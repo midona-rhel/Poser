@@ -226,6 +226,7 @@ public class GizmoOverlayWindow : Window
     {
         // Draw the free-camera notice before interaction gates.
         DrawFreeCameraSpeed();
+        DrawShellDragReadout();
 
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
@@ -649,16 +650,20 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
                 return;
             primaryBone = primaryBoneId;
-            // Hidden bones suppress new gizmos but do not cancel active drags.
-            if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null
-                && !_presentation.IsVisible(primaryBoneId))
-                return;
-            // The armature takes the gizmo with it, when asked — per
-            // SKELETON: this actor's bones must be shown, not anyone's.
-            if (GizmoConfig.HideGizmoWithoutArmature && _gesture == null
-                && !(ArmatureVisibility.MasterOn
-                    && _presentation.AnyVisibleFor(primaryBoneId)))
-                return;
+            // Keep gizmo without bones is the stronger word: on, a selected
+            // bone keeps its gizmo whatever the overlay shows. Off, hiding
+            // the bone, or the whole armature when asked, takes it away.
+            // Neither cancels an active drag.
+            if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null)
+            {
+                if (!_presentation.IsVisible(primaryBoneId))
+                    return;
+                // Per SKELETON: this actor's bones must be shown, not anyone's.
+                if (GizmoConfig.HideGizmoWithoutArmature
+                    && !(ArmatureVisibility.MasterOn
+                        && _presentation.AnyVisibleFor(primaryBoneId)))
+                    return;
+            }
             // Querying the skeleton matrix refreshes its runtime cache.
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
                 return;
@@ -1008,6 +1013,14 @@ public class GizmoOverlayWindow : Window
 
         var min = mouse + new Vector2(18f, 14f) * uiScale;
         Crystarium.HoverHelp.Readout(min, text);
+    }
+
+    /// <summary>The readout of a drag held on a shell control, drawn here
+    /// because the shell itself is faded out under it.</summary>
+    private static void DrawShellDragReadout()
+    {
+        if (ManipulationDrag.ShellReadout is { } readout)
+            Crystarium.HoverHelp.Readout(readout.Min, readout.Text);
     }
 
     /// <summary>Draws the current free-camera speed notice.</summary>

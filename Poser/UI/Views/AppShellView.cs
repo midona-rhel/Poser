@@ -183,8 +183,6 @@ public sealed class AppShellViewModel
     public string? RedoDescription;
     public bool ShowSpawn;
     public bool ShowProject;
-    /// <summary>Whether the active tab has a faithful standalone rendering.</summary>
-    public bool ShowPopOut;
 
     /// <summary>
     /// The scene's structural revision. The sidebar's retained per-row state is
@@ -294,7 +292,13 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
-    public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
+    public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnProject;
+
+    /// <summary>The content footer's two seats — the sidebar's attach
+    /// toggle on the left, the inspector's on the right — and what the
+    /// active pane keeps between them.</summary>
+    public Action? OnSidebarAttachToggle, OnInspectorAttachToggle;
+    public Action<Vector2, Vector2>? DrawFooterMiddle; // (origin, size)
     /// <summary>
     /// Button-opened surfaces use the button seat; context menus use the
     /// pointer because they have no button seat.
@@ -1037,15 +1041,6 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        // The pop-out remains available from the titlebar toolbar.
-        if (vm.ShowPopOut)
-        {
-            x -= step;
-            IconAt(
-                new Vector2(x, y), TablerIcon.ExternalLink, side, vm.OnPopOut,
-                "##shell-popout",
-                help: "Pop the selected actor's content into its own window");
-        }
         // Armature visibility is controlled by the sidebar and settings, not
         // by this titlebar cluster.
         return x;
@@ -1264,9 +1259,12 @@ public static class AppShellView
         // Toolbar and content share the horizontal inset; the shell owns the
         // origin while panes own their internal spacing.
         var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
+        // The footer band is the shell's, under every view.
+        float footerHeight =
+            Crystarium.ActiveTheme.Floating.ModalBarHeight * s;
         var childSize = new Vector2(
             max.X - min.X - 1f * s - leftEdge,
-            max.Y - toolbarBottom - 1f * s);
+            MathF.Max(0f, max.Y - toolbarBottom - 1f * s - footerHeight));
         // Measure the inset from the child so the border and scrollbar remain
         // outside the pane's content box.
         ImGui.SetCursorScreenPos(childOrigin);
@@ -1339,6 +1337,45 @@ public static class AppShellView
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
+        DrawContentFooter(
+            vm,
+            new Vector2(childOrigin.X, childOrigin.Y + childSize.Y),
+            new Vector2(
+                childOrigin.X + childSize.X,
+                childOrigin.Y + childSize.Y + footerHeight),
+            s);
+    }
+
+    /// <summary>The content footer every view shares: the sidebar's attach
+    /// seat on the left, the inspector's on the right, and whatever the
+    /// active pane keeps between them (Pose: its parenting bar).</summary>
+    private static void DrawContentFooter(
+        AppShellViewModel vm, Vector2 min, Vector2 max, float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            min, new Vector2(max.X, min.Y + MathF.Max(1f, s)),
+            U32(BorderSecondary));
+        float side = theme.Controls.ShellIconAction;
+        float inset = MainHorizontalPadding * s;
+        float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
+        IconAt(
+            new Vector2(min.X + inset, y), TablerIcon.LayoutSidebarLeft, side,
+            vm.OnSidebarAttachToggle, "##footer-sidebar",
+            help: vm.Detached ? "Attach the sidebar" : "Detach the sidebar");
+        float rightX = max.X - inset - side * s;
+        IconAt(
+            new Vector2(rightX, y), TablerIcon.LayoutSidebarRight, side,
+            vm.OnInspectorAttachToggle, "##footer-inspector",
+            help: vm.InspectorSplit
+                ? "Attach the inspector"
+                : "Detach the inspector");
+        float gap = theme.Page.ActionGap * s;
+        float middleLeft = min.X + inset + side * s + gap;
+        float middleRight = rightX - gap;
+        vm.DrawFooterMiddle?.Invoke(
+            new Vector2(middleLeft, min.Y),
+            new Vector2(MathF.Max(0f, middleRight - middleLeft), max.Y - min.Y));
     }
 
     // ── rail ─────────────────────────────────────────────────────────────

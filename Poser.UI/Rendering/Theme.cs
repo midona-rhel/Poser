@@ -147,7 +147,9 @@ public readonly record struct Theme
             // Sized so the app's real labels FIT — re-measured for
             // Roboto, which runs wider than Segoe did at 72.
             LabelColumnWidth = 90f,
-            ValueColumnWidth = 52f,
+            // Six digits and a unit ("0.0004", "600 s", "2.00×") in the
+            // mono face, with the well's own padding.
+            ValueColumnWidth = 62f,
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,
             AxisWellHorizontalPadding = 6f,
@@ -248,6 +250,7 @@ public readonly record struct Theme
             Height = 520f,
             NavigationWidth = 200f,
             LabelColumnWidth = 180f,
+            NavigationRowHeight = 36f,
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -735,6 +738,9 @@ public readonly record struct Theme
         /// settings body has the room to spend.</summary>
         public float LabelColumnWidth { get; init; }
 
+        /// <summary>The settings rail's page rows: taller than a list
+        /// row, the highlight spanning the rail edge to edge.</summary>
+        public float NavigationRowHeight { get; init; }
     }
 
     /// <summary>Pixel-grid rounding. The per-band text nudges this once

@@ -465,9 +465,13 @@ public static class ManipulationHide
     public static FadeHandle FadeScope()
     {
         bool pushed = Opacity < 1f;
+        // Never exactly zero: ImGui hides a window whose alpha is zero
+        // and skips its items, and a drag held on one of them would end.
+        // A hair above zero is invisible and alive.
         if (pushed)
             ImGui.PushStyleVar(
-                ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Opacity);
+                ImGuiStyleVar.Alpha,
+                ImGui.GetStyle().Alpha * MathF.Max(0.002f, Opacity));
         return new FadeHandle(pushed);
     }
 
@@ -490,12 +494,33 @@ public static class ManipulationHide
 public static class ManipulationDrag
 {
     private static int _heldUntilFrame = -1;
+    private static int _shellUntilFrame = -1;
+    private static int _readoutFrame = -1;
+    private static (Vector2 Min, string Text) _readout;
 
     public static void Hold() =>
         _heldUntilFrame = ImGui.GetFrameCount() + 1;
 
     public static bool Held =>
         ImGui.GetFrameCount() <= _heldUntilFrame;
+
+    /// <summary>A drag held on a control INSIDE a shell window (the
+    /// inspector's rotation ball): the shell fades like it does for a
+    /// world drag, but the window keeps drawing at zero alpha so the
+    /// held item lives on, and the readout is handed to the overlay.</summary>
+    public static void HoldFromShell(Vector2 readoutMin, string readout)
+    {
+        _shellUntilFrame = ImGui.GetFrameCount() + 1;
+        _readoutFrame = ImGui.GetFrameCount() + 1;
+        _readout = (readoutMin, readout);
+    }
+
+    public static bool ShellHeld =>
+        ImGui.GetFrameCount() <= _shellUntilFrame;
+
+    /// <summary>The shell drag's readout for this frame, if any.</summary>
+    public static (Vector2 Min, string Text)? ShellReadout =>
+        ImGui.GetFrameCount() <= _readoutFrame ? _readout : null;
 }
 
 public static class GizmoPointerOwnership

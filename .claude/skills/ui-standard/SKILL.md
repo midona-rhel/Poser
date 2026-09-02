@@ -331,8 +331,22 @@ Windows each have ONE job. No mode may change what a window IS.
   with the rows. The spawn plus closes the band at the right of the
   search (moved from the adopt band 2026-08-30); the toolbar keeps
   its own plus.
-- **Pop-outs** are pinned properties: the standard tab-content view
-  with a pin. A bespoke pop-out layout is a defect.
+- **Panels attach and detach; nothing pops out.** The sidebar and the
+  inspector each live either inside the main window or in their own
+  window, and the verbs are ATTACH and DETACH (never merge/split). A
+  detached panel also OPENS and CLOSES. The burger menu carries one
+  submenu per panel (Sidebar, Inspector: Attach|Detach, then
+  Open|Close, the latter disabled while attached) and one row for the
+  properties panel (Open|Close, only while the sidebar is detached).
+  Icons: sidebar = layout-sidebar-left, inspector = the same glyph
+  mirrored (layout-sidebar-right), properties panel = layout-panel,
+  Close = X. The pop-out (an actor's content frozen in its own
+  window) was removed 2026-09-02; do not reintroduce it.
+- **The content footer** is the shell's, under EVERY view: the
+  sidebar's attach seat at the left, the inspector's at the right,
+  and whatever the active pane keeps between them (Pose: its
+  Parenting bar). One burger menu everywhere — the toolbar's is the
+  main window's, never a subset.
 - **Hide while manipulating** (Settings → UI → Visibility, off by
   default) — the shell windows FADE over 100 ms while a world drag
   is HELD, and only then: hovering a handle never hides (ruled
@@ -735,6 +749,16 @@ never "Search poses", "Filter bones", "Search everything spawnable".
 The field's surroundings already say what is being searched; naming it
 again is chrome talking to itself (swept 2026-08-30).
 
+## Picking a bone from the view
+
+Anything that needs a bone (IK's Bone target, the camera's tracked
+bones) offers BOTH a list picker and a crosshair seat that starts
+overlay picking (`BonePick.Begin`): every actor's bones show until one
+is clicked. Single picks take the first click; multi picks keep going
+on Ctrl-click. Escape, right-click or a click on nothing ends it, and
+nothing is selected by a pick. Every SearchPicker focuses its search
+field the frame it opens.
+
 ## Tooltips
 
 A hover is a LABEL, not an explanation. Its length follows the verb's
@@ -752,6 +776,29 @@ complexity, and most verbs are one word.
   the future tutorial.
 - Group gates read like any other toggle: "Hide"/"Show", "Pause"/"Play".
   Never describe the gate mechanics in the hover.
+
+## Empty states and readouts
+
+- An empty state (nothing selected, nothing matches) sits centred in
+  its surface, both axes. A line pinned to the top-left corner is a
+  defect.
+- A drag readout (degrees turned, distance moved, scale factor) is
+  numbers, so it renders in the MONO face, the same as every numeric
+  well. It is drawn outside any shell fade so it stays readable while
+  the windows hide for the drag.
+- Error text never appears inline in a form: a failure is a
+  notification. Inline text that appears and disappears reflows the
+  page.
+
+- A search over rows settles a quarter second after the last keystroke
+  and only then re-renders: rows that stay slide UP into their new place,
+  rows that arrive slide in from below while fading in, nothing animates
+  per keystroke. The first painted section on any page leads with no
+  rule, whatever the caller passed (`PageScope` enforces it).
+- A window that must stay interactive while it is "hidden" (a drag held
+  on one of its controls) fades to a hair above zero alpha, never zero:
+  ImGui hides a zero-alpha window and skips its items, and the held item
+  is torn away.
 
 ## How to design a surface
 

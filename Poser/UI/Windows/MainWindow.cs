@@ -142,10 +142,10 @@ public class MainWindow : Window
     private readonly ILightingService _lightingService;
     private readonly CameraPane _cameraPane;
     private readonly IVirtualCameraService _cameraService;
-    private readonly Crystarium.SearchPicker<CameraBoneChoice>
+    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice>
         _cameraTrackingBonePicker = new("camera-tracking-bones");
-    private IReadOnlyList<CameraBoneChoice> _cameraBoneChoices =
-        Array.Empty<CameraBoneChoice>();
+    private IReadOnlyList<global::Poser.UI.BoneChoice> _cameraBoneChoices =
+        Array.Empty<global::Poser.UI.BoneChoice>();
     private CameraId? _cameraBonePickerCamera;
     private ActorId? _cameraBonePickerActor;
     private readonly EnvironmentPane _environmentPane;
@@ -409,9 +409,6 @@ public class MainWindow : Window
     /// the browser opens at and the tab that affordance answers for.</summary>
     public event Action<Vector2, SpawnBrowserTab>? OnSpawnBrowserRequested;
 
-    /// <summary>Pop out the main content, frozen to this actor. The window
-    /// set answers by minting a <see cref="PopOutWindow"/>.</summary>
-    public event Action<ActorId>? OnPopOutRequested;
 
     /// <summary>The strip's Scene toggle: the window set flips the Scene
     /// window and answers its state through <see cref="GetSceneWindowOpen"/>.
@@ -419,6 +416,11 @@ public class MainWindow : Window
     public event Action? OnSceneWindowToggleRequested;
 
     public Func<bool>? GetSceneWindowOpen { get; set; }
+
+    /// <summary>The split inspector window: shown or hidden without
+    /// merging it back.</summary>
+    public event Action? OnInspectorWindowToggleRequested;
+    public Func<bool>? GetInspectorWindowOpen { get; set; }
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -566,6 +568,7 @@ public class MainWindow : Window
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
+        _poseInspector.BuildBoneChoices = BuildCameraBoneChoices;
         _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
@@ -710,11 +713,10 @@ public class MainWindow : Window
             else
                 IsOpen = false;
         };
-        _vm.OnPopOut = () =>
-        {
-            if (SelectedActorId() is { } popOut)
-                OnPopOutRequested?.Invoke(popOut);
-        };
+        _vm.OnSidebarAttachToggle = RequestDetachToggle;
+        _vm.OnInspectorAttachToggle =
+            () => OnInspectorSplitToggleRequested?.Invoke();
+        _vm.DrawFooterMiddle = DrawFooterMiddle;
         // Each section plus opens the shared spawn browser on that section's
         // tab, anchored to the button that opened it.
         _vm.OnSectionPlus = (index, anchor) =>
@@ -1388,7 +1390,10 @@ public class MainWindow : Window
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
-        if (!_contentHidden && !Controls.ManipulationHide.Hidden)
+        // A drag held on the shell's own control keeps the window drawing
+        // through the fade, invisible, so the held item is not torn away.
+        if (!_contentHidden
+            && (!Controls.ManipulationHide.Hidden || Controls.ManipulationDrag.ShellHeld))
         {
             using var manipulationFade = Controls.ManipulationHide.FadeScope();
             AppShellView.Draw(
@@ -1628,9 +1633,6 @@ public class MainWindow : Window
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.UndoDescription = _cleanTransforms.UndoDescription;
         _vm.RedoDescription = _cleanTransforms.RedoDescription;
-        // Pop-out follows the toolbar actor: any selection that resolves to
-        // an actor can be frozen into its own content window.
-        _vm.ShowPopOut = toolbarActor != null;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
         // the same surface, the spawn browser — the lights and cameras pluses
@@ -2264,12 +2266,6 @@ public class MainWindow : Window
         ["Follow", "Pan", "Follow and pan", "None"];
 
     /// <summary>One exact bone in the flat tracking picker.</summary>
-    private sealed record CameraBoneChoice(
-        string Key,
-        string Label,
-        string SearchText,
-        BoneId BoneId,
-        string? Badge);
 
     /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
     private void DrawCameraTrackingActors(
@@ -2287,7 +2283,7 @@ public class MainWindow : Window
             "Tracking",
             camera.IsTracking,
             value => camera.IsTracking = value,
-            help: "Steer the orbit pivot at the tracked bones every frame",
+            help: "Keep the tracked bones in view every frame",
             disabled: locked);
         form.Dropdown(
             "Mode",
@@ -2300,19 +2296,39 @@ public class MainWindow : Window
 
         form.Actions(
             string.Empty,
-            actions => actions.Button(
-                "Select bones",
-                () =>
-                {
-                    if (actor != null)
-                        OpenCameraBonePicker(cameraId, actor.Id, camera);
-                },
-                style: ControlStyle.Workspace with { Width = UiWidth.Fill },
-                disabled: locked || actor == null,
-                help: actor == null
-                    ? "Choose an actor first"
-                    : $"Choose exact bones on {ActorDisplayName(actor)}",
-                id: "camera-track-select-bones"));
+            actions =>
+            {
+                actions.Button(
+                    "Select bones",
+                    () =>
+                    {
+                        if (actor != null)
+                            OpenCameraBonePicker(cameraId, actor.Id, camera);
+                    },
+                    style: ControlStyle.Workspace with { Width = UiWidth.Fill },
+                    disabled: locked || actor == null,
+                    help: actor == null
+                        ? "Choose an actor first"
+                        : $"Choose exact bones on {ActorDisplayName(actor)}",
+                    id: "camera-track-select-bones");
+                // Picking in the view: a click takes a bone, Ctrl-click
+                // keeps adding. Another actor's bone moves the tracking
+                // to that actor, as the list does.
+                actions.IconButton(
+                    TablerIcon.Crosshair,
+                    () => global::Poser.UI.Controls.BonePick.Begin(
+                        multi: true,
+                        bone =>
+                        {
+                            if (ResolveExactCamera(cameraId, camera) && !camera.IsLocked)
+                                _cameraPane.ToggleTrackedBone(camera, bone);
+                        },
+                        onlyActor: actor?.Id),
+                    disabled: locked,
+                    help: actor == null
+                        ? "Pick bones in the view"
+                        : "Pick bones in the view on this actor");
+            });
 
         PumpCameraBonePicker(cameraId, camera, actor);
     }
@@ -2412,7 +2428,7 @@ public class MainWindow : Window
         else if (_cameraTrackingBonePicker.IsOpen)
         {
             _cameraTrackingBonePicker.UpdateItems(
-                Array.Empty<CameraBoneChoice>());
+                Array.Empty<global::Poser.UI.BoneChoice>());
             _cameraTrackingBonePicker.UpdateSelection(
                 new HashSet<string>(StringComparer.Ordinal));
         }
@@ -2429,7 +2445,7 @@ public class MainWindow : Window
         _cameraBonePickerCamera = cameraId;
         _cameraBonePickerActor = actorId;
         _cameraBoneChoices = BuildCameraBoneChoices(actor);
-        var options = new PickerOptions<CameraBoneChoice>
+        var options = new PickerOptions<global::Poser.UI.BoneChoice>
         {
             Query = CameraBoneSearch,
             Badge = choice => choice.Badge,
@@ -2449,7 +2465,7 @@ public class MainWindow : Window
     private void ToggleCameraTrackedBone(
         CameraId cameraId,
         ActorId actorId,
-        CameraBoneChoice choice,
+        global::Poser.UI.BoneChoice choice,
         IVirtualCamera camera)
     {
         var boneId = choice.BoneId;
@@ -2500,10 +2516,10 @@ public class MainWindow : Window
             .Select(id => id!.Value.ToString())
             .ToHashSet(StringComparer.Ordinal);
 
-    private IReadOnlyList<CameraBoneChoice> BuildCameraBoneChoices(
+    private IReadOnlyList<global::Poser.UI.BoneChoice> BuildCameraBoneChoices(
         ActorDescriptor actor)
     {
-        var rows = new List<CameraBoneChoice>();
+        var rows = new List<global::Poser.UI.BoneChoice>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
         {
@@ -2540,7 +2556,7 @@ public class MainWindow : Window
             {
                 if (bone.IsHidden || IsBoneSuppressed(bone))
                     continue;
-                rows.Add(new CameraBoneChoice(
+                rows.Add(new global::Poser.UI.BoneChoice(
                     bone.Id.ToString(),
                     bone.DisplayName,
                     $"{label} {bone.DisplayName} {bone.Id.CanonicalName}",
@@ -2552,7 +2568,7 @@ public class MainWindow : Window
     }
 
     private static void AddCameraCategoryBones(
-        List<CameraBoneChoice> rows,
+        List<global::Poser.UI.BoneChoice> rows,
         BuiltCategory category,
         string[] ancestors)
     {
@@ -2563,7 +2579,7 @@ public class MainWindow : Window
             AddCameraCategoryBones(rows, child, contexts);
         string searchContext = string.Join(' ', contexts);
         foreach (var bone in category.VisibleBones)
-            rows.Add(new CameraBoneChoice(
+            rows.Add(new global::Poser.UI.BoneChoice(
                 bone.Id.ToString(),
                 bone.DisplayName,
                 $"{searchContext} {bone.DisplayName} "
@@ -2572,7 +2588,7 @@ public class MainWindow : Window
                 category.Label));
     }
 
-    private IReadOnlyList<CameraBoneChoice> CameraBoneSearch(string query) =>
+    private IReadOnlyList<global::Poser.UI.BoneChoice> CameraBoneSearch(string query) =>
         query.Length == 0
             ? _cameraBoneChoices
             : _cameraBoneChoices.Where(choice => choice.SearchText.Contains(
@@ -3075,7 +3091,10 @@ public class MainWindow : Window
             if (built.Count > 0)
             {
                 var skeletonKey = actorKey + "/skeleton";
-                _knownCategoryNodes.Add(skeletonKey);
+                // The skeleton starts folded like the actor above it;
+                // only a disclosure click, or the tree verbs, open it.
+                if (_knownCategoryNodes.Add(skeletonKey))
+                    _collapsedNodes.Add(skeletonKey);
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
@@ -3088,7 +3107,7 @@ public class MainWindow : Window
                 {
                     Label = "Skeleton",
                     Count = "",
-                    Icon = TablerIcon.Armature,
+                    Icon = TablerIcon.Walk,
                     ForceIcon = true,
                     Depth = depth + 1,
                     HasChildren = true,
@@ -4317,6 +4336,26 @@ public class MainWindow : Window
         }
     }
 
+    /// <summary>Folds or opens the tree: the root row alone, or the root
+    /// and everything keyed beneath it.</summary>
+    private void SetTreeCollapsed(string root, bool collapsed, bool subtree)
+    {
+        void Set(string key)
+        {
+            if (collapsed)
+                _collapsedNodes.Add(key);
+            else
+                _collapsedNodes.Remove(key);
+        }
+        Set(root);
+        if (!subtree)
+            return;
+        IEnumerable<string> keys = _knownActorNodes.Concat(_knownCategoryNodes);
+        foreach (var key in keys.ToArray())
+            if (key.StartsWith(root + "/", StringComparison.Ordinal))
+                Set(key);
+    }
+
     /// <summary>The root slot a drop row stands for: a group head or a
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference
@@ -4595,19 +4634,13 @@ public class MainWindow : Window
     internal enum ShellCommand
     {
         ShowLibrary,
-        SpawnActor,
-        ImportPose,
-        ExportPose,
-        SaveScene,
-        AutoSaves,
+        OpenSpawn,
+        Pose,
+        Scene,
         LayoutSeparator,
-        PopOutContent,
-        DetachSeparator,
-        ToggleDetached,
-        SplitInspector,
-        WindowsSeparator,
-        SceneWindow,
-        InspectorWindow,
+        PropertiesPanel,
+        Sidebar,
+        Inspector,
         SettingsSeparator,
         OpenSettings,
     }
@@ -4628,6 +4661,11 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
         if (clicked >= 0 && clicked < _shellMenuItems.Length)
             InvokeShellCommand((ShellCommand)clicked);
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0
+            && subParent < _shellMenuItems.Length)
+            InvokeShellSubmenu((ShellCommand)subParent, subClicked);
     }
 
     /// <summary>Updates the shell menu when its visible state changes.</summary>
@@ -4637,10 +4675,12 @@ public class MainWindow : Window
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
+        bool inspectorOpen = GetInspectorWindowOpen?.Invoke() ?? true;
         int layoutState = (uiConfig.DetachedShell ? 1 : 0)
             | (sceneOpen ? 2 : 0)
             | (_contentHidden ? 4 : 0)
-            | (uiConfig.SplitInspector ? 8 : 0);
+            | (uiConfig.SplitInspector ? 8 : 0)
+            | (inspectorOpen ? 16 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -4655,7 +4695,8 @@ public class MainWindow : Window
             uiConfig.DetachedShell,
             sceneOpen,
             _contentHidden,
-            uiConfig.SplitInspector);
+            uiConfig.SplitInspector,
+            inspectorOpen);
     }
 
     /// <summary>Fills the shell menu rows for the current UI state.</summary>
@@ -4665,59 +4706,113 @@ public class MainWindow : Window
         bool detachedShell,
         bool sceneOpen,
         bool contentHidden,
-        bool splitInspector = false)
+        bool splitInspector = false,
+        bool inspectorOpen = true)
     {
         items[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Book);
-        items[(int)ShellCommand.SpawnActor] =
-            new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
-        items[(int)ShellCommand.ImportPose] =
+        items[(int)ShellCommand.OpenSpawn] =
+            new ContextMenuItem("Open the spawn menu", TablerIcon.Plus);
+        items[(int)ShellCommand.Pose] =
             new ContextMenuItem(
-                "Import pose", TablerIcon.Download, disabled: !poseTarget);
-        items[(int)ShellCommand.ExportPose] =
+                "Pose", TablerIcon.Walk, disabled: !poseTarget,
+                submenuItems:
+                [
+                    new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Export", TablerIcon.Upload),
+                    new ContextMenuItem("Auto-saves", TablerIcon.DeviceFloppy),
+                ]);
+        items[(int)ShellCommand.Scene] =
             new ContextMenuItem(
-                "Export pose", TablerIcon.Upload, disabled: !poseTarget);
-        items[(int)ShellCommand.SaveScene] =
-            new ContextMenuItem("Save scene", TablerIcon.Movie);
-        items[(int)ShellCommand.AutoSaves] =
-            new ContextMenuItem(
-                "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+                "Scene", TablerIcon.Movie,
+                submenuItems:
+                [
+                    new ContextMenuItem("Save", TablerIcon.DeviceFloppy),
+                ]);
         items[(int)ShellCommand.LayoutSeparator] = ContextMenuItem.Separator;
-        items[(int)ShellCommand.PopOutContent] =
-            new ContextMenuItem(
-                "Pop out content", TablerIcon.WindowMaximize,
-                disabled: !poseTarget);
-        items[(int)ShellCommand.DetachSeparator] = ContextMenuItem.Separator;
-        items[(int)ShellCommand.ToggleDetached] =
-            new ContextMenuItem(
-                detachedShell ? "Merge the UI" : "Detach the UI",
-                detachedShell ? TablerIcon.WindowMinimize : TablerIcon.WindowMaximize);
-        items[(int)ShellCommand.SplitInspector] =
-            new ContextMenuItem(
-                splitInspector ? "Merge the inspector" : "Split the inspector",
-                splitInspector
-                    ? TablerIcon.WindowMinimize
-                    : TablerIcon.WindowMaximize,
-                help: splitInspector
-                    ? "Fold the inspector back into the shell"
-                    : "Give the inspector its own window");
-        items[(int)ShellCommand.WindowsSeparator] = ContextMenuItem.Separator;
-        // Detached windows can be opened and closed here.
-        items[(int)ShellCommand.SceneWindow] =
-            new ContextMenuItem(
-                sceneOpen ? "Close the sidebar" : "Open the sidebar",
-                sceneOpen ? TablerIcon.DeviceIpadX : TablerIcon.LayoutPanel,
-                disabled: !detachedShell);
-        items[(int)ShellCommand.InspectorWindow] =
+        // The properties panel is the main window's own content: it opens
+        // and closes, and only while the sidebar lives apart from it.
+        items[(int)ShellCommand.PropertiesPanel] =
             new ContextMenuItem(
                 contentHidden
                     ? "Open the properties panel"
                     : "Close the properties panel",
-                contentHidden ? TablerIcon.LayoutSidebarLeft : TablerIcon.BrowserX,
+                contentHidden ? TablerIcon.LayoutPanel : TablerIcon.X,
                 disabled: !detachedShell);
+        items[(int)ShellCommand.Sidebar] =
+            new ContextMenuItem(
+                "Sidebar", TablerIcon.LayoutSidebarLeft,
+                submenuItems: PanelVerbs(
+                    TablerIcon.LayoutSidebarLeft,
+                    attached: !detachedShell, open: sceneOpen));
+        items[(int)ShellCommand.Inspector] =
+            new ContextMenuItem(
+                "Inspector", TablerIcon.LayoutSidebarRight,
+                submenuItems: PanelVerbs(
+                    TablerIcon.LayoutSidebarRight,
+                    attached: !splitInspector, open: inspectorOpen));
         items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;
         items[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>One panel's verbs: Attach or Detach by its state, then
+    /// Open or Close — which only a detached panel can do.</summary>
+    private static ContextMenuItem[] PanelVerbs(
+        TablerIcon glyph, bool attached, bool open) =>
+    [
+        new ContextMenuItem(attached ? "Detach" : "Attach", glyph),
+        open
+            ? new ContextMenuItem("Close", TablerIcon.X, disabled: attached)
+            : new ContextMenuItem("Open", glyph, disabled: attached),
+    ];
+
+    /// <summary>What the active pane keeps in the content footer between
+    /// the two attach seats.</summary>
+    private void DrawFooterMiddle(Vector2 origin, Vector2 size)
+    {
+        if (_activeTab == "Pose" && SelectedSkeleton() is { } skeleton)
+            _poseInspector.DrawParentingBar(origin, size, skeleton);
+    }
+
+    /// <summary>Runs one row of a burger submenu, routed by its parent.</summary>
+    private void InvokeShellSubmenu(ShellCommand parent, int index)
+    {
+        switch (parent)
+        {
+            case ShellCommand.Pose:
+                if (SelectedSkeleton() is not { } skeleton)
+                    return;
+                switch (index)
+                {
+                    case 0:
+                        _poseFileSection.RequestImportMenu(withPresets: true);
+                        break;
+                    case 1:
+                        _poseFileSection.RequestExportMenu();
+                        break;
+                    case 2:
+                        _poseFileSection.OpenAutoSaves(skeleton);
+                        break;
+                }
+                break;
+            case ShellCommand.Scene:
+                if (index == 0)
+                    _scenePane.RequestLibrarySave();
+                break;
+            case ShellCommand.Sidebar:
+                if (index == 0)
+                    RequestDetachToggle();
+                else
+                    OnSceneWindowToggleRequested?.Invoke();
+                break;
+            case ShellCommand.Inspector:
+                if (index == 0)
+                    OnInspectorSplitToggleRequested?.Invoke();
+                else
+                    OnInspectorWindowToggleRequested?.Invoke();
+                break;
+        }
     }
 
     /// <summary>Requests the shell layout toggle.</summary>
@@ -4738,41 +4833,12 @@ public class MainWindow : Window
             case ShellCommand.ShowLibrary:
                 ShowLibrary();
                 break;
-            case ShellCommand.SpawnActor:
+            case ShellCommand.OpenSpawn:
                 // The menu anchor is also the spawn browser's anchor.
                 OnSpawnBrowserRequested?.Invoke(
                     _shellMenuAnchor, SpawnBrowserTab.All);
                 break;
-            // Import and export use the existing pose-file menus.
-            case ShellCommand.ImportPose:
-                if (SelectedSkeleton() != null)
-                    _poseFileSection.RequestImportMenu(withPresets: true);
-                break;
-            case ShellCommand.ExportPose:
-                if (SelectedSkeleton() != null)
-                    _poseFileSection.RequestExportMenu();
-                break;
-            case ShellCommand.SaveScene:
-                _scenePane.RequestLibrarySave();
-                break;
-            case ShellCommand.AutoSaves:
-                if (SelectedSkeleton() is { } recoverSkeleton)
-                    _poseFileSection.OpenAutoSaves(recoverSkeleton);
-                break;
-            case ShellCommand.PopOutContent:
-                if (SelectedActorId() is { } popOut)
-                    OnPopOutRequested?.Invoke(popOut);
-                break;
-            case ShellCommand.ToggleDetached:
-                RequestDetachToggle();
-                break;
-            case ShellCommand.SplitInspector:
-                OnInspectorSplitToggleRequested?.Invoke();
-                break;
-            case ShellCommand.SceneWindow:
-                OnSceneWindowToggleRequested?.Invoke();
-                break;
-            case ShellCommand.InspectorWindow:
+            case ShellCommand.PropertiesPanel:
                 ContentHidden = !ContentHidden;
                 break;
             case ShellCommand.OpenSettings:
@@ -4829,6 +4895,14 @@ public class MainWindow : Window
                 submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
             new("Save to library", TablerIcon.Library,
                 disabled: !actor.HasSkeleton),
+            new("Expand", TablerIcon.SquarePlus),
+            new("Collapse", TablerIcon.SquareMinus),
+            new("All", TablerIcon.Copy,
+                submenuItems:
+                [
+                    new ContextMenuItem("Expand all", TablerIcon.Copy),
+                    new ContextMenuItem("Collapse all", TablerIcon.Copy),
+                ]),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -4884,6 +4958,9 @@ public class MainWindow : Window
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
+            () => SetTreeCollapsed("actor:" + actorId, false, subtree: false),
+            () => SetTreeCollapsed("actor:" + actorId, true, subtree: false),
+            null, // All — child clicks are read separately.
             null, // separator
             null, // Companion — child clicks are read separately.
         };
@@ -4891,7 +4968,7 @@ public class MainWindow : Window
         // Bone presets belong to this actor.
         items.Add(ContextMenuItem.Separator);
         items.Add(new ContextMenuItem(
-            "Bone presets", TablerIcon.Armature,
+            "Bone presets", TablerIcon.Eye,
             disabled: !actor.HasSkeleton,
             help: "Named sets of which bones this actor shows in the overlay",
             submenuItems: actor.HasSkeleton
@@ -4986,6 +5063,9 @@ public class MainWindow : Window
             _ctxOpenRequested = false;
             Crystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
         }
+        // The preset rows show live checks: the menu takes this frame's
+        // rows so a toggle shows at once while the menu stays open.
+        Crystarium.FloatingMenu.Refresh("##actor-ctx", items.ToArray());
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
@@ -5004,6 +5084,11 @@ public class MainWindow : Window
                 {
                     () => Duplicate(actor),
                     () => DuplicateWithPose(actor),
+                },
+                "All" => new List<Action?>
+                {
+                    () => SetTreeCollapsed("actor:" + actorId, false, subtree: true),
+                    () => SetTreeCollapsed("actor:" + actorId, true, subtree: true),
                 },
                 _ => null,
             };
@@ -5033,8 +5118,9 @@ public class MainWindow : Window
             _bonePresetItems.Add(new ContextMenuItem(
                 name,
                 _bonePresets.IsApplied(actor, name)
-                    ? TablerIcon.Check
+                    ? TablerIcon.CircleDot
                     : TablerIcon.Circle,
+                keepOpen: true,
                 help: $"{preset.Bones.Count} bones"));
             _bonePresetActions.Add(() => _bonePresets.Toggle(actor, name));
         }
@@ -5042,7 +5128,7 @@ public class MainWindow : Window
         _bonePresetItems.Add(ContextMenuItem.Separator);
         _bonePresetActions.Add(null);
         _bonePresetItems.Add(new ContextMenuItem(
-            "Show bones no preset covers", TablerIcon.Crosshair,
+            "Show uncovered bones", TablerIcon.Crosshair,
             disabled: presets.Count == 0,
             help: "Hide everything the presets claim and show the rest"));
         _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
@@ -5163,9 +5249,9 @@ public class MainWindow : Window
             _overlayPresentation.AreVisible(overlayBones);
         var items = new[]
         {
-            new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
-            new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: !hasChildren),
-            new ContextMenuItem("Select mirrored bone", TablerIcon.ArrowsMove, disabled: mirror == null),
+            new ContextMenuItem("Select parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null),
+            new ContextMenuItem("Select children", TablerIcon.SelectChildren, disabled: !hasChildren),
+            new ContextMenuItem("Select mirrored bone", TablerIcon.SelectMirror, disabled: mirror == null),
             new ContextMenuItem(
                 overlayVisible
                     ? "Hide from overlay"

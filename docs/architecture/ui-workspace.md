@@ -2,7 +2,7 @@
 
 `UiWindowSet` keeps the workspace windows and their draw order: the main
 window, settings, spawn browser, gizmo and skeleton overlays, detached sidebar
-and toolbar parts, actor pop-outs, frame profiler, and reference pictures.
+and toolbar parts, frame profiler, and reference pictures.
 The skeleton overlay starts enabled for each session. Selected bones remain
 visible as anchors when the global overlay mask hides other bones.
 

@@ -97,6 +97,8 @@ public static partial class Crystarium
         private Vector2 _anchorMax;
         private string _owner = string.Empty;
         private string _query = string.Empty;
+        // The search field takes the keyboard the frame the surface opens.
+        private bool _focusSearch;
 
         private string? _caption;
         private IReadOnlyList<T> _items = Array.Empty<T>();
@@ -280,6 +282,7 @@ public static partial class Crystarium
             // Each open starts with an empty query. Callers retain strip state.
             _query = string.Empty;
             _openRequested = true;
+            _focusSearch = true;
         }
 
         private int StripCount() =>
@@ -345,6 +348,11 @@ public static partial class Crystarium
                 theme);
             ImGui.SetCursorScreenPos(
                 searchOrigin + new Vector2(searchMargin * scale, 0f));
+            if (_focusSearch)
+            {
+                _focusSearch = false;
+                ImGui.SetKeyboardFocusHere();
+            }
             FilterPill(
                 _filterId,
                 _query,

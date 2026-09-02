@@ -26,7 +26,7 @@ public static partial class Crystarium
             uint Id, Vector2 Min, Vector2 Max, string Text,
             string? Shortcut, HoverHelpSide Side, bool Instant,
             bool Animated, InteractionOwner Owner, Vector2? Position = null,
-            float Alpha = 1f);
+            float Alpha = 1f, bool Mono = false);
 
         private static Candidate? _candidate;
         private static uint? _pendingId;
@@ -79,10 +79,11 @@ public static partial class Crystarium
         {
             if (text.Length == 0 || opacity <= 0f)
                 return;
+            // Numbers wiggle in the text face; a readout is numbers.
             var readout = new Candidate(
                 0, min, min, text, null, HoverHelpSide.Bottom,
                 Instant: true, Animated: false, Owner: Interactive.CurrentOwner,
-                Position: min, Alpha: opacity);
+                Position: min, Alpha: opacity, Mono: true);
             Draw(readout, 1f);
         }
 
@@ -90,7 +91,7 @@ public static partial class Crystarium
         {
             float scale = ImGuiHelpers.GlobalScale;
             var help = Crystarium.ActiveTheme.HoverHelp;
-            var style = ContentStyle;
+            var style = ContentStyle with { Family = FontFamily.Mono };
             var textSize = Crystarium.MeasureText(text, style);
             float border = help.BorderWidth * scale;
             return new Vector2(
@@ -242,7 +243,9 @@ public static partial class Crystarium
         {
             float scale = ImGuiHelpers.GlobalScale;
             var help = Crystarium.ActiveTheme.HoverHelp;
-            var contentStyle = ContentStyle;
+            var contentStyle = c.Mono
+                ? ContentStyle with { Family = FontFamily.Mono }
+                : ContentStyle;
             var badgeStyle = BadgeStyle;
             var textSize = Crystarium.MeasureText(c.Text, contentStyle);
 

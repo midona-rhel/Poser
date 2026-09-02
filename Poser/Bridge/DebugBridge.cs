@@ -44,6 +44,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.IGazeService _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
+    private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -63,8 +64,10 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Services.IGazeService gaze,
         global::Poser.Services.IBonePosingService bonePosing,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
-        global::Poser.Services.ISpawnCatalogService catalog)
+        global::Poser.Services.ISpawnCatalogService catalog,
+        global::Poser.Game.Posing.IkBakeCapture ikBake)
     {
+        _ikBake = ikBake;
         _catalog = catalog;
         _worldObjects = worldObjects;
         _bonePosing = bonePosing;
@@ -81,6 +84,7 @@ public sealed class DebugBridge : IDisposable
         _lifecycle = lifecycle;
         _spawner = spawner;
         _listener = new TcpListener(IPAddress.Loopback, Port);
+        global::Poser.UI.Crystarium.FloatingMenu.Trace = line => _log.Debug(line);
         try
         {
             _listener.Start();
@@ -394,6 +398,42 @@ public sealed class DebugBridge : IDisposable
                     Flag("rot"), Flag("pos"), Flag("scale"), Flag("physics"), Flag("roots"));
                 return Json(new { ok = true, from = from.Name, to = actor.Name });
             }
+            case "/bake":
+            {
+                string name = query["name"]; int part = query.TryGetValue("partial", out var bp) ? int.Parse(bp) : 0;
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            if (_bindings.GetBoneId(bone) is not { } boneId)
+                                return Json(new { error = "bone has no binding" });
+                            var target = global::Poser.Domain.Identity.TransformTargetId.ForBone(boneId);
+                            var begun = _ikBake.Begin(target);
+                            return Json(new { ok = begun.Success, begun.Detail, pending = _ikBake.IsPending });
+                        }
+                return Json(new { error = "no such bone" });
+            }
+            case "/fonts":
+            {
+                var typography = global::Poser.UI.Crystarium.ActiveTheme.Typography;
+                object Probe(float size)
+                {
+                    var handle = global::Poser.UI.FontRegistry.Resolve(
+                        global::Poser.UI.FontFamily.Mono, global::Poser.UI.FontWeight.Regular, size);
+                    return new { size, resolved = handle != null, available = handle?.Available };
+                }
+                var registry = typeof(global::Poser.UI.FontRegistry);
+                const System.Reflection.BindingFlags Hidden = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+                var directory = registry.GetField("_fontDirectory", Hidden)?.GetValue(null) as string;
+                var files = registry.GetField("_files", Hidden)?.GetValue(null) as System.Collections.IDictionary;
+                var known = new List<string>();
+                if (files != null)
+                    foreach (System.Collections.DictionaryEntry entry in files)
+                        known.Add($"{entry.Key} => {entry.Value ?? "(default)"}");
+                return Json(new { directory, files = known, lastError = global::Poser.UI.FontRegistry.LastError, body = Probe(typography.BodySize), label = Probe(typography.LabelSize), caption = Probe(typography.CaptionSize) });
+            }
+            case "/bakestate":
+                return Json(new { pending = _ikBake.IsPending, note = _ikBake.Note?.Text });
             case "/destroy":
             {
                 bool gone = _lifecycle.DespawnActor(actor);

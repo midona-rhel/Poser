@@ -31,8 +31,6 @@ public sealed class UiWindowSet : IDisposable
 
     public bool IsPrimaryOpen => _primaryOpenRequested;
 
-    private readonly List<PopOutWindow> _popOuts = new();
-    private readonly List<PopOutWindow> _dismissedPopOuts = new();
 
     private readonly ReferenceImageSession _referenceImages;
 
@@ -96,6 +94,8 @@ public sealed class UiWindowSet : IDisposable
         Main.OnDetachToggleRequested += ToggleDetached;
         Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
         Main.OnSceneWindowToggleRequested += ToggleSceneWindow;
+        Main.GetInspectorWindowOpen = () => InspectorPart.IsOpen;
+        Main.OnInspectorWindowToggleRequested += ToggleInspectorWindow;
 
         Settings = settings;
         System.AddWindow(Settings);
@@ -109,7 +109,6 @@ public sealed class UiWindowSet : IDisposable
         FrameProfilerPanel = new FrameProfilerWindow(configService);
         System.AddWindow(FrameProfilerPanel);
 
-        Main.OnPopOutRequested += CreatePopOut;
 
         _configService.OnConfigurationChanged += SyncSplitWindows;
         _configService.OnConfigurationChanged += SyncFrameProfiler;
@@ -185,6 +184,14 @@ public sealed class UiWindowSet : IDisposable
     public void ToggleSceneWindow() =>
         SidebarPart.IsOpen = !SidebarPart.IsOpen;
 
+    /// <summary>Shows or hides the split inspector window without merging
+    /// it; only meaningful while the inspector is split.</summary>
+    private void ToggleInspectorWindow()
+    {
+        if (_configService.Config.UI.SplitInspector)
+            InspectorPart.IsOpen = !InspectorPart.IsOpen;
+    }
+
     /// <summary>The inspector's own split: the rail leaves the shell for
     /// its own window and comes back through the same toggle — the bar's
     /// merge, or the burger.</summary>
@@ -196,7 +203,7 @@ public sealed class UiWindowSet : IDisposable
         // The properties window sheds or regains the rail's width so the
         // split reads as a split, not a widening.
         Main.ApplyRailShift(ui.SplitInspector ? +1 : -1);
-        if (ui.SplitInspector)
+        if (ui.SplitInspector && !ui.DetachedWindowsRemember)
             InspectorPart.PlaceAt(
                 Main.RailSeatScreen,
                 new System.Numerics.Vector2(
@@ -212,14 +219,15 @@ public sealed class UiWindowSet : IDisposable
         ui.DetachedShell = detaching;
         if (detaching)
         {
-            float gs = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-            SidebarPart.PlaceAt(
-                Main.LastPosition,
-                new System.Numerics.Vector2(
-                    Main.LastSidebarWidth, Main.LastHeight));
-            // The toolbar is ALWAYS its own window with its own remembered
-            // position — detaching the shell must not move it.
-            _ = gs;
+            // Seated where it sat attached, unless the window is to open
+            // where it was last: then ImGui's own memory of the window
+            // stands. The toolbar is ALWAYS its own window with its own
+            // remembered position — detaching the shell must not move it.
+            if (!ui.DetachedWindowsRemember)
+                SidebarPart.PlaceAt(
+                    Main.LastPosition,
+                    new System.Numerics.Vector2(
+                        Main.LastSidebarWidth, Main.LastHeight));
             Main.ApplyDetachShift(+1);
         }
         else
@@ -233,27 +241,6 @@ public sealed class UiWindowSet : IDisposable
     {
         SetPrimaryOpen(false);
         Settings.IsOpen = false;
-        foreach (var popOut in _popOuts.ToArray())
-            popOut.IsOpen = false;
-    }
-
-    private void CreatePopOut(Domain.Identity.ActorId actor)
-    {
-        FlushDismissed();
-        var window = PopOutWindow.Create(_services, Main, actor);
-        window.OnDismissed += dismissed => _dismissedPopOuts.Add(dismissed);
-        _popOuts.Add(window);
-        System.AddWindow(window);
-    }
-
-    private void FlushDismissed()
-    {
-        foreach (var window in _dismissedPopOuts)
-        {
-            _popOuts.Remove(window);
-            System.RemoveWindow(window);
-        }
-        _dismissedPopOuts.Clear();
     }
 
     public void PumpReferenceImages()
@@ -307,9 +294,9 @@ public sealed class UiWindowSet : IDisposable
         _dismissedReference.Clear();
         _configService.OnConfigurationChanged -= SyncSplitWindows;
         _configService.OnConfigurationChanged -= SyncFrameProfiler;
-        Main.OnPopOutRequested -= CreatePopOut;
         Main.OnDetachToggleRequested -= ToggleDetached;
         Main.OnSceneWindowToggleRequested -= ToggleSceneWindow;
+        Main.OnInspectorWindowToggleRequested -= ToggleInspectorWindow;
         _overlayPresentation.Clear();
         System.RemoveAllWindows();
     }

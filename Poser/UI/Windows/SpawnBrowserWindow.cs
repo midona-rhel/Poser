@@ -61,13 +61,12 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowLightPoint = 21;
     private const int RowLightArea = 22;
     private const int RowLightDirectional = 23;
-    private const int RowWorldLight = 24;
-    private const int RowLightFromLibrary = 25;
-    private const int RowLightFromFile = 26;
-    private const int RowCameraGame = 27;
-    private const int RowCameraFree = 28;
-    private const int RowCameraFromLibrary = 29;
-    private const int RowCameraFromFile = 30;
+    private const int RowLightFromLibrary = 24;
+    private const int RowLightFromFile = 25;
+    private const int RowCameraGame = 26;
+    private const int RowCameraFree = 27;
+    private const int RowCameraFromLibrary = 28;
+    private const int RowCameraFromFile = 29;
     // The catalog starts after the LAST fixed row: a row added above
     // shifted every catalog activation one entry off ("crystal" spawned
     // the disco lights, 2026-09-02).
@@ -633,13 +632,6 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-light-directional", "Directional light",
             TablerIcon.Sun, noLights));
-        // Capture takes a copy of a light the world itself placed and
-        // suppresses the original; availability moves with the player, so this
-        // row is re-stated on every open.
-        rows.Add(ActionRow(
-            "##spawn-world-light", "World light", TablerIcon.BuildingStore,
-            noLights,
-            help: "Copy a light the world places here and edit it"));
         rows.Add(ActionRow(
             "##spawn-light-library", "Light from library",
             TablerIcon.BulbFromFile, noLights,
@@ -935,19 +927,6 @@ public sealed class SpawnBrowserWindow : Window
             }
         }
 
-        if (!_built)
-            return;
-        bool disabled = _worldLights.Count == 0;
-        var row = _vm.Rows[RowWorldLight];
-        if (row.Disabled == disabled)
-            return;
-        _vm.Rows[RowWorldLight] = row with
-        {
-            Disabled = disabled,
-            Help = disabled
-                ? NoWorldLightsNote
-                : "Copy a light the world places here and edit it",
-        };
     }
 
     private static string? Badge(CompanionKind kind) => kind switch
@@ -1228,19 +1207,6 @@ public sealed class SpawnBrowserWindow : Window
                 // is pumped by the main window every frame, so the dialog
                 // outlives this window.
                 _lightPane.OpenLoad();
-                return;
-            case RowWorldLight:
-                // The row just reserved is the anchor the surface opens off.
-                RefreshWorldLights();
-                _worldPicker.Open(
-                    "world-light",
-                    _worldLights,
-                    static choice => choice.Label,
-                    static choice => choice.Key,
-                    options: new PickerOptions<WorldLightChoice>
-                    {
-                        Glyph = static _ => TablerIcon.Bulb,
-                    });
                 return;
             case RowCameraGame:
             case RowCameraFree:

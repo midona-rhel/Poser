@@ -16,7 +16,7 @@ public enum UITheme
 public class UIConfiguration
 {
     // Below this alpha, translucent surfaces no longer read reliably.
-    public const float MinimumFillOpacity = 0.50f;
+    public const float MinimumFillOpacity = 0.25f;
 
     private float _fillOpacity = 1f;
     public UITheme Theme { get; set; } = UITheme.Dark;
@@ -31,6 +31,14 @@ public class UIConfiguration
     public static float ClampFillOpacity(float value) =>
         float.IsFinite(value) ? Math.Clamp(value, MinimumFillOpacity, 1f) : 1f;
     public bool DetachedShell { get; set; }
+
+    /// <summary>Where a detached sidebar or inspector opens: beside the
+    /// properties window, where it sat attached (false), or where it was
+    /// the last time it was detached (true).</summary>
+    public bool DetachedWindowsRemember { get; set; }
+
+    /// <summary>The settings page last shown; the window opens there.</summary>
+    public int LastSettingsPage { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
     public bool ShowInGPose { get; set; } = true;

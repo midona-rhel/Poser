@@ -73,6 +73,10 @@ public class SkeletonConfiguration
     /// targets, and lights remain visible.</summary>
     public bool HideSkeletonOnActorSelection { get; set; } = true;
 
+    /// <summary>Bones draw for the one actor the selection belongs to and
+    /// no other; a selection spanning actors draws none.</summary>
+    public bool OnlyActiveActorBones { get; set; }
+
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();

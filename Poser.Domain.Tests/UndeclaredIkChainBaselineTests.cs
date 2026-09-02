@@ -26,7 +26,7 @@ public sealed class UndeclaredIkChainBaselineTests
         Assert.Equal(3, defaults.CcdDepth);
         Assert.Equal(8, defaults.CcdIterations);
         Assert.False(defaults.Enabled);
-        Assert.Equal(IkTargetMode.Relative, defaults.TargetMode);
+        Assert.Equal(IkTargetMode.Actor, defaults.TargetMode);
         Assert.True(defaults.EnforceConstraints);
         Assert.Null(defaults.ValidateUndeclared());
     }

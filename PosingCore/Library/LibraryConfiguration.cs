@@ -113,10 +113,34 @@ public class LibraryConfiguration
     /// a scene and a character file are documents a user shares and backs up,
     /// not plugin state.
     /// </summary>
-    private static string HomeRoot(string leaf) => System.IO.Path.Combine(
+    /// <summary>The one Poser folder; every home is a reserved leaf
+    /// inside it.</summary>
+    public static string DefaultRoot => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "Poser",
-        leaf);
+        "Poser");
+
+    public const string PosesLeaf = "Poses";
+    public const string ScenesLeaf = "Scenes";
+    public const string McdfLeaf = "MCDFs";
+    public const string ObjectsLeaf = "Objects";
+    public const string AutoSavesLeaf = "Auto-saves";
+
+    private static string HomeRoot(string leaf) =>
+        System.IO.Path.Combine(DefaultRoot, leaf);
+
+    /// <summary>The root the configured homes share: the parent of the
+    /// poses home when it ends in its reserved leaf, else the default.</summary>
+    public string ResolveRoot()
+    {
+        var poses = ResolvePoseRoot().TrimEnd('\\', '/');
+        var parent = System.IO.Path.GetDirectoryName(poses);
+        return parent != null
+            && string.Equals(
+                System.IO.Path.GetFileName(poses),
+                PosesLeaf, StringComparison.OrdinalIgnoreCase)
+            ? parent
+            : DefaultRoot;
+    }
 
     /// <inheritdoc cref="HomeRoot"/>
     public static string DefaultPoseRoot => HomeRoot("Poses");

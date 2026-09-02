@@ -107,6 +107,14 @@ public interface IBonePosingService : IDisposable
     /// exactly on its own skeleton and partial.</summary>
     bool IsIkTwoJointAvailable(IBone bone);
 
+    /// <summary>Points the chain at another bone (Bone mode): the endpoint
+    /// keeps the offset it has from that bone now and follows it. Null on
+    /// success, else the refusal.</summary>
+    string? SetIkBoneTarget(IBone endpoint, IBone target);
+
+    /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
+    IBone? GetIkBoneTarget(IBone endpoint);
+
     /// <summary>Disables and clears every chain configuration of the
     /// skeleton (Reset All).</summary>
     void ClearIkConfigurations(ISkeleton skeleton);

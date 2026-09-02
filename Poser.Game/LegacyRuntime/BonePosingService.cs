@@ -135,8 +135,23 @@ public unsafe class BonePosingService : IBonePosingService
     {
         public required Poser.Domain.Posing.IkChainConfig Config;
         public Poser.Domain.Posing.IkResolvedChain Chain;
-        public (Vector3 Target, Vector3 Translation)? FixedCapture;
+        /// <summary>The held target: World mode keeps the tip's world
+        /// point, Bone mode keeps the tip's world OFFSET from the target
+        /// bone. Translation is the authored delta at capture, so a later
+        /// drag moves the target by exactly what was dragged.</summary>
+        public HeldTarget? HeldCapture;
+        public IBone? TargetBone;
     }
+
+    /// <summary>What a held chain captured: World mode's world point and
+    /// rotation, or Bone mode's offset and relative rotation from the
+    /// target bone, plus the authored deltas at capture so a later drag or
+    /// turn moves the target by exactly that much.</summary>
+    private readonly record struct HeldTarget(
+        Vector3 Target,
+        Quaternion Rotation,
+        Vector3 Translation,
+        Quaternion RotationDelta);
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
         _ikChains = new();
@@ -571,8 +586,8 @@ public unsafe class BonePosingService : IBonePosingService
                 bool fixedHold = chainState is
                 {
                     Config.Enabled: true,
-                    Config.TargetMode: Poser.Domain.Posing.IkTargetMode.Fixed,
-                    FixedCapture: not null,
+                    Config.TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor,
+                    HeldCapture: not null,
                 };
                 // Brio visits every bone unconditionally (SkeletonService.cs:98-127)
                 // because a transitive action may append a stack to a bone
@@ -809,18 +824,27 @@ public unsafe class BonePosingService : IBonePosingService
     /// stack exists: target = captured target + (0 − captured translation).</summary>
     private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik)
     {
-        var capture = ik.FixedCapture!.Value;
-        var target = capture.Target - capture.Translation;
+        if (ResolveHeld(ik, bone, Vector3.Zero, Quaternion.Identity) is not { } held)
+            return;
+        var target = held.Position;
         var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
         var currentRotation = new Quaternion(
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
+        bool holdRotation = ik.Config.HoldRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-            target, currentRotation, ik.Config, ik.Chain));
+            target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
         {
             var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
             modelSpace->Translation = *(hkVector4f*)(&target);
+        }
+        if (holdRotation)
+        {
+            // The tip keeps the held rotation too; its children ride along.
+            var heldSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
+            var heldRotation = held.Rotation;
+            heldSpace->Rotation = *(hkQuaternionf*)(&heldRotation);
         }
     }
 
@@ -852,8 +876,10 @@ public unsafe class BonePosingService : IBonePosingService
         var tempPos = beforePos + positionDelta;
         bool armed = ik is { Config.Enabled: true };
         bool fixedMode = armed &&
-            ik!.Config.TargetMode == Poser.Domain.Posing.IkTargetMode.Fixed;
+            ik!.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Actor &&
+            ik.HeldCapture != null;
         bool rotationEnforcedByIk = false;
+        Quaternion? heldRotation = null;
         if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
         {
             // Brio-style live IK: the stored delta is the TARGET offset; the
@@ -862,9 +888,6 @@ public unsafe class BonePosingService : IBonePosingService
             // shifted by the authored translation moved since capture, so
             // mode changes never jump or double-apply an existing edit.
             var target = tempPos;
-            if (fixedMode && ik!.FixedCapture is { } capture)
-                target = capture.Target +
-                    (info.Transform.Position - capture.Translation);
 
             // Requested end rotation, computed BEFORE the solve so optional
             // enforcement receives the value the direct apply would produce.
@@ -877,6 +900,20 @@ public unsafe class BonePosingService : IBonePosingService
                     headRotation * info.Transform.Rotation *
                     Quaternion.Inverse(headRotation) * rotBefore)
                 : Quaternion.Normalize(rotBefore * info.Transform.Rotation);
+
+            // A held target brings its own rotation when the chain holds
+            // rotation: the solver aims at it and the write below keeps it.
+            if (fixedMode
+                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation)
+                    is { } held)
+            {
+                target = held.Position;
+                if (ik.Config.HoldRotation)
+                {
+                    requestedRotation = held.Rotation;
+                    heldRotation = held.Rotation;
+                }
+            }
 
             _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
                 target, requestedRotation, ik!.Config, ik.Chain));
@@ -901,12 +938,17 @@ public unsafe class BonePosingService : IBonePosingService
         {
             prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
             modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
+            // A zero basis takes the delta as its whole rotation — the
+            // same reading the delta was taken with (BonePoseInfo.UsableBasis).
+            var beforeRot = BonePoseInfo.UsableBasis(new Quaternion(
+                modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W));
             var tempRot = info.Frame == TransformFrame.HeadRelative
                 ? Quaternion.Normalize(
                     headRotation * info.Transform.Rotation *
                     Quaternion.Inverse(headRotation) * beforeRot)
-                : beforeRot * info.Transform.Rotation;
+                : Quaternion.Normalize(beforeRot * info.Transform.Rotation);
+            if (heldRotation is { } keep)
+                tempRot = keep;
             modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
         }
 
@@ -1113,23 +1155,33 @@ public unsafe class BonePosingService : IBonePosingService
 
         // Fixed-target lifecycle: capture on entering Fixed or enabling a
         // Fixed chain; disabling retains tuning but clears the capture.
-        if (!config.Enabled)
+        var mode = config.TargetMode;
+        bool fresh = previous == null
+            || previous.Config.TargetMode != mode
+            || !previous.Config.Enabled
+            || state.HeldCapture == null;
+        if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
-            state.FixedCapture = null;
+            state.HeldCapture = null;
+            state.TargetBone = null;
         }
-        else if (config.TargetMode == Poser.Domain.Posing.IkTargetMode.Fixed &&
-                 (previous == null ||
-                  previous.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Fixed ||
-                  !previous.Config.Enabled ||
-                  state.FixedCapture == null))
+        else if (!config.Enabled)
         {
-            state.FixedCapture = (
-                bone.LastTransform.Position,
-                GetModification(bone)?.Position ?? Vector3.Zero);
+            // Disabling keeps the picked bone and the tuning; the capture
+            // is retaken when the chain comes back.
+            state.HeldCapture = null;
         }
-        else if (config.TargetMode == Poser.Domain.Posing.IkTargetMode.Relative)
+        else if (mode == Poser.Domain.Posing.IkTargetMode.World && fresh)
         {
-            state.FixedCapture = null;
+            state.TargetBone = null;
+            state.HeldCapture = CaptureWorld(bone);
+        }
+        else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
+        {
+            if (state.TargetBone is not { } targetBone)
+                state.HeldCapture = null;
+            else if (fresh)
+                state.HeldCapture = CaptureBoneOffset(bone, targetBone);
         }
 
         _ikChains[key] = state;
@@ -1138,6 +1190,153 @@ public unsafe class BonePosingService : IBonePosingService
         GetPoseInfo(bone.Skeleton);
         return null;
     }
+
+    public string? SetIkBoneTarget(IBone endpoint, IBone target)
+    {
+        if (ReferenceEquals(endpoint, target))
+            return "A bone cannot follow itself.";
+        if (target.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid)
+            return "That bone is not drawn.";
+        var config = GetIkConfiguration(endpoint);
+        if (config == null)
+            return "This bone cannot use IK.";
+        var key = ChainKey(endpoint);
+        _ikChains.TryGetValue(key, out var state);
+        if (state == null)
+        {
+            // Nothing stored yet: the defaults are stored first, then aimed.
+            var stored = SetIkConfiguration(endpoint, config);
+            if (stored != null)
+                return stored;
+            _ikChains.TryGetValue(key, out state);
+            if (state == null)
+                return "This bone cannot use IK.";
+        }
+        state.TargetBone = target;
+        state.Config = state.Config with
+        {
+            TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
+        };
+        state.HeldCapture = state.Config.Enabled
+            ? CaptureBoneOffset(endpoint, target)
+            : null;
+        return null;
+    }
+
+    public IBone? GetIkBoneTarget(IBone endpoint) =>
+        _ikChains.TryGetValue(ChainKey(endpoint), out var state)
+            ? state.TargetBone
+            : null;
+
+    /// <summary>The bone's posed transform in the world: its cached
+    /// model-space transform through the skeleton's model matrix.</summary>
+    private static global::Poser.Transform? BoneWorld(IBone bone)
+    {
+        if (bone.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid)
+            return null;
+        var world = global::Poser.Transform.FromMatrix(
+            bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
+        return AllFinite(world.Position) && AllFinite(world.Rotation)
+            ? world
+            : null;
+    }
+
+    /// <summary>World mode's capture: the tip's world position and
+    /// rotation now, with the authored deltas they were taken under.</summary>
+    private HeldTarget? CaptureWorld(IBone endpoint)
+    {
+        RefreshCache(endpoint);
+        if (BoneWorld(endpoint) is not { } tip)
+            return null;
+        var authored = GetModification(endpoint);
+        return new HeldTarget(
+            tip.Position, tip.Rotation,
+            authored?.Position ?? Vector3.Zero,
+            authored?.Rotation ?? Quaternion.Identity);
+    }
+
+    /// <summary>Bone mode's capture: the tip's world offset and rotation
+    /// RELATIVE to the target bone now, with the authored deltas.</summary>
+    private HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target)
+    {
+        RefreshCache(endpoint);
+        RefreshCache(target);
+        if (BoneWorld(endpoint) is not { } tip
+            || BoneWorld(target) is not { } anchor)
+            return null;
+        var authored = GetModification(endpoint);
+        return new HeldTarget(
+            tip.Position - anchor.Position,
+            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
+            authored?.Position ?? Vector3.Zero,
+            authored?.Rotation ?? Quaternion.Identity);
+    }
+
+    /// <summary>The held target in the endpoint's model space this frame:
+    /// the captured world point and rotation (World) or the target bone's
+    /// world transform with the captured offsets (Bone), brought into model
+    /// space through the skeleton's matrix, then moved and turned by what
+    /// was authored since capture. Null when it cannot be resolved.</summary>
+    private static (Vector3 Position, Quaternion Rotation)? ResolveHeld(
+        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation)
+    {
+        if (ik.HeldCapture is not { } capture)
+            return null;
+        Vector3 worldPosition;
+        Quaternion worldRotation;
+        switch (ik.Config.TargetMode)
+        {
+            case Poser.Domain.Posing.IkTargetMode.World:
+                worldPosition = capture.Target;
+                worldRotation = capture.Rotation;
+                break;
+            case Poser.Domain.Posing.IkTargetMode.Bone:
+                if (ik.TargetBone is not { } targetBone
+                    || targetBone.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton
+                    || !targetSkeleton.IsValid)
+                    return null;
+                targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
+                if (BoneWorld(targetBone) is not { } anchor)
+                    return null;
+                worldPosition = anchor.Position + capture.Target;
+                worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
+                break;
+            default:
+                return null;
+        }
+        if (endpoint.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid
+            || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var toModel))
+            return null;
+        var position = Vector3.Transform(worldPosition, toModel)
+            + (authoredPosition - capture.Translation);
+        // System.Numerics multiplies right-to-left: the world rotation is
+        // frame * model (model first, then the actor's frame), so model =
+        // frame⁻¹ * world. The authored turn since capture rides on the
+        // end, where the delta stack puts it.
+        var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
+        if (!AllFinite(frame) || frame.LengthSquared() < 1e-6f)
+            return null;
+        var rotation = Quaternion.Normalize(
+            Quaternion.Inverse(Quaternion.Normalize(frame)) * worldRotation
+            * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
+        if (!AllFinite(position) || !AllFinite(rotation))
+            return null;
+        return (position, rotation);
+    }
+
+    /// <summary>A bone the apply pass never visits (no stack) keeps a
+    /// stale cached transform; a capture reads the live pose.</summary>
+    private static void RefreshCache(IBone bone)
+    {
+        if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
+            skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
+    }
+
+    private static bool AllFinite(Vector3 v) =>
+        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+
+    private static bool AllFinite(Quaternion q) =>
+        float.IsFinite(q.X) && float.IsFinite(q.Y) && float.IsFinite(q.Z) && float.IsFinite(q.W);
 
     public bool IsIkTwoJointAvailable(IBone bone)
     {

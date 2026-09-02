@@ -145,7 +145,18 @@ public class PoseInspectorPane
     private static readonly string[] NoOtherActors = ["No other actors"];
     private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD", "FABRIK", "Rope"];
     private static readonly string[] CcdSolverItems = ["CCD", "FABRIK", "Rope"];
-    private static readonly string[] TargetModeItems = ["Relative", "Fixed"];
+    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone"];
+
+    /// <summary>Bone-mode target picking: the actor whose bones the list
+    /// shows, the picker, and the choices the host builds (its categorised
+    /// bone list, shared with the camera's tracking picker).</summary>
+    private global::Poser.Domain.Identity.ActorId? _ikBoneActor;
+    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice> _ikBonePicker =
+        new("ik-bone-target");
+    private IReadOnlyList<global::Poser.UI.BoneChoice> _ikBoneChoices =
+        Array.Empty<global::Poser.UI.BoneChoice>();
+    public Func<global::Poser.Domain.Scene.ActorDescriptor,
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices;
 
     private static readonly string[] ArmJointLabels =
         ["Shoulder", "Elbow", "Hand"];
@@ -180,10 +191,12 @@ public class PoseInspectorPane
         CameraPane cameraPane,
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
+        UserNotices notices,
         global::Poser.Application.Scene.SceneGroups groups)
     {
         _groups = groups;
         _overlayPresentation = overlayPresentation;
+        _notices = notices;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
@@ -239,6 +252,7 @@ public class PoseInspectorPane
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly UserNotices _notices;
     private bool _openCameraTracking = true;
 
     private bool IsCreature(IActor actor) =>
@@ -823,13 +837,10 @@ public class PoseInspectorPane
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
-        float footerHeightPx =
-            Crystarium.ActiveTheme.Floating.ModalBarHeight;
         float width = size.X;
-        float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
+        float height = Math.Max(size.Y, (tabsHeightPx + 1f) * s);
         float tabsHeight = tabsHeightPx * s;
-        float footerHeight = footerHeightPx * s;
-        float bodyHeight = Math.Max(1f, height - tabsHeight - footerHeight);
+        float bodyHeight = Math.Max(1f, height - tabsHeight);
 
         float segmentedHeightPx =
             Crystarium.ActiveTheme.Controls.NavigationHeight;
@@ -927,17 +938,6 @@ public class PoseInspectorPane
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        var footerOrigin =
-            new Vector2(cursor.X, cursor.Y + height - footerHeight);
-        dl.AddRectFilled(
-            new Vector2(shellLeft, footerOrigin.Y),
-            new Vector2(
-                shellLeft + shellWidth,
-                footerOrigin.Y + MathF.Max(1f, s)),
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(
-                    Crystarium.ActiveTheme.FormSeparator)));
-        DrawPoseFooter(footerOrigin, width, skeleton);
         return height;
     }
 
@@ -1241,19 +1241,18 @@ public class PoseInspectorPane
         return viewportHeight;
     }
 
-    private void DrawPoseFooter(
+    /// <summary>The parenting bar the shell's content footer keeps
+    /// between its two attach seats while Pose is the tab.</summary>
+    internal void DrawParentingBar(
         Vector2 cursor,
-        float width,
+        Vector2 size,
         ISkeleton skeleton)
     {
-        float scale = ImGuiHelpers.GlobalScale;
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
         Crystarium.ActionBar(
             "pose-parenting-footer",
             cursor,
-            new Vector2(
-                width,
-                Crystarium.ActiveTheme.Floating.ModalBarHeight * scale),
+            size,
             bar =>
             {
                 bar.Label(
@@ -2010,7 +2009,21 @@ public class PoseInspectorPane
     // Keep raw hinge-axis values while dragging.
 
     // Bake refusals are scoped to their target bone.
-    private (TransformTargetId Target, string Text)? _ikBakeNote;
+    /// <summary>The last bake note handed to the notices, so a failure
+    /// that lingers on the bake is reported once.</summary>
+    private string? _forwardedBakeNote;
+
+    /// <summary>A bake that fails after its click fails inside a later
+    /// pass; its note reaches the user as a notice, never as page text.</summary>
+    private void ForwardBakeNote()
+    {
+        var text = _ikBake.Note?.Text;
+        if (text == _forwardedBakeNote)
+            return;
+        _forwardedBakeNote = text;
+        if (text != null && text.StartsWith("Bake:", StringComparison.Ordinal))
+            _notices.Failed(text);
+    }
 
     private void DrawIkChainList(
         Crystarium.FormScope form,
@@ -2092,6 +2105,86 @@ public class PoseInspectorPane
         return chains;
     }
 
+    /// <summary>Bone mode's rows: whose bone, which bone (a list or a pick
+    /// in the view). The pick keeps the tip's offset from the bone.</summary>
+    private void DrawIkBoneTarget(
+        Crystarium.FormScope form,
+        global::Poser.Domain.Identity.BoneId endpoint,
+        TransformTargetId ikTarget)
+    {
+        var actors = _scene.Snapshot.Actors;
+        var current = _ikPort.BoneTarget(ikTarget);
+        // The dropdown leads with Any actor: the list needs one named, the
+        // pick in the view is limited to the named one and free otherwise.
+        var shownActor = _ikBoneActor ?? current?.Skeleton.Actor;
+        int actorIndex = -1;
+        var names = new string[actors.Count + 1];
+        names[0] = "Any actor";
+        for (int i = 0; i < actors.Count; i++)
+        {
+            names[i + 1] = DescriptorDisplayName?.Invoke(actors[i]) ?? actors[i].Id.ToString();
+            if (actors[i].Id == shownActor)
+                actorIndex = i;
+        }
+        form.Dropdown(
+            "Actor",
+            names,
+            actorIndex + 1,
+            next => _ikBoneActor = next == 0 ? null : actors[next - 1].Id,
+            help: "Whose bone to follow; Any actor lets the pick in the view choose");
+        var actorDescriptor = actorIndex >= 0 ? actors[actorIndex] : null;
+        string boneLabel = current is { } picked
+            ? _ikBoneChoices.FirstOrDefault(choice => choice.BoneId == picked)?.Label
+                ?? picked.CanonicalName
+            : "Choose a bone";
+        void Aim(global::Poser.Domain.Identity.BoneId bone)
+        {
+            if (_ikPort.SetBoneTarget(ikTarget, bone) is { Success: false } failed)
+                _notices.Failed($"IK target: {failed.Detail}");
+            else
+                _ikBoneActor = bone.Skeleton.Actor;
+        }
+        form.Actions("Bone", actions =>
+        {
+            actions.Button(
+                boneLabel,
+                () =>
+                {
+                    if (actorDescriptor == null || BuildBoneChoices == null)
+                        return;
+                    _ikBoneChoices = BuildBoneChoices(actorDescriptor);
+                    var options = new PickerOptions<global::Poser.UI.BoneChoice>
+                    {
+                        Query = IkBoneSearch,
+                        Badge = choice => choice.Badge,
+                    };
+                    _ikBonePicker.Open(
+                        $"ik-bone:{endpoint.CanonicalName}",
+                        _ikBoneChoices,
+                        choice => choice.Label,
+                        choice => choice.Key,
+                        options: in options);
+                },
+                disabled: actorDescriptor == null,
+                help: "Pick the bone from a list");
+            actions.IconButton(
+                TablerIcon.Crosshair,
+                () => global::Poser.UI.Controls.BonePick.Begin(
+                    multi: false, Aim, onlyActor: actorDescriptor?.Id),
+                help: actorDescriptor == null
+                    ? "Pick the bone in the view"
+                    : "Pick the bone in the view on this actor");
+        });
+        if (_ikBonePicker.Draw() is { } chosen)
+            Aim(chosen.Item.BoneId);
+    }
+
+    private IReadOnlyList<global::Poser.UI.BoneChoice> IkBoneSearch(string query) =>
+        query.Length == 0
+            ? _ikBoneChoices
+            : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
+                query, StringComparison.OrdinalIgnoreCase)).ToArray();
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -2135,17 +2228,13 @@ public class PoseInspectorPane
                 "Bake",
                 () =>
                 {
-                    _ikBakeNote = _ikBake.Begin(ikTarget)
-                        is { Success: false } failed
-                        ? (ikTarget, $"Bake: {failed.Detail}")
-                        : null;
+                    if (_ikBake.Begin(ikTarget) is { Success: false } failed)
+                        _notices.Failed($"Bake: {failed.Detail}");
                     config = _ikPort.Get(ikTarget);
                 },
                 disabled: !canBake);
         });
-        if ((_ikBake.Note ?? _ikBakeNote) is { } note &&
-            note.Target.Equals(ikTarget))
-            form.Status(note.Text);
+        ForwardBakeNote();
         if (config == null)
             return;
 
@@ -2193,23 +2282,37 @@ public class PoseInspectorPane
             next => Apply(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
+        int modeIndex = config.TargetMode switch
+        {
+            Domain.Posing.IkTargetMode.World => 1,
+            Domain.Posing.IkTargetMode.Bone => 2,
+            _ => 0,
+        };
+        form.Dropdown(
+            "Target",
+            TargetModeItems,
+            modeIndex,
+            next => Apply(config with
+            {
+                TargetMode = next switch
+                {
+                    1 => Domain.Posing.IkTargetMode.World,
+                    2 => Domain.Posing.IkTargetMode.Bone,
+                    _ => Domain.Posing.IkTargetMode.Actor,
+                },
+            }),
+            help: "Actor moves the target with the actor, World holds it where it is, Bone follows another bone");
+        if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
+            DrawIkBoneTarget(form, boneId, ikTarget);
+        form.Switch(
+            "Keep rotation",
+            config.HoldRotation,
+            next => Apply(config with { HoldRotation = next }),
+            disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
+            help: "The tip keeps its rotation to the held spot or bone as well");
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
-            int modeIndex =
-                config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
-            form.Dropdown(
-                "Target",
-                TargetModeItems,
-                modeIndex,
-                next =>
-                    Apply(config with
-                    {
-                        TargetMode = next == 1
-                            ? Domain.Posing.IkTargetMode.Fixed
-                            : Domain.Posing.IkTargetMode.Relative,
-                    }),
-                help: "Relative lets the animation carry the target; Fixed pins it to a spot on the actor captured when you switched");
             form.Switch(
                 "Constraints",
                 config.EnforceConstraints,
@@ -2331,8 +2434,9 @@ public class PoseInspectorPane
             return;
         var next = _bakeQueue[0];
         _bakeQueue.RemoveAt(0);
-        if (_ikBake.CanBake(next))
-            _ikBake.Begin(next);
+        if (_ikBake.CanBake(next)
+            && _ikBake.Begin(next) is { Success: false } failed)
+            _notices.Failed($"Bake: {failed.Detail}");
     }
 
     private void DrawActorIk(Crystarium.FormScope form, ISkeleton skeleton)
@@ -2370,8 +2474,7 @@ public class PoseInspectorPane
                 () => ShowChainBones(chains),
                 disabled: armed == 0);
         });
-        if (_ikBake.Note is { } note)
-            form.Status(note.Text);
+        ForwardBakeNote();
 
     }
 

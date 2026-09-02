@@ -246,10 +246,10 @@ public sealed class CameraPane
     /// rail's gate for the two camera sections.</summary>
     public bool HasRailCamera => TargetCamera().Camera != null;
 
-    /// <summary>Whether the rail should also declare tracking: only an orbit
-    /// camera has a pivot to steer.</summary>
-    public bool RailHasTracking =>
-        TargetCamera().Camera is { Kind: not CameraKind.Free };
+    /// <summary>Whether the rail should also declare tracking: every
+    /// camera tracks — an orbit camera steers its pivot, a free camera
+    /// carries or turns itself.</summary>
+    public bool RailHasTracking => TargetCamera().Camera != null;
 
     /// <summary>The rail's translation for a camera: the value it edits is
     /// the offset; free cameras edit their absolute position.</summary>
@@ -344,7 +344,7 @@ public sealed class CameraPane
     public void DrawRailTracking(Crystarium.FormScope form)
     {
         var (_, camera) = TargetCamera();
-        if (camera == null || camera.Kind == CameraKind.Free)
+        if (camera == null)
             return;
         TrackingRows(form, camera);
     }

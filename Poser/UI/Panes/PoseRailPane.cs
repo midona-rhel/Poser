@@ -54,6 +54,11 @@ public class PoseRailPane
     /// survives selection changes exactly as the tool choice does — it is a
     /// statement about how the user is working, not about this bone.</summary>
     private int _lockedAxis = RotationGizmoRings.NoLock;
+    private Vector2 _joyAccumulated;
+    /// <summary>Below every orb, before the transform grid: enough that the
+    /// grid's legends sit under the inspector's bottom edge at its minimum
+    /// height, so a folded-small inspector ends on the orb.</summary>
+    private const float OrbBottomMargin = 32f;
 
     private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
     private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
@@ -147,7 +152,7 @@ public class PoseRailPane
                     pmin,
                     pmax,
                     ImGui.ColorConvertFloat4ToU32(
-                        Crystarium.ActiveTheme.Chrome.AccentFill),
+                        ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.AccentFill)),
                     Crystarium.ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
                 Crystarium.Icon(
@@ -315,6 +320,7 @@ public class PoseRailPane
             // gesture is relative from wherever the hand landed.
             _joyRolling = mouseDistance > discRadius + 2f * s;
             _joyOrigin = mouse;
+            _joyAccumulated = Vector2.Zero;
             if (_joyRolling && camera != null)
             {
                 _joyRollStartAngle = MathF.Atan2(
@@ -325,7 +331,7 @@ public class PoseRailPane
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
-            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
         if (active && camera != null)
@@ -339,6 +345,10 @@ public class PoseRailPane
                 if (delta > MathF.PI) delta -= MathF.Tau;
                 if (delta < -MathF.PI) delta += MathF.Tau;
                 camera.Roll = _joyRollStartValue + delta;
+                // The same hide and readout a world drag gets.
+                ManipulationDrag.HoldFromShell(
+                    mouse + new Vector2(18f, 14f) * s,
+                    $"Roll  {delta * (180f / MathF.PI):+0.0;-0.0}°");
             }
             else
             {
@@ -357,11 +367,13 @@ public class PoseRailPane
                 float stepX = fraction.X * JoystickRadiansPerSecond * dt;
                 // Screen-down drags the view down: vertical inverts.
                 float stepY = -fraction.Y * JoystickRadiansPerSecond * dt;
+                // A free camera turns the way the stick points; its
+                // rotation runs the other way from an orbit pan.
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
                     camera.Rotation = camera.Rotation with
                     {
-                        X = camera.Rotation.X + stepX,
-                        Y = camera.Rotation.Y + stepY,
+                        X = camera.Rotation.X - stepX,
+                        Y = camera.Rotation.Y - stepY,
                     };
                 else
                     camera.Pan = camera.Pan with
@@ -369,6 +381,11 @@ public class PoseRailPane
                         X = camera.Pan.X + stepX,
                         Y = camera.Pan.Y + stepY,
                     };
+                _joyAccumulated += new Vector2(stepX, stepY);
+                ManipulationDrag.HoldFromShell(
+                    mouse + new Vector2(18f, 14f) * s,
+                    $"X {_joyAccumulated.X * (180f / MathF.PI):+0.0;-0.0}°  "
+                    + $"Y {_joyAccumulated.Y * (180f / MathF.PI):+0.0;-0.0}°");
             }
         }
 
@@ -399,7 +416,7 @@ public class PoseRailPane
                 overRing ? "Roll the camera" : "Pan the camera");
         }
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 
     // ── The overlay pad ──────────────────────────────────────────────
@@ -433,7 +450,7 @@ public class PoseRailPane
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
-            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
         if (active && node != null)
@@ -446,6 +463,11 @@ public class PoseRailPane
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;
+            // The same hide and readout every rail drag gets: the move
+            // since the press, in screen pixels.
+            ManipulationDrag.HoldFromShell(
+                mouse + new Vector2(18f, 14f) * s,
+                $"X {_padOffset.X / s:+0;-0} px  Y {_padOffset.Y / s:+0;-0} px");
             var shown = _padOffset;
             float length = shown.Length();
             if (length > discRadius)
@@ -468,7 +490,7 @@ public class PoseRailPane
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
                 "Move the overlay");
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
@@ -480,7 +502,11 @@ public class PoseRailPane
 
         ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
         ImGui.InvisibleButton("##rail-gizmo", new Vector2(d, d));
-        bool active = ImGui.IsItemActive();
+        // A held drag rides the mouse button, not the item: the shell can
+        // fade to nothing under it and rebuild its items without the drag
+        // ending until the button is released.
+        bool active = ImGui.IsItemActive()
+            || (_dragAxis >= 0 && ImGui.IsMouseDown(ImGuiMouseButton.Left));
         bool hovered = ImGui.IsItemHovered();
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
@@ -496,7 +522,7 @@ public class PoseRailPane
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(
-                Crystarium.ActiveTheme.Glass.Luminosity));
+                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Glass.Luminosity)));
 
         // The inspector's own direction-only projection, straight at the
         // fixed widget centre — no perspective and no recentring, so the
@@ -505,7 +531,7 @@ public class PoseRailPane
         var rings = RotationGizmoRings.Project(
             _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)
-            return d + 8f * s;
+            return d + OrbBottomMargin * s;
 
         int hoverAxis = -1;
         _hoverHit = null;
@@ -553,6 +579,10 @@ public class PoseRailPane
         if (active && _dragAxis >= 0)
         {
             GizmoPointerOwnership.Hold();
+            // The same hide and the same readout a world drag gets.
+            ManipulationDrag.HoldFromShell(
+                mouse + new Vector2(18f, 14f) * s,
+                $"{RotationGizmoRings.AxisName(_dragAxis)}  {_dragAngle * (180f / MathF.PI):+0.0;-0.0}°");
             float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);
             float delta = (newDistance - _dragDistance) *
                 RotationGizmoRings.ModifierMultiplier(io);
@@ -566,7 +596,7 @@ public class PoseRailPane
             }
         }
 
-        if (ImGui.IsItemDeactivated())
+        if (_dragAxis >= 0 && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
             _inspector.CommitRotation();
             _dragAxis = -1;
@@ -587,6 +617,6 @@ public class PoseRailPane
                     : "right-click to lock this axis"));
         }
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 }

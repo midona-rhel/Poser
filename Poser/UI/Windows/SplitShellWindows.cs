@@ -120,7 +120,8 @@ public sealed class SidebarPartWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
+        if (!_main.IsOpen
+            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
             return;
         using var manipulationFade = Controls.ManipulationHide.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
@@ -194,7 +195,7 @@ public sealed class SidebarPartWindow : Window
             "x",
             () => OnReattach?.Invoke(),
             ControlStyle.Square(closeSide),
-            help: "Merge the shell back into one window",
+            help: "Attach the sidebar",
             id: "##part-reattach-sidebar");
         // The library button is the sidebar titlebar's — this window IS
         // the sidebar's titlebar while the shell is split. TWO sidebars,
@@ -307,7 +308,8 @@ public sealed class ToolbarPartWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
+        if (!_main.IsOpen
+            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
             return;
         using var manipulationFade = Controls.ManipulationHide.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
@@ -433,7 +435,8 @@ public sealed class InspectorPartWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
+        if (!_main.IsOpen
+            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
             return;
         using var manipulationFade = Controls.ManipulationHide.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
@@ -499,7 +502,7 @@ public sealed class InspectorPartWindow : Window
             "x",
             () => OnMerge?.Invoke(),
             ControlStyle.Square(closeSide),
-            help: "Merge the inspector back into the shell",
+            help: "Attach the inspector",
             id: "##part-merge-inspector");
 
         float rule = MathF.Max(1f, s);

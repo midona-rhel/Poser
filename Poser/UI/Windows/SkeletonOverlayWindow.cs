@@ -165,6 +165,9 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance;
         public bool IsHovered;
         public bool IsEngaged;
+        /// <summary>A child group of the whole-group selection: only its
+        /// inner ring, like every other member of that group.</summary>
+        public bool Reduced;
     }
 
     private readonly HashSet<SelectionId> _selectedIds = new();
@@ -359,8 +362,11 @@ public class SkeletonOverlayWindow : Window
         // handle is the only route to it from the viewport, so it draws
         // whenever the scene holds lights — Ktisis and Brio both draw their
         // light handles unconditionally. Alt still hides everything.
+        // Picking shows everything: every actor, every opted-out bone.
+        bool picking = global::Poser.UI.Controls.BonePick.Active;
         bool drawArmature =
-            (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor();
+            (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor()
+            || picking;
         // Published for the gizmo's armature-visibility gate: the master
         // toggle alone — the per-skeleton half is the presentation's
         // AnyVisibleFor, asked at the gizmo, so a hidden actor beside a
@@ -443,6 +449,8 @@ public class SkeletonOverlayWindow : Window
                 ScreenPos = viewportPos + groupScreen,
                 CameraDistance = Vector3.Distance(cameraPosition, centroid),
                 IsEngaged = _engagedGroups.Contains(group.Id),
+                Reduced = group.ParentId is { } parentGroup
+                    && parentGroup == wholeGroup,
             });
         }
 
@@ -588,9 +596,20 @@ public class SkeletonOverlayWindow : Window
         // Collect all bones that project to screen successfully — snapshot
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.
+        var onlyActor = Config.OnlyActiveActorBones ? SelectionActorLineage() : null;
         if (drawArmature)
         foreach (var actor in _scene.Snapshot.Actors)
         {
+            // Bones of the active actor only: the one actor the selection
+            // belongs to. Several actors selected is not bone work.
+            if (Config.OnlyActiveActorBones && !picking
+                && onlyActor != actor.Id.LogicalId)
+                continue;
+            // A pick limited to one actor shows that actor alone.
+            if (picking
+                && global::Poser.UI.Controls.BonePick.OnlyActor is { } pickActor
+                && pickActor != actor.Id)
+                continue;
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             float armatureOpacity = ActorOpacity(actor.Id, activeLineage);
 
@@ -632,7 +651,7 @@ public class SkeletonOverlayWindow : Window
                     && Core.PoseMath.GetMirrorBoneName(canonical)
                         is { } mirror)
                     (implicated ??= new()).Add(mirror);
-                if (_bonePosing.LinkedBonesEnabled)
+                if (_bonePosing.LinkedBonesEnabled || symmetryConfig.AutoLinkPairedBones)
                     foreach (var linked in global::Poser.Domain.Posing
                         .BoneLinkCatalog.GetLinked(canonical))
                         (implicated ??= new()).Add(linked);
@@ -648,7 +667,8 @@ public class SkeletonOverlayWindow : Window
                 // SELECTED bone draws regardless — the anchor rule, which is
                 // what stops the switch stranding an edit with no on-screen
                 // handle.
-                bool shown = UserVisible && _presentation.IsVisible(bone.Id);
+                bool shown = picking
+                    || (UserVisible && _presentation.IsVisible(bone.Id));
                 if (bone.IsHidden
                     || (!shown
                         && !selectedIds.Contains(
@@ -699,7 +719,9 @@ public class SkeletonOverlayWindow : Window
         // one with the same delta, one flipped — so BOTH modes show it,
         // resolved PER BONE through the one symmetry rule.
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
-        if (_bonePosing.LinkedBonesEnabled)
+        // Eyes and ears that move together by default are partners too.
+        if (_bonePosing.LinkedBonesEnabled
+            || ConfigurationService.Instance.Config.AutoLinkPairedBones)
             MarkLinkPartners(bones);
 
         // No armature filter here anymore: every entry above was already
@@ -756,9 +778,10 @@ public class SkeletonOverlayWindow : Window
                 !bone.IsHovered && !IsPriorityBone(bone));
 
         // Draw skeleton
-        // The custom gizmo holds shared pointer ownership on hover AND
-        // drag, so this single check covers both engagement states.
-        var isGizmoActive = Controls.GizmoPointerOwnership.Owned;
+        // A HELD drag, world gizmo or inspector ball: hovering a handle
+        // is not a manipulation and hides nothing (Midona, 2026-09-02).
+        var isGizmoActive = Controls.ManipulationDrag.Held
+            || Controls.ManipulationDrag.ShellHeld;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
         // Brio's HideSkeletonWhenGizmoActive: the armature goes away for the
         // length of a drag rather than fading. Hover and press were resolved
@@ -821,6 +844,14 @@ public class SkeletonOverlayWindow : Window
             float dotRadius = dot.IsEngaged || dot.IsHovered
                 ? groupRadius + 2f
                 : groupRadius;
+            if (dot.Reduced)
+            {
+                drawList.AddCircleFilled(
+                    dot.ScreenPos, dotRadius * 0.45f, groupColor, 16);
+                drawList.AddCircle(dot.ScreenPos, dotRadius * 0.45f,
+                    OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
             drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 20);
             drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 20,
                 2f * ImGuiHelpers.GlobalScale);
@@ -1037,6 +1068,28 @@ public class SkeletonOverlayWindow : Window
 
     /// <summary>One actor's fade: full while it is the active one or while
     /// nothing is active, the configured multiplier otherwise.</summary>
+    /// <summary>The single actor the selection belongs to — bones, actor,
+    /// gaze — or null when it belongs to none or to more than one.</summary>
+    private Guid? SelectionActorLineage()
+    {
+        Guid? found = null;
+        foreach (var id in _selection.Selected)
+        {
+            Guid lineage;
+            if (id.Bone is { } bone)
+                lineage = bone.Skeleton.Actor.LogicalId;
+            else if (id.Actor is { } actor
+                     && id.Kind is SceneEntityKind.Actor or SceneEntityKind.GazeTarget)
+                lineage = actor.LogicalId;
+            else
+                continue;
+            if (found is { } other && other != lineage)
+                return null;
+            found = lineage;
+        }
+        return found;
+    }
+
     private static float ActorOpacity(ActorId actor, Guid? activeLineage) =>
         activeLineage is not { } active || actor.LogicalId == active
             ? 1f
@@ -1305,6 +1358,37 @@ public class SkeletonOverlayWindow : Window
     /// <summary>The group dot's press: press and release on the SAME
     /// group selects its whole membership and makes it the active group —
     /// the sidebar head-click, from the viewport.</summary>
+    /// <summary>Overlay picking: a release over a bone hands it to the
+    /// picker (Ctrl keeps a multi-pick going); a release over nothing, a
+    /// right-click or Escape ends the pick. Nothing is selected.</summary>
+    private void UpdateBonePick(SelectionId? target, bool pointerBlocked)
+    {
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape)
+            || ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            global::Poser.UI.Controls.BonePick.Cancel();
+            _pressedWorldTarget = null;
+            return;
+        }
+        if (pointerBlocked)
+        {
+            _pressedWorldTarget = null;
+            return;
+        }
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _pressedWorldTarget = target;
+        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            return;
+        if (_pressedWorldTarget is { } pressed
+            && target is { } released
+            && pressed.Equals(released)
+            && released.Bone is { } bone)
+            global::Poser.UI.Controls.BonePick.Take(bone, ImGui.GetIO().KeyCtrl);
+        else if (_pressedWorldTarget == null && target == null)
+            global::Poser.UI.Controls.BonePick.Cancel();
+        _pressedWorldTarget = null;
+    }
+
     private void UpdateGroupPress(Guid? target, bool pointerBlocked)
     {
         if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
@@ -1379,6 +1463,11 @@ public class SkeletonOverlayWindow : Window
         SelectionId? target,
         bool pointerBlocked)
     {
+        if (global::Poser.UI.Controls.BonePick.Active)
+        {
+            UpdateBonePick(target, pointerBlocked);
+            return;
+        }
         if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
         {
             _pressedWorldTarget = null;

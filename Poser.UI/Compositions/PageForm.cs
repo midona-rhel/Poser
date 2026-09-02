@@ -58,7 +58,8 @@ public static partial class Crystarium
             width,
             scale,
             labelColumnWidth,
-            halfRows: halfRows);
+            halfRows: halfRows)
+        { Height = size.Y };
         content(page);
         page.Complete(origin, size.X);
     }
@@ -159,6 +160,25 @@ public static partial class Crystarium
         /// consumed by the row that follows.</summary>
         internal bool NextFullLine;
 
+        /// <summary>Search hooks. A probe sees every (section, label, help)
+        /// the page would draw and draws nothing; a row filter drops rows
+        /// that answer false, a section filter drops whole sections. A
+        /// dropped row takes no layout.</summary>
+        public Action<string, string, string?>? Probe { get; set; }
+        public Func<string, string, string?, bool>? RowFilter { get; set; }
+        public Func<string, bool>? SectionFilter { get; set; }
+        /// <summary>Prefixed to every section title drawn — a search result
+        /// names the page its section came from.</summary>
+        public string? SectionPrefix { get; set; }
+        private string _section = string.Empty;
+
+        /// <summary>Paint hooks: every row and every section header the
+        /// page paints reports its section, label, vertex range and top,
+        /// so a host can move or fade what was just painted.</summary>
+        public Action<string, string, int, int, float>? RowPainted { get; set; }
+        public Action<string, int, int, float>? SectionPainted { get; set; }
+        private bool _anyPainted;
+
         internal PageScope(string id, Vector2 origin, float width, float scale,
             float? labelColumnWidth = null, bool dense = false,
             bool halfRows = false)
@@ -184,12 +204,22 @@ public static partial class Crystarium
             ? ActiveTheme.Controls.ListRowHeight
             : ActiveTheme.Controls.FormRowHeight;
 
+        /// <summary>The page's own height in screen pixels, when the host
+        /// knows it; an empty state centres in it.</summary>
+        internal float Height { get; init; }
+
+        /// <summary>An empty page says so in the middle of itself, both
+        /// ways — never as a line pinned to the top-left corner.</summary>
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
         {
-            DrawText(new(_origin.X, _origin.Y + ActiveTheme.Spacing.Four * _scale),
-                _width, ActiveTheme.Typography.LabelSize, FontWeight.Regular,
-                FormHintColor, text);
-            _y = ActiveTheme.Controls.FormRowHeight;
+            float size = ActiveTheme.Typography.LabelSize;
+            var measured = MeasureText(text, size, FontWeight.Regular);
+            float x = _origin.X + MathF.Max(0f, (_width - measured.X) * 0.5f);
+            float y = Height > 0f
+                ? _origin.Y + MathF.Max(0f, (Height - measured.Y) * 0.5f)
+                : _origin.Y + ActiveTheme.Spacing.Four * _scale;
+            DrawText(new(x, y), _width, size, FontWeight.Regular, FormHintColor, text);
+            _y = Height > 0f ? Height / _scale : ActiveTheme.Controls.FormRowHeight;
         }
 
         public void Status(string? text, string? help = null)
@@ -223,7 +253,21 @@ public static partial class Crystarium
             bool divider = true)
         {
             EndPairedRows();
+            _section = title;
+            if (Probe != null)
+            {
+                Probe(title, string.Empty, null);
+                content(new FormScope(this, title));
+                return;
+            }
+            if (SectionFilter != null && !SectionFilter(title))
+                return;
             var page = ActiveTheme.Page;
+            // The first thing on a page never leads with a rule, whatever
+            // the caller asked: a search draws sections out of their order.
+            if (!_anyPainted)
+                divider = false;
+            int sectionVertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size;
             if (divider)
             {
                 _y += page.SectionMarginTop;
@@ -262,8 +306,12 @@ public static partial class Crystarium
             }
 
             PaintSectionHeader(
-                hit, headerIdentity, title, open,
-                new(_origin.X, headerTop), _width);
+                hit, headerIdentity,
+                SectionPrefix == null ? title : SectionPrefix + title,
+                open, new(_origin.X, headerTop), _width);
+            _anyPainted = true;
+            SectionPainted?.Invoke(
+                title, sectionVertexStart, ImGui.GetWindowDrawList().VtxBuffer.Size, headerTop);
 
             _y += page.SectionHeaderHeight;
             if (open)
@@ -315,8 +363,15 @@ public static partial class Crystarium
             _trackWidth = _width;
         }
 
-        internal FormRowScope BeginRow(string label)
+        internal FormRowScope BeginRow(string label, string? help = null)
         {
+            if (Probe != null)
+            {
+                Probe(_section, label, help);
+                return SkippedRow();
+            }
+            if (RowFilter != null && !RowFilter(_section, label, help))
+                return SkippedRow();
             bool fullLine = NextFullLine;
             NextFullLine = false;
             if (!_twoTrack || fullLine)
@@ -330,7 +385,11 @@ public static partial class Crystarium
             var row = new FormRowScope(
                 new(x, top), _trackWidth, _scale, column / _scale,
                 RowHeight, visible)
-            { HasLabel = !string.IsNullOrEmpty(label) };
+            {
+                HasLabel = !string.IsNullOrEmpty(label),
+                Label = label,
+                VertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size,
+            };
             if (visible && !string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
@@ -342,13 +401,31 @@ public static partial class Crystarium
             return row;
         }
 
+        /// <summary>A row the search dropped: laid far off screen so a
+        /// widget that paints regardless paints nothing anyone sees, and
+        /// ended without advancing the page.</summary>
+        private FormRowScope SkippedRow() =>
+            new(new(_origin.X, -100000f), _trackWidth, _scale,
+                LabelColumn(string.Empty, _trackWidth, _scale, _labelWidth) / _scale,
+                RowHeight, visible: false)
+            { HasLabel = false, Skipped = true };
+
         internal void EndRow(
             in FormRowScope row,
             string id,
             string? help,
             float? logicalHeight = null)
         {
+            if (row.Skipped)
+                return;
             float height = logicalHeight ?? RowHeight;
+            if (row.Visible)
+            {
+                _anyPainted = true;
+                RowPainted?.Invoke(
+                    _section, row.Label, row.VertexStart,
+                    ImGui.GetWindowDrawList().VtxBuffer.Size, row.Origin.Y);
+            }
             // The help anchors on the LABEL band — a full-row rect would
             // shadow the controls' own hovers.
             float helpWidth = row.HasLabel ? row.LabelWidth : row.Width;
@@ -381,8 +458,14 @@ public static partial class Crystarium
             bool open,
             Action<bool>? onOpenChanged,
             Action<FormScope> content,
-            bool divider = true) =>
+            bool divider = true)
+        {
+            // A standalone section is one of a stack its caller manages:
+            // the caller's divider stands, the page's first-rule rule
+            // does not apply.
+            _anyPainted = true;
             DrawSection(title, open, onOpenChanged, content, divider);
+        }
 
         internal string RowId(string section, string label) =>
             Ids.Row(_id, section, label);
@@ -426,7 +509,7 @@ public static partial class Crystarium
         public void Custom(string label, float logicalHeight,
             Action<FormRowScope> draw, string? help = null)
         {
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (row.Visible)
                 draw(row);
             _page.EndRow(row, Id(label), help, logicalHeight);
@@ -452,7 +535,7 @@ public static partial class Crystarium
             float? altReset = null)
         {
             string controlId = Id(id ?? label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, controlId, help);
@@ -581,7 +664,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -614,7 +697,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -659,7 +742,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -801,7 +884,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -821,7 +904,7 @@ public static partial class Crystarium
             bool disabled = false, ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -847,7 +930,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -881,7 +964,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -938,7 +1021,7 @@ public static partial class Crystarium
             string? disabledHelp = null, ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -985,7 +1068,7 @@ public static partial class Crystarium
             ControlStyle cancelStyle = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1039,7 +1122,7 @@ public static partial class Crystarium
             float? altReset = null)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1080,7 +1163,7 @@ public static partial class Crystarium
             Action? onCommit = null)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1138,7 +1221,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             var controlStyle =
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -1160,7 +1243,7 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             var actionScope = new ActionScope();
             actions(actionScope);
             float actionWidth = MeasureActions(
@@ -1195,7 +1278,7 @@ public static partial class Crystarium
             string id = string.IsNullOrEmpty(label)
                 ? UnlabelledId("actions", ref _actionRows)
                 : Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1215,7 +1298,7 @@ public static partial class Crystarium
             string? help = null)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             var wells = new ColorWellScope(row, id);
             content(wells);
             int wellRows = wells.Draw();
@@ -1233,7 +1316,7 @@ public static partial class Crystarium
             string? help = null)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1254,7 +1337,7 @@ public static partial class Crystarium
             string? help = null)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1290,7 +1373,7 @@ public static partial class Crystarium
             bool unavailable = false, nint icon = 0, bool mono = false)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1339,7 +1422,7 @@ public static partial class Crystarium
                 : string.IsNullOrEmpty(label)
                 ? UnlabelledId("readonly-actions", ref _readOnlyActionRows)
                 : Id(label);
-            var row = _page.BeginRow(label);
+            var row = _page.BeginRow(label, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, controlId, help);
@@ -1427,7 +1510,7 @@ public static partial class Crystarium
         public void Label(string text, string? help = null)
         {
             string id = Id(text);
-            var row = _page.BeginRow(text);
+            var row = _page.BeginRow(text, help);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -1626,7 +1709,7 @@ public static partial class Crystarium
             }
 
             string id = Id(label);
-            var row = _page.BeginRow(fullWidth ? string.Empty : label);
+            var row = _page.BeginRow(fullWidth ? string.Empty : label, help);
             var actionScope = new ActionScope();
             actions?.Invoke(actionScope);
             float gap = ActiveTheme.Form.AxisGap * row.Scale;
@@ -1741,7 +1824,7 @@ public static partial class Crystarium
                     ? axes[i]
                     : $"{label} {axes[i]}";
                 string rowId = Id(rowLabel);
-                var row = _page.BeginRow(rowLabel);
+                var row = _page.BeginRow(rowLabel, help);
                 if (!row.Visible)
                 {
                     _page.EndRow(
@@ -2198,6 +2281,14 @@ public static partial class Crystarium
         /// <summary>Whether the row carries a label — what decides where
         /// its help anchors: the label band, never the whole row.</summary>
         public bool HasLabel { get; internal init; }
+
+        /// <summary>A row a search dropped: nothing drawn, no layout.</summary>
+        public bool Skipped { get; internal init; }
+
+        /// <summary>The label the row was begun with, and where the draw
+        /// list stood then — what the paint hook reports.</summary>
+        public string Label { get; internal init; } = string.Empty;
+        public int VertexStart { get; internal init; }
 
         internal FormRowScope(
             Vector2 origin, float width, float scale, float labelWidth,

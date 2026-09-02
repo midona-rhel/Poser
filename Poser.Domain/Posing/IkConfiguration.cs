@@ -18,13 +18,19 @@ public enum IkSolver
 
 public enum IkTargetMode
 {
-    /// <summary>Target follows animation: animated endpoint position plus
-    /// the authored translation delta, evaluated every frame.</summary>
-    Relative,
+    /// <summary>The target moves with the actor: the animated endpoint
+    /// plus the authored translation, evaluated every frame.</summary>
+    Actor,
 
-    /// <summary>Target holds the endpoint at an exact skeleton model-space
-    /// point captured when the mode was entered or the chain enabled.</summary>
-    Fixed,
+    /// <summary>The target holds a WORLD point captured when the mode was
+    /// entered or the chain enabled; the actor moving or animating leaves
+    /// the tip where it was. A drag moves the point.</summary>
+    World,
+
+    /// <summary>The target follows another bone — any actor's — keeping
+    /// the offset the tip had from it when the bone was picked. A drag
+    /// changes the offset.</summary>
+    Bone,
 }
 
 /// <summary>
@@ -47,7 +53,8 @@ public sealed record IkChainConfig(
     float HingeMaxDegrees,
     Vector3 HingeAxis,
     bool EnforceEndRotation,
-    float SwivelDegrees = 0f)
+    float SwivelDegrees = 0f,
+    bool HoldRotation = true)
 {
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past
@@ -71,7 +78,7 @@ public sealed record IkChainConfig(
         if (!float.IsFinite(SwivelDegrees)
             || SwivelDegrees is < -MaxSwivelDegrees or > MaxSwivelDegrees)
             return $"Swivel must be within ±{MaxSwivelDegrees}°.";
-        if (TargetMode is not (IkTargetMode.Relative or IkTargetMode.Fixed))
+        if (TargetMode is not (IkTargetMode.Actor or IkTargetMode.World or IkTargetMode.Bone))
             return "IK target mode is unsupported.";
         if (CcdDepth is < MinDepth or > MaxDepth)
             return $"Depth must be {MinDepth}..{MaxDepth}.";
@@ -154,7 +161,7 @@ public sealed record IkChainConfig(
         Enabled: enabled,
         EnforceConstraints: true,
         Solver: IkSolver.TwoJoint,
-        TargetMode: IkTargetMode.Relative,
+        TargetMode: IkTargetMode.Actor,
         CcdDepth: 3,
         CcdIterations: 8,
         CcdGain: 0.5f,

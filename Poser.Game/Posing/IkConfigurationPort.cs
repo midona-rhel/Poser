@@ -95,6 +95,39 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return IkPortResult.Ok();
     }
 
+    public IkPortResult SetBoneTarget(
+        TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
+    {
+        if (target.Bone is not { } endpointId)
+            return IkPortResult.Fail("IK configuration requires a bone target.");
+        var endpoint = _bindings.Resolve(endpointId);
+        if (!endpoint.Success)
+            return IkPortResult.Fail(
+                endpoint.Detail ?? $"Bone {endpointId.CanonicalName} did not resolve.");
+        var anchor = _bindings.Resolve(bone);
+        if (!anchor.Success)
+            return IkPortResult.Fail(
+                anchor.Detail ?? $"Bone {bone.CanonicalName} did not resolve.");
+        var error = _bonePosing.SetIkBoneTarget(endpoint.Value!, anchor.Value!);
+        if (error != null)
+        {
+            _log.Information($"IK target rejected: {error}");
+            return IkPortResult.Fail(error);
+        }
+        return IkPortResult.Ok();
+    }
+
+    public global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target)
+    {
+        if (target.Bone is not { } endpointId)
+            return null;
+        var endpoint = _bindings.Resolve(endpointId);
+        if (!endpoint.Success
+            || _bonePosing.GetIkBoneTarget(endpoint.Value!) is not { } anchor)
+            return null;
+        return _bindings.GetBoneId(anchor);
+    }
+
     public IkPortResult ResetDefaults(TransformTargetId target)
     {
         if (target.Bone is not { } boneId)
