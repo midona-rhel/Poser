@@ -542,7 +542,8 @@ public sealed partial class AppearancePane
             top + 1,
             columns: 5,
             tileSize: 72f,
-            rows: 6);
+            rows: 6,
+            knownIds: new List<uint>(icons.Keys));
         _tilePickers[key] = picker;
         return picker;
     }

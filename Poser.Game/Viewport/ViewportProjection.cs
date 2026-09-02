@@ -154,6 +154,7 @@ public sealed class ViewportProjection : IViewportReads
     /// gizmo asked for it once per skeleton per frame — traced at 0.6 ms a
     /// frame on one actor (2026-09-02). Once per frame is the whole need.</summary>
     private readonly Dictionary<Skeleton, long> _refreshedAt = new();
+    private readonly Dictionary<Skeleton, Matrix4x4> _lastModel = new();
 
     public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
     {
@@ -173,11 +174,14 @@ public sealed class ViewportProjection : IViewportReads
         {
             if (_refreshedAt.Count > 64)
                 _refreshedAt.Clear();
-            skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-            _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
             _refreshedAt[skeleton] = stamp;
+            _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
+            var refreshed = skeleton.RefreshForDraw();
+            if (refreshed is { } fresh)
+                _lastModel[skeleton] = fresh;
+            return refreshed;
         }
-        return skeleton.GetModelMatrix();
+        return _lastModel.TryGetValue(skeleton, out var model) ? model : skeleton.GetModelMatrix();
     }
 
     private static PoseTransform? ToPoseTransform(Transform transform) =>

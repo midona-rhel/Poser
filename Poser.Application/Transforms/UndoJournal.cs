@@ -80,7 +80,30 @@ public sealed class UndoJournal
                     () => _history.PeekUndo() == entry,
                     () => _history.CommitUndo(entry));
         }
-        return _runner.Undo();
+        return GiveUpOnRepeat(entry, _runner.Undo());
+    }
+
+    /// <summary>The entry the runner refused last; the same entry refused
+    /// again is dropped, so one dead step (a bake whose bones are gone, a
+    /// rollback that cannot land) never wedges every later undo.</summary>
+    private HistoryEntry? _refused;
+
+    private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
+    {
+        if (result.Success || entry is not JournalStep step)
+        {
+            _refused = null;
+            return result;
+        }
+        if (!ReferenceEquals(_refused, entry))
+        {
+            _refused = entry;
+            return result;
+        }
+        _refused = null;
+        _history.Drop(entry);
+        _notice($"{step.Description} could not be undone twice and was discarded.");
+        return result;
     }
 
     public GestureResult Redo()
@@ -103,7 +126,7 @@ public sealed class UndoJournal
                     () => _history.PeekRedo() == entry,
                     () => _history.CommitRedo(entry));
         }
-        return _runner.Redo();
+        return GiveUpOnRepeat(entry, _runner.Redo());
     }
 
     private enum KeyState { Current, Moved, Gone }

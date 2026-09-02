@@ -60,8 +60,17 @@ public class CameraService : ICameraService
             : Vector3.Zero;
     }
 
+    /// <summary>The composed view-projection, once per frame: every
+    /// overlay point used to re-read the camera and re-multiply the two
+    /// matrices (audited 2026-09-03).</summary>
+    private Matrix4x4 _viewProjection;
+    private int _viewProjectionFrame = -1;
+
     public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
     {
+        int frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount();
+        if (frame == _viewProjectionFrame)
+            return WorldToScreenDepth(_viewProjection, worldPos, out screenPos);
         var cameraManager = CameraManager.Instance();
         if (cameraManager == null)
         {
@@ -89,6 +98,8 @@ public class CameraService : ICameraService
         }
 
         var matrix = viewMatrix * renderCamera->ProjectionMatrix;
+        _viewProjection = matrix;
+        _viewProjectionFrame = frame;
         return WorldToScreenDepth(matrix, worldPos, out screenPos);
     }
 

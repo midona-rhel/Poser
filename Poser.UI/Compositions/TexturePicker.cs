@@ -133,12 +133,22 @@ public static partial class Crystarium
             string id, TexturePreview preview, uint count = 1000,
             Func<uint, string>? caption = null,
             int columns = TextureGridColumns, float tileSize = TextureTileSize,
-            int rows = TextureGridRows)
+            int rows = TextureGridRows, IReadOnlyList<uint>? knownIds = null)
         {
             ArgumentNullException.ThrowIfNull(preview);
             _columns = Math.Max(1, columns);
             _rows = Math.Max(1, rows);
             _tileSize = tileSize;
+            // A catalog that KNOWS its ids skips the walk: the grid opens at
+            // its final size on its first frame, and a tile whose image is
+            // still loading draws its glyph until the handle exists. Walked
+            // catalogs (sky, clouds) grew row by row for a dozen frames.
+            if (knownIds is not null)
+            {
+                _ids.AddRange(knownIds);
+                _ids.Sort();
+                _probeNext = count;
+            }
             _popupId = $"##texture-picker-{id}";
             _gridId = $"{_popupId}-grid";
             _preview = preview;

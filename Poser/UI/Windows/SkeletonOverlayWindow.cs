@@ -522,7 +522,8 @@ public class SkeletonOverlayWindow : Window
                     cameraPosition, lightTransform.Position),
                 IsSelected = lightSelected,
                 Live = resolved.Success ? resolved.Value : null,
-                Reduced = _groups.GroupOf(lightSelectionId) is { } lightGroup
+                Reduced = wholeGroup is not null
+                    && _groups.GroupOf(lightSelectionId) is { } lightGroup
                     && lightGroup.Id == wholeGroup,
             });
         }
@@ -551,7 +552,8 @@ public class SkeletonOverlayWindow : Window
                 // A prop belongs to no actor, so the actor fade has nothing to
                 // say about it.
                 Opacity = 1f,
-                Reduced = _groups.GroupOf(propSelectionId) is { } propGroup
+                Reduced = wholeGroup is not null
+                    && _groups.GroupOf(propSelectionId) is { } propGroup
                     && propGroup.Id == wholeGroup,
             });
         }
@@ -578,7 +580,8 @@ public class SkeletonOverlayWindow : Window
                 CameraDistance = Vector3.Distance(
                     cameraPosition, worldTransform.Position),
                 Opacity = 1f,
-                Reduced = _groups.GroupOf(worldSelectionId) is { } worldGroup
+                Reduced = wholeGroup is not null
+                    && _groups.GroupOf(worldSelectionId) is { } worldGroup
                     && worldGroup.Id == wholeGroup,
             });
         }
@@ -609,7 +612,8 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
                     Opacity = ActorOpacity(actor.Id, activeLineage),
-                    Reduced = _groups.GroupOf(actorSelectionId) is { } actorGroup
+                    Reduced = wholeGroup is not null
+                        && _groups.GroupOf(actorSelectionId) is { } actorGroup
                         && actorGroup.Id == wholeGroup,
                 });
             }

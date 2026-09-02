@@ -644,22 +644,25 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// resets append are folded into it.</summary>
     public PoseEditResult ResetAll(IActor actor)
     {
+        // The snapshot comes straight from the port, as the disruptive
+        // steps take it: the keyed scope is empty while the state keys are
+        // disconnected, and an inverse with nothing to restore was a dead
+        // entry that blocked every later undo (audited 2026-09-03).
         var lineage = _bindings.GetActorId(actor)?.LogicalId;
-        var scope = lineage is { } l ? _journal.BeginActorStep([l]) : null;
+        var before = lineage is { } l ? _snapshots.Value.Capture(l) : null;
         var top = _history.PeekUndo();
         var result = ResetAllCore(actor);
+        if (before is null)
+            return result;
         while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
             _history.Drop(inner);
-        if (scope is null)
-            return result;
-        var context = scope.Complete();
-        var before = context.Before.FirstOrDefault();
         _history.Append(new JournalStep(
             "Reset all",
-            () => before is not null && _snapshots.Value.Restore(before, _ => { }),
+            () => _snapshots.Value.Restore(before, _ => { }),
             () => ResetAllCore(actor).Success)
         {
-            Context = context,
+            Context = new StepContext(
+                Array.Empty<ActorStateKey>(), new[] { before }, Array.Empty<ActorSnapshot>(), null),
         });
         return result;
     }
