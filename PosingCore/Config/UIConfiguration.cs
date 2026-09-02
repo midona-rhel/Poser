@@ -61,6 +61,14 @@ public class UIConfiguration
     /// overlays stay, the scene clears. Off by default.</summary>
     public bool HideWhileManipulating { get; set; }
 
+    /// <summary>Hide the windows while the camera moves: flight keys held,
+    /// a look drag, or a drag on empty space that turns the camera.</summary>
+    public bool HideWhileMovingCamera { get; set; }
+
+    /// <summary>The gizmo tool in use when Poser last ran: Move, Rotate,
+    /// Scale or Universal, by the tool enum's name.</summary>
+    public string LastTransformTool { get; set; } = "Rotate";
+
     /// <summary>The inspector rail lives in its own window — the third
     /// split, beside the detached shell.</summary>
     public bool SplitInspector { get; set; }

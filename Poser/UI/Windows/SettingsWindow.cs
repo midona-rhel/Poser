@@ -214,6 +214,7 @@ public class SettingsWindow : Window
             TreeGuides = c.UI.ShowTreeGuides,
             ShowInGPose = c.UI.ShowInGPose,
             HideWhileManipulating = c.UI.HideWhileManipulating,
+            HideWhileMovingCamera = c.UI.HideWhileMovingCamera,
             HideGizmoWhileManipulating = c.UI.HideGizmoWhileManipulating,
             ShowInCutscene = c.UI.ShowInCutscene,
             ShowWhenGameUiHidden = c.UI.ShowWhenGameUiHidden,
@@ -453,6 +454,7 @@ public class SettingsWindow : Window
         c.UI.ShowTreeGuides = _vm.TreeGuides;
         c.UI.ShowInGPose = _vm.ShowInGPose;
         c.UI.HideWhileManipulating = _vm.HideWhileManipulating;
+        c.UI.HideWhileMovingCamera = _vm.HideWhileMovingCamera;
         c.UI.HideGizmoWhileManipulating = _vm.HideGizmoWhileManipulating;
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;

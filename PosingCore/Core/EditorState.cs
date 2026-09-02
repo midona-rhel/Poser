@@ -25,7 +25,24 @@ public class EditorState : IEditorState
         => _configuration = configuration;
 
     public TransformOrientation TransformOrientation { get; set; } = TransformOrientation.Local;
-    public TransformTool TransformTool { get; set; } = TransformTool.Rotate;
+    /// <summary>The tool outlives the session: it is read from the config
+    /// once and written back on every change.</summary>
+    private TransformTool? _tool;
+    public TransformTool TransformTool
+    {
+        get => _tool ??= System.Enum.TryParse<TransformTool>(
+                _configuration.Config.UI.LastTransformTool, out var saved)
+            ? saved
+            : TransformTool.Rotate;
+        set
+        {
+            if (_tool == value)
+                return;
+            _tool = value;
+            _configuration.Config.UI.LastTransformTool = value.ToString();
+            _configuration.ApplyChange();
+        }
+    }
 
     public SkeletonViewMode SkeletonViewMode
     {

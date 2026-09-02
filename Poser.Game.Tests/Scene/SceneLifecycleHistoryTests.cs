@@ -308,6 +308,7 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeCameras : IVirtualCameraService
     {
         public bool SuppressFlightKeys { get; set; }
+        public bool FlightActive => false;
         private readonly List<IVirtualCamera> _cameras = new();
 
         public IReadOnlyList<IVirtualCamera> Live => _cameras;
