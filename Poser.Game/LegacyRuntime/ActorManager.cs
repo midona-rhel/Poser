@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -239,12 +240,51 @@ public class ActorManager : IActorManager
     }
 
     private readonly HashSet<nint> _adopted = new();
+    /// <summary>Where each adopted body stood when it was taken — its
+    /// draw object's position, rotation and scale — so GPose leaving
+    /// puts it back exactly there. Its pose needs no restoring: once the
+    /// scene lets go, the game's own animation writes the skeleton again.</summary>
+    private readonly Dictionary<nint, (Vector3 Position, Quaternion Rotation, Vector3 Scale)> _adoptedSeats = new();
 
-    public void AdoptWorldActor(nint address)
+    public unsafe void AdoptWorldActor(nint address)
     {
         if (address == nint.Zero || !_adopted.Add(address))
             return;
+        try
+        {
+            var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
+            if (draw != null)
+                _adoptedSeats[address] = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorManager: could not read an adopted actor's seat: {ex.Message}");
+        }
         RefreshActors();
+    }
+
+    private unsafe void RestoreAdoptedSeats()
+    {
+        foreach (var (address, seat) in _adoptedSeats)
+        {
+            try
+            {
+                var reference = _objectTable.CreateObjectReference(address);
+                if (reference is null || !reference.IsValid())
+                    continue;
+                var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
+                if (draw == null)
+                    continue;
+                draw->Object.Position = seat.Position;
+                draw->Object.Rotation = seat.Rotation;
+                draw->Object.Scale = seat.Scale;
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"ActorManager: could not seat an adopted actor back: {ex.Message}");
+            }
+        }
+        _adoptedSeats.Clear();
     }
 
     public bool IsAdopted(IActor actor) => _adopted.Contains(actor.Address);
@@ -429,6 +469,7 @@ public class ActorManager : IActorManager
 
     private void ClearActors()
     {
+        RestoreAdoptedSeats();
         _adopted.Clear();
         foreach (var actor in _actors)
         {

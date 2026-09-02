@@ -293,17 +293,25 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
     /// off-thread call, or an actor with nothing drawn. A caller must read that
     /// as "no highlight is on", never as an unpaired set.</para>
     /// </summary>
+    private nint _highlightedAddress;
+
     public unsafe bool SetHighlight(WorldActorCandidateId id, bool highlighted)
     {
         if (!OnOwnerThread)
             return false;
-        if (!_observations.TryGetValue(id, out var stored))
+        // A body that was just adopted has left the listing, but its
+        // highlight is still lit: turning it off goes by the address the
+        // last highlight went to, whatever the listing knows now.
+        nint address = _observations.TryGetValue(id, out var stored)
+            ? stored.Address
+            : highlighted ? nint.Zero : _highlightedAddress;
+        if (address == nint.Zero)
             return false;
         try
         {
             var native =
                 (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)
-                    stored.Address;
+                    address;
             if (native == null || native->DrawObject == null)
                 return false;
             native->Highlight(highlighted
@@ -311,6 +319,7 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
                     .ObjectHighlightColor.Yellow
                 : FFXIVClientStructs.FFXIV.Client.Game.Object
                     .ObjectHighlightColor.None);
+            _highlightedAddress = highlighted ? address : nint.Zero;
             return true;
         }
         catch (Exception ex)
@@ -387,6 +396,9 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         if (clone is null)
             return WorldActorImportResult.Failed(
                 "The actor could not be added to the scene.");
+        // The handle's highlight goes with the handle.
+        if (_highlightedAddress == fresh.Address)
+            SetHighlight(id, false);
         spawned = clone;
         return WorldActorImportResult.Ok();
     }
