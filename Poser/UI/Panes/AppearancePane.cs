@@ -232,7 +232,7 @@ public sealed partial class AppearancePane
                         DrawEquipmentView(page, actor);
                     else
                         DrawActorView(page, actor);
-                });
+                }, labelColumnWidth: _view == 1 ? EquipmentLabelWidth : null);
             });
     }
 
