@@ -59,10 +59,15 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
         var slots = _skeletons.GetSkeletons(actor);
         if (slots.Count == 0)
             return null;
+        // Only the bones the user authored, plus the roots. A restore clears
+        // every layer and re-authors these alone, so a bone the animation
+        // was driving goes back to the animation instead of freezing at the
+        // pose it happened to hold when the snapshot was taken.
         PoseFile pose;
         try
         {
-            pose = _poseFiles.CreatePoseFile(slots);
+            pose = _poseFiles.CreatePoseFile(
+                slots, bone => bone.IsSkeletonRoot || _posing.HasModifications(bone));
         }
         catch (Exception ex)
         {
