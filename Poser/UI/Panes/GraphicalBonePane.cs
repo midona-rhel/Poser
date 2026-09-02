@@ -120,6 +120,12 @@ public sealed class GraphicalBonePane : IDisposable
 
         _config = GraphicalBoneReader.ReadEmbeddedResource();
 
+        // Every map starts decoding now, so the first visit to Body or
+        // Face finds its image ready instead of a placeholder that fills
+        // a few frames later.
+        foreach (var section in _config.PoseImages.Values)
+            if (!string.IsNullOrEmpty(section.Image))
+                GetTexture(section.Image);
     }
 
     /// <summary>

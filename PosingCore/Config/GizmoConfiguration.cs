@@ -69,6 +69,10 @@ public class GizmoConfiguration
     /// </summary>
     public bool KeepGizmoWhenBonesHidden { get; set; } = true;
 
+    /// <summary>The Universal tool's centre handle moves the target
+    /// instead of scaling it uniformly (ruled 2026-09-03: the user picks).</summary>
+    public bool UniversalCenterTranslates { get; set; }
+
     /// <summary>Hides the bone gizmo whenever the armature overlay is not
     /// drawn at all — the master-switch companion to
     /// <see cref="KeepGizmoWhenBonesHidden"/>, which answers for one

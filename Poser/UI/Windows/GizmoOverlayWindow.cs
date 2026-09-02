@@ -196,6 +196,11 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
+        // The first click on an unselected entity only selects it: the
+        // press that changed the selection may not begin a drag on the
+        // gizmo that appeared under it (ruled 2026-09-03). The flag clears
+        // on release, as every other suppression does.
+        scene.Selection.SelectionChanged += _ => _beginSuppressed = true;
         _selection = scene.Selection;
         _scene = scene;
         _viewport = viewport;
@@ -820,7 +825,8 @@ public class GizmoOverlayWindow : Window
             ? WorldGizmo.Build(
                 projection, tool, translateFrame, scaleFrame, ringFrame, uiScale,
                 _gesture != null ? _dragTranslateSigns : null,
-                _gesture != null ? _dragScaleSigns : null)
+                _gesture != null ? _dragScaleSigns : null,
+                universalCenterTranslates: GizmoConfig.UniversalCenterTranslates)
             : null;
 
         var io = ImGui.GetIO();

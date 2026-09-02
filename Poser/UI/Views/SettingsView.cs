@@ -93,6 +93,7 @@ public sealed class SettingsViewModel
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
     public bool KeepGizmoWhenBonesHidden = true;
+    public bool UniversalCenterTranslates;
     public bool HideGizmoWithoutArmature;
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
@@ -1037,6 +1038,11 @@ public static class SettingsView
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Dots and lines disappear while you drag");
+            form.Switch(
+                "Universal centre moves",
+                vm.UniversalCenterTranslates,
+                next => vm.UniversalCenterTranslates = next,
+                "The centre handle moves; off, it scales");
             form.Slider(
                 "Line opacity",
                 vm.BoneLineOpacityWhileUsing,

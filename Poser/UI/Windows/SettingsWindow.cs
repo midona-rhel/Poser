@@ -187,6 +187,7 @@ public class SettingsWindow : Window
             SnapLinearStep = c.Gizmo.SnapLinearStep,
             AllowRaySnap = c.Gizmo.AllowRaySnap,
             KeepGizmoWhenBonesHidden = c.Gizmo.KeepGizmoWhenBonesHidden,
+            UniversalCenterTranslates = c.Gizmo.UniversalCenterTranslates,
             HideGizmoWithoutArmature = c.Gizmo.HideGizmoWithoutArmature,
 
             NsfwBones = c.Display.ShowNsfwBones,
@@ -419,6 +420,7 @@ public class SettingsWindow : Window
         c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
         c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
         c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
+        c.Gizmo.UniversalCenterTranslates = _vm.UniversalCenterTranslates;
         c.Gizmo.HideGizmoWithoutArmature = _vm.HideGizmoWithoutArmature;
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
