@@ -54,23 +54,31 @@ public class SettingsWindow : Window
         _vm.DebugLog = message => _log.Debug(message);
     }
 
+    /// <summary>What the config held when the window opened: Cancel, or
+    /// closing without Save, puts it back — every change previews live on
+    /// the config while the window is open.</summary>
+    private SettingsViewModel? _snapshot;
+
     public override void OnOpen()
     {
         _saving = false;
         LoadFromConfig();
+        _snapshot = BuildViewModel();
         WireRuntime();
     }
 
     public override void OnClose()
     {
-        if (!_saving)
+        if (!_saving && _snapshot != null)
         {
-            // Cancel restores the persisted preview state.
+            _vm = _snapshot;
+            ApplyToConfig(preview: true);
             var ui = ConfigurationService.Instance.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
             Crystarium.FloatingSurface.ConfigureEffects(
                 ui.FillOpacity, ui.BackdropBlur);
         }
+        _snapshot = null;
         _saving = false;
     }
 
@@ -91,6 +99,10 @@ public class SettingsWindow : Window
         try
         {
             SettingsView.Draw(_vm, min);
+            // Live preview: the config carries the edits as they happen;
+            // only Save persists them and only Cancel takes them back.
+            if (_snapshot != null)
+                ApplyToConfig(preview: true);
         }
         finally
         {
@@ -98,10 +110,12 @@ public class SettingsWindow : Window
         }
     }
 
-    private void LoadFromConfig()
+    private void LoadFromConfig() => _vm = BuildViewModel();
+
+    private SettingsViewModel BuildViewModel()
     {
         var c = ConfigurationService.Instance.Config;
-        _vm = new SettingsViewModel
+        var vm = new SettingsViewModel
         {
             Category = 1,
             OpenOnGPose = c.OpenOnGPoseEnter,
@@ -199,16 +213,16 @@ public class SettingsWindow : Window
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
             OnResetConfig = ResetConfig,
-            OnRefreshIntegrations = () => ReadIntegrations(_vm),
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
             OnSurfaceEffectsPreview = Crystarium.FloatingSurface.ConfigureEffects,
         };
-        _vm.OnOpenRepository = () =>
+        vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
+        vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
-        _vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
-        _vm.OnOpenFolder = path =>
+        vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
+        vm.OnOpenFolder = path =>
         {
             if (string.IsNullOrWhiteSpace(path))
                 return;
@@ -225,7 +239,7 @@ public class SettingsWindow : Window
         {
             if (IsHomeSource(source.Name))
                 continue;
-            _vm.LibrarySources.Add(new LibrarySourceVm
+            vm.LibrarySources.Add(new LibrarySourceVm
             {
                 Name = source.Name,
                 Path = source.Path,
@@ -233,9 +247,10 @@ public class SettingsWindow : Window
             });
         }
 
-        ReadIntegrations(_vm);
-        _vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
-        _vm.BindingRevision++;
+        ReadIntegrations(vm);
+        vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
+        vm.BindingRevision++;
+        return vm;
     }
     private void ReadIntegrations(SettingsViewModel vm)
     {
@@ -274,6 +289,8 @@ public class SettingsWindow : Window
 
         int category = _vm.Category;
         LoadFromConfig();
+        // A reset is committed: Cancel afterwards keeps it.
+        _snapshot = BuildViewModel();
         _vm.Category = category;
         _vm.ResetStatus = "Reset. These are the shipped defaults.";
         ThemeSelection.Apply(
@@ -281,6 +298,22 @@ public class SettingsWindow : Window
     }
 
     private void SaveToConfig()
+    {
+        ApplyToConfig(preview: false);
+        var svc = ConfigurationService.Instance;
+        var c = svc.Config;
+        _saving = true;
+        ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
+        Crystarium.FloatingSurface.ConfigureEffects(
+            c.UI.FillOpacity, c.UI.BackdropBlur);
+        svc.ApplyChange();
+        IsOpen = false;
+    }
+
+    /// <summary>The view model onto the config. A preview skips what
+    /// touches disk or the keybind registry: library folders, the
+    /// auto-save root, the bindings.</summary>
+    private void ApplyToConfig(bool preview)
     {
         var svc = ConfigurationService.Instance;
         var c = svc.Config;
@@ -395,6 +428,9 @@ public class SettingsWindow : Window
         c.UI.SwapRotationXY = _vm.SwapRotationXY;
         c.UI.ShowFrameProfiler = _vm.ShowFrameProfiler;
 
+        if (preview)
+            return;
+
         // Replaced whole, never merged: an action dropped from the registry
         // has no row to clear it from, and a stale entry would keep firing.
         c.UI.Bindings.Clear();
@@ -442,13 +478,6 @@ public class SettingsWindow : Window
         c.AutoSave.RootDirectory = _vm.AutoSaveFolderDraft.Trim().Length == 0
             ? _autoSave.RootDirectory
             : _vm.AutoSaveFolderDraft.Trim();
-
-        _saving = true;
-        ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
-        Crystarium.FloatingSurface.ConfigureEffects(
-            c.UI.FillOpacity, c.UI.BackdropBlur);
-        svc.ApplyChange();
-        IsOpen = false;
     }
     private static bool IsHomeSource(string name)
     {

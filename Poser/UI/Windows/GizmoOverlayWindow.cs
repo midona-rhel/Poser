@@ -649,16 +649,20 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
                 return;
             primaryBone = primaryBoneId;
-            // Hidden bones suppress new gizmos but do not cancel active drags.
-            if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null
-                && !_presentation.IsVisible(primaryBoneId))
-                return;
-            // The armature takes the gizmo with it, when asked — per
-            // SKELETON: this actor's bones must be shown, not anyone's.
-            if (GizmoConfig.HideGizmoWithoutArmature && _gesture == null
-                && !(ArmatureVisibility.MasterOn
-                    && _presentation.AnyVisibleFor(primaryBoneId)))
-                return;
+            // Keep gizmo without bones is the stronger word: on, a selected
+            // bone keeps its gizmo whatever the overlay shows. Off, hiding
+            // the bone, or the whole armature when asked, takes it away.
+            // Neither cancels an active drag.
+            if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null)
+            {
+                if (!_presentation.IsVisible(primaryBoneId))
+                    return;
+                // Per SKELETON: this actor's bones must be shown, not anyone's.
+                if (GizmoConfig.HideGizmoWithoutArmature
+                    && !(ArmatureVisibility.MasterOn
+                        && _presentation.AnyVisibleFor(primaryBoneId)))
+                    return;
+            }
             // Querying the skeleton matrix refreshes its runtime cache.
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
                 return;
