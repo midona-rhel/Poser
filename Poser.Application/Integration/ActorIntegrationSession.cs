@@ -84,6 +84,11 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationValue<WardrobeState> ReadWardrobe(ActorId actor) => _port.GetWardrobeState(actor);
 
+    public IntegrationValue<CustomizeState> ReadCustomize(ActorId actor) => _port.GetCustomizeState(actor);
+
+    public IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+        Lift(_port.SetCustomize(actor, values));
+
     public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => Lift(_port.ApplyGlamourerStateJson(actor, stateJson));
 
     public IntegrationResult RevertState(ActorId actor) => Lift(_port.RevertGlamourerState(actor));

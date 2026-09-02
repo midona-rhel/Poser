@@ -24,7 +24,7 @@ public static partial class Crystarium
     public static bool ImageTile(
         string id, nint texture, float side, Action? onClick = null,
         TablerIcon fallback = TablerIcon.Photo, string? help = null,
-        bool disabled = false)
+        bool disabled = false, bool selected = false)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -32,11 +32,16 @@ public static partial class Crystarium
         var draw = ImGui.GetWindowDrawList();
         var fill = !disabled && (hit.Hovered || hit.Active)
             ? theme.Chrome.WeakOverlay
-            : theme.Chrome.InputWell;
+            : selected ? theme.Chrome.ActiveOverlay : theme.Chrome.InputWell;
         BoxRenderer.Draw(draw, hit.ScreenMin, hit.ScreenMax, new BoxStyle
         {
             BackgroundColor = disabled ? fill.Fade(theme.Chrome.DisabledOpacity) : fill,
             BorderRadius = theme.Radii.Control,
+            BorderWidth = selected ? 1f : 0f,
+            BorderTopColor = selected ? theme.Chrome.Primary : null,
+            BorderRightColor = selected ? theme.Chrome.Primary : null,
+            BorderBottomColor = selected ? theme.Chrome.Primary : null,
+            BorderLeftColor = selected ? theme.Chrome.Primary : null,
         });
         float inset = theme.Spacing.Two * scale;
         if (texture != 0)

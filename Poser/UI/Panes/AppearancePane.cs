@@ -35,7 +35,9 @@ public sealed partial class AppearancePane
     private readonly Func<FacewearEntry, nint> _facewearTexture;
     private static readonly Func<PropRow, string?> _propBadge = static row => row.Detail;
     private static readonly Func<PropRow, TablerIcon?> _propGlyph = static _ => TablerIcon.Wand;
-    private static readonly string[] ViewLabels = ["Actor", "Equipment"];
+    private static readonly string[] ViewLabels = ["Actor", "Appearance", "Equipment"];
+    private readonly ICustomizeCatalog _customize;
+    private readonly Game.Journal.CustomizeSession _customizeSession;
     private int _view;
 
     private readonly ActorPresentationSession _presentation;
@@ -141,8 +143,12 @@ public sealed partial class AppearancePane
         IWardrobeCatalog wardrobe,
         IPropCatalog props,
         Game.Journal.WardrobeSession wardrobeSession,
-        global::Poser.UI.Controls.EntityNameModal names)
+        global::Poser.UI.Controls.EntityNameModal names,
+        ICustomizeCatalog customize,
+        Game.Journal.CustomizeSession customizeSession)
     {
+        _customize = customize;
+        _customizeSession = customizeSession;
         _wardrobe = wardrobe;
         _props = props;
         _wardrobeSession = wardrobeSession;
@@ -189,6 +195,7 @@ public sealed partial class AppearancePane
         DrainPicker();
         DrainModelPicker();
         DrainWardrobePickers();
+        DrainCustomizePickers();
 
         float s = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
@@ -199,9 +206,12 @@ public sealed partial class AppearancePane
             "##appearance-view", ViewLabels, _view,
             next => _view = next,
             alignFirstTabToCursor: true,
-            itemHelp: index => index == 0
-                ? "The actor in the scene"
-                : "What the actor wears");
+            itemHelp: index => index switch
+            {
+                0 => "The actor in the scene",
+                1 => "How the actor looks",
+                _ => "What the actor wears",
+            });
 
         float shellLeft = origin.X - global::Poser.UI.Views.AppShellView.MainHorizontalPadding * s;
         float shellWidth = size.X
@@ -228,11 +238,13 @@ public sealed partial class AppearancePane
                         page.EmptyState();
                         return;
                     }
-                    if (_view == 1)
-                        DrawEquipmentView(page, actor);
-                    else
-                        DrawActorView(page, actor);
-                }, labelColumnWidth: _view == 1 ? EquipmentLabelWidth : null);
+                    switch (_view)
+                    {
+                        case 1: DrawCustomizeView(page, actor); break;
+                        case 2: DrawEquipmentView(page, actor); break;
+                        default: DrawActorView(page, actor); break;
+                    }
+                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null);
             });
     }
 

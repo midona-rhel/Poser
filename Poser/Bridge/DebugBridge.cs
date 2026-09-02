@@ -207,6 +207,7 @@ public sealed class DebugBridge : IDisposable
                         "/actors",
                         "/history", "/undo", "/redo",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
+                        "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/apply?actor&slot=1&timeline=8136",
@@ -526,6 +527,18 @@ public sealed class DebugBridge : IDisposable
             {
                 var wardrobe = _session.ReadWardrobe(id);
                 return wardrobe.Success ? Json(wardrobe.Value!) : Json(new { error = wardrobe.Detail });
+            }
+            case "/customize":
+            {
+                var look = _session.ReadCustomize(id);
+                return look.Success ? Json(look.Value!) : Json(new { error = look.Detail });
+            }
+            case "/setcustomize":
+            {
+                var key = Enum.Parse<global::Poser.Domain.Integration.CustomizeKey>(query["key"], true);
+                int value = int.Parse(query["value"], CultureInfo.InvariantCulture);
+                var set = _session.SetCustomize(id, new Dictionary<global::Poser.Domain.Integration.CustomizeKey, int> { [key] = value });
+                return Json(new { ok = set.Success, set.Detail });
             }
             case "/glamstate":
             {

@@ -919,6 +919,68 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return IntegrationValue<WardrobeState>.Ok(ParseWardrobe(state));
         });
 
+    public IntegrationValue<CustomizeState> GetCustomizeState(ActorId actor) =>
+        Guarded<CustomizeState>(Glamourer, "Read look", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<CustomizeState>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<CustomizeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<CustomizeState>.Ok(ParseCustomize(state));
+        });
+
+    /// <summary>The customization out of the state JSON: every key under
+    /// Customize as a plain number (a bool reads as 0 or 1).</summary>
+    internal static CustomizeState ParseCustomize(Newtonsoft.Json.Linq.JObject state)
+    {
+        var values = new Dictionary<CustomizeKey, int>();
+        int modelId = 0;
+        if (state["Customize"] is Newtonsoft.Json.Linq.JObject customize)
+        {
+            modelId = customize["ModelId"]?.ToObject<int>() ?? 0;
+            foreach (var key in Enum.GetValues<CustomizeKey>())
+            {
+                if (customize[key.ToString()]?["Value"] is not { } token)
+                    continue;
+                values[key] = token.Type == Newtonsoft.Json.Linq.JTokenType.Boolean
+                    ? (token.ToObject<bool>() ? 1 : 0)
+                    : token.ToObject<int>();
+            }
+        }
+        return new CustomizeState(values, modelId);
+    }
+
+    public IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+        Guarded(Glamourer, "Set look", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationPortResult.Fail($"Glamourer failed reading the state (code {ec}).");
+            if (state["Customize"] is not Newtonsoft.Json.Linq.JObject customize)
+                return IntegrationPortResult.Fail("The state carries no customization.");
+            foreach (var (key, value) in values)
+            {
+                if (customize[key.ToString()] is not Newtonsoft.Json.Linq.JObject entry)
+                    continue;
+                entry["Value"] = key == CustomizeKey.Wetness
+                    ? new Newtonsoft.Json.Linq.JValue(value != 0)
+                    : new Newtonsoft.Json.Linq.JValue(value);
+            }
+            // Every customize key applies, so the look lands whole and the
+            // changed value is not the only one Glamourer reads.
+            foreach (var property in customize.Properties())
+                if (property.Value is Newtonsoft.Json.Linq.JObject entry && entry["Apply"] is not null)
+                    entry["Apply"] = true;
+            // A string crosses as base64 to Glamourer; a JObject is read as JSON.
+            int rc = _applyState.InvokeFunc(state, index, 0u, ApplyOnce | ApplyCustomization);
+            return GlamourerResult(rc, "setting the look");
+        });
+
     private static readonly (EquipSlot Slot, string Key)[] WardrobeSlotKeys =
     {
         (EquipSlot.MainHand, "MainHand"), (EquipSlot.OffHand, "OffHand"), (EquipSlot.Head, "Head"),
@@ -961,7 +1023,17 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            int ec = _applyState.InvokeFunc(stateJson, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            Newtonsoft.Json.Linq.JObject parsed;
+            try
+            {
+                parsed = Newtonsoft.Json.Linq.JObject.Parse(stateJson);
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                return IntegrationPortResult.Fail($"The state is not JSON: {ex.Message}");
+            }
+            // A string crosses as base64 to Glamourer; a JObject is read as JSON.
+            int ec = _applyState.InvokeFunc(parsed, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return GlamourerResult(ec, "applying the state");
         });
 

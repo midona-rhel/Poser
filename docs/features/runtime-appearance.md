@@ -31,10 +31,17 @@ owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
 before the captured state is restored, including the by-name path after a
 clone is gone; failure of either part keeps the operation owned.
 
-The Appearance tab has two views under one pill. Actor is what the actor
-is in the scene: model, opacity, tints, wet surface, collection, body
-profile, character file. Equipment is what it wears, through Glamourer's
-IPC only: a design to apply, save or revert; the outfit verbs; a card per
+The Appearance tab has three views under one pill. Actor is what the
+actor is in the scene: model, opacity, tints, wet surface, collection,
+design, body profile, character file. Appearance is how it looks, through
+Glamourer's state: race, clan and gender (each redraws, so each is a
+disruptive step), height and body sliders, the face, hair, tail and face
+paint off the character-making sheet's own tiles, the named options, the
+facial features as icon toggles, and the colours off the palettes the
+game's own UI shows (the human colour file). A single value is a step
+that folds while a slider drags; the whole customization is applied at
+once so Glamourer reads every value. Equipment is what it wears, through
+Glamourer's IPC only: a design to apply, save or revert; the outfit verbs; a card per
 slot with the item, its two dyes and the ids behind it; the facewear; the
 hat, visor and weapon switches; and, closed, the raw model ids. An item
 id is Glamourer's: a sheet row, zero for nothing, a sentinel under the

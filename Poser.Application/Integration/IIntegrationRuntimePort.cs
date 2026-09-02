@@ -153,6 +153,11 @@ public interface IIntegrationRuntimePort
     IntegrationValue<string> GetGlamourerStateJson(ActorId actor);
     /// <summary>The actor's wardrobe read out of that state.</summary>
     IntegrationValue<WardrobeState> GetWardrobeState(ActorId actor);
+    /// <summary>The actor's customization read out of that state.</summary>
+    IntegrationValue<CustomizeState> GetCustomizeState(ActorId actor);
+    /// <summary>Writes the given customize values and applies the whole
+    /// customization once; a race or gender among them redraws.</summary>
+    IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values);
     /// <summary>Applies a JSON state; what it carries with Apply set lands.</summary>
     IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
     /// <summary>Hands the actor back to what the game and automation say.</summary>
