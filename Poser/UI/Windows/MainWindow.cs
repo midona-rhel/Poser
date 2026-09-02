@@ -874,18 +874,24 @@ public class MainWindow : Window
             if (!paused.Success ||
                 paused.Value is not { IsValid: true } handle)
                 return;
-            if (handle.IsVfx)
-            {
-                handle.VfxPaused = !handle.VfxPaused;
-                row.Paused = handle.VfxPaused;
+            if (!handle.IsVfx)
                 return;
-            }
-            // Spawned scenery cannot be animated by the game; its seat
-            // is inert by construction.
-            if (handle.Spawned)
+            handle.VfxPaused = !handle.VfxPaused;
+            row.Paused = handle.VfxPaused;
+        };
+        // The scenery row's sun/moon seat: the same night state the
+        // properties page switches.
+        _vm.OnRowNight = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } nightId })
                 return;
-            handle.AnimationPaused = !handle.AnimationPaused;
-            row.Paused = handle.AnimationPaused;
+            var night = _bindings.Resolve(nightId);
+            if (!night.Success ||
+                night.Value is not { IsValid: true, IsVfx: false } handle)
+                return;
+            handle.NightState = !handle.NightState;
+            row.Night = handle.NightState;
         };
         _vm.OnLightVisibility = row =>
         {
@@ -1941,9 +1947,6 @@ public class MainWindow : Window
                 && groupIds.TryGetValue(entry.Key, out var childId)
                 && groupIds.TryGetValue(parentKey, out var parentId))
                 _groups.Nest(childId, parentId);
-        foreach (var entry in pending.Groups)
-            if (groupIds.TryGetValue(entry.Key, out var lockedId))
-                _groups.SetLocked(lockedId, entry.Locked);
         if (pending.RootOrder is { } orderRefs)
         {
             var slots =
@@ -2609,11 +2612,13 @@ public class MainWindow : Window
             Tag = SelectionId.ForWorldObject(worldObject.Id),
             LightActions = true,
             LightOn = worldObject.Visible,
-            PauseAction = true,
-            Paused = isVfx
-                ? worldObject.VfxPaused
-                : worldObject.AnimPaused,
-            PauseDisabled = !isVfx && worldObject.Spawned,
+            // Effects play and pause; scenery switches day and night
+            // (its animation pause, borrowed scenery only, lives on the
+            // properties page).
+            PauseAction = isVfx,
+            Paused = worldObject.VfxPaused,
+            NightAction = !isVfx,
+            Night = worldObject.Night,
         };
     }
 
@@ -4113,8 +4118,7 @@ public class MainWindow : Window
             {
                 if (matched is { } named)
                     form.TextInput("Name", named.Name,
-                        value => _groups.Rename(named.Id, value),
-                        help: "Rename the group");
+                        value => _groups.Rename(named.Id, value));
                 for (int i = 0; i < 5; i++)
                     if (_multiCounts[i] > 0)
                         form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
@@ -4126,11 +4130,9 @@ public class MainWindow : Window
                             () => OpenEntityRename(
                                 "Save group to library", group.Name,
                                 name => _scenePane.SaveGroupEntry(
-                                    group.Members, name)),
-                            help: "Save the group as a library entry");
+                                    group.Members, name)));
                         actions.Button("Ungroup",
-                            () => DissolveGroup(group.Id),
-                            help: "Dissolve the group; nothing is destroyed");
+                            () => DissolveGroup(group.Id));
                     }
                     else
                     {
@@ -4139,13 +4141,10 @@ public class MainWindow : Window
                                 "Name the group",
                                 $"Group {_groups.All.Count + 1}",
                                 name => _groups.Create(
-                                    name, _selection.Selected)),
-                            help: "Make a named group of the selection");
+                                    name, _selection.Selected)));
                     }
-                    actions.Button("Move to camera", MoveSelectionToCamera,
-                        help: "Place the selection in front of the camera");
-                    actions.Button("Deselect", () => _selection.Clear(),
-                        help: "Drop the whole selection");
+                    actions.Button("Move to camera", MoveSelectionToCamera);
+                    actions.Button("Deselect", () => _selection.Clear());
                 });
             }, divider: false);
         });
@@ -5747,23 +5746,25 @@ public class MainWindow : Window
             return;
         }
         bool locked = group.Locked;
+        // The gates read as the group's own state: closed shows the verb
+        // that opens it. A closed gate anywhere above still wins.
         var items = new[]
         {
-            new ContextMenuItem("Rename", TablerIcon.Edit,
-                disabled: locked),
-            new ContextMenuItem("Save to library", TablerIcon.Library,
-                help: "Saves the group and its members as a library entry"),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Save to library", TablerIcon.Library),
             new ContextMenuItem(locked ? "Unlock" : "Lock",
-                locked ? TablerIcon.LockOpen : TablerIcon.Lock,
-                help: locked ? null : "Nothing in a locked group moves"),
-            new ContextMenuItem("Ungroup", TablerIcon.X,
-                disabled: locked,
-                help: "Dissolve the group; nothing is destroyed"),
+                locked ? TablerIcon.LockOpen : TablerIcon.Lock),
             ContextMenuItem.Separator,
-            new ContextMenuItem("Destroy", TablerIcon.Trash,
-                danger: true, disabled: locked,
-                help: "Destroy the group AND everything in it; borrowed "
-                    + "things are released instead"),
+            new ContextMenuItem(group.Hidden ? "Show" : "Hide",
+                group.Hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem(group.Paused ? "Play" : "Pause",
+                group.Paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause),
+            new ContextMenuItem(group.Night ? "Day" : "Night",
+                group.Night ? TablerIcon.Sun : TablerIcon.Moon),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Ungroup", TablerIcon.X),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
         };
         var actions = new Action?[]
         {
@@ -5774,6 +5775,11 @@ public class MainWindow : Window
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(group.Members, name)),
             () => _groups.SetLocked(groupId, !group.Locked),
+            null, // separator
+            () => SetGroupHidden(group, !group.Hidden),
+            () => SetGroupPaused(group, !group.Paused),
+            () => SetGroupNight(group, !group.Night),
+            null, // separator
             () => DissolveGroup(groupId),
             null, // separator
             // The members go through each kind's own lifetime seam; the
@@ -5806,21 +5812,24 @@ public class MainWindow : Window
             return;
         }
 
-        // Hide/Show and Pause/Resume drive the set to ONE state: any
-        // visible member means Hide, any running actor means Pause.
-        bool anyVisible = false, anyActor = false, anyRunning = false;
+        // Hide/Show and Pause/Play drive the set to ONE state: any
+        // visible member means Hide, anything running means Pause. The
+        // pause verb exists only when something in the set animates.
+        bool anyVisible = false, anyAnimated = false, anyRunning = false;
         foreach (var id in _selection.Selected)
         {
+            if (PlayingOf(id) is { } playing)
+            {
+                anyAnimated = true;
+                anyRunning |= playing;
+            }
             switch (id)
             {
                 case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    anyActor = true;
                     if (_bindings.Resolve(actorId) is
                             { Success: true, Value: { } actor }
                         && _spawnService.IsVisible(actor))
                         anyVisible = true;
-                    if (!_animation.IsPaused(actorId))
-                        anyRunning = true;
                     break;
                 case { Kind: SceneEntityKind.Light, Light: { } lightId }:
                     if (_bindings.Resolve(lightId) is
@@ -5849,42 +5858,38 @@ public class MainWindow : Window
         var matched = _groups.ActiveSelection(_selection.Selected);
         var items = new List<ContextMenuItem>
         {
-            new("Duplicate", TablerIcon.Copy,
-                help: "Clone every selected thing that can be cloned"),
+            new("Duplicate", TablerIcon.Copy),
             new(anyVisible ? "Hide" : "Show",
                 anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new(anyRunning ? "Pause animation" : "Resume animation",
-                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
-                disabled: !anyActor,
-                help: anyActor ? null : "No actors in the selection"),
-            new("Move to camera", TablerIcon.Crosshair),
-            ContextMenuItem.Separator,
         };
         var actions = new List<Action?>
         {
             DuplicateSelection,
             () => SetSelectionVisible(!anyVisible),
-            () => SetSelectionPaused(anyRunning),
-            MoveSelectionToCamera,
-            null, // separator
         };
+        if (anyAnimated)
+        {
+            items.Add(new ContextMenuItem(anyRunning ? "Pause" : "Play",
+                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay));
+            actions.Add(() => SetSelectionPaused(anyRunning));
+        }
+        items.Add(new ContextMenuItem("Move to camera", TablerIcon.Crosshair));
+        actions.Add(MoveSelectionToCamera);
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
         if (matched != null)
         {
             items.Add(new ContextMenuItem(
-                "Save to library", TablerIcon.Library,
-                help: "Saves the group and its members as a library entry"));
+                "Save to library", TablerIcon.Library));
             actions.Add(() => OpenEntityRename(
                 "Save group to library", matched.Name,
                 name => _scenePane.SaveGroupEntry(matched.Members, name)));
-            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
-                disabled: matched.Locked,
-                help: "Dissolve the group; nothing is destroyed"));
+            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
             actions.Add(() => DissolveGroup(matched.Id));
         }
         else
         {
-            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder,
-                help: "Make a named group of the selection"));
+            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder));
             actions.Add(() => OpenEntityRename(
                 "Name the group",
                 $"Group {_groups.All.Count + 1}",
@@ -5895,10 +5900,7 @@ public class MainWindow : Window
         items.Add(ContextMenuItem.Separator);
         actions.Add(null);
         items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
-            danger: true,
-            disabled: matched is { Locked: true },
-            help: "Destroy what the scene owns; borrowed things are "
-                + "released instead"));
+            danger: true));
         actions.Add(DestroySelection);
         if (_selectionCtxOpenRequested)
         {
@@ -5953,21 +5955,19 @@ public class MainWindow : Window
         }
     }
 
-    /// <summary>One visibility for the whole selection — actors' draw,
-    /// objects' and overlays' eyes, lights' on-state. Cameras have no
-    /// visibility and skip.</summary>
-    // ── group gates: closed hides or pauses everything beneath and
-    // remembers each member's own flag; open gives it back — unless a gate
-    // further up is still closed ─────────────────────────────────────────
+    // ── group gates: closed hides, pauses or benights everything beneath
+    // and remembers each member's own state; open gives it back — unless
+    // a gate further up is still closed ──────────────────────────────────
 
-    /// <summary>Ungrouping opens both gates first so every member gets its
-    /// own flags back.</summary>
+    /// <summary>Ungrouping opens every gate first so each member gets its
+    /// own state back.</summary>
     private void DissolveGroup(Guid id)
     {
         if (_groups.Find(id) is { } group)
         {
             SetGroupHidden(group, false);
             SetGroupPaused(group, false);
+            SetGroupNight(group, false);
         }
         _groups.Dissolve(id);
     }
@@ -5984,29 +5984,47 @@ public class MainWindow : Window
         return false;
     }
 
+    /// <summary>One gate's mechanics, shared by the three: closing reads
+    /// and remembers each member's own state and imposes the gate's;
+    /// opening gives the remembered state back to every member no other
+    /// closed gate still covers.</summary>
+    private void SetGate(
+        global::Poser.Application.Scene.SceneGroup group,
+        bool close,
+        Dictionary<SelectionId, bool> remembered,
+        Func<global::Poser.Application.Scene.SceneGroup, bool> closedOn,
+        Func<SelectionId, bool?> read,
+        Action<SelectionId, bool> write,
+        bool imposed)
+    {
+        if (close)
+        {
+            foreach (var member in _groups.Descendants(group))
+            {
+                if (read(member) is not { } own)
+                    continue;
+                if (!remembered.ContainsKey(member))
+                    remembered[member] = own;
+                write(member, imposed);
+            }
+        }
+        else
+        {
+            foreach (var (member, own) in remembered)
+                if (!UnderClosedGate(member, closedOn))
+                    write(member, own);
+            remembered.Clear();
+        }
+        _groups.Touch();
+    }
+
     private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden)
     {
         if (group.Hidden == hidden)
             return;
         group.Hidden = hidden;
-        if (hidden)
-        {
-            foreach (var member in _groups.Descendants(group))
-            {
-                if (!group.RememberedVisible.ContainsKey(member)
-                    && IsEntityVisible(member) is { } own)
-                    group.RememberedVisible[member] = own;
-                SetEntityVisible(member, false);
-            }
-        }
-        else
-        {
-            foreach (var (member, own) in group.RememberedVisible)
-                if (!UnderClosedGate(member, g => g.Hidden))
-                    SetEntityVisible(member, own);
-            group.RememberedVisible.Clear();
-        }
-        _groups.Touch();
+        SetGate(group, hidden, group.RememberedVisible, g => g.Hidden,
+            IsEntityVisible, SetEntityVisible, imposed: false);
     }
 
     private void SetGroupPaused(global::Poser.Application.Scene.SceneGroup group, bool paused)
@@ -6014,65 +6032,56 @@ public class MainWindow : Window
         if (group.Paused == paused)
             return;
         group.Paused = paused;
-        if (paused)
-        {
-            foreach (var member in _groups.Descendants(group))
-            {
-                if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                    continue;
-                if (!group.RememberedPlaying.ContainsKey(member))
-                    group.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
-                _animation.Pause(actorId);
-            }
-        }
-        else
-        {
-            foreach (var (member, own) in group.RememberedPlaying)
-            {
-                if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                    continue;
-                if (UnderClosedGate(member, g => g.Paused))
-                    continue;
-                if (own)
-                    _animation.Resume(actorId);
-                else
-                    _animation.Pause(actorId);
-            }
-            group.RememberedPlaying.Clear();
-        }
-        _groups.Touch();
+        SetGate(group, paused, group.RememberedPlaying, g => g.Paused,
+            PlayingOf, SetPlaying, imposed: false);
     }
 
-    /// <summary>A member joining under a closed gate is hidden or paused
-    /// by the outermost closed group, which remembers its own flag.</summary>
+    private void SetGroupNight(global::Poser.Application.Scene.SceneGroup group, bool night)
+    {
+        if (group.Night == night)
+            return;
+        group.Night = night;
+        SetGate(group, night, group.RememberedNight, g => g.Night,
+            NightOf, SetNight, imposed: true);
+    }
+
+    /// <summary>A member joining under closed gates takes each gate's
+    /// state from the outermost closed group, which remembers its own.</summary>
     private void JoinGroupOverrides(SelectionId member)
     {
         if (_groups.GroupOf(member) is not { } home)
             return;
         var chain = new List<global::Poser.Application.Scene.SceneGroup> { home };
         chain.AddRange(_groups.Ancestors(home));
-        global::Poser.Application.Scene.SceneGroup? hiding = null, pausing = null;
+        global::Poser.Application.Scene.SceneGroup? hiding = null, pausing = null, benighting = null;
         foreach (var group in chain)
         {
             if (group.Hidden)
                 hiding = group;
             if (group.Paused)
                 pausing = group;
+            if (group.Night)
+                benighting = group;
         }
         if (hiding != null && IsEntityVisible(member) is { } visible)
         {
             hiding.RememberedVisible[member] = visible;
             SetEntityVisible(member, false);
         }
-        if (pausing != null && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        if (pausing != null && PlayingOf(member) is { } playing)
         {
-            pausing.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
-            _animation.Pause(actorId);
+            pausing.RememberedPlaying[member] = playing;
+            SetPlaying(member, false);
+        }
+        if (benighting != null && NightOf(member) is { } night)
+        {
+            benighting.RememberedNight[member] = night;
+            SetNight(member, true);
         }
     }
 
-    /// <summary>A member leaving its group gets its own flags back from
-    /// whichever group remembered them.</summary>
+    /// <summary>A member leaving its group gets its own state back from
+    /// whichever group remembered it.</summary>
     private void LeaveGroupOverrides(SelectionId member)
     {
         if (_groups.GroupOf(member) is not { } own)
@@ -6083,15 +6092,70 @@ public class MainWindow : Window
         {
             if (group.RememberedVisible.Remove(member, out var visible))
                 SetEntityVisible(member, visible);
-            if (group.RememberedPlaying.Remove(member, out var playing)
-                && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-            {
+            if (group.RememberedPlaying.Remove(member, out var playing))
+                SetPlaying(member, playing);
+            if (group.RememberedNight.Remove(member, out var night))
+                SetNight(member, night);
+        }
+    }
+
+    /// <summary>Whether this entity is playing its animation: an actor's
+    /// timeline, an effect's playback, borrowed scenery's animation. Null
+    /// for kinds that do not animate, spawned scenery included.</summary>
+    private bool? PlayingOf(SelectionId id)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _animation.AnyPlaying(actorId);
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                if (_bindings.Resolve(objectId) is not
+                        { Success: true, Value: { IsValid: true } handle })
+                    return null;
+                if (handle.IsVfx)
+                    return !handle.VfxPaused;
+                return handle.Spawned ? null : !handle.AnimationPaused;
+            default:
+                return null;
+        }
+    }
+
+    private void SetPlaying(SelectionId id, bool playing)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
                 if (playing)
                     _animation.Resume(actorId);
                 else
                     _animation.Pause(actorId);
-            }
+                break;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                if (_bindings.Resolve(objectId) is not
+                        { Success: true, Value: { IsValid: true } handle })
+                    return;
+                if (handle.IsVfx)
+                    handle.VfxPaused = !playing;
+                else if (!handle.Spawned)
+                    handle.AnimationPaused = !playing;
+                break;
         }
+    }
+
+    /// <summary>Scenery's night state; null for everything else.</summary>
+    private bool? NightOf(SelectionId id) =>
+        id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
+        && _bindings.Resolve(objectId) is
+            { Success: true, Value: { IsValid: true, IsVfx: false } handle }
+            ? handle.NightState
+            : null;
+
+    private void SetNight(SelectionId id, bool night)
+    {
+        if (id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
+            && _bindings.Resolve(objectId) is
+                { Success: true, Value: { IsValid: true, IsVfx: false } handle })
+            handle.NightState = night;
     }
 
     private bool? IsEntityVisible(SelectionId id)
@@ -6185,14 +6249,7 @@ public class MainWindow : Window
     private void SetSelectionPaused(bool paused)
     {
         foreach (var id in _selection.Selected)
-        {
-            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                continue;
-            if (paused)
-                _animation.Pause(actorId);
-            else
-                _animation.Resume(actorId);
-        }
+            SetPlaying(id, !paused);
     }
 
     /// <summary>Destroys the whole selection, each kind through its own

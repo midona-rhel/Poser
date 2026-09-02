@@ -610,7 +610,6 @@ public class SceneGroupEntry
 {
     public Guid Key { get; set; }
     public string Name { get; set; } = string.Empty;
-    public bool Locked { get; set; }
     public List<SceneStructureRef> Members { get; set; } = new();
 
     /// <summary>The group this one nests in, by key; null at the root.</summary>

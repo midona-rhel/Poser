@@ -1577,7 +1577,6 @@ public sealed class SceneWorkflow : IDisposable
                 {
                     Key = group.Id,
                     Name = group.Name,
-                    Locked = group.Locked,
                     Parent = group.ParentId,
                 };
                 foreach (var member in group.Members)

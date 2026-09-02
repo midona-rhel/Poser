@@ -34,6 +34,11 @@ public sealed class SceneGroup
     public bool Paused { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedPlaying = new();
 
+    /// <summary>The night gate, scenery only: closed puts everything
+    /// beneath in its night dressing, open gives each its own back.</summary>
+    public bool Night { get; set; }
+    public readonly Dictionary<SelectionId, bool> RememberedNight = new();
+
     public int ItemCount => Members.Count + Children.Count;
 }
 
@@ -92,10 +97,7 @@ public sealed class SceneGroups
         var kept = new List<SelectionId>();
         foreach (var member in members)
             if (Selection.EntitySelection.IsEntity(member.Kind)
-                && !kept.Contains(member)
-                // A locked group keeps its members: a new group cannot
-                // steal them.
-                && !IsLockedMember(member))
+                && !kept.Contains(member))
                 kept.Add(member);
         if (kept.Count < 2)
             return null;
@@ -207,10 +209,6 @@ public sealed class SceneGroups
 
     public void RemoveMember(SelectionId member)
     {
-        // A locked group keeps its members; the scene's own prune is the
-        // one force that overrides (a despawned member is simply gone).
-        if (IsLockedMember(member))
-            return;
         if (RemoveMemberCore(member, reseat: true))
             Revision++;
     }
@@ -218,9 +216,7 @@ public sealed class SceneGroups
     public void AddMember(Guid groupId, SelectionId member, int index = -1)
     {
         if (!Selection.EntitySelection.IsEntity(member.Kind)
-            || Find(groupId) is not { Locked: false } group
-            || IsLocked(group)
-            || IsLockedMember(member))
+            || Find(groupId) is not { } group)
             return;
         int existing = group.Members.IndexOf(member);
         if (existing >= 0)
@@ -257,11 +253,6 @@ public sealed class SceneGroups
         if (Find(childId) is not { } child || Find(parentId) is not { } parent)
         {
             reason = "That group is gone.";
-            return false;
-        }
-        if (IsLocked(parent) || IsLocked(child))
-        {
-            reason = "A locked group keeps its shape.";
             return false;
         }
         foreach (var ancestor in Ancestors(parent))
@@ -310,7 +301,7 @@ public sealed class SceneGroups
     /// <paramref name="anchor"/> (or at the end).</summary>
     public void Unnest(Guid groupId, RootSlot? anchor = null, bool after = true)
     {
-        if (Find(groupId) is not { ParentId: not null } group || IsLocked(group))
+        if (Find(groupId) is not { ParentId: not null } group)
             return;
         Detach(group);
         var slot = RootSlot.ForGroup(groupId);
@@ -503,7 +494,9 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Locked itself or under a locked group.</summary>
+    /// <summary>Locked itself or under a locked group. A lock means one
+    /// thing: nothing beneath transforms in the scene. Sidebar moves,
+    /// nesting, renaming and dissolving ignore it.</summary>
     public bool IsLocked(SceneGroup group)
     {
         if (group.Locked)

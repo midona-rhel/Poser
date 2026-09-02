@@ -86,7 +86,9 @@ public sealed class ShellSidebarRow
     /// the game, so its seat is inert and slashed.</summary>
     public bool PauseAction;
     public bool Paused;
-    public bool PauseDisabled;
+    /// <summary>Scenery rows: the sun/moon seat over the object's night state.</summary>
+    public bool NightAction;
+    public bool Night;
     /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;
@@ -331,6 +333,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
     public Action<ShellSidebarRow>? OnRowPause;
+    public Action<ShellSidebarRow>? OnRowNight;
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
