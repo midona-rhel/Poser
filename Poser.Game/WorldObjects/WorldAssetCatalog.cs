@@ -1,3 +1,4 @@
+using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -5,14 +6,6 @@ using System.IO.Compression;
 using System.Reflection;
 
 namespace Poser.Game.WorldObjects;
-
-/// <summary>
-/// One spawnable game asset: the path the spawn takes, the LABEL a person
-/// searches by — Brio's derived naming, "Type [stem]" — and the context
-/// line (expansion · subtype) the picker badges.
-/// </summary>
-public sealed record WorldAsset(
-    string Name, string Path, string Label, string Context);
 
 /// <summary>
 /// Every spawnable world asset the game data holds, by path list: the BG

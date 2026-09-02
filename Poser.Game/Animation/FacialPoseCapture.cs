@@ -1,9 +1,10 @@
+using Poser.Domain.Transforms;
 using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Animation;

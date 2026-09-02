@@ -34,12 +34,12 @@ public sealed class WorldObjectsPane
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
-    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+    private readonly Crystarium.SearchPicker<WorldAsset>
         _assetPicker = new("world-object-asset");
 
     /// <summary>The combined picker list — models and effects both, told
     /// apart by their glyphs — minted on first browse.</summary>
-    private List<Game.WorldObjects.WorldAsset>? _assetChoices;
+    private List<WorldAsset>? _assetChoices;
 
     /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
     /// that files one in the same history the transforms use — the seam whose
@@ -128,7 +128,7 @@ public sealed class WorldObjectsPane
     {
         if (_assetChoices == null)
         {
-            _assetChoices = new List<Game.WorldObjects.WorldAsset>(
+            _assetChoices = new List<WorldAsset>(
                 _assets.Models.Count + _assets.Effects.Count);
             _assetChoices.AddRange(_assets.Models);
             _assetChoices.AddRange(_assets.Effects);
@@ -142,7 +142,7 @@ public sealed class WorldObjectsPane
             loadError: _assetChoices.Count == 0
                 ? "The path catalog could not be read."
                 : null,
-            options: new PickerOptions<Game.WorldObjects.WorldAsset>
+            options: new PickerOptions<WorldAsset>
             {
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)

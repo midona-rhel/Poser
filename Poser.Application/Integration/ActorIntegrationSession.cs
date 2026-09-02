@@ -1,5 +1,5 @@
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Scene;

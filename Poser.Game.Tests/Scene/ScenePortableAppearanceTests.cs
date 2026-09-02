@@ -1,4 +1,5 @@
-﻿using Poser.Files;
+﻿using Poser.Scene;
+using Poser.Files;
 using Poser.Game.Scene;
 
 namespace Poser.Game.Tests.Scene;

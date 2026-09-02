@@ -1,3 +1,4 @@
+using Poser.Domain.Actors;
 using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Core;

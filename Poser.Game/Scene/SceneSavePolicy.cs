@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using Poser.Scene;
+using System.Collections.Generic;
 using Poser.Files;
 
 namespace Poser.Game.Scene;

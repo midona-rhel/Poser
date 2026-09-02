@@ -1,3 +1,4 @@
+using Poser.Domain.Operations;
 using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Win32.SafeHandles;
@@ -44,8 +45,8 @@ private const int ChunkSizeForTest = 81920;
     private sealed class ActiveSessionSource
         : Poser.Application.Lifecycle.ISessionGenerationSource
     {
-        public Poser.Application.Operations.SessionGeneration? ActiveSessionGeneration { get; } =
-            Poser.Application.Operations.SessionGeneration.New();
+        public Poser.Domain.Operations.SessionGeneration? ActiveSessionGeneration { get; } =
+            Poser.Domain.Operations.SessionGeneration.New();
     }
 
     private class ExportRuntimeProxy : DispatchProxy

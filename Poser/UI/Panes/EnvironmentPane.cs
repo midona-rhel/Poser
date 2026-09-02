@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Poser.Scene;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;

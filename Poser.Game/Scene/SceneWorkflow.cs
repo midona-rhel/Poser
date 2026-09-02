@@ -1,9 +1,10 @@
-﻿using System;
+﻿using Poser.Scene;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Files;
 
@@ -1485,18 +1486,7 @@ public sealed class SceneWorkflow : IDisposable
 
     // ── sidebar structure: save-side write, load-side staging ───────────
 
-    /// <summary>A completed load's structure — the document's groups and
-    /// root order plus the file-key → runtime-token map — waiting for the
-    /// sidebar. The spawned entities bind on the next snapshot publish;
-    /// the sidebar resolves the tokens then and clears this.</summary>
-    public sealed class PendingStructure
-    {
-        public required IReadOnlyList<SceneGroupEntry> Groups { get; init; }
-        public required IReadOnlyList<SceneStructureRef>? RootOrder { get; init; }
-        public required IReadOnlyDictionary<Guid, object> Tokens { get; init; }
-    }
-
-    public PendingStructure? PendingSceneStructure { get; private set; }
+    public ScenePendingStructure? PendingSceneStructure { get; private set; }
 
     public void ClearPendingStructure() => PendingSceneStructure = null;
 
@@ -1510,7 +1500,7 @@ public sealed class SceneWorkflow : IDisposable
         foreach (var map in tokenMaps)
             foreach (var pair in map)
                 tokens.TryAdd(pair.Key, pair.Value);
-        PendingSceneStructure = new PendingStructure
+        PendingSceneStructure = new ScenePendingStructure
         {
             Groups = scene.Groups
                 ?? (IReadOnlyList<SceneGroupEntry>)Array.Empty<SceneGroupEntry>(),

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Poser.Scene;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -808,7 +809,7 @@ public sealed class SpawnBrowserWindow : Window
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
-    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+    private readonly Crystarium.SearchPicker<WorldAsset>
         _assetPicker = new("spawn-world-asset");
 
     /// <summary>Every SAVED library entry the row list carries after the
@@ -838,7 +839,7 @@ public sealed class SpawnBrowserWindow : Window
                 // centre-relative position re-attaches inside the load.
                 var overlayLoad = _scenes.BeginLoad(
                     saved.Path,
-                    new Game.Scene.SceneLoadOptions
+                    new SceneLoadOptions
                     {
                         IncludeActors = false,
                         IncludeProps = false,
@@ -855,11 +856,11 @@ public sealed class SpawnBrowserWindow : Window
         // The configured default rules here — the portal has no
         // placement dropdown of its own.
         var mode = _configuration.Config.DefaultSpawnPlacement;
-        var options = new Game.Scene.SceneLoadOptions();
+        var options = new SceneLoadOptions();
         if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
             && _anchors.TryCurrentFor(
                 mode, out var anchorPosition, out var anchorYaw, out _))
-            options = new Game.Scene.SceneLoadOptions
+            options = new SceneLoadOptions
             {
                 Placement = mode,
                 PlacementPosition = anchorPosition,

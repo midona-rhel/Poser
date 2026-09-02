@@ -1,3 +1,4 @@
+using Poser.Domain.Posing;
 using System.Diagnostics;
 using System.Numerics;
 using System.Text;

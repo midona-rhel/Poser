@@ -1,3 +1,4 @@
+using Poser.Services;
 using System;
 using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;

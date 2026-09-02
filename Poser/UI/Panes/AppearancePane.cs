@@ -7,7 +7,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;

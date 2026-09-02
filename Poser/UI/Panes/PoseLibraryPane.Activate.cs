@@ -1,3 +1,5 @@
+using Poser.Scene;
+using Poser.Domain.Posing;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -9,7 +11,7 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Config;

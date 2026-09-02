@@ -1,11 +1,12 @@
-﻿using System;
+﻿using Poser.Scene;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Config;
 using Poser.Files;
 using Poser.Game.Scene;

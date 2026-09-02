@@ -9,7 +9,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;

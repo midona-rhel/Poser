@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Poser.Domain.Transforms;
+using System;
 using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Linq;
@@ -528,7 +529,7 @@ public class PoseInspectorPane
         global::Poser.Application.Selection.EntitySelection
             .IsMultiEntity(_selection.Selected);
 
-    private global::Poser.Application.Transforms.TransformGestureId? _groupGesture;
+    private TransformGestureId? _groupGesture;
     private readonly int[] _multiHeadCounts = new int[5];
     private string _multiHeadWho = string.Empty;
     private string _multiHeadSub = string.Empty;

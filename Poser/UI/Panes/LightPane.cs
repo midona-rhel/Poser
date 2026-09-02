@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Poser.Domain.Transforms;
+using System;
 using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
@@ -19,7 +20,7 @@ using DomainDelta = Poser.Domain.Transforms.TransformDelta;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
-using GestureId = Poser.Application.Transforms.TransformGestureId;
+using GestureId = Poser.Domain.Transforms.TransformGestureId;
 
 namespace Poser.UI;
 

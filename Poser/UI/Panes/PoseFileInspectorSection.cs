@@ -8,7 +8,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;

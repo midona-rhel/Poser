@@ -1,6 +1,7 @@
-﻿using System.Collections.Concurrent;
+﻿using Poser.Scene;
+using System.Collections.Concurrent;
 using System.Numerics;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Domain.Companions;
 using Poser.Files;
 using Poser.Game.Scene;
