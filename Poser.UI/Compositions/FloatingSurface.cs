@@ -101,7 +101,10 @@ public static partial class Crystarium
                 size,
                 scale);
             float padding = props.Padding * scale;
-            float radius = Crystarium.ActiveTheme.Radii.Surface * scale;
+            // A solid menu rounds like the control it opens from.
+            float radius = (props.Treatment == FloatingSurfaceTreatment.Solid
+                ? Crystarium.ActiveTheme.Radii.Control
+                : Crystarium.ActiveTheme.Radii.Surface) * scale;
 
             ImGui.SetNextWindowPos(position);
             ImGui.SetNextWindowSize(size);
@@ -150,7 +153,15 @@ public static partial class Crystarium
                                 // The menu IS the control, taller: it paints exactly what
                                 // the combo box paints — its fill, its border, its radius.
                                 var theme = Crystarium.ActiveTheme;
-                                BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
+                                var menuDraw = ImGui.GetWindowDrawList();
+                                // The box sits on the page surface; the menu carries that
+                                // surface with it, opaque, so nothing shows through.
+                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
+                                {
+                                    BackgroundColor = theme.Surface with { W = 1f },
+                                    BorderRadius = theme.Radii.Control,
+                                });
+                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
                                 {
                                     BackgroundColor = theme.Chrome.ControlHover,
                                     BorderWidth = 1f,
