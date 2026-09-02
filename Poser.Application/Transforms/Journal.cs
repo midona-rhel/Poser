@@ -107,10 +107,20 @@ public sealed class JournalContexts
         _snapshots = snapshots;
     }
 
+    /// <summary>
+    /// Whether steps carry keys and snapshots at all. Off, every scope is
+    /// empty: no key is read, no pose is captured, and every step undoes by
+    /// its delta — the same rule Brio applies. Disconnected 2026-09-02 on
+    /// Midona's call; the machinery stays for the day it is wanted.
+    /// </summary>
+    public bool StateKeys { get; set; }
+
     public StepScope BeginActorStep(IEnumerable<Guid> lineages)
     {
         var keys = new List<ActorStateKey>();
         var before = new List<ActorSnapshot>();
+        if (!StateKeys)
+            return new StepScope(this, keys, before);
         foreach (var lineage in lineages.Distinct())
         {
             if (lineage == Guid.Empty)

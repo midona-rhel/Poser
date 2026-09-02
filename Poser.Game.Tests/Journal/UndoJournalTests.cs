@@ -114,7 +114,12 @@ public sealed class UndoJournalTests
                 new FakeKeys(current),
                 new Lazy<IPoseSnapshotPort>(() => Snapshots),
                 _ => assetExists,
-                Notices.Add);
+                Notices.Add)
+            {
+                // The keys are disconnected by default; these tests are the
+                // record of what they do when they are on.
+                StateKeys = true,
+            };
         }
     }
 

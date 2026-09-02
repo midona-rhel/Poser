@@ -108,8 +108,15 @@ public sealed class UndoJournal
 
     private enum KeyState { Current, Moved, Gone }
 
+    /// <summary>Whether a step's keys are checked before its delta runs.
+    /// Off, every step is current and undoes by its delta; the redo asset
+    /// check stays. See <see cref="JournalContexts.StateKeys"/>.</summary>
+    public bool StateKeys { get; set; }
+
     private KeyState Validity(StepContext context)
     {
+        if (!StateKeys)
+            return KeyState.Current;
         var state = KeyState.Current;
         foreach (var key in context.Keys)
         {
