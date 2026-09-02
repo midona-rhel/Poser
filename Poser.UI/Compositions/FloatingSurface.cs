@@ -150,10 +150,18 @@ public static partial class Crystarium
                                     Crystarium.ActiveTheme.Radii.Surface);
                             else if (solid)
                             {
+                                // The combo box is the page surface under the subtle
+                                // overlay; its menu is painted the same way, opaque.
                                 var theme = Crystarium.ActiveTheme;
-                                BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
+                                var menuDraw = ImGui.GetWindowDrawList();
+                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
                                 {
-                                    BackgroundColor = theme.Chrome.ControlHover with { W = 1f },
+                                    BackgroundColor = theme.Surface with { W = 1f },
+                                    BorderRadius = theme.Radii.Surface,
+                                });
+                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
+                                {
+                                    BackgroundColor = theme.Chrome.ControlHover,
                                     BorderWidth = 1f,
                                     BorderRadius = theme.Radii.Surface,
                                     BorderTopColor = SolidMenuLine,
