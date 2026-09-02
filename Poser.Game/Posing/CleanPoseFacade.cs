@@ -1,6 +1,7 @@
 ﻿using Dalamud.Plugin.Services;
 using Poser.Application.Operations;
 using Poser.Application.Posing;
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
@@ -42,8 +43,14 @@ public sealed class CleanPoseFacade
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IFramework framework,
+        TransformHistory history,
+        JournalContexts journal,
+        Lazy<IPoseSnapshotPort> snapshots,
         IPluginLog log)
     {
+        _history = history;
+        _journal = journal;
+        _snapshots = snapshots;
         _framework = framework;
         _bindings = bindings;
         _edits = edits;
@@ -628,7 +635,36 @@ public sealed class CleanPoseFacade
     /// runs even when an earlier one fails. A partial failure is aggregated
     /// into one reported result and logged.
     /// </summary>
+    private readonly TransformHistory _history;
+    private readonly JournalContexts _journal;
+    private readonly Lazy<IPoseSnapshotPort> _snapshots;
+
+    /// <summary>Everything back to the game's own: ONE step. The inverse is
+    /// the actor's snapshot from before the reset; the entries the inner
+    /// resets append are folded into it.</summary>
     public PoseEditResult ResetAll(IActor actor)
+    {
+        var lineage = _bindings.GetActorId(actor)?.LogicalId;
+        var scope = lineage is { } l ? _journal.BeginActorStep([l]) : null;
+        var top = _history.PeekUndo();
+        var result = ResetAllCore(actor);
+        while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
+            _history.Drop(inner);
+        if (scope is null)
+            return result;
+        var context = scope.Complete();
+        var before = context.Before.FirstOrDefault();
+        _history.Append(new JournalStep(
+            "Reset all",
+            () => before is not null && _snapshots.Value.Restore(before, _ => { }),
+            () => ResetAllCore(actor).Success)
+        {
+            Context = context,
+        });
+        return result;
+    }
+
+    private PoseEditResult ResetAllCore(IActor actor)
     {
         var failures = new List<string>();
 

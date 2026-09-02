@@ -38,6 +38,7 @@ public class PoseInspectorPane
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
+    private readonly Game.Journal.GazeSession _gazeValues;
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
@@ -176,6 +177,7 @@ public class PoseInspectorPane
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
+        Game.Journal.GazeSession gazeValues,
         IEditorState editorState,
         SceneSession scene,
         IEntityBindings bindings,
@@ -209,6 +211,7 @@ public class PoseInspectorPane
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
+        _gazeValues = gazeValues;
         _editorState = editorState;
         _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
@@ -1701,7 +1704,7 @@ public class PoseInspectorPane
             else
             {
                 _gazeActorUnavailableNote = false;
-                Record(_gazeService.SetGazeMode(actor, selected switch
+                Record(_gazeValues.SetMode(actor, selected switch
                 {
                     0 => GazeTargetMode.None,
                     1 => GazeTargetMode.Forward,
@@ -1755,7 +1758,7 @@ public class PoseInspectorPane
                 && _bindings.Resolve(others[next].Id) is
                     { Success: true, Value: { } live })
             {
-                Record(_gazeService.SetGazeTarget(actor, live));
+                Record(_gazeValues.SetTarget(actor, live));
                 state = _gazeService.GetGazeState(actor);
             }
         }
@@ -1837,7 +1840,7 @@ public class PoseInspectorPane
 
         void SetPart(GazeTargetType part, bool next)
         {
-            record(_gazeService.SetGazeParts(
+            record(_gazeValues.SetParts(
                 actor,
                 next
                     ? state.TargetType | part
@@ -1854,7 +1857,7 @@ public class PoseInspectorPane
             bool locked = _gazeService.IsPartLocked(actor, part);
             actions.IconButton(
                 locked ? TablerIcon.Lock : TablerIcon.LockOpen,
-                () => _gazeService.SetPartLock(actor, part, !locked),
+                () => _gazeValues.SetPartLock(actor, part, !locked),
                 disabled: !enabled,
                 help: locked
                     ? "Unfreeze this part so it follows the gaze target again"
@@ -1872,7 +1875,7 @@ public class PoseInspectorPane
                 TablerIcon.CameraSnap,
                 () =>
                 {
-                    _gazeService.SnapPartToCamera(actor, part);
+                    _gazeValues.SnapPartToCamera(actor, part);
                     state = _gazeService.GetGazeState(actor);
                 },
                 disabled: !enabled,
@@ -1925,10 +1928,10 @@ public class PoseInspectorPane
                 PartPoint(part),
                 next =>
                 {
-                    _gazeService.SetPartPosition(actor, part, next);
+                    _gazeValues.SetPartPosition(actor, part, next);
                     state = _gazeService.GetGazeState(actor);
                 },
-                null,
+                _gazeValues.Seal,
                 0.005f,
                 "0.000",
                 help: "The world point this part looks at",

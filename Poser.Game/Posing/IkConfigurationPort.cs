@@ -21,16 +21,35 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
+    private readonly ValueJournal _journal;
+
     public IkConfigurationPort(
         StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         TransformGestureService gestures,
+        ValueJournal journal,
         IPluginLog log)
     {
         _bindings = bindings;
         _bonePosing = bonePosing;
         _gestures = gestures;
+        _journal = journal;
         _log = log;
+    }
+
+    /// <summary>The set as a journal step: the previous configuration is
+    /// the inverse. Only a landed set is journaled.</summary>
+    public IkPortResult Set(TransformTargetId target, IkChainConfig config)
+    {
+        var before = Get(target);
+        var result = Write(target, config);
+        if (!result.Success || before is null || before == config)
+            return result;
+        _journal.Record(
+            config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
+            before, config, next => Write(target, next),
+            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+        return result;
     }
 
     /// <summary>Eligibility is the runtime's own answer rather than a name
@@ -71,7 +90,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             : null;
     }
 
-    public IkPortResult Set(TransformTargetId target, IkChainConfig config)
+    private IkPortResult Write(TransformTargetId target, IkChainConfig config)
     {
         if (_gestures.ActiveGesture != null)
         {
@@ -96,6 +115,21 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     }
 
     public IkPortResult SetBoneTarget(
+        TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
+    {
+        var before = BoneTarget(target);
+        var result = WriteBoneTarget(target, bone);
+        // Without a previous anchor there is no inverse to record: the
+        // chain's target mode step (an IK set) carries the way back.
+        if (!result.Success || before is not { } previous || previous == bone)
+            return result;
+        _journal.Record("Set IK bone target", previous, bone,
+            next => WriteBoneTarget(target, next),
+            () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
+        return result;
+    }
+
+    private IkPortResult WriteBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
     {
         if (target.Bone is not { } endpointId)

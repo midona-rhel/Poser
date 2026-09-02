@@ -23,6 +23,7 @@ public sealed class AnimationPane : IDisposable
     private const long ExpressionRetryDelayMs = 500;
 
     private readonly AnimationSession _animation;
+    private readonly AnimationSteps _steps;
     private readonly AnimationCatalog _catalog;
 
     // The expression workspace may open before another catalog row.
@@ -131,6 +132,7 @@ public sealed class AnimationPane : IDisposable
 
     public AnimationPane(
         AnimationSession animation,
+        AnimationSteps steps,
         AnimationCatalog catalog,
         Game.Animation.AnimationCatalogLoader catalogLoader,
         Game.Animation.FacialPoseCapture facialCapture,
@@ -143,6 +145,7 @@ public sealed class AnimationPane : IDisposable
     {
         _notices = notices;
         _animation = animation;
+        _steps = steps;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
         _facialCapture = facialCapture;
@@ -385,7 +388,7 @@ public sealed class AnimationPane : IDisposable
                 actions.Button(
                     "Apply",
                     () => Report(
-                        _animation.PlaySelectedSlot(
+                        _steps.Play(
                             actor,
                             slot,
                             choice,
@@ -423,7 +426,7 @@ public sealed class AnimationPane : IDisposable
                     play ? "Play" : "Pause",
                     () => Report(
                         play
-                            ? _animation.PlaySelectedSlot(
+                            ? _steps.Play(
                                 actor,
                                 slot,
                                 choice,
@@ -473,8 +476,7 @@ public sealed class AnimationPane : IDisposable
                     "Loop",
                     _animation.LoopWantedFor(actor, slot),
                     next => Report(
-                        _animation.SetSlotLoop(
-                            actor, slot, 0, next),
+                        _steps.SetLoop(actor, slot, next),
                         $"{label} loop"),
                     disabled: !advanced);
                 ImGui.PopID();
@@ -515,7 +517,7 @@ public sealed class AnimationPane : IDisposable
         // Advanced releases every layer before Basic can issue Base commands.
         foreach (var slot in PrimaryLayers)
         {
-            var reset = _animation.ResetSlot(actor, slot);
+            var reset = _steps.ResetSlot(actor, slot);
             if (!reset.Success)
             {
                 Report(reset, "Basic animation");
@@ -543,7 +545,7 @@ public sealed class AnimationPane : IDisposable
                 "##anim-general-loop",
                 _animation.LoopWantedFor(actor, AnimationSlot.Base),
                 next => Report(
-                    _animation.SetSlotLoop(actor, AnimationSlot.Base, 0, next),
+                    _steps.SetLoop(actor, AnimationSlot.Base, next),
                     "Loop"),
                 disabled: advanced));
 
@@ -1120,7 +1122,7 @@ public sealed class AnimationPane : IDisposable
     {
         if (slot == AnimationSlot.Facial)
             CancelExpressionRetry(actor);
-        var reset = _animation.ResetSlot(actor, slot);
+        var reset = _steps.ResetSlot(actor, slot);
         if (reset.Success)
         {
             _layerSelections.Remove((actor, slot));
@@ -1146,14 +1148,14 @@ public sealed class AnimationPane : IDisposable
         }
         _generalSelections[actor] = command with { Applied = true };
         Report(
-            _animation.PlaySelectedSlot(
+            _steps.Play(
                 actor, entry.Slot, entry, _playEmoteStart),
             "Animation");
     }
 
     private void ResetGeneral(ActorId actor)
     {
-        var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
+        var reset = _steps.ResetSlot(actor, AnimationSlot.Base);
         if (!reset.Success)
         {
             Report(reset, "Animation reset");
@@ -1161,8 +1163,7 @@ public sealed class AnimationPane : IDisposable
         }
         if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
         {
-            var loop = _animation.SetSlotLoop(
-                actor, AnimationSlot.Base, 0, false);
+            var loop = _steps.SetLoop(actor, AnimationSlot.Base, false);
             if (!loop.Success)
             {
                 Report(loop, "Animation reset");

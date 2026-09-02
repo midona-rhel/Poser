@@ -53,6 +53,7 @@ public class GizmoOverlayWindow : Window
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
+    private readonly Game.Journal.GazeSession _gazeValues;
     // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
     // Resolves stable selections to live actors.
@@ -181,6 +182,7 @@ public class GizmoOverlayWindow : Window
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
+        Game.Journal.GazeSession gazeValues,
         IEntityBindings bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
@@ -205,6 +207,7 @@ public class GizmoOverlayWindow : Window
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
+        _gazeValues = gazeValues;
         _bindings = bindings;
         _virtualCameras = virtualCameras;
         _presentation = presentation;
@@ -360,8 +363,11 @@ public class GizmoOverlayWindow : Window
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
             UpdateGazeGesture(active, actor, io, mouse);
         else
-            // Release ends the drag.
+        {
+            // Release ends the drag, and the drag is one step.
             _gazeGesture = null;
+            _gazeValues.Seal();
+        }
     }
 
     /// <summary>Eight directions used for glyph underpaint.</summary>
@@ -511,9 +517,9 @@ public class GizmoOverlayWindow : Window
         gesture.Accum += step;
         var target = gesture.Start + gesture.Accum;
         if (gesture.Part == GazePart.Anchor)
-            _gazeService.SetGazePosition(actor, target);
+            _gazeValues.SetGazePosition(actor, target);
         else
-            _gazeService.SetPartPosition(actor, ToTargetType(gesture.Part), target);
+            _gazeValues.SetPartPosition(actor, ToTargetType(gesture.Part), target);
     }
 
     /// <summary>Returns whether another interface owns the pointer —

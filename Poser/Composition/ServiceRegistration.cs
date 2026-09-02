@@ -210,6 +210,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Game.Journal.EnvironmentSession>();
         services.AddSingleton<Game.Journal.ActorValueSession>();
+        services.AddSingleton<Game.Journal.ExpressionSession>();
+        services.AddSingleton<Game.Journal.GazeSession>();
+        services.AddSingleton<AnimationSteps>();
         services.AddSingleton(sp => new Game.Journal.EntitySessions(
             sp.GetRequiredService<Game.Journal.ActorValueSession>(),
             sp.GetRequiredService<Game.Journal.LightSession>(),
