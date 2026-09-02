@@ -47,6 +47,8 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
+    private readonly ITransformFacade _transforms;
+    private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -67,8 +69,12 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
-        global::Poser.Library.IPoseLibraryService library)
+        global::Poser.Library.IPoseLibraryService library,
+        ITransformFacade transforms,
+        global::Poser.Application.Viewport.IViewportReads viewport)
     {
+        _transforms = transforms;
+        _viewport = viewport;
         _ikBake = ikBake;
         _catalog = catalog;
         _worldObjects = worldObjects;
@@ -99,10 +105,18 @@ public sealed class DebugBridge : IDisposable
         }
     }
 
+    private int _disposed;
+
+    /// <summary>Idempotent, and the listener stops BEFORE the token cancels:
+    /// cancelling a token with an accept pending on it threw on unload,
+    /// which failed the unload and left the port held by a dead instance.</summary>
     public void Dispose()
     {
-        _stop.Cancel();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         try { _listener.Stop(); } catch { }
+        try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
+        try { _stop.Dispose(); } catch { }
     }
 
     private async Task AcceptLoop()
@@ -191,6 +205,8 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/history", "/undo", "/redo",
+                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
@@ -215,12 +231,32 @@ public sealed class DebugBridge : IDisposable
         }
     }
 
+    private object History() => new
+    {
+        canUndo = _transforms.CanUndo,
+        canRedo = _transforms.CanRedo,
+        undo = _transforms.UndoDescription,
+        redo = _transforms.RedoDescription,
+    };
+
     private string RouteOnFramework(string path, Dictionary<string, string> query)
     {
         switch (path)
         {
             case "/actors":
                 return Json(ListActors());
+            case "/history":
+                return Json(History());
+            case "/undo":
+            {
+                var result = _transforms.Undo();
+                return Json(new { ok = result.Success, result.Detail, history = History() });
+            }
+            case "/redo":
+            {
+                var result = _transforms.Redo();
+                return Json(new { ok = result.Success, result.Detail, history = History() });
+            }
         }
 
         if (!query.TryGetValue("actor", out var actorKey))
@@ -482,6 +518,31 @@ public sealed class DebugBridge : IDisposable
                             };
                             var error = _bonePosing.SetIkConfiguration(bone, next);
                             return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
+                        }
+                return Json(new { error = "no such bone" });
+            }
+            case "/setbone":
+            {
+                // A JOURNALED bone write: the same absolute write a typed
+                // inspector well issues, so the step lands in the history the
+                // way a drag does. /rotatebone below writes the runtime directly.
+                string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
+                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            if (_bindings.GetBoneId(bone) is not { } boneId)
+                                return Json(new { error = "bone has no stable id" });
+                            if (_viewport.GetBoneModelTransform(boneId) is not { } current)
+                                return Json(new { error = "bone has no model transform this frame" });
+                            var turned = System.Numerics.Quaternion.Normalize(
+                                current.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f));
+                            var desired = new global::Poser.Domain.Transforms.PoseTransform(current.Position, turned, current.Scale);
+                            var written = _transforms.SetAbsolute(
+                                global::Poser.Domain.Identity.TransformTargetId.ForBone(boneId), desired, $"Bridge {name}");
+                            return Json(new { ok = written.Success, written.Detail, modified = _bonePosing.HasModifications(bone), history = History() });
                         }
                 return Json(new { error = "no such bone" });
             }
