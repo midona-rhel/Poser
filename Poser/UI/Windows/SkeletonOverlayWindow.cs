@@ -165,6 +165,9 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance;
         public bool IsHovered;
         public bool IsEngaged;
+        /// <summary>A child group of the whole-group selection: only its
+        /// inner ring, like every other member of that group.</summary>
+        public bool Reduced;
     }
 
     private readonly HashSet<SelectionId> _selectedIds = new();
@@ -443,6 +446,8 @@ public class SkeletonOverlayWindow : Window
                 ScreenPos = viewportPos + groupScreen,
                 CameraDistance = Vector3.Distance(cameraPosition, centroid),
                 IsEngaged = _engagedGroups.Contains(group.Id),
+                Reduced = group.ParentId is { } parentGroup
+                    && parentGroup == wholeGroup,
             });
         }
 
@@ -829,6 +834,14 @@ public class SkeletonOverlayWindow : Window
             float dotRadius = dot.IsEngaged || dot.IsHovered
                 ? groupRadius + 2f
                 : groupRadius;
+            if (dot.Reduced)
+            {
+                drawList.AddCircleFilled(
+                    dot.ScreenPos, dotRadius * 0.45f, groupColor, 16);
+                drawList.AddCircle(dot.ScreenPos, dotRadius * 0.45f,
+                    OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
             drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 20);
             drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 20,
                 2f * ImGuiHelpers.GlobalScale);

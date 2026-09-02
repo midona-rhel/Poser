@@ -54,6 +54,7 @@ public class PoseRailPane
     /// survives selection changes exactly as the tool choice does — it is a
     /// statement about how the user is working, not about this bone.</summary>
     private int _lockedAxis = RotationGizmoRings.NoLock;
+    private Vector2 _joyAccumulated;
 
     private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
     private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
@@ -147,7 +148,7 @@ public class PoseRailPane
                     pmin,
                     pmax,
                     ImGui.ColorConvertFloat4ToU32(
-                        Crystarium.ActiveTheme.Chrome.AccentFill),
+                        ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.AccentFill)),
                     Crystarium.ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
                 Crystarium.Icon(
@@ -315,6 +316,7 @@ public class PoseRailPane
             // gesture is relative from wherever the hand landed.
             _joyRolling = mouseDistance > discRadius + 2f * s;
             _joyOrigin = mouse;
+            _joyAccumulated = Vector2.Zero;
             if (_joyRolling && camera != null)
             {
                 _joyRollStartAngle = MathF.Atan2(
@@ -325,7 +327,7 @@ public class PoseRailPane
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
-            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
         if (active && camera != null)
@@ -339,6 +341,10 @@ public class PoseRailPane
                 if (delta > MathF.PI) delta -= MathF.Tau;
                 if (delta < -MathF.PI) delta += MathF.Tau;
                 camera.Roll = _joyRollStartValue + delta;
+                // The same hide and readout a world drag gets.
+                ManipulationDrag.HoldFromShell(
+                    mouse + new Vector2(18f, 14f) * s,
+                    $"Roll  {delta * (180f / MathF.PI):+0.0;-0.0}°");
             }
             else
             {
@@ -357,11 +363,13 @@ public class PoseRailPane
                 float stepX = fraction.X * JoystickRadiansPerSecond * dt;
                 // Screen-down drags the view down: vertical inverts.
                 float stepY = -fraction.Y * JoystickRadiansPerSecond * dt;
+                // A free camera turns the way the stick points; its
+                // rotation runs the other way from an orbit pan.
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
                     camera.Rotation = camera.Rotation with
                     {
-                        X = camera.Rotation.X + stepX,
-                        Y = camera.Rotation.Y + stepY,
+                        X = camera.Rotation.X - stepX,
+                        Y = camera.Rotation.Y - stepY,
                     };
                 else
                     camera.Pan = camera.Pan with
@@ -369,6 +377,11 @@ public class PoseRailPane
                         X = camera.Pan.X + stepX,
                         Y = camera.Pan.Y + stepY,
                     };
+                _joyAccumulated += new Vector2(stepX, stepY);
+                ManipulationDrag.HoldFromShell(
+                    mouse + new Vector2(18f, 14f) * s,
+                    $"X {_joyAccumulated.X * (180f / MathF.PI):+0.0;-0.0}°  "
+                    + $"Y {_joyAccumulated.Y * (180f / MathF.PI):+0.0;-0.0}°");
             }
         }
 
@@ -433,7 +446,7 @@ public class PoseRailPane
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
-            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
         if (active && node != null)
@@ -500,7 +513,7 @@ public class PoseRailPane
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(
-                Crystarium.ActiveTheme.Glass.Luminosity));
+                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Glass.Luminosity)));
 
         // The inspector's own direction-only projection, straight at the
         // fixed widget centre — no perspective and no recentring, so the

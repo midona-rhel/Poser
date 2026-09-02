@@ -507,7 +507,7 @@ public sealed class AppearancePane
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
                 () => ReportExternal(_integration.Redraw(actor), "Redraw"));
-            actions.Button("Reset appearance",
+            actions.Button("Reset",
                 () => Report(_presentation.ResetActor(actor), "Reset appearance"));
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",

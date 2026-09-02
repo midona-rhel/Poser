@@ -84,6 +84,7 @@ public sealed class DebugBridge : IDisposable
         _lifecycle = lifecycle;
         _spawner = spawner;
         _listener = new TcpListener(IPAddress.Loopback, Port);
+        global::Poser.UI.Crystarium.FloatingMenu.Trace = line => _log.Debug(line);
         try
         {
             _listener.Start();
@@ -411,6 +412,25 @@ public sealed class DebugBridge : IDisposable
                             return Json(new { ok = begun.Success, begun.Detail, pending = _ikBake.IsPending });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/fonts":
+            {
+                var typography = global::Poser.UI.Crystarium.ActiveTheme.Typography;
+                object Probe(float size)
+                {
+                    var handle = global::Poser.UI.FontRegistry.Resolve(
+                        global::Poser.UI.FontFamily.Mono, global::Poser.UI.FontWeight.Regular, size);
+                    return new { size, resolved = handle != null, available = handle?.Available };
+                }
+                var registry = typeof(global::Poser.UI.FontRegistry);
+                const System.Reflection.BindingFlags Hidden = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+                var directory = registry.GetField("_fontDirectory", Hidden)?.GetValue(null) as string;
+                var files = registry.GetField("_files", Hidden)?.GetValue(null) as System.Collections.IDictionary;
+                var known = new List<string>();
+                if (files != null)
+                    foreach (System.Collections.DictionaryEntry entry in files)
+                        known.Add($"{entry.Key} => {entry.Value ?? "(default)"}");
+                return Json(new { directory, files = known, lastError = global::Poser.UI.FontRegistry.LastError, body = Probe(typography.BodySize), label = Probe(typography.LabelSize), caption = Probe(typography.CaptionSize) });
             }
             case "/bakestate":
                 return Json(new { pending = _ikBake.IsPending, note = _ikBake.Note?.Text });

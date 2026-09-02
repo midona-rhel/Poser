@@ -4323,21 +4323,24 @@ public class MainWindow : Window
         }
     }
 
-    /// <summary>Folds or opens the tree: one actor's rows (its own row
-    /// and everything keyed beneath it) or, with no root, every row the
-    /// tree has ever built.</summary>
-    private void SetTreeCollapsed(string? root, bool collapsed)
+    /// <summary>Folds or opens the tree: the root row alone, or the root
+    /// and everything keyed beneath it.</summary>
+    private void SetTreeCollapsed(string root, bool collapsed, bool subtree)
     {
-        IEnumerable<string> keys = _knownActorNodes.Concat(_knownCategoryNodes);
-        foreach (var key in keys.ToArray())
+        void Set(string key)
         {
-            if (root != null && key != root && !key.StartsWith(root + "/", StringComparison.Ordinal))
-                continue;
             if (collapsed)
                 _collapsedNodes.Add(key);
             else
                 _collapsedNodes.Remove(key);
         }
+        Set(root);
+        if (!subtree)
+            return;
+        IEnumerable<string> keys = _knownActorNodes.Concat(_knownCategoryNodes);
+        foreach (var key in keys.ToArray())
+            if (key.StartsWith(root + "/", StringComparison.Ordinal))
+                Set(key);
     }
 
     /// <summary>The root slot a drop row stands for: a group head or a
@@ -4854,7 +4857,7 @@ public class MainWindow : Window
                 disabled: !actor.HasSkeleton),
             new("Expand", TablerIcon.SquarePlus),
             new("Collapse", TablerIcon.SquareMinus),
-            new("All actors", TablerIcon.Copy,
+            new("All", TablerIcon.Copy,
                 submenuItems:
                 [
                     new ContextMenuItem("Expand all", TablerIcon.Copy),
@@ -4915,9 +4918,9 @@ public class MainWindow : Window
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
-            () => SetTreeCollapsed("actor:" + actorId, false),
-            () => SetTreeCollapsed("actor:" + actorId, true),
-            null, // All actors — child clicks are read separately.
+            () => SetTreeCollapsed("actor:" + actorId, false, subtree: false),
+            () => SetTreeCollapsed("actor:" + actorId, true, subtree: false),
+            null, // All — child clicks are read separately.
             null, // separator
             null, // Companion — child clicks are read separately.
         };
@@ -5042,10 +5045,10 @@ public class MainWindow : Window
                     () => Duplicate(actor),
                     () => DuplicateWithPose(actor),
                 },
-                "All actors" => new List<Action?>
+                "All" => new List<Action?>
                 {
-                    () => SetTreeCollapsed(null, false),
-                    () => SetTreeCollapsed(null, true),
+                    () => SetTreeCollapsed("actor:" + actorId, false, subtree: true),
+                    () => SetTreeCollapsed("actor:" + actorId, true, subtree: true),
                 },
                 _ => null,
             };

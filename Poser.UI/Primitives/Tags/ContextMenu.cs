@@ -107,6 +107,9 @@ public static partial class Crystarium
         private static int _submenuParent = -1;
         private static int _submenuClicked = -1;
         private static int _submenuClickedParent = -1;
+
+        /// <summary>Debug trace of submenu placement, wired by the host.</summary>
+        public static Action<string>? Trace;
         private static double _phaseStart;
         private static int _lastOwnerFrame = -1;
         private static int _openedFrame = -1;
@@ -459,6 +462,25 @@ public static partial class Crystarium
             var hostBounds = HostBounds(
                 _min, _size, hasSubmenu,
                 hostSubmenuMin, hostSubmenuSize, host);
+            // The submenu the rows drew last frame is covered too: the
+            // prediction can undersize it (the Pose submenu lost its last
+            // row to the host's edge, 2026-09-02), and a host that clips
+            // its own rows is worse than one a little too large.
+            if (_submenuItems is not null)
+            {
+                var shown = HostBounds(
+                    _min, _size, true, _submenuMin, _submenuSize, host);
+                var unionMin = Vector2.Min(hostBounds.Min, shown.Min);
+                var unionMax = Vector2.Max(
+                    hostBounds.Min + hostBounds.Size, shown.Min + shown.Size);
+                hostBounds = (unionMin, unionMax - unionMin);
+            }
+            if (_submenuItems is { } tracedSubmenu && Trace != null && _submenuParent >= 0)
+                Trace(
+                    $"[Menu] parent={_submenuParent} '{_items?[_submenuParent].Label}' rows={tracedSubmenu.Length} "
+                    + $"submenuMin={_submenuMin} size={_submenuSize} predicted={hasPredictedSubmenu} "
+                    + $"host={hostBounds.Min}+{hostBounds.Size} display={ImGui.GetIO().DisplaySize} "
+                    + $"heightFor={HeightFor(tracedSubmenu, s)}");
             ImGui.SetNextWindowPos(hostBounds.Min);
             ImGui.SetNextWindowSize(hostBounds.Size);
             ImGui.SetNextWindowFocus();
