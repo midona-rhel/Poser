@@ -769,6 +769,15 @@ on Ctrl-click. Escape, right-click or a click on nothing ends it, and
 nothing is selected by a pick. Every SearchPicker focuses its search
 field the frame it opens.
 
+## Modals
+
+A modal is as tall as its body. `Crystarium.Modal` measures the body
+every frame and applies the height the next, drawing a never-measured
+modal's first frame off screen so the user only sees the final size.
+Do not pass a `height` to make a dialog fit; a stated height is for a
+body that scrolls by design (a long list). A body that clips its own
+text is a defect of the caller's height, never of the text.
+
 ## Tooltips
 
 A hover is a LABEL, not an explanation. Its length follows the verb's
