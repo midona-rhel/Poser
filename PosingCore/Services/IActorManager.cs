@@ -26,6 +26,12 @@ public interface IActorManager : IDisposable
     /// </summary>
     IReadOnlyList<IActor> AuxiliaryActors { get; }
 
+    /// <summary>Whether the actor is the player's own character — the
+    /// overworld body or its GPose copy, which shares its game object id.
+    /// Ownership of character data rests on this and on Poser having
+    /// spawned the actor; nothing else may be exported or saved.</summary>
+    bool IsLocalPlayer(IActor actor) => false;
+
     /// <summary>
     /// Opts one object-table index into <see cref="AuxiliaryActors"/>. Safe to
     /// call from any thread; the actor appears on a later framework tick.

@@ -196,7 +196,8 @@ public sealed class ScenePane
     /// objects home as a .xivg.</summary>
     public bool SaveGroupEntry(
         IReadOnlyList<global::Poser.Domain.Identity.SelectionId> members,
-        string displayName)
+        string displayName,
+        bool includeAppearance = true)
     {
         var keys = new List<Guid>();
         foreach (var member in members)
@@ -223,10 +224,17 @@ public sealed class ScenePane
         var root = _libraryConfig.EnsureObjectsRootExists();
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.GroupEntryExtension);
+        if (!includeAppearance)
+            _notices.Refused(
+                "The group holds an actor that is not yours; it is saved without appearance.");
         var result = _workflow.BeginSave(
             path, null,
             SceneSaveOptions.GroupEntry(keys)
-                with { EntryName = displayName });
+                with
+                {
+                    EntryName = displayName,
+                    IncludeModdedAppearance = includeAppearance,
+                });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??

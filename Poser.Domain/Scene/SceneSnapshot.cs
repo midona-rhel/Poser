@@ -31,8 +31,13 @@ public sealed record ActorDescriptor(
     bool IsPlayer = false,
     bool IsCompanion = false,
     bool IsHidden = false,
-    ActorId? OwnerActor = null)
+    ActorId? OwnerActor = null,
+    bool IsOwned = true)
 {
+    /// <summary><see cref="IsOwned"/>: the actor was spawned by Poser or
+    /// is the player's own character. Only an owned actor's character
+    /// data — appearance, MCDF — may be exported or saved; anyone else's
+    /// (a friend posed in GPose) may be posed but never packaged.</summary>
     /// <summary>The Character-slot skeleton; callers needing another slot use
     /// <see cref="GetSkeleton"/>.</summary>
     public SkeletonDescriptor? CharacterSkeleton =>

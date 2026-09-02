@@ -4156,7 +4156,7 @@ public class MainWindow : Window
                             () => OpenEntityRename(
                                 "Save group to library", group.Name,
                                 name => _scenePane.SaveGroupEntry(
-                                    group.Members, name)));
+                                    group.Members, name, AllActorsOwned(group.Members))));
                         actions.Button("Ungroup",
                             () => DissolveGroup(group.Id));
                     }
@@ -4773,6 +4773,30 @@ public class MainWindow : Window
             : new ContextMenuItem("Open", glyph, disabled: attached),
     ];
 
+    /// <summary>Character data is saved only for an owned actor: one
+    /// Poser spawned, or the player's own character.</summary>
+    private bool SaveOwnedActorEntry(ActorId actorId, string name)
+    {
+        if (ResolveActorDescriptor(actorId) is not { IsOwned: true })
+        {
+            _notices.Refused(
+                "Only an actor you spawned or your own character can be saved to the library.");
+            return false;
+        }
+        return _scenePane.SaveActorEntry(actorId.LogicalId, name);
+    }
+
+    /// <summary>Whether every actor among the members is owned; a group
+    /// holding anyone else's actor saves without appearance.</summary>
+    private bool AllActorsOwned(IReadOnlyList<SelectionId> members)
+    {
+        foreach (var member in members)
+            if (member.Actor is { } actorId
+                && ResolveActorDescriptor(actorId) is not { IsOwned: true })
+                return false;
+        return true;
+    }
+
     /// <summary>What the active pane keeps in the content footer between
     /// the two attach seats.</summary>
     private void DrawFooterMiddle(Vector2 origin, Vector2 size)
@@ -4963,7 +4987,7 @@ public class MainWindow : Window
                 "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
-                name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
+                name => SaveOwnedActorEntry(actorId, name)),
             () => SetTreeCollapsed("actor:" + actorId, false, subtree: false),
             () => SetTreeCollapsed("actor:" + actorId, true, subtree: false),
             null, // All — child clicks are read separately.
@@ -5876,7 +5900,8 @@ public class MainWindow : Window
             null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save group to library", group.Name,
-                name => _scenePane.SaveGroupEntry(group.Members, name)),
+                name => _scenePane.SaveGroupEntry(
+                    group.Members, name, AllActorsOwned(group.Members))),
             () => _groups.SetLocked(groupId, !group.Locked),
             null, // separator
             () => SetGroupHidden(group, !group.Hidden),
@@ -5996,7 +6021,8 @@ public class MainWindow : Window
                 "Save to library", TablerIcon.Library));
             actions.Add(() => OpenEntityRename(
                 "Save group to library", matched.Name,
-                name => _scenePane.SaveGroupEntry(matched.Members, name)));
+                name => _scenePane.SaveGroupEntry(
+                    matched.Members, name, AllActorsOwned(matched.Members))));
             items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
             actions.Add(() => DissolveGroup(matched.Id));
         }

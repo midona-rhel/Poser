@@ -360,6 +360,26 @@ public class ActorManager : IActorManager
         _pendingRefresh = true;
     }
 
+    public bool IsLocalPlayer(IActor actor)
+    {
+        var local = _objectTable.LocalPlayer;
+        if (local == null || actor.Address == nint.Zero)
+            return false;
+        if (actor.Address == local.Address)
+            return true;
+        // The GPose copy of the player is a different object at the same
+        // game object id.
+        try
+        {
+            return _objectTable.CreateObjectReference(actor.Address) is { } reference
+                && reference.GameObjectId == local.GameObjectId;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public IActor? GetGPoseTarget()
     {
         var gposeTarget = _targetManager.GPoseTarget;
