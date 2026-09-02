@@ -21,7 +21,8 @@ public sealed record BeginTransformGesture(
     IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>? TargetModes = null,
     /// <summary>When enabled, secondary bones rotate in the primary's frame
     /// instead of receiving the primary's raw delta.</summary>
-    bool RelativeSecondaryBones = false);
+    bool RelativeSecondaryBones = false,
+    GroupScaleMode GroupScale = GroupScaleMode.SizesAndSpacing);
 
 public readonly record struct GestureResult(
     bool Success,
@@ -270,12 +271,22 @@ public sealed class TransformGestureService : IDisposable
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
                 ? baseline.Transform.Position
                 : active.Pivot;
+            // A shared pivot makes this a group gesture: the offsets scale
+            // with it, and each member's own size follows only in the
+            // sizes-and-spacing mode. Per-target scaling is unchanged.
+            // Bones never spread: scaling several bones scales the bones.
+            bool scalePosition = rotatePosition
+                && baseline.Target.Kind != TransformTargetKind.Bone;
+            bool scaleOwn = !scalePosition
+                || active.Command.GroupScale == GroupScaleMode.SizesAndSpacing;
             desired[index] = TransformMath.Apply(
                 baseline.Transform,
                 targetDelta,
                 active.Command.Space,
                 pivot,
-                rotatePosition);
+                rotatePosition,
+                scalePosition,
+                scaleOwn);
         }
 
         for (var index = 0; index < active.Before.Count; index++)

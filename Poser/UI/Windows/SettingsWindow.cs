@@ -150,6 +150,7 @@ public class SettingsWindow : Window
 
             GizmoScale = c.Gizmo.GizmoScale,
             AllowHoldSnap = c.Gizmo.AllowHoldSnap,
+            GroupScale = (int)c.Gizmo.GroupScale,
             SnapRotationDegrees = c.Gizmo.SnapRotationDegrees,
             SnapLinearStep = c.Gizmo.SnapLinearStep,
             AllowRaySnap = c.Gizmo.AllowRaySnap,
@@ -348,6 +349,7 @@ public class SettingsWindow : Window
 
         c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);
         c.Gizmo.AllowHoldSnap = _vm.AllowHoldSnap;
+        c.Gizmo.GroupScale = (global::Poser.Domain.Transforms.GroupScaleMode)Math.Clamp(_vm.GroupScale, 0, 1);
         c.Gizmo.SnapRotationDegrees =
             Math.Clamp(_vm.SnapRotationDegrees, 0.5f, 45f);
         c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
