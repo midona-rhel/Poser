@@ -244,19 +244,6 @@ public partial class MainWindow
     // and remembers each member's own state; open gives it back — unless
     // a gate further up is still closed ──────────────────────────────────
 
-    /// <summary>Ungrouping opens every gate first so each member gets its
-    /// own state back.</summary>
-    private void DissolveGroup(Guid id)
-    {
-        if (_groups.Find(id) is { } group)
-        {
-            SetGroupHidden(group, false);
-            SetGroupPaused(group, false);
-            SetGroupNight(group, false);
-        }
-        _groups.Dissolve(id);
-    }
-
     /// <summary>The plain duplicate: the drawn appearance and the source's
     /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
     private void Duplicate(IActor actor)

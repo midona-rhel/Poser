@@ -28,6 +28,72 @@ namespace Poser.UI;
 /// <summary>The camera tracking picker: tracked actors and bones, and the bone choice list.</summary>
 public partial class MainWindow
 {
+    /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
+    private void DrawCameraTrackingActors(
+        Crystarium.FormScope form, IVirtualCamera camera)
+    {
+        if (_bindings.GetCameraId(camera) is not { } cameraId)
+        {
+            form.Status("Tracking is unavailable for this camera.");
+            return;
+        }
+
+        var actor = ReconcileCameraTrackingActor(cameraId, camera);
+        bool locked = camera.IsLocked;
+        form.Switch(
+            "Tracking",
+            camera.IsTracking,
+            value => camera.IsTracking = value,
+            help: "Keep the tracked bones in view every frame",
+            disabled: locked);
+        form.Dropdown(
+            "Mode",
+            CameraTrackingModeOptions,
+            (int)camera.TrackingMode,
+            selected => camera.TrackingMode = (CameraTrackingMode)selected,
+            disabled: locked,
+            help: "Follow moves the camera with the bones, Pan swings the "
+                + "view onto them, Follow and pan blends both");
+
+        form.Actions(
+            string.Empty,
+            actions =>
+            {
+                actions.Button(
+                    "Select bones",
+                    () =>
+                    {
+                        if (actor != null)
+                            OpenCameraBonePicker(cameraId, actor.Id, camera);
+                    },
+                    style: ControlStyle.Workspace with { Width = UiWidth.Fill },
+                    disabled: locked || actor == null,
+                    help: actor == null
+                        ? "Choose an actor first"
+                        : $"Choose exact bones on {ActorNames.Display(actor)}",
+                    id: "camera-track-select-bones");
+                // Picking in the view: a click takes a bone, Ctrl-click
+                // keeps adding. Another actor's bone moves the tracking
+                // to that actor, as the list does.
+                actions.IconButton(
+                    TablerIcon.Crosshair,
+                    () => global::Poser.UI.Controls.BonePick.Begin(
+                        multi: true,
+                        bone =>
+                        {
+                            if (ResolveExactCamera(cameraId, camera) && !camera.IsLocked)
+                                _cameraPane.ToggleTrackedBone(camera, bone);
+                        },
+                        onlyActor: actor?.Id),
+                    disabled: locked,
+                    help: actor == null
+                        ? "Pick bones in the view"
+                        : "Pick bones in the view on this actor");
+            });
+
+        PumpCameraBonePicker(cameraId, camera, actor);
+    }
+
     /// <summary>Prunes stale and mixed tracking state, then resolves the one
     /// exact actor that currently owns tracking.</summary>
     private ActorDescriptor? ReconcileCameraTrackingActor(

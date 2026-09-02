@@ -28,6 +28,19 @@ namespace Poser.UI;
 /// <summary>Group gates and overrides.</summary>
 public partial class MainWindow
 {
+    /// <summary>Ungrouping opens every gate first so each member gets its
+    /// own state back.</summary>
+    private void DissolveGroup(Guid id)
+    {
+        if (_groups.Find(id) is { } group)
+        {
+            SetGroupHidden(group, false);
+            SetGroupPaused(group, false);
+            SetGroupNight(group, false);
+        }
+        _groups.Dissolve(id);
+    }
+
     private bool UnderClosedGate(SelectionId member, Func<global::Poser.Application.Scene.SceneGroup, bool> closed)
     {
         if (_groups.GroupOf(member) is not { } own)
