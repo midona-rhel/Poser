@@ -106,7 +106,7 @@ public sealed class PoseLibraryFileActions
     /// <summary>Maps a metadata read to the library's typed entry status —
     /// the ONE mapping the scan and the retry probe both answer with.
     /// </summary>
-    internal static (PoseLibraryMetadataStatus Status, string Detail) Classify(
+    public static (PoseLibraryMetadataStatus Status, string Detail) Classify(
         PoseFileMetadataReadOutcome metadata)
     {
         if (metadata.Succeeded)
@@ -127,7 +127,7 @@ public sealed class PoseLibraryFileActions
     /// <summary>The same mapping for a SCENE, which is a different document
     /// read by a different codec — the ONE mapping the scan and the retry
     /// probe both answer an <c>.xivs</c> scene with.</summary>
-    internal static (PoseLibraryMetadataStatus Status, string Detail) Classify(
+    public static (PoseLibraryMetadataStatus Status, string Detail) Classify(
         SceneMetadataReadOutcome metadata)
     {
         if (metadata.Succeeded)

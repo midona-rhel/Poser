@@ -95,6 +95,9 @@ public sealed class PoseLibraryTileRow
     /// a person for a character file.</summary>
     public TablerIcon Fallback = TablerIcon.Armature;
     public string? Author;
+    /// <summary>Whether the file behind the tile has been read: author,
+    /// tags, status and a scene's contents arrive on selection.</summary>
+    public bool Enriched;
     /// <summary>The info strip's chips. Never null; empty is the norm.
     /// </summary>
     public IReadOnlyList<string> Tags = Array.Empty<string>();

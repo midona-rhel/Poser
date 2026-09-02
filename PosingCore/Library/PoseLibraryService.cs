@@ -66,7 +66,6 @@ public sealed class PoseLibraryService : IPoseLibraryService
         _poseStore = poseStore;
         _observeDirectory = observeDirectory;
         _sourceSignature = BuildSourceSignature();
-        LoadIndex();
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
 
@@ -266,7 +265,6 @@ public sealed class PoseLibraryService : IPoseLibraryService
             // Single reference swap is the last step, so a reader either sees
             // the whole previous snapshot or the whole new one.
             var revision = _snapshot.Revision + 1;
-            PersistIndex();
             Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
             {
                 Revision = revision,
@@ -453,143 +451,36 @@ public sealed class PoseLibraryService : IPoseLibraryService
             ObjectsCount = node.ObjectsCount
         });
 
-        // The reads are the cost: entries build in parallel and land in
-        // file order. An unchanged file never reaches a read at all.
-        var built = new PoseLibraryEntry[node.Files.Count];
-        System.Threading.Tasks.Parallel.For(
-            0,
-            node.Files.Count,
-            new System.Threading.Tasks.ParallelOptions
-            {
-                CancellationToken = cancellation,
-                MaxDegreeOfParallelism = ScanParallelism,
-            },
-            i => built[i] = CreateEntry(node.Files[i], folderIndex));
-        entries.AddRange(built);
+        foreach (var file in node.Files)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            entries.Add(CreateEntry(file, folderIndex));
+        }
 
         foreach (var child in node.Children)
             Flatten(child, folders, entries, cancellation);
     }
 
-    private PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
+    /// <summary>One entry from the directory listing alone: name, kind,
+    /// stamp. Nothing is opened — what a file holds (author, tags, what a
+    /// scene contains, whether it is sound) is read when the entry is
+    /// selected, the way Brio's library works, so a scan of thousands of
+    /// files costs a listing and nothing more.</summary>
+    private static PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
     {
         var name = Path.GetFileNameWithoutExtension(filePath);
         DateTime modified;
-        long length;
         try
         {
-            var info = new FileInfo(filePath);
-            modified = info.LastWriteTime;
-            length = info.Length;
+            modified = File.GetLastWriteTime(filePath);
         }
         catch (Exception)
         {
             modified = default;
-            length = -1;
         }
         var kind = KindOf(filePath);
         var isLegacy = kind == PoseLibraryEntryKind.Pose
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
-        // The index answers for a file whose stamp and size have not
-        // changed since it was last read — no open, no parse.
-        if (length >= 0
-            && _index.TryGetValue(filePath, out var indexed)
-            && indexed.Ticks == modified.Ticks
-            && indexed.Length == length)
-        {
-            return new PoseLibraryEntry
-            {
-                Kind = kind,
-                FilePath = filePath,
-                Name = name,
-                NameLower = name.ToLowerInvariant(),
-                ModifiedText = modified.ToString(
-                    LibraryStamp.DateTimeFormat, CultureInfo.InvariantCulture),
-                Modified = modified,
-                Folder = folderIndex,
-                Author = indexed.Author,
-                AuthorLower = indexed.Author?.ToLowerInvariant() ?? string.Empty,
-                Tags = indexed.Tags,
-                TagsLower = indexed.Tags.Select(tag => tag.ToLowerInvariant()).ToArray(),
-                MetadataStatus = (PoseLibraryMetadataStatus)indexed.Status,
-                MetadataDetail = indexed.Detail,
-                IsLegacy = isLegacy,
-                HasThumbnail = indexed.HasThumbnail,
-                SceneContents = indexed.SceneContents,
-                ScenePlace = indexed.ScenePlace,
-                SceneCapturedAt = indexed.SceneCapturedAt,
-            };
-        }
-
-        string? author = null;
-        IReadOnlyList<string> tags = [];
-        IReadOnlyList<string> tagsLower = [];
-        var hasThumbnail = false;
-        var status = PoseLibraryMetadataStatus.Valid;
-        var detail = string.Empty;
-        var sceneContents = string.Empty;
-        var scenePlace = string.Empty;
-        DateTimeOffset? sceneCapturedAt = null;
-
-        // A scene is probed through its OWN codec, which validates the whole
-        // bounded document — so an entry the browser offers is an entry the
-        // load will accept, and a corrupt or future file says so in the row
-        // instead of only when it is clicked. An ACTOR entry is the same
-        // container and takes the same probe.
-        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
-            or PoseLibraryEntryKind.Environment
-            or PoseLibraryEntryKind.Overlay
-            or PoseLibraryEntryKind.Group
-            or PoseLibraryEntryKind.WorldObject
-            or PoseLibraryEntryKind.Prop
-            or PoseLibraryEntryKind.Light
-            or PoseLibraryEntryKind.Camera)
-        {
-            var metadata = SceneFileStore.Default.ReadMetadata(filePath);
-            if (metadata.Succeeded)
-            {
-                // The document's OWN author, which Poser's capture never sets,
-                // so this is normally empty. It is emphatically not the
-                // description: Author is what the search box's author term
-                // matches, and a scene must not answer an author search with
-                // words from its description.
-                author = metadata.Author;
-                sceneContents = kind == PoseLibraryEntryKind.Scene
-                    ? DescribeScene(metadata)
-                    : string.Empty;
-                scenePlace = kind == PoseLibraryEntryKind.Scene
-                    ? metadata.PlaceName ?? string.Empty
-                    : string.Empty;
-                sceneCapturedAt = metadata.SavedAt;
-            }
-            // The ONE mapping — shared with the retry probe, exactly as the
-            // pose branch shares its own.
-            (status, detail) = PoseLibraryFileActions.Classify(metadata);
-        }
-        // A .cmp has no header and an .mcdf is a compressed archive: opening
-        // either would cost a read that can never answer.
-        else if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
-        {
-            var metadata = _poseStore.ReadMetadata(filePath);
-            if (metadata.Succeeded)
-            {
-                author = metadata.Author;
-                tags = metadata.Tags;
-                tagsLower = tags.Select(tag => tag.ToLowerInvariant()).ToArray();
-                hasThumbnail = metadata.HasThumbnail;
-            }
-            // The ONE mapping — shared with the retry probe, so a "Retry"
-            // answers exactly what the next scan would.
-            (status, detail) = PoseLibraryFileActions.Classify(metadata);
-        }
-
-        if (length >= 0)
-        {
-            _index[filePath] = new IndexedEntry(
-                modified.Ticks, length, author, tags.ToArray(), hasThumbnail,
-                (int)status, detail, sceneContents, scenePlace, sceneCapturedAt);
-            _indexDirty = true;
-        }
         return new PoseLibraryEntry
         {
             Kind = kind,
@@ -600,95 +491,24 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 LibraryStamp.DateTimeFormat, CultureInfo.InvariantCulture),
             Modified = modified,
             Folder = folderIndex,
-            Author = author,
-            AuthorLower = author?.ToLowerInvariant() ?? string.Empty,
-            Tags = tags,
-            TagsLower = tagsLower,
-            MetadataStatus = status,
-            MetadataDetail = detail,
+            Author = null,
+            AuthorLower = string.Empty,
+            Tags = [],
+            TagsLower = [],
+            MetadataStatus = PoseLibraryMetadataStatus.Valid,
+            MetadataDetail = string.Empty,
             IsLegacy = isLegacy,
-            HasThumbnail = hasThumbnail,
-            SceneContents = sceneContents,
-            ScenePlace = scenePlace,
-            SceneCapturedAt = sceneCapturedAt
+            // A pose file may carry a thumbnail; the tile asks the cache,
+            // which reads the file only when the tile is on screen.
+            HasThumbnail = kind == PoseLibraryEntryKind.Pose && !isLegacy,
+            SceneContents = string.Empty,
+            ScenePlace = string.Empty,
+            SceneCapturedAt = null
         };
     }
 
-    /// <summary>The scene row's one-line contents, minted at scan time
-    /// because the grid reads it on every keystroke.</summary>
-    // ── the index ──────────────────────────────────────────────────────
-    // What a read of a file yielded, keyed by path and stamped with the
-    // file's write time and size: a rescan reads only what changed, and a
-    // reopen of the library reads nothing. Saved beside the config after
-    // a scan that learned something.
-    private const int ScanParallelism = 4;
-    private const string IndexFileName = "library-index.json";
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IndexedEntry> _index =
-        new(StringComparer.OrdinalIgnoreCase);
-    private volatile bool _indexDirty;
-
-    private sealed record IndexedEntry(
-        long Ticks,
-        long Length,
-        string? Author,
-        string[] Tags,
-        bool HasThumbnail,
-        int Status,
-        string Detail,
-        string SceneContents,
-        string ScenePlace,
-        DateTimeOffset? SceneCapturedAt);
-
-    private string? IndexPath()
-    {
-        var directory = _config.PluginDirectory;
-        return string.IsNullOrEmpty(directory)
-            ? null
-            : Path.Combine(directory, IndexFileName);
-    }
-
-    private void LoadIndex()
-    {
-        try
-        {
-            if (IndexPath() is not { } path || !File.Exists(path))
-                return;
-            var stored = System.Text.Json.JsonSerializer.Deserialize<
-                Dictionary<string, IndexedEntry>>(File.ReadAllText(path));
-            if (stored == null)
-                return;
-            foreach (var (file, entry) in stored)
-                if (entry.Tags != null && entry.Detail != null)
-                    _index[file] = entry;
-        }
-        catch (Exception)
-        {
-            // A damaged index is rebuilt by the next scan.
-            _index.Clear();
-        }
-    }
-
-    private void PersistIndex()
-    {
-        if (!_indexDirty)
-            return;
-        _indexDirty = false;
-        try
-        {
-            if (IndexPath() is not { } path)
-                return;
-            var snapshot = new Dictionary<string, IndexedEntry>(_index, StringComparer.OrdinalIgnoreCase);
-            var temporary = path + ".tmp";
-            File.WriteAllText(temporary, System.Text.Json.JsonSerializer.Serialize(snapshot));
-            File.Move(temporary, path, overwrite: true);
-        }
-        catch (Exception)
-        {
-            // The index is a cache: losing a save costs one rescan's reads.
-        }
-    }
-
-    private static string DescribeScene(SceneMetadataReadOutcome metadata)
+    /// <summary>What a scene holds, for its tile once it is selected.</summary>
+    public static string DescribeScene(SceneMetadataReadOutcome metadata)
     {
         var parts = new List<string>(4);
         if (metadata.ActorCount > 0)
@@ -719,7 +539,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(PropExtension, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static PoseLibraryEntryKind KindOf(string path)
+    public static PoseLibraryEntryKind KindOf(string path)
     {
         var extension = Path.GetExtension(path);
         if (extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase))

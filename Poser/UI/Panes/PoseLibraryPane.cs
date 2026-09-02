@@ -631,6 +631,7 @@ public sealed class PoseLibraryPane
         if (!_metaImageBrowser.IsOpen)
             DrawMetadataModal();
         _metaImageBrowser.Draw();
+        PumpEnrichments();
         DrawDeleteModal();
     }
 
@@ -3258,6 +3259,88 @@ public sealed class PoseLibraryPane
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         _vm.Selected = index;
+        EnrichTile(index);
+    }
+
+    /// <summary>The information a selection wants — author, tags, status,
+    /// what a scene holds — is read from the file when the tile is
+    /// SELECTED, never at scan time. The read runs off the UI thread and
+    /// its answer is applied to the tile on the next frame.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<TileFacts> _enrichments = new();
+    private readonly record struct TileFacts(
+        string Id, string? Author, IReadOnlyList<string> Tags, string? Sub,
+        PoseLibraryMetadataStatus Status, string Detail);
+
+    private void EnrichTile(int index)
+    {
+        var tile = _vm.Tiles[index];
+        if (tile.Enriched)
+            return;
+        tile.Enriched = true;
+        string path = tile.Id;
+        var kind = PoseLibraryService.KindOf(path);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (kind == PoseLibraryEntryKind.Pose)
+                {
+                    var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
+                    var (status, detail) = PoseLibraryFileActions.Classify(metadata);
+                    _enrichments.Enqueue(new TileFacts(
+                        path,
+                        metadata.Succeeded ? metadata.Author : null,
+                        metadata.Succeeded ? metadata.Tags : [],
+                        null, status, detail));
+                }
+                else if (kind != PoseLibraryEntryKind.Mcdf)
+                {
+                    var metadata = SceneFileStore.Default.ReadMetadata(path);
+                    var (status, detail) = PoseLibraryFileActions.Classify(metadata);
+                    _enrichments.Enqueue(new TileFacts(
+                        path,
+                        metadata.Succeeded ? metadata.Author : null,
+                        [],
+                        metadata.Succeeded && kind == PoseLibraryEntryKind.Scene
+                            ? PoseLibraryService.DescribeScene(metadata)
+                            : null,
+                        status, detail));
+                }
+            }
+            catch (Exception)
+            {
+                // A file that cannot be read shows what the listing knew.
+            }
+        });
+    }
+
+    private void PumpEnrichments()
+    {
+        while (_enrichments.TryDequeue(out var facts))
+        {
+            for (int i = 0; i < _vm.Tiles.Count; i++)
+            {
+                var tile = _vm.Tiles[i];
+                if (!string.Equals(tile.Id, facts.Id, StringComparison.Ordinal))
+                    continue;
+                tile.Author = facts.Author;
+                tile.Tags = facts.Tags;
+                if (facts.Sub is { Length: > 0 } sub)
+                    tile.Sub = sub;
+                if (facts.Status != PoseLibraryMetadataStatus.Valid)
+                {
+                    tile.Flagged = true;
+                    tile.StatusText = StatusText(facts.Status, facts.Detail);
+                }
+                if (i < _tileStatus.Count)
+                    _tileStatus[i] = facts.Status;
+                if (i < _tileAuthors.Count)
+                    _tileAuthors[i] = facts.Author?.ToLowerInvariant() ?? string.Empty;
+                if (i < _tileTags.Count)
+                    _tileTags[i] = facts.Tags.Select(tag => tag.ToLowerInvariant()).ToArray();
+                break;
+            }
+        }
     }
 
     private void SelectFolder(int index)
