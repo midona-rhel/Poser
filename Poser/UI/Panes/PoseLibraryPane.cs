@@ -2254,7 +2254,14 @@ public sealed class PoseLibraryPane
 
             if (files.Count == 0)
                 continue;
-            files.Sort(StringComparer.OrdinalIgnoreCase);
+            // Newest first, by the save time; the name only breaks ties.
+            files.Sort((a, b) =>
+            {
+                int byTime = SafeFileTime(b).CompareTo(SafeFileTime(a));
+                return byTime != 0
+                    ? byTime
+                    : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            });
 
             var entries = new List<AutoSaveEntry>(files.Count);
             foreach (var file in files)
@@ -2335,8 +2342,13 @@ public sealed class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
 
-        // Day-and-place -> rail row index, for this pass only: a mint runs on
-        // tab entry and on an explicit rescan, never per frame.
+        // Run -> rail row index, for this pass only: a mint runs on tab
+        // entry and on an explicit rescan, never per frame. A run is the
+        // saves of one day at one place, in time order: leaving for another
+        // place and coming back makes two rows, so the rail reads as time.
+        int run = 0;
+        string? runDay = null;
+        string? runPlace = null;
         var rows = new Dictionary<string, int>(StringComparer.Ordinal);
 
         int total = 0;
@@ -2361,7 +2373,15 @@ public sealed class PoseLibraryPane
             for (int e = 0; e < entries.Count; e++)
             {
                 var entry = entries[e];
-                string key = snapshot.Day + KeySeparator + entry.Place;
+                if (!string.Equals(runDay, snapshot.Day, StringComparison.Ordinal)
+                    || !string.Equals(runPlace, entry.Place, StringComparison.Ordinal))
+                {
+                    run++;
+                    runDay = snapshot.Day;
+                    runPlace = entry.Place;
+                }
+                string key = snapshot.Day + KeySeparator + entry.Place
+                    + KeySeparator + run.ToString(CultureInfo.InvariantCulture);
                 if (!rows.TryGetValue(key, out int group))
                 {
                     group = folders.Count;
