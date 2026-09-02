@@ -94,6 +94,10 @@ public sealed class ActorSpawnServiceOwnershipTests
     /// </summary>
     private sealed class FakeCollections : ISpawnCollectionPort
     {
+        public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) =>
+            IntegrationPortResult.Ok();
+
+
         public List<(nint Source, nint Clone)> Inherited { get; } = new();
         public List<nint> Released { get; } = new();
 

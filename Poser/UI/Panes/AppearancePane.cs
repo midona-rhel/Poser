@@ -163,9 +163,6 @@ public sealed class AppearancePane
                 return;
             }
             _modelLoader.EnsureLoaded();
-            // Unsupported sections are omitted for creature models.
-            bool creature = IsCreature(actor);
-
             // Model controls remain available for creature models.
             bool supported = _presentation.IsSupported(actor)
                 && _presentation.Read(actor) is not null;
@@ -194,20 +191,21 @@ public sealed class AppearancePane
                     form => WetSurfaceRows(form, actor, owned, reading));
             }
 
-            if (!creature)
-            {
-                RefreshReadouts(actor);
-                var external = _integration.OverridesFor(actor);
+            // Companions, mounts and catalog creatures take the external
+            // integrations like any actor: Brio attaches its appearance
+            // capability to every actor entity (ActorEntity.cs:122) and
+            // gates only on the integration being installed.
+            RefreshReadouts(actor);
+            var external = _integration.OverridesFor(actor);
 
-                page.Section("External appearance", _openExternalAppearance,
-                    next => _openExternalAppearance = next,
-                    form => ExternalAppearanceRows(form, actor, external),
-                    divider: !first);
-                first = false;
-                page.Section("Character file (MCDF)", _openCharacterFile,
-                    next => _openCharacterFile = next,
-                    form => CharacterFileRows(form, actor, external));
-            }
+            page.Section("External appearance", _openExternalAppearance,
+                next => _openExternalAppearance = next,
+                form => ExternalAppearanceRows(form, actor, external),
+                divider: !first);
+            first = false;
+            page.Section("Character file (MCDF)", _openCharacterFile,
+                next => _openCharacterFile = next,
+                form => CharacterFileRows(form, actor, external));
 
         });
     }
@@ -464,18 +462,6 @@ public sealed class AppearancePane
         return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 
-    /// <summary>Returns whether the actor uses a creature model.</summary>
-    private bool IsCreature(ActorId id)
-    {
-        if (Describe(id) is { IsCompanion: true })
-            return true;
-        var resolved = _bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { } live)
-            return false;
-        return _spawn.GetSpawnedKind(live) is not null
-            || _spawn.GetModelCharaId(live) != 0;
-    }
-
     /// <summary>Dispatches a pick to the actor captured when it opened.</summary>
     private void DrainPicker()
     {
@@ -518,19 +504,16 @@ public sealed class AppearancePane
                             $"Open in Glamourer: {opened.Detail}");
                 },
                 disabled: !glamourer.Available,
-                help: glamourer.Available
-                    ? "Open this actor in Glamourer"
-                    : glamourer.Detail);
+                help: glamourer.Available ? null : glamourer.Detail);
+            actions.Button("Redraw",
+                () => ReportExternal(_integration.Redraw(actor), "Redraw"));
             actions.Button("Reset appearance",
-                () => Report(_presentation.ResetActor(actor), "Reset appearance"),
-                help: "Undo opacity, tint, and wetness");
+                () => Report(_presentation.ResetActor(actor), "Reset appearance"));
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
                 () => _invisibleSkin.Request(actor, _notices.Failed),
                 disabled: !human,
-                help: human
-                    ? "Hide the skin, hair and eyes; Redraw restores"
-                    : "Only human actors can hide their body");
+                help: human ? null : "Only human actors can hide their body");
         });
     }
 

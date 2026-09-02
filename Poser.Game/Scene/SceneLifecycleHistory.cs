@@ -1140,6 +1140,21 @@ public sealed class SceneLifecycleHistory
         return worldObject;
     }
 
+    /// <summary>Spawns one object from a model path, journalled like an
+    /// adoption: undoing it takes the copy out of the scene again.</summary>
+    public object? SpawnWorldObject(string path, Transform placement, bool visible)
+    {
+        var worldObject = _worldObjects.Spawn(path, placement, visible);
+        if (worldObject == null)
+            return null;
+        var slot = WorldObjectSlotFor(worldObject);
+        _history.Append(new SceneLifecyclePatch(
+            "Add world object",
+            () => ReleaseWorldObjectSlot(slot),
+            () => RestoreWorldObject(slot)));
+        return worldObject;
+    }
+
     /// <summary>Gives one adopted object back to the map, journalled. Undoing
     /// it re-adopts the same address and puts back the placement the user had
     /// given it.</summary>

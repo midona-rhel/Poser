@@ -35,4 +35,11 @@ public interface ISpawnCollectionPort
     /// on the object's identifier, which stops existing with the object.</summary>
     IntegrationPortResult ReleaseCollection(nint cloneAddress);
 
+    /// <summary>Assigns the PLAYER's effective collection to a fresh actor
+    /// that was not copied from anyone in particular — a new actor, a
+    /// catalog creature. Brio leaves such a spawn to Penumbra's own
+    /// identification; Poser's self-directed copy gives the spawn its own
+    /// identifier, so the assignment has to be explicit.</summary>
+    IntegrationPortResult AssignPlayerCollection(nint cloneAddress);
+
 }

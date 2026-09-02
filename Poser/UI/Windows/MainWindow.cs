@@ -1016,6 +1016,7 @@ public class MainWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        PumpGroupCopies();
 
         // Keep one shell width across tabs; detached parts release their width.
         float minimumWidth = EffectiveMinimumWidth();
@@ -4807,6 +4808,9 @@ public class MainWindow : Window
             return;
         }
         var actor = resolved.Value!;
+        // A companion rides its owner's slot and cannot be copied on its
+        // own (Brio ActorLifetimeCapability.CanClone).
+        bool companion = ResolveActorDescriptor(actorId) is { IsCompanion: true };
 
         var items = new List<ContextMenuItem>
         {
@@ -4815,23 +4819,16 @@ public class MainWindow : Window
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the verb the row performs: resume wears play,
             // pause wears pause.
-            new(!_animation.AnyPlaying(actorId) ? "Resume animation" : "Pause animation",
+            new(!_animation.AnyPlaying(actorId) ? "Play" : "Pause",
                 !_animation.AnyPlaying(actorId)
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
             new("Duplicate", TablerIcon.Copy,
-                help: "A fresh copy wearing this appearance"),
-            new("Duplicate with pose", TablerIcon.Stack2,
-                disabled: !actor.HasSkeleton,
-                help: actor.HasSkeleton
-                    ? "A frozen copy in this exact pose and place"
-                    : "Needs a loaded skeleton"),
+                disabled: companion,
+                submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
             new("Save to library", TablerIcon.Library,
-                disabled: !actor.HasSkeleton,
-                help: actor.HasSkeleton
-                    ? "Saves this actor with its appearance as a library entry"
-                    : "Needs a loaded skeleton"),
+                disabled: !actor.HasSkeleton),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -4881,8 +4878,7 @@ public class MainWindow : Window
                     actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
-            () => Duplicate(actor),
-            () => DuplicateWithPose(actor),
+            null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
@@ -5004,6 +5000,11 @@ public class MainWindow : Window
                 "Bone presets" => _bonePresetActions,
                 "Companion" => companionActions,
                 "Pose" => poseActions,
+                "Duplicate" => new List<Action?>
+                {
+                    () => Duplicate(actor),
+                    () => DuplicateWithPose(actor),
+                },
                 _ => null,
             };
             if (submenu != null && subClicked < submenu.Count)
@@ -5456,7 +5457,7 @@ public class MainWindow : Window
             new(light.IsOn ? "Switch off" : "Switch on",
                 light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
@@ -5534,7 +5535,7 @@ public class MainWindow : Window
             new(prop.Visible ? "Hide" : "Show",
                 prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
@@ -5602,7 +5603,7 @@ public class MainWindow : Window
                 disabled: !canRecenterTracked,
                 help: "Swing the camera back onto whoever it tracks"),
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
             new("Reset transform", TablerIcon.Refresh,
@@ -5695,6 +5696,7 @@ public class MainWindow : Window
             new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
                 worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             // A spawned object is Poser's own and DESTROYS; a borrowed
@@ -5710,6 +5712,12 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
+            () =>
+            {
+                if (DuplicateWorldObject(worldObject) is { } copy
+                    && _bindings.GetWorldObjectId(copy) is { } copyId)
+                    _selection.Select(SelectionId.ForWorldObject(copyId));
+            },
             () => OpenEntityRename(
                 "Save object to library", worldObject.Name,
                 name => _scenePane.SaveWorldObjectEntry(
@@ -5751,6 +5759,8 @@ public class MainWindow : Window
         var items = new[]
         {
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy,
+                submenuItems: DuplicateSubmenu(posable: true)),
             new ContextMenuItem("Save to library", TablerIcon.Library),
             new ContextMenuItem(locked ? "Unlock" : "Lock",
                 locked ? TablerIcon.LockOpen : TablerIcon.Lock),
@@ -5771,6 +5781,7 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename group", group.Name,
                 next => _groups.Rename(groupId, next)),
+            null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(group.Members, name)),
@@ -5795,6 +5806,11 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
+            && items[subParent].Label == "Duplicate")
+            DuplicateGroup(group, withPose: subClicked == 1);
     }
 
     /// <summary>Right-click on any row of a multi-entity selection: one
@@ -5816,6 +5832,7 @@ public class MainWindow : Window
         // visible member means Hide, anything running means Pause. The
         // pause verb exists only when something in the set animates.
         bool anyVisible = false, anyAnimated = false, anyRunning = false;
+        bool anyActor = false;
         foreach (var id in _selection.Selected)
         {
             if (PlayingOf(id) is { } playing)
@@ -5826,6 +5843,7 @@ public class MainWindow : Window
             switch (id)
             {
                 case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    anyActor = true;
                     if (_bindings.Resolve(actorId) is
                             { Success: true, Value: { } actor }
                         && _spawnService.IsVisible(actor))
@@ -5856,15 +5874,18 @@ public class MainWindow : Window
         }
 
         var matched = _groups.ActiveSelection(_selection.Selected);
+        // With an actor in the set, Duplicate opens the plain/posed
+        // choice; without one there is nothing to pose.
         var items = new List<ContextMenuItem>
         {
-            new("Duplicate", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy,
+                submenuItems: anyActor ? DuplicateSubmenu(posable: true) : null),
             new(anyVisible ? "Hide" : "Show",
                 anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
         };
         var actions = new List<Action?>
         {
-            DuplicateSelection,
+            anyActor ? null : () => DuplicateSelection(withPose: false),
             () => SetSelectionVisible(!anyVisible),
         };
         if (anyAnimated)
@@ -5911,49 +5932,223 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
+            && items[subParent].Label == "Duplicate")
+            DuplicateSelection(withPose: subClicked == 1);
     }
 
-    /// <summary>Clones every clonable selected entity through the same
-    /// history-seamed calls the single menus use. Borrowed objects have
-    /// no clone; the selection stays on the ORIGINALS — the clones' own
-    /// bindings land asynchronously per kind, so re-selecting them here
-    /// would be a guess.</summary>
-    private void DuplicateSelection()
+    /// <summary>Duplicates the selection: a whole group as a new group,
+    /// otherwise each entity by its own kind through the same history-
+    /// seamed calls the single menus use. Borrowed objects with no model
+    /// have no copy; the selection stays on the ORIGINALS — the copies'
+    /// bindings land on the scene's own refresh.</summary>
+    private void DuplicateSelection(bool withPose)
     {
-        foreach (var id in _selection.Selected.ToArray())
+        if (_groups.ActiveSelection(_selection.Selected) is { } whole)
         {
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    if (_bindings.Resolve(actorId) is
-                            { Success: true, Value: { } actor })
-                        _lifecycle.SpawnActor(
-                            $"Clone actor '{DisplayName(actor.Name)}'",
-                            () => _spawnService.CloneActor(actor));
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                    if (_bindings.Resolve(lightId) is
-                            { Success: true, Value: { IsValid: true } light })
-                        _lifecycle.CloneLight(light);
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                    if (_bindings.Resolve(propId) is
-                            { Success: true, Value: { IsValid: true } prop })
-                        _lifecycle.CloneProp(prop);
-                    break;
-                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
-                    if (_bindings.Resolve(cameraId) is
-                            { Success: true, Value: { IsValid: true } camera })
-                        _lifecycle.CloneCamera(camera);
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                    if (_bindings.Resolve(overlayId) is
-                            { Success: true, Value: { } node })
-                        _overlayPane.Duplicate(node);
-                    break;
-            }
+            DuplicateGroup(whole, withPose);
+            return;
+        }
+        foreach (var id in _selection.Selected.ToArray())
+            DuplicateEntity(id, withPose);
+    }
+
+    private static ContextMenuItem[] DuplicateSubmenu(bool posable) =>
+    [
+        new ContextMenuItem("Duplicate", TablerIcon.Copy),
+        new ContextMenuItem("Duplicate with pose", TablerIcon.Stack2,
+            disabled: !posable),
+    ];
+
+    /// <summary>One entity's copy, by kind; the live copy, or null when
+    /// the kind has none or the copy failed.</summary>
+    private object? DuplicateEntity(SelectionId id, bool withPose)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
+                    ? DuplicateActor(actor, withPose)
+                    : null;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
+                    ? _lifecycle.CloneLight(light)
+                    : null;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
+                    ? _lifecycle.CloneProp(prop)
+                    : null;
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                return _bindings.Resolve(cameraId) is { Success: true, Value: { IsValid: true } camera }
+                    ? _lifecycle.CloneCamera(camera)
+                    : null;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
+                    ? _overlayPane.Duplicate(node)
+                    : null;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                return _bindings.Resolve(objectId) is { Success: true, Value: { IsValid: true } worldObject }
+                    ? DuplicateWorldObject(worldObject)
+                    : null;
+            default:
+                return null;
         }
     }
+
+    /// <summary>A spawned copy of a world object: the same model at the
+    /// same place with the same dressing. A borrowed object whose model
+    /// never loaded states its address as the path and has nothing to
+    /// copy from.</summary>
+    private Game.WorldObjects.AdoptedWorldObject? DuplicateWorldObject(
+        Game.WorldObjects.AdoptedWorldObject source)
+    {
+        if (!source.Path.Contains('/'))
+        {
+            _notices.Failed($"'{source.Name}' has no model to copy.");
+            return null;
+        }
+        if (_lifecycle.SpawnWorldObject(source.Path, source.Transform, source.Visible)
+            is not Game.WorldObjects.AdoptedWorldObject copy)
+            return null;
+        copy.Name = source.Name;
+        copy.Opacity = source.Opacity;
+        copy.Tint = source.Tint;
+        if (source.IsVfx)
+        {
+            copy.LoopVfx = source.LoopVfx;
+            copy.VfxSpeed = source.VfxSpeed;
+            copy.VfxIntensity = source.VfxIntensity;
+            copy.VfxPaused = source.VfxPaused;
+        }
+        else
+            copy.NightState = source.NightState;
+        return copy;
+    }
+
+    // ── duplicating groups ───────────────────────────────────────────────
+    // The copies spawn at once; their bindings land on the scene's own
+    // refresh, so the group is assembled from the pump once every copy
+    // has an id (or patience runs out and what did bind is grouped).
+
+    private sealed class GroupCopy
+    {
+        public string Name = "";
+        public bool Hidden, Paused, Night;
+        public readonly List<object> Members = new();
+        public readonly List<GroupCopy> Children = new();
+        public Guid? Parent;
+        public int Index = -1;
+        public global::Poser.Application.Scene.RootSlot? Anchor;
+        public int Frames;
+    }
+
+    private readonly List<GroupCopy> _groupCopies = new();
+    private const int GroupCopyPatience = 120;
+
+    /// <summary>Copies the group and everything beneath it into a new
+    /// group of the same name, seated right after the original at the
+    /// same level, gates and all.</summary>
+    private void DuplicateGroup(global::Poser.Application.Scene.SceneGroup group, bool withPose)
+    {
+        var copy = CopyGroupTree(group, withPose);
+        copy.Parent = group.ParentId;
+        if (group.ParentId is { } parentId && _groups.Find(parentId) is { } parent)
+            copy.Index = parent.Children.IndexOf(group.Id) + 1;
+        else
+            copy.Anchor = global::Poser.Application.Scene.RootSlot.ForGroup(group.Id);
+        _groupCopies.Add(copy);
+    }
+
+    private GroupCopy CopyGroupTree(global::Poser.Application.Scene.SceneGroup group, bool withPose)
+    {
+        var copy = new GroupCopy
+        {
+            Name = group.Name,
+            Hidden = group.Hidden,
+            Paused = group.Paused,
+            Night = group.Night,
+        };
+        foreach (var member in group.Members)
+            if (DuplicateEntity(member, withPose) is { } made)
+                copy.Members.Add(made);
+        foreach (var childId in group.Children)
+            if (_groups.Find(childId) is { } child)
+                copy.Children.Add(CopyGroupTree(child, withPose));
+        return copy;
+    }
+
+    private void PumpGroupCopies()
+    {
+        for (int i = _groupCopies.Count - 1; i >= 0; i--)
+        {
+            var copy = _groupCopies[i];
+            if (!CopyBound(copy) && ++copy.Frames < GroupCopyPatience)
+                continue;
+            _groupCopies.RemoveAt(i);
+            if (RealizeGroupCopy(copy) is not { } made)
+            {
+                _notices.Failed($"'{copy.Name}' could not be duplicated: nothing in it copied.");
+                continue;
+            }
+            if (copy.Parent is { } parentId && _groups.Find(parentId) != null)
+                _groups.Nest(made.Id, parentId, copy.Index);
+            else if (copy.Anchor is { } anchor)
+                _groups.MoveRoot(
+                    global::Poser.Application.Scene.RootSlot.ForGroup(made.Id), anchor, after: true);
+        }
+    }
+
+    private bool CopyBound(GroupCopy copy)
+    {
+        foreach (var member in copy.Members)
+            if (IdOfLive(member) == null)
+                return false;
+        foreach (var child in copy.Children)
+            if (!CopyBound(child))
+                return false;
+        return true;
+    }
+
+    private global::Poser.Application.Scene.SceneGroup? RealizeGroupCopy(GroupCopy copy)
+    {
+        var ids = new List<SelectionId>();
+        foreach (var member in copy.Members)
+            if (IdOfLive(member) is { } id)
+                ids.Add(id);
+        var children = new List<global::Poser.Application.Scene.SceneGroup>();
+        foreach (var child in copy.Children)
+            if (RealizeGroupCopy(child) is { } made)
+                children.Add(made);
+        if (ids.Count + children.Count == 0)
+            return null;
+        var group = _groups.Create(copy.Name, ids, allowThin: true);
+        if (group == null)
+            return null;
+        foreach (var child in children)
+            _groups.Nest(child.Id, group.Id);
+        if (copy.Hidden)
+            SetGroupHidden(group, true);
+        if (copy.Paused)
+            SetGroupPaused(group, true);
+        if (copy.Night)
+            SetGroupNight(group, true);
+        return group;
+    }
+
+    /// <summary>A live entity's selection id once the scene has bound it.</summary>
+    private SelectionId? IdOfLive(object live) => live switch
+    {
+        IActor actor => _bindings.GetActorId(actor) is { } a ? SelectionId.ForActor(a) : null,
+        ILight light => _bindings.GetLightId(light) is { } l ? SelectionId.ForLight(l) : null,
+        Game.PropHandle prop => _bindings.GetPropId(prop) is { } p ? SelectionId.ForProp(p) : null,
+        IVirtualCamera camera => _bindings.GetCameraId(camera) is { } c ? SelectionId.ForCamera(c) : null,
+        Game.Overlays.OverlayNodeHandle node => _bindings.GetOverlayId(node) is { } o ? SelectionId.ForOverlay(o) : null,
+        Game.WorldObjects.AdoptedWorldObject worldObject =>
+            _bindings.GetWorldObjectId(worldObject) is { } w ? SelectionId.ForWorldObject(w) : null,
+        _ => null,
+    };
 
     // ── group gates: closed hides, pauses or benights everything beneath
     // and remembers each member's own state; open gives it back — unless
@@ -6362,31 +6557,47 @@ public class MainWindow : Window
     /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
     private void Duplicate(IActor actor)
     {
-        var clone = _lifecycle.SpawnActor(
-            $"Duplicate actor '{DisplayName(actor.Name)}'",
-            () => CloneWearingCollection(actor));
-        if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
+        if (DuplicateActor(actor, withPose: false) is { } clone
+            && _bindings.GetActorId(clone) is { } cloneId)
             _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    private void DuplicateWithPose(IActor actor)
+    {
+        if (DuplicateActor(actor, withPose: true) is { } clone
+            && _bindings.GetActorId(clone) is { } cloneId)
+            _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The copy itself, plain or posed; posed falls back to plain
+    /// for an actor with no skeleton to read.</summary>
+    private IActor? DuplicateActor(IActor actor, bool withPose)
+    {
+        if (!withPose || !actor.HasSkeleton)
+            return _lifecycle.SpawnActor(
+                $"Duplicate actor '{DisplayName(actor.Name)}'",
+                () => CloneWearingCollection(actor));
+        return DuplicateActorWithPose(actor);
     }
 
     /// <summary>The posed duplicate: spawned wearing the collection, restored
     /// to the source's pose and place once posable, frozen, and its gaze
     /// frozen with it — a duplicate never animates and never tracks. No
     /// Customize+: the captured bones already carry it.</summary>
-    private void DuplicateWithPose(IActor actor)
+    private IActor? DuplicateActorWithPose(IActor actor)
     {
         var clone = _lifecycle.SpawnActorWithPose(
             $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
             () => CloneWearingCollection(actor),
             actor);
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
-            return;
+            return clone;
         _animation.Pause(cloneId);
         // Before the first draw: a copy that once engaged the camera look-at
         // and was then paused froze mid blend-out, head off its neck
         // (2026-09-02). Detached from the start, nothing ever engages.
         FreezeGaze(clone);
-        _selection.Select(SelectionId.ForActor(cloneId));
+        return clone;
     }
 
     /// <summary>The seed copy plus what the built body needs again: the

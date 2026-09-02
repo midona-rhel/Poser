@@ -92,17 +92,20 @@ public sealed class SceneGroups
     /// <summary>Groups the entities. When every member already shares one
     /// parent group the new group nests inside it; otherwise it is a root
     /// group seated where its first member sat.</summary>
-    public SceneGroup? Create(string name, IReadOnlyList<SelectionId> members)
+    public SceneGroup? Create(
+        string name, IReadOnlyList<SelectionId> members, bool allowThin = false)
     {
         var kept = new List<SelectionId>();
         foreach (var member in members)
             if (Selection.EntitySelection.IsEntity(member.Kind)
                 && !kept.Contains(member))
                 kept.Add(member);
-        if (kept.Count < 2)
+        // A group being assembled from copies may start thin: its
+        // subgroups nest into it right after.
+        if (kept.Count < 2 && !allowThin)
             return null;
 
-        SceneGroup? sharedParent = GroupOf(kept[0]);
+        SceneGroup? sharedParent = kept.Count > 0 ? GroupOf(kept[0]) : null;
         foreach (var member in kept)
             if (GroupOf(member) != sharedParent)
             {
