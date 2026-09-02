@@ -166,7 +166,12 @@ public sealed class GraphicalBonePane : IDisposable
         var mapArea = new Vector2(
             contentArea.X, MathF.Max(1f, contentArea.Y - bandHeight));
         ImGui.SetCursorScreenPos(origin);
-
+        // The canvas is an ITEM: a press on it belongs to the map — the
+        // marquee — never to the window, which used to move instead. The
+        // dots and the pages draw over it and take their own hover.
+        ImGui.InvisibleButton("##bone-map-canvas", mapArea);
+        ImGui.SetItemAllowOverlap();
+        ImGui.SetCursorScreenPos(origin);
         if (page == 0)
             DrawBodyPage(skeleton, mapArea);
         else
@@ -219,12 +224,18 @@ public sealed class GraphicalBonePane : IDisposable
             {
                 if (isDrag)
                 {
-                    var io = ImGui.GetIO();
-                    if (!io.KeyCtrl && !io.KeyShift)
-                        _selection.Clear();
+                    // A marquee that catches nothing is not a selection of
+                    // nothing: the selection stands.
+                    var caught = new List<SelectionId>();
                     foreach (var (dotId, pos) in _frameDots)
-                    {
                         if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
+                            caught.Add(dotId);
+                    if (caught.Count > 0)
+                    {
+                        var io = ImGui.GetIO();
+                        if (!io.KeyCtrl && !io.KeyShift)
+                            _selection.Clear();
+                        foreach (var dotId in caught)
                             _selection.Add(dotId);
                     }
                 }

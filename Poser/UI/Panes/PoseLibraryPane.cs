@@ -228,7 +228,7 @@ public sealed class PoseLibraryPane
     private void RebuildAfterFilterChange()
     {
         _lastAppliedTile = -1;
-        _vm.Selected = -1;
+        ClearTileSelection();
         _seenRevision = -1;
         _autoDirty = true;
         _refilter = true;
@@ -496,6 +496,12 @@ public sealed class PoseLibraryPane
         _vm.OnSelectFolder = SelectFolder;
         _vm.OnToggleGroup = ToggleGroup;
         _vm.OnSelect = Select;
+        _vm.OnSelectWith = SelectWith;
+        _vm.OnMarquee = MarqueeSelect;
+        _vm.OnApplyTarget = index =>
+            _applyChoice = index >= 0 && index < _applyTargets.Count
+                ? _applyTargets[index]
+                : null;
         // Every apply that HAS a target goes through the actor picker — one
         // workflow, the target always explicit (a lone eligible actor skips
         // the menu). A scene has no target and loads outright.
@@ -530,8 +536,7 @@ public sealed class PoseLibraryPane
                 ActivateObject(_vm.Selected);
                 return;
             }
-            _applyMenuAnchor = Crystarium.ButtonSeat;
-            _applyMenuRequested = true;
+            ApplyToChosen(_vm.Selected);
         };
         // The character-file apply is the one long transaction this pane
         // starts, so this pane also carries its stop — the same cooperative
@@ -613,6 +618,7 @@ public sealed class PoseLibraryPane
         if (_refilter)
             Refilter();
         SyncTarget();
+        SyncApplyTargets();
         SyncImportToggles();
         SyncStatus();
         SyncPreview();
@@ -717,25 +723,30 @@ public sealed class PoseLibraryPane
         _menuItems.Clear();
         _menuActionRows.Clear();
         var tile = _vm.Tiles[index];
-
         bool scenes = _type == LibraryType.Scenes;
-        // A scene is restored whole into the session; it has no actor to be
-        // applied TO, so it states the verb it actually performs.
-        Row(TileMenuAction.Apply, new ContextMenuItem(
-            scenes ? "Load scene" : "Apply",
-            scenes ? TablerIcon.Movie : TablerIcon.Check,
-            disabled: !_vm.CanApply));
-        if (!scenes)
-            Row(TileMenuAction.Spawn, new ContextMenuItem(
-                "Spawn as new actor", TablerIcon.UserPlus,
-                disabled: !_vm.CanSpawn));
+        bool objects = _type == LibraryType.Objects;
+        int count = VerbTargets(index).Count;
+        string many = count > 1 ? " " + count.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        // The verb says what the file IS: a scene loads, an object spawns,
+        // a pose or a character file applies. One file at a time.
+        if (count == 1)
+        {
+            Row(TileMenuAction.Apply, new ContextMenuItem(
+                scenes ? "Load scene" : objects ? "Spawn" : "Apply",
+                scenes ? TablerIcon.Movie : objects ? TablerIcon.Plus : TablerIcon.Check,
+                disabled: !_vm.CanApply));
+            if (!scenes && !objects)
+                Row(TileMenuAction.Spawn, new ContextMenuItem(
+                    "Spawn as new actor", TablerIcon.UserPlus,
+                    disabled: !_vm.CanSpawn));
+        }
         if (_vm.CanFavorite)
             Row(TileMenuAction.Favorite, new ContextMenuItem(
-                tile.Favorite ? "Unfavorite" : "Favorite", TablerIcon.Star));
+                (tile.Favorite ? "Unfavorite" : "Favorite") + many, TablerIcon.Star));
 
         bool poses = _type == LibraryType.Poses;
         var status = _tileStatus[index];
-        if (poses && status != PoseLibraryMetadataStatus.Valid)
+        if (count == 1 && poses && status != PoseLibraryMetadataStatus.Valid)
         {
             Separator();
             Row(TileMenuAction.Retry, new ContextMenuItem(
@@ -755,26 +766,27 @@ public sealed class PoseLibraryPane
         if (_type != LibraryType.AutoSaves)
         {
             Separator();
-            // Valid only. Editing rewrites the whole document, and a Future
-            // entry is one whose schema Poser has already said it does not
-            // support; the core refuses it as well, this keeps the menu from
-            // offering a verb that would only answer a refusal.
-            if (CanEditMetadata(index))
+            if (count == 1 && CanEditMetadata(index))
                 Row(TileMenuAction.EditMetadata, new ContextMenuItem(
                     "Edit metadata…", TablerIcon.FileText,
                     help: "Author and tags, written back into the file."));
-            Row(TileMenuAction.Rename, new ContextMenuItem(
-                "Rename…", TablerIcon.Edit));
+            if (count == 1)
+                Row(TileMenuAction.Rename, new ContextMenuItem(
+                    "Rename…", TablerIcon.Edit));
+            _moveMore.Clear();
+            foreach (var target in VerbTargets(index))
+                if (target != index)
+                    _moveMore.Add(_vm.Tiles[target].ThumbKey);
             Row(TileMenuAction.MoveTo, new ContextMenuItem(
-                "Move to folder…", TablerIcon.Folder,
+                count > 1 ? $"Move{many} to folder…" : "Move to folder…", TablerIcon.Folder,
                 submenuItems: BuildMoveSubmenu(tile.ThumbKey)));
         }
-
         Separator();
-        Row(TileMenuAction.Reveal, new ContextMenuItem(
-            "Reveal in Explorer", TablerIcon.ExternalLink));
+        if (count == 1)
+            Row(TileMenuAction.Reveal, new ContextMenuItem(
+                "Reveal in Explorer", TablerIcon.ExternalLink));
         Row(TileMenuAction.Delete, new ContextMenuItem(
-            "Delete…", TablerIcon.Trash, danger: true));
+            count > 1 ? $"Delete{many} files…" : "Delete…", TablerIcon.Trash, danger: true));
 
         void Row(TileMenuAction action, ContextMenuItem item)
         {
@@ -846,8 +858,7 @@ public sealed class PoseLibraryPane
             ActivateObject(index);
             return;
         }
-        _applyMenuAnchor = ImGui.GetMousePos();
-        _applyMenuRequested = true;
+        ApplyToChosen(index);
     }
 
     /// <summary>The footer's LEFT cluster: configuring sources belongs on
@@ -930,12 +941,16 @@ public sealed class PoseLibraryPane
         if (selected < 0 || selected >= _vm.Tiles.Count ||
             selected >= _tileModified.Count)
         {
-            Crystarium.TextAt(cursor, "Select a file", new TextStyle
-            {
-                Size = theme.Typography.CaptionSize,
-                Color = theme.FormHint,
-            });
-            return inset * 2f + theme.Typography.CaptionSize * scale;
+            // Centred in the rail, both ways, like every empty state.
+            Crystarium.TextInBand(
+                origin, size, "Select a file",
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.FormHint,
+                },
+                TextAlign.Center);
+            return size.Y;
         }
 
         var tile = _vm.Tiles[selected];
@@ -1263,8 +1278,13 @@ public sealed class PoseLibraryPane
                 Spawn(index);
                 break;
             case TileMenuAction.Favorite:
-                ToggleFavorite(index);
+            {
+                // The set follows the clicked tile: all on, or all off.
+                bool favorite = !tile.Favorite;
+                foreach (var target in VerbTargets(index))
+                    SetFavorite(target, favorite);
                 break;
+            }
             case TileMenuAction.Retry:
                 RetryProbe(path);
                 break;
@@ -1285,10 +1305,19 @@ public sealed class PoseLibraryPane
                 RevealFile(path);
                 break;
             case TileMenuAction.Delete:
+            {
+                var targets = VerbTargets(index);
                 _deletePath = path;
-                _deleteName = System.IO.Path.GetFileName(path);
+                _deleteMore.Clear();
+                foreach (var target in targets)
+                    if (target != index)
+                        _deleteMore.Add(_vm.Tiles[target].ThumbKey);
+                _deleteName = targets.Count > 1
+                    ? $"{targets.Count} files"
+                    : System.IO.Path.GetFileName(path);
                 _deleteOpen = true;
                 break;
+            }
         }
     }
 
@@ -1366,9 +1395,21 @@ public sealed class PoseLibraryPane
         return items.ToArray();
     }
 
+    private readonly List<string> _deleteMore = new();
+    private readonly List<string> _moveMore = new();
+
     private void MoveToFolder(string path, string destination)
     {
         _movePath = null;
+        foreach (var more in _moveMore)
+        {
+            var moved = PoseLibraryFileActions.Default.Move(more, destination);
+            if (moved.Succeeded)
+                FavoritePathChanged(more, moved.ResultPath);
+            else
+                _notices.Failed("Move: " + moved.Detail);
+        }
+        _moveMore.Clear();
         var result = PoseLibraryFileActions.Default.Move(path, destination);
         if (result.Succeeded)
         {
@@ -1714,6 +1755,17 @@ public sealed class PoseLibraryPane
                     style: pairStyle,
                     id: "library-delete-confirm"))
             {
+                // The rest of a bulk delete goes first; the clicked file's
+                // own outcome is the one reported below.
+                foreach (var more in _deleteMore)
+                {
+                    var gone = PoseLibraryFileActions.Default.Delete(more);
+                    if (gone.Succeeded)
+                        FavoritePathChanged(more, null);
+                    else
+                        _notices.Failed("Delete: " + gone.Detail);
+                }
+                _deleteMore.Clear();
                 var result = PoseLibraryFileActions.Default.Delete(_deletePath);
                 if (result.Succeeded)
                 {
@@ -1862,7 +1914,7 @@ public sealed class PoseLibraryPane
         _type = (LibraryType)index;
         ResetFilters();
         _lastAppliedTile = -1;
-        _vm.Selected = -1;
+        ClearTileSelection();
         // Each type builds its OWN rail and tiles from the same snapshot, so
         // both paths have to rebuild rather than refilter.
         _seenRevision = -1;
@@ -2047,7 +2099,7 @@ public sealed class PoseLibraryPane
 
         // Row identity did not survive the rebuild, so neither does the
         // selection; a rail row that no longer exists falls back to "All".
-        _vm.Selected = -1;
+        ClearTileSelection();
         _vm.ShowRail = true;
         _vm.RailHeads = 2;
         _vm.ShowNoSources = folders.Count <= 2;
@@ -2300,7 +2352,7 @@ public sealed class PoseLibraryPane
             _tileAuthors.Clear();
             _tileStatus.Clear();
             _tileKinds.Clear();
-            _vm.Selected = -1;
+            ClearTileSelection();
             _vm.EmptyText = ScanningText;
             _refilter = true;
             }
@@ -2446,7 +2498,7 @@ public sealed class PoseLibraryPane
         for (int i = 1; i < folders.Count; i++)
             folders[i].CountText = Count(folders[i].Count);
 
-        _vm.Selected = -1;
+        ClearTileSelection();
         _vm.SelectedFolder =
             held is not null && rows.TryGetValue(held, out int standing)
                 ? standing
@@ -2748,7 +2800,7 @@ public sealed class PoseLibraryPane
         // A selection the filter dropped is no longer on screen, so it stops
         // being what the action row would act on.
         if (!kept)
-            _vm.Selected = -1;
+            ClearTileSelection();
     }
 
     /// <summary>The group row for a slot, reused in place: a refilter mints
@@ -2983,7 +3035,52 @@ public sealed class PoseLibraryPane
         }
 
         // The primary opens the actor picker; its caption is constant.
-        _vm.ApplyLabel = "Apply to";
+        _vm.ApplyLabel = "Apply";
+    }
+
+    /// <summary>Whom a pose or character file applies to: the scene's
+    /// eligible actors in a dropdown beside the verb, the selection's actor
+    /// by default, a chosen one until the choice leaves the scene.</summary>
+    private IActor? _applyChoice;
+
+    private void SyncApplyTargets()
+    {
+        bool shows = _type is LibraryType.Poses or LibraryType.Mcdf;
+        _vm.ShowApplyTarget = shows;
+        if (!shows)
+            return;
+        _applyTargets.Clear();
+        foreach (var actor in _actors.Actors)
+            if (_type == LibraryType.Mcdf || actor.HasSkeleton)
+                _applyTargets.Add(actor);
+        if (_vm.ApplyTargetNames.Length != _applyTargets.Count)
+            _vm.ApplyTargetNames = new string[_applyTargets.Count];
+        for (int i = 0; i < _applyTargets.Count; i++)
+        {
+            var actor = _applyTargets[i];
+            _vm.ApplyTargetNames[i] = _bindings.GetActorId(actor) is { } id
+                ? _config.GetDisplayName(id.LogicalId, Clean(actor.Name))
+                : Clean(actor.Name);
+        }
+        int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice) : -1;
+        if (index < 0)
+        {
+            _applyChoice = null;
+            var selected = TargetActor();
+            index = selected != null ? _applyTargets.IndexOf(selected) : -1;
+        }
+        _vm.ApplyTargetIndex = index < 0 && _applyTargets.Count > 0 ? 0 : index;
+    }
+
+    private void ApplyToChosen(int index)
+    {
+        if (_applyTargets.Count == 0)
+        {
+            _notices.Refused("No actor to apply to.");
+            return;
+        }
+        int choice = Math.Clamp(_vm.ApplyTargetIndex, 0, _applyTargets.Count - 1);
+        ApplyTo(index, _applyTargets[choice]);
     }
 
     /// <summary>The first actor this tab's apply could land on, in scene order
@@ -3297,8 +3394,70 @@ public sealed class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
+        _vm.SelectedSet.Clear();
+        _vm.SelectedSet.Add(index);
         _vm.Selected = index;
         EnrichTile(index);
+    }
+
+    private void ClearTileSelection()
+    {
+        _vm.Selected = -1;
+        _vm.SelectedSet.Clear();
+    }
+
+    /// <summary>Ctrl toggles a tile in the set; Shift selects the range from
+    /// the primary; a plain click selects the tile alone. The primary is
+    /// the tile the rail describes.</summary>
+    private void SelectWith(int index, bool ctrl, bool shift)
+    {
+        if (index < 0 || index >= _vm.Tiles.Count)
+            return;
+        if (shift && _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count)
+        {
+            int from = Math.Min(_vm.Selected, index);
+            int to = Math.Max(_vm.Selected, index);
+            if (!ctrl)
+                _vm.SelectedSet.Clear();
+            for (int i = from; i <= to; i++)
+                _vm.SelectedSet.Add(i);
+            EnrichTile(index);
+            return;
+        }
+        if (ctrl)
+        {
+            if (!_vm.SelectedSet.Remove(index))
+            {
+                _vm.SelectedSet.Add(index);
+                _vm.Selected = index;
+                EnrichTile(index);
+            }
+            else if (_vm.Selected == index)
+                _vm.Selected = _vm.SelectedSet.Count > 0 ? _vm.SelectedSet.Max() : -1;
+            return;
+        }
+        Select(index);
+    }
+
+    private void MarqueeSelect(IReadOnlyList<int> caught, bool additive)
+    {
+        if (caught.Count == 0)
+            return;
+        if (!additive)
+            _vm.SelectedSet.Clear();
+        foreach (var index in caught)
+            _vm.SelectedSet.Add(index);
+        _vm.Selected = caught[caught.Count - 1];
+        EnrichTile(_vm.Selected);
+    }
+
+    /// <summary>The tiles a verb acts on: the whole set when the tile
+    /// clicked is in it, else that tile alone.</summary>
+    private List<int> VerbTargets(int index)
+    {
+        if (_vm.SelectedSet.Contains(index) && _vm.SelectedSet.Count > 1)
+            return _vm.SelectedSet.OrderBy(i => i).ToList();
+        return [index];
     }
 
     /// <summary>The information a selection wants — author, tags, status,
@@ -3413,13 +3572,21 @@ public sealed class PoseLibraryPane
 
     private void ToggleFavorite(int index)
     {
+        if (index < 0 || index >= _vm.Tiles.Count)
+            return;
+        SetFavorite(index, !_vm.Tiles[index].Favorite);
+    }
+
+    private void SetFavorite(int index, bool favorite)
+    {
         if (_type != LibraryType.Poses)
             return;
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         var tile = _vm.Tiles[index];
         var favorites = _config.Config.Library.Favorites;
-        bool favorite = !tile.Favorite;
+        if (tile.Favorite == favorite)
+            return;
         if (favorite)
             favorites.Add(tile.ThumbKey);
         else
