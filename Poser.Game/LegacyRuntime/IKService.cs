@@ -273,19 +273,29 @@ public unsafe class IKService : IIKService
         var spin = Quaternion.CreateFromAxisAngle(
             Vector3.Normalize(axis), request.Config.SwivelDegrees * MathF.PI / 180f);
         bool keepEndRotation = request.Config.Solver == IkSolver.TwoJoint && request.Config.EnforceEndRotation;
+        // The whole chain is read BEFORE anything is written: a write
+        // propagates, so a child read afterwards comes back already spun
+        // by its parent and would be spun again (compounded down the
+        // chain, 2026-09-02).
+        var indices = new int[count];
+        var positions = new Vector3[count];
+        var rotations = new Quaternion[count];
+        for (int i = 0; i < count; i++)
+        {
+            indices[i] = bones[i].BoneIndex;
+            if (!ReadModelSpace(pose, indices[i], out positions[i], out rotations[i]))
+                return;
+        }
         // Root to tip.
         for (int i = count - 1; i >= 0; i--)
         {
-            int index = bones[i].BoneIndex;
-            if (!ReadModelSpace(pose, index, out var position, out var rotation))
-                continue;
             var swung = i == count - 1
-                ? position
-                : start + Vector3.Transform(position - start, spin);
+                ? positions[i]
+                : start + Vector3.Transform(positions[i] - start, spin);
             var turned = i == 0 && keepEndRotation
-                ? rotation
-                : Quaternion.Normalize(spin * rotation);
-            WriteModelSpace(pose, index, swung, turned);
+                ? rotations[i]
+                : Quaternion.Normalize(spin * rotations[i]);
+            WriteModelSpace(pose, indices[i], swung, turned);
         }
     }
 
