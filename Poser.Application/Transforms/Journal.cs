@@ -55,7 +55,13 @@ public sealed record StepContext(
 public sealed record JournalStep(
     string Description,
     Func<bool> Undo,
-    Func<bool> Redo) : HistoryEntry(Description);
+    Func<bool> Redo) : HistoryEntry(Description)
+{
+    /// <summary>The value before and after, when the step is a value
+    /// change — read by the action recorder, never by undo.</summary>
+    public object? BeforeValue { get; init; }
+    public object? AfterValue { get; init; }
+}
 
 /// <summary>The current key of an actor, by lineage. Null when the actor
 /// is gone.</summary>

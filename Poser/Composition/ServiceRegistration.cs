@@ -203,6 +203,7 @@ internal static class ServiceRegistration
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
         services.AddSingleton<ValueJournal>();
+        services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
         services.AddSingleton<Game.Journal.OverlaySession>();
@@ -515,6 +516,8 @@ internal static class ServiceRegistration
         // The one transient-message channel every surface below speaks
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
+        services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
+        services.AddSingleton<global::Poser.UI.Controls.IssueReportModal>();
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();

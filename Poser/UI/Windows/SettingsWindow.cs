@@ -19,6 +19,7 @@ public class SettingsWindow : Window
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
     private readonly IIntegrationRuntimePort _integrations;
+    private readonly Controls.IssueReportModal _issueReport;
     private readonly Dalamud.Plugin.Services.IKeyState _keyState;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
@@ -26,7 +27,8 @@ public class SettingsWindow : Window
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
-        IIntegrationRuntimePort integrations)
+        IIntegrationRuntimePort integrations,
+        Controls.IssueReportModal issueReport)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -34,6 +36,7 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
+        _issueReport = issueReport;
         _keyState = keyState;
         _log = log;
         WireRuntime();
@@ -250,6 +253,7 @@ public class SettingsWindow : Window
                         chosen(path);
                 },
                 string.IsNullOrWhiteSpace(start) ? null : start);
+        vm.OnReportIssue = _issueReport.Open;
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);

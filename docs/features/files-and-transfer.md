@@ -59,3 +59,26 @@ cancellation removes them in reverse order. Incomplete cleanup stays available
 through Reset MCDF. Export only reads data, reports skipped resources, and
 writes the destination safely. Appearance rules are in
 [runtime-appearance.md](runtime-appearance.md).
+
+## Issue reports
+
+"Report an issue" in the burger menu and on the Settings About page
+saves one zip in the plugin's own `issues` folder and opens that
+folder. It never sends anything. The user attaches the file.
+
+The report holds the last five hundred actions with their values
+before and after, the notices the user saw, any exception the UI
+caught, the Poser and Dalamud versions, the loaded plugins, the
+settings and Poser's own lines from the Dalamud log. The scene is an
+option, off by default, and the dialog says what it means: scene data
+only, no modified files, no mods.
+
+Names never enter the file. The recorder replaces character names
+with "Actor 1", "Actor 2" and so on as it writes, in order of first
+sight and stable for the session; the user's profile path and user
+name become a tilde. The scene file is scrubbed the same way before it
+is packed.
+
+The recorder is a reader of the journal, not a second journal: every
+appended entry becomes a record, a folded value step updates its
+record, and the recorder can never fail an append.

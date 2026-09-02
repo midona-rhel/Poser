@@ -58,6 +58,10 @@ public sealed class ValueJournal
     /// makes the step's undo and redo no-ops.</param>
     /// <param name="actors">The lineages of the actors the value belongs
     /// to, when it belongs to one; the step then carries their keys.</param>
+    /// <summary>A step folded a later value into itself: the entry and
+    /// its new after value, for the action recorder.</summary>
+    public event Action<HistoryEntry, object?>? Folded;
+
     public void Set<T>(
         object key,
         string description,
@@ -81,6 +85,7 @@ public sealed class ValueJournal
         {
             write(value);
             open.SetAfter(value!);
+            Folded?.Invoke(open.Entry, value);
             return;
         }
         var scope = actors is { } lineages ? _contexts?.BeginActorStep(lineages) : null;
@@ -93,6 +98,8 @@ public sealed class ValueJournal
             () => Put(alive, write, box.Value))
         {
             Context = scope?.Complete(),
+            BeforeValue = before,
+            AfterValue = value,
         };
         _history.Append(entry);
         _open = new OpenStep(key, entry, next => box.Value = (T)next);
@@ -114,7 +121,11 @@ public sealed class ValueJournal
         _history.Append(new JournalStep(
             description,
             () => Put(alive, write, before),
-            () => Put(alive, write, after)));
+            () => Put(alive, write, after))
+        {
+            BeforeValue = before,
+            AfterValue = after,
+        });
         _open = null;
     }
 

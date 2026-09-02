@@ -532,6 +532,7 @@ public partial class MainWindow : Window
         global::Poser.Application.Scene.SceneGroups groups,
         global::Poser.Application.Scene.GroupSteps groupSteps,
         Controls.EntityNameModal names,
+        Controls.IssueReportModal issueReport,
         ISceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         IViewportReads viewportProjection,
@@ -569,6 +570,7 @@ public partial class MainWindow : Window
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
         _names = names;
+        _issueReport = issueReport;
         _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
@@ -1267,6 +1269,7 @@ public partial class MainWindow : Window
         Sidebar,
         Inspector,
         SettingsSeparator,
+        ReportIssue,
         OpenSettings,
     }
 

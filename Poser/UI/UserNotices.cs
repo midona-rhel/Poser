@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Plugin.Services;
 
@@ -51,10 +52,15 @@ public sealed class UserNotices
 
     public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
 
+    /// <summary>Every notice as it is posted: its kind and its text, for
+    /// the action recorder.</summary>
+    public event Action<string, string>? Posted;
+
     private void Post(string message, NotificationType type)
     {
         if (string.IsNullOrWhiteSpace(message))
             return;
+        Posted?.Invoke(type.ToString(), message);
         _notifications.AddNotification(new Notification
         {
             Title = Title,

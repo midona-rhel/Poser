@@ -131,6 +131,8 @@ public partial class MainWindow
                     TablerIcon.LayoutSidebarRight,
                     attached: !splitInspector, open: inspectorOpen));
         items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;
+        items[(int)ShellCommand.ReportIssue] =
+            new ContextMenuItem("Report an issue", TablerIcon.Bug);
         items[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
     }
@@ -243,6 +245,9 @@ public partial class MainWindow
                 break;
             case ShellCommand.PropertiesPanel:
                 ContentHidden = !ContentHidden;
+                break;
+            case ShellCommand.ReportIssue:
+                _issueReport.Open();
                 break;
             case ShellCommand.OpenSettings:
                 OnSettingsRequested?.Invoke();

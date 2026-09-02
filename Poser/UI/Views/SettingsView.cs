@@ -188,6 +188,7 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
+    public Action? OnReportIssue;
     public Action<string>? OnOpenUrl;
     public Action<string>? OnOpenFolder;
     /// <summary>Opens a folder picker seeded at the first argument and
@@ -1509,6 +1510,10 @@ public static class SettingsView
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));
+            form.Actions("Issue", actions => actions.Button(
+                "Report an issue",
+                () => vm.OnReportIssue?.Invoke(),
+                help: "Save a report to attach"));
             form.Status(
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);

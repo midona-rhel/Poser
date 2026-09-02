@@ -32,7 +32,12 @@ public sealed class UIManager : IUIManager
     private readonly Keybind[] _keybinds;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
 
+    private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
+    private readonly Controls.IssueReportModal _issueReport;
+
     public UIManager(
+        global::Poser.Application.Diagnostics.ActionRecorder recorder,
+        Controls.IssueReportModal issueReport,
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
@@ -47,6 +52,8 @@ public sealed class UIManager : IUIManager
         AnimationSceneActions sceneActions,
         Dalamud.Plugin.Services.IPluginLog log)
     {
+        _recorder = recorder;
+        _issueReport = issueReport;
         _log = log;
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -116,9 +123,22 @@ public sealed class UIManager : IUIManager
         try
         {
             Interactive.BeginFrame();
-            _windows.System.Draw();
+            try
+            {
+                _windows.System.Draw();
+            }
+            catch (Exception ex)
+            {
+                // Recorded for the issue report, then rethrown: Dalamud
+                // owns what happens to a frame that threw.
+                _recorder.Exception(ex);
+                throw;
+            }
             using (FrameProfiler.Scope("Shell · reference images"))
                 _windows.PumpReferenceImages();
+            // The report dialog is a popup, not a window: it draws from
+            // the frame so it opens from the burger and from Settings alike.
+            _issueReport.Draw();
             using (FrameProfiler.Scope("Shell · floating menus"))
                 Crystarium.FloatingMenu.EndFrame();
             using (FrameProfiler.Scope("Shell · hover help"))

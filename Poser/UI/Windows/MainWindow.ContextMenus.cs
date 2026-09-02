@@ -704,6 +704,7 @@ public partial class MainWindow
     /// actor modal, which writes a nickname beside a name the game
     /// owns.</summary>
     private readonly Controls.EntityNameModal _names;
+    private readonly Controls.IssueReportModal _issueReport;
 
     /// <summary>Right-click light menu: the lifetime verbs the actor menu
     /// gives its rows, spoken in the light's vocabulary — the eye, the file,

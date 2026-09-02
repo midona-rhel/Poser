@@ -61,6 +61,10 @@ public sealed class TransformHistory
     public string? UndoDescription => CanUndo ? _undo[^1].Description : null;
     public string? RedoDescription => CanRedo ? _redo[^1].Description : null;
 
+    /// <summary>The entry just appended, for observers that read it — the
+    /// action recorder. Observers cannot roll the append back.</summary>
+    public event Action<HistoryEntry>? Appended;
+
     public void Append(HistoryEntry patch)
     {
         int capacity = _capacity();
@@ -88,6 +92,16 @@ public sealed class TransformHistory
                 catch
                 {
                     // Observers have no transaction authority or result channel.
+                }
+        if (Appended is { } readers)
+            foreach (Action<HistoryEntry> reader in readers.GetInvocationList())
+                try
+                {
+                    reader(patch);
+                }
+                catch
+                {
+                    // Same rule: a reader cannot fail the append.
                 }
     }
 
