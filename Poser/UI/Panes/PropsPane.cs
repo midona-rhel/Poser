@@ -1,10 +1,10 @@
 using System;
+using Poser.Services;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Scene;
 
 namespace Poser.UI;
@@ -21,7 +21,7 @@ namespace Poser.UI;
 public sealed class PropsPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly StainCatalog _stains;
 
     /// <summary>The dye sheet's picker; the owner string carries which of
@@ -30,7 +30,7 @@ public sealed class PropsPane
         new("prop-dye");
 
     private string _status = string.Empty;
-    private PropHandle? _animDraftFor;
+    private IPropHandle? _animDraftFor;
     private float _animDraft;
 
     /// <summary>Destroying a prop is a scene-lifecycle act, so it goes through
@@ -47,7 +47,7 @@ public sealed class PropsPane
 
     public PropsPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         SceneLifecycleHistory lifecycle,
         StainCatalog stains,
         ScenePane scenePane,
@@ -104,7 +104,7 @@ public sealed class PropsPane
         pending?.Invoke();
     }
 
-    private void OpenDyePicker(PropHandle prop, int channel)
+    private void OpenDyePicker(IPropHandle prop, int channel)
     {
         byte current = channel == 0
             ? prop.Model.Stain0
@@ -123,7 +123,7 @@ public sealed class PropsPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void PropRows(Crystarium.FormScope form, PropHandle prop)
+    private void PropRows(Crystarium.FormScope form, IPropHandle prop)
     {
         // Identity first, the camera pattern: the name leads the page.
         form.TextInput(
@@ -237,7 +237,7 @@ public sealed class PropsPane
 
     private bool _destroyAllArmed;
 
-    private PropHandle? SelectedProp()
+    private IPropHandle? SelectedProp()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Prop, Prop: { } propId })

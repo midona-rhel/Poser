@@ -15,7 +15,6 @@ using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Domain.Companions;
 using Poser.Game.Posing;

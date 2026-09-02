@@ -5,7 +5,6 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Overlays;
 using Poser.Game.Scene;
 using Poser.Services;
@@ -36,7 +35,7 @@ namespace Poser.UI;
 public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly SceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawns;
 
@@ -48,7 +47,7 @@ public sealed class SelectionSection
 
     public SelectionSection(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         SceneLifecycleHistory lifecycle,
         IActorSpawnService spawns)
     {
@@ -192,10 +191,10 @@ public sealed class SelectionSection
     /// has moved past is smaller, not a refusal.</summary>
     private readonly record struct ResolvedGroup(
         IReadOnlyList<IActor> Actors,
-        IReadOnlyList<PropHandle> Props,
+        IReadOnlyList<IPropHandle> Props,
         IReadOnlyList<ILight> Lights,
         IReadOnlyList<IVirtualCamera> Cameras,
-        IReadOnlyList<OverlayNodeHandle> Overlays)
+        IReadOnlyList<IOverlayNode> Overlays)
     {
         public int Count =>
             Actors.Count + Props.Count + Lights.Count +
@@ -217,10 +216,10 @@ public sealed class SelectionSection
     private ResolvedGroup Resolve(IReadOnlyList<SelectionId> selected)
     {
         var actors = new List<IActor>();
-        var props = new List<PropHandle>();
+        var props = new List<IPropHandle>();
         var lights = new List<ILight>();
         var cameras = new List<IVirtualCamera>();
-        var overlays = new List<OverlayNodeHandle>();
+        var overlays = new List<IOverlayNode>();
 
         foreach (var id in selected)
         {

@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -13,7 +14,6 @@ using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
 
 namespace Poser.UI;
 
@@ -29,7 +29,7 @@ public sealed class AnimationPane : IDisposable
     private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly IFramework _framework;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly SceneSession _scene;
 
@@ -135,7 +135,7 @@ public sealed class AnimationPane : IDisposable
         Game.Animation.AnimationCatalogLoader catalogLoader,
         Game.Animation.FacialPoseCapture facialCapture,
         IFramework framework,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ISessionGenerationSource sessionGeneration,
         ITextureProvider textures,
         SceneSession scene,

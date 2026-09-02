@@ -12,19 +12,6 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 namespace Poser.Game;
 
-/// <summary>One spawnable prop model: a display name over the weapon model
-/// triple the native spawn takes (Ktisis's props library row, minus the
-/// unsupported wield/sheathe columns).</summary>
-public readonly record struct PropModel(
-    string Name,
-    ushort Model,
-    ushort Submodel,
-    byte Variant,
-    string Description,
-    byte Stain0 = 0,
-    byte Stain1 = 0,
-    byte AnimationVariant = 0);
-
 /// <summary>
 /// One spawned prop: a stable id and display name over the live native
 /// weapon. The handle owns no copy of the transform — every read goes
@@ -32,7 +19,7 @@ public readonly record struct PropModel(
 /// handle whose prop has been destroyed reads as identity and writes
 /// nothing.
 /// </summary>
-public sealed unsafe class PropHandle
+public sealed unsafe class PropHandle : IPropHandle
 {
     private readonly PropSpawnService _owner;
     private nint _address;

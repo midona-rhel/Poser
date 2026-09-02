@@ -13,7 +13,6 @@ using Poser.Data;
 using Poser.Data.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -29,7 +28,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
 
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
@@ -82,7 +81,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     public GraphicalBonePane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
         ITextureProvider textureProvider,

@@ -15,7 +15,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
 using Poser.Game.Presentation;
 using Poser.Services;
 
@@ -33,7 +32,7 @@ public sealed class AppearancePane
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ITextureProvider _textures;
 
     /// <summary>Stores action results for the notification channel.</summary>
@@ -115,7 +114,7 @@ public sealed class AppearancePane
         ActorIntegrationSession integration,
         SceneSession scene,
         IActorSpawnService spawn,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ITextureProvider textures,
         Config.ConfigurationService config,
         Game.Integration.InvisibleSkinService invisibleSkin,

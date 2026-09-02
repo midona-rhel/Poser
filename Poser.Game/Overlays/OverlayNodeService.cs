@@ -16,7 +16,7 @@ namespace Poser.Game.Overlays;
 /// capture — and a handle whose node has been destroyed reads its last
 /// document and writes nothing, exactly as a destroyed prop's handle does.
 /// </summary>
-public sealed class OverlayNodeHandle
+public sealed class OverlayNodeHandle : IOverlayNode
 {
     private readonly OverlayNodeService _owner;
     private object? _node;

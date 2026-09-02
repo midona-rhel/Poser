@@ -8,7 +8,6 @@ using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -139,7 +138,7 @@ public sealed class WorldAdoptionSource
     // same history the transforms use — unlike the actor clone and the light
     // capture beside it, for neither of which this seam can state an inverse.
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly SelectionSession _selection;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
@@ -150,7 +149,7 @@ public sealed class WorldAdoptionSource
     private long _nextRefreshMs;
     private IActor? _pendingSelectActor;
     private ILight? _pendingSelectLight;
-    private Game.WorldObjects.AdoptedWorldObject? _pendingSelectWorldObject;
+    private IWorldObject? _pendingSelectWorldObject;
 
     public WorldAdoptionSource(
         Game.WorldActorDiscovery worldActors,
@@ -158,7 +157,7 @@ public sealed class WorldAdoptionSource
         Game.WorldObjects.WorldObjectService worldObjects,
         ICameraService camera,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         SelectionSession selection,
         AnimationSession animation,
         ConfigurationService configuration,
@@ -462,7 +461,7 @@ public sealed class WorldAdoptionSource
     private void AdoptWorldObject(nint address)
     {
         if (_lifecycle.AdoptWorldObject(address)
-            is Game.WorldObjects.AdoptedWorldObject adopted)
+            is IWorldObject adopted)
         {
             _pendingSelectWorldObject = adopted;
             return;

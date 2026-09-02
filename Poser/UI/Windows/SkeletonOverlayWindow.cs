@@ -12,7 +12,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -31,7 +30,7 @@ public class SkeletonOverlayWindow : Window
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IBonePosingService _bonePosing;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly WorldAdoptionSource _adoption;
     private readonly Application.Scene.SceneGroups _groups;
     // Only for the inactive-actor fade: "active" can mean the GAME's target,
@@ -240,7 +239,7 @@ public class SkeletonOverlayWindow : Window
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         WorldAdoptionSource adoption,
         Application.Scene.SceneGroups groups,
         IActorManager actorManager,

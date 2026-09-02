@@ -12,7 +12,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Services;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
@@ -37,7 +36,7 @@ namespace Poser.UI;
 public sealed class LightPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ILightingService _lighting;
 
     /// <summary>Adding and removing a light goes through the lifecycle seam,
@@ -121,7 +120,7 @@ public sealed class LightPane
 
     public LightPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ILightingService lighting,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,

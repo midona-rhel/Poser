@@ -17,7 +17,6 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 using Poser.Files;
@@ -42,7 +41,7 @@ public class PoseInspectorPane
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -178,7 +177,7 @@ public class PoseInspectorPane
         IGazeService gazeService,
         IEditorState editorState,
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         Game.Viewport.ViewportProjection viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
@@ -2721,7 +2720,7 @@ public class PoseInspectorPane
 
     /// <summary>The rail pad's overlay node — the camera ball's idiom.
     /// </summary>
-    public Game.Overlays.OverlayNodeHandle? RailOverlayNode() =>
+    public IOverlayNode? RailOverlayNode() =>
         _overlayPane.RailNode;
 
     public bool IsActorSelection =>

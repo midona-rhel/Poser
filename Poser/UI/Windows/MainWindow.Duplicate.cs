@@ -15,7 +15,6 @@ using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Domain.Companions;
 using Poser.Game.Posing;
@@ -90,8 +89,8 @@ public partial class MainWindow
     /// same place with the same dressing. A borrowed object whose model
     /// never loaded states its address as the path and has nothing to
     /// copy from.</summary>
-    private Game.WorldObjects.AdoptedWorldObject? DuplicateWorldObject(
-        Game.WorldObjects.AdoptedWorldObject source)
+    private IWorldObject? DuplicateWorldObject(
+        IWorldObject source)
     {
         if (!source.Path.Contains('/'))
         {
@@ -99,7 +98,7 @@ public partial class MainWindow
             return null;
         }
         if (_lifecycle.SpawnWorldObject(source.Path, source.Transform, source.Visible)
-            is not Game.WorldObjects.AdoptedWorldObject copy)
+            is not IWorldObject copy)
             return null;
         copy.Name = source.Name;
         copy.Opacity = source.Opacity;
@@ -232,10 +231,10 @@ public partial class MainWindow
     {
         IActor actor => _bindings.GetActorId(actor) is { } a ? SelectionId.ForActor(a) : null,
         ILight light => _bindings.GetLightId(light) is { } l ? SelectionId.ForLight(l) : null,
-        Game.PropHandle prop => _bindings.GetPropId(prop) is { } p ? SelectionId.ForProp(p) : null,
+        IPropHandle prop => _bindings.GetPropId(prop) is { } p ? SelectionId.ForProp(p) : null,
         IVirtualCamera camera => _bindings.GetCameraId(camera) is { } c ? SelectionId.ForCamera(c) : null,
-        Game.Overlays.OverlayNodeHandle node => _bindings.GetOverlayId(node) is { } o ? SelectionId.ForOverlay(o) : null,
-        Game.WorldObjects.AdoptedWorldObject worldObject =>
+        IOverlayNode node => _bindings.GetOverlayId(node) is { } o ? SelectionId.ForOverlay(o) : null,
+        IWorldObject worldObject =>
             _bindings.GetWorldObjectId(worldObject) is { } w ? SelectionId.ForWorldObject(w) : null,
         _ => null,
     };

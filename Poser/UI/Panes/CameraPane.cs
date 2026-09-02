@@ -10,7 +10,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -31,7 +30,7 @@ public sealed class CameraPane
     private const float Deg2Rad = MathF.PI / 180f;
 
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly IVirtualCameraService _cameras;
     private readonly IActorSpawnService _spawnService;
 
@@ -81,7 +80,7 @@ public sealed class CameraPane
 
     public CameraPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         IVirtualCameraService cameras,
         IActorSpawnService spawnService,
         Game.Scene.SceneLifecycleHistory lifecycle,

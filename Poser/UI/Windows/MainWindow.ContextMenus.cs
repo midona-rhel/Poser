@@ -15,7 +15,6 @@ using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Domain.Companions;
 using Poser.Game.Posing;
@@ -820,7 +819,7 @@ public partial class MainWindow
                 "Rename object", prop.Name, next => prop.Name = next),
             () =>
             {
-                if (_lifecycle.CloneProp(prop) is Game.PropHandle clone &&
+                if (_lifecycle.CloneProp(prop) is IPropHandle clone &&
                     _bindings.GetPropId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForProp(cloneId));
             },

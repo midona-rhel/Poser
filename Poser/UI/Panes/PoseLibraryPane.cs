@@ -17,7 +17,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Preview;
 using Poser.Game.Scene;
@@ -173,7 +172,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly SelectionSession _selection;
 
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
 
     private readonly ActorIntegrationSession _integration;
 
@@ -441,7 +440,7 @@ public sealed partial class PoseLibraryPane
         CleanPoseFacade poseFacade,
         IActorSpawnService spawnService,
         SelectionSession selection,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ActorIntegrationSession integration,
         IAutoSaveService autoSave,
         PoseFileInspectorSection files,

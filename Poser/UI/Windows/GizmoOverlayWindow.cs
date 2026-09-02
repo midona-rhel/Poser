@@ -55,7 +55,7 @@ public class GizmoOverlayWindow : Window
     // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
     // Resolves stable selections to live actors.
-    private readonly Game.Bindings.StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
@@ -180,7 +180,7 @@ public class GizmoOverlayWindow : Window
         CleanTransformFacade cleanTransforms,
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
-        Game.Bindings.StableBindingRegistry bindings,
+        IEntityBindings bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,

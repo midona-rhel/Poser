@@ -8,7 +8,6 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -25,7 +24,7 @@ public sealed class CompanionSection
 {
     private readonly CompanionCatalog _catalog;
     private readonly IActorSpawnService _spawn;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
 
     private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
         new("companion");
@@ -74,7 +73,7 @@ public sealed class CompanionSection
     public CompanionSection(
         CompanionCatalog catalog,
         IActorSpawnService spawn,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ITextureProvider textures)
     {
         _catalog = catalog;

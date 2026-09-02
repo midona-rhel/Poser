@@ -12,7 +12,7 @@ namespace Poser.Game.WorldObjects;
 /// A user-adopted world object and the state needed to restore it. The handle
 /// borrows the game object; it does not own or destroy the native object.
 /// </summary>
-public sealed class AdoptedWorldObject
+public sealed class AdoptedWorldObject : IWorldObject
 {
     private readonly WorldObjectService _owner;
     private Transform _placement;

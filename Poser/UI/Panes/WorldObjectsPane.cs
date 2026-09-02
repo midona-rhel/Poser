@@ -1,11 +1,11 @@
 using System.Globalization;
+using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Game.Bindings;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 
@@ -29,7 +29,7 @@ namespace Poser.UI;
 public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly Game.WorldObjects.WorldAssetCatalog _assets;
 
     /// <summary>The whole-game asset browser, for re-modelling the
@@ -49,7 +49,7 @@ public sealed class WorldObjectsPane
     private bool _openObject = true;
 
     private Action? _pending;
-    private AdoptedWorldObject? _pathDraftFor;
+    private IWorldObject? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
 
@@ -57,7 +57,7 @@ public sealed class WorldObjectsPane
 
     public WorldObjectsPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         SceneLifecycleHistory lifecycle,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -155,7 +155,7 @@ public sealed class WorldObjectsPane
     /// eight, each a live checkbox, plus mono readouts — the manual twin
     /// of the automated gate hunt.</summary>
     private void DebugRows(
-        Crystarium.FormScope form, AdoptedWorldObject worldObject)
+        Crystarium.FormScope form, IWorldObject worldObject)
     {
         ulong flags = worldObject.DebugObjectFlags ?? 0;
         form.ReadOnly(
@@ -220,7 +220,7 @@ public sealed class WorldObjectsPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void ObjectRows(
-        Crystarium.FormScope form, AdoptedWorldObject worldObject)
+        Crystarium.FormScope form, IWorldObject worldObject)
     {
         // Identity first: the name is Poser's to give even on a borrowed
         // thing; the model path below stays the map's fact.
@@ -418,7 +418,7 @@ public sealed class WorldObjectsPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private AdoptedWorldObject? SelectedWorldObject()
+    private IWorldObject? SelectedWorldObject()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } id })

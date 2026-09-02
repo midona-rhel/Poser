@@ -17,7 +17,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Preview;
 using Poser.Game.Scene;

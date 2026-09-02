@@ -15,7 +15,6 @@ using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Domain.Companions;
 using Poser.Game.Posing;
@@ -201,15 +200,15 @@ public partial class MainWindow
                 IActor actor => _bindings.GetActorId(actor) is { } actorId
                     ? SelectionId.ForActor(actorId)
                     : null,
-                Game.PropHandle prop =>
+                IPropHandle prop =>
                     _bindings.GetPropId(prop) is { } propId
                         ? SelectionId.ForProp(propId)
                         : null,
-                Game.Overlays.OverlayNodeHandle node =>
+                IOverlayNode node =>
                     _bindings.GetOverlayId(node) is { } overlayId
                         ? SelectionId.ForOverlay(overlayId)
                         : null,
-                Game.WorldObjects.AdoptedWorldObject worldObject =>
+                IWorldObject worldObject =>
                     _bindings.GetWorldObjectId(worldObject) is { } worldId
                         ? SelectionId.ForWorldObject(worldId)
                         : null,

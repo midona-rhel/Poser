@@ -1,4 +1,5 @@
 using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -6,7 +7,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
-using Poser.Game.Bindings;
 using Poser.Game.Overlays;
 using Poser.Game.Scene;
 
@@ -33,7 +33,7 @@ namespace Poser.UI;
 public sealed class OverlayPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly StatusIconCatalog _statusIcons;
 
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
@@ -64,7 +64,7 @@ public sealed class OverlayPane
 
     /// <summary>The node a create or duplicate made, selected once the scene
     /// refresh has bound it.</summary>
-    private readonly global::Poser.UI.Composition.PendingSelection<OverlayNodeHandle> _pendingSelect = new();
+    private readonly global::Poser.UI.Composition.PendingSelection<IOverlayNode> _pendingSelect = new();
 
     private string _status = string.Empty;
 
@@ -76,7 +76,7 @@ public sealed class OverlayPane
 
     public OverlayPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         StatusIconCatalog statusIcons,
         SceneLifecycleHistory lifecycle,
         ITextureProvider textures,
@@ -98,7 +98,7 @@ public sealed class OverlayPane
     /// <summary>Selects a node some other surface just created — the spawn
     /// browser's rows and this pane's own duplicate. The scene has not
     /// rescanned yet, so the id is resolved on a later frame.</summary>
-    public void SelectWhenBound(OverlayNodeHandle? node)
+    public void SelectWhenBound(IOverlayNode? node)
     {
         if (node != null)
             _pendingSelect.Arm(node);
@@ -158,7 +158,7 @@ public sealed class OverlayPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void PlacementRows(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         string name = node.Name;
         form.TextInput(
@@ -229,7 +229,7 @@ public sealed class OverlayPane
 
     /// <summary>The rail pad's node — the camera pane's BallCamera idiom:
     /// the rail asks the pane that owns the entity.</summary>
-    public OverlayNodeHandle? RailNode => SelectedNode();
+    public IOverlayNode? RailNode => SelectedNode();
 
     /// <summary>
     /// The rail's section for an overlay node — the three facts a node is
@@ -260,7 +260,7 @@ public sealed class OverlayPane
     /// <summary>The X and Y wells. Both surfaces draw these, so the pixel
     /// format, the per-pixel rate and the wheel step are stated once.</summary>
     private static void ScreenPointRows(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         var position = node.Position;
         form.Cells(cells =>
@@ -286,7 +286,7 @@ public sealed class OverlayPane
     }
 
     private static void DraggableRow(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         form.Switch(
             "Drag on screen",
@@ -299,7 +299,7 @@ public sealed class OverlayPane
     /// and "Effect" are what the tab calls the same field — a rail row that
     /// renamed it would read as a second, different setting.</summary>
     private static void TextRow(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         bool status = node.Kind is not (
             OverlayNodeKind.Talk or OverlayNodeKind.Balloon);
@@ -313,7 +313,7 @@ public sealed class OverlayPane
                 : "The words this overlay draws");
     }
 
-    private void ContentRows(Crystarium.FormScope form, OverlayNodeHandle node)
+    private void ContentRows(Crystarium.FormScope form, IOverlayNode node)
     {
         switch (node.Kind)
         {
@@ -330,7 +330,7 @@ public sealed class OverlayPane
     }
 
     private static void TalkRows(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         form.TextInput(
             "Speaker",
@@ -364,7 +364,7 @@ public sealed class OverlayPane
     }
 
     private static void BalloonRows(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         form.TextInput(
             "Line",
@@ -408,7 +408,7 @@ public sealed class OverlayPane
         FontSizeRow(form, node);
     }
 
-    private void StatusRows(Crystarium.FormScope form, OverlayNodeHandle node)
+    private void StatusRows(Crystarium.FormScope form, IOverlayNode node)
     {
         form.TextInput(
             "Effect",
@@ -439,7 +439,7 @@ public sealed class OverlayPane
     }
 
     private static void FontSizeRow(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         form.NumericSlider(
             "Text size",
@@ -453,7 +453,7 @@ public sealed class OverlayPane
     }
 
     private void LifetimeRows(
-        Crystarium.FormScope form, OverlayNodeHandle node)
+        Crystarium.FormScope form, IOverlayNode node)
     {
         form.Actions("Library", actions =>
             actions.Button(
@@ -507,7 +507,7 @@ public sealed class OverlayPane
 
     // ── the icon picker ──────────────────────────────────────────────────
 
-    private void OpenIconPicker(OverlayNodeHandle node)
+    private void OpenIconPicker(IOverlayNode node)
     {
         _iconChoices.Clear();
         foreach (var entry in _statusIcons.Entries)
@@ -545,7 +545,7 @@ public sealed class OverlayPane
 
     /// <summary>Public because the overlay row's context menu speaks this
     /// verb too — one duplication rule, wherever it is asked.</summary>
-    public OverlayNodeHandle? Duplicate(OverlayNodeHandle node)
+    public IOverlayNode? Duplicate(IOverlayNode node)
     {
         // The copy is offset so it does not land exactly under the original,
         // where it would look like nothing happened; the NAME is dropped so
@@ -556,7 +556,7 @@ public sealed class OverlayPane
             Name = string.Empty,
             Position = node.Position + new Vector2(DuplicateOffset),
         };
-        if (_lifecycle.SpawnOverlay(document) is OverlayNodeHandle copy)
+        if (_lifecycle.SpawnOverlay(document) is IOverlayNode copy)
         {
             _pendingSelect.Arm(copy);
             _status = string.Empty;
@@ -571,7 +571,7 @@ public sealed class OverlayPane
     /// screen pixels.</summary>
     private const float DuplicateOffset = 24f;
 
-    private static Vector2 Centred(OverlayNodeHandle node)
+    private static Vector2 Centred(IOverlayNode node)
     {
         var viewport = ImGui.GetMainViewport().Size;
         // The same extent the node layer gives the game as the node's own size,
@@ -582,7 +582,7 @@ public sealed class OverlayPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private OverlayNodeHandle? SelectedNode()
+    private IOverlayNode? SelectedNode()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })

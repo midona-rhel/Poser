@@ -15,7 +15,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.UI.Views;
 
@@ -102,7 +101,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly CameraPane _cameraPane;
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
@@ -180,7 +179,7 @@ public sealed class SpawnBrowserWindow : Window
         CameraPane cameraPane,
         ISpawnCatalogService catalog,
         SelectionSession selection,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         AnimationSession animation,
         ConfigurationService configuration,
         Game.Scene.SceneLifecycleHistory lifecycle,
@@ -1149,7 +1148,7 @@ public sealed class SpawnBrowserWindow : Window
                     _ => OverlayNodeKind.Talk,
                 };
                 if (_lifecycle.SpawnOverlay(overlayKind)
-                    is Game.Overlays.OverlayNodeHandle staged)
+                    is IOverlayNode staged)
                 {
                     // The pane owns the pending select and is pumped by the
                     // main window every frame, so the selection lands however
