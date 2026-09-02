@@ -42,9 +42,6 @@ public static partial class Crystarium
 
         public static Vector4 FillColor => GlassChrome.BackgroundColor;
 
-        /// <summary>The white line around a solid menu.</summary>
-        private static readonly Vector4 SolidMenuLine = new(1f, 1f, 1f, 0.85f);
-
         public static void PrependShellBlur(
             ImDrawListPtr drawList,
             Vector2 min,
@@ -150,24 +147,18 @@ public static partial class Crystarium
                                     Crystarium.ActiveTheme.Radii.Surface);
                             else if (solid)
                             {
-                                // The combo box is the page surface under the subtle
-                                // overlay; its menu is painted the same way, opaque.
+                                // The menu IS the control, taller: it paints exactly what
+                                // the combo box paints — its fill, its border, its radius.
                                 var theme = Crystarium.ActiveTheme;
-                                var menuDraw = ImGui.GetWindowDrawList();
-                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
-                                {
-                                    BackgroundColor = theme.Surface with { W = 1f },
-                                    BorderRadius = theme.Radii.Surface,
-                                });
-                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
+                                BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
                                 {
                                     BackgroundColor = theme.Chrome.ControlHover,
                                     BorderWidth = 1f,
-                                    BorderRadius = theme.Radii.Surface,
-                                    BorderTopColor = SolidMenuLine,
-                                    BorderRightColor = SolidMenuLine,
-                                    BorderBottomColor = SolidMenuLine,
-                                    BorderLeftColor = SolidMenuLine,
+                                    BorderRadius = theme.Radii.Control,
+                                    BorderTopColor = theme.Border,
+                                    BorderRightColor = theme.Border,
+                                    BorderBottomColor = theme.Border,
+                                    BorderLeftColor = theme.Border,
                                 });
                             }
                             body();

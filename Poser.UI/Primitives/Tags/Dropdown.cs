@@ -169,7 +169,9 @@ public static partial class Crystarium
                             var hitSize = new Vector2(
                                 (scrolls ? region.ContentWidth : regionWidth) * scale,
                                 rowHeight);
-                            var fillSize = new Vector2(regionWidth * scale, rowHeight);
+                            // The highlight stops where the rows stop: a gutter
+                            // short of the scrollbar when there is one.
+                            var fillSize = hitSize;
 
                             ImGui.PushID(i);
                             var itemHit = Interactive.Reserve(
