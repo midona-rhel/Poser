@@ -307,7 +307,7 @@ public class PoseFileService : IPoseFileService
                         var writeComponents = AnchorMask(match, options, components);
                         if (writeComponents == TransformComponents.None)
                             continue;
-                        PlanBoneTransform(plan, bone, boneData, writeComponents);
+                        PlanBoneTransform(plan, bone, boneData, writeComponents, collection);
                         applied = true;
                     }
                     if (applied)
@@ -517,7 +517,7 @@ public class PoseFileService : IPoseFileService
                 var writeComponents = AnchorMask(match, options, boneComponents);
                 if (writeComponents == TransformComponents.None)
                     continue;
-                PlanBoneTransform(plan, bone, boneData, writeComponents);
+                PlanBoneTransform(plan, bone, boneData, writeComponents, poseFile.Bones);
                 applied = true;
             }
             if (applied)
@@ -653,7 +653,8 @@ public class PoseFileService : IPoseFileService
     }
 
     private static void PlanBoneTransform(
-        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components,
+        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
     {
         // The FILE transform verbatim: file bones are LastRawTransform
         // snapshots taken AFTER the update phase's post-reparent refresh
@@ -672,6 +673,19 @@ public class PoseFileService : IPoseFileService
         // game's zero-quaternion helpers) has nothing to apply.
         if (IsZeroRotation(boneData.Rotation))
             return;
+        // Position travels as the bone's OFFSET FROM ITS PARENT, not as a
+        // place in model space. A bone whose local offset already matches
+        // the file's — a rigid limb, a chain link, a physics link — gets no
+        // position write: its place is its parent's and the game's to
+        // derive, and a written place fights that derivation (a minion's
+        // leash shortened every rotation down the chain to nothing,
+        // 2026-09-02). A root, a hip, or a bone a Customize+ offset moved
+        // differs locally and is written.
+        if (components.HasFlag(TransformComponents.Position)
+            && LocalOffsetMatches(bone, boneData, collection))
+            components &= ~TransformComponents.Position;
+        if (components == TransformComponents.None)
+            return;
         plan.Writes.Add(new PoseImportWrite(
             bone.Skeleton.Slot,
             bone.PartialId,
@@ -683,6 +697,40 @@ public class PoseFileService : IPoseFileService
                 Scale = boneData.Scale
             },
             components));
+    }
+
+    /// <summary>Whether the file places this bone at the same offset from
+    /// its parent as the live skeleton does, to half a millimetre. A root
+    /// has no parent to measure against and always keeps its position.</summary>
+    private static bool LocalOffsetMatches(
+        IBone bone, PoseFile.BoneData boneData,
+        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
+    {
+        if (bone.ParentBone is not { } parent
+            || !collection.TryGetValue(parent.BoneName, out var parentData)
+            || !TransformMath.IsValidRotation(parentData.Rotation))
+            return false;
+        var rawParent = parent.LastRawTransform;
+        if (!TransformMath.IsValidRotation(rawParent.Rotation))
+            return false;
+        var fileLocal = LocalOffset(
+            boneData.Position, parentData.Position, parentData.Rotation, parentData.Scale);
+        var rawLocal = LocalOffset(
+            bone.LastRawTransform.Position, rawParent.Position, rawParent.Rotation, rawParent.Scale);
+        const float halfMillimetreSquared = 0.0005f * 0.0005f;
+        return Vector3.DistanceSquared(fileLocal, rawLocal) < halfMillimetreSquared;
+    }
+
+    private static Vector3 LocalOffset(
+        Vector3 position, Vector3 parentPosition, Quaternion parentRotation, Vector3 parentScale)
+    {
+        var offset = Vector3.Transform(
+            position - parentPosition,
+            Quaternion.Inverse(TransformMath.NormalizeRotation(parentRotation)));
+        return new Vector3(
+            parentScale.X > 0.0001f ? offset.X / parentScale.X : offset.X,
+            parentScale.Y > 0.0001f ? offset.Y / parentScale.Y : offset.Y,
+            parentScale.Z > 0.0001f ? offset.Z / parentScale.Z : offset.Z);
     }
 
     /// <summary>Brio PoseWindow's TransformComponents assembly from the three

@@ -40,14 +40,19 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     /// the placement is restored separately and explicitly, exactly as the
     /// scene loader separates <c>PlaceActor</c> from its pose import.
     /// </summary>
-    private static PoseImportOptions RestoreOptions => new()
+    private PoseImportOptions RestoreOptions => new()
     {
-        ApplyRotation = true,
-        ApplyPosition = true,
-        ApplyScale = true,
+        ApplyRotation = DebugRotation,
+        ApplyPosition = DebugPosition,
+        ApplyScale = DebugScale,
         ApplyModelTransform = false,
         SuppressHistory = true,
     };
+
+    // Debug-bridge knobs for the restore experiments (2026-09-02): which
+    // components the restore imports and which side passes run.
+    internal bool DebugRotation = true, DebugPosition = true, DebugScale = true;
+    internal bool DebugPhysicsDeltas = true, DebugRootScales = true;
 
     private readonly IActorSpawnService _spawns;
     private readonly IPosingService _posing;
@@ -456,14 +461,14 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         // child against its root as the last posing pass left it, and a
         // root owned in the same tick compounded the face bones (1.077
         // twice, 01:2x). Own the roots, let a pass run, then import.
-        if (state.PartialRootScales is { } rootScales)
+        if (state.PartialRootScales is { } rootScales && DebugRootScales)
             ApplyPartialRootScales(actor, rootScales);
         var restored = _poses.ImportPose(
             actor, pose, RestoreOptions, $"Restore pose for {actor.Name}");
         if (!restored.Success)
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
-        if (state.PhysicsDeltas is { } physicsDeltas)
+        if (state.PhysicsDeltas is { } physicsDeltas && DebugPhysicsDeltas)
             ApplyPhysicsDeltasOver(actor, physicsDeltas, passes: 4);
     }
 }

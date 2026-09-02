@@ -730,6 +730,25 @@ public sealed class SceneLifecycleHistory
     public void WhenPosable(IActor actor, Action<IActor> act) =>
         _actors.WhenPosable(actor, a => act((IActor)a));
 
+    /// <summary>Debug bridge only: the source's state onto an existing
+    /// actor, unjournaled, with the restore knobs set for the run.</summary>
+    public void TransferState(
+        IActor from, IActor to,
+        bool rotation, bool position, bool scale,
+        bool physicsDeltas, bool rootScales)
+    {
+        if (_actors is ActorServiceLifecycle lifecycle)
+        {
+            lifecycle.DebugRotation = rotation;
+            lifecycle.DebugPosition = position;
+            lifecycle.DebugScale = scale;
+            lifecycle.DebugPhysicsDeltas = physicsDeltas;
+            lifecycle.DebugRootScales = rootScales;
+        }
+        var state = _actors.Read(from);
+        _actors.Restore(to, state);
+    }
+
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
