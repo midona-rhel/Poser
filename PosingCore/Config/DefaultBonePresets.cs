@@ -6,19 +6,26 @@ namespace Poser.Config;
 /// <summary>
 /// The stock bone filters, built from Ktisis's category tree so they name
 /// exactly the bones the sidebar files under those headings (asked
-/// 2026-09-03). Body is the spine from the hips to the head; Head is the
-/// whole head subtree; the paired filters take both sides, IVCS bones
-/// included, since a preset only ever shows the bones an actor carries.
+/// 2026-09-03). Body is the spine from the hips to the head with the
+/// abdomen's muscle bones; Head is the whole head subtree; the paired
+/// filters take both sides, and each takes the IVCS bones of its own
+/// region — fingers with the hands, toes with the feet, the arm and thigh
+/// muscles with the arms and legs — since a preset only ever shows the
+/// bones an actor carries.
 /// </summary>
 public static class DefaultBonePresets
 {
+    /// <summary>Bumped when a stock list changes; the seed then replaces
+    /// the stock presets by name.</summary>
+    public const int Version = 2;
+
     public static IReadOnlyList<BoneVisibilityPreset> Build() =>
     [
-        Preset("Body", Own("Spine"), ["j_kubi", "j_kao"]),
+        Preset("Body", Own("Spine"), ["j_kubi", "j_kao"], Own("CustomAbdomen")),
         Preset("Head", Subtree("Head")),
-        Preset("Arms", Own("LeftArm"), Own("RightArm")),
+        Preset("Arms", Own("LeftArm"), Own("RightArm"), Own("CustomArms")),
         Preset("Hands", Own("LeftHand"), Own("LeftHandIvcs"), Own("RightHand"), Own("RightHandIvcs")),
-        Preset("Legs", Own("LeftLeg"), Own("RightLeg")),
+        Preset("Legs", Own("LeftLeg"), Own("RightLeg"), Own("CustomLegs")),
         Preset("Feet", Own("LeftFoot"), Own("LeftFootIvcs"), Own("RightFoot"), Own("RightFootIvcs")),
         Preset("Breasts", Own("Breasts"), Own("BreastsIvcs")),
         Preset("Privates", Own("GenitalsIvcs"), Own("PenisIvcs"), Own("VaginaIvcs"), Own("BottomIvcs")),

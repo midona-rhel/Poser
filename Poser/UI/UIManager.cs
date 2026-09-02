@@ -376,7 +376,11 @@ public sealed class UIManager : IUIManager
             return false;
         bool handled = false;
         // Off, the bind still runs, and the game sees the key as well.
-        bool keep = _configService.Config.Camera.KeepBoundKeysFromGame;
+        // Escape and Enter are never taken whatever the setting: they are
+        // how a user leaves GPose and a game dialog, and Deselect sits on
+        // Escape in every preset (Escape stopped leaving GPose, 2026-09-03).
+        bool keep = _configService.Config.Camera.KeepBoundKeysFromGame
+            && key != VirtualKey.ESCAPE && key != VirtualKey.RETURN;
         foreach (var bind in _keybinds)
         {
             if (!ChordIs(bind.Primary, key) && !ChordIs(bind.Secondary, key))

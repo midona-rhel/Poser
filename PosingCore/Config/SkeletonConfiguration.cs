@@ -83,9 +83,10 @@ public class SkeletonConfiguration
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();
 
-    /// <summary>The stock presets were added once; a user who deletes one
-    /// does not get it back on the next load.</summary>
-    public bool DefaultBonePresetsSeeded { get; set; }
+    /// <summary>The stock preset version last seeded. A user who deletes a
+    /// stock preset does not get it back until the stock lists change, and
+    /// then every stock name is written anew.</summary>
+    public int DefaultBonePresetsVersion { get; set; }
 
     /// <summary>
     /// Brio's <c>SkeletonLineToCircle</c>: a connector stops at the two dots'
