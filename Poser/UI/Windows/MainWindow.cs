@@ -632,22 +632,12 @@ public class MainWindow : Window
         _vm.OnGroupVisibility = row =>
         {
             if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
-                SetGroupVisible(group, group.VisibleOverride switch
-                {
-                    null => false,
-                    false => true,
-                    _ => null,
-                });
+                SetGroupHidden(group, !group.Hidden);
         };
         _vm.OnGroupPause = row =>
         {
             if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
-                SetGroupPlaying(group, group.PlayingOverride switch
-                {
-                    null => false,
-                    false => true,
-                    _ => null,
-                });
+                SetGroupPaused(group, !group.Paused);
         };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
@@ -2693,44 +2683,56 @@ public class MainWindow : Window
         int depth,
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter,
-        bool filtering)
+        bool filtering,
+        bool[]? lines = null,
+        bool isLast = true)
     {
         string key = "group:" + group.Id;
         bool expanded = filtering || !_collapsedNodes.Contains(key);
         bool locked = _groups.IsLocked(group);
+        lines ??= RootTreeLines;
         _sceneSection.Rows.Add(new ShellSidebarRow
         {
             Label = group.Name,
             Icon = TablerIcon.Folder,
+            ForceIcon = true,
             Draggable = !locked,
             DropContainer = !locked,
             GroupActions = true,
             GroupLocked = group.Locked,
-            GroupVisible = group.VisibleOverride,
-            GroupPlaying = group.PlayingOverride,
+            GroupHidden = group.Hidden,
+            GroupPaused = group.Paused,
             HasChildren = group.ItemCount > 0,
             Depth = depth,
+            IsLastChild = isLast,
+            TreeLines = lines,
             ExpandKey = key,
             Expanded = expanded,
             Tag = new GroupRowTag(group.Id),
         });
         if (!expanded)
             return;
+        // The branch lines below this head: a trunk continues at this
+        // level while a later sibling follows the group.
+        var childLines = depth == 0 ? RootTreeLines : Descend(lines, isLast);
         int memberStart = _sceneSection.Rows.Count;
         for (int m = 0; m < group.Members.Count; m++)
             AddGroupMemberRow(
                 group.Members[m], snapshot, filter, filtering,
                 isLast: m == group.Members.Count - 1 && group.Children.Count == 0,
-                depth: depth + 1);
+                depth: depth + 1,
+                lines: childLines);
         for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
         {
             _sceneSection.Rows[r].GroupMember = true;
             if (locked)
                 _sceneSection.Rows[r].Draggable = false;
         }
-        foreach (var childId in group.Children)
-            if (_groups.Find(childId) is { } child)
-                AddGroupRows(child, depth + 1, snapshot, filter, filtering);
+        for (int c = 0; c < group.Children.Count; c++)
+            if (_groups.Find(group.Children[c]) is { } child)
+                AddGroupRows(
+                    child, depth + 1, snapshot, filter, filtering,
+                    childLines, isLast: c == group.Children.Count - 1);
     }
 
     private void AddGroupMemberRow(
@@ -2739,8 +2741,10 @@ public class MainWindow : Window
         string filter,
         bool filtering,
         bool isLast,
-        int depth = 1)
+        int depth = 1,
+        bool[]? lines = null)
     {
+        lines ??= RootTreeLines;
         switch (member)
         {
             case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
@@ -2749,7 +2753,7 @@ public class MainWindow : Window
                     {
                         AddActorRows(
                             _sceneSection, actor, snapshot, filter,
-                            filtering, depth, RootTreeLines, isLast);
+                            filtering, depth, lines, isLast);
                         return;
                     }
                 return;
@@ -2759,7 +2763,7 @@ public class MainWindow : Window
                     {
                         var row = PropRow(prop, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2770,7 +2774,7 @@ public class MainWindow : Window
                     {
                         var row = WorldObjectRow(worldObject, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2781,7 +2785,7 @@ public class MainWindow : Window
                     {
                         var row = LightRow(light, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2792,7 +2796,7 @@ public class MainWindow : Window
                     {
                         var row = CameraRow(camera, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2803,7 +2807,7 @@ public class MainWindow : Window
                     {
                         var row = OverlayRow(overlay, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -4210,6 +4214,11 @@ public class MainWindow : Window
         ShellSidebarRow? target,
         RowDropPosition position)
     {
+        int pointerLevel = _vm.DropLevel;
+        (target, position) = ResolveDropLevel(target, position);
+        _log.Debug(
+            $"Sidebar drop: {DescribeRow(dragged)} -> {(target == null ? "nothing" : DescribeRow(target))} "
+            + $"{position} at level {pointerLevel}");
         // A group head re-seats among the root slots like anything else;
         // open space is the end of the list.
         if (dragged.Tag is GroupRowTag draggedGroup)
@@ -4263,6 +4272,20 @@ public class MainWindow : Window
             return;
         }
 
+        // Beside a nested group: the dragged rows join that group's parent.
+        if (target?.Tag is GroupRowTag besideGroup
+            && position is RowDropPosition.Before or RowDropPosition.After
+            && _groups.Find(besideGroup.Id) is { ParentId: { } parentId })
+        {
+            foreach (var id in moved)
+            {
+                LeaveGroupOverrides(id);
+                _groups.AddMember(parentId, id);
+                JoinGroupOverrides(id);
+            }
+            return;
+        }
+
         // A root seam: the dragged rows leave any group and re-seat at
         // the caret, in carry order.
         if (target != null
@@ -4295,6 +4318,49 @@ public class MainWindow : Window
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference
     /// images, attached rows — answer null and the drop is a no-op.</summary>
+    private string DescribeRow(ShellSidebarRow row) => row.Tag switch
+    {
+        GroupRowTag tag => $"group '{row.Label}' ({tag.Id.ToString()[..8]}, depth {row.Depth})",
+        SelectionId id => $"{id.Kind} '{row.Label}' (depth {row.Depth})",
+        _ => $"'{row.Label}'",
+    };
+
+    /// <summary>The pointer's indent decides the level at a seam. Right of
+    /// a group head's indent, "after" it means "first inside it"; left of a
+    /// group's last row's indent, "after" it means "after the group" — one
+    /// level out per 20px, so a drag can climb out of nested groups in one
+    /// motion. Returns the row to act on and the position against it.</summary>
+    private (ShellSidebarRow? Target, RowDropPosition Position) ResolveDropLevel(
+        ShellSidebarRow? target, RowDropPosition position)
+    {
+        int level = _vm.DropLevel;
+        _vm.DropLevel = -1;
+        if (target == null || level < 0
+            || position is not (RowDropPosition.Before or RowDropPosition.After))
+            return (target, position);
+        if (level > target.Depth)
+        {
+            if (position == RowDropPosition.After && target.Tag is GroupRowTag)
+                return (target, RowDropPosition.Into);
+            return (target, position);
+        }
+        if (level >= target.Depth || position != RowDropPosition.After)
+            return (target, position);
+        // Climb: the group at the pointer's level that contains this row.
+        var host = HostGroupOf(target);
+        var climbed = host;
+        int depth = target.Depth - 1;
+        while (climbed != null && depth > level)
+        {
+            climbed = _groups.ParentOf(climbed);
+            depth--;
+        }
+        if (climbed == null || host == null)
+            return (target, position);
+        var stand = new ShellSidebarRow { Depth = depth, Tag = new GroupRowTag(climbed.Id) };
+        return (stand, RowDropPosition.After);
+    }
+
     /// <summary>A dragged group: onto a group head it nests there; beside
     /// a nested row it becomes a sibling in that row's group; beside a root
     /// row or into nothing it comes out to the root order. A nest past the
@@ -4304,7 +4370,7 @@ public class MainWindow : Window
         if (target?.Tag is GroupRowTag intoGroup && position == RowDropPosition.Into)
         {
             if (_groups.CanNest(groupId, intoGroup.Id, out var reason))
-                _groups.Nest(groupId, intoGroup.Id);
+                _log.Debug($"Sidebar drop: nest -> {_groups.Nest(groupId, intoGroup.Id)}");
             else
                 _notices.Failed($"Group not moved: {reason}");
             return;
@@ -5887,45 +5953,65 @@ public class MainWindow : Window
     /// <summary>One visibility for the whole selection — actors' draw,
     /// objects' and overlays' eyes, lights' on-state. Cameras have no
     /// visibility and skip.</summary>
-    // ── group overrides: the group's flag over every member, each member's
-    // own flag remembered and given back when the override clears ────────
+    // ── group gates: closed hides or pauses everything beneath and
+    // remembers each member's own flag; open gives it back — unless a gate
+    // further up is still closed ─────────────────────────────────────────
 
-    /// <summary>Ungrouping gives every member its own flags back first.</summary>
+    /// <summary>Ungrouping opens both gates first so every member gets its
+    /// own flags back.</summary>
     private void DissolveGroup(Guid id)
     {
         if (_groups.Find(id) is { } group)
         {
-            SetGroupVisible(group, null);
-            SetGroupPlaying(group, null);
+            SetGroupHidden(group, false);
+            SetGroupPaused(group, false);
         }
         _groups.Dissolve(id);
     }
 
-    private void SetGroupVisible(global::Poser.Application.Scene.SceneGroup group, bool? visible)
+    private bool UnderClosedGate(SelectionId member, Func<global::Poser.Application.Scene.SceneGroup, bool> closed)
     {
-        if (visible is { } forced)
+        if (_groups.GroupOf(member) is not { } own)
+            return false;
+        if (closed(own))
+            return true;
+        foreach (var ancestor in _groups.Ancestors(own))
+            if (closed(ancestor))
+                return true;
+        return false;
+    }
+
+    private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden)
+    {
+        if (group.Hidden == hidden)
+            return;
+        group.Hidden = hidden;
+        if (hidden)
         {
             foreach (var member in _groups.Descendants(group))
             {
                 if (!group.RememberedVisible.ContainsKey(member)
                     && IsEntityVisible(member) is { } own)
                     group.RememberedVisible[member] = own;
-                SetEntityVisible(member, forced);
+                SetEntityVisible(member, false);
             }
         }
         else
         {
             foreach (var (member, own) in group.RememberedVisible)
-                SetEntityVisible(member, own);
+                if (!UnderClosedGate(member, g => g.Hidden))
+                    SetEntityVisible(member, own);
             group.RememberedVisible.Clear();
         }
-        group.VisibleOverride = visible;
         _groups.Touch();
     }
 
-    private void SetGroupPlaying(global::Poser.Application.Scene.SceneGroup group, bool? playing)
+    private void SetGroupPaused(global::Poser.Application.Scene.SceneGroup group, bool paused)
     {
-        if (playing is { } forced)
+        if (group.Paused == paused)
+            return;
+        group.Paused = paused;
+        if (paused)
         {
             foreach (var member in _groups.Descendants(group))
             {
@@ -5933,10 +6019,7 @@ public class MainWindow : Window
                     continue;
                 if (!group.RememberedPlaying.ContainsKey(member))
                     group.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
-                if (forced)
-                    _animation.Resume(actorId);
-                else
-                    _animation.Pause(actorId);
+                _animation.Pause(actorId);
             }
         }
         else
@@ -5945,6 +6028,8 @@ public class MainWindow : Window
             {
                 if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
                     continue;
+                if (UnderClosedGate(member, g => g.Paused))
+                    continue;
                 if (own)
                     _animation.Resume(actorId);
                 else
@@ -5952,39 +6037,39 @@ public class MainWindow : Window
             }
             group.RememberedPlaying.Clear();
         }
-        group.PlayingOverride = playing;
         _groups.Touch();
     }
 
-    /// <summary>A member joining a group under an override takes it and
-    /// remembers its own flag the same way the founding members did.</summary>
+    /// <summary>A member joining under a closed gate is hidden or paused
+    /// by the outermost closed group, which remembers its own flag.</summary>
     private void JoinGroupOverrides(SelectionId member)
     {
         if (_groups.GroupOf(member) is not { } home)
             return;
-        // The outermost override up the chain is the one in force.
-        var group = home;
-        foreach (var ancestor in _groups.Ancestors(home))
-            if (ancestor.VisibleOverride != null || ancestor.PlayingOverride != null)
-                group = ancestor;
-        if (group.VisibleOverride is { } visible)
+        var chain = new List<global::Poser.Application.Scene.SceneGroup> { home };
+        chain.AddRange(_groups.Ancestors(home));
+        global::Poser.Application.Scene.SceneGroup? hiding = null, pausing = null;
+        foreach (var group in chain)
         {
-            if (IsEntityVisible(member) is { } own)
-                group.RememberedVisible[member] = own;
-            SetEntityVisible(member, visible);
+            if (group.Hidden)
+                hiding = group;
+            if (group.Paused)
+                pausing = group;
         }
-        if (group.PlayingOverride is { } playing
-            && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        if (hiding != null && IsEntityVisible(member) is { } visible)
         {
-            group.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
-            if (playing)
-                _animation.Resume(actorId);
-            else
-                _animation.Pause(actorId);
+            hiding.RememberedVisible[member] = visible;
+            SetEntityVisible(member, false);
+        }
+        if (pausing != null && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        {
+            pausing.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
+            _animation.Pause(actorId);
         }
     }
 
-    /// <summary>A member leaving a group gets its own flags back.</summary>
+    /// <summary>A member leaving its group gets its own flags back from
+    /// whichever group remembered them.</summary>
     private void LeaveGroupOverrides(SelectionId member)
     {
         if (_groups.GroupOf(member) is not { } own)

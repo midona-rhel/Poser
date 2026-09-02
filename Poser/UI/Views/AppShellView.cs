@@ -35,9 +35,9 @@ public sealed class ShellSidebarRow
     /// <summary>Group-head rows: the lock action seat.</summary>
     public bool GroupActions;
     public bool GroupLocked;
-    /// <summary>A group row's overrides: null = members keep their own.</summary>
-    public bool? GroupVisible;
-    public bool? GroupPlaying;
+    /// <summary>A group row's gates: closed hides / pauses everything beneath.</summary>
+    public bool GroupHidden;
+    public bool GroupPaused;
     /// <summary>Camera rows: the kind letter between the live and lock
     /// seats — M main, F free, C camera. A marker, not a control.</summary>
     public string CameraMark = "";
@@ -307,6 +307,11 @@ public sealed class AppShellViewModel
     /// <summary>A drag released: <c>dragged</c> lands relative to
     /// <c>target</c> (null target = open space, which un-groups).</summary>
     public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
+    /// <summary>The tree level the pointer sat at when the drop landed
+    /// (0 = root), read by the drop handler: dragging out to the left of a
+    /// group's last row climbs out of it, dragging right under a group
+    /// head goes into it. -1 when no row was under the pointer.</summary>
+    public int DropLevel = -1;
 
     /// <summary>A click on the tree's open space below the last row — the
     /// "nothing" target: the shell clears the selection.</summary>

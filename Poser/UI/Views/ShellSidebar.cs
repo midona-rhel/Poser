@@ -394,6 +394,10 @@ public sealed class ShellSidebar
     private RowDropPosition _dropPosition;
     private bool _dropOnSelf;
     private bool _paintDropOnSelf;
+    private int _dropLevel = -1;
+    private ShellSidebarRow? _hoverRow;
+    private double _hoverSince;
+    private const double HoverExpandSeconds = 0.6;
     private ShellSidebarRow? _paintDropTarget;
     private RowDropPosition _paintDropPosition;
 
@@ -415,6 +419,7 @@ public sealed class ShellSidebar
         _dropTarget = null;
         _dropPosition = RowDropPosition.Out;
         _dropOnSelf = false;
+        _dropLevel = -1;
 
         var clipper = new ImGuiListClipper();
         clipper.Begin(_slotCount, _pitch * scale);
@@ -478,10 +483,12 @@ public sealed class ShellSidebar
 
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
+                _vm.DropLevel = _dropLevel;
                 if (!_dropOnSelf && !_paintDropOnSelf)
                     _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
                 _dragSource = null;
                 _dropTarget = null;
+                _hoverRow = null;
                 _dirty = true;
             }
         }
@@ -535,9 +542,40 @@ public sealed class ShellSidebar
             if (mouse.X >= rectMin.X && mouse.X < rectMax.X
                 && mouse.Y >= rectMin.Y && mouse.Y < rectMax.Y)
             {
-                bool canInto = row.DropContainer && !source.DropContainer;
-                float third = rowHeight / 3f;
+                // A group goes into a group too (nesting); the handler
+                // refuses what would nest too deep.
+                bool canInto = row.DropContainer;
+                // A container takes the middle HALF as "into"; the seams
+                // are the outer quarters.
+                float third = rowHeight / 4f;
                 _dropTarget = row;
+                // The level the pointer points at: the row's own, one
+                // in per 20px to the right of its indent, one out per
+                // 20px to the left.
+                float indent = 20f * scale;
+                float rowContentX = rectMin.X + 12f * scale + row.Depth * indent;
+                _dropLevel = Math.Clamp(
+                    row.Depth + (int)MathF.Floor((mouse.X - rowContentX) / indent),
+                    0, row.Depth + 1);
+                // A collapsed container held under the drag opens up.
+                if (row.HasChildren && !row.Expanded)
+                {
+                    double now = ImGui.GetTime();
+                    if (!ReferenceEquals(_hoverRow, row))
+                    {
+                        _hoverRow = row;
+                        _hoverSince = now;
+                    }
+                    else if (now - _hoverSince > HoverExpandSeconds)
+                    {
+                        _hoverSince = double.MaxValue;
+                        _vm.OnRowExpandToggled?.Invoke(row);
+                    }
+                }
+                else
+                {
+                    _hoverRow = null;
+                }
                 _dropPosition = canInto
                     ? mouse.Y < rectMin.Y + third
                         ? RowDropPosition.Before
@@ -868,37 +906,30 @@ public sealed class ShellSidebar
                         dimmed: !row.GroupLocked))
                     _vm.OnGroupLock?.Invoke(row);
 
-                // The group's own flags cycle: inherit -> hidden -> shown
-                // -> inherit (and paused -> playing for animation). A
-                // dimmed icon means the members keep their own flag.
+                // The group's gates: closed hides or pauses everything
+                // beneath; open gives each member its own flag back.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
-                        row.GroupVisible == false ? TablerIcon.EyeOff : TablerIcon.Eye,
+                        row.GroupHidden ? TablerIcon.EyeOff : TablerIcon.Eye,
                         selected: false,
                         style: square,
-                        help: row.GroupVisible switch
-                        {
-                            null => "Hide the whole group",
-                            false => "Show the whole group",
-                            _ => "Let each member keep its own visibility",
-                        },
+                        help: row.GroupHidden
+                            ? "Show: each member keeps its own visibility"
+                            : "Hide everything in the group",
                         id: "##group-visible",
-                        dimmed: row.GroupVisible == null))
+                        dimmed: row.GroupHidden))
                     _vm.OnGroupVisibility?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
-                        row.GroupPlaying == false ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
+                        row.GroupPaused ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
-                        help: row.GroupPlaying switch
-                        {
-                            null => "Pause every actor in the group",
-                            false => "Play every actor in the group",
-                            _ => "Let each actor keep its own play state",
-                        },
+                        help: row.GroupPaused
+                            ? "Play: each actor plays its own animation again"
+                            : "Pause every actor in the group",
                         id: "##group-play",
-                        dimmed: row.GroupPlaying == null))
+                        dimmed: row.GroupPaused))
                     _vm.OnGroupPause?.Invoke(row);
                 return;
             }

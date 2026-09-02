@@ -22,15 +22,16 @@ public sealed class SceneGroup
 
     public bool Locked { get; set; }
 
-    /// <summary>The group's own visibility: null lets every member keep its
-    /// own flag; true or false is imposed on all of them, and what each
-    /// member had before is remembered so clearing the override gives it
-    /// back.</summary>
-    public bool? VisibleOverride { get; set; }
+    /// <summary>The visibility GATE: closed hides everything beneath and
+    /// remembers each member's own flag; open gives every member its own
+    /// flag back. A closed gate anywhere up the chain keeps a member
+    /// hidden.</summary>
+    public bool Hidden { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedVisible = new();
 
-    /// <summary>The same for animation play, actors only.</summary>
-    public bool? PlayingOverride { get; set; }
+    /// <summary>The play gate, actors only: closed pauses everything
+    /// beneath, open lets each actor play whatever it was playing.</summary>
+    public bool Paused { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedPlaying = new();
 
     public int ItemCount => Members.Count + Children.Count;
@@ -109,12 +110,14 @@ public sealed class SceneGroups
         if (sharedParent != null && Depth(sharedParent.Id) >= MaxDepth)
             sharedParent = null;
 
-        int seat = -1;
-        if (sharedParent != null)
-            seat = sharedParent.Members.IndexOf(kept[0]);
-        // One home per entity: joining this group leaves any other.
+        // One home per entity: joining this group leaves any other — and
+        // leaves it for good, never re-seated into the old parent on the
+        // way (that listed a member twice, 2026-09-02).
         foreach (var member in kept)
-            RemoveMemberCore(member, reseat: sharedParent == null);
+        {
+            RemoveMemberCore(member, reseat: false);
+            RemoveRootSlot(RootSlot.For(member));
+        }
 
         var group = new SceneGroup
         {
@@ -142,7 +145,6 @@ public sealed class SceneGroups
                 }
             _order.Insert(Math.Min(at, _order.Count), RootSlot.ForGroup(group.Id));
         }
-        _ = seat;
         Revision++;
         return group;
     }
