@@ -24,6 +24,7 @@ public class Poser : IDalamudPlugin
     private const string CommandName = "/poser";
 
     private readonly ServiceProvider _serviceProvider;
+    private readonly Dalamud.Interface.ManagedFontAtlas.IFontAtlas _standbyFontAtlas;
     private readonly ICommandManager _commandManager;
 
     public Poser(
@@ -124,11 +125,18 @@ public class Poser : IDalamudPlugin
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
+        // The other polarity's fonts warm on a second atlas, so the atlas
+        // the UI draws with is never rebuilt once it is up: the rebuild's
+        // landing frame was the one frame the whole UI went missing.
+        _standbyFontAtlas = pluginInterface.UiBuilder.CreateFontAtlas(
+            Dalamud.Interface.ManagedFontAtlas.FontAtlasAutoRebuildMode.Async,
+            debugName: "Poser standby fonts");
         FontRegistry.Register(
             pluginInterface.UiBuilder.FontAtlas,
             System.IO.Path.Combine(
                 pluginInterface.AssemblyLocation.DirectoryName ?? ".",
-                "Data", "Fonts"));
+                "Data", "Fonts"),
+            _standbyFontAtlas);
         Func<byte[], int, int, (nint, IDisposable?)> textureUploader = (pixels, width, height) =>
         {
             var wrap = textureProvider.CreateFromRaw(
@@ -251,6 +259,7 @@ public class Poser : IDalamudPlugin
                 Crystarium.IconTextureUploader = null;
                 Crystarium.PanelShadowTextureUploader = null;
                 FontRegistry.Dispose();
+                _standbyFontAtlas.Dispose();
             });
     }
 }

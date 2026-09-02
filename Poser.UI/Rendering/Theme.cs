@@ -912,7 +912,10 @@ public static partial class Crystarium
     {
         _themes.Advance(candidate => FontRegistry.Activate(candidate));
         _activeTheme = _themes.Active;
-        return FontRegistry.Ready;
+        // Once the fonts have been ready the UI draws every frame; a
+        // handle that reads unavailable for a frame falls back to the
+        // default font in the text pipeline instead of hiding everything.
+        return FontRegistry.Ready || FontRegistry.EverReady;
     }
 }
 

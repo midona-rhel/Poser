@@ -44,6 +44,19 @@ public static class FontRegistry
 
     private static IFontAtlas? _atlas;
 
+    /// <summary>The atlas the standby polarity warms into. Adding fonts
+    /// to an atlas rebuilds it, and the frame a rebuild lands is a frame
+    /// the active handles read as unavailable; with the standby set on
+    /// its own atlas the active atlas never rebuilds after its first
+    /// build. Null means both sets share one atlas.</summary>
+    private static IFontAtlas? _standbyAtlas;
+
+    /// <summary>True once <see cref="Ready"/> has been true. A frame
+    /// where a handle briefly reads unavailable is drawn with the
+    /// fallback font, never skipped: a skipped frame is the whole UI
+    /// vanishing for one frame.</summary>
+    public static bool EverReady { get; private set; }
+
     /// <summary>Last font-load failure (diagnostics; surfaced via the UI bridge).</summary>
     public static string? LastError { get; private set; }
 
@@ -91,9 +104,11 @@ public static class FontRegistry
     /// Dalamud default font.</summary>
     private static string? _fontDirectory;
 
-    public static void Register(IFontAtlas atlas, string? fontDirectory = null)
+    public static void Register(
+        IFontAtlas atlas, string? fontDirectory = null, IFontAtlas? standbyAtlas = null)
     {
         _atlas = atlas;
+        _standbyAtlas = standbyAtlas;
         _fontDirectory = fontDirectory;
         Activate(Crystarium.ActiveTheme);
     }
@@ -115,6 +130,7 @@ public static class FontRegistry
                 return false;
 
             PrimeStandby();
+            EverReady = true;
             return true;
         }
     }
@@ -157,6 +173,8 @@ public static class FontRegistry
             return false;
 
         (_cache, _standby) = (_standby, _cache);
+        if (_standbyAtlas is not null)
+            (_atlas, _standbyAtlas) = (_standbyAtlas, _atlas);
         _bakeLight = theme.IsLight;
         _standbyLight = !_bakeLight;
         SetRequired(required);
@@ -390,11 +408,16 @@ public static class FontRegistry
         Dictionary<Key, IFontHandle> into, Key key, bool light)
     {
         if (_atlas == null) return null;
+        // The standby set builds on its own atlas when there is one, so
+        // the active atlas is never rebuilt under the handles in use.
+        var atlas = ReferenceEquals(into, _standby) && _standbyAtlas is not null
+            ? _standbyAtlas
+            : _atlas;
         try
         {
             string? file = ResolveFile(key.Family, key.Weight);
             float gamma = light ? LightRasterizerGamma : DarkRasterizerGamma;
-            var handle = _atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk =>
+            var handle = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk =>
             {
                 try
                 {
@@ -506,5 +529,7 @@ public static class FontRegistry
         _failed.Clear();
         _files.Clear();
         _atlas = null;
+        _standbyAtlas = null;
+        EverReady = false;
     }
 }
