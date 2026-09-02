@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Files;
 
@@ -103,7 +104,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// and the workflow binds them — nothing outside Poser.Game ever names
     /// <see cref="ISceneRuntime"/>.
     /// </summary>
+    private readonly TransformHistory? _history;
+
     public SceneWorkflow(
+        TransformHistory history,
         Dalamud.Plugin.Services.IFramework framework,
         Poser.Application.Lifecycle.ISessionGenerationSource sessions,
         SceneCaptureService capture,
@@ -199,6 +203,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         public required SceneOperationKind Kind { get; init; }
         public bool Invalidated;
         public bool TerminalPublished;
+        /// <summary>Whether a landed load appends its step. A load the
+        /// journal itself started as a redo does not: its step is the one
+        /// being redone.</summary>
+        public bool Journal = true;
 
         public ActorId Target => new(SceneScopeId, 0);
 
@@ -351,6 +359,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         var operation = Admit(
             Guid.NewGuid(), System.IO.Path.GetFileName(path),
             SceneOperationKind.Load, session);
+        operation.Journal = !_redoing;
+        _redoing = false;
         var cancellation = _cancellation!.Token;
         _progress = new SceneProgress(
             SceneOperationKind.Load, operation.FileName,
@@ -360,6 +370,40 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             () => RunLoad(operation, path, chosen, cancellation),
             CancellationToken.None);
         return SceneActionResult.Ok();
+    }
+
+    private bool _redoing;
+
+    /// <summary>
+    /// A landed load is one step. Its undo is the load's own rollback: every
+    /// entity the load spawned goes, every baseline it overwrote comes back;
+    /// the actors that were there before the load are untouched, as the
+    /// load never touched them. Its redo loads the file again and gives up
+    /// with the load's own refusal when the file is gone or the load fails.
+    /// A load that cleared the scene first cannot bring the cleared entities
+    /// back: the clear is not a step.
+    /// </summary>
+    private void AppendLoadStep(Operation operation, string path, SceneLoadOptions options)
+    {
+        if (!operation.Journal)
+            return;
+        _history?.Append(new JournalStep(
+            $"Load {operation.FileName}",
+            () => Rollback(operation) is null,
+            () =>
+            {
+                _redoing = true;
+                var begun = BeginLoad(path, options);
+                _redoing = false;
+                return begun.Success;
+            })
+        {
+            Context = new StepContext(
+                Array.Empty<ActorStateKey>(),
+                Array.Empty<ActorSnapshot>(),
+                Array.Empty<ActorSnapshot>(),
+                path),
+        });
     }
 
     // ── Save ─────────────────────────────────────────────────────────────
@@ -1463,6 +1507,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                         : OperationReceiptState.Failed,
                     detail, entities,
                     notes, Array.Empty<string>());
+                if (failures.Count == 0)
+                    AppendLoadStep(operation, path, options);
                 return null;
             });
             if (committed != null)
