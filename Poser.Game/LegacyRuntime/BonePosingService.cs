@@ -901,12 +901,15 @@ public unsafe class BonePosingService : IBonePosingService
         {
             prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
             modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            var beforeRot = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W);
+            // A zero basis takes the delta as its whole rotation — the
+            // same reading the delta was taken with (BonePoseInfo.UsableBasis).
+            var beforeRot = BonePoseInfo.UsableBasis(new Quaternion(
+                modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W));
             var tempRot = info.Frame == TransformFrame.HeadRelative
                 ? Quaternion.Normalize(
                     headRotation * info.Transform.Rotation *
                     Quaternion.Inverse(headRotation) * beforeRot)
-                : beforeRot * info.Transform.Rotation;
+                : Quaternion.Normalize(beforeRot * info.Transform.Rotation);
             modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
         }
 

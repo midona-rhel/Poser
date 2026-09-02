@@ -361,10 +361,12 @@ public sealed class IkBakeCapture : IDisposable
             // propagation (PoseImporter.cs:35 → PoseInfo.Apply's `propagation`
             // argument), so a baked bone carries its children with it exactly
             // as the pose it replaced did.
+            // A bone with no usable basis (a chain link the game left at a
+            // zero rotation) cannot take a delta; it is left as it is and
+            // the rest of the bake lands.
             if (poseInfo.Apply(desired, basis, TransformComponents.All) == null)
             {
-                bake.Failure ??=
-                    $"{bone.BoneName} produced a non-finite bake delta.";
+                _log.Warning($"IK bake: {bone.BoneName} produced a non-finite delta and was left out.");
                 return;
             }
             bake.Written.Add(boneTarget);

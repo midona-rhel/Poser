@@ -180,10 +180,12 @@ public class PoseInspectorPane
         CameraPane cameraPane,
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
+        UserNotices notices,
         global::Poser.Application.Scene.SceneGroups groups)
     {
         _groups = groups;
         _overlayPresentation = overlayPresentation;
+        _notices = notices;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
@@ -239,6 +241,7 @@ public class PoseInspectorPane
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly UserNotices _notices;
     private bool _openCameraTracking = true;
 
     private bool IsCreature(IActor actor) =>
@@ -2010,7 +2013,21 @@ public class PoseInspectorPane
     // Keep raw hinge-axis values while dragging.
 
     // Bake refusals are scoped to their target bone.
-    private (TransformTargetId Target, string Text)? _ikBakeNote;
+    /// <summary>The last bake note handed to the notices, so a failure
+    /// that lingers on the bake is reported once.</summary>
+    private string? _forwardedBakeNote;
+
+    /// <summary>A bake that fails after its click fails inside a later
+    /// pass; its note reaches the user as a notice, never as page text.</summary>
+    private void ForwardBakeNote()
+    {
+        var text = _ikBake.Note?.Text;
+        if (text == _forwardedBakeNote)
+            return;
+        _forwardedBakeNote = text;
+        if (text != null && text.StartsWith("Bake:", StringComparison.Ordinal))
+            _notices.Failed(text);
+    }
 
     private void DrawIkChainList(
         Crystarium.FormScope form,
@@ -2135,17 +2152,13 @@ public class PoseInspectorPane
                 "Bake",
                 () =>
                 {
-                    _ikBakeNote = _ikBake.Begin(ikTarget)
-                        is { Success: false } failed
-                        ? (ikTarget, $"Bake: {failed.Detail}")
-                        : null;
+                    if (_ikBake.Begin(ikTarget) is { Success: false } failed)
+                        _notices.Failed($"Bake: {failed.Detail}");
                     config = _ikPort.Get(ikTarget);
                 },
                 disabled: !canBake);
         });
-        if ((_ikBake.Note ?? _ikBakeNote) is { } note &&
-            note.Target.Equals(ikTarget))
-            form.Status(note.Text);
+        ForwardBakeNote();
         if (config == null)
             return;
 
@@ -2331,8 +2344,9 @@ public class PoseInspectorPane
             return;
         var next = _bakeQueue[0];
         _bakeQueue.RemoveAt(0);
-        if (_ikBake.CanBake(next))
-            _ikBake.Begin(next);
+        if (_ikBake.CanBake(next)
+            && _ikBake.Begin(next) is { Success: false } failed)
+            _notices.Failed($"Bake: {failed.Detail}");
     }
 
     private void DrawActorIk(Crystarium.FormScope form, ISkeleton skeleton)
@@ -2370,8 +2384,7 @@ public class PoseInspectorPane
                 () => ShowChainBones(chains),
                 disabled: armed == 0);
         });
-        if (_ikBake.Note is { } note)
-            form.Status(note.Text);
+        ForwardBakeNote();
 
     }
 

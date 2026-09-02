@@ -229,6 +229,13 @@ public static class SettingsView
 
     private static readonly float[] UndoDepthMarks = [0f, 200f];
 
+    public static int PageCount => Nav.Length;
+
+    /// <summary>When the search text last changed: the results fade in
+    /// from that moment.</summary>
+    private static string _lastSearch = string.Empty;
+    private static double _searchChangedAt;
+
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
         var theme = Crystarium.ActiveTheme;
@@ -289,17 +296,19 @@ public static class SettingsView
             });
         float top = rail.Min.Y + (inset + searchHeight + theme.Page.ActionGap) * scale;
         float rowHeight = theme.Settings.NavigationRowHeight * scale;
+        // The page glyphs stand in the search's own icon column.
+        float glyphInset = (inset + theme.Controls.InputPaddingX) * scale;
         for (int i = 0; i < Nav.Length; i++)
         {
-            ImGui.SetCursorScreenPos(new Vector2(rail.Min.X, top + rowHeight * i));
+            ImGui.SetCursorScreenPos(new Vector2(rail.Min.X + inset * scale, top + rowHeight * i));
             if (NavigationRow(
                     $"##settings-nav-{i}",
                     Nav[i].Label,
                     Nav[i].Icon,
                     vm.Category == i && vm.Search.Length == 0,
-                    rail.Size.X,
+                    rail.Size.X - inset * 2f * scale,
                     rowHeight,
-                    inset * scale))
+                    glyphInset - inset * scale))
             {
                 vm.Category = i;
                 vm.Search = string.Empty;
@@ -307,8 +316,8 @@ public static class SettingsView
         }
     }
 
-    /// <summary>One page row: the highlight spans the rail edge to edge,
-    /// the glyph and label keep the page inset.</summary>
+    /// <summary>One page row: a rounded pill with the page inset on both
+    /// sides; the glyph sits in the search's icon column.</summary>
     private static bool NavigationRow(
         string id,
         string label,
@@ -336,13 +345,14 @@ public static class SettingsView
             ImGui.GetWindowDrawList().AddRectFilled(
                 hit.ScreenMin,
                 hit.ScreenMax,
-                ImGui.ColorConvertFloat4ToU32(fill));
+                ImGui.ColorConvertFloat4ToU32(fill),
+                NavigationPillRadius * scale);
 
         float glyph = theme.Controls.SmallIconSize * scale;
         var slotMin = new Vector2(hit.ScreenMin.X + inset, hit.ScreenMin.Y);
         var glyphMin = slotMin + new Vector2(0f, (height - glyph) * 0.5f);
         Crystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
-        float labelX = slotMin.X + glyph + theme.Page.ActionGap * scale;
+        float labelX = slotMin.X + glyph + theme.Controls.SearchIconGap * scale;
         Crystarium.TextInBand(
             new Vector2(labelX, hit.ScreenMin.Y),
             new Vector2(hit.ScreenMax.X - labelX - inset, height),
@@ -382,10 +392,17 @@ public static class SettingsView
 
     /// <summary>Every page is probed for what it would draw; a section
     /// whose title matches shows whole, otherwise the rows whose label or
-    /// hover matches. Each page with a match leads with its own name.</summary>
+    /// hover matches. Section titles carry their page's name, and the
+    /// results fade in from the moment the search changed.</summary>
     private static void DrawSearch(SettingsViewModel vm, Crystarium.PageScope page)
     {
         string needle = vm.Search.Trim();
+        if (!string.Equals(needle, _lastSearch, StringComparison.Ordinal))
+        {
+            _lastSearch = needle;
+            _searchChangedAt = ImGui.GetTime();
+        }
+        int mark = Crystarium.VertexMark();
         bool Hit(string? text) =>
             text != null && text.Contains(needle, StringComparison.OrdinalIgnoreCase);
         int any = 0;
@@ -413,12 +430,12 @@ public static class SettingsView
                 vm.Category = saved;
                 continue;
             }
-            page.Section(Nav[category].Label, _ => { }, divider: any > 0);
+            page.SectionPrefix = Nav[category].Label + " · ";
             page.SectionFilter = section => sections.Contains(section);
             page.RowFilter = (section, label, help) =>
-                wholePage || Hit(section) || label.Length == 0
-                || rows.Contains((section, label));
+                wholePage || Hit(section) || rows.Contains((section, label));
             DrawCategory(vm, page);
+            page.SectionPrefix = null;
             page.SectionFilter = null;
             page.RowFilter = null;
             vm.Category = saved;
@@ -426,6 +443,11 @@ public static class SettingsView
         }
         if (any == 0)
             page.EmptyState($"Nothing matches \"{needle}\".");
+        float fade = Crystarium.ActiveTheme.Motion.Fast;
+        float alpha = fade <= 0f
+            ? 1f
+            : Math.Clamp((float)(ImGui.GetTime() - _searchChangedAt) / fade, 0f, 1f);
+        Crystarium.FadeSince(mark, alpha);
     }
 
     private static void DrawCategory(

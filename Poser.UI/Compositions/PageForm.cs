@@ -166,6 +166,9 @@ public static partial class Crystarium
         public Action<string, string, string?>? Probe { get; set; }
         public Func<string, string, string?, bool>? RowFilter { get; set; }
         public Func<string, bool>? SectionFilter { get; set; }
+        /// <summary>Prefixed to every section title drawn — a search result
+        /// names the page its section came from.</summary>
+        public string? SectionPrefix { get; set; }
         private string _section = string.Empty;
 
         internal PageScope(string id, Vector2 origin, float width, float scale,
@@ -280,8 +283,9 @@ public static partial class Crystarium
             }
 
             PaintSectionHeader(
-                hit, headerIdentity, title, open,
-                new(_origin.X, headerTop), _width);
+                hit, headerIdentity,
+                SectionPrefix == null ? title : SectionPrefix + title,
+                open, new(_origin.X, headerTop), _width);
 
             _y += page.SectionHeaderHeight;
             if (open)

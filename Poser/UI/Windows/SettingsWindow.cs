@@ -80,6 +80,14 @@ public class SettingsWindow : Window
         }
         _snapshot = null;
         _saving = false;
+        // The page is remembered either way: it is where the window
+        // opens, not a setting anyone saves.
+        var svc = ConfigurationService.Instance;
+        if (svc.Config.UI.LastSettingsPage != _vm.Category)
+        {
+            svc.Config.UI.LastSettingsPage = _vm.Category;
+            svc.ApplyChange();
+        }
     }
 
     public override void PreDraw()
@@ -117,7 +125,7 @@ public class SettingsWindow : Window
         var c = ConfigurationService.Instance.Config;
         var vm = new SettingsViewModel
         {
-            Category = 1,
+            Category = Math.Clamp(c.UI.LastSettingsPage, 0, SettingsView.PageCount - 1),
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
             RelativeSecondaryBones = c.RelativeSecondaryBones,

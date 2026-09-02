@@ -31,6 +31,9 @@ public class UIConfiguration
     public static float ClampFillOpacity(float value) =>
         float.IsFinite(value) ? Math.Clamp(value, MinimumFillOpacity, 1f) : 1f;
     public bool DetachedShell { get; set; }
+
+    /// <summary>The settings page last shown; the window opens there.</summary>
+    public int LastSettingsPage { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
     public bool ShowInGPose { get; set; } = true;

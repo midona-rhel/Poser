@@ -316,13 +316,28 @@ public class BonePoseInfo
 
     private static Transform CalculateDiff(Transform newTransform, Transform original)
     {
-        // Match Brio's formula: Conjugate(original) * new, normalized
+        // Match Brio's formula: Conjugate(original) * new, normalized. A
+        // basis the game left with no rotation at all (a chain link frozen
+        // at zero) is taken as identity, so the delta IS the rotation and
+        // the apply, which treats such a basis the same way, lands it.
         return new Transform
         {
             Position = newTransform.Position - original.Position,
-            Rotation = Quaternion.Normalize(Quaternion.Conjugate(original.Rotation) * newTransform.Rotation),
+            Rotation = Quaternion.Normalize(
+                Quaternion.Conjugate(UsableBasis(original.Rotation)) * newTransform.Rotation),
             Scale = newTransform.Scale - original.Scale
         };
+    }
+
+    /// <summary>A rotation the delta math can stand on: the live one made
+    /// unit length (the game leaves a blending chain link short), identity
+    /// when it is zero or not finite.</summary>
+    public static Quaternion UsableBasis(Quaternion rotation)
+    {
+        float length = rotation.LengthSquared();
+        return float.IsFinite(length) && length > 0.000001f
+            ? Quaternion.Normalize(rotation)
+            : Quaternion.Identity;
     }
 
     private static Transform CombineTransforms(Transform a, Transform b)
