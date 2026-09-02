@@ -20,10 +20,21 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
     private Dictionary<byte, DyeEntry>? _dyeById;
     private List<FacewearEntry>? _facewear;
 
+    private readonly object _gate = new();
+
     public WardrobeCatalog(IDataManager data, IPluginLog log)
     {
         _data = data;
         _log = log;
+    }
+
+    /// <summary>Reads every sheet now, off the draw thread, so the first
+    /// Equipment view pays nothing.</summary>
+    public void Warm()
+    {
+        LoadItems();
+        LoadDyes();
+        _ = Facewear;
     }
 
     public IReadOnlyList<WardrobeItem> ItemsFor(EquipSlot slot)
@@ -76,6 +87,8 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
 
     private void LoadDyes()
     {
+        lock (_gate)
+        {
         if (_dyes is not null)
             return;
         var list = new List<DyeEntry>();
@@ -93,8 +106,9 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
         {
             _log.Warning($"Wardrobe: the dye sheet could not be read: {ex.Message}");
         }
-        _dyes = list;
         _dyeById = list.ToDictionary(dye => dye.Id);
+        _dyes = list;
+        }
     }
 
     /// <summary>The slots an equip-slot category admits, in Glamourer's
@@ -117,6 +131,8 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
 
     private void LoadItems()
     {
+        lock (_gate)
+        {
         if (_bySlot is not null)
             return;
         var bySlot = new Dictionary<EquipSlot, List<WardrobeItem>>();
@@ -147,7 +163,8 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
         {
             _log.Warning($"Wardrobe: the item sheet could not be read: {ex.Message}");
         }
-        _bySlot = bySlot;
         _byId = byId;
+        _bySlot = bySlot;
+        }
     }
 }

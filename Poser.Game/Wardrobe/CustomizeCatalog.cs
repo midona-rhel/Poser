@@ -34,10 +34,20 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
     private Dictionary<(byte Clan, byte Gender), CustomizeMenu>? _menus;
     private CustomizePalettes? _palettes;
 
+    private readonly object _gate = new();
+
     public CustomizeCatalog(IDataManager data, IPluginLog log)
     {
         _data = data;
         _log = log;
+    }
+
+    /// <summary>Reads the sheets and the colour file now, off the draw
+    /// thread, so the first Appearance view pays nothing.</summary>
+    public void Warm()
+    {
+        LoadNames();
+        LoadMenus();
     }
 
     public string LegacyTattooTexture => "chara/common/texture/decal_equip/_stigma.tex";
@@ -55,11 +65,14 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
     public CustomizeMenu? Menu(byte clan, byte gender)
     {
         LoadMenus();
-        if (!_menus!.TryGetValue((clan, gender), out var menu))
-            return null;
-        if (_discovered.Add((clan, gender)))
-            _menus[(clan, gender)] = menu = Discover(menu);
-        return menu;
+        lock (_gate)
+        {
+            if (!_menus!.TryGetValue((clan, gender), out var menu))
+                return null;
+            if (_discovered.Add((clan, gender)))
+                _menus[(clan, gender)] = menu = Discover(menu);
+            return menu;
+        }
     }
 
     private readonly HashSet<(byte, byte)> _discovered = new();
@@ -145,6 +158,8 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
 
     private void LoadNames()
     {
+        lock (_gate)
+        {
         if (_races is not null)
             return;
         var races = new List<RaceEntry>();
@@ -170,8 +185,9 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         {
             _log.Warning($"Customize: the race sheets could not be read: {ex.Message}");
         }
-        _races = races;
         _clans = clans;
+        _races = races;
+        }
     }
 
     // ── menus ───────────────────────────────────────────────────────────
@@ -211,6 +227,8 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
 
     private void LoadMenus()
     {
+        lock (_gate)
+        {
         if (_menus is not null)
             return;
         var menus = new Dictionary<(byte, byte), CustomizeMenu>();
@@ -325,8 +343,9 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
                 SkinColors = skins.TryGetValue(key, out var skin) ? skin : Array.Empty<uint>(),
                 HairColors = hairs.TryGetValue(key, out var hair) ? hair : Array.Empty<uint>(),
             };
-        _menus = menus;
         _palettes = palettes;
+        _menus = menus;
+        }
     }
 
     private static uint[] Slice(uint[] colors, int start, int length)

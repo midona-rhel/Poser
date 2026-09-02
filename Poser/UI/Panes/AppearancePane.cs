@@ -153,6 +153,20 @@ public sealed partial class AppearancePane
         _props = props;
         _wardrobeSession = wardrobeSession;
         _names = names;
+        // The sheet catalogs warm off the draw thread at load, so the first
+        // Appearance or Equipment view draws final on its first frame.
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                (wardrobe as Game.Wardrobe.WardrobeCatalog)?.Warm();
+                (customize as Game.Wardrobe.CustomizeCatalog)?.Warm();
+            }
+            catch (Exception)
+            {
+                // A failed warm-up costs nothing: the views load on demand.
+            }
+        });
         _wardrobeItemTexture = item => ResolveIcon(item.Icon);
         _wardrobeItemBadge = item => "#" + item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         _dyeRowFill = dye => dye.Id == 0 ? null : DyeColor(dye.Color);
