@@ -448,7 +448,7 @@ public partial class MainWindow
                 resolved.Value is not { IsValid: true } camera ||
                 _bindings.GetCameraId(camera) != rowCameraId)
                 return;
-            camera.IsLocked = !camera.IsLocked;
+            _cameraValues.SetLocked(camera, !camera.IsLocked);
             row.CameraLocked = camera.IsLocked;
         };
         _vm.OnOverlayVisibility = row =>

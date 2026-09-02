@@ -48,6 +48,7 @@ public partial class MainWindow : Window
 
     private readonly IActorSpawnService _spawnService;
 
+    private readonly Game.Journal.CameraSession _cameraValues;
     private readonly SceneSession _scene;
 
     private readonly SelectionSession _selection;
@@ -535,6 +536,7 @@ public partial class MainWindow : Window
         Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         IViewportReads viewportProjection,
+        Game.Journal.CameraSession cameraValues,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -627,6 +629,7 @@ public partial class MainWindow : Window
         _groups = groups;
         _gameCamera = gameCamera;
         _viewportProjection = viewportProjection;
+        _cameraValues = cameraValues;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path

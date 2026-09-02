@@ -901,7 +901,7 @@ public partial class MainWindow
                     }
                 }
             },
-            () => camera.IsLocked = !camera.IsLocked,
+            () => _cameraValues.SetLocked(camera, !camera.IsLocked),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => camera.Name = next),
