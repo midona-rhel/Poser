@@ -469,12 +469,15 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         for (int i = 0; i < 0x20; i++)
         {
             int offset = 0xC0 + i;
-            // Never held: the game's own words. 0xC4..0xC7 is an index the
-            // cascade-shadow pass dereferences and 0xCC its state byte —
-            // a tail captured before the model loaded held 0xC4 at its
-            // 0xFFFF sentinel and the pass crashed the client on it
-            // (dump 2026-09-02 02:34, ffxiv_dx11+453EE1).
-            if (offset is (>= 0xC4 and <= 0xC7) or 0xCC or 0xCD or 0xCE or (>= 0xD0 and <= 0xD3))
+            // Never held: the game's own words. 0xC0..0xC3 is the draw
+            // state — a tail captured the frame a file's object was spawned
+            // held it at 0 and the paused object never drew (Crystal group,
+            // 2026-09-02). 0xC4..0xC7 is an index the cascade-shadow pass
+            // dereferences and 0xCC its state byte — a tail captured before
+            // the model loaded held 0xC4 at its 0xFFFF sentinel and the pass
+            // crashed the client on it (dump 2026-09-02 02:34,
+            // ffxiv_dx11+453EE1).
+            if (offset is (>= 0xC0 and <= 0xC7) or 0xCC or 0xCD or 0xCE or (>= 0xD0 and <= 0xD3))
                 continue;
             *((byte*)node + offset) = values[i];
         }
