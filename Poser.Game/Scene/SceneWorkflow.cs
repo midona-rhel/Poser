@@ -510,8 +510,13 @@ public sealed class SceneWorkflow : IDisposable
                 scene.WorldObjects?.RemoveAll(
                     entry => !keep.Contains(entry.Key));
                 scene.Groups?.RemoveAll(group =>
-                    group.Members.Count == 0
-                    || !group.Members.All(member => keep.Contains(member.Key)));
+                    !group.Members.All(member => keep.Contains(member.Key)));
+                // A parent that fell out takes its nesting with it.
+                if (scene.Groups is { } remaining)
+                    foreach (var group in remaining)
+                        if (group.Parent is { } parentKey
+                            && !remaining.Any(candidate => candidate.Key == parentKey))
+                            group.Parent = null;
                 // An entry has no sidebar order of its own: its entities
                 // seat where the load lands them.
                 scene.RootOrder = null;
@@ -1573,11 +1578,12 @@ public sealed class SceneWorkflow : IDisposable
                     Key = group.Id,
                     Name = group.Name,
                     Locked = group.Locked,
+                    Parent = group.ParentId,
                 };
                 foreach (var member in group.Members)
                     if (RefOf(member) is { } reference)
                         entry.Members.Add(reference);
-                if (entry.Members.Count >= 2)
+                if (entry.Members.Count + group.Children.Count >= 2)
                     groups.Add(entry);
             }
             if (groups.Count > 0)

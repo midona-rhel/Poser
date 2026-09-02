@@ -1875,41 +1875,7 @@ public class MainWindow : Window
             }
             if (_groups.Find(slot.GroupId) is not { } group)
                 continue;
-            string key = "group:" + group.Id;
-            bool expanded = filtering || !_collapsedNodes.Contains(key);
-            _sceneSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = group.Name,
-                Icon = TablerIcon.Folder,
-                // A locked group holds still: no grip, no drops into it.
-                Draggable = !group.Locked,
-                DropContainer = !group.Locked,
-                GroupActions = true,
-                GroupLocked = group.Locked,
-                GroupVisible = group.VisibleOverride,
-                GroupPlaying = group.PlayingOverride,
-                HasChildren = group.Members.Count > 0,
-                ExpandKey = key,
-                Expanded = expanded,
-                Tag = new GroupRowTag(group.Id),
-            });
-            if (!expanded)
-                continue;
-            int memberStart = _sceneSection.Rows.Count;
-            for (int m = 0; m < group.Members.Count; m++)
-                AddGroupMemberRow(
-                    group.Members[m], snapshot, filter, filtering,
-                    isLast: m == group.Members.Count - 1);
-            // The head-vs-members highlight rule has to know which rows
-            // are grouped; the sweep marks the subtree whole, a grouped
-            // actor's bones included — and a locked group's members lose
-            // their grips with it.
-            for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
-            {
-                _sceneSection.Rows[r].GroupMember = true;
-                if (group.Locked)
-                    _sceneSection.Rows[r].Draggable = false;
-            }
+            AddGroupRows(group, 0, snapshot, filter, filtering);
         }
 
         // A reference picture is an overlay by the same test the nodes are —
@@ -1975,10 +1941,19 @@ public class MainWindow : Window
                 && _groups.Create(entry.Name, members) is { } made)
             {
                 groupIds[entry.Key] = made.Id;
-                _groups.SetLocked(made.Id, entry.Locked);
                 anyResolved = true;
             }
         }
+        // Nesting, then locks: a lock refuses the nest, and the parent
+        // must exist before its child asks.
+        foreach (var entry in pending.Groups)
+            if (entry.Parent is { } parentKey
+                && groupIds.TryGetValue(entry.Key, out var childId)
+                && groupIds.TryGetValue(parentKey, out var parentId))
+                _groups.Nest(childId, parentId);
+        foreach (var entry in pending.Groups)
+            if (groupIds.TryGetValue(entry.Key, out var lockedId))
+                _groups.SetLocked(lockedId, entry.Locked);
         if (pending.RootOrder is { } orderRefs)
         {
             var slots =
@@ -2710,12 +2685,61 @@ public class MainWindow : Window
     /// <summary>One grouped member's row(s), nested one level in — the
     /// SAME constructions the kind walks use, so a grouped row never
     /// drifts from its ungrouped twin.</summary>
+    /// <summary>A group head at <paramref name="depth"/>, its members one
+    /// level in, then its subgroups the same way — to
+    /// <see cref="global::Poser.Application.Scene.SceneGroups.MaxDepth"/>.</summary>
+    private void AddGroupRows(
+        global::Poser.Application.Scene.SceneGroup group,
+        int depth,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter,
+        bool filtering)
+    {
+        string key = "group:" + group.Id;
+        bool expanded = filtering || !_collapsedNodes.Contains(key);
+        bool locked = _groups.IsLocked(group);
+        _sceneSection.Rows.Add(new ShellSidebarRow
+        {
+            Label = group.Name,
+            Icon = TablerIcon.Folder,
+            Draggable = !locked,
+            DropContainer = !locked,
+            GroupActions = true,
+            GroupLocked = group.Locked,
+            GroupVisible = group.VisibleOverride,
+            GroupPlaying = group.PlayingOverride,
+            HasChildren = group.ItemCount > 0,
+            Depth = depth,
+            ExpandKey = key,
+            Expanded = expanded,
+            Tag = new GroupRowTag(group.Id),
+        });
+        if (!expanded)
+            return;
+        int memberStart = _sceneSection.Rows.Count;
+        for (int m = 0; m < group.Members.Count; m++)
+            AddGroupMemberRow(
+                group.Members[m], snapshot, filter, filtering,
+                isLast: m == group.Members.Count - 1 && group.Children.Count == 0,
+                depth: depth + 1);
+        for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
+        {
+            _sceneSection.Rows[r].GroupMember = true;
+            if (locked)
+                _sceneSection.Rows[r].Draggable = false;
+        }
+        foreach (var childId in group.Children)
+            if (_groups.Find(childId) is { } child)
+                AddGroupRows(child, depth + 1, snapshot, filter, filtering);
+    }
+
     private void AddGroupMemberRow(
         SelectionId member,
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter,
         bool filtering,
-        bool isLast)
+        bool isLast,
+        int depth = 1)
     {
         switch (member)
         {
@@ -2725,7 +2749,7 @@ public class MainWindow : Window
                     {
                         AddActorRows(
                             _sceneSection, actor, snapshot, filter,
-                            filtering, 1, RootTreeLines, isLast);
+                            filtering, depth, RootTreeLines, isLast);
                         return;
                     }
                 return;
@@ -2733,7 +2757,7 @@ public class MainWindow : Window
                 foreach (var prop in _scene.Snapshot.Props)
                     if (prop.Id.Equals(propId))
                     {
-                        var row = PropRow(prop, 1);
+                        var row = PropRow(prop, depth);
                         row.IsLastChild = isLast;
                         row.TreeLines = RootTreeLines;
                         _sceneSection.Rows.Add(row);
@@ -2744,7 +2768,7 @@ public class MainWindow : Window
                 foreach (var worldObject in _scene.Snapshot.WorldObjects)
                     if (worldObject.Id.Equals(worldId))
                     {
-                        var row = WorldObjectRow(worldObject, 1);
+                        var row = WorldObjectRow(worldObject, depth);
                         row.IsLastChild = isLast;
                         row.TreeLines = RootTreeLines;
                         _sceneSection.Rows.Add(row);
@@ -2755,7 +2779,7 @@ public class MainWindow : Window
                 foreach (var light in _scene.Snapshot.Lights)
                     if (light.Id.Equals(lightId))
                     {
-                        var row = LightRow(light, 1);
+                        var row = LightRow(light, depth);
                         row.IsLastChild = isLast;
                         row.TreeLines = RootTreeLines;
                         _sceneSection.Rows.Add(row);
@@ -2766,7 +2790,7 @@ public class MainWindow : Window
                 foreach (var camera in _scene.Snapshot.Cameras)
                     if (camera.Id.Equals(cameraId))
                     {
-                        var row = CameraRow(camera, 1);
+                        var row = CameraRow(camera, depth);
                         row.IsLastChild = isLast;
                         row.TreeLines = RootTreeLines;
                         _sceneSection.Rows.Add(row);
@@ -2777,7 +2801,7 @@ public class MainWindow : Window
                 foreach (var overlay in _scene.Snapshot.Overlays)
                     if (overlay.Id.Equals(overlayId))
                     {
-                        var row = OverlayRow(overlay, 1);
+                        var row = OverlayRow(overlay, depth);
                         row.IsLastChild = isLast;
                         row.TreeLines = RootTreeLines;
                         _sceneSection.Rows.Add(row);
@@ -3967,22 +3991,24 @@ public class MainWindow : Window
         // machinery does the rest. Ctrl adds the members instead.
         if (row.Tag is GroupRowTag groupTag)
         {
-            if (_groups.Find(groupTag.Id) is not { } group
-                || group.Members.Count == 0)
+            if (_groups.Find(groupTag.Id) is not { } group)
+                return;
+            var everything = new List<SelectionId>(_groups.Descendants(group));
+            if (everything.Count == 0)
                 return;
             var io2 = ImGui.GetIO();
             // A group row's members live one level down; they join a
             // multi-selection only when it already sits at that level.
             if (io2.KeyCtrl && SelectionParentIs(group.Id))
             {
-                foreach (var member in group.Members)
+                foreach (var member in everything)
                     _selection.Add(member);
             }
             else
             {
-                _selection.Select(group.Members[0]);
-                for (int i = 1; i < group.Members.Count; i++)
-                    _selection.Add(group.Members[i]);
+                _selection.Select(everything[0]);
+                for (int i = 1; i < everything.Count; i++)
+                    _selection.Add(everything[i]);
                 // The HEAD click alone makes the selection "the group" —
                 // hand-selecting every member stays a member selection.
                 _groups.ActiveGroupId = group.Id;
@@ -4188,14 +4214,7 @@ public class MainWindow : Window
         // open space is the end of the list.
         if (dragged.Tag is GroupRowTag draggedGroup)
         {
-            if (target == null)
-                _groups.MoveRootToEnd(RootSlot.ForGroup(draggedGroup.Id));
-            else if (position is RowDropPosition.Before or RowDropPosition.After
-                && RootSlotOf(target) is { } groupAnchor)
-                _groups.MoveRoot(
-                    RootSlot.ForGroup(draggedGroup.Id),
-                    groupAnchor,
-                    position == RowDropPosition.After);
+            DropGroup(draggedGroup.Id, target, position);
             return;
         }
 
@@ -4276,16 +4295,75 @@ public class MainWindow : Window
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference
     /// images, attached rows — answer null and the drop is a no-op.</summary>
+    /// <summary>A dragged group: onto a group head it nests there; beside
+    /// a nested row it becomes a sibling in that row's group; beside a root
+    /// row or into nothing it comes out to the root order. A nest past the
+    /// depth limit is refused by name and nothing moves.</summary>
+    private void DropGroup(Guid groupId, ShellSidebarRow? target, RowDropPosition position)
+    {
+        if (target?.Tag is GroupRowTag intoGroup && position == RowDropPosition.Into)
+        {
+            if (_groups.CanNest(groupId, intoGroup.Id, out var reason))
+                _groups.Nest(groupId, intoGroup.Id);
+            else
+                _notices.Failed($"Group not moved: {reason}");
+            return;
+        }
+        // Beside a row that lives inside a group: a sibling there.
+        if (target != null && position is RowDropPosition.Before or RowDropPosition.After
+            && HostGroupOf(target) is { } host)
+        {
+            if (!_groups.CanNest(groupId, host.Id, out var reason))
+            {
+                _notices.Failed($"Group not moved: {reason}");
+                return;
+            }
+            int index = target.Tag is GroupRowTag sibling ? host.Children.IndexOf(sibling.Id) : -1;
+            if (index >= 0 && position == RowDropPosition.After)
+                index++;
+            _groups.Nest(groupId, host.Id, index);
+            return;
+        }
+        // The root order.
+        var slot = RootSlot.ForGroup(groupId);
+        if (target != null && position is RowDropPosition.Before or RowDropPosition.After
+            && RootSlotOf(target) is { } anchor)
+        {
+            if (_groups.Find(groupId) is { ParentId: not null })
+                _groups.Unnest(groupId, anchor, position == RowDropPosition.After);
+            else
+                _groups.MoveRoot(slot, anchor, position == RowDropPosition.After);
+            return;
+        }
+        if (_groups.Find(groupId) is { ParentId: not null })
+            _groups.Unnest(groupId);
+        else
+            _groups.MoveRootToEnd(slot);
+    }
+
+    /// <summary>The group a row sits INSIDE: a member's group, or a nested
+    /// group's parent. Null for anything at the root.</summary>
+    private global::Poser.Application.Scene.SceneGroup? HostGroupOf(ShellSidebarRow row)
+    {
+        if (row.Tag is GroupRowTag tag)
+            return _groups.Find(tag.Id) is { } group ? _groups.ParentOf(group) : null;
+        if (row.Tag is SelectionId id)
+            return _groups.GroupOf(id);
+        return null;
+    }
+
     private RootSlot? RootSlotOf(ShellSidebarRow row)
     {
         if (row.Tag is GroupRowTag tag)
-            return RootSlot.ForGroup(tag.Id);
+            return _groups.Find(tag.Id) is { } group
+                ? RootSlot.ForGroup(_groups.RootOf(group).Id)
+                : null;
         if (row.Tag is not SelectionId id
             || !global::Poser.Application.Selection.EntitySelection
                 .IsEntity(id.Kind))
             return null;
         if (_groups.GroupOf(id) is { } host)
-            return RootSlot.ForGroup(host.Id);
+            return RootSlot.ForGroup(_groups.RootOf(host).Id);
         return RootSlot.For(id);
     }
 
@@ -5827,7 +5905,7 @@ public class MainWindow : Window
     {
         if (visible is { } forced)
         {
-            foreach (var member in group.Members)
+            foreach (var member in _groups.Descendants(group))
             {
                 if (!group.RememberedVisible.ContainsKey(member)
                     && IsEntityVisible(member) is { } own)
@@ -5849,7 +5927,7 @@ public class MainWindow : Window
     {
         if (playing is { } forced)
         {
-            foreach (var member in group.Members)
+            foreach (var member in _groups.Descendants(group))
             {
                 if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
                     continue;
@@ -5882,8 +5960,13 @@ public class MainWindow : Window
     /// remembers its own flag the same way the founding members did.</summary>
     private void JoinGroupOverrides(SelectionId member)
     {
-        if (_groups.GroupOf(member) is not { } group)
+        if (_groups.GroupOf(member) is not { } home)
             return;
+        // The outermost override up the chain is the one in force.
+        var group = home;
+        foreach (var ancestor in _groups.Ancestors(home))
+            if (ancestor.VisibleOverride != null || ancestor.PlayingOverride != null)
+                group = ancestor;
         if (group.VisibleOverride is { } visible)
         {
             if (IsEntityVisible(member) is { } own)
@@ -5904,17 +5987,22 @@ public class MainWindow : Window
     /// <summary>A member leaving a group gets its own flags back.</summary>
     private void LeaveGroupOverrides(SelectionId member)
     {
-        if (_groups.GroupOf(member) is not { } group)
+        if (_groups.GroupOf(member) is not { } own)
             return;
-        if (group.RememberedVisible.Remove(member, out var visible))
-            SetEntityVisible(member, visible);
-        if (group.RememberedPlaying.Remove(member, out var playing)
-            && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        var chain = new List<global::Poser.Application.Scene.SceneGroup> { own };
+        chain.AddRange(_groups.Ancestors(own));
+        foreach (var group in chain)
         {
-            if (playing)
-                _animation.Resume(actorId);
-            else
-                _animation.Pause(actorId);
+            if (group.RememberedVisible.Remove(member, out var visible))
+                SetEntityVisible(member, visible);
+            if (group.RememberedPlaying.Remove(member, out var playing)
+                && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+            {
+                if (playing)
+                    _animation.Resume(actorId);
+                else
+                    _animation.Pause(actorId);
+            }
         }
     }
 

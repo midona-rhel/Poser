@@ -3,21 +3,23 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
-/// <summary>One named group of scene entities. ONE depth by construction:
-/// members are entities, never groups.</summary>
+/// <summary>A named set of scene entities the user moves, selects and
+/// hides as one, with subgroups nested inside it. Within a group the
+/// direct members list first, then the subgroups.</summary>
 public sealed class SceneGroup
 {
     public required Guid Id { get; init; }
     public required string Name { get; set; }
+
+    /// <summary>The direct entity members, in the user's order.</summary>
     public required List<SelectionId> Members { get; init; }
 
-    /// <summary>A locked group freezes its CHILDREN: a member selected
-    /// on its own refuses world transforms, nothing drags in, out, or
-    /// around, and the structure verbs (rename, ungroup, destroy) wait
-    /// for the unlock. The GROUP itself stays movable — a selection
-    /// holding the whole membership moves it as one thing (ruled
-    /// 2026-08-31; the whole-placement reading was wrong). Visibility
-    /// and animation stay free.</summary>
+    /// <summary>The subgroups, in the user's order.</summary>
+    public List<Guid> Children { get; } = new();
+
+    /// <summary>The group this one sits inside; null at the root.</summary>
+    public Guid? ParentId { get; set; }
+
     public bool Locked { get; set; }
 
     /// <summary>The group's own visibility: null lets every member keep its
@@ -30,10 +32,11 @@ public sealed class SceneGroup
     /// <summary>The same for animation play, actors only.</summary>
     public bool? PlayingOverride { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedPlaying = new();
+
+    public int ItemCount => Members.Count + Children.Count;
 }
 
-/// <summary>One root slot of the outliner: an ungrouped entity or a
-/// group head. Exactly one of the two is set.</summary>
+/// <summary>One seat in the root order: an entity or a root-level group.</summary>
 public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
 {
     public static RootSlot For(SelectionId entity) => new(entity, Guid.Empty);
@@ -41,18 +44,27 @@ public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
     public bool IsGroup => GroupId != Guid.Empty;
 }
 
-/// <summary>
-/// The scene's named groups. A group is NAMING AND STRUCTURE over the
-/// anonymous group: selecting one selects its members, and every
-/// manipulation (centroid gizmo, group ball, move to camera) is the
-/// multiselect machinery — this store never transforms anything. An
-/// entity lives in at most ONE group; membership is entity-only, so a
-/// group can never contain a group. In-memory for now; persistence
-/// arrives with the scene-save slice.
-/// </summary>
+/// <summary>The scene's groups and the root order. Groups nest to
+/// <see cref="MaxDepth"/> levels; a drop past that is refused by name.</summary>
 public sealed class SceneGroups
 {
+    /// <summary>Root groups are depth 1; a group at depth 4 holds no groups.</summary>
+    public const int MaxDepth = 4;
+
     private readonly List<SceneGroup> _groups = new();
+
+    /// <summary>The root list in the USER'S order, kinds interleaved:
+    /// entities and root-level groups.</summary>
+    private readonly List<RootSlot> _order = new();
+
+    public int Revision { get; private set; }
+
+    /// <summary>Every group, nested ones included.</summary>
+    public IReadOnlyList<SceneGroup> All => _groups;
+
+    public IReadOnlyList<RootSlot> RootOrder => _order;
+
+    public Guid? ActiveGroupId { get; set; }
 
     /// <summary>Marks a change made on a group object directly (an
     /// override), so the sidebar rebuilds.</summary>
@@ -69,19 +81,11 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>The root list in the USER'S order, kinds interleaved:
-    /// group heads and ungrouped entities, one slot each. Attached and
-    /// grouped entities hold no slot; <see cref="SyncRoot"/> reconciles
-    /// membership every rebuild while the structural verbs below keep
-    /// positions meaningful.</summary>
-    private readonly List<RootSlot> _order = new();
+    // ── creation and dissolution ─────────────────────────────────────────
 
-    /// <summary>Bumped on every structural change — the sidebar rebuild
-    /// gates on it exactly as it gates on the scene revision.</summary>
-    public int Revision { get; private set; }
-
-    public IReadOnlyList<SceneGroup> All => _groups;
-
+    /// <summary>Groups the entities. When every member already shares one
+    /// parent group the new group nests inside it; otherwise it is a root
+    /// group seated where its first member sat.</summary>
     public SceneGroup? Create(string name, IReadOnlyList<SelectionId> members)
     {
         var kept = new List<SelectionId>();
@@ -94,9 +98,24 @@ public sealed class SceneGroups
                 kept.Add(member);
         if (kept.Count < 2)
             return null;
+
+        SceneGroup? sharedParent = GroupOf(kept[0]);
+        foreach (var member in kept)
+            if (GroupOf(member) != sharedParent)
+            {
+                sharedParent = null;
+                break;
+            }
+        if (sharedParent != null && Depth(sharedParent.Id) >= MaxDepth)
+            sharedParent = null;
+
+        int seat = -1;
+        if (sharedParent != null)
+            seat = sharedParent.Members.IndexOf(kept[0]);
         // One home per entity: joining this group leaves any other.
         foreach (var member in kept)
-            RemoveMemberCore(member);
+            RemoveMemberCore(member, reseat: sharedParent == null);
+
         var group = new SceneGroup
         {
             Id = Guid.NewGuid(),
@@ -104,17 +123,26 @@ public sealed class SceneGroups
             Members = kept,
         };
         _groups.Add(group);
-        // The group takes its first member's seat in the root order; the
-        // members' own slots fold into it.
-        int at = _order.Count;
-        for (int i = _order.Count - 1; i >= 0; i--)
-            if (_order[i] is { IsGroup: false, Entity: { } slotted }
-                && kept.Contains(slotted))
-            {
-                _order.RemoveAt(i);
-                at = i;
-            }
-        _order.Insert(Math.Min(at, _order.Count), RootSlot.ForGroup(group.Id));
+        if (sharedParent != null && Find(sharedParent.Id) is { } parent)
+        {
+            group.ParentId = parent.Id;
+            parent.Children.Add(group.Id);
+        }
+        else
+        {
+            // The group takes its first member's seat in the root order;
+            // the members' own slots fold into it.
+            int at = _order.Count;
+            for (int i = _order.Count - 1; i >= 0; i--)
+                if (_order[i] is { IsGroup: false, Entity: { } slotted }
+                    && kept.Contains(slotted))
+                {
+                    _order.RemoveAt(i);
+                    at = i;
+                }
+            _order.Insert(Math.Min(at, _order.Count), RootSlot.ForGroup(group.Id));
+        }
+        _ = seat;
         Revision++;
         return group;
     }
@@ -128,43 +156,68 @@ public sealed class SceneGroups
         Revision++;
     }
 
+    /// <summary>Ungroups: members and subgroups reclaim the group's seat
+    /// in its parent (or the root order), in their order — ungrouping
+    /// never scatters rows.</summary>
     public void Dissolve(Guid id)
     {
         if (Find(id) is not { Locked: false } group)
             return;
-        // The members reclaim the group's seat in the root order, in
-        // member order — ungrouping never scatters rows.
-        int at = RootIndexOfGroup(id);
-        if (at >= 0)
-            _order.RemoveAt(at);
-        else
-            at = _order.Count;
-        for (int m = 0; m < group.Members.Count; m++)
-            _order.Insert(at + m, RootSlot.For(group.Members[m]));
+        Release(group);
         _groups.Remove(group);
         Revision++;
     }
 
-    /// <summary>An entity left the scene: it leaves its group, and a group
-    /// thinned below two members dissolves — a group of one is a selection.
-    /// </summary>
+    private void Release(SceneGroup group)
+    {
+        if (group.ParentId is { } parentId && Find(parentId) is { } parent)
+        {
+            int at = parent.Children.IndexOf(group.Id);
+            if (at >= 0)
+                parent.Children.RemoveAt(at);
+            else
+                at = parent.Children.Count;
+            parent.Members.AddRange(group.Members);
+            foreach (var childId in group.Children)
+            {
+                parent.Children.Insert(Math.Min(at++, parent.Children.Count), childId);
+                if (Find(childId) is { } child)
+                    child.ParentId = parent.Id;
+            }
+            return;
+        }
+        int seat = RootIndexOfGroup(group.Id);
+        if (seat >= 0)
+            _order.RemoveAt(seat);
+        else
+            seat = _order.Count;
+        foreach (var member in group.Members)
+            _order.Insert(seat++, RootSlot.For(member));
+        foreach (var childId in group.Children)
+        {
+            _order.Insert(seat++, RootSlot.ForGroup(childId));
+            if (Find(childId) is { } child)
+                child.ParentId = null;
+        }
+    }
+
+    // ── membership ───────────────────────────────────────────────────────
+
     public void RemoveMember(SelectionId member)
     {
         // A locked group keeps its members; the scene's own prune is the
         // one force that overrides (a despawned member is simply gone).
         if (IsLockedMember(member))
             return;
-        if (RemoveMemberCore(member))
+        if (RemoveMemberCore(member, reseat: true))
             Revision++;
     }
 
-    /// <summary>Puts one entity into a group at <paramref name="index"/>
-    /// (clamped; negative appends). Joining leaves any other group; a
-    /// member of the SAME group moves to the new place instead.</summary>
     public void AddMember(Guid groupId, SelectionId member, int index = -1)
     {
         if (!Selection.EntitySelection.IsEntity(member.Kind)
             || Find(groupId) is not { Locked: false } group
+            || IsLocked(group)
             || IsLockedMember(member))
             return;
         int existing = group.Members.IndexOf(member);
@@ -176,10 +229,8 @@ public sealed class SceneGroups
         }
         else
         {
-            RemoveMemberCore(member);
-            // The removal above may have dissolved nothing relevant, but
-            // it can never have touched THIS group (the member was not in
-            // it), so the group reference stays valid.
+            RemoveMemberCore(member, reseat: false);
+            RemoveRootSlot(RootSlot.For(member));
         }
         if (index < 0 || index > group.Members.Count)
             index = group.Members.Count;
@@ -187,15 +238,156 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>The root list in display order — valid after
-    /// <see cref="SyncRoot"/> ran for the current scene.</summary>
-    public IReadOnlyList<RootSlot> RootOrder => _order;
+    // ── nesting ──────────────────────────────────────────────────────────
 
-    /// <summary>Reconciles the root order against the scene: the caller
-    /// hands every root-eligible ungrouped entity, in kind order. Stale
-    /// slots leave, missing ones append — a new spawn lands at the
-    /// bottom. Reconciliation never bumps <see cref="Revision"/>: it
-    /// runs inside the rebuild that already reflects it.</summary>
+    /// <summary>Whether <paramref name="childId"/> may sit inside
+    /// <paramref name="parentId"/>: not itself, not one of its own
+    /// descendants, and no deeper than <see cref="MaxDepth"/> counting the
+    /// child's own subtree.</summary>
+    public bool CanNest(Guid childId, Guid parentId, out string reason)
+    {
+        reason = "";
+        if (childId == parentId)
+        {
+            reason = "A group cannot hold itself.";
+            return false;
+        }
+        if (Find(childId) is not { } child || Find(parentId) is not { } parent)
+        {
+            reason = "That group is gone.";
+            return false;
+        }
+        if (IsLocked(parent) || IsLocked(child))
+        {
+            reason = "A locked group keeps its shape.";
+            return false;
+        }
+        foreach (var ancestor in Ancestors(parent))
+            if (ancestor.Id == childId)
+            {
+                reason = "A group cannot be moved into one of its own subgroups.";
+                return false;
+            }
+        int depth = Depth(parentId) + Height(child);
+        if (depth > MaxDepth)
+        {
+            reason = $"Groups nest {MaxDepth} deep at most; this would be {depth}.";
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Moves a group inside another, at <paramref name="index"/>
+    /// among the parent's subgroups (-1 = last). Refused per
+    /// <see cref="CanNest"/>.</summary>
+    public bool Nest(Guid childId, Guid parentId, int index = -1)
+    {
+        if (!CanNest(childId, parentId, out _)
+            || Find(childId) is not { } child || Find(parentId) is not { } parent)
+            return false;
+        int existing = parent.Children.IndexOf(childId);
+        if (existing >= 0)
+        {
+            parent.Children.RemoveAt(existing);
+            if (index > existing)
+                index--;
+        }
+        else
+        {
+            Detach(child);
+        }
+        if (index < 0 || index > parent.Children.Count)
+            index = parent.Children.Count;
+        parent.Children.Insert(index, childId);
+        child.ParentId = parent.Id;
+        Revision++;
+        return true;
+    }
+
+    /// <summary>Moves a nested group out to the root order, beside
+    /// <paramref name="anchor"/> (or at the end).</summary>
+    public void Unnest(Guid groupId, RootSlot? anchor = null, bool after = true)
+    {
+        if (Find(groupId) is not { ParentId: not null } group || IsLocked(group))
+            return;
+        Detach(group);
+        var slot = RootSlot.ForGroup(groupId);
+        RemoveRootSlot(slot);
+        int to = anchor is { } a ? _order.IndexOf(a) : -1;
+        if (to < 0)
+            _order.Add(slot);
+        else
+            _order.Insert(after ? to + 1 : to, slot);
+        Revision++;
+    }
+
+    private void Detach(SceneGroup group)
+    {
+        if (group.ParentId is { } parentId && Find(parentId) is { } parent)
+            parent.Children.Remove(group.Id);
+        else
+            RemoveRootSlot(RootSlot.ForGroup(group.Id));
+        group.ParentId = null;
+    }
+
+    public SceneGroup? ParentOf(SceneGroup group) =>
+        group.ParentId is { } id ? Find(id) : null;
+
+    /// <summary>The group's parents, nearest first.</summary>
+    public IEnumerable<SceneGroup> Ancestors(SceneGroup group)
+    {
+        var current = ParentOf(group);
+        int guard = 0;
+        while (current != null && guard++ < 16)
+        {
+            yield return current;
+            current = ParentOf(current);
+        }
+    }
+
+    /// <summary>Root groups are 1.</summary>
+    public int Depth(Guid id)
+    {
+        if (Find(id) is not { } group)
+            return 0;
+        int depth = 1;
+        foreach (var _ in Ancestors(group))
+            depth++;
+        return depth;
+    }
+
+    /// <summary>Levels in the group's own subtree, itself included.</summary>
+    public int Height(SceneGroup group)
+    {
+        int height = 1;
+        foreach (var childId in group.Children)
+            if (Find(childId) is { } child)
+                height = Math.Max(height, 1 + Height(child));
+        return height;
+    }
+
+    /// <summary>Every entity in the group and its subgroups, in order.</summary>
+    public IEnumerable<SelectionId> Descendants(SceneGroup group)
+    {
+        foreach (var member in group.Members)
+            yield return member;
+        foreach (var childId in group.Children)
+            if (Find(childId) is { } child)
+                foreach (var nested in Descendants(child))
+                    yield return nested;
+    }
+
+    /// <summary>The topmost group above (or being) this one.</summary>
+    public SceneGroup RootOf(SceneGroup group)
+    {
+        var top = group;
+        foreach (var ancestor in Ancestors(group))
+            top = ancestor;
+        return top;
+    }
+
+    // ── the root order ───────────────────────────────────────────────────
+
     public IReadOnlyList<RootSlot> SyncRoot(
         IReadOnlyList<SelectionId> rootEntities)
     {
@@ -203,7 +395,7 @@ public sealed class SceneGroups
         {
             var slot = _order[i];
             bool keep = slot.IsGroup
-                ? Find(slot.GroupId) != null
+                ? Find(slot.GroupId) is { ParentId: null }
                 : slot.Entity is { } id && ContainsEntity(rootEntities, id);
             // A slot also leaves when an earlier copy already holds the
             // seat — the structural verbs guess positions and this sweep
@@ -212,7 +404,7 @@ public sealed class SceneGroups
                 _order.RemoveAt(i);
         }
         foreach (var group in _groups)
-            if (RootIndexOfGroup(group.Id) < 0)
+            if (group.ParentId == null && RootIndexOfGroup(group.Id) < 0)
                 _order.Add(RootSlot.ForGroup(group.Id));
         foreach (var id in rootEntities)
             if (_order.IndexOf(RootSlot.For(id)) < 0)
@@ -220,11 +412,6 @@ public sealed class SceneGroups
         return _order;
     }
 
-    /// <summary>A loaded document's order restored: each named slot moves
-    /// to the end in the given sequence, so a cleared-and-loaded scene
-    /// reads back in its saved order and a merge-load's entities arrive
-    /// at the bottom, still ordered among themselves. Unknown slots are
-    /// seated too — the next sync prunes any that never materialize.</summary>
     public void RestoreOrder(IReadOnlyList<RootSlot> slots)
     {
         if (slots.Count == 0)
@@ -239,8 +426,6 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>The open-space drop: <paramref name="moved"/> re-seats at
-    /// the END of the root list.</summary>
     public void MoveRootToEnd(RootSlot moved)
     {
         int from = _order.IndexOf(moved);
@@ -251,9 +436,6 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Reorders the root list: <paramref name="moved"/> re-seats
-    /// itself before or after <paramref name="target"/>. Unknown slots
-    /// no-op — the sync owns membership, this owns order only.</summary>
     public void MoveRoot(RootSlot moved, RootSlot target, bool after)
     {
         if (moved == target)
@@ -272,21 +454,17 @@ public sealed class SceneGroups
         Revision++;
     }
 
+    // ── lookups ──────────────────────────────────────────────────────────
+
     public SceneGroup? Find(Guid id) =>
         _groups.Find(group => group.Id == id);
 
+    /// <summary>The group an entity sits in directly.</summary>
     public SceneGroup? GroupOf(SelectionId member) =>
         _groups.Find(group => group.Members.Contains(member));
 
-    /// <summary>The group the user EXPLICITLY selected by clicking its
-    /// head. Set by the head click alone — hand-selecting every member
-    /// stays a member-level selection, never this. It survives only while
-    /// the selection still IS that group's membership.</summary>
-    public Guid? ActiveGroupId { get; set; }
-
-    /// <summary>The explicitly selected group, if the selection still
-    /// equals its membership — the ONLY way a multiselect counts as "the
-    /// group". A drifted selection clears the state.</summary>
+    /// <summary>The active group when the selection is exactly its
+    /// entities (subgroups included).</summary>
     public SceneGroup? ActiveSelection(IReadOnlyList<SelectionId> selected)
     {
         if (ActiveGroupId is not { } id)
@@ -297,25 +475,24 @@ public sealed class SceneGroups
         return null;
     }
 
-    /// <summary>Whether the selection's entity set equals the group's
-    /// member set.</summary>
-    private static bool SelectionEquals(
+    private bool SelectionEquals(
         SceneGroup group, IReadOnlyList<SelectionId> selected)
     {
+        var all = new List<SelectionId>(Descendants(group));
         int entities = 0;
         foreach (var id in selected)
         {
             if (!Selection.EntitySelection.IsEntity(id.Kind))
                 continue;
             entities++;
-            if (!group.Members.Contains(id))
+            if (!all.Contains(id))
                 return false;
         }
-        return entities >= 2 && entities == group.Members.Count;
+        return entities >= 2 && entities == all.Count;
     }
 
-    /// <summary>The lock, one verb: flipping it bumps the revision so the
-    /// rows restate their grips.</summary>
+    // ── locks ────────────────────────────────────────────────────────────
+
     public void SetLocked(Guid id, bool locked)
     {
         if (Find(id) is not { } group || group.Locked == locked)
@@ -324,28 +501,39 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Whether the entity belongs to a locked group — the
-    /// STRUCTURE question (drag, rename, dissolve).</summary>
-    public bool IsLockedMember(SelectionId member) =>
-        GroupOf(member) is { Locked: true };
+    /// <summary>Locked itself or under a locked group.</summary>
+    public bool IsLocked(SceneGroup group)
+    {
+        if (group.Locked)
+            return true;
+        foreach (var ancestor in Ancestors(group))
+            if (ancestor.Locked)
+                return true;
+        return false;
+    }
 
-    /// <summary>The TRANSFORM question, selection-aware: a locked group
-    /// freezes its children individually, but a selection holding the
-    /// whole membership is the group moving as one — the lock never
-    /// refuses the group itself.</summary>
+    public bool IsLockedMember(SelectionId member) =>
+        GroupOf(member) is { } group && IsLocked(group);
+
     public bool IsLockedChild(
         SelectionId member, IReadOnlyList<SelectionId> selected)
     {
-        if (GroupOf(member) is not { Locked: true } group)
+        if (GroupOf(member) is not { } group || !IsLocked(group))
             return false;
-        foreach (var one in group.Members)
+        var locked = group;
+        foreach (var ancestor in Ancestors(group))
+            if (ancestor.Locked)
+                locked = ancestor;
+        foreach (var one in Descendants(locked))
             if (!ContainsEntity(selected, one))
                 return true;
         return false;
     }
 
-    /// <summary>Drops members the snapshot no longer contains. Returns
-    /// whether anything changed (the caller already rebuilds).</summary>
+    // ── housekeeping ─────────────────────────────────────────────────────
+
+    /// <summary>Drops members that no longer exist; a group left with
+    /// fewer than two items dissolves into its parent.</summary>
     public bool Prune(Func<SelectionId, bool> exists)
     {
         bool changed = false;
@@ -358,52 +546,71 @@ public sealed class SceneGroups
                     group.Members.RemoveAt(m);
                     changed = true;
                 }
-            if (group.Members.Count < 2)
-            {
-                DissolveThinned(i);
-                changed = true;
-            }
         }
+        // Thinned groups dissolve deepest first, so a parent counts what
+        // its children left behind.
+        bool thinned;
+        do
+        {
+            thinned = false;
+            for (int i = _groups.Count - 1; i >= 0; i--)
+                if (_groups[i].ItemCount < 2)
+                {
+                    DissolveThinned(i);
+                    thinned = true;
+                    changed = true;
+                    break;
+                }
+        }
+        while (thinned);
         if (changed)
             Revision++;
         return changed;
     }
 
-    private bool RemoveMemberCore(SelectionId member)
+    private bool RemoveMemberCore(SelectionId member, bool reseat)
     {
         for (int i = _groups.Count - 1; i >= 0; i--)
         {
             var group = _groups[i];
             if (!group.Members.Remove(member))
                 continue;
-            // The freed entity lands beside its old group. A member that
-            // is actually moving into ANOTHER group leaves a stray slot
-            // here; the next root sync collects it.
-            int at = RootIndexOfGroup(group.Id);
-            if (at >= 0)
-                _order.Insert(at + 1, RootSlot.For(member));
-            else
-                _order.Add(RootSlot.For(member));
-            if (group.Members.Count < 2)
+            if (reseat)
+            {
+                // The freed entity lands beside its old group: in the
+                // parent, or in the root order.
+                if (group.ParentId is { } parentId && Find(parentId) is { } parent)
+                {
+                    parent.Members.Add(member);
+                }
+                else
+                {
+                    int at = RootIndexOfGroup(group.Id);
+                    if (at >= 0)
+                        _order.Insert(at + 1, RootSlot.For(member));
+                    else
+                        _order.Add(RootSlot.For(member));
+                }
+            }
+            if (group.ItemCount < 2)
                 DissolveThinned(i);
             return true;
         }
         return false;
     }
 
-    /// <summary>A group thinned below two dissolves in place: the
-    /// survivor, if any, takes the group's seat in the root order.</summary>
     private void DissolveThinned(int index)
     {
         var group = _groups[index];
-        int at = RootIndexOfGroup(group.Id);
-        if (at >= 0)
-        {
-            _order.RemoveAt(at);
-            if (group.Members.Count == 1)
-                _order.Insert(at, RootSlot.For(group.Members[0]));
-        }
+        Release(group);
         _groups.RemoveAt(index);
+    }
+
+    private void RemoveRootSlot(RootSlot slot)
+    {
+        int at = _order.IndexOf(slot);
+        if (at >= 0)
+            _order.RemoveAt(at);
     }
 
     private int RootIndexOfGroup(Guid id)

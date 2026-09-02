@@ -1305,11 +1305,12 @@ public class SkeletonOverlayWindow : Window
             && pressed == released
             && !Interactive.PointerOccluded(
                 InteractionOwner.World, ImGui.GetMousePos())
-            && _groups.Find(released) is { Members.Count: > 0 } group)
+            && _groups.Find(released) is { } group
+            && new List<SelectionId>(_groups.Descendants(group)) is { Count: > 0 } everything)
         {
-            _selection.Select(group.Members[0]);
-            for (int i = 1; i < group.Members.Count; i++)
-                _selection.Add(group.Members[i]);
+            _selection.Select(everything[0]);
+            for (int i = 1; i < everything.Count; i++)
+                _selection.Add(everything[i]);
             _groups.ActiveGroupId = group.Id;
         }
         _pressedGroupTarget = null;
