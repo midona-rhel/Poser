@@ -206,7 +206,9 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                 // spawned, or the player's own character. Anyone else's is
                 // posed, never taken.
                 if (_bindings.Resolve(id) is not { Success: true, Value: { } live }
-                    || !(_spawns.IsSpawnedActor(live) || _actors.IsLocalPlayer(live)))
+                    || !(_spawns.IsSpawnedActor(live)
+                        || _actors.IsLocalPlayer(live)
+                        || _actors.IsAdopted(live)))
                 {
                     notes.Add(
                         $"Actor '{actor.Name}' is not yours, so its appearance " +

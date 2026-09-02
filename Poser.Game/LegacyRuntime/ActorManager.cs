@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -219,7 +220,89 @@ public class ActorManager : IActorManager
                 yield return obj;
             }
         }
+        // Adopted overworld bodies keep their own index below the GPose
+        // range; they are listed by address, and one that has left the
+        // world leaves the set.
+        if (_adopted.Count == 0)
+            yield break;
+        foreach (var address in _adopted.ToArray())
+        {
+            IGameObject? obj = null;
+            try { obj = _objectTable.CreateObjectReference(address); }
+            catch { }
+            if (obj is null || !obj.IsValid())
+            {
+                _adopted.Remove(address);
+                continue;
+            }
+            yield return obj;
+        }
     }
+
+    private readonly HashSet<nint> _adopted = new();
+    /// <summary>Where each adopted body stood when it was taken — its
+    /// draw object's position, rotation and scale — so GPose leaving
+    /// puts it back exactly there. Its pose needs no restoring: once the
+    /// scene lets go, the game's own animation writes the skeleton again.</summary>
+    private readonly Dictionary<nint, (Vector3 Position, Quaternion Rotation, Vector3 Scale)> _adoptedSeats = new();
+
+    public unsafe void AdoptWorldActor(nint address)
+    {
+        if (address == nint.Zero || !_adopted.Add(address))
+            return;
+        try
+        {
+            var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
+            if (draw != null)
+                _adoptedSeats[address] = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorManager: could not read an adopted actor's seat: {ex.Message}");
+        }
+        RefreshActors();
+    }
+
+    public void ReleaseWorldActor(nint address)
+    {
+        if (!_adopted.Remove(address))
+            return;
+        if (_adoptedSeats.Remove(address, out var seat))
+            SeatBack(address, seat);
+        RefreshActors();
+    }
+
+    private unsafe void RestoreAdoptedSeats()
+    {
+        foreach (var (address, seat) in _adoptedSeats)
+            SeatBack(address, seat);
+        _adoptedSeats.Clear();
+    }
+
+    private unsafe void SeatBack(
+        nint address, (Vector3 Position, Quaternion Rotation, Vector3 Scale) seat)
+    {
+        {
+            try
+            {
+                var reference = _objectTable.CreateObjectReference(address);
+                if (reference is null || !reference.IsValid())
+                    return;
+                var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
+                if (draw == null)
+                    return;
+                draw->Object.Position = seat.Position;
+                draw->Object.Rotation = seat.Rotation;
+                draw->Object.Scale = seat.Scale;
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"ActorManager: could not seat an adopted actor back: {ex.Message}");
+            }
+        }
+    }
+
+    public bool IsAdopted(IActor actor) => _adopted.Contains(actor.Address);
 
     public void RefreshActors()
     {
@@ -401,6 +484,8 @@ public class ActorManager : IActorManager
 
     private void ClearActors()
     {
+        RestoreAdoptedSeats();
+        _adopted.Clear();
         foreach (var actor in _actors)
         {
             if (actor is IDisposable disposable)

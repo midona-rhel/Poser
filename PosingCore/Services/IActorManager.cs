@@ -32,6 +32,18 @@ public interface IActorManager : IDisposable
     /// spawned the actor; nothing else may be exported or saved.</summary>
     bool IsLocalPlayer(IActor actor) => false;
 
+    /// <summary>Takes an overworld actor into the scene BY REFERENCE —
+    /// Brio's AddFromWorld: the same body, registered with GPose, listed
+    /// beside the GPose set until GPose ends. No copy is made.</summary>
+    void AdoptWorldActor(nint address) { }
+
+    /// <summary>Whether the actor is an adopted overworld body.</summary>
+    bool IsAdopted(IActor actor) => false;
+
+    /// <summary>Lets an adopted body go: it is seated back where it was
+    /// taken and leaves the scene, the world keeping it.</summary>
+    void ReleaseWorldActor(nint address) { }
+
     /// <summary>
     /// Opts one object-table index into <see cref="AuxiliaryActors"/>. Safe to
     /// call from any thread; the actor appears on a later framework tick.
