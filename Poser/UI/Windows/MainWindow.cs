@@ -3075,7 +3075,10 @@ public class MainWindow : Window
             if (built.Count > 0)
             {
                 var skeletonKey = actorKey + "/skeleton";
-                _knownCategoryNodes.Add(skeletonKey);
+                // The skeleton starts folded like the actor above it;
+                // only a disclosure click, or the tree verbs, open it.
+                if (_knownCategoryNodes.Add(skeletonKey))
+                    _collapsedNodes.Add(skeletonKey);
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
@@ -4317,6 +4320,23 @@ public class MainWindow : Window
         }
     }
 
+    /// <summary>Folds or opens the tree: one actor's rows (its own row
+    /// and everything keyed beneath it) or, with no root, every row the
+    /// tree has ever built.</summary>
+    private void SetTreeCollapsed(string? root, bool collapsed)
+    {
+        IEnumerable<string> keys = _knownActorNodes.Concat(_knownCategoryNodes);
+        foreach (var key in keys.ToArray())
+        {
+            if (root != null && key != root && !key.StartsWith(root + "/", StringComparison.Ordinal))
+                continue;
+            if (collapsed)
+                _collapsedNodes.Add(key);
+            else
+                _collapsedNodes.Remove(key);
+        }
+    }
+
     /// <summary>The root slot a drop row stands for: a group head or a
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference
@@ -4829,6 +4849,14 @@ public class MainWindow : Window
                 submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
             new("Save to library", TablerIcon.Library,
                 disabled: !actor.HasSkeleton),
+            new("Tree", TablerIcon.Sitemap,
+                submenuItems:
+                [
+                    new ContextMenuItem("Expand", TablerIcon.ChevronDown),
+                    new ContextMenuItem("Collapse", TablerIcon.ChevronRight),
+                    new ContextMenuItem("Expand all", TablerIcon.ChevronDown),
+                    new ContextMenuItem("Collapse all", TablerIcon.ChevronRight),
+                ]),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -4884,6 +4912,7 @@ public class MainWindow : Window
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
+            null, // Tree — child clicks are read separately.
             null, // separator
             null, // Companion — child clicks are read separately.
         };
@@ -5004,6 +5033,13 @@ public class MainWindow : Window
                 {
                     () => Duplicate(actor),
                     () => DuplicateWithPose(actor),
+                },
+                "Tree" => new List<Action?>
+                {
+                    () => SetTreeCollapsed("actor:" + actorId, false),
+                    () => SetTreeCollapsed("actor:" + actorId, true),
+                    () => SetTreeCollapsed(null, false),
+                    () => SetTreeCollapsed(null, true),
                 },
                 _ => null,
             };
@@ -5163,9 +5199,9 @@ public class MainWindow : Window
             _overlayPresentation.AreVisible(overlayBones);
         var items = new[]
         {
-            new ContextMenuItem("Select parent", TablerIcon.ArrowUp, disabled: descriptor.Parent == null),
-            new ContextMenuItem("Select children", TablerIcon.Sitemap, disabled: !hasChildren),
-            new ContextMenuItem("Select mirrored bone", TablerIcon.ArrowsMove, disabled: mirror == null),
+            new ContextMenuItem("Select parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null),
+            new ContextMenuItem("Select children", TablerIcon.SelectChildren, disabled: !hasChildren),
+            new ContextMenuItem("Select mirrored bone", TablerIcon.SelectMirror, disabled: mirror == null),
             new ContextMenuItem(
                 overlayVisible
                     ? "Hide from overlay"

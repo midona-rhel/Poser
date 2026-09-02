@@ -77,6 +77,7 @@ public sealed class SettingsViewModel
     public bool SkeletonLineToCircle;
     public bool HideSkeletonWhileDragging;
     public bool HideSkeletonOnActorSelection = true;
+    public bool OnlyActiveActorBones;
 
     public bool DimInactiveActors;
     public float InactiveActorOpacity = 0.5f;
@@ -336,10 +337,12 @@ public static class SettingsView
             id, new Vector2(width, height), disabled: false);
         ImGui.PopStyleVar();
 
+        // Selected is the strong fill; a hover is a hint at half that,
+        // so the two never read as two selections.
         var fill = selected
             ? theme.Chrome.SidebarSelected
             : hit.Hovered
-                ? theme.Chrome.SidebarHover
+                ? theme.Chrome.SidebarHover with { W = theme.Chrome.SidebarHover.W * 0.5f }
                 : Vector4.Zero;
         if (fill.W > 0f)
             ImGui.GetWindowDrawList().AddRectFilled(
@@ -496,42 +499,39 @@ public static class SettingsView
                 "Open with GPose",
                 vm.OpenOnGPose,
                 next => vm.OpenOnGPose = next,
-                "Show Poser when GPose starts");
+                "Poser's windows open by themselves when you enter GPose");
             form.Switch(
                 "Close with GPose",
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
-                "Hide every Poser window when GPose ends");
+                "Poser's windows close by themselves when you leave GPose");
             form.Switch(
-                "Follow game target",
+                "Selection follows the game target",
                 vm.FollowGameTarget,
                 next => vm.FollowGameTarget = next,
-                "Targeting an actor in GPose selects it in Poser");
+                "Targeting a character in GPose selects it in Poser's sidebar");
             form.Switch(
                 "Game target follows selection",
                 vm.TargetFollowsSelection,
                 next => vm.TargetFollowsSelection = next,
-                "Selecting an actor in Poser targets it in GPose");
+                "Selecting an actor in the sidebar makes it GPose's target");
             form.Slider(
-                "Undo history",
+                "Undo steps",
                 vm.UndoDepth,
                 0f,
                 500f,
                 next => vm.UndoDepth = (int)MathF.Round(next),
-                readout: static value => value < 1f
-                    ? "Off"
-                    : ((int)MathF.Round(value)).ToString(
-                        CultureInfo.InvariantCulture) + " steps",
+                format: "0",
                 marks: UndoDepthMarks,
-                help: "How many edits Poser can undo; zero turns undo off");
+                help: "How many edits you can undo; 0 turns undo off");
         }, divider: false);
         page.Section("Spawning", form =>
             form.Dropdown(
-                "Place spawned things",
+                "Library entries land",
                 SpawnPlacementLabels,
                 vm.DefaultSpawnPlacement,
                 next => vm.DefaultSpawnPlacement = next,
-                help: "Where a spawned entry lands by default"));
+                help: "Where an actor, object or scene from the library appears when you load it"));
         page.Section("Auto-save", form =>
         {
             bool saving = vm.AutoSaveEnabled;
@@ -540,44 +540,43 @@ public static class SettingsView
                 "Auto-save poses",
                 vm.AutoSaveEnabled,
                 next => vm.AutoSaveEnabled = next,
-                "Back up every actor with pose edits while in GPose");
+                "While you are in GPose, every actor you have posed is saved to a backup folder on a timer");
             form.Slider(
-                "Save interval",
+                "Every",
                 vm.AutoSaveIntervalSeconds,
                 10f,
                 600f,
                 next => vm.AutoSaveIntervalSeconds = next,
                 format: "0 s",
+                help: "Seconds between backups",
                 disabled: !saving);
             form.Number(
-                "Auto-saves kept",
+                "Backups kept",
                 ParseCount(vm.AutoSaveMaxKept, 10),
                 next => vm.AutoSaveMaxKept = CountText(next),
                 perPixel: 0.1f,
                 format: "0",
-                help: "Snapshot folders to keep; the oldest go first",
+                help: "Older backups are deleted once there are more than this",
                 disabled: !saving);
             form.Switch(
-                "Auto-save whole scenes",
+                "Auto-save the scene too",
                 vm.SceneSnapshotsEnabled,
                 next => vm.SceneSnapshotsEnabled = next,
-                "Also snapshot actors, objects, lights, cameras and the "
-                    + "environment, on the same interval, into their own folder",
+                "The whole scene, everything in the sidebar, is saved on the same timer into its own folder",
                 disabled: !saving);
             form.Number(
-                "Scene snapshots kept",
+                "Scene backups kept",
                 ParseCount(vm.SceneSnapshotsMaxKept, 5),
                 next => vm.SceneSnapshotsMaxKept = CountText(next),
                 perPixel: 0.1f,
                 format: "0",
-                help: "Whole-scene snapshots to keep; the oldest go first",
+                help: "Older scene backups are deleted once there are more than this",
                 disabled: !scenes);
             form.Switch(
-                "Clean up on GPose exit",
+                "Delete backups on exit",
                 vm.AutoSaveCleanOnExit,
                 next => vm.AutoSaveCleanOnExit = next,
-                "Delete the auto-saves when GPose ends normally; after a "
-                    + "crash they stay for recovery",
+                "Leaving GPose normally clears the backups; after a crash they stay so you can recover",
                 disabled: !saving);
         });
         // The one diagnostic surface a photographer is ever pointed at, on the
@@ -589,8 +588,7 @@ public static class SettingsView
                 "Show frame profiler",
                 vm.ShowFrameProfiler,
                 next => vm.ShowFrameProfiler = next,
-                "Measure what each Poser window, pane and section costs the "
-                    + "frame, worst first. Off, it records nothing");
+                "A window listing what each part of Poser costs per frame, slowest first");
         });
         page.Section("Reset", form =>
         {
@@ -668,7 +666,7 @@ public static class SettingsView
                     vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 });
             form.Slider(
-                "Fill opacity",
+                "Window opacity",
                 vm.FillOpacity,
                 UIConfiguration.MinimumFillOpacity,
                 1f,
@@ -679,9 +677,9 @@ public static class SettingsView
                         vm.FillOpacity, vm.BackdropBlur);
                 },
                 format: "0 %",
-                help: "How solid the windows are");
+                help: "How see-through Poser's windows are");
             form.Switch(
-                "Backdrop blur",
+                "Blur behind windows",
                 vm.BackdropBlur,
                 next =>
                 {
@@ -689,14 +687,14 @@ public static class SettingsView
                     vm.OnSurfaceEffectsPreview?.Invoke(
                         vm.FillOpacity, vm.BackdropBlur);
                 },
-                "Blur what shows through windows and popups");
+                "The game behind a window is blurred instead of showing through sharp");
         }, divider: false);
         page.Section("Privacy", form =>
             form.Switch(
                 "Anonymous mode",
                 vm.AnonymousMode,
                 next => vm.AnonymousMode = next,
-                "Mask character names throughout the UI"));
+                "Character names are replaced everywhere in Poser, for streaming and screenshots"));
         page.Section("Reset", form => ResetRow(
             vm,
             form,
@@ -709,48 +707,53 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("Armature", form =>
+        page.Section("Bones", form =>
         {
             form.Dropdown(
-                "Bone shape",
+                "Draw bones as",
                 SkeletonShapeLabels,
                 vm.SkeletonShape,
                 next => vm.SkeletonShape = next,
-                "A dot, a solid pointing at its child, or a joint");
+                "Dots, solids that point at the child bone, or joints");
             form.Slider(
-                "Bone dot radius",
+                "Dot size",
                 vm.BoneDotRadius,
                 2f,
                 12f,
                 next => vm.BoneDotRadius = next,
                 format: "0 px",
-                help: "Dot size in the overlay");
+                help: "The size of a bone dot on screen");
             form.Slider(
-                "Map dot radius",
+                "Map dot size",
                 vm.MapDotRadius,
                 3f,
                 12f,
                 next => vm.MapDotRadius = next,
                 format: "0 px",
-                help: "Dot size on the body and face maps");
+                help: "The size of a dot on the body and face maps");
             form.Switch(
                 "Only selected bones",
                 vm.SelectedBonesOnly,
                 next => vm.SelectedBonesOnly = next,
-                "Draw the selected bones and nothing else");
+                "Only the bones you have selected are drawn; everything else waits for a hover");
+            form.Switch(
+                "Only the active actor's bones",
+                vm.OnlyActiveActorBones,
+                next => vm.OnlyActiveActorBones = next,
+                "Bones draw for the actor you are working on and no other; with several actors selected none draw");
             form.Switch(
                 "NSFW bones",
                 vm.NsfwBones,
                 next => vm.NsfwBones = next,
-                "Show IVCS and extended bone groups");
+                "IVCS and other adult bone sets appear in the tree and the overlay");
             form.Switch(
-                "Show unused Viera ears",
+                "All Viera ear sets",
                 vm.ShowAllVieraEars,
                 next => vm.ShowAllVieraEars = next,
-                "Keep all four Viera ear sets, not only the pair worn");
+                "Every Viera ear set is listed, not only the one the character wears");
         }, divider: false);
         page.Section("Colors", form =>
-            form.ColorWells("Overlay", wells =>
+            form.ColorWells("Bones", wells =>
             {
                 wells.Well(
                     "Selected",
@@ -780,7 +783,7 @@ public static class SettingsView
                 "Show lines",
                 vm.ShowSkeletonLines,
                 next => vm.ShowSkeletonLines = next,
-                "Connect parent and child bones");
+                "A line joins each bone to its parent");
             form.Slider(
                 "Thickness",
                 vm.BoneLineThickness,
@@ -804,67 +807,64 @@ public static class SettingsView
                 1f,
                 next => vm.BoneLineOpacityWhileUsing = next,
                 format: "0%",
-                help: "How visible the lines stay while a handle is held",
+                help: "How visible the lines stay while you drag a handle",
                 disabled: !lines || vm.HideSkeletonWhileDragging);
             form.Switch(
-                "Stop lines at the dot",
+                "Stop at the dot",
                 vm.SkeletonLineToCircle,
                 next => vm.SkeletonLineToCircle = next,
-                "End each line at the dot's edge instead of its centre",
+                "Lines end at the edge of a dot instead of running through it",
                 disabled: !lines);
         });
-        page.Section("Selection and dragging", form =>
+        page.Section("Selecting and dragging", form =>
         {
             form.Switch(
                 "Hide bones while dragging",
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
-                "Take the dots and lines away for the length of a drag");
+                "Dots and lines disappear while you drag a handle, so you see the pose");
             form.Switch(
-                "Hide bones on actor selection",
+                "Selecting an actor keeps bones hidden",
                 vm.HideSkeletonOnActorSelection,
                 next => vm.HideSkeletonOnActorSelection = next,
-                "Selecting an actor does not open its whole armature; "
-                    + "select a bone to show it");
+                "Clicking an actor does not draw its whole skeleton; bones appear once you select one");
             form.Dropdown(
-                "Bone pick behavior",
+                "Wheel over stacked bones",
                 BonePickBehaviorLabels,
                 vm.BonePickBehavior,
                 next => vm.BonePickBehavior = next,
-                "The wheel over a stack of bones: Ktisis moves the highlight "
-                    + "and the click picks, Brio selects as the wheel reaches");
+                "Ktisis: the wheel moves the highlight and a click picks it. Brio: the wheel selects each bone as it reaches it");
             form.Switch(
-                "Per-bone symmetry",
+                "Remember Link and Mirror per bone",
                 vm.PerBoneSymmetry,
                 next => vm.PerBoneSymmetry = next,
-                "The toolbar's Link and Mirror remember per bone");
+                "The toolbar's Link and Mirror modes are kept for each bone separately");
             form.Switch(
-                "Auto-link paired bones",
+                "Eyes and ears move together",
                 vm.AutoLinkPairedBones,
                 next => vm.AutoLinkPairedBones = next,
-                "Eyes and paired ears move together");
+                "Moving one eye or ear bone moves its pair");
             form.Switch(
-                "Link left and right bones",
+                "Select left and right together",
                 vm.LinkSiblingBones,
                 next => vm.LinkSiblingBones = next,
                 "Selecting a bone also selects its opposite side");
             form.Switch(
-                "Keep relative bone angles",
+                "Keep relative angles",
                 vm.RelativeSecondaryBones,
                 next => vm.RelativeSecondaryBones = next,
-                "With several bones selected, the rest turn about the "
-                    + "first one's frame and keep their angle to it");
+                "With several bones selected, the others turn around the first one instead of each around itself");
         });
         page.Section("Inactive actors", form =>
         {
             bool dim = vm.DimInactiveActors;
             form.Switch(
-                "Dim inactive actors",
+                "Fade inactive actors",
                 vm.DimInactiveActors,
                 next => vm.DimInactiveActors = next,
-                "Fade every actor's overlay except the active one");
+                "Bones of every actor but the active one are drawn faded");
             form.Slider(
-                "Inactive opacity",
+                "Faded opacity",
                 vm.InactiveActorOpacity,
                 0f,
                 1f,
@@ -872,11 +872,11 @@ public static class SettingsView
                 format: "0%",
                 disabled: !dim);
             form.Dropdown(
-                "Active actor is",
+                "The active actor is",
                 ActiveActorLabels,
                 vm.ActiveActorSource,
                 next => vm.ActiveActorSource = next,
-                "The GPose target, the selection, or either",
+                "The one GPose targets, the one selected in Poser, or either",
                 disabled: !dim);
         });
         page.Section("Names", form =>
@@ -884,7 +884,7 @@ public static class SettingsView
                 "Friendly bone names",
                 vm.ShowFriendlyBoneNames,
                 next => vm.ShowFriendlyBoneNames = next,
-                "\"Jaw\" instead of \"j_f_ago\""));
+                "\"Jaw\" instead of the game's \"j_f_ago\""));
         page.Section("Reset", form => ResetRow(
             vm,
             form,
@@ -914,12 +914,12 @@ public static class SettingsView
                 2f,
                 next => vm.GizmoScale = next,
                 format: "0.00×",
-                help: "The handles keep this size on screen at any distance"),
+                help: "How large the handles are on screen; they stay this size at any distance"),
             divider: false);
         page.Section("Drag speed", form =>
         {
             form.Slider(
-                "Entities",
+                "Actors and objects",
                 vm.TransformEntitySpeed,
                 0.0005f,
                 0.05f,
@@ -942,7 +942,7 @@ public static class SettingsView
                 "Hold Z to snap",
                 vm.AllowHoldSnap,
                 next => vm.AllowHoldSnap = next,
-                "Drags step while Z is held; add Shift for a tenth of the step");
+                "While Z is held a drag moves in steps; add Shift for a tenth of the step");
             form.Slider(
                 "Rotation step",
                 vm.SnapRotationDegrees,
@@ -960,28 +960,28 @@ public static class SettingsView
                 format: "0.00",
                 disabled: !snap);
             form.Switch(
-                "Hold X for surface snap",
+                "Hold X to snap to surfaces",
                 vm.AllowRaySnap,
                 next => vm.AllowRaySnap = next,
-                "While moving, the target lands where the pointer meets the scene");
+                "While X is held, what you move lands wherever the pointer touches the scene");
         });
         page.Section("Groups", form =>
             form.Dropdown(
-                "Group scale",
+                "Scaling a group",
                 GroupScaleLabels,
                 vm.GroupScale,
                 next => vm.GroupScale = next,
-                help: "Scaling several things grows them and their spacing, or the spacing alone"));
+                help: "Grow the members and the space between them, or only the space between them"));
         page.Section("Visibility", form =>
         {
             bool keep = vm.KeepGizmoWhenBonesHidden;
             form.Switch(
-                "Keep gizmo without bones",
+                "Keep the gizmo without bones",
                 vm.KeepGizmoWhenBonesHidden,
                 next => vm.KeepGizmoWhenBonesHidden = next,
-                "A selected bone keeps its gizmo whatever the overlay shows");
+                "A selected bone keeps its gizmo even when its bones are hidden from the overlay");
             form.Switch(
-                "Hide gizmo with the armature",
+                "Hide the gizmo with the skeleton",
                 vm.HideGizmoWithoutArmature,
                 next => vm.HideGizmoWithoutArmature = next,
                 "Turning the bone overlay off takes the gizmo with it",
@@ -996,13 +996,13 @@ public static class SettingsView
         page.Section("New free cameras", form =>
         {
             form.Slider(
-                "Movement speed",
+                "Fly speed",
                 vm.CameraDefaultSpeed,
                 FreeCameraSpeed.Minimum,
                 FreeCameraSpeed.Maximum,
                 next => vm.CameraDefaultSpeed = next,
                 format: "0.000",
-                help: "The fly speed a newly created free camera starts with");
+                help: "The speed a new free camera flies at");
             form.Slider(
                 "Mouse sensitivity",
                 vm.CameraDefaultSensitivity,
@@ -1010,50 +1010,50 @@ public static class SettingsView
                 0.2f,
                 next => vm.CameraDefaultSensitivity = next,
                 format: "0.000",
-                help: "How far a right-drag turns a newly created free camera");
+                help: "How far a right-drag turns a new free camera");
         }, divider: false);
         page.Section("Selection", form =>
             form.Switch(
-                "Look through selected cameras",
+                "Look through a selected camera",
                 vm.CameraLookThroughSelected,
                 next => vm.CameraLookThroughSelected = next,
-                "Selecting a camera switches the view to it"));
-        page.Section("Speed modifiers", form =>
+                "Selecting a camera in the sidebar switches the view to it"));
+        page.Section("Speed keys", form =>
         {
             form.Slider(
-                "Hold Shift",
+                "Shift",
                 vm.CameraFastMultiplier,
                 1f,
                 10f,
                 next => vm.CameraFastMultiplier = next,
                 format: "0.0×",
-                help: "What holding Shift multiplies the fly speed by");
+                help: "Holding Shift multiplies the fly speed by this");
             form.Slider(
-                "Hold Ctrl",
+                "Ctrl",
                 vm.CameraSlowMultiplier,
                 0.05f,
                 1f,
                 next => vm.CameraSlowMultiplier = next,
                 format: "0.00×",
-                help: "What holding Ctrl multiplies the fly speed by");
+                help: "Holding Ctrl multiplies the fly speed by this");
         });
         page.Section("Game input", form =>
         {
             form.Switch(
-                "Reserve flight keys",
+                "Keep flight keys from the game",
                 vm.CameraConsumeModifiers,
                 next => vm.CameraConsumeModifiers = next,
-                "While a free camera flies, the game never sees Space, C, Shift or Ctrl");
+                "While a free camera flies, the game does not see Space, C, Shift or Ctrl");
             form.Switch(
-                "Consume all game input",
+                "Keep every key from the game",
                 vm.CameraConsumeAllInput,
                 next => vm.CameraConsumeAllInput = next,
-                "Take every key off the game while in GPose, except Escape and Enter");
+                "While in GPose the game sees no keys at all except Escape and Enter");
             form.Switch(
                 "Flip fly keys past 90°",
                 vm.CameraFlipPastNinety,
                 next => vm.CameraFlipPastNinety = next,
-                "Once the camera is rolled past a quarter turn, invert the sideways and vertical fly keys so they still move you the way the screen shows");
+                "Once the camera is rolled more than a quarter turn, sideways and up keys swap so they still move you the way the screen shows");
         });
     }
 
@@ -1064,54 +1064,50 @@ public static class SettingsView
         page.Section("Layout", form =>
         {
             form.Switch(
-                "Detached UI",
+                "Detached windows",
                 vm.DetachedShell,
                 next => vm.DetachedShell = next,
-                "Float the toolbar and the scene sidebar as their own windows");
-        }, divider: false);
-        page.Section("Tree", form =>
+                "The toolbar and the sidebar float as separate windows you can place anywhere");
             form.Switch(
                 "Tree guide lines",
                 vm.TreeGuides,
                 next => vm.TreeGuides = next,
-                "Show hierarchy connector lines"));
-        page.Section("Visibility", form =>
-        {
-            form.Switch(
-                "Show in GPose",
-                vm.ShowInGPose,
-                next => vm.ShowInGPose = next,
-                "Keep Poser on screen while GPose hides the game's UI");
-            form.Switch(
-                "Show in cutscenes",
-                vm.ShowInCutscene,
-                next => vm.ShowInCutscene = next,
-                "Keep Poser on screen during cutscenes");
-            form.Switch(
-                "Hide while manipulating",
-                vm.HideWhileManipulating,
-                next => vm.HideWhileManipulating = next,
-                "Hide the windows while a gizmo drag is held");
-            // The dependent row follows its override, disabled in place.
-            form.Switch(
-                "Also hide the gizmo",
-                vm.HideGizmoWhileManipulating,
-                next => vm.HideGizmoWhileManipulating = next,
-                "Hide the gizmo too; the drag's angle and distance stay",
-                disabled: !vm.HideWhileManipulating);
-            form.Switch(
-                "Show with game UI hidden",
-                vm.ShowWhenGameUiHidden,
-                next => vm.ShowWhenGameUiHidden = next,
-                "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
-        });
-        page.Section("Transform rows", form =>
+                "Lines in the sidebar show what belongs under what");
             form.Switch(
                 "Swap rotation X and Y",
                 vm.SwapRotationXY,
                 next => vm.SwapRotationXY = next,
-                "Show the rotation row's first two columns exchanged. "
-                    + "The pose itself is unchanged"));
+                "The rotation row shows its first two columns the other way round; the pose itself is unchanged");
+        }, divider: false);
+        page.Section("Visibility", form =>
+        {
+            form.Switch(
+                "Show while the game UI is hidden",
+                vm.ShowInGPose,
+                next => vm.ShowInGPose = next,
+                "Poser stays on screen when GPose hides the game's own interface");
+            form.Switch(
+                "Show in cutscenes",
+                vm.ShowInCutscene,
+                next => vm.ShowInCutscene = next,
+                "Poser stays on screen during cutscenes");
+            form.Switch(
+                "Show after you hide the HUD",
+                vm.ShowWhenGameUiHidden,
+                next => vm.ShowWhenGameUiHidden = next,
+                "Poser stays on screen after Scroll Lock hides the HUD, or the game hides it for you");
+            form.Switch(
+                "Hide while dragging",
+                vm.HideWhileManipulating,
+                next => vm.HideWhileManipulating = next,
+                "Every Poser window disappears while you drag a handle, so you see the pose");
+            form.Switch(
+                "Hide the gizmo too",
+                vm.HideGizmoWhileManipulating,
+                next => vm.HideGizmoWhileManipulating = next,
+                "The gizmo disappears with the windows; the drag itself keeps working",
+                disabled: !vm.HideWhileManipulating);
+        });
         page.Section("Reset", form => ResetRow(
             vm,
             form,

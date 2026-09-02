@@ -588,9 +588,14 @@ public class SkeletonOverlayWindow : Window
         // Collect all bones that project to screen successfully — snapshot
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.
+        var onlyActor = Config.OnlyActiveActorBones ? SelectionActorLineage() : null;
         if (drawArmature)
         foreach (var actor in _scene.Snapshot.Actors)
         {
+            // Bones of the active actor only: the one actor the selection
+            // belongs to. Several actors selected is not bone work.
+            if (Config.OnlyActiveActorBones && onlyActor != actor.Id.LogicalId)
+                continue;
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             float armatureOpacity = ActorOpacity(actor.Id, activeLineage);
 
@@ -1037,6 +1042,28 @@ public class SkeletonOverlayWindow : Window
 
     /// <summary>One actor's fade: full while it is the active one or while
     /// nothing is active, the configured multiplier otherwise.</summary>
+    /// <summary>The single actor the selection belongs to — bones, actor,
+    /// gaze — or null when it belongs to none or to more than one.</summary>
+    private Guid? SelectionActorLineage()
+    {
+        Guid? found = null;
+        foreach (var id in _selection.Selected)
+        {
+            Guid lineage;
+            if (id.Bone is { } bone)
+                lineage = bone.Skeleton.Actor.LogicalId;
+            else if (id.Actor is { } actor
+                     && id.Kind is SceneEntityKind.Actor or SceneEntityKind.GazeTarget)
+                lineage = actor.LogicalId;
+            else
+                continue;
+            if (found is { } other && other != lineage)
+                return null;
+            found = lineage;
+        }
+        return found;
+    }
+
     private static float ActorOpacity(ActorId actor, Guid? activeLineage) =>
         activeLineage is not { } active || actor.LogicalId == active
             ? 1f

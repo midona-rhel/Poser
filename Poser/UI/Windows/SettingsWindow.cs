@@ -164,6 +164,7 @@ public class SettingsWindow : Window
             HideSkeletonWhileDragging = c.Skeleton.HideSkeletonWhileDragging,
             HideSkeletonOnActorSelection =
                 c.Skeleton.HideSkeletonOnActorSelection,
+            OnlyActiveActorBones = c.Skeleton.OnlyActiveActorBones,
             DimInactiveActors = c.Skeleton.DimInactiveActors,
             InactiveActorOpacity = c.Skeleton.InactiveActorOpacity,
             ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
@@ -378,6 +379,7 @@ public class SettingsWindow : Window
         c.Skeleton.HideSkeletonWhileDragging = _vm.HideSkeletonWhileDragging;
         c.Skeleton.HideSkeletonOnActorSelection =
             _vm.HideSkeletonOnActorSelection;
+        c.Skeleton.OnlyActiveActorBones = _vm.OnlyActiveActorBones;
         c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
         c.Skeleton.InactiveActorOpacity =
             Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);
