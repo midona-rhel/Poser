@@ -43,6 +43,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Services.IGazeService _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -61,8 +62,10 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Services.IGazeService gaze,
         global::Poser.Services.IBonePosingService bonePosing,
-        global::Poser.Game.WorldObjects.WorldObjectService worldObjects)
+        global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
+        global::Poser.Services.ISpawnCatalogService catalog)
     {
+        _catalog = catalog;
         _worldObjects = worldObjects;
         _bonePosing = bonePosing;
         _integration = integration;
@@ -455,6 +458,18 @@ public sealed class DebugBridge : IDisposable
                 if (!meta.Success || meta.Value is not { } m)
                     return Json(new { error = meta.Detail });
                 return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
+            }
+            case "/spawncatalog":
+            {
+                string want = query.TryGetValue("name", out var cn) ? cn.ToLowerInvariant() : "wind-up titan";
+                global::Poser.Services.SpawnCatalogEntry? entry = null;
+                foreach (var e in _catalog.Entries)
+                    if (e.NameLower == want || (entry == null && e.NameLower.Contains(want)))
+                        entry = e;
+                if (entry is not { } found)
+                    return Json(new { ok = false, detail = "no catalog entry matches" });
+                var spawnedActor = _lifecycle.SpawnActor($"Add {found.Name}", () => _spawner.SpawnCatalogActor(found));
+                return Json(new { ok = spawnedActor != null, name = spawnedActor?.Name, entry = found.Name, kind = found.Kind.ToString() });
             }
             case "/spawnobject":
             {

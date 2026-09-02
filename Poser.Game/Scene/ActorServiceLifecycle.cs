@@ -68,7 +68,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     // degrees off and never settling (2026-09-02). A bone the user HAS
     // transformed on the source carries that transform across.
     private static readonly string[] PhysicsPrefixes =
-        { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
+        { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_", "nf_leash" };
 
     public ActorServiceLifecycle(
         IActorSpawnService spawns,
@@ -235,7 +235,11 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
 
     private static bool IsPhysicsDriven(string name)
     {
-        if (name.Contains("_phys", StringComparison.Ordinal) || name.Contains("_phy_", StringComparison.Ordinal))
+        // A chain (a minion's leash) is simulated from its own previous
+        // pose: a link written every frame feeds the simulator a drifting
+        // state until the tail's rotation collapses to zero (2026-09-02).
+        if (name.Contains("_phys", StringComparison.Ordinal) || name.Contains("_phy_", StringComparison.Ordinal)
+            || name.Contains("_chain", StringComparison.Ordinal))
             return true;
         foreach (var prefix in PhysicsPrefixes)
             if (name.StartsWith(prefix, StringComparison.Ordinal))
