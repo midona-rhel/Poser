@@ -1388,7 +1388,10 @@ public class MainWindow : Window
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
-        if (!_contentHidden && !Controls.ManipulationHide.Hidden)
+        // A drag held on the shell's own control keeps the window drawing
+        // through the fade, invisible, so the held item is not torn away.
+        if (!_contentHidden
+            && (!Controls.ManipulationHide.Hidden || Controls.ManipulationDrag.ShellHeld))
         {
             using var manipulationFade = Controls.ManipulationHide.FadeScope();
             AppShellView.Draw(

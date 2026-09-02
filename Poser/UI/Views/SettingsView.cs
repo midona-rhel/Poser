@@ -715,6 +715,7 @@ public static class SettingsView
                 vm.SkeletonShape,
                 next => vm.SkeletonShape = next,
                 "Dots, solids that point at the child bone, or joints");
+            form.PairRows();
             form.Slider(
                 "Dot size",
                 vm.BoneDotRadius,
@@ -731,6 +732,7 @@ public static class SettingsView
                 next => vm.MapDotRadius = next,
                 format: "0 px",
                 help: "The size of a dot on the body and face maps");
+            form.EndPair();
             form.Switch(
                 "Only selected bones",
                 vm.SelectedBonesOnly,
@@ -784,6 +786,7 @@ public static class SettingsView
                 vm.ShowSkeletonLines,
                 next => vm.ShowSkeletonLines = next,
                 "A line joins each bone to its parent");
+            form.PairRows();
             form.Slider(
                 "Thickness",
                 vm.BoneLineThickness,
@@ -800,15 +803,7 @@ public static class SettingsView
                 next => vm.BoneLineOpacity = next,
                 format: "0%",
                 disabled: !lines);
-            form.Slider(
-                "Opacity while dragging",
-                vm.BoneLineOpacityWhileUsing,
-                0f,
-                1f,
-                next => vm.BoneLineOpacityWhileUsing = next,
-                format: "0%",
-                help: "How visible the lines stay while you drag a handle",
-                disabled: !lines || vm.HideSkeletonWhileDragging);
+            form.EndPair();
             form.Switch(
                 "Stop at the dot",
                 vm.SkeletonLineToCircle,
@@ -816,13 +811,8 @@ public static class SettingsView
                 "Lines end at the edge of a dot instead of running through it",
                 disabled: !lines);
         });
-        page.Section("Selecting and dragging", form =>
+        page.Section("Selecting", form =>
         {
-            form.Switch(
-                "Hide bones while dragging",
-                vm.HideSkeletonWhileDragging,
-                next => vm.HideSkeletonWhileDragging = next,
-                "Dots and lines disappear while you drag a handle, so you see the pose");
             form.Switch(
                 "Selecting an actor keeps bones hidden",
                 vm.HideSkeletonOnActorSelection,
@@ -918,6 +908,7 @@ public static class SettingsView
             divider: false);
         page.Section("Drag speed", form =>
         {
+            form.PairRows();
             form.Slider(
                 "Actors and objects",
                 vm.TransformEntitySpeed,
@@ -934,6 +925,7 @@ public static class SettingsView
                 next => vm.TransformBoneSpeed = next,
                 format: "0.0000",
                 help: "How far one pixel of drag moves a bone");
+            form.EndPair();
         });
         page.Section("Snapping", form =>
         {
@@ -943,6 +935,7 @@ public static class SettingsView
                 vm.AllowHoldSnap,
                 next => vm.AllowHoldSnap = next,
                 "While Z is held a drag moves in steps; add Shift for a tenth of the step");
+            form.PairRows();
             form.Slider(
                 "Rotation step",
                 vm.SnapRotationDegrees,
@@ -959,6 +952,7 @@ public static class SettingsView
                 next => vm.SnapLinearStep = next,
                 format: "0.00",
                 disabled: !snap);
+            form.EndPair();
             form.Switch(
                 "Hold X to snap to surfaces",
                 vm.AllowRaySnap,
@@ -972,6 +966,37 @@ public static class SettingsView
                 vm.GroupScale,
                 next => vm.GroupScale = next,
                 help: "Grow the members and the space between them, or only the space between them"));
+        // Everything that happens for the length of a drag, world gizmo or
+        // inspector ball alike, lives here and nowhere else.
+        page.Section("While dragging", form =>
+        {
+            bool hideWindows = vm.HideWhileManipulating;
+            form.Switch(
+                "Hide the windows",
+                vm.HideWhileManipulating,
+                next => vm.HideWhileManipulating = next,
+                "Every Poser window fades out while you drag a handle, so you see the pose");
+            form.Switch(
+                "Hide the gizmo too",
+                vm.HideGizmoWhileManipulating,
+                next => vm.HideGizmoWhileManipulating = next,
+                "The gizmo fades with the windows; the drag and its readout stay",
+                disabled: !hideWindows);
+            form.Switch(
+                "Hide the bones",
+                vm.HideSkeletonWhileDragging,
+                next => vm.HideSkeletonWhileDragging = next,
+                "Dots and lines disappear while you drag");
+            form.Slider(
+                "Line opacity",
+                vm.BoneLineOpacityWhileUsing,
+                0f,
+                1f,
+                next => vm.BoneLineOpacityWhileUsing = next,
+                format: "0%",
+                help: "How visible the bone lines stay while you drag, when they are not hidden",
+                disabled: !vm.ShowSkeletonLines || vm.HideSkeletonWhileDragging);
+        });
         page.Section("Visibility", form =>
         {
             bool keep = vm.KeepGizmoWhenBonesHidden;
@@ -995,6 +1020,7 @@ public static class SettingsView
     {
         page.Section("New free cameras", form =>
         {
+            form.PairRows();
             form.Slider(
                 "Fly speed",
                 vm.CameraDefaultSpeed,
@@ -1011,6 +1037,7 @@ public static class SettingsView
                 next => vm.CameraDefaultSensitivity = next,
                 format: "0.000",
                 help: "How far a right-drag turns a new free camera");
+            form.EndPair();
         }, divider: false);
         page.Section("Selection", form =>
             form.Switch(
@@ -1020,6 +1047,7 @@ public static class SettingsView
                 "Selecting a camera in the sidebar switches the view to it"));
         page.Section("Speed keys", form =>
         {
+            form.PairRows();
             form.Slider(
                 "Shift",
                 vm.CameraFastMultiplier,
@@ -1036,6 +1064,7 @@ public static class SettingsView
                 next => vm.CameraSlowMultiplier = next,
                 format: "0.00×",
                 help: "Holding Ctrl multiplies the fly speed by this");
+            form.EndPair();
         });
         page.Section("Game input", form =>
         {
@@ -1096,17 +1125,6 @@ public static class SettingsView
                 vm.ShowWhenGameUiHidden,
                 next => vm.ShowWhenGameUiHidden = next,
                 "Poser stays on screen after Scroll Lock hides the HUD, or the game hides it for you");
-            form.Switch(
-                "Hide while dragging",
-                vm.HideWhileManipulating,
-                next => vm.HideWhileManipulating = next,
-                "Every Poser window disappears while you drag a handle, so you see the pose");
-            form.Switch(
-                "Hide the gizmo too",
-                vm.HideGizmoWhileManipulating,
-                next => vm.HideGizmoWhileManipulating = next,
-                "The gizmo disappears with the windows; the drag itself keeps working",
-                disabled: !vm.HideWhileManipulating);
         });
         page.Section("Reset", form => ResetRow(
             vm,

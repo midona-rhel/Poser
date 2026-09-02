@@ -553,6 +553,10 @@ public class PoseRailPane
         if (active && _dragAxis >= 0)
         {
             GizmoPointerOwnership.Hold();
+            // The same hide and the same readout a world drag gets.
+            ManipulationDrag.HoldFromShell(
+                mouse + new Vector2(18f, 14f) * s,
+                $"{RotationGizmoRings.AxisName(_dragAxis)}  {_dragAngle * (180f / MathF.PI):+0.0;-0.0}°");
             float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);
             float delta = (newDistance - _dragDistance) *
                 RotationGizmoRings.ModifierMultiplier(io);

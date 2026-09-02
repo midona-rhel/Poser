@@ -226,6 +226,7 @@ public class GizmoOverlayWindow : Window
     {
         // Draw the free-camera notice before interaction gates.
         DrawFreeCameraSpeed();
+        DrawShellDragReadout();
 
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
@@ -1012,6 +1013,14 @@ public class GizmoOverlayWindow : Window
 
         var min = mouse + new Vector2(18f, 14f) * uiScale;
         Crystarium.HoverHelp.Readout(min, text);
+    }
+
+    /// <summary>The readout of a drag held on a shell control, drawn here
+    /// because the shell itself is faded out under it.</summary>
+    private static void DrawShellDragReadout()
+    {
+        if (ManipulationDrag.ShellReadout is { } readout)
+            Crystarium.HoverHelp.Readout(readout.Min, readout.Text);
     }
 
     /// <summary>Draws the current free-camera speed notice.</summary>

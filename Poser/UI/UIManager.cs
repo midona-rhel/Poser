@@ -130,7 +130,8 @@ public sealed class UIManager : IUIManager
         // under the gesture.
         Controls.ManipulationHide.Active =
             _configService.Config.UI.HideWhileManipulating
-            && Controls.ManipulationDrag.Held;
+            && (Controls.ManipulationDrag.Held
+                || Controls.ManipulationDrag.ShellHeld);
         Controls.ManipulationHide.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
         Controls.ManipulationHide.Advance();
