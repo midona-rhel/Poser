@@ -18,7 +18,7 @@ public class PoserConfiguration : IPluginConfiguration
     /// <summary>The version a config written by THIS build carries. A stored
     /// config below it goes through <c>ConfigurationService.MigrateConfig</c>
     /// once, in ascending step order.</summary>
-    public const int LatestVersion = 3;
+    public const int LatestVersion = 4;
 
     public SkeletonConfiguration Skeleton { get; set; } = new();
     public GizmoConfiguration Gizmo { get; set; } = new();

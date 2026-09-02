@@ -594,6 +594,7 @@ public static partial class Crystarium
             bool openedSubmenu = false;
             if (ReferenceEquals(items, _items))
                 _submenuItems = null;
+            int hoveredRow = -1;
             for (int i = 0; i < items.Length; i++)
             {
                 if (i > 0)
@@ -631,6 +632,12 @@ public static partial class Crystarium
                     if (hit.Clicked && item.SubmenuItems is not { Length: > 0 })
                         clicked = i;
                     hovered = hit.Hovered;
+                    if (hovered && hoveredRow >= 0)
+                        Trace?.Invoke(
+                            $"[Menu] two rows hovered: {hoveredRow} and {i} "
+                            + $"mouse={ImGui.GetMousePos()} row={rowMin}..{rowMax}");
+                    if (hovered)
+                        hoveredRow = i;
                 }
 
                 bool keepAlive = false;

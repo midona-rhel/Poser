@@ -113,6 +113,7 @@ public sealed class SettingsViewModel
     public bool ShowInGPose = true;
     public bool ShowInCutscene = true;
     public bool HideWhileManipulating;
+    public bool HideWhileMovingCamera;
     public bool HideGizmoWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
@@ -1024,6 +1025,11 @@ public static class SettingsView
                 vm.HideWhileManipulating,
                 next => vm.HideWhileManipulating = next,
                 "Every Poser window fades out while you drag a handle, so you see the pose");
+            form.Switch(
+                "Hide while the camera moves",
+                vm.HideWhileMovingCamera,
+                next => vm.HideWhileMovingCamera = next,
+                "The windows fade out while you fly or drag the camera");
             form.Switch(
                 "Hide the gizmo too",
                 vm.HideGizmoWhileManipulating,

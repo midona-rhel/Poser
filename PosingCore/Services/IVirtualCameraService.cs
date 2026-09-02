@@ -30,6 +30,11 @@ public interface IVirtualCameraService : IDisposable
     /// modifier contract's focus rule. Written once per UI frame.</summary>
     bool SuppressFlightKeys { get; set; }
 
+    /// <summary>Whether the free camera moved this frame by its own
+    /// input — flight keys held or a look drag. Read by the UI to hide
+    /// itself while the camera moves.</summary>
+    bool FlightActive { get; }
+
     /// <summary>False when the native camera-update signature was not found;
     /// every operation is a silent no-op in that state.</summary>
     bool IsAvailable { get; }

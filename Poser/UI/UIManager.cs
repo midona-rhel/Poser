@@ -135,6 +135,11 @@ public sealed class UIManager : IUIManager
         bool shellHeld = Controls.ManipulationDrag.ShellHeld;
         bool active = _configService.Config.UI.HideWhileManipulating
             && (held || shellHeld);
+        // Hide while the camera moves: the free camera's own input, or a
+        // drag that began on empty space and turns whatever camera is live.
+        if (_configService.Config.UI.HideWhileMovingCamera
+            && (_cameras.FlightActive || EmptySpaceDrag()))
+            active = true;
         if (active != Controls.ManipulationHide.Active)
             _log.Debug(
                 $"[ManipulationHide] active={active} held={held} shell={shellHeld} "
@@ -143,14 +148,39 @@ public sealed class UIManager : IUIManager
         Controls.ManipulationHide.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
         Controls.ManipulationHide.Advance();
-        // The focus rule, published once per frame: typing, an active
-        // ImGui item (a drag in the UI), or a live gizmo gesture owns the
-        // keyboard, and the free camera's flight keys stand down.
-        _cameras.SuppressFlightKeys =
-            ImGui.GetIO().WantTextInput
-            || ImGui.IsAnyItemActive()
-            || Controls.GizmoPointerOwnership.Owned;
+        // The focus rule, published once per frame: only typing owns the
+        // keyboard. A hover over a handle or a window, or a drag in the
+        // UI, never stands the flight keys down — the camera keys are the
+        // user's hands while framing.
+        _cameras.SuppressFlightKeys = ImGui.GetIO().WantTextInput;
         HandleKeybinds();
+    }
+
+    /// <summary>A mouse drag that began on empty space — nothing of the
+    /// UI or a handle under the press — and has moved since: the game is
+    /// turning its camera under it, on either button.</summary>
+    private readonly bool[] _emptyPress = new bool[2];
+    private readonly System.Numerics.Vector2[] _pressAt = new System.Numerics.Vector2[2];
+    private bool EmptySpaceDrag()
+    {
+        bool dragging = false;
+        var io = ImGui.GetIO();
+        for (int button = 0; button < 2; button++)
+        {
+            var which = (ImGuiMouseButton)button;
+            if (ImGui.IsMouseClicked(which))
+            {
+                _emptyPress[button] = !io.WantCaptureMouse
+                    && !Controls.GizmoPointerOwnership.Owned;
+                _pressAt[button] = io.MousePos;
+            }
+            if (!ImGui.IsMouseDown(which))
+                _emptyPress[button] = false;
+            if (_emptyPress[button]
+                && (io.MousePos - _pressAt[button]).LengthSquared() > 9f)
+                dragging = true;
+        }
+        return dragging;
     }
 
     private Keybind[] BuildKeybinds()

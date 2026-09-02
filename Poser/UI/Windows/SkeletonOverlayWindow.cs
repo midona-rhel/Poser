@@ -177,9 +177,25 @@ public class SkeletonOverlayWindow : Window
     private readonly List<AdoptDisplayData> _adopts = new();
     private readonly List<GroupDisplayData> _groupDots = new();
     private readonly HashSet<Guid> _engagedGroups = new();
-    private readonly Dictionary<BoneId, Vector2> _boneScreenPositions = new();
-    private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
-    private readonly List<BoneDisplayData> _hoverCandidates = new();
+    /// <summary>Per-frame scratch indexed like a skeleton's descriptors,
+    /// grown to the largest skeleton seen; and the descriptor index of
+    /// every bone id per skeleton, rebuilt only when the snapshot hands
+    /// out a new descriptor list.</summary>
+    private Vector2[] _screenScratch = Array.Empty<Vector2>();
+    private Vector3[] _worldScratch = Array.Empty<Vector3>();
+    private bool[] _placedScratch = Array.Empty<bool>();
+    private readonly Dictionary<SkeletonId,
+        (IReadOnlyList<BoneDescriptor> Source, Dictionary<BoneId, int> Map)> _indexMaps = new();
+    /// <summary>Brio's popup: the cluster FROZEN at the press or the
+    /// wheel notch that opened it, so its order and its entries never
+    /// change while it is open — the reference's stability. Its rect is
+    /// what the last paint covered.</summary>
+    private readonly List<BoneDisplayData> _popupItems = new();
+    private readonly List<string> _popupLabels = new();
+    private bool _popupOpen;
+    private Vector2 _popupAnchor;
+    /// <summary>Ktisis' dot radius: the hit box is at least this dot.</summary>
+    private const float ReferenceDotRadius = 7f;
 
     // Hover list state (Ktisis-style). The frozen candidates outlive the
     // frame that found them, so this list is NOT one of the per-frame
@@ -190,7 +206,14 @@ public class SkeletonOverlayWindow : Window
     private readonly List<BoneDisplayData> _hoveredBones = new();
     private readonly List<string> _hoverLabels = new();
     private int _hoverIndex;
-    private Vector2 _hoverAnchor;
+    /// <summary>Once the wheel turns, the cluster LOCKS: its members stay
+    /// until the pointer leaves every one of them, so dots that breathe
+    /// in and out of the hit box cannot shuffle the list under the wheel.
+    /// The list's width is measured when it appears and held until it
+    /// goes, for the same reason.</summary>
+    private bool _clusterLocked;
+    private float? _listWidth;
+    private float _popupWidth;
     private SelectionId? _pressedWorldTarget;
     private PendingSelection? _pendingSelection;
     private WorldAdoptionCandidate? _pressedAdoptTarget;
@@ -324,12 +347,10 @@ public class SkeletonOverlayWindow : Window
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
-        var hoverListOwner = new InteractionOwner(
-            HoverListOwnerId,
-            InteractionLayer.OverlaySurface,
-            int.MaxValue);
-        bool listTravel = CanContinueIntoHoverList(
-            mousePos, hoverListOwner);
+        bool brio = Config.BonePickBehavior == BonePickBehavior.Brio;
+        // The lists are painted on the foreground and never sit under
+        // the pointer, so nothing travels into them.
+        bool listTravel = false;
         // BOTH halves of "a window swallows the clicks it receives"
         // (#79): the Interactive registry knows Poser's own surfaces, and
         // the ImGui hover test knows every real window — each catches
@@ -657,12 +678,23 @@ public class SkeletonOverlayWindow : Window
                         (implicated ??= new()).Add(linked);
             }
 
-            var boneScreenPositions = _boneScreenPositions;
-            var boneWorldPositions = _boneWorldPositions;
-            boneScreenPositions.Clear();
-            boneWorldPositions.Clear();
-            foreach (var bone in descriptors)
+            // One live skeleton per slot, then every bone straight from
+            // its cached transform — the references' walk, not a registry
+            // resolve per bone. Positions land in scratch arrays indexed
+            // like the descriptors; the parent is an index lookup.
+            if (_bindings.Resolve(descriptors[0].Id) is not
+                { Success: true, Value: { Skeleton: { } live } })
+                continue;
+            var index = IndexMapFor(slotSkeleton);
+            int count = descriptors.Count;
+            EnsureScratch(count);
+            var screen = _screenScratch;
+            var world = _worldScratch;
+            var placed = _placedScratch;
+            Array.Clear(placed, 0, count);
+            for (int b = 0; b < count; b++)
             {
+                var bone = descriptors[b];
                 // Opted-in bones draw while the master switch is on; a
                 // SELECTED bone draws regardless — the anchor rule, which is
                 // what stops the switch stranding an edit with no on-screen
@@ -678,35 +710,34 @@ public class SkeletonOverlayWindow : Window
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
-                if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
+                if (live.GetBone(bone.Id.PartialId, bone.Id.BoneIndex) is not { } liveBone)
                     continue;
-                var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
+                var worldPos = Vector3.Transform(liveBone.LastTransform.Position, modelMatrix);
+                // The projection refuses what lies behind the camera.
                 if (!_cameraService.WorldToScreen(worldPos, out var screenPos))
                     continue;
-                boneScreenPositions[bone.Id] = viewportPos + screenPos;
-                boneWorldPositions[bone.Id] = worldPos;
+                screen[b] = viewportPos + screenPos;
+                world[b] = worldPos;
+                placed[b] = true;
             }
-
-            foreach (var bone in descriptors)
+            for (int b = 0; b < count; b++)
             {
-                if (!boneScreenPositions.TryGetValue(bone.Id, out var screenPos))
+                if (!placed[b])
                     continue;
-
+                var bone = descriptors[b];
                 Vector2? parentScreenPos = null;
-                if (bone.Parent is { } parentId &&
-                    boneScreenPositions.TryGetValue(parentId, out var psp))
-                {
-                    parentScreenPos = psp;
-                }
-
+                if (bone.Parent is { } parentId
+                    && index.TryGetValue(parentId, out int parentAt)
+                    && placed[parentAt])
+                    parentScreenPos = screen[parentAt];
                 var selectionId = SelectionId.ForBone(bone.Id);
                 bones.Add(new BoneDisplayData
                 {
                     Name = bone.DisplayName,
                     Id = selectionId,
-                    ScreenPos = screenPos,
+                    ScreenPos = screen[b],
                     ParentScreenPos = parentScreenPos,
-                    CameraDistance = Vector3.Distance(cameraPosition, boneWorldPositions[bone.Id]),
+                    CameraDistance = Vector3.Distance(cameraPosition, world[b]),
                     IsSelected = selectedIds.Contains(selectionId),
                     IsIkChain = armedIkBones?.Contains(bone.Id.CanonicalName) == true,
                     Opacity = armatureOpacity,
@@ -714,10 +745,6 @@ public class SkeletonOverlayWindow : Window
             }
             }
         }
-
-        // Link (Copy) and Mirror both drive the opposite-side partner —
-        // one with the same delta, one flipped — so BOTH modes show it,
-        // resolved PER BONE through the one symmetry rule.
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
         // Eyes and ears that move together by default are partners too.
         if (_bonePosing.LinkedBonesEnabled
@@ -753,9 +780,9 @@ public class SkeletonOverlayWindow : Window
         // that leaves the dots painted and stops them answering the pointer,
         // so a gizmo handle underneath one can be grabbed — reads exactly like
         // an occluded pointer here, which is what makes it a one-line gate.
-        bool dotsSuppressed =
-            false; // The configured hold-modifier died with its setting:
-                   // Alt is the ONE suspend, and it hides the dots outright.
+        // Brio's popup owns the frame while it is open: no dot takes
+        // hover or a press until it closes.
+        bool dotsSuppressed = _popupOpen;
         if (pointerBlocked || dotsSuppressed)
         {
             foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
@@ -926,44 +953,31 @@ public class SkeletonOverlayWindow : Window
                 animated: false);
         }
 
-        // Freeze the overlapping candidates and their anchor while the
-        // pointer crosses into the explicit list.
-        bool onFrozenCluster = listTravel && AnyHoveredIsFrozen(bones);
-        UpdateHoveredBones(bones, mousePos, listTravel);
-        bool hasWorldBone = !listTravel
-            ? AnyHovered(bones)
-            : onFrozenCluster;
-        // The hover-list wheel. A notch steps the highlighted candidate and
-        // wraps at both ends (CycleHoverIndex — Ktisis' step, single test per
-        // side). It runs while the cluster is alive — over the dots OR
-        // travelling into the list — and BEFORE the target is read below, so
-        // the entry a release commits is the one the wheel just put under the
-        // highlight. The wheel is claimed only when it actually moved the
-        // highlight, so a single candidate leaves scrolling to whatever is
-        // underneath.
-        //
-        // WHAT THE NOTCH COSTS is the one thing the references disagree on,
-        // and it is the user's to choose (BonePickBehavior). Under Ktisis the
-        // notch moves the highlight and nothing else. Under Brio the notch
-        // SELECTS what it lands on (PosingOverlayWindow.DrawPopup:444-448
-        // invokes the entry's OnClick on every wheel event), so the scene
-        // selection walks the stack as the wheel turns. It is armed as a
-        // pending selection rather than applied here so it goes through the
-        // one commit path — same presence and occlusion tests as a click.
-        if (_hoveredBones.Count > 1 && (hasWorldBone || listTravel)
-            && io.MouseWheel != 0f)
+        // The candidates, in skeleton order as both references keep them;
+        // the highlight index survives a changing cluster (Ktisis).
+        UpdateHoveredBones(bones);
+        bool hasWorldBone = AnyHovered(bones);
+        // Bones ALWAYS beat the gizmo (Midona's rule, Brio's behaviour):
+        // a hovered dot or an open popup takes the pointer off the gizmo.
+        if (hasWorldBone || _popupOpen)
+            Controls.GizmoPointerOwnership.Suppress();
+        // THE WHEEL. Ktisis: the notch moves the highlight and nothing
+        // else (SelectableGui.DrawSelectList). Brio: over a cluster the
+        // notch opens the popup on the frozen cluster and selects its
+        // first entry; over one dot it selects that dot
+        // (PosingOverlayWindow.HandleInput).
+        if (hasWorldBone && !_popupOpen && io.MouseWheel != 0f)
         {
-            _hoverIndex = CycleHoverIndex(
-                _hoverIndex, _hoveredBones.Count, io.MouseWheel);
-            if (Config.BonePickBehavior == BonePickBehavior.Brio)
-                _pendingSelection = new PendingSelection(
-                    _hoveredBones[_hoverIndex].Id,
-                    ImGui.GetMousePos(),
-                    io.KeyCtrl,
-                    new InteractionOwner(
-                        HoverListOwnerId,
-                        InteractionLayer.OverlaySurface,
-                        int.MaxValue));
+            _clusterLocked = true;
+            if (!brio)
+                _hoverIndex = CycleHoverIndex(
+                    _hoverIndex, _hoveredBones.Count, io.MouseWheel);
+            else
+            {
+                if (_hoveredBones.Count > 1)
+                    OpenPopup(mousePos);
+                SelectNow(_hoveredBones[0].Id, io.KeyShift);
+            }
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
         }
@@ -979,7 +993,7 @@ public class SkeletonOverlayWindow : Window
                 : hasHoveredActor
                     ? actors[hoveredActorIndex].Id
                     : hasWorldBone && _hoveredBones.Count > 0
-                        ? _hoveredBones[_hoverIndex].Id
+                        ? _hoveredBones[brio ? 0 : _hoverIndex].Id
                         : (SelectionId?)null;
         // Dalamud routes every click ImGui has not claimed BEFORE the press
         // to the game — an unclaimed pointer means the press never reaches
@@ -1015,8 +1029,7 @@ public class SkeletonOverlayWindow : Window
             hasHoveredGroup ? groupDots[hoveredGroupIndex].Id : (Guid?)null,
             pointerBlocked || dotsSuppressed || listTravel);
         UpdateAdoptPress(adoptTarget, pointerBlocked || listTravel);
-        if (_hoveredBones.Count > 0)
-            DrawHoverList();
+        DrawHoverList(mousePos, brio);
     }
 
     // ── inactive-actor dimming (Ktisis SceneDraw.GetOpacityMultiplier) ────
@@ -1171,23 +1184,11 @@ public class SkeletonOverlayWindow : Window
     /// <summary>Whether any bone hovered THIS frame is one of the frozen
     /// candidates — the test that keeps a cluster alive while the pointer
     /// crosses into its list.</summary>
-    private bool AnyHoveredIsFrozen(List<BoneDisplayData> bones)
-    {
-        for (int i = 0; i < bones.Count; i++)
-        {
-            var bone = bones[i];
-            if (!bone.IsHovered)
-                continue;
-            for (int j = 0; j < _hoveredBones.Count; j++)
-                if (_hoveredBones[j].Id.Equals(bone.Id))
-                    return true;
-        }
-        return false;
-    }
-
     private void UpdateHoverState(List<BoneDisplayData> bones, Vector2 mousePos)
     {
-        var radius = DotRadius * ImGuiHelpers.GlobalScale;
+        // The hit box is at least the reference dot plus its padding,
+        // whatever size the dot is drawn at.
+        var radius = MathF.Max(DotRadius, ReferenceDotRadius) * ImGuiHelpers.GlobalScale;
         var isOctahedraMode = _editorState.SkeletonViewMode == SkeletonViewMode.Octahedra;
 
         foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
@@ -1252,56 +1253,49 @@ public class SkeletonOverlayWindow : Window
         return u >= 0 && v >= 0 && u + v <= 1;
     }
 
-    private void UpdateHoveredBones(
-        List<BoneDisplayData> bones,
-        Vector2 mousePos,
-        bool keepFrozen)
+    /// <summary>The hovered dots in skeleton order, as both references
+    /// list them — never re-sorted, so a breathing actor cannot shuffle
+    /// the list. The highlight index is Ktisis' ScrollIndex: it survives
+    /// a changing cluster and only falls to zero when it runs past the
+    /// end. A LOCKED cluster keeps its members while the pointer is still
+    /// over any of them.</summary>
+    private void UpdateHoveredBones(List<BoneDisplayData> bones)
     {
-        if (keepFrozen && _hoveredBones.Count > 0)
-            return;
-
-        // Nearest first, by insertion: a candidate cluster is a handful of
-        // overlapping dots, and inserting AFTER every equal distance keeps
-        // the stable order the ordered query gave.
-        var hovered = _hoverCandidates;
-        hovered.Clear();
+        if (_clusterLocked && _hoveredBones.Count > 0)
+        {
+            bool stillOver = false;
+            for (int i = 0; !stillOver && i < bones.Count; i++)
+                if (bones[i].IsHovered)
+                    for (int j = 0; !stillOver && j < _hoveredBones.Count; j++)
+                        stillOver = _hoveredBones[j].Id.Equals(bones[i].Id);
+            if (stillOver)
+                return;
+            _clusterLocked = false;
+        }
+        _hoveredBones.Clear();
+        _hoverLabels.Clear();
         for (int i = 0; i < bones.Count; i++)
         {
-            var bone = bones[i];
-            if (!bone.IsHovered)
+            if (!bones[i].IsHovered)
                 continue;
-            int at = hovered.Count;
-            while (at > 0
-                && hovered[at - 1].CameraDistance > bone.CameraDistance)
-                at--;
-            hovered.Insert(at, bone);
+            _hoveredBones.Add(bones[i]);
+            _hoverLabels.Add(bones[i].Name);
         }
-
-        if (hovered.Count == 0)
-        {
-            if (keepFrozen)
-                return;
-            _hoveredBones.Clear();
-            _hoverLabels.Clear();
+        if (_hoveredBones.Count == 0)
+            _listWidth = null;
+        if (_hoverIndex >= _hoveredBones.Count || _hoverIndex < 0)
             _hoverIndex = 0;
-            return;
-        }
+    }
 
-        bool sameCandidates = _hoveredBones.Count == hovered.Count;
-        for (int i = 0; sameCandidates && i < hovered.Count; i++)
-            sameCandidates = _hoveredBones[i].Id.Equals(hovered[i].Id);
-        if (!sameCandidates)
-        {
-            _hoveredBones.Clear();
-            _hoverLabels.Clear();
-            for (int i = 0; i < hovered.Count; i++)
-            {
-                _hoveredBones.Add(hovered[i]);
-                _hoverLabels.Add(hovered[i].Name);
-            }
-            _hoverIndex = 0;
-            _hoverAnchor = mousePos;
-        }
+    /// <summary>Whether this dot wears the hover colour: under Ktisis the
+    /// one the list highlights, under Brio every hovered one.</summary>
+    private bool HoverLit(in BoneDisplayData bone)
+    {
+        if (!bone.IsHovered || _hoveredBones.Count == 0)
+            return false;
+        if (Config.BonePickBehavior == BonePickBehavior.Brio)
+            return true;
+        return _hoveredBones[_hoverIndex].Id.Equals(bone.Id);
     }
 
     /// <summary>
@@ -1333,26 +1327,6 @@ public class SkeletonOverlayWindow : Window
         if (next < 0)
             return count - 1;
         return next;
-    }
-
-    private bool CanContinueIntoHoverList(
-        Vector2 point,
-        InteractionOwner owner)
-    {
-        if (_hoveredBones.Count == 0
-            || !Interactive.TryGetOwnerBounds(
-                HoverListOwnerId,
-                out var listMin,
-                out var listMax)
-            || Interactive.PointerOccluded(owner, point))
-            return false;
-        float padding = HoverPadding * ImGuiHelpers.GlobalScale;
-        var bridgeMin = Vector2.Min(_hoverAnchor, listMin)
-            - new Vector2(padding);
-        var bridgeMax = Vector2.Max(_hoverAnchor, listMax)
-            + new Vector2(padding);
-        return point.X >= bridgeMin.X && point.X < bridgeMax.X
-            && point.Y >= bridgeMin.Y && point.Y < bridgeMax.Y;
     }
 
     /// <summary>The group dot's press: press and release on the SAME
@@ -1468,28 +1442,19 @@ public class SkeletonOverlayWindow : Window
             UpdateBonePick(target, pointerBlocked);
             return;
         }
-        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
-        {
-            _pressedWorldTarget = null;
-            return;
-        }
-
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _pressedWorldTarget = target;
-
-        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
-            return;
-        if (_pressedWorldTarget is { } pressed
-            && target is { } released
-            && pressed.Equals(released))
-        {
-            _pendingSelection = new PendingSelection(
-                released,
-                ImGui.GetMousePos(),
-                ImGui.GetIO().KeyCtrl,
-                InteractionOwner.World);
-        }
         _pressedWorldTarget = null;
+        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+            return;
+        // The PRESS selects, as both references do — nothing waits for the
+        // release. Ktisis: Ctrl toggles and the highlighted entry is taken.
+        // Brio: Shift toggles, the first hovered is taken, and a cluster
+        // also opens the popup on it, frozen.
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || target is not { } pressed)
+            return;
+        bool brioPress = Config.BonePickBehavior == BonePickBehavior.Brio;
+        SelectNow(pressed, brioPress ? ImGui.GetIO().KeyShift : ImGui.GetIO().KeyCtrl);
+        if (brioPress && pressed.Bone != null && _hoveredBones.Count > 1)
+            OpenPopup(ImGui.GetMousePos());
     }
 
     // ── adoption handles ─────────────────────────────────────────────────
@@ -1621,29 +1586,148 @@ public class SkeletonOverlayWindow : Window
         && left.Light.Handle == right.Light.Handle
         && left.WorldObject == right.WorldObject;
 
-    private void DrawHoverList()
+    /// <summary>The hover list, per reference, in the standard's own
+    /// surface. Ktisis: it rides 20 px right of the pointer whenever a dot
+    /// is hovered, one entry or many, the highlight is the persistent
+    /// index and the click takes it. Brio: a preview at (+15, +10) that
+    /// shows what is hovered and marks what is selected, taking no input;
+    /// the popup, once open, replaces it. Both sit above the gizmo.</summary>
+    private void DrawHoverList(Vector2 mousePos, bool brio)
     {
-        if (_hoveredBones.Count == 0
-            || Controls.GizmoPointerOwnership.Owned)
+        if (_popupOpen)
+        {
+            DrawPopup();
             return;
+        }
+        if (_hoveredBones.Count == 0)
+            return;
+        float s = ImGuiHelpers.GlobalScale;
+        float gap = Crystarium.ActiveTheme.Floating.AnchorGap;
+        int marked = -1;
+        if (brio)
+            for (int i = 0; i < _hoveredBones.Count; i++)
+                if (_selection.IsSelected(_hoveredBones[i].Id))
+                    marked = i;
+        var anchor = brio
+            ? mousePos + new Vector2(MathF.Max(0f, 15f - gap), 10f) * s
+            : mousePos + new Vector2(MathF.Max(0f, 20f - gap), 0f) * s;
+        _listWidth ??= Crystarium.FloatingSurface.HoverListWidth(_hoverLabels);
+        Crystarium.FloatingSurface.HoverList(
+            HoverListOwnerId,
+            anchor,
+            _hoverLabels,
+            brio ? marked : _hoverIndex,
+            InteractionLayer.OverlaySurface,
+            onTop: true,
+            width: _listWidth);
+    }
 
+    private void OpenPopup(Vector2 at)
+    {
+        _popupItems.Clear();
+        _popupLabels.Clear();
+        for (int i = 0; i < _hoveredBones.Count; i++)
+        {
+            _popupItems.Add(_hoveredBones[i]);
+            _popupLabels.Add(_hoverLabels[i]);
+        }
+        _popupAnchor = at;
+        _popupWidth = Crystarium.FloatingSurface.HoverListWidth(_popupLabels);
+        _popupOpen = true;
+        _clusterLocked = false;
+    }
+
+    /// <summary>Brio's popup (PosingOverlayWindow.DrawPopup): the frozen
+    /// cluster at the point it opened. A click on an entry selects it and
+    /// closes; a click anywhere else closes; Escape closes. The wheel
+    /// steps from the entry that is selected NOW — down the list on a
+    /// pull, up on a push, wrapping — and selects what it lands on. Ctrl
+    /// or Shift keep the selection additive.</summary>
+    private void DrawPopup()
+    {
+        var io = ImGui.GetIO();
+        if (_popupItems.Count == 0 || ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            _popupOpen = false;
+            return;
+        }
+        int selectedIndex = -1;
+        for (int i = 0; i < _popupItems.Count; i++)
+            if (_selection.IsSelected(_popupItems[i].Id))
+                selectedIndex = i;
+        bool multi = io.KeyCtrl || io.KeyShift;
         int clicked = Crystarium.FloatingSurface.HoverList(
             HoverListOwnerId,
-            _hoverAnchor,
-            _hoverLabels,
-            _hoverIndex,
-            InteractionLayer.OverlaySurface);
-        if (clicked < 0 || clicked >= _hoveredBones.Count)
+            _popupAnchor,
+            _popupLabels,
+            selectedIndex,
+            InteractionLayer.OverlaySurface,
+            onTop: true,
+            width: _popupWidth);
+        if (clicked >= 0 && clicked < _popupItems.Count)
+        {
+            SelectNow(_popupItems[clicked].Id, multi);
+            _popupOpen = false;
             return;
-        _hoverIndex = clicked;
-        _pendingSelection = new PendingSelection(
-            _hoveredBones[clicked].Id,
-            ImGui.GetMousePos(),
-            ImGui.GetIO().KeyCtrl,
-            new InteractionOwner(
-                HoverListOwnerId,
-                InteractionLayer.OverlaySurface,
-                int.MaxValue));
+        }
+        bool inside = Interactive.TryGetOwnerBounds(
+                HoverListOwnerId, out var listMin, out var listMax)
+            && io.MousePos.X >= listMin.X && io.MousePos.X < listMax.X
+            && io.MousePos.Y >= listMin.Y && io.MousePos.Y < listMax.Y;
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !inside)
+        {
+            _popupOpen = false;
+            return;
+        }
+        if (io.MouseWheel != 0f)
+        {
+            if (io.MouseWheel < 0f)
+            {
+                selectedIndex++;
+                if (selectedIndex >= _popupItems.Count)
+                    selectedIndex = 0;
+            }
+            else
+            {
+                selectedIndex--;
+                if (selectedIndex < 0)
+                    selectedIndex = _popupItems.Count - 1;
+            }
+            SelectNow(_popupItems[selectedIndex].Id, multi);
+            io.WantCaptureMouse = true;
+            ImGui.SetNextFrameWantCaptureMouse(true);
+        }
+    }
+
+    /// <summary>Selection, now: the press or the wheel decided.</summary>
+    private void SelectNow(SelectionId id, bool additive)
+    {
+        if (additive)
+            _selection.Toggle(id);
+        else
+            _selection.Select(id);
+    }
+
+    private Dictionary<BoneId, int> IndexMapFor(SkeletonDescriptor skeleton)
+    {
+        if (_indexMaps.TryGetValue(skeleton.Id, out var cached)
+            && ReferenceEquals(cached.Source, skeleton.Bones))
+            return cached.Map;
+        var map = new Dictionary<BoneId, int>(skeleton.Bones.Count);
+        for (int b = 0; b < skeleton.Bones.Count; b++)
+            map[skeleton.Bones[b].Id] = b;
+        _indexMaps[skeleton.Id] = (skeleton.Bones, map);
+        return map;
+    }
+
+    private void EnsureScratch(int count)
+    {
+        if (_screenScratch.Length >= count)
+            return;
+        int size = Math.Max(count, _screenScratch.Length * 2);
+        _screenScratch = new Vector2[size];
+        _worldScratch = new Vector3[size];
+        _placedScratch = new bool[size];
     }
 
     private void CommitPendingSelection(
@@ -1870,7 +1954,7 @@ public class SkeletonOverlayWindow : Window
             if (IsPriorityBone(bone) != priority) continue;
             var radius = DotRadius;
             float outlineThickness;
-            var color = ResolveBoneColor(bone, useHover: false, BoneColor);
+            var color = ResolveBoneColor(bone, useHover: HoverLit(bone), BoneColor);
             if (bone.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
 
@@ -1884,9 +1968,7 @@ public class SkeletonOverlayWindow : Window
                 outlineThickness = 1.0f;
             }
 
-            // Filled circle
             drawList.AddCircleFilled(bone.ScreenPos, radius, color, 16);
-            // Black outline
             drawList.AddCircle(bone.ScreenPos, radius, OutlineColor, 16, outlineThickness);
         }
     }

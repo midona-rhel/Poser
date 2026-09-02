@@ -115,6 +115,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// focus rule). Written from the draw side, read on the camera's
     /// update — a one-frame lag is invisible.</summary>
     public bool SuppressFlightKeys { get; set; }
+    public bool FlightActive { get; private set; }
 
     // The last fly-speed change the wheel made, for the overlay's readout.
     // Two scalar fields rather than one notice struct because the writer is
@@ -799,6 +800,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 }
             }
 
+            FlightActive = false;
             if (live.Kind == CameraKind.Free)
                 HandleFreeCameraInput(live, mouse, keyboard);
 
@@ -835,9 +837,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         // A locked camera holds its shot: the look-drag stops accumulating
         // (the lock block below eats the delta itself).
-        if (!live.IsLocked &&
-            mouse != null && mouse->IsButtonDown(MouseState.Right))
+        // Either button looks: the orbit camera turns on both, and a press
+        // over the UI never reaches this hook, so a drag that arrives here
+        // began on empty space.
+        if (!live.IsLocked && mouse != null
+            && (mouse->IsButtonDown(MouseState.Right)
+                || mouse->IsButtonDown(MouseState.Left)))
         {
+            if (mouse->Delta != Vector2.Zero)
+                FlightActive = true;
             _freeMouseDelta += mouse->Delta;
             mouse->HandleDelta();
         }
@@ -899,6 +907,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         // Shift = faster, Ctrl = slower — increase and decrease, in that
         // order. Alt carries NO camera role: it is the visibility peek,
         // everywhere and exclusively.
+        if (forwardBack != 0 || leftRight != 0 || upDown != 0)
+            FlightActive = true;
+
         var settings = CameraSettings;
         _freeMoveSpeed = live.MovementSpeed;
         if (keyboard->KeyDown(VirtualKey.SHIFT))
