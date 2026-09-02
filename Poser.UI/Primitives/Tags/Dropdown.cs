@@ -140,12 +140,15 @@ public static partial class Crystarium
                 AnchorMin = valueMin,
                 AnchorMax = valueMax + new Vector2(
                     0f, popupMetrics.AnchorGapCompensation),
-                // A combo's menu is a control: solid, in the box's own colour.
-                Treatment = FloatingSurfaceTreatment.Solid,
+                Treatment = FloatingSurfaceTreatment.Unframed,
             },
             () =>
             {
+                var popupMin = ImGui.GetWindowPos();
+                var popupMax = popupMin + ImGui.GetWindowSize();
                 var popupDrawList = ImGui.GetWindowDrawList();
+                PaintDropdownSurface(popupDrawList, popupMin, popupMax);
+
 
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
                 ScrollRegion(
@@ -364,6 +367,36 @@ public static partial class Crystarium
             BorderLeftColor = triggerBorder,
         });
         return new DropdownTriggerPaint(labelColor, ChevronOpacity);
+    }
+
+    /// <summary>The open menu's own colour: the trigger's overlay flattened
+    /// over the page surface, so the menu is opaque by construction and
+    /// reads as the control opened taller.</summary>
+    private static Vector4 DropdownPopupFill(in Theme theme) =>
+        ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
+
+    /// <summary>The open panel itself: the trigger's own surface, radius
+    /// and border, with the panel shadows, drawn against the full display
+    /// so the shadows escape the popup window's clip. Restored to what it
+    /// was before the rewrite (2026-09-02).</summary>
+    private static void PaintDropdownSurface(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max)
+    {
+        var theme = ActiveTheme;
+        var border = theme.Border;
+        drawList.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
+        BoxRenderer.Draw(drawList, min, max, new BoxStyle
+        {
+            BackgroundColor = DropdownPopupFill(theme),
+            BorderWidth = 1f,
+            BorderRadius = theme.Radii.Control,
+            BorderTopColor = border,
+            BorderRightColor = border,
+            BorderBottomColor = border,
+            BorderLeftColor = border,
+            BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
+        });
+        drawList.PopClipRect();
     }
 
     /// <summary>Paints one active or hovered option row.</summary>

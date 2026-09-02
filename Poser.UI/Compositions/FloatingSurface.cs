@@ -20,10 +20,6 @@ public enum FloatingSurfaceTreatment
 {
     Glass,
     Unframed,
-    /// <summary>A control's own menu: the control's fill, opaque, under a
-    /// white line — no glass, no blur, and immune to the shell's opacity,
-    /// because a menu is a control, not a surface.</summary>
-    Solid,
 }
 
 public static partial class Crystarium
@@ -101,10 +97,7 @@ public static partial class Crystarium
                 size,
                 scale);
             float padding = props.Padding * scale;
-            // A solid menu rounds like the control it opens from.
-            float radius = (props.Treatment == FloatingSurfaceTreatment.Solid
-                ? Crystarium.ActiveTheme.Radii.Control
-                : Crystarium.ActiveTheme.Radii.Surface) * scale;
+            float radius = Crystarium.ActiveTheme.Radii.Surface * scale;
 
             ImGui.SetNextWindowPos(position);
             ImGui.SetNextWindowSize(size);
@@ -137,9 +130,6 @@ public static partial class Crystarium
                     {
                         var owner = Interactive.BeginOwner(
                             id, InteractionLayer.Popup, min, max);
-                        bool solid = props.Treatment == FloatingSurfaceTreatment.Solid;
-                        if (solid)
-                            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 1f);
                         try
                         {
                             if (props.Treatment == FloatingSurfaceTreatment.Glass)
@@ -148,36 +138,10 @@ public static partial class Crystarium
                                     min,
                                     max,
                                     Crystarium.ActiveTheme.Radii.Surface);
-                            else if (solid)
-                            {
-                                // The menu IS the control, taller: it paints exactly what
-                                // the combo box paints — its fill, its border, its radius.
-                                var theme = Crystarium.ActiveTheme;
-                                var menuDraw = ImGui.GetWindowDrawList();
-                                // The box sits on the page surface; the menu carries that
-                                // surface with it, opaque, so nothing shows through.
-                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
-                                {
-                                    BackgroundColor = theme.Surface with { W = 1f },
-                                    BorderRadius = theme.Radii.Control,
-                                });
-                                BoxRenderer.Draw(menuDraw, min, max, new BoxStyle
-                                {
-                                    BackgroundColor = theme.Chrome.ControlHover,
-                                    BorderWidth = 1f,
-                                    BorderRadius = theme.Radii.Control,
-                                    BorderTopColor = theme.Border,
-                                    BorderRightColor = theme.Border,
-                                    BorderBottomColor = theme.Border,
-                                    BorderLeftColor = theme.Border,
-                                });
-                            }
                             body();
                         }
                         finally
                         {
-                            if (solid)
-                                ImGui.PopStyleVar();
                             Interactive.EndOwner(owner);
                         }
                     }
