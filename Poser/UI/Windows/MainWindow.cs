@@ -409,9 +409,6 @@ public class MainWindow : Window
     /// the browser opens at and the tab that affordance answers for.</summary>
     public event Action<Vector2, SpawnBrowserTab>? OnSpawnBrowserRequested;
 
-    /// <summary>Pop out the main content, frozen to this actor. The window
-    /// set answers by minting a <see cref="PopOutWindow"/>.</summary>
-    public event Action<ActorId>? OnPopOutRequested;
 
     /// <summary>The strip's Scene toggle: the window set flips the Scene
     /// window and answers its state through <see cref="GetSceneWindowOpen"/>.
@@ -419,6 +416,11 @@ public class MainWindow : Window
     public event Action? OnSceneWindowToggleRequested;
 
     public Func<bool>? GetSceneWindowOpen { get; set; }
+
+    /// <summary>The split inspector window: shown or hidden without
+    /// merging it back.</summary>
+    public event Action? OnInspectorWindowToggleRequested;
+    public Func<bool>? GetInspectorWindowOpen { get; set; }
 
     public MainWindow(
         IGPoseService gPoseService,
@@ -710,11 +712,10 @@ public class MainWindow : Window
             else
                 IsOpen = false;
         };
-        _vm.OnPopOut = () =>
-        {
-            if (SelectedActorId() is { } popOut)
-                OnPopOutRequested?.Invoke(popOut);
-        };
+        _vm.OnSidebarAttachToggle = RequestDetachToggle;
+        _vm.OnInspectorAttachToggle =
+            () => OnInspectorSplitToggleRequested?.Invoke();
+        _vm.DrawFooterMiddle = DrawFooterMiddle;
         // Each section plus opens the shared spawn browser on that section's
         // tab, anchored to the button that opened it.
         _vm.OnSectionPlus = (index, anchor) =>
@@ -1631,9 +1632,6 @@ public class MainWindow : Window
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.UndoDescription = _cleanTransforms.UndoDescription;
         _vm.RedoDescription = _cleanTransforms.RedoDescription;
-        // Pop-out follows the toolbar actor: any selection that resolves to
-        // an actor can be frozen into its own content window.
-        _vm.ShowPopOut = toolbarActor != null;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
         // the same surface, the spawn browser — the lights and cameras pluses
@@ -4621,19 +4619,13 @@ public class MainWindow : Window
     internal enum ShellCommand
     {
         ShowLibrary,
-        SpawnActor,
-        ImportPose,
-        ExportPose,
-        SaveScene,
-        AutoSaves,
+        OpenSpawn,
+        Pose,
+        Scene,
         LayoutSeparator,
-        PopOutContent,
-        DetachSeparator,
-        ToggleDetached,
-        SplitInspector,
-        WindowsSeparator,
-        SceneWindow,
-        InspectorWindow,
+        PropertiesPanel,
+        Sidebar,
+        Inspector,
         SettingsSeparator,
         OpenSettings,
     }
@@ -4654,6 +4646,11 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
         if (clicked >= 0 && clicked < _shellMenuItems.Length)
             InvokeShellCommand((ShellCommand)clicked);
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0
+            && subParent < _shellMenuItems.Length)
+            InvokeShellSubmenu((ShellCommand)subParent, subClicked);
     }
 
     /// <summary>Updates the shell menu when its visible state changes.</summary>
@@ -4663,10 +4660,12 @@ public class MainWindow : Window
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
+        bool inspectorOpen = GetInspectorWindowOpen?.Invoke() ?? true;
         int layoutState = (uiConfig.DetachedShell ? 1 : 0)
             | (sceneOpen ? 2 : 0)
             | (_contentHidden ? 4 : 0)
-            | (uiConfig.SplitInspector ? 8 : 0);
+            | (uiConfig.SplitInspector ? 8 : 0)
+            | (inspectorOpen ? 16 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -4681,7 +4680,8 @@ public class MainWindow : Window
             uiConfig.DetachedShell,
             sceneOpen,
             _contentHidden,
-            uiConfig.SplitInspector);
+            uiConfig.SplitInspector,
+            inspectorOpen);
     }
 
     /// <summary>Fills the shell menu rows for the current UI state.</summary>
@@ -4691,59 +4691,113 @@ public class MainWindow : Window
         bool detachedShell,
         bool sceneOpen,
         bool contentHidden,
-        bool splitInspector = false)
+        bool splitInspector = false,
+        bool inspectorOpen = true)
     {
         items[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Book);
-        items[(int)ShellCommand.SpawnActor] =
-            new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
-        items[(int)ShellCommand.ImportPose] =
+        items[(int)ShellCommand.OpenSpawn] =
+            new ContextMenuItem("Open the spawn menu", TablerIcon.Plus);
+        items[(int)ShellCommand.Pose] =
             new ContextMenuItem(
-                "Import pose", TablerIcon.Download, disabled: !poseTarget);
-        items[(int)ShellCommand.ExportPose] =
+                "Pose", TablerIcon.Walk, disabled: !poseTarget,
+                submenuItems:
+                [
+                    new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Export", TablerIcon.Upload),
+                    new ContextMenuItem("Auto-saves", TablerIcon.DeviceFloppy),
+                ]);
+        items[(int)ShellCommand.Scene] =
             new ContextMenuItem(
-                "Export pose", TablerIcon.Upload, disabled: !poseTarget);
-        items[(int)ShellCommand.SaveScene] =
-            new ContextMenuItem("Save scene", TablerIcon.Movie);
-        items[(int)ShellCommand.AutoSaves] =
-            new ContextMenuItem(
-                "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+                "Scene", TablerIcon.Movie,
+                submenuItems:
+                [
+                    new ContextMenuItem("Save", TablerIcon.DeviceFloppy),
+                ]);
         items[(int)ShellCommand.LayoutSeparator] = ContextMenuItem.Separator;
-        items[(int)ShellCommand.PopOutContent] =
-            new ContextMenuItem(
-                "Pop out content", TablerIcon.WindowMaximize,
-                disabled: !poseTarget);
-        items[(int)ShellCommand.DetachSeparator] = ContextMenuItem.Separator;
-        items[(int)ShellCommand.ToggleDetached] =
-            new ContextMenuItem(
-                detachedShell ? "Merge the UI" : "Detach the UI",
-                detachedShell ? TablerIcon.WindowMinimize : TablerIcon.WindowMaximize);
-        items[(int)ShellCommand.SplitInspector] =
-            new ContextMenuItem(
-                splitInspector ? "Merge the inspector" : "Split the inspector",
-                splitInspector
-                    ? TablerIcon.WindowMinimize
-                    : TablerIcon.WindowMaximize,
-                help: splitInspector
-                    ? "Fold the inspector back into the shell"
-                    : "Give the inspector its own window");
-        items[(int)ShellCommand.WindowsSeparator] = ContextMenuItem.Separator;
-        // Detached windows can be opened and closed here.
-        items[(int)ShellCommand.SceneWindow] =
-            new ContextMenuItem(
-                sceneOpen ? "Close the sidebar" : "Open the sidebar",
-                sceneOpen ? TablerIcon.DeviceIpadX : TablerIcon.LayoutPanel,
-                disabled: !detachedShell);
-        items[(int)ShellCommand.InspectorWindow] =
+        // The properties panel is the main window's own content: it opens
+        // and closes, and only while the sidebar lives apart from it.
+        items[(int)ShellCommand.PropertiesPanel] =
             new ContextMenuItem(
                 contentHidden
                     ? "Open the properties panel"
                     : "Close the properties panel",
-                contentHidden ? TablerIcon.LayoutSidebarLeft : TablerIcon.BrowserX,
+                contentHidden ? TablerIcon.LayoutPanel : TablerIcon.X,
                 disabled: !detachedShell);
+        items[(int)ShellCommand.Sidebar] =
+            new ContextMenuItem(
+                "Sidebar", TablerIcon.LayoutSidebarLeft,
+                submenuItems: PanelVerbs(
+                    TablerIcon.LayoutSidebarLeft,
+                    attached: !detachedShell, open: sceneOpen));
+        items[(int)ShellCommand.Inspector] =
+            new ContextMenuItem(
+                "Inspector", TablerIcon.LayoutSidebarRight,
+                submenuItems: PanelVerbs(
+                    TablerIcon.LayoutSidebarRight,
+                    attached: !splitInspector, open: inspectorOpen));
         items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;
         items[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
+    }
+
+    /// <summary>One panel's verbs: Attach or Detach by its state, then
+    /// Open or Close — which only a detached panel can do.</summary>
+    private static ContextMenuItem[] PanelVerbs(
+        TablerIcon glyph, bool attached, bool open) =>
+    [
+        new ContextMenuItem(attached ? "Detach" : "Attach", glyph),
+        open
+            ? new ContextMenuItem("Close", TablerIcon.X, disabled: attached)
+            : new ContextMenuItem("Open", glyph, disabled: attached),
+    ];
+
+    /// <summary>What the active pane keeps in the content footer between
+    /// the two attach seats.</summary>
+    private void DrawFooterMiddle(Vector2 origin, Vector2 size)
+    {
+        if (_activeTab == "Pose" && SelectedSkeleton() is { } skeleton)
+            _poseInspector.DrawParentingBar(origin, size, skeleton);
+    }
+
+    /// <summary>Runs one row of a burger submenu, routed by its parent.</summary>
+    private void InvokeShellSubmenu(ShellCommand parent, int index)
+    {
+        switch (parent)
+        {
+            case ShellCommand.Pose:
+                if (SelectedSkeleton() is not { } skeleton)
+                    return;
+                switch (index)
+                {
+                    case 0:
+                        _poseFileSection.RequestImportMenu(withPresets: true);
+                        break;
+                    case 1:
+                        _poseFileSection.RequestExportMenu();
+                        break;
+                    case 2:
+                        _poseFileSection.OpenAutoSaves(skeleton);
+                        break;
+                }
+                break;
+            case ShellCommand.Scene:
+                if (index == 0)
+                    _scenePane.RequestLibrarySave();
+                break;
+            case ShellCommand.Sidebar:
+                if (index == 0)
+                    RequestDetachToggle();
+                else
+                    OnSceneWindowToggleRequested?.Invoke();
+                break;
+            case ShellCommand.Inspector:
+                if (index == 0)
+                    OnInspectorSplitToggleRequested?.Invoke();
+                else
+                    OnInspectorWindowToggleRequested?.Invoke();
+                break;
+        }
     }
 
     /// <summary>Requests the shell layout toggle.</summary>
@@ -4764,41 +4818,12 @@ public class MainWindow : Window
             case ShellCommand.ShowLibrary:
                 ShowLibrary();
                 break;
-            case ShellCommand.SpawnActor:
+            case ShellCommand.OpenSpawn:
                 // The menu anchor is also the spawn browser's anchor.
                 OnSpawnBrowserRequested?.Invoke(
                     _shellMenuAnchor, SpawnBrowserTab.All);
                 break;
-            // Import and export use the existing pose-file menus.
-            case ShellCommand.ImportPose:
-                if (SelectedSkeleton() != null)
-                    _poseFileSection.RequestImportMenu(withPresets: true);
-                break;
-            case ShellCommand.ExportPose:
-                if (SelectedSkeleton() != null)
-                    _poseFileSection.RequestExportMenu();
-                break;
-            case ShellCommand.SaveScene:
-                _scenePane.RequestLibrarySave();
-                break;
-            case ShellCommand.AutoSaves:
-                if (SelectedSkeleton() is { } recoverSkeleton)
-                    _poseFileSection.OpenAutoSaves(recoverSkeleton);
-                break;
-            case ShellCommand.PopOutContent:
-                if (SelectedActorId() is { } popOut)
-                    OnPopOutRequested?.Invoke(popOut);
-                break;
-            case ShellCommand.ToggleDetached:
-                RequestDetachToggle();
-                break;
-            case ShellCommand.SplitInspector:
-                OnInspectorSplitToggleRequested?.Invoke();
-                break;
-            case ShellCommand.SceneWindow:
-                OnSceneWindowToggleRequested?.Invoke();
-                break;
-            case ShellCommand.InspectorWindow:
+            case ShellCommand.PropertiesPanel:
                 ContentHidden = !ContentHidden;
                 break;
             case ShellCommand.OpenSettings:

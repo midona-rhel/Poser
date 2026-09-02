@@ -826,13 +826,10 @@ public class PoseInspectorPane
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
-        float footerHeightPx =
-            Crystarium.ActiveTheme.Floating.ModalBarHeight;
         float width = size.X;
-        float height = Math.Max(size.Y, (tabsHeightPx + footerHeightPx + 1f) * s);
+        float height = Math.Max(size.Y, (tabsHeightPx + 1f) * s);
         float tabsHeight = tabsHeightPx * s;
-        float footerHeight = footerHeightPx * s;
-        float bodyHeight = Math.Max(1f, height - tabsHeight - footerHeight);
+        float bodyHeight = Math.Max(1f, height - tabsHeight);
 
         float segmentedHeightPx =
             Crystarium.ActiveTheme.Controls.NavigationHeight;
@@ -930,17 +927,6 @@ public class PoseInspectorPane
         ImGui.EndChild();
         ImGui.PopStyleVar();
 
-        var footerOrigin =
-            new Vector2(cursor.X, cursor.Y + height - footerHeight);
-        dl.AddRectFilled(
-            new Vector2(shellLeft, footerOrigin.Y),
-            new Vector2(
-                shellLeft + shellWidth,
-                footerOrigin.Y + MathF.Max(1f, s)),
-            ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(
-                    Crystarium.ActiveTheme.FormSeparator)));
-        DrawPoseFooter(footerOrigin, width, skeleton);
         return height;
     }
 
@@ -1244,19 +1230,18 @@ public class PoseInspectorPane
         return viewportHeight;
     }
 
-    private void DrawPoseFooter(
+    /// <summary>The parenting bar the shell's content footer keeps
+    /// between its two attach seats while Pose is the tab.</summary>
+    internal void DrawParentingBar(
         Vector2 cursor,
-        float width,
+        Vector2 size,
         ISkeleton skeleton)
     {
-        float scale = ImGuiHelpers.GlobalScale;
         var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
         Crystarium.ActionBar(
             "pose-parenting-footer",
             cursor,
-            new Vector2(
-                width,
-                Crystarium.ActiveTheme.Floating.ModalBarHeight * scale),
+            size,
             bar =>
             {
                 bar.Label(

@@ -13,7 +13,7 @@ namespace Poser.UI;
 /// <c>unsafe</c> static and a pinned struct because the callback carries no
 /// managed state; Poser's windows are <c>Dalamud.Interface.Windowing.Window</c>
 /// instances that already state <c>Size</c>/<c>SizeCondition</c> from
-/// <c>PreDraw</c> (MainWindow's collapse, PopOutWindow's restore), so the same
+/// <c>PreDraw</c> (MainWindow's collapse), so the same
 /// seam carries this and the codebase keeps one sizing idiom.</para>
 ///
 /// <para>WHICH AXIS WINS is the whole subtlety. Ktisis always derives height

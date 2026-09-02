@@ -331,8 +331,22 @@ Windows each have ONE job. No mode may change what a window IS.
   with the rows. The spawn plus closes the band at the right of the
   search (moved from the adopt band 2026-08-30); the toolbar keeps
   its own plus.
-- **Pop-outs** are pinned properties: the standard tab-content view
-  with a pin. A bespoke pop-out layout is a defect.
+- **Panels attach and detach; nothing pops out.** The sidebar and the
+  inspector each live either inside the main window or in their own
+  window, and the verbs are ATTACH and DETACH (never merge/split). A
+  detached panel also OPENS and CLOSES. The burger menu carries one
+  submenu per panel (Sidebar, Inspector: Attach|Detach, then
+  Open|Close, the latter disabled while attached) and one row for the
+  properties panel (Open|Close, only while the sidebar is detached).
+  Icons: sidebar = layout-sidebar-left, inspector = the same glyph
+  mirrored (layout-sidebar-right), properties panel = layout-panel,
+  Close = X. The pop-out (an actor's content frozen in its own
+  window) was removed 2026-09-02; do not reintroduce it.
+- **The content footer** is the shell's, under EVERY view: the
+  sidebar's attach seat at the left, the inspector's at the right,
+  and whatever the active pane keeps between them (Pose: its
+  Parenting bar). One burger menu everywhere — the toolbar's is the
+  main window's, never a subset.
 - **Hide while manipulating** (Settings → UI → Visibility, off by
   default) — the shell windows FADE over 100 ms while a world drag
   is HELD, and only then: hovering a handle never hides (ruled
