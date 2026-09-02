@@ -245,6 +245,7 @@ public sealed class AdoptedWorldObject
     /// lives in it, and a held transform over a running clock jumps on
     /// unpause.</summary>
     internal byte[]? HeldPauseTail;
+    internal bool HeldTailPending;
 
     /// <summary>What the anchor pump last wrote, so the game's own write
     /// is recognisable: raw differing from this without us writing IS
@@ -650,11 +651,16 @@ public sealed class WorldObjectService : IDisposable
                         ? frozen
                         : handle.Transform;
             handle.EngageNext = false;
+            // The tail is captured only from a LOADED model: before that
+            // the game's own words in it are sentinels, and holding those
+            // every frame crashed the client (2026-09-02).
             var tail = new byte[0x20];
             handle.HeldPauseTail =
-                _port.TryReadBgTail(handle.Address, tail)
+                _port.IsBgReady(handle.Address)
+                && _port.TryReadBgTail(handle.Address, tail)
                     ? tail
                     : null;
+            handle.HeldTailPending = handle.HeldPauseTail == null;
             _log.Debug(
                 "[WorldObject] pause topology: "
                 + _port.DescribeBgAnimation(handle.Address));
@@ -665,6 +671,7 @@ public sealed class WorldObjectService : IDisposable
                 handle.SeedPlacement(frozen);
             handle.HeldPause = null;
             handle.HeldPauseTail = null;
+            handle.HeldTailPending = false;
             handle.LastWritten = null;
             handle.AnimRef = null;
             if (handle.WasAnchored)
@@ -703,6 +710,14 @@ public sealed class WorldObjectService : IDisposable
                 if (handle.HeldPause is not { } held)
                     continue;
                 _port.Write(handle.Address, held);
+                if (handle.HeldPauseTail == null && handle.HeldTailPending
+                    && _port.IsBgReady(handle.Address))
+                {
+                    var late = new byte[0x20];
+                    if (_port.TryReadBgTail(handle.Address, late))
+                        handle.HeldPauseTail = late;
+                    handle.HeldTailPending = false;
+                }
                 if (handle.HeldPauseTail is { } heldTail)
                     _port.WriteBgTailHeld(handle.Address, heldTail);
                 handle.LastWritten = held;
