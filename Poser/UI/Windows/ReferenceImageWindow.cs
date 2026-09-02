@@ -214,9 +214,15 @@ public sealed class ReferenceImageWindow : Window
             _applied = target;
             // Written only while the observation is genuinely off-ratio: a
             // conformant window leaves SetNextWindowSize alone so the resize
-            // grip keeps its own authority.
-            if (MathF.Abs(target.X - _observed.X) > 0.5f
-                || MathF.Abs(target.Y - _observed.Y) > 0.5f)
+            // grip keeps its own authority. And never while the button is
+            // down: the size constraint callback owns the ratio during a
+            // drag, and a correction on the same frame fought it — a corner
+            // pull sized twice and flickered. The seat is corrected once
+            // the hand lets go.
+            bool dragging = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+            if (!dragging
+                && (MathF.Abs(target.X - _observed.X) > 0.5f
+                    || MathF.Abs(target.Y - _observed.Y) > 0.5f))
             {
                 Size = target;
                 SizeCondition = ImGuiCond.Always;
