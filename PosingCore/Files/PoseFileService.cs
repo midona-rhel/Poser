@@ -94,6 +94,7 @@ public class PoseFileService : IPoseFileService
         // partial's bones go into the slot's matching collection as absolute
         // model-space snapshots (LastRawTransform). Partial roots are skipped
         // except the skeleton root.
+        int degenerate = 0;
         foreach (var skeleton in slots)
         {
             actor ??= skeleton.Actor;
@@ -106,10 +107,21 @@ public class PoseFileService : IPoseFileService
                     continue;
                 if (include != null && !include(bone))
                     continue;
+                // A helper the game never rotates (a zero-scaled leash
+                // chain link) carries an all-zero quaternion; a file cannot
+                // hold it and an import could not apply it. Left out — a
+                // NaN, by contrast, is corruption and still refuses.
+                if (IsZeroRotation(bone.LastRawTransform.Rotation))
+                {
+                    degenerate++;
+                    continue;
+                }
 
                 collection[bone.BoneName] = bone.LastRawTransform;
             }
         }
+        if (degenerate > 0)
+            _log.Debug($"Pose capture left out {degenerate} bone(s) with a degenerate rotation");
 
         // Brio parity (ModelPosingCapability.ExportModelPose): the OWNING
         // ACTOR's transform, written once regardless of slot count.
@@ -135,6 +147,9 @@ public class PoseFileService : IPoseFileService
 
         return poseFile;
     }
+
+    private static bool IsZeroRotation(Quaternion rotation) =>
+        rotation.X == 0f && rotation.Y == 0f && rotation.Z == 0f && rotation.W == 0f;
 
     public bool ExportPose(IReadOnlyList<ISkeleton> slots, string path)
     {
@@ -648,6 +663,10 @@ public class PoseFileService : IPoseFileService
         // 316-317, :370-401). Excluded components are masked on the DELTA
         // (Brio PoseInfo.cs:108), so the bone's live values stay put without
         // being re-asserted.
+        // A file bone with an all-zero rotation (older captures kept the
+        // game's zero-quaternion helpers) has nothing to apply.
+        if (IsZeroRotation(boneData.Rotation))
+            return;
         plan.Writes.Add(new PoseImportWrite(
             bone.Skeleton.Slot,
             bone.PartialId,

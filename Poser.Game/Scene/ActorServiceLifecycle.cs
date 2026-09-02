@@ -410,7 +410,20 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         }
         try
         {
-            _framework.RunOnTick(() => Attempt(actor, state, attempts), delayTicks: 1);
+            _framework.RunOnTick(() =>
+            {
+                // The tick runs as a task: an escaped exception here is
+                // an unobserved-task error a minute later, not a report.
+                try
+                {
+                    Attempt(actor, state, attempts);
+                }
+                catch (Exception ex)
+                {
+                    _log.Warning(
+                        $"SceneLifecycleHistory: '{actor.Name}' came back but its restore failed: {ex.Message}");
+                }
+            }, delayTicks: 1);
         }
         catch (Exception ex)
         {
