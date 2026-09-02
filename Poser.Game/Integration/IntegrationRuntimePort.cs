@@ -101,6 +101,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<string, uint, int> _unlockStateName;
     private readonly ICallGateSubscriber<object, string, uint, ulong, int> _applyStateName;
     private readonly ICallGateSubscriber<int, object?> _openActorIndex;
+    private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> _setItem;
+    private readonly ICallGateSubscriber<int, byte, ulong, uint, ulong, int> _setBonusItem;
+    private readonly ICallGateSubscriber<int, ulong, bool, uint, ulong, int> _setMetaState;
+    private readonly ICallGateSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> _getState;
+    private readonly ICallGateSubscriber<int, uint, ulong, int> _revertState;
+    private readonly ICallGateSubscriber<string, string, (int, Guid)> _addDesign;
 
     // Customize+
     private readonly ICallGateSubscriber<(int Breaking, int Feature)> _customizeVersion;
@@ -153,6 +159,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _unlockStateName = pluginInterface.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
         _applyStateName = pluginInterface.GetIpcSubscriber<object, string, uint, ulong, int>("Glamourer.ApplyStateName");
         _openActorIndex = pluginInterface.GetIpcSubscriber<int, object?>("Glamourer.OpenActorIndex");
+        _setItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V3");
+        _setBonusItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, uint, ulong, int>("Glamourer.SetBonusItem");
+        _setMetaState = pluginInterface.GetIpcSubscriber<int, ulong, bool, uint, ulong, int>("Glamourer.SetMetaState");
+        _getState = pluginInterface.GetIpcSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)>("Glamourer.GetState");
+        _revertState = pluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+        _addDesign = pluginInterface.GetIpcSubscriber<string, string, (int, Guid)>("Glamourer.AddDesign");
 
         _customizeVersion = pluginInterface.GetIpcSubscriber<(int, int)>("CustomizePlus.General.GetApiVersion");
         _getProfileList = pluginInterface.GetIpcSubscriber<IList<(Guid, string, string, List<(string, ushort, byte, ushort)>, int, bool)>>("CustomizePlus.Profile.GetList");
@@ -847,6 +859,202 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         });
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    // ── the wardrobe ─────────────────────────────────────────────────────
+
+    public IntegrationPortResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
+        Guarded(Glamourer, "Set item", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            // A byte[] crosses Dalamud IPC as a base64 string and cannot become the
+            // provider's IReadOnlyList<byte>; a List<byte> crosses as a JSON array.
+            int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new List<byte> { dye1, dye2 }, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the item");
+        });
+
+    public IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId) =>
+        Guarded(Glamourer, "Set facewear", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            const byte glasses = 1;
+            int ec = _setBonusItem.InvokeFunc(index, glasses, bonusItemId, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the facewear");
+        });
+
+    public IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) =>
+        Guarded(Glamourer, "Set switch", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _setMetaState.InvokeFunc(index, (ulong)which, on, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the switch");
+        });
+
+    public IntegrationValue<string> GetGlamourerStateJson(ActorId actor) =>
+        Guarded<string>(Glamourer, "Read state", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<string>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<string>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<string>.Ok(state.ToString(Newtonsoft.Json.Formatting.None));
+        });
+
+    public IntegrationValue<WardrobeState> GetWardrobeState(ActorId actor) =>
+        Guarded<WardrobeState>(Glamourer, "Read wardrobe", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<WardrobeState>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<WardrobeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<WardrobeState>.Ok(ParseWardrobe(state));
+        });
+
+    public IntegrationValue<CustomizeState> GetCustomizeState(ActorId actor) =>
+        Guarded<CustomizeState>(Glamourer, "Read look", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<CustomizeState>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<CustomizeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<CustomizeState>.Ok(ParseCustomize(state));
+        });
+
+    /// <summary>The customization out of the state JSON: every key under
+    /// Customize as a plain number (a bool reads as 0 or 1).</summary>
+    internal static CustomizeState ParseCustomize(Newtonsoft.Json.Linq.JObject state)
+    {
+        var values = new Dictionary<CustomizeKey, int>();
+        int modelId = 0;
+        if (state["Customize"] is Newtonsoft.Json.Linq.JObject customize)
+        {
+            modelId = customize["ModelId"]?.ToObject<int>() ?? 0;
+            foreach (var key in Enum.GetValues<CustomizeKey>())
+            {
+                if (customize[key.ToString()]?["Value"] is not { } token)
+                    continue;
+                values[key] = token.Type == Newtonsoft.Json.Linq.JTokenType.Boolean
+                    ? (token.ToObject<bool>() ? 1 : 0)
+                    : token.ToObject<int>();
+            }
+        }
+        return new CustomizeState(values, modelId);
+    }
+
+    public IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+        Guarded(Glamourer, "Set look", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationPortResult.Fail($"Glamourer failed reading the state (code {ec}).");
+            if (state["Customize"] is not Newtonsoft.Json.Linq.JObject customize)
+                return IntegrationPortResult.Fail("The state carries no customization.");
+            foreach (var (key, value) in values)
+            {
+                if (customize[key.ToString()] is not Newtonsoft.Json.Linq.JObject entry)
+                    continue;
+                entry["Value"] = key == CustomizeKey.Wetness
+                    ? new Newtonsoft.Json.Linq.JValue(value != 0)
+                    : new Newtonsoft.Json.Linq.JValue(value);
+            }
+            // Every customize key applies, so the look lands whole and the
+            // changed value is not the only one Glamourer reads.
+            foreach (var property in customize.Properties())
+                if (property.Value is Newtonsoft.Json.Linq.JObject entry && entry["Apply"] is not null)
+                    entry["Apply"] = true;
+            // A string crosses as base64 to Glamourer; a JObject is read as JSON.
+            int rc = _applyState.InvokeFunc(state, index, 0u, ApplyOnce | ApplyCustomization);
+            return GlamourerResult(rc, "setting the look");
+        });
+
+    private static readonly (EquipSlot Slot, string Key)[] WardrobeSlotKeys =
+    {
+        (EquipSlot.MainHand, "MainHand"), (EquipSlot.OffHand, "OffHand"), (EquipSlot.Head, "Head"),
+        (EquipSlot.Body, "Body"), (EquipSlot.Hands, "Hands"), (EquipSlot.Legs, "Legs"),
+        (EquipSlot.Feet, "Feet"), (EquipSlot.Ears, "Ears"), (EquipSlot.Neck, "Neck"),
+        (EquipSlot.Wrists, "Wrists"), (EquipSlot.RightFinger, "RFinger"), (EquipSlot.LeftFinger, "LFinger"),
+    };
+
+    /// <summary>The wardrobe out of Glamourer's state JSON: the twelve
+    /// slots under Equipment with ItemId, Stain and Stain2; the switches
+    /// under Hat, Visor, Weapon and VieraEars; the glasses under Bonus.</summary>
+    internal static WardrobeState ParseWardrobe(Newtonsoft.Json.Linq.JObject state)
+    {
+        var equipment = state["Equipment"] as Newtonsoft.Json.Linq.JObject;
+        var slots = new Dictionary<EquipSlot, WardrobeSlot>();
+        foreach (var (slot, key) in WardrobeSlotKeys)
+        {
+            if (equipment?[key] is not Newtonsoft.Json.Linq.JObject worn)
+                continue;
+            slots[slot] = new WardrobeSlot(
+                worn.Value<ulong?>("ItemId") ?? 0,
+                worn.Value<byte?>("Stain") ?? 0,
+                worn.Value<byte?>("Stain2") ?? 0);
+        }
+        bool Flag(string key, string field, bool fallback) =>
+            equipment?[key]?[field]?.ToObject<bool>() ?? fallback;
+        ulong facewear = state["Bonus"]?["Glasses"]?["BonusId"]?.ToObject<ulong>() ?? 0;
+        return new WardrobeState(
+            slots,
+            facewear,
+            Flag("Hat", "Show", true),
+            Flag("Visor", "IsToggled", false),
+            Flag("Weapon", "Show", true),
+            Flag("VieraEars", "Show", true));
+    }
+
+    public IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson) =>
+        Guarded(Glamourer, "Apply state", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            Newtonsoft.Json.Linq.JObject parsed;
+            try
+            {
+                parsed = Newtonsoft.Json.Linq.JObject.Parse(stateJson);
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                return IntegrationPortResult.Fail($"The state is not JSON: {ex.Message}");
+            }
+            // A string crosses as base64 to Glamourer; a JObject is read as JSON.
+            int ec = _applyState.InvokeFunc(parsed, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "applying the state");
+        });
+
+    public IntegrationPortResult RevertGlamourerState(ActorId actor) =>
+        Guarded(Glamourer, "Revert", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _revertState.InvokeFunc(index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "reverting the state");
+        });
+
+    public IntegrationValue<Guid> AddDesign(string stateJson, string name) =>
+        Guarded<Guid>(Glamourer, "Save design", () =>
+        {
+            var (ec, id) = _addDesign.InvokeFunc(stateJson, name);
+            return ec is GlamourerEcSuccess
+                ? IntegrationValue<Guid>.Ok(id)
+                : IntegrationValue<Guid>.Fail($"Glamourer failed saving the design (code {ec}).");
+        });
 
     private static IntegrationPortResult Guarded(
         IntegrationAvailability availability, string what, Func<IntegrationPortResult> call)

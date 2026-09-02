@@ -274,7 +274,8 @@ public static class WorldGizmo
         Quaternion ringFrame,
         float uiScale,
         float[]? heldTranslateSigns = null,
-        float[]? heldScaleSigns = null)
+        float[]? heldScaleSigns = null,
+        bool universalCenterTranslates = false)
     {
         var layout = new Layout { Projection = projection, UiScale = uiScale };
         layout.TranslateFrame = translateFrame;
@@ -286,8 +287,10 @@ public static class WorldGizmo
         {
             layout.TranslateActive = true;
             // Move exposes the centre as a camera-plane handle; Universal
-            // keeps its centre reserved for uniform scale.
-            layout.TranslateCenterActive = tool == TransformTool.Move;
+            // keeps its centre for uniform scale unless the user gave it
+            // to translation.
+            layout.TranslateCenterActive =
+                tool == TransformTool.Move || (universal && universalCenterTranslates);
             for (int a = 0; a < 3; a++)
                 layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
                     FrameAxis(translateFrame, a), projection.ViewForward);
@@ -323,7 +326,7 @@ public static class WorldGizmo
         {
             layout.ScaleActive = true;
             layout.ScaleShafts = !universal;
-            layout.UniformActive = true;
+            layout.UniformActive = !(universal && universalCenterTranslates);
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
             for (int a = 0; a < 3; a++)
                 layout.ScaleSign[a] = heldScaleSigns?[a] ?? AxisFlipSign(

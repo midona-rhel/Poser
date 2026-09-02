@@ -4,10 +4,6 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game;
-using Poser.Game.Bindings;
-using Poser.Game.Overlays;
-using Poser.Game.Scene;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -36,8 +32,9 @@ namespace Poser.UI;
 public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly IEntityBindings _bindings;
+    private readonly Game.Journal.EntitySessions _sessions;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawns;
 
     /// <summary>The selection the removal was armed against. The arm is only
@@ -48,10 +45,12 @@ public sealed class SelectionSection
 
     public SelectionSection(
         SceneSession scene,
-        StableBindingRegistry bindings,
-        SceneLifecycleHistory lifecycle,
-        IActorSpawnService spawns)
+        IEntityBindings bindings,
+        ISceneLifecycleHistory lifecycle,
+        IActorSpawnService spawns,
+        Game.Journal.EntitySessions sessions)
     {
+        _sessions = sessions;
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
@@ -164,13 +163,13 @@ public sealed class SelectionSection
     private void SetVisible(ResolvedGroup group, bool visible)
     {
         foreach (var actor in group.Actors)
-            _spawns.SetVisibility(actor, visible);
+            _sessions.Actors.SetVisibility(actor, visible);
         foreach (var prop in group.Props)
-            prop.Visible = visible;
+            _sessions.Props.SetVisible(prop, visible);
         foreach (var light in group.Lights)
-            light.IsOn = visible;
+            _sessions.Lights.SetIsOn(light, visible);
         foreach (var overlay in group.Overlays)
-            overlay.Visible = visible;
+            _sessions.Overlays.SetVisible(overlay, visible);
     }
 
     private void Remove(ResolvedGroup group)
@@ -192,10 +191,10 @@ public sealed class SelectionSection
     /// has moved past is smaller, not a refusal.</summary>
     private readonly record struct ResolvedGroup(
         IReadOnlyList<IActor> Actors,
-        IReadOnlyList<PropHandle> Props,
+        IReadOnlyList<IPropHandle> Props,
         IReadOnlyList<ILight> Lights,
         IReadOnlyList<IVirtualCamera> Cameras,
-        IReadOnlyList<OverlayNodeHandle> Overlays)
+        IReadOnlyList<IOverlayNode> Overlays)
     {
         public int Count =>
             Actors.Count + Props.Count + Lights.Count +
@@ -217,10 +216,10 @@ public sealed class SelectionSection
     private ResolvedGroup Resolve(IReadOnlyList<SelectionId> selected)
     {
         var actors = new List<IActor>();
-        var props = new List<PropHandle>();
+        var props = new List<IPropHandle>();
         var lights = new List<ILight>();
         var cameras = new List<IVirtualCamera>();
-        var overlays = new List<OverlayNodeHandle>();
+        var overlays = new List<IOverlayNode>();
 
         foreach (var id in selected)
         {

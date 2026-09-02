@@ -50,7 +50,7 @@ public sealed class SettingsViewModel
     public bool LinkSiblingBones;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
-    public int UndoDepth = 200;
+    public int UndoDepth = 500;
 
     /// <summary>Whether the frame profiler records and shows its panel.
     /// </summary>
@@ -93,6 +93,7 @@ public sealed class SettingsViewModel
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
     public bool KeepGizmoWhenBonesHidden = true;
+    public bool UniversalCenterTranslates;
     public bool HideGizmoWithoutArmature;
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
@@ -101,7 +102,7 @@ public sealed class SettingsViewModel
     public float CameraFastMultiplier = 3f;
     public float CameraSlowMultiplier = 0.3f;
     public bool CameraConsumeModifiers = true;
-    public bool CameraConsumeAllInput;
+    public bool KeepBoundKeysFromGame = true;
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
     public int DefaultSpawnPlacement;
@@ -151,8 +152,6 @@ public sealed class SettingsViewModel
     /// after three blind fixes; the probe reports, nobody theorizes.</summary>
     public Action<string>? DebugLog;
     public string RebindProbe = string.Empty;
-    public int RebindProbeFrame;
-
     /// <summary>A refused capture's standing answer — a chord already
     /// bound elsewhere is never applied; the message stands until a new
     /// chord lands or the capture disarms.</summary>
@@ -189,6 +188,7 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
+    public Action? OnReportIssue;
     public Action<string>? OnOpenUrl;
     public Action<string>? OnOpenFolder;
     /// <summary>Opens a folder picker seeded at the first argument and
@@ -233,8 +233,6 @@ public static class SettingsView
 
     public static float DesignHeight =>
         Crystarium.ActiveTheme.Settings.Height;
-    private const float NavigationIconMargin = 2f;
-
     private const float NavigationPillRadius = 5f;
 
     /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>
@@ -255,7 +253,7 @@ public static class SettingsView
         (TablerIcon.Info, "About"),
     };
 
-    private static readonly float[] UndoDepthMarks = [0f, 200f];
+    private static readonly float[] UndoDepthMarks = [0f, 500f];
 
     public static int PageCount => Nav.Length;
 
@@ -1041,6 +1039,11 @@ public static class SettingsView
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Dots and lines disappear while you drag");
+            form.Switch(
+                "Universal centre moves",
+                vm.UniversalCenterTranslates,
+                next => vm.UniversalCenterTranslates = next,
+                "The centre handle moves; off, it scales");
             form.Slider(
                 "Line opacity",
                 vm.BoneLineOpacityWhileUsing,
@@ -1128,10 +1131,10 @@ public static class SettingsView
                 next => vm.CameraConsumeModifiers = next,
                 "While a free camera flies, the game does not see Space, C, Shift or Ctrl");
             form.Switch(
-                "Keep every key from the game",
-                vm.CameraConsumeAllInput,
-                next => vm.CameraConsumeAllInput = next,
-                "While in GPose the game sees no keys at all except Escape and Enter");
+                "Keep bound keys from the game",
+                vm.KeepBoundKeysFromGame,
+                next => vm.KeepBoundKeysFromGame = next,
+                "A key Poser binds never reaches the game's own keybind");
             form.Switch(
                 "Flip fly keys past 90°",
                 vm.CameraFlipPastNinety,
@@ -1507,6 +1510,10 @@ public static class SettingsView
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));
+            form.Actions("Issue", actions => actions.Button(
+                "Report an issue",
+                () => vm.OnReportIssue?.Invoke(),
+                help: "Save a report to attach"));
             form.Status(
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);

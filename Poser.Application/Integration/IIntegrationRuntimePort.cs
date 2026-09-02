@@ -142,6 +142,29 @@ public interface IIntegrationRuntimePort
     /// <summary>Outbound navigation: opens Glamourer's window on the actor.</summary>
     IntegrationPortResult OpenGlamourer(ActorId actor);
 
+    // ── the wardrobe: what Glamourer wears and switches per actor ──
+    /// <summary>Puts an item with its two dyes in a slot.</summary>
+    IntegrationPortResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2);
+    /// <summary>Puts a facewear on; 0 takes it off.</summary>
+    IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId);
+    /// <summary>Flips one of the meta switches.</summary>
+    IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on);
+    /// <summary>The actor's whole Glamourer state as JSON.</summary>
+    IntegrationValue<string> GetGlamourerStateJson(ActorId actor);
+    /// <summary>The actor's wardrobe read out of that state.</summary>
+    IntegrationValue<WardrobeState> GetWardrobeState(ActorId actor);
+    /// <summary>The actor's customization read out of that state.</summary>
+    IntegrationValue<CustomizeState> GetCustomizeState(ActorId actor);
+    /// <summary>Writes the given customize values and applies the whole
+    /// customization once; a race or gender among them redraws.</summary>
+    IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values);
+    /// <summary>Applies a JSON state; what it carries with Apply set lands.</summary>
+    IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
+    /// <summary>Hands the actor back to what the game and automation say.</summary>
+    IntegrationPortResult RevertGlamourerState(ActorId actor);
+    /// <summary>Saves a JSON state as a named design; returns its id.</summary>
+    IntegrationValue<Guid> AddDesign(string stateJson, string name);
+
     // ── Customize+ ───────────────────────────────────────────────────────
 
     /// <summary>Saved (normal) profiles only.</summary>

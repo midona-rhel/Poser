@@ -1,5 +1,5 @@
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Scene;
@@ -70,6 +70,33 @@ public sealed class ActorIntegrationSession : IDisposable
         var result = _port.OpenGlamourer(actor);
         return result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
     }
+
+    // ── the wardrobe ─────────────────────────────
+
+    public IntegrationResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
+        Lift(_port.SetItem(actor, slot, itemId, dye1, dye2));
+
+    public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId) => Lift(_port.SetFacewear(actor, bonusItemId));
+
+    public IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) => Lift(_port.SetMetaSwitch(actor, which, on));
+
+    public IntegrationValue<string> GetStateJson(ActorId actor) => _port.GetGlamourerStateJson(actor);
+
+    public IntegrationValue<WardrobeState> ReadWardrobe(ActorId actor) => _port.GetWardrobeState(actor);
+
+    public IntegrationValue<CustomizeState> ReadCustomize(ActorId actor) => _port.GetCustomizeState(actor);
+
+    public IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+        Lift(_port.SetCustomize(actor, values));
+
+    public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => Lift(_port.ApplyGlamourerStateJson(actor, stateJson));
+
+    public IntegrationResult RevertState(ActorId actor) => Lift(_port.RevertGlamourerState(actor));
+
+    public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _port.AddDesign(stateJson, name);
+
+    private static IntegrationResult Lift(IntegrationPortResult result) =>
+        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
 
     // ── Selectors ────────────────────────────────────────────────────────
 
@@ -193,8 +220,47 @@ public sealed class ActorIntegrationSession : IDisposable
             Baseline = current.Baseline with { GlamourerState = state },
             DesignOwned = true,
             DesignName = name,
+            DesignActorName = current.DesignActorName ?? NameOf(actor),
         });
         return IntegrationResult.Ok();
+    }
+
+    /// <summary>
+    /// Takes ownership of the actor's look before the first wardrobe or
+    /// customize write: the Glamourer state as it stands is captured once,
+    /// and the reset that runs on GPose exit, on Revert and on the actor
+    /// leaving the scene puts it back, as Brio and Ktisis put an actor
+    /// back (asked 2026-09-03). A look already owned is left as it is.
+    /// </summary>
+    public IntegrationResult OwnLook(ActorId actor)
+    {
+        if (McdfGate(actor) is { } gate)
+            return gate;
+        var current = OverridesFor(actor);
+        if (current.DesignOwned && current.Baseline.GlamourerState != null)
+            return IntegrationResult.Ok();
+        var state = current.Baseline.GlamourerState;
+        if (state == null)
+        {
+            var incoming = _port.CaptureGlamourerState(actor);
+            if (!incoming.Success || incoming.Value is not { } captured)
+                return IntegrationResult.Fail(incoming.Detail ?? "The Glamourer state could not be captured.");
+            state = captured;
+        }
+        Mutate(actor, current with
+        {
+            Baseline = current.Baseline with { GlamourerState = state },
+            DesignOwned = true,
+            DesignName = current.DesignName ?? "Edited look",
+            DesignActorName = current.DesignActorName ?? NameOf(actor),
+        });
+        return IntegrationResult.Ok();
+    }
+
+    private string? NameOf(ActorId actor)
+    {
+        var named = _port.GetActorName(actor);
+        return named.Success && !string.IsNullOrWhiteSpace(named.Value) ? named.Value : null;
     }
 
     public IntegrationResult ResetDesign(ActorId actor)
@@ -355,12 +421,22 @@ public sealed class ActorIntegrationSession : IDisposable
         {
             if (!resolvable)
             {
-                // No native object to write into; the state died with it.
+                // No exact object to write into: the body left GPose. The
+                // character name still names it, so the baseline goes back
+                // by name; without a name the state died with the object.
+                if (current.Baseline.GlamourerState is { } byNameState
+                    && current.DesignActorName is { } byName)
+                {
+                    var restoredByName = _port.RestoreGlamourerStateByName(byName, byNameState);
+                    if (!restoredByName.Success)
+                        failures.Add(restoredByName.Detail!);
+                }
                 current = current with
                 {
                     Baseline = current.Baseline with { GlamourerState = null },
                     DesignOwned = false,
                     DesignName = null,
+                    DesignActorName = null,
                 };
             }
             else if (current.Baseline.GlamourerState is { } state)
@@ -372,6 +448,7 @@ public sealed class ActorIntegrationSession : IDisposable
                         Baseline = current.Baseline with { GlamourerState = null },
                         DesignOwned = false,
                         DesignName = null,
+                        DesignActorName = null,
                     };
                 else
                     failures.Add(restored.Detail!);

@@ -1,7 +1,7 @@
-using Poser.Application.Transforms;
+using Poser.Domain.Transforms;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Operations;
+namespace Poser.Domain.Operations;
 
 /// <summary>
 /// Exact logical identity of one application session.

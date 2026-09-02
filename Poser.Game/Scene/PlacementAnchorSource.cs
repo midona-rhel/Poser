@@ -13,7 +13,7 @@ namespace Poser.Game.Scene;
 /// loads resolve against them. One service so every surface that anchors
 /// (lights, cameras, actor entries, scene capture) reads the same facts.
 /// </summary>
-public sealed class PlacementAnchorSource
+public sealed class PlacementAnchorSource : IPlacementAnchorSource
 {
     private readonly ICameraService _camera;
     private readonly SceneSession _scene;

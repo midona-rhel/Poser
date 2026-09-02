@@ -1,4 +1,5 @@
 using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
@@ -13,7 +14,7 @@ namespace Poser.Game.Animation;
 /// Entries carry their native slot from ActionTimeline.Stance so every
 /// picker can filter choices before a native command is issued.
 /// </summary>
-public sealed class AnimationCatalogLoader
+public sealed class AnimationCatalogLoader : IAnimationCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly AnimationCatalog _catalog;

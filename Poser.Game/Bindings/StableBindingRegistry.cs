@@ -9,23 +9,6 @@ using Poser.Services;
 
 namespace Poser.Game.Bindings;
 
-public enum BindingStatus
-{
-    Success,
-    StaleTarget,
-    IdentityMismatch,
-    Missing,
-}
-
-public readonly record struct BindingResult<T>(
-    BindingStatus Status,
-    T? Value = default,
-    string? Detail = null)
-    where T : class
-{
-    public bool Success => Status == BindingStatus.Success && Value != null;
-}
-
 /// <summary>
 /// One auxiliary body's binding identity, as the registry staged it: the actor
 /// itself (<see cref="Skeleton"/> null) and then one entry per present slot
@@ -40,7 +23,7 @@ public readonly record struct AuxiliaryBindingKey(
 /// Private identity map between domain ids and current legacy/native entities.
 /// Refresh and resolution must run on the framework thread.
 /// </summary>
-public sealed class StableBindingRegistry
+public sealed class StableBindingRegistry : IEntityBindings
 {
     private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
@@ -893,6 +876,39 @@ public sealed class StableBindingRegistry
         return null;
     }
 
+    /// <summary>The current-generation id for a target whose actor is still
+    /// in the scene: the same bone by slot, partial, index and name on the
+    /// redrawn body, or the actor's current id. Null when nothing matches.
+    /// Used only on reconcile, so the scans are not per frame.</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target)
+    {
+        switch (target.Kind)
+        {
+            case TransformTargetKind.Bone when target.Bone is { } bone:
+                foreach (var pair in _boneBindings)
+                {
+                    var key = pair.Key;
+                    if (key.Skeleton.Actor.LogicalId == bone.Skeleton.Actor.LogicalId
+                        && key.Skeleton.Slot == bone.Skeleton.Slot
+                        && key.PartialId == bone.PartialId
+                        && key.BoneIndex == bone.BoneIndex
+                        && key.CanonicalName.Equals(bone.CanonicalName, StringComparison.Ordinal))
+                        return TransformTargetId.ForBone(key);
+                }
+                return null;
+            case TransformTargetKind.Actor when target.Actor is { } actor:
+                foreach (var pair in _boneBindings)
+                {
+                    var current = pair.Key.Skeleton.Actor;
+                    if (current.LogicalId == actor.LogicalId)
+                        return TransformTargetId.ForActor(current);
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
     public BindingResult<IBone> Resolve(BoneId id)
     {
         if (_boneBindings.TryGetValue(id, out var bone))
@@ -928,6 +944,34 @@ public sealed class StableBindingRegistry
 
     /// <summary>Light identity is instance identity: two distinct lights with
     /// identical settings are never the same light.</summary>
+    // The port's handle-typed forms. The registry keeps its concrete
+    // signatures for the runtime; the surfaces see the interfaces.
+    PropId? IEntityBindings.GetPropId(IPropHandle prop) => GetPropId((PropHandle)prop);
+
+    WorldObjectId? IEntityBindings.GetWorldObjectId(IWorldObject worldObject) =>
+        GetWorldObjectId((AdoptedWorldObject)worldObject);
+
+    OverlayId? IEntityBindings.GetOverlayId(IOverlayNode overlay) =>
+        GetOverlayId((OverlayNodeHandle)overlay);
+
+    BindingResult<IPropHandle> IEntityBindings.Resolve(PropId id)
+    {
+        var result = Resolve(id);
+        return new(result.Status, result.Value, result.Detail);
+    }
+
+    BindingResult<IWorldObject> IEntityBindings.Resolve(WorldObjectId id)
+    {
+        var result = Resolve(id);
+        return new(result.Status, result.Value, result.Detail);
+    }
+
+    BindingResult<IOverlayNode> IEntityBindings.Resolve(OverlayId id)
+    {
+        var result = Resolve(id);
+        return new(result.Status, result.Value, result.Detail);
+    }
+
     private sealed class LightReferenceComparer : IEqualityComparer<ILight>
     {
         public static LightReferenceComparer Instance { get; } = new();

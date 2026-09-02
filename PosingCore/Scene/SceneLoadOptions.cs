@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using System;
 using System.Numerics;
 using Poser.Domain.Scene;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Scene;
 
 /// <summary>
 /// What a scene SAVE is asked to put in the document. The six category flags

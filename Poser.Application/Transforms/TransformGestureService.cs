@@ -1,15 +1,10 @@
 ﻿using System.Numerics;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
-
-public readonly record struct TransformGestureId(Guid Value)
-{
-    public static TransformGestureId New() => new(Guid.NewGuid());
-}
 
 public sealed record BeginTransformGesture(
     IReadOnlyList<TransformTargetId> Targets,
@@ -24,53 +19,31 @@ public sealed record BeginTransformGesture(
     bool RelativeSecondaryBones = false,
     GroupScaleMode GroupScale = GroupScaleMode.SizesAndSpacing);
 
-public readonly record struct GestureResult(
-    bool Success,
-    string? Detail = null,
-    TransformGestureId? GestureId = null)
-{
-    public static GestureResult Ok(TransformGestureId? id = null) =>
-        new(true, null, id);
-    public static GestureResult Fail(string detail) =>
-        new(false, detail);
-
-    /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
-    public TransformRecoveryReceipt? Recovery { get; init; }
-
-    /// <summary>Additive operation evidence, excluded from legacy positional
-    /// equality, hashing, and deconstruction.</summary>
-    public OperationReceipt? OperationReceipt { get; init; }
-
-    public bool Equals(GestureResult other) =>
-        Success == other.Success &&
-        Detail == other.Detail &&
-        GestureId == other.GestureId;
-
-    public override int GetHashCode() =>
-        HashCode.Combine(Success, Detail, GestureId);
-}
-
 /// <summary>
 /// Idempotent transform gesture, recovery, and patch-history coordinator.
 /// Public transitions run serialized on the Application/framework thread.
 /// The narrow guard rejects synchronous port-callback reentry; it is not a
 /// lock, scheduler, or cross-thread coordinator.
 /// </summary>
-public sealed class TransformGestureService : IDisposable
+public sealed class TransformGestureService : IDisposable, IUndoRunner
 {
     private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
     private ActiveGestureState? _active;
     private bool _transitionActive;
 
+    private readonly JournalContexts? _journal;
+
     public TransformGestureService(
         SceneSession scene,
         ITransformRuntimePort runtime,
-        TransformHistory history)
+        TransformHistory history,
+        JournalContexts? journal = null)
     {
         _scene = scene;
         _runtime = runtime;
         History = history;
+        _journal = journal;
         _scene.Selection.SelectionChanged += OnSelectionChanged;
     }
 
@@ -157,7 +130,9 @@ public sealed class TransformGestureService : IDisposable
             _scene.Revision,
             command,
             pivot,
-            captured.ToArray());
+            captured.ToArray(),
+            _journal?.BeginActorStep(
+                captured.Select(state => state.Target.ActorLineage)));
         return GestureResult.Ok(id);
     }
 
@@ -369,7 +344,10 @@ public sealed class TransformGestureService : IDisposable
         History.Append(new TransformPatch(
             active.Command.Description,
             active.Before,
-            after));
+            after)
+        {
+            Context = active.Journal?.Complete(),
+        });
         _active = null;
         return GestureResult.Ok(gestureId);
     }
@@ -425,6 +403,11 @@ public sealed class TransformGestureService : IDisposable
                 lifecycle.Undo,
                 $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
                 () => History.CommitUndo(entry));
+        if (entry is JournalStep step)
+            return RunLifecycle(
+                step.Undo,
+                $"Could not undo {step.Description.ToLowerInvariant()}.",
+                () => History.CommitUndo(entry));
         var patch = (TransformPatch)entry;
         var recovery = AttemptRecovery(patch.Before);
         if (recovery.Complete)
@@ -470,6 +453,11 @@ public sealed class TransformGestureService : IDisposable
             return RunLifecycle(
                 lifecycle.Redo,
                 $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
+                () => History.CommitRedo(entry));
+        if (entry is JournalStep step)
+            return RunLifecycle(
+                step.Redo,
+                $"Could not redo {step.Description.ToLowerInvariant()}.",
                 () => History.CommitRedo(entry));
         var patch = (TransformPatch)entry;
         var recovery = AttemptRecovery(patch.After);
@@ -719,5 +707,6 @@ public sealed class TransformGestureService : IDisposable
         ulong SceneRevision,
         BeginTransformGesture Command,
         Vector3 Pivot,
-        IReadOnlyList<TransformTargetState> Before);
+        IReadOnlyList<TransformTargetState> Before,
+        JournalContexts.StepScope? Journal = null);
 }

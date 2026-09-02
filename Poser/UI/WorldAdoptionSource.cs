@@ -1,3 +1,4 @@
+using Poser.Domain.Actors;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -5,10 +6,10 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Application.Animation;
 using Poser.Application.Selection;
+using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -127,9 +128,9 @@ public sealed class WorldAdoptionSource
     // The concrete discovery service, for the same reason the spawn browser
     // takes it: the import overload that hands the clone wrapper back — the
     // thing a pending-select needs — is not on the read port.
-    private readonly Game.WorldActorDiscovery _worldActors;
+    private readonly IWorldActorDiscovery _worldActors;
     private readonly ILightingService _lighting;
-    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly IWorldObjectService _worldObjects;
 
     // The point every handle's range is measured from. Never the player's.
     private readonly ICameraService _camera;
@@ -138,8 +139,8 @@ public sealed class WorldAdoptionSource
     // (release-and-restore), so it goes through the seam that files one in the
     // same history the transforms use — unlike the actor clone and the light
     // capture beside it, for neither of which this seam can state an inverse.
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
-    private readonly StableBindingRegistry _bindings;
+    private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly IEntityBindings _bindings;
     private readonly SelectionSession _selection;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
@@ -150,21 +151,25 @@ public sealed class WorldAdoptionSource
     private long _nextRefreshMs;
     private IActor? _pendingSelectActor;
     private ILight? _pendingSelectLight;
-    private Game.WorldObjects.AdoptedWorldObject? _pendingSelectWorldObject;
+    private IWorldObject? _pendingSelectWorldObject;
 
     public WorldAdoptionSource(
-        Game.WorldActorDiscovery worldActors,
+        IWorldActorDiscovery worldActors,
         ILightingService lighting,
-        Game.WorldObjects.WorldObjectService worldObjects,
+        IWorldObjectService worldObjects,
         ICameraService camera,
-        Game.Scene.SceneLifecycleHistory lifecycle,
-        StableBindingRegistry bindings,
+        ISceneLifecycleHistory lifecycle,
+        IEntityBindings bindings,
         SelectionSession selection,
         AnimationSession animation,
         ConfigurationService configuration,
         IPluginLog log,
-        UserNotices notices)
+        UserNotices notices,
+        TransformHistory history,
+        IActorSpawnService spawns)
     {
+        _history = history;
+        _spawns = spawns;
         _worldActors = worldActors;
         _lighting = lighting;
         _worldObjects = worldObjects;
@@ -283,7 +288,7 @@ public sealed class WorldAdoptionSource
     /// are cleared together: the restore has to write back what THIS hover
     /// found, not a value stated anywhere else.</summary>
     private WorldAdoptionCandidate? _hoveredCandidate;
-    private byte _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+    private byte _hoveredOutline = WorldObjectOutline.None;
     private bool _hoveredActorPainted;
 
     /// <summary>
@@ -331,7 +336,7 @@ public sealed class WorldAdoptionSource
         }
 
         _hoveredCandidate = null;
-        _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+        _hoveredOutline = WorldObjectOutline.None;
         _hoveredActorPainted = false;
 
         if (candidate is not { } next)
@@ -346,7 +351,7 @@ public sealed class WorldAdoptionSource
                         next.WorldObject, out _hoveredOutline))
                     return;
                 _worldObjects.WriteOutline(
-                    next.WorldObject, Game.WorldObjects.WorldObjectOutline.Hover);
+                    next.WorldObject, WorldObjectOutline.Hover);
                 break;
             case WorldAdoptionKind.Actor:
                 _hoveredActorPainted =
@@ -418,6 +423,9 @@ public sealed class WorldAdoptionSource
         _nextRefreshMs = 0;
     }
 
+    private readonly TransformHistory _history;
+    private readonly IActorSpawnService _spawns;
+
     private void AdoptActor(WorldActorCandidateId id)
     {
         var result = _worldActors.CloneCandidate(id, out var clone);
@@ -426,6 +434,17 @@ public sealed class WorldAdoptionSource
             // The clone is bound by the scene's own rescan, so the wrapper the
             // typed import hands back is resolved on a later tick.
             _pendingSelectActor = clone;
+            if (clone is { } adopted)
+            {
+                // The undo hands the body back; the redo adopts it again
+                // from the listing, and refuses if the listing has moved on.
+                var address = adopted.Address;
+                _history.Append(new JournalStep(
+                    "Add actor from the world",
+                    () => _spawns.RemoveActorFromScene(adopted)
+                        || _spawns.AdoptFromWorld(address) is null,
+                    () => _spawns.AdoptFromWorld(address) is not null));
+            }
             return;
         }
         Refuse(
@@ -456,13 +475,13 @@ public sealed class WorldAdoptionSource
     /// Takes one BG object into the scene BY REFERENCE — the map's own object,
     /// not a copy of it. Nothing is written to it here: the claim records where
     /// it stood, and every way that claim can end writes that back (see
-    /// WorldObjectService's restore contract). The adoption is journaled, so an
+    /// IWorldObjectService's restore contract). The adoption is journaled, so an
     /// undo releases it and the map has its object back.
     /// </summary>
     private void AdoptWorldObject(nint address)
     {
         if (_lifecycle.AdoptWorldObject(address)
-            is Game.WorldObjects.AdoptedWorldObject adopted)
+            is IWorldObject adopted)
         {
             _pendingSelectWorldObject = adopted;
             return;

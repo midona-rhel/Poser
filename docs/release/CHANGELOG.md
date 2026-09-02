@@ -1,5 +1,155 @@
 # Changelog
 
+## 0.9.3-beta — the world, the journal, the wardrobe, and the overlay
+
+Sixty-two commits and eleven merged pull requests since 0.9.2-beta.
+
+**Spawn anything.** The plus lists the whole game: a hundred and three
+thousand map models under Scene objects and eight thousand effects under
+a new Effects tab, each named from the file's own stem (Rock, Barrel,
+Waterfall — English and romaji both), badged with the expansion and zone
+it comes from, searched with ranking from three letters, and spawned with
+Enter. Names you give in `asset-names.json` beside the config stick
+everywhere. Props (weapon models) take two dyes and a pose variant. Every
+named event NPC spawns from the Actors tab by name. Actors, props,
+objects, effects, lights, cameras and overlays each have a from-file row
+and a from-library row; an actor can spawn straight from a character
+file. Everything lands where the light does — in front of the camera —
+unless you choose another placement, and the choice is a setting.
+
+**Scenery that behaves.** A map object takes a dye where its model
+allows one and says plainly when it does not. A Night switch dresses it
+for day or night — the byte the zone's layout writes and no reference
+plugin knew about. Effects get brightness, a pause, a tint and a loop
+that replays in place instead of blinking. Animated scenery can be
+paused, and moving a windmill or a banner now moves the motion with it:
+your placement is the base and the animation rides on top. Opacity, tint,
+loop, speed, pause and night all ride the scene document and come back on
+load. A saved document always carries spawnable copies, loadable in any
+zone at any position. Stagehand's JSON stages import and export from the
+Scene page.
+
+**Take what is there.** An overworld actor is taken into the scene by
+reference, as Brio does — nothing is cloned and nothing stands beside it —
+and goes back to its seat when GPose ends or when you release it. World
+effects adopt the same way and go home exactly as they were found. Other
+players are never borrowed, and character data leaves Poser only for an
+actor you own: one you spawned, or your own.
+
+**Duplicate.** One verb on actors, groups, world objects and mixed
+selections. An actor duplicates plain, or with its pose: a snapshot of
+its placement, visibility and every authored bone, restored on the copy
+and paused. The copy wears the source's collection, gear, facewear, draw
+flags and body profile; physics bones stay with the simulation.
+
+**Groups.** Groups nest four levels deep; drag a group onto a head to
+nest it, beside a row to seat it, out to the root to free it. A group
+carries gates for hide, pause and night that reach every member of every
+kind and give each its own flag back when opened. The lock freezes
+transforms only, never structure, and is never saved. Scaling a
+multi-selection grows it about its pivot, with a setting for whether
+sizes follow the spacing. The Main Camera keeps its group across loads.
+
+**IK.** FABRIK is the default chain solver and reaches fifty bones; the
+game's own solver stays with its cap of twenty. A swivel spins a solved
+chain about its root-to-tip line, replacing the hinge wells no one could
+type. A chain's target is the actor, a world point, or another bone —
+any actor's — picked in the view with a crosshair, keeping the tip's
+offset and rotation. Ropes are live: a catenary between root and dragged
+tip, hanging on world down. The actor's Pose page leads with an IK
+section: chain count, Enable all, Disable all, Bake all, Show bones.
+
+**Pause and scrub, owned.** Pause and scrub now move the whole clock
+family, so a forward scrub ends on time and a paused actor stays where
+you put it. Props ride the layer clock through scrubs and speed changes.
+Speed zero is a pause wherever it comes from, Play resumes the live
+timeline instead of re-blending it, and resetting a layer really stops it.
+
+**Undo everything.** Every value the UI changes is a step with an
+inverse: lights, cameras, the environment, expressions, gaze, IK,
+animation choices, world objects, props, overlays, groups, adoption and
+scene loads. A drag or a typed word is one step. Bone edits survive a
+redraw, as Brio's do. Verbs that break animation state — Redraw, MCDF
+import, design and collection applies — wear purple, and their undo
+restores the actor from a snapshot. A step the runner refuses twice is
+dropped instead of wedging the stack. Undo depth is 500.
+
+**Wear anything.** The Appearance tab has three views through Glamourer:
+Actor, Appearance and Equipment. Equipment is a card per slot with the
+item's icon, its name and two dye boxes; the icon opens a search by name
+or id, Ctrl-click removes the item or the dye, and an Outfit row puts on
+nothing, smallclothes, the Emperor's set or the invisible set. Appearance
+is laid out as Ktisis lays it: one clan dropdown with the gender beside
+it, face, hair and feature tiles as cards, the game's own colour palettes,
+and steppers that walk only through values that exist.
+
+**Settings.** A search across every page. Every change previews as you
+make it; Save keeps it, Cancel puts the opening state back. Pages are
+regrouped — General, Display, Skeleton, Gizmo, Camera, UI — with
+dependent rows disabled under their switch, every row named for what it
+does in plain words, and the five library folders as one Poser folder
+with Browse. Bones can be drawn for the selected actor only.
+
+**The shell.** One burger menu everywhere: library, spawn, Pose, Scene,
+then attach or detach the sidebar and the inspector; the pop-out window
+is gone. The inspector can split into its own window; the sidebar folds
+behind a chevron; double-clicking a title bar collapses it. Menus stay
+open for toggles and stay on screen. A drag held on the inspector ball,
+the camera orb or the overlay pad fades the windows like a world drag and
+reads out in the mono face. Windows can hide while the camera moves, and
+go down to a quarter opacity. Empty states hold their shape.
+
+**The overlay.** It selects on the press, hits like Ktisis, and shows the
+hover list beside the pointer; under the Brio preset a cluster opens
+Brio's frozen popup and the wheel walks it. Selected, IK and mirror bones
+paint on top with bolder lines, and the settings swatches finally reach
+the lines and the body and face maps, which gain connector lines by
+Brio's rule and a dot size of their own. Link shows its partners as
+Mirror does, and symmetry can be set per bone. Bone dots are baked
+circles drawn in one batch and connectors are soft strips drawn in one
+batch, the projection fetched once per frame: four visible skeletons
+went from 2.9 to 1.1 ms of overlay time, and three per-frame allocators
+are gone.
+
+**Cameras and input.** Free cameras track like orbit cameras: Follow
+carries the camera, Pan turns it. Selecting a camera can be the
+look-through. The free camera's keys never stand down for a hover and it
+looks on either button. The gizmo tool is remembered. The first click on
+an unselected entity only selects it; the next press drags. The
+Universal tool's centre handle can move instead of scale.
+
+**The library.** A scan is a listing: no file is opened until its tile is
+selected, so the window opens at once. Tiles multi-select with Ctrl,
+Shift and a marquee, and Favorite, Move and Delete act on the set. The
+verb says what a file is — a scene loads, an object spawns, a pose or a
+character file applies to the actor named beside it. The Objects tab
+filters by kind. Auto-saves count files, default to three minutes and
+two hundred kept, list newest first grouped by day and place, and never
+flash while scanning.
+
+**Report an issue.** From the burger menu or Settings ▸ About. It saves
+one zip in the plugin's own folder: the last five hundred actions with
+their values before and after, the notices you saw, any error the UI
+caught, versions, loaded plugins, settings and Poser's own log lines.
+Character names are replaced by Actor 1, Actor 2 and so on; paths lose
+your user name. The scene is an option, off by default: scene data only,
+no modified files, no mods. Nothing is sent anywhere; you attach the
+file.
+
+**Fixed.** A scene load crashed the renderer by refreshing an object
+before its model streamed in. A paused object held the game's own index
+and draw words and crashed the shadow pass. Undoing a spawned object's
+removal re-adopted a freed address. Disabling a borrowed actor's draw
+object crashed a later zone change. A zero-quaternion helper bone refused
+a whole pose. The Body and Face maps flashed on first visit. The combo
+menu paints as it did before the shell redesign.
+
+**Under the hood.** The main window and the library pane are partial
+files, one concern each. Surfaces reach the runtime through sixteen ports
+and never name a runtime class. Duplicated facts have one home each. A
+debug bridge and MCP server drive the plugin from outside the game for
+development.
+
 ## 0.9.2-beta — groups, the redesigned shell, and the input contract
 
 **Group anything.** Select two or more things of any kinds — actors, lights,

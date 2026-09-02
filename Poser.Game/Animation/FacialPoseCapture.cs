@@ -1,9 +1,10 @@
+using Poser.Domain.Transforms;
 using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Animation;
@@ -25,7 +26,7 @@ namespace Poser.Game.Animation;
 /// The result is exact for the captured facial output and can drift while a
 /// running animation continues to change that output.
 /// </summary>
-public sealed class FacialPoseCapture : IDisposable
+public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;

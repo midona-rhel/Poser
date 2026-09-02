@@ -19,6 +19,7 @@ public class SettingsWindow : Window
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
     private readonly IIntegrationRuntimePort _integrations;
+    private readonly Controls.IssueReportModal _issueReport;
     private readonly Dalamud.Plugin.Services.IKeyState _keyState;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
@@ -26,7 +27,8 @@ public class SettingsWindow : Window
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
-        IIntegrationRuntimePort integrations)
+        IIntegrationRuntimePort integrations,
+        Controls.IssueReportModal issueReport)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -34,6 +36,7 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
+        _issueReport = issueReport;
         _keyState = keyState;
         _log = log;
         WireRuntime();
@@ -187,6 +190,7 @@ public class SettingsWindow : Window
             SnapLinearStep = c.Gizmo.SnapLinearStep,
             AllowRaySnap = c.Gizmo.AllowRaySnap,
             KeepGizmoWhenBonesHidden = c.Gizmo.KeepGizmoWhenBonesHidden,
+            UniversalCenterTranslates = c.Gizmo.UniversalCenterTranslates,
             HideGizmoWithoutArmature = c.Gizmo.HideGizmoWithoutArmature,
 
             NsfwBones = c.Display.ShowNsfwBones,
@@ -204,7 +208,7 @@ public class SettingsWindow : Window
             CameraFastMultiplier = c.Camera.FastMultiplier,
             CameraSlowMultiplier = c.Camera.SlowMultiplier,
             CameraConsumeModifiers = c.Camera.ConsumeModifiersWhileFlying,
-            CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
+            KeepBoundKeysFromGame = c.Camera.KeepBoundKeysFromGame,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
@@ -249,6 +253,7 @@ public class SettingsWindow : Window
                         chosen(path);
                 },
                 string.IsNullOrWhiteSpace(start) ? null : start);
+        vm.OnReportIssue = _issueReport.Open;
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
@@ -419,6 +424,7 @@ public class SettingsWindow : Window
         c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
         c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
         c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
+        c.Gizmo.UniversalCenterTranslates = _vm.UniversalCenterTranslates;
         c.Gizmo.HideGizmoWithoutArmature = _vm.HideGizmoWithoutArmature;
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
@@ -443,7 +449,7 @@ public class SettingsWindow : Window
         c.Camera.FastMultiplier = Math.Clamp(_vm.CameraFastMultiplier, 1f, 10f);
         c.Camera.SlowMultiplier = Math.Clamp(_vm.CameraSlowMultiplier, 0.05f, 1f);
         c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
-        c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
+        c.Camera.KeepBoundKeysFromGame = _vm.KeepBoundKeysFromGame;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
         c.DefaultSpawnPlacement =

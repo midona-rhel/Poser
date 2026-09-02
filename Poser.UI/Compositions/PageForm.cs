@@ -159,6 +159,7 @@ public static partial class Crystarium
         /// the left track. Set through <see cref="FormScope.FullLine"/>;
         /// consumed by the row that follows.</summary>
         internal bool NextFullLine;
+        internal bool IsTwoTrack => _twoTrack;
 
         /// <summary>Search hooks. A probe sees every (section, label, help)
         /// the page would draw and draws nothing; a row filter drops rows
@@ -499,6 +500,10 @@ public static partial class Crystarium
         /// pairing the standard calls for on short rows
         /// (Override|Weather, Opacity|Tint).</summary>
         public void PairRows() => _page.BeginPairedRows();
+
+        /// <summary>Whether paired rows run two tracks at this width. A
+        /// caller that pairs rows across cards orders them by it.</summary>
+        public bool TwoTrack => _page.IsTwoTrack;
 
         /// <summary>Ends a paired stretch early.</summary>
         public void EndPair() => _page.EndPairedRows();
@@ -1018,8 +1023,10 @@ public static partial class Crystarium
         /// <summary>Draws a picker with an optional reset action.</summary>
         public void Selector(string label, string value, Action select, Action reset,
             bool available, bool owned, string? help = null,
-            string? disabledHelp = null, ControlStyle style = default)
+            string? disabledHelp = null, ControlStyle style = default,
+            bool disruptive = false)
         {
+            var variant = disruptive ? ButtonVariant.Disruptive : ButtonVariant.Secondary;
             string id = Id(label);
             var row = _page.BeginRow(label, help);
             if (!row.Visible)
@@ -1046,7 +1053,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
             Crystarium.Button(
                 display, select, style: triggerStyle,
-                disabled: !available, help: disabledHelp, id: id);
+                disabled: !available, help: disabledHelp, variant: variant, id: id);
 
             if (owned)
             {
@@ -1056,6 +1063,7 @@ public static partial class Crystarium
                 Crystarium.Button(
                     "Reset", reset, style: resetStyle,
                     help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
+                    variant: variant,
                     id: Ids.Join(id, "-reset"));
             }
             _page.EndRow(row, id, help);
@@ -2045,7 +2053,9 @@ public static partial class Crystarium
             IReadOnlyList<float>? marks = null,
             string? help = null,
             float logCurvature = 99f,
-            float? altReset = null)
+            float? altReset = null,
+            Action? onBegin = null,
+            Action? onCommit = null)
         {
             float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
             float track = MathF.Max(
@@ -2067,7 +2077,9 @@ public static partial class Crystarium
                 help,
                 scale: scale,
                 logCurvature: logCurvature,
-                altReset: altReset);
+                altReset: altReset,
+                onBegin: onBegin,
+                onCommit: onCommit);
             // Custom values use text; numeric values use the standard readout.
             var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
             if (readout is { } custom)

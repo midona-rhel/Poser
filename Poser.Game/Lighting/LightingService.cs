@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Transforms;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Dalamud.Game;
@@ -1147,19 +1148,8 @@ public sealed unsafe class LightingService : ILightingService
         if (_attachRefreshed.Add(skeleton))
             skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
 
-        var world = PoserTransform.FromMatrix(
-            bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
-        if (!IsFinite(world.Position) || !IsFinite(world.Rotation))
-            return null;
-        return world;
+        return BoneWorld.Of(bone);
     }
-
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
-
-    private static bool IsFinite(Quaternion value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
 
     #endregion
 

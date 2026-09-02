@@ -1,4 +1,5 @@
 using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -25,7 +26,7 @@ namespace Poser.Game.Integration;
 /// sharing it keeps the change. The drawn body holds the state until its
 /// next redraw, which is therefore the restore.
 /// </summary>
-public sealed class InvisibleSkinService
+public sealed class InvisibleSkinService : IInvisibleSkinService
 {
     private readonly IntegrationRuntimePort _port;
     private readonly IFramework _framework;

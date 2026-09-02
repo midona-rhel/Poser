@@ -18,6 +18,7 @@ public static partial class Crystarium
 {
     // Footer right-alignment uses the previous frame's measured width (standard
     // ImGui trick — avoids double-rendering children and their ID collisions).
+    private static readonly Dictionary<string, float> _modalBodyHeights = new();
     private static readonly Dictionary<string, float> _modalFooterWidths = new();
 
     /// <summary>
@@ -69,14 +70,26 @@ public static partial class Crystarium
             _ => Crystarium.ActiveTheme.Floating.SmallWidth,
         } * scale;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
-        float totalHeight = (height
-            ?? Crystarium.ActiveTheme.Floating.DefaultModalHeight) * scale;
+        // No stated height: the modal is as tall as its body. The body's
+        // content height is what the previous frame measured; a modal that
+        // has never been measured draws its first frame off screen (ImGui's
+        // own auto-resize rule), so the user only ever sees the final size.
+        bool measured = _modalBodyHeights.TryGetValue(popupId, out float measuredBody);
+        bool measuringFrame = height is null && !measured;
+        float totalHeight = height is { } stated
+            ? stated * scale
+            : measured
+                ? MathF.Min(
+                    barHeight + measuredBody + (footer != null ? barHeight : 0f),
+                    ImGui.GetIO().DisplaySize.Y - 2f * barHeight)
+                : Crystarium.ActiveTheme.Floating.DefaultModalHeight * scale;
         float rounding = Crystarium.ActiveTheme.Radii.Surface * scale;
 
         ImGui.SetNextWindowPos(
-            position ?? FloatingSurface.PlaceCentered(
-                new Vector2(width, totalHeight)),
-            ImGuiCond.Appearing);
+            measuringFrame
+                ? new Vector2(-4f * width, -4f * totalHeight)
+                : position ?? FloatingSurface.PlaceCentered(new Vector2(width, totalHeight)),
+            height is null ? ImGuiCond.Always : ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(new Vector2(width, totalHeight));
 
         // Persistent, not pushed: ImGui draws the modal dim outside this call's
@@ -199,7 +212,15 @@ public static partial class Crystarium
             try
             {
                 if (bodyVisible)
+                {
                     body();
+                    // What the body used, padding on both sides included;
+                    // the trailing item spacing is not content.
+                    float padding = Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale;
+                    _modalBodyHeights[popupId] = MathF.Max(
+                        2f * padding,
+                        ImGui.GetCursorPosY() - ImGui.GetStyle().ItemSpacing.Y + padding);
+                }
             }
             finally
             {

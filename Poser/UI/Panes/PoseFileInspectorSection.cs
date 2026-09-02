@@ -8,12 +8,11 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Library;
-using Poser.Game.Posing;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -27,11 +26,11 @@ public sealed class PoseFileInspectorSection
     private bool _typeBody;
     private bool _typeExpression;
 
-    private readonly CleanPoseFacade _poseFacade;
+    private readonly IPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
-    private readonly Game.Preview.PosePreviewService _preview;
+    private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
     private readonly IPoseLibraryService _library;
 
@@ -42,7 +41,7 @@ public sealed class PoseFileInspectorSection
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _exportBrowser =
         new("Export Pose", new[] { ".pose" }, isSaveMode: true);
-    private string _lastPath;
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder;
     // Rotation is enabled by default; position and scale are opt-in.
     private bool _rotation = true, _position, _scale;
     private bool _reset;
@@ -85,11 +84,11 @@ public sealed class PoseFileInspectorSection
     public event Action? OnLibraryRequested;
 
     public PoseFileInspectorSection(
-        CleanPoseFacade poseFacade,
+        IPoseFacade poseFacade,
         SelectionSession selection,
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
-        Game.Preview.PosePreviewService preview,
+        IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,
         UserNotices notices)
@@ -104,7 +103,7 @@ public sealed class PoseFileInspectorSection
         _library = library;
         _importPreview = new PosePreviewBinder(preview, poseFacade);
         _freeze = config.Config.FreezeActorOnPoseImport;
-        _lastPath = config.Config.Library.EnsurePoseRootExists();
+        _folder = new(config.Config.Library.EnsurePoseRootExists());
 
         _importBrowser.WidthAdjustment = -80f;
         _importBrowser.HeightAdjustment = -12f;
@@ -444,14 +443,6 @@ public sealed class PoseFileInspectorSection
                 Treatment = FloatingSurfaceTreatment.Glass,
             },
             DrawBoneFilterBody);
-
-    public void DrawOptionsRail(Vector2 origin, Vector2 size)
-    {
-        DrawOptionsSections(
-            origin, size.X, withPresets: false,
-            previewCap: size.Y,
-            dense: true);
-    }
 
 
     private const float ImportPreviewImageWidth = 256f;
@@ -1894,14 +1885,14 @@ public sealed class PoseFileInspectorSection
             return;
         }
 
-        BrowseAndImport(skeleton, _lastPath, rememberPath: true);
+        BrowseAndImport(skeleton, _folder.Path, rememberPath: true);
     }
 
     /// <summary>The context menu's "Import from file": straight to the
     /// browser regardless of the library-first preference — the row names
     /// its destination.</summary>
     public void OpenImportFromFile(ISkeleton skeleton) =>
-        BrowseAndImport(skeleton, _lastPath, rememberPath: true);
+        BrowseAndImport(skeleton, _folder.Path, rememberPath: true);
 
     public void OpenAutoSaves(ISkeleton skeleton)
     {
@@ -1921,7 +1912,7 @@ public sealed class PoseFileInspectorSection
         OpenBrowser(() => _importBrowser.Open(initialPath, path =>
         {
             if (rememberPath)
-                _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+                _folder.Remember(path);
             ImportFromPath(skeleton, path, fromDialog: true);
         }));
     }
@@ -2132,9 +2123,8 @@ public sealed class PoseFileInspectorSection
 
     public void OpenExport(ISkeleton skeleton)
     {
-        OpenBrowser(() => _exportBrowser.Open(_lastPath, path =>
+        OpenBrowser(() => _folder.Open(_exportBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             var armed = _poseFacade.ExportPose(
                 skeleton.Actor,
                 path,

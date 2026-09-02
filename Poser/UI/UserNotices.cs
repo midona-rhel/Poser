@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Plugin.Services;
 
@@ -39,13 +40,27 @@ public sealed class UserNotices
     /// </summary>
     public void Refused(string message) => Post(message, NotificationType.Warning);
 
+    /// <summary>One line of information: nothing failed, nothing was
+    /// refused, but the user should know what happened.</summary>
+    public void Note(string message) => Post(message, NotificationType.Info);
+
     /// <summary>An action ran and failed.</summary>
     public void Failed(string message) => Post(message, NotificationType.Error);
+
+    /// <summary>"Verb: detail" — the shape a failed file verb reports in.</summary>
+    public void Failed(string verb, string detail) => Failed(verb + ": " + detail);
+
+    public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
+
+    /// <summary>Every notice as it is posted: its kind and its text, for
+    /// the action recorder.</summary>
+    public event Action<string, string>? Posted;
 
     private void Post(string message, NotificationType type)
     {
         if (string.IsNullOrWhiteSpace(message))
             return;
+        Posted?.Invoke(type.ToString(), message);
         _notifications.AddNotification(new Notification
         {
             Title = Title,

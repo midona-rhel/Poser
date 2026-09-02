@@ -259,6 +259,9 @@ public sealed class PoseLibraryViewModel
     /// <summary>The primary action's caption — the binder mints
     /// "Apply to {name}".</summary>
     public string ApplyLabel = "Apply";
+    /// <summary>Whether the primary breaks animation state — a character
+    /// file does — and wears the Disruptive colour.</summary>
+    public bool ApplyDisruptive;
 
     public bool CanApply;
     public bool CanSpawn;
@@ -735,7 +738,7 @@ public static class PoseLibraryView
             vm.ApplyLabel,
             vm.ApplyMenuClick!,
             disabled: none || !vm.CanApply,
-            variant: ButtonVariant.Primary);
+            variant: vm.ApplyDisruptive ? ButtonVariant.Disruptive : ButtonVariant.Primary);
     }
 
     // ---- Band -------------------------------------------------------

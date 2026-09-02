@@ -47,6 +47,10 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
+    private readonly ITransformFacade _transforms;
+    private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
+    private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
+    private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -67,8 +71,16 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
-        global::Poser.Library.IPoseLibraryService library)
+        global::Poser.Library.IPoseLibraryService library,
+        ITransformFacade transforms,
+        global::Poser.Application.Viewport.IViewportReads viewport,
+        global::Poser.UI.SkeletonOverlayWindow overlay,
+        global::Poser.UI.SkeletonOverlayPresentation overlayPresentation)
     {
+        _overlayPresentation = overlayPresentation;
+        _transforms = transforms;
+        _viewport = viewport;
+        _overlay = overlay;
         _ikBake = ikBake;
         _catalog = catalog;
         _worldObjects = worldObjects;
@@ -87,7 +99,6 @@ public sealed class DebugBridge : IDisposable
         _lifecycle = lifecycle;
         _spawner = spawner;
         _listener = new TcpListener(IPAddress.Loopback, Port);
-        global::Poser.UI.Crystarium.FloatingMenu.Trace = line => _log.Debug(line);
         try
         {
             _listener.Start();
@@ -100,10 +111,18 @@ public sealed class DebugBridge : IDisposable
         }
     }
 
+    private int _disposed;
+
+    /// <summary>Idempotent, and the listener stops BEFORE the token cancels:
+    /// cancelling a token with an accept pending on it threw on unload,
+    /// which failed the unload and left the port held by a dead instance.</summary>
     public void Dispose()
     {
-        _stop.Cancel();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         try { _listener.Stop(); } catch { }
+        try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
+        try { _stop.Dispose(); } catch { }
     }
 
     private async Task AcceptLoop()
@@ -192,6 +211,10 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
+                        "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
+                        "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
+                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
@@ -216,12 +239,82 @@ public sealed class DebugBridge : IDisposable
         }
     }
 
+    private object History() => new
+    {
+        canUndo = _transforms.CanUndo,
+        canRedo = _transforms.CanRedo,
+        undo = _transforms.UndoDescription,
+        redo = _transforms.RedoDescription,
+    };
+
     private string RouteOnFramework(string path, Dictionary<string, string> query)
     {
         switch (path)
         {
             case "/actors":
                 return Json(ListActors());
+            case "/profile":
+            {
+                // The frame profiler's own ledger — the instrument Midona reads
+                // — plus the GC counters, so a stopwatch cost the sampler
+                // cannot see (a collection pausing the render thread) shows.
+                global::Poser.UI.FrameProfiler.SetEnabled(true);
+                var samples = new global::Poser.UI.FrameProfiler.Sample[64];
+                int n = global::Poser.UI.FrameProfiler.Snapshot(samples);
+                var units = new List<object>();
+                for (int i = 0; i < n; i++)
+                    units.Add(new { samples[i].Label, self = Math.Round(samples[i].AverageSelfMs, 3), peak = Math.Round(samples[i].PeakSelfMs, 1), incl = Math.Round(samples[i].AverageInclusiveMs, 3), samples[i].Hits });
+                return Json(new
+                {
+                    frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount(),
+                    avgMs = Math.Round(global::Poser.UI.FrameProfiler.AverageFrameMs, 3),
+                    peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
+                    gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
+                    allocated = GC.GetTotalAllocatedBytes(false),
+                    resolveUs = global::Poser.Entities.Skeleton.ResolveCalls == 0 ? 0.0
+                        : Math.Round(global::Poser.Entities.Skeleton.ResolveTicks * 1_000_000.0
+                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Entities.Skeleton.ResolveCalls, 2),
+                    resolveCalls = global::Poser.Entities.Skeleton.ResolveCalls,
+                    units,
+                });
+            }
+            case "/overlay":
+            {
+                // The overlay's scope and visibility, for perf captures:
+                // all=1 shows every actor's bones, visible=1 shows them.
+                var skeleton = global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+                if (query.TryGetValue("all", out var all))
+                    skeleton.OnlyActiveActorBones = all != "1";
+                if (query.TryGetValue("visible", out var visible))
+                    _overlay.UserVisible = visible == "1";
+                // show=1 marks every bone of every actor shown, as the
+                // sidebar's toggles would; show=0 hides them all again.
+                if (query.TryGetValue("show", out var show))
+                {
+                    var everyBone = new List<global::Poser.Domain.Identity.BoneId>();
+                    foreach (var each in _actors.Actors)
+                        foreach (var each_skeleton in _skeletons.GetSkeletons(each))
+                            foreach (var bone in each_skeleton.Bones)
+                                if (_bindings.GetBoneId(bone) is { } boneId)
+                                    everyBone.Add(boneId);
+                    _overlayPresentation.SetVisible(everyBone, show == "1");
+                }
+                if (query.TryGetValue("mode", out var mode))
+                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Services.SkeletonViewMode>(mode, true);
+                return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen, bones = _overlay.LastBoneCount, mode = skeleton.SkeletonViewMode.ToString() });
+            }
+            case "/history":
+                return Json(History());
+            case "/undo":
+            {
+                var result = _transforms.Undo();
+                return Json(new { ok = result.Success, result.Detail, history = History() });
+            }
+            case "/redo":
+            {
+                var result = _transforms.Redo();
+                return Json(new { ok = result.Success, result.Detail, history = History() });
+            }
         }
 
         if (!query.TryGetValue("actor", out var actorKey))
@@ -483,6 +576,62 @@ public sealed class DebugBridge : IDisposable
                             };
                             var error = _bonePosing.SetIkConfiguration(bone, next);
                             return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
+                        }
+                return Json(new { error = "no such bone" });
+            }
+            case "/wardrobe":
+            {
+                var wardrobe = _session.ReadWardrobe(id);
+                return wardrobe.Success ? Json(wardrobe.Value!) : Json(new { error = wardrobe.Detail });
+            }
+            case "/customize":
+            {
+                var look = _session.ReadCustomize(id);
+                return look.Success ? Json(look.Value!) : Json(new { error = look.Detail });
+            }
+            case "/setcustomize":
+            {
+                var key = Enum.Parse<global::Poser.Domain.Integration.CustomizeKey>(query["key"], true);
+                int value = int.Parse(query["value"], CultureInfo.InvariantCulture);
+                var set = _session.SetCustomize(id, new Dictionary<global::Poser.Domain.Integration.CustomizeKey, int> { [key] = value });
+                return Json(new { ok = set.Success, set.Detail });
+            }
+            case "/glamstate":
+            {
+                var state = _session.GetStateJson(id);
+                return state.Success ? state.Value! : Json(new { error = state.Detail });
+            }
+            case "/setitem":
+            {
+                var slot = (global::Poser.Domain.Integration.EquipSlot)byte.Parse(query["slot"]);
+                ulong item = ulong.Parse(query["item"]);
+                byte d1 = query.TryGetValue("dye1", out var s1) ? byte.Parse(s1) : (byte)0;
+                byte d2 = query.TryGetValue("dye2", out var s2) ? byte.Parse(s2) : (byte)0;
+                var set = _session.SetItem(id, slot, item, d1, d2);
+                return Json(new { ok = set.Success, set.Detail });
+            }
+            case "/setbone":
+            {
+                // A JOURNALED bone write: the same absolute write a typed
+                // inspector well issues, so the step lands in the history the
+                // way a drag does. /rotatebone below writes the runtime directly.
+                string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
+                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            if (_bindings.GetBoneId(bone) is not { } boneId)
+                                return Json(new { error = "bone has no stable id" });
+                            if (_viewport.GetBoneModelTransform(boneId) is not { } current)
+                                return Json(new { error = "bone has no model transform this frame" });
+                            var turned = System.Numerics.Quaternion.Normalize(
+                                current.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f));
+                            var desired = new global::Poser.Domain.Transforms.PoseTransform(current.Position, turned, current.Scale);
+                            var written = _transforms.SetAbsolute(
+                                global::Poser.Domain.Identity.TransformTargetId.ForBone(boneId), desired, $"Bridge {name}");
+                            return Json(new { ok = written.Success, written.Detail, modified = _bonePosing.HasModifications(bone), history = History() });
                         }
                 return Json(new { error = "no such bone" });
             }

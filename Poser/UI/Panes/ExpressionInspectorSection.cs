@@ -1,10 +1,10 @@
 using System;
+using Poser.Game;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game;
 
 namespace Poser.UI;
 
@@ -27,8 +27,14 @@ public sealed class ExpressionInspectorSection
 {
     private readonly IExpressionService _expressions;
 
-    public ExpressionInspectorSection(IExpressionService expressions)
-        => _expressions = expressions;
+    private readonly Game.Journal.ExpressionSession _values;
+
+    public ExpressionInspectorSection(
+        IExpressionService expressions, Game.Journal.ExpressionSession values)
+    {
+        _expressions = expressions;
+        _values = values;
+    }
 
     /// <summary>Whether the action-unit backend is up. The section is drawn
     /// whenever this OR an expression row is available — the picked expression
@@ -254,10 +260,10 @@ public sealed class ExpressionInspectorSection
             _expressions.GetWeight(actor, id),
             bidirectional ? -1f : 0f,
             1f,
-            next => _expressions.SetWeight(actor, id, next),
+            next => _values.SetWeight(actor, id, next),
             format: "0%",
             bare: bare,
-            altReset: 0f);
+            altReset: 0f, onBegin: _values.Seal);
 
     /// <summary>Two unrelated single units share one surface row, each
     /// under its own label with its own value.</summary>
@@ -304,6 +310,17 @@ public sealed class ExpressionInspectorSection
             help: help);
     }
 
+    private readonly Dictionary<string, string> _sliderIds = new();
+
+    /// <summary>The slider's id for a unit, minted once: an interpolated
+    /// string per unit per frame was measurable garbage.</summary>
+    private string SliderId(string id)
+    {
+        if (!_sliderIds.TryGetValue(id, out var made))
+            _sliderIds[id] = made = "##expr-" + id;
+        return made;
+    }
+
     /// <summary>One half of a pair: the cell slider with its numeric
     /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
@@ -313,13 +330,13 @@ public sealed class ExpressionInspectorSection
         float minimum,
         string help) =>
         cell.Slider(
-            $"##expr-{id}",
+            SliderId(id),
             _expressions.GetWeight(actor, id),
             minimum,
             1f,
-            next => _expressions.SetWeight(actor, id, next),
+            next => _values.SetWeight(actor, id, next),
             format: "0%",
-            help: help);
+            help: help, onBegin: _values.Seal);
 
     /// <summary>The cell label spoken in full for its hover: "Furrow L"
     /// hovers as "Furrow left".</summary>
@@ -335,7 +352,7 @@ public sealed class ExpressionInspectorSection
         bool active = _expressions.HasActiveExpression(actor);
         form.Actions("Expression", actions => actions.Button(
             "Reset",
-            () => _expressions.ResetExpression(actor),
+            () => _values.Reset(actor),
             disabled: !active,
             help: "Zero every expression slider"));
     }

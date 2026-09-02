@@ -1,3 +1,4 @@
+using Poser.Domain.Actors;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -156,7 +157,7 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 /// at its own 201–439 index through the ordinary registry scan. The source is
 /// never adopted, mutated, or deleted.
 /// </summary>
-public sealed class WorldActorDiscovery : IWorldActorReadPort
+public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscovery
 {
     private readonly IWorldActorTableAdapter _adapter;
     private readonly IGPoseService _gPose;

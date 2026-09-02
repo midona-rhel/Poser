@@ -1,6 +1,7 @@
 ﻿using Dalamud.Plugin.Services;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Posing;
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
@@ -12,7 +13,7 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 /// <summary>Legacy IEntity presentation bridge into stable-id pose commands.</summary>
-public sealed class CleanPoseFacade
+public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
     private readonly PoseEditService _edits;
@@ -42,8 +43,14 @@ public sealed class CleanPoseFacade
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IFramework framework,
+        TransformHistory history,
+        JournalContexts journal,
+        Lazy<IPoseSnapshotPort> snapshots,
         IPluginLog log)
     {
+        _history = history;
+        _journal = journal;
+        _snapshots = snapshots;
         _framework = framework;
         _bindings = bindings;
         _edits = edits;
@@ -226,7 +233,7 @@ public sealed class CleanPoseFacade
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
         return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
+            $"Import {System.IO.Path.GetFileName(path)}", onReceipt, asset: path);
     }
 
     /// <summary>In-memory variant of the file import — same plan builder,
@@ -382,7 +389,8 @@ public sealed class CleanPoseFacade
         PoseImportPlan plan,
         PoseImportOptions options,
         string description,
-        Action<OperationReceipt>? onReceipt = null)
+        Action<OperationReceipt>? onReceipt = null,
+        string? asset = null)
     {
         // Synchronous validation BEFORE the pause side effect: both
         // ImportPose overloads build the plan before calling here (a bad
@@ -565,7 +573,8 @@ public sealed class CleanPoseFacade
                         arm.Operation,
                         plan,
                         expression: options.AsExpression,
-                        suppressHistory: options.SuppressHistory);
+                        suppressHistory: options.SuppressHistory,
+                        asset: asset);
                     if (!begun.Success)
                     {
                         _log.Warning(
@@ -626,7 +635,39 @@ public sealed class CleanPoseFacade
     /// runs even when an earlier one fails. A partial failure is aggregated
     /// into one reported result and logged.
     /// </summary>
+    private readonly TransformHistory _history;
+    private readonly JournalContexts _journal;
+    private readonly Lazy<IPoseSnapshotPort> _snapshots;
+
+    /// <summary>Everything back to the game's own: ONE step. The inverse is
+    /// the actor's snapshot from before the reset; the entries the inner
+    /// resets append are folded into it.</summary>
     public PoseEditResult ResetAll(IActor actor)
+    {
+        // The snapshot comes straight from the port, as the disruptive
+        // steps take it: the keyed scope is empty while the state keys are
+        // disconnected, and an inverse with nothing to restore was a dead
+        // entry that blocked every later undo (audited 2026-09-03).
+        var lineage = _bindings.GetActorId(actor)?.LogicalId;
+        var before = lineage is { } l ? _snapshots.Value.Capture(l) : null;
+        var top = _history.PeekUndo();
+        var result = ResetAllCore(actor);
+        if (before is null)
+            return result;
+        while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
+            _history.Drop(inner);
+        _history.Append(new JournalStep(
+            "Reset all",
+            () => _snapshots.Value.Restore(before, _ => { }),
+            () => ResetAllCore(actor).Success)
+        {
+            Context = new StepContext(
+                Array.Empty<ActorStateKey>(), new[] { before }, Array.Empty<ActorSnapshot>(), null),
+        });
+        return result;
+    }
+
+    private PoseEditResult ResetAllCore(IActor actor)
     {
         var failures = new List<string>();
 

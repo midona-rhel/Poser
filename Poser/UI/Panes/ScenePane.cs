@@ -1,14 +1,15 @@
-﻿using System;
+﻿using Poser.Scene;
+using Poser.Game.Scene;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Config;
 using Poser.Files;
-using Poser.Game.Scene;
 using Dalamud.Bindings.ImGui;
 using Poser.Library;
 using Poser.Services;
@@ -33,8 +34,8 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ScenePane
 {
-    private readonly SceneWorkflow _workflow;
-    private readonly PlacementAnchorSource _anchors;
+    private readonly ISceneWorkflow _workflow;
+    private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
@@ -78,7 +79,7 @@ public sealed class ScenePane
     /// having to navigate anywhere. Choosing another folder is still allowed
     /// and sticks for the rest of the session.
     /// </summary>
-    private string _lastPath;
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder;
 
     private string _description = string.Empty;
 
@@ -320,9 +321,8 @@ public sealed class ScenePane
     /// anchored BeginLoad a library activation runs.</summary>
     public void OpenEntryLoad()
     {
-        _entryBrowser.Open(_lastPath, path =>
+        _folder.Open(_entryBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             var options = new SceneLoadOptions();
             var mode = _config.Config.DefaultSpawnPlacement;
             if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
@@ -354,14 +354,14 @@ public sealed class ScenePane
     }
 
     public ScenePane(
-        SceneWorkflow workflow,
+        ISceneWorkflow workflow,
         SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        PlacementAnchorSource anchors)
+        IPlacementAnchorSource anchors)
     {
         _anchors = anchors;
         _config = config;
@@ -372,7 +372,7 @@ public sealed class ScenePane
         _place = place;
         _notices = notices;
         _libraryConfig = config.Config.Library;
-        _lastPath = config.Config.Library.EnsureSceneRootExists();
+        _folder = new(config.Config.Library.EnsureSceneRootExists());
 
         // The verdict column is not a reserved rectangle: it states what the
         // highlighted file IS, and says so in its own words when nothing is
@@ -391,37 +391,6 @@ public sealed class ScenePane
         // same place.
         _saveBrowser.BottomPanel =
             new FileSidePanel(SaveBandHeight, DrawSaveOptionsBand);
-    }
-
-    /// <summary>Asks for the save destination from ANOTHER surface — the
-    /// library's scene tab, which is where a user goes looking for scenes. The
-    /// open is deferred to the browser pump rather than run inline: the caller
-    /// is mid-draw inside its own pane, and a dialog opened there claims the
-    /// frame a pane is still using.</summary>
-    public void RequestSave() => _saveRequested = true;
-
-    /// <summary>The library's inspector rail on the scenes and auto-saves
-    /// tabs: the SAME load options the workspace states, mounted where the
-    /// tiles that start those loads live.</summary>
-    public void DrawLibraryRail(Vector2 origin, Vector2 size)
-    {
-        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset * scale;
-        float width = size.X - inset * 2f;
-        var cursor = origin + new Vector2(inset, inset);
-
-        Crystarium.TextAt(cursor, "Load options", new TextStyle
-        {
-            Size = theme.Typography.CaptionSize,
-            Color = theme.FormHint,
-        });
-        cursor.Y += (theme.Typography.CaptionSize + 8f) * scale;
-
-        // One table: both groups share the section label column, so the
-        // rows align whatever group they sit in.
-        cursor.Y += DrawLoadSceneOptions(cursor, width);
-        DrawLoadIncludeOptions(cursor, width);
     }
 
     private bool _librarySaveOpen;
@@ -515,19 +484,12 @@ public sealed class ScenePane
         });
     }
 
-    private bool _saveRequested;
-
     /// <summary>Pumped every frame by the window: a dialog must survive the
     /// frames in which this pane's mode is not the one being drawn. Deferred
     /// opens run HERE, at the root pump, before anything claims the frame.
     /// </summary>
     public void DrawBrowsers()
     {
-        if (_saveRequested)
-        {
-            _saveRequested = false;
-            OpenSave();
-        }
         _saveBrowser.Draw();
         DrawLibrarySaveModal();
         _loadBrowser.Draw();
@@ -1252,9 +1214,8 @@ public sealed class ScenePane
 
     // ── actions ──────────────────────────────────────────────────────────
 
-    private void OpenSave() => _saveBrowser.Open(_lastPath, path =>
+    private void OpenSave() => _folder.Open(_saveBrowser, path =>
     {
-        _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         if (!path.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
             path += SceneFile.Extension;
         var started = _workflow.BeginSave(
@@ -1267,9 +1228,8 @@ public sealed class ScenePane
             _notices.Failed(started.Detail ?? "The scene could not be saved.");
     });
 
-    private void OpenLoad() => _loadBrowser.Open(_lastPath, path =>
+    private void OpenLoad() => _folder.Open(_loadBrowser, path =>
     {
-        _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         BeginLoad(path);
     });
 

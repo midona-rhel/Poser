@@ -13,7 +13,6 @@ using Poser.Data;
 using Poser.Data.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.UI.Controls;
 
@@ -29,7 +28,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
 
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
@@ -49,6 +48,23 @@ public sealed class GraphicalBonePane : IDisposable
     /// frame simply skips the image until its decode lands.</summary>
     private readonly Dictionary<string, System.Threading.Tasks.Task<IDalamudTextureWrap>>
         _pendingTextures = new();
+
+    /// <summary>Each map's pixel size, read off the PNG header the moment
+    /// its decode is started — so the first frame lays the map out at its
+    /// exact size and the decode's arrival shifts nothing.</summary>
+    private readonly Dictionary<string, Vector2> _imageSizes = new();
+
+    /// <summary>The size a PNG declares in its header, or null when the
+    /// bytes are not a PNG.</summary>
+    private static Vector2? PngSize(byte[] bytes)
+    {
+        if (bytes.Length < 24 || bytes[0] != 0x89 || bytes[1] != 0x50
+            || bytes[2] != 0x4E || bytes[3] != 0x47)
+            return null;
+        int width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+        int height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+        return width > 0 && height > 0 ? new Vector2(width, height) : null;
+    }
 
     /// <summary>
     /// Mirror selection (Brio GraphicalSidesSwapped): swaps which side each
@@ -82,7 +98,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     public GraphicalBonePane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
         ITextureProvider textureProvider,
@@ -104,6 +120,12 @@ public sealed class GraphicalBonePane : IDisposable
 
         _config = GraphicalBoneReader.ReadEmbeddedResource();
 
+        // Every map starts decoding now, so the first visit to Body or
+        // Face finds its image ready instead of a placeholder that fills
+        // a few frames later.
+        foreach (var section in _config.PoseImages.Values)
+            if (!string.IsNullOrEmpty(section.Image))
+                GetTexture(section.Image);
     }
 
     /// <summary>
@@ -370,7 +392,9 @@ public sealed class GraphicalBonePane : IDisposable
             contentArea - new Vector2(margin * 2f));
         var sourceSize = texture != null
             ? new Vector2(texture.Width, texture.Height)
-            : _faceSourceSize;
+            : _imageSizes.TryGetValue(section.Image, out var declared)
+                ? declared
+                : _faceSourceSize;
         float fit = MathF.Min(
             available.X / sourceSize.X,
             available.Y / sourceSize.Y);
@@ -434,21 +458,29 @@ public sealed class GraphicalBonePane : IDisposable
         var texture = GetTexture(section.Image);
         var min = new Vector2(rect.X, rect.Y);
         var size = new Vector2(rect.Z, rect.W);
-        if (texture == null)
+        Vector2 sourceSize;
+        if (texture != null)
         {
-            // The slot's rect is computable without the texture, so an
-            // in-flight decode reserves it with a quiet fill instead of
-            // dropping the section — the image pops into an already
-            // reserved area and nothing shifts. A missing or failed image
-            // stays absent, exactly as before.
+            ImGui.GetWindowDrawList().AddImage(texture.Handle, min, min + size);
+            sourceSize = new Vector2(texture.Width, texture.Height);
+        }
+        else if (_pendingTextures.ContainsKey(section.Image)
+            && _imageSizes.TryGetValue(section.Image, out var declared))
+        {
+            // The decode is in flight but the header already said the size,
+            // so the dots take their final places now over a quiet fill;
+            // the image lands under them and nothing moves.
+            DrawPendingFill(min, size);
+            sourceSize = declared;
+        }
+        else
+        {
+            // A missing or failed image stays absent; a decode whose header
+            // gave no size reserves its rect and waits.
             if (_pendingTextures.ContainsKey(section.Image))
                 DrawPendingFill(min, size);
             return;
         }
-
-        var max = min + size;
-        ImGui.GetWindowDrawList().AddImage(texture.Handle, min, max);
-        var sourceSize = new Vector2(texture.Width, texture.Height);
         var scalingFactors = size / sourceSize;
 
         _currentSection++;
@@ -720,6 +752,8 @@ public sealed class GraphicalBonePane : IDisposable
             return null;
         }
 
+        if (PngSize(bytes) is { } declared)
+            _imageSizes[imageName] = declared;
         _pendingTextures[imageName] = _textureProvider.CreateFromImageAsync(bytes);
         return null;
     }

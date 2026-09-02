@@ -78,8 +78,8 @@ public sealed class ReferenceImageSession : IDisposable
     private readonly ConcurrentQueue<(int Id, int Generation,
         IDalamudTextureWrap? Wrap, string? Failure)> _completed = new();
 
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder =
+        new(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
 
     /// <summary>Bumped by <see cref="Dispose"/>; a load carries the value it
     /// started under, so a wrap that lands after teardown is disposed instead
@@ -135,9 +135,8 @@ public sealed class ReferenceImageSession : IDisposable
     /// is a dead dialog.</summary>
     public void OpenAddDialog()
     {
-        _browser.Open(_lastPath, path =>
+        _folder.Open(_browser, path =>
         {
-            _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
             Add(path);
         });
     }

@@ -10,7 +10,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -31,14 +30,14 @@ public sealed class CameraPane
     private const float Deg2Rad = MathF.PI / 180f;
 
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly IVirtualCameraService _cameras;
     private readonly IActorSpawnService _spawnService;
 
     /// <summary>Camera creation and removal use the lifecycle history.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
+    private readonly IPlacementAnchorSource _anchors;
     private readonly global::Poser.Files.ObjectPlacementPreferences _placement;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
@@ -68,30 +67,33 @@ public sealed class CameraPane
         new("Save Camera", new[] { ".xivc" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
         new("Load Camera", new[] { ".xivc" });
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder =
+        new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
     // An imported or cloned camera is only selectable once the scene refresh
     // has bound it, exactly like a spawned light.
-    private IVirtualCamera? _pendingSelect;
+    private readonly global::Poser.UI.Composition.PendingSelection<IVirtualCamera> _pendingSelect = new();
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     private readonly ScenePane _scenePane;
+    private readonly Game.Journal.CameraSession _values;
 
     public CameraPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         IVirtualCameraService cameras,
         IActorSpawnService spawnService,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ICameraFileService cameraFiles,
-        Game.Scene.PlacementAnchorSource anchors,
+        IPlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
-        ScenePane scenePane)
+        ScenePane scenePane,
+        Game.Journal.CameraSession values)
     {
+        _values = values;
         _names = names;
         _anchors = anchors;
         _placement = placement;
@@ -114,21 +116,19 @@ public sealed class CameraPane
     {
         _saveBrowser.Draw();
         _loadBrowser.Draw();
-        if (_pendingSelect is { } created &&
-            _bindings.GetCameraId(created) is { } cameraId)
-        {
-            _scene.Selection.Select(SelectionId.ForCamera(cameraId));
-            _pendingSelect = null;
-        }
+        _pendingSelect.Reconcile(
+            created => _bindings.GetCameraId(created) is { } id
+                ? SelectionId.ForCamera(id)
+                : null,
+            _scene.Selection);
     }
 
     /// <summary>Opens the load dialog from outside the pane — the cameras
     /// header's "New camera from file…".</summary>
     public void OpenLoad()
     {
-        _loadBrowser.Open(_lastPath, path =>
+        _folder.Open(_loadBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // Import creation is recorded through the lifecycle service.
             var imported = _lifecycle.RecordSpawnedCamera(
                 $"Add camera from {System.IO.Path.GetFileNameWithoutExtension(path)}",
@@ -138,14 +138,14 @@ public sealed class CameraPane
                 _notices.Failed("Load: the camera file could not be read.");
                 return;
             }
-            _pendingSelect = imported;
+            _pendingSelect.Arm(imported);
         });
     }
 
     /// <summary>Arms the created camera for selection once the refresh binds
     /// it — the header menu and the pane's own clone both route here.</summary>
     public void SelectWhenBound(IVirtualCamera camera) =>
-        _pendingSelect = camera;
+        _pendingSelect.Arm(camera);
 
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
@@ -165,7 +165,7 @@ public sealed class CameraPane
             return;
         }
 
-        var result = _cameras.CenterOnActor(actor);
+        var result = _values.CenterOnActor(actor);
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "Center: the camera could not move.");
@@ -200,10 +200,7 @@ public sealed class CameraPane
             _notices.Refused("Reset: unlock the camera first.");
             return;
         }
-        if (camera.Kind == CameraKind.Free)
-            camera.Position = camera.SpawnPosition;
-        else
-            camera.PositionOffset = Vector3.Zero;
+        _values.ResetPosition(camera);
     }
 
     /// <summary>
@@ -312,12 +309,12 @@ public sealed class CameraPane
                 (r, a, next) =>
                 {
                     if (r == 0)
-                        camera.PositionOffset =
-                            WithAxis(camera.PositionOffset, a, next);
+                        _values.SetPositionOffset(
+                            camera, WithAxis(camera.PositionOffset, a, next));
                     else if (camera.FixedPosition is { } point)
-                        camera.FixedPosition = WithAxis(point, a, next);
+                        _values.SetFixedPosition(camera, WithAxis(point, a, next));
                 },
-                _ => { },
+                _ => _values.Seal(),
                 _ => perPixel,
                 _ => "0.00",
                 r => locked ||
@@ -333,7 +330,7 @@ public sealed class CameraPane
             {
                 if (locked || !_cameras.IsAvailable)
                     return;
-                camera.FixedPosition = value ? camera.WorldPosition : null;
+                _values.SetFixedPosition(camera, value ? camera.WorldPosition : null);
             },
             disabled: locked || !_cameras.IsAvailable,
             help: "Hold this world position");
@@ -396,7 +393,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##camera-name", camera.Name,
-                    value => camera.Name = value, disabled: locked),
+                    value => _values.SetName(camera, value), disabled: locked),
                 help: "Name it in the sidebar");
             cells.Cell(
                 "Type",
@@ -418,10 +415,10 @@ public sealed class CameraPane
         // like the environment's distance sliders.
         var limits = camera.ZoomLimits;
         form.Slider("Zoom", camera.Zoom, limits.X, limits.Y,
-            value => camera.Zoom = value,
+            value => _values.SetZoom(camera, value),
             disabled: locked,
             scale: SliderScale.Log,
-            help: "Distance from the pivot");
+            help: "Distance from the pivot", onBegin: _values.Seal);
         FovRollRow(form, camera, locked);
 
         // Angle and pan are wrap-around headings, not bounded travels — a
@@ -480,7 +477,7 @@ public sealed class CameraPane
         var displayedId = followedId ?? nativeTargetId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string name = ActorName(actor);
+            string name = ActorNames.Display(actor);
             choices.Add((actor.Id, name));
             labels.Add(name);
             if (displayedId is { } exact && actor.Id == exact)
@@ -589,13 +586,13 @@ public sealed class CameraPane
             cells.Cell(
                 "Movement",
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
-                    value => camera.MovementEnabled = value,
+                    value => _values.SetMovementEnabled(camera, value),
                     disabled: locked),
                 help: "Fly with WASD while live");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
-                    value => camera.Move2D = value, disabled: locked),
+                    value => _values.SetMove2D(camera, value), disabled: locked),
                 help: "Stay in the horizontal plane");
         });
         // The slider ends are the wheel's clamp: the row and the notch read
@@ -605,24 +602,24 @@ public sealed class CameraPane
             "Speed",
             cell => cell.Slider("##camera-speed", camera.MovementSpeed,
                 FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
-                value => camera.MovementSpeed = value,
+                value => _values.SetMovementSpeed(camera, value),
                 format: "0.000", disabled: locked,
-                help: "Flight speed; the wheel adjusts it"),
+                help: "Flight speed; the wheel adjusts it", onBegin: _values.Seal),
             "Sensitivity",
             cell => cell.Slider("##camera-sensitivity",
                 camera.MouseSensitivity, 0.001f, 0.2f,
-                value => camera.MouseSensitivity = value,
+                value => _values.SetMouseSensitivity(camera, value),
                 format: "0.000", disabled: locked,
-                help: "How far a right-drag turns the view"));
+                help: "How far a right-drag turns the view", onBegin: _values.Seal));
         form.Switch("Delimit angle", camera.DelimitAngle,
-            value => camera.DelimitAngle = value,
+            value => _values.SetDelimitAngle(camera, value),
             disabled: locked,
             help: "Let pitch wrap past vertical");
     }
 
     /// <summary>FoV and roll share one row for both camera kinds: the two
     /// lens facts, side by side.</summary>
-    private static void FovRollRow(
+    private void FovRollRow(
         Crystarium.FormScope form, IVirtualCamera camera, bool locked)
     {
         form.Cells(cells =>
@@ -633,17 +630,17 @@ public sealed class CameraPane
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
                     -44f, 120f,
-                    value => camera.FoV = value * Deg2Rad,
+                    value => _values.SetFoV(camera, value * Deg2Rad),
                     format: "0.0", disabled: locked,
-                    altReset: camera.DefaultFoV * Rad2Deg),
+                    altReset: camera.DefaultFoV * Rad2Deg, onBegin: _values.Seal),
                 help: "Lens offset, degrees");
             cells.Cell(
                 "Roll",
                 cell => cell.Slider("##camera-roll", camera.Roll * Rad2Deg,
                     -180f, 180f,
-                    value => camera.Roll = value * Deg2Rad,
+                    value => _values.SetRoll(camera, value * Deg2Rad),
                     format: "0.0", disabled: locked,
-                    altReset: camera.DefaultRoll * Rad2Deg),
+                    altReset: camera.DefaultRoll * Rad2Deg, onBegin: _values.Seal),
                 help: "Tilt around the view axis, in degrees");
         });
     }
@@ -687,14 +684,14 @@ public sealed class CameraPane
                     "Collision",
                     cell => cell.Switch("##camera-collision",
                         !camera.DisableCollision,
-                        value => camera.DisableCollision = !value,
+                        value => _values.SetDisableCollision(camera, !value),
                         disabled: locked),
                     help: "Let walls push the camera");
                 cells.Cell(
                     "Delimit",
                     cell => cell.Switch("##camera-delimit",
                         camera.DelimitCamera,
-                        value => camera.DelimitCamera = value,
+                        value => _values.SetDelimitCamera(camera, value),
                         disabled: locked),
                     help: "Lift zoom and pitch limits");
             });
@@ -702,23 +699,15 @@ public sealed class CameraPane
         form.Pair(
             "Orthographic",
             cell => cell.Switch("##camera-ortho", camera.Orthographic,
-                value => camera.Orthographic = value,
+                value => _values.SetOrthographic(camera, value),
                 disabled: locked,
                 help: "Flatten perspective entirely"),
             "Ortho zoom",
             cell => cell.Slider("##camera-ortho-zoom",
                 camera.OrthographicZoom, 0.1f, 10f,
-                value =>
-                {
-                    camera.OrthographicZoom = value;
-                    // The setter routes through the render camera only
-                    // while orthographic is on; restating the switch
-                    // applies the zoom.
-                    if (camera.Orthographic)
-                        camera.Orthographic = true;
-                },
+                value => _values.SetOrthographicZoom(camera, value),
                 disabled: locked || !camera.Orthographic,
-                help: "Width of the flat view"));
+                help: "Width of the flat view", onBegin: _values.Seal));
     }
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -756,7 +745,7 @@ public sealed class CameraPane
                             "Clone: the camera could not be created.");
                         return;
                     }
-                    _pendingSelect = clone;
+                    _pendingSelect.Arm(clone);
                 },
                 help: "Duplicate this camera");
             if (!camera.IsDefault)
@@ -841,7 +830,7 @@ public sealed class CameraPane
                 _notices.Refused("Center: the followed actor is not visible.");
                 return;
             }
-            ReportCenter(_cameras.CenterOnActor(liveFollowed));
+            ReportCenter(_values.CenterOnActor(liveFollowed));
             return;
         }
 
@@ -859,7 +848,7 @@ public sealed class CameraPane
                 _bindings.GetActorId(liveNative) == nativeTargetId &&
                 _spawnService.IsVisible(liveNative))
             {
-                ReportCenter(_cameras.CenterOnActor(liveNative));
+                ReportCenter(_values.CenterOnActor(liveNative));
                 return;
             }
             _notices.Refused("Center: the game target is no longer available.");
@@ -876,7 +865,7 @@ public sealed class CameraPane
                 _notices.Refused("Center: that bone is no longer available.");
                 return;
             }
-            ReportCenter(_cameras.CenterOnBone(selectedBone));
+            ReportCenter(_values.CenterOnBone(selectedBone));
             return;
         }
 
@@ -895,7 +884,7 @@ public sealed class CameraPane
                 _notices.Refused("Center: that actor is not visible.");
                 return;
             }
-            ReportCenter(_cameras.CenterOnActor(selectedActor));
+            ReportCenter(_values.CenterOnActor(selectedActor));
             return;
         }
 
@@ -907,7 +896,7 @@ public sealed class CameraPane
             if (!resolved.Success || resolved.Value is not { } liveBone ||
                 _bindings.GetBoneId(liveBone) != trackedId)
                 continue;
-            ReportCenter(_cameras.CenterOnBone(liveBone));
+            ReportCenter(_values.CenterOnBone(liveBone));
             return;
         }
 
@@ -945,7 +934,7 @@ public sealed class CameraPane
             return;
         if (!enabled)
         {
-            _cameras.ClearTargetActor(camera);
+            _values.ClearTargetActor(camera);
             return;
         }
 
@@ -956,10 +945,10 @@ public sealed class CameraPane
                 ReferenceEquals(exact, camera.TargetActor) &&
                 _bindings.GetActorId(exact) == targetId)
             {
-                camera.IsTargetLocked = true;
+                _values.SetTargetLocked(camera, true);
                 return;
             }
-            _cameras.ClearTargetActor(camera);
+            _values.ClearTargetActor(camera);
             _notices.Refused("Follow: that actor is no longer available.");
             return;
         }
@@ -971,10 +960,10 @@ public sealed class CameraPane
             if (resolved.Success &&
                 ReferenceEquals(resolved.Value, native) &&
                 _bindings.GetActorId(native) == nativeId &&
-                _cameras.SetTargetActor(
+                _values.SetTargetActor(
                     camera, native, nativeId, ActorNameFrom(native)))
             {
-                camera.IsTargetLocked = true;
+                _values.SetTargetLocked(camera, true);
                 return;
             }
         }
@@ -1000,8 +989,8 @@ public sealed class CameraPane
             return;
         }
         if (camera.TargetActorId == targetId)
-            _cameras.ClearTargetActor(camera);
-        else if (_cameras.SetTargetActor(
+            _values.ClearTargetActor(camera);
+        else if (_values.SetTargetActor(
             camera, exact, targetId, ActorNameFrom(exact)))
             ClearTrackedBonesOutside(camera, targetId);
     }
@@ -1016,7 +1005,7 @@ public sealed class CameraPane
         if (camera.TargetActorId is not { } targetId)
         {
             if (camera.IsTargetLocked)
-                _cameras.ClearTargetActor(camera);
+                _values.ClearTargetActor(camera);
             return true;
         }
         var resolved = _bindings.Resolve(targetId);
@@ -1024,7 +1013,7 @@ public sealed class CameraPane
             ReferenceEquals(actor, camera.TargetActor) &&
             _bindings.GetActorId(actor) == targetId)
             return true;
-        _cameras.ClearTargetActor(camera);
+        _values.ClearTargetActor(camera);
         if (notify)
             _notices.Refused("Follow: the target actor is no longer available.");
         return false;
@@ -1063,7 +1052,7 @@ public sealed class CameraPane
             _notices.Refused("Follow: that actor is no longer available.");
             return;
         }
-        if (!_cameras.SetTargetActor(camera, actor, actorId, displayName))
+        if (!_values.SetTargetActor(camera, actor, actorId, displayName))
         {
             _notices.Failed("Follow: the actor is not drawn yet.");
             return;
@@ -1114,19 +1103,13 @@ public sealed class CameraPane
             camera.TrackedBones.Clear();
     }
 
-    /// <summary>Nickname / anonymous-mask aware, like every other surface.
-    /// </summary>
-    private static string ActorName(ActorDescriptor actor) =>
-        ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, actor.Name);
-
     // ── actions ──────────────────────────────────────────────────────────
 
     private void SetLive(IVirtualCamera camera, bool live)
     {
         if (live)
         {
-            _cameras.SetLive(camera);
+            _values.SetLive(camera);
             return;
         }
         // Switching the live camera off means going back to the game's own —
@@ -1137,7 +1120,7 @@ public sealed class CameraPane
         {
             if (candidate.IsDefault)
             {
-                _cameras.SetLive(candidate);
+                _values.SetLive(candidate);
                 return;
             }
         }
@@ -1147,9 +1130,8 @@ public sealed class CameraPane
     /// </summary>
     public void OpenSave(IVirtualCamera camera)
     {
-        _saveBrowser.Open(_lastPath, path =>
+        _folder.Open(_saveBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             if (!camera.IsValid)
             {
                 _notices.Refused("Export: the camera no longer exists.");

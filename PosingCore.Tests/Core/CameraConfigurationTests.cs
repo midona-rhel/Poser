@@ -15,7 +15,7 @@ public sealed class CameraConfigurationTests
         Assert.Equal(3f, camera.FastMultiplier);
         Assert.Equal(0.3f, camera.SlowMultiplier);
         Assert.True(camera.ConsumeModifiersWhileFlying);
-        Assert.False(camera.ConsumeAllGameInput);
+        Assert.True(camera.KeepBoundKeysFromGame);
         Assert.False(camera.FlipBindsPastNinety);
         Assert.NotNull(new PoserConfiguration().Camera);
     }

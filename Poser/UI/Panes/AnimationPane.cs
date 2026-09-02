@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -8,12 +9,11 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
 
 namespace Poser.UI;
 
@@ -23,13 +23,14 @@ public sealed class AnimationPane : IDisposable
     private const long ExpressionRetryDelayMs = 500;
 
     private readonly AnimationSession _animation;
+    private readonly AnimationSteps _steps;
     private readonly AnimationCatalog _catalog;
 
     // The expression workspace may open before another catalog row.
-    private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
-    private readonly Game.Animation.FacialPoseCapture _facialCapture;
+    private readonly IAnimationCatalogLoader _catalogLoader;
+    private readonly IFacialPoseCapture _facialCapture;
     private readonly IFramework _framework;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly SceneSession _scene;
 
@@ -131,11 +132,12 @@ public sealed class AnimationPane : IDisposable
 
     public AnimationPane(
         AnimationSession animation,
+        AnimationSteps steps,
         AnimationCatalog catalog,
-        Game.Animation.AnimationCatalogLoader catalogLoader,
-        Game.Animation.FacialPoseCapture facialCapture,
+        IAnimationCatalogLoader catalogLoader,
+        IFacialPoseCapture facialCapture,
         IFramework framework,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ISessionGenerationSource sessionGeneration,
         ITextureProvider textures,
         SceneSession scene,
@@ -143,6 +145,7 @@ public sealed class AnimationPane : IDisposable
     {
         _notices = notices;
         _animation = animation;
+        _steps = steps;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
         _facialCapture = facialCapture;
@@ -177,7 +180,7 @@ public sealed class AnimationPane : IDisposable
         PrunePaneState();
         Crystarium.Page("animation", origin, size, page =>
         {
-            if (TargetActor() is not { } actor)
+            if (_scene.Selection.PrimaryActor is not { } actor)
             {
                 page.EmptyState();
                 return;
@@ -385,7 +388,7 @@ public sealed class AnimationPane : IDisposable
                 actions.Button(
                     "Apply",
                     () => Report(
-                        _animation.PlaySelectedSlot(
+                        _steps.Play(
                             actor,
                             slot,
                             choice,
@@ -423,7 +426,7 @@ public sealed class AnimationPane : IDisposable
                     play ? "Play" : "Pause",
                     () => Report(
                         play
-                            ? _animation.PlaySelectedSlot(
+                            ? _steps.Play(
                                 actor,
                                 slot,
                                 choice,
@@ -473,8 +476,7 @@ public sealed class AnimationPane : IDisposable
                     "Loop",
                     _animation.LoopWantedFor(actor, slot),
                     next => Report(
-                        _animation.SetSlotLoop(
-                            actor, slot, 0, next),
+                        _steps.SetLoop(actor, slot, next),
                         $"{label} loop"),
                     disabled: !advanced);
                 ImGui.PopID();
@@ -515,7 +517,7 @@ public sealed class AnimationPane : IDisposable
         // Advanced releases every layer before Basic can issue Base commands.
         foreach (var slot in PrimaryLayers)
         {
-            var reset = _animation.ResetSlot(actor, slot);
+            var reset = _steps.ResetSlot(actor, slot);
             if (!reset.Success)
             {
                 Report(reset, "Basic animation");
@@ -543,7 +545,7 @@ public sealed class AnimationPane : IDisposable
                 "##anim-general-loop",
                 _animation.LoopWantedFor(actor, AnimationSlot.Base),
                 next => Report(
-                    _animation.SetSlotLoop(actor, AnimationSlot.Base, 0, next),
+                    _steps.SetLoop(actor, AnimationSlot.Base, next),
                     "Loop"),
                 disabled: advanced));
 
@@ -749,7 +751,7 @@ public sealed class AnimationPane : IDisposable
                         "Bake expression",
                         () =>
                         {
-                            var descriptor = Describe(actor);
+                            var descriptor = _scene.Snapshot.FindActor(actor);
                             if (descriptor == null)
                                 _notices.Refused(
                                     "Bake expression: actor is no longer in "
@@ -1026,24 +1028,6 @@ public sealed class AnimationPane : IDisposable
         long DueAt);
 
 
-    private ActorId? TargetActor() => _scene.Selection.Primary switch
-    {
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-        { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-            bone.Skeleton.Actor,
-        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
-            gazeActor,
-        _ => null,
-    };
-
-    private ActorDescriptor? Describe(ActorId id)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.Equals(id))
-                return actor;
-        return null;
-    }
-
     private static string StanceName(AnimationStance stance) => stance switch
     {
         AnimationStance.Idle => "Idle",
@@ -1138,7 +1122,7 @@ public sealed class AnimationPane : IDisposable
     {
         if (slot == AnimationSlot.Facial)
             CancelExpressionRetry(actor);
-        var reset = _animation.ResetSlot(actor, slot);
+        var reset = _steps.ResetSlot(actor, slot);
         if (reset.Success)
         {
             _layerSelections.Remove((actor, slot));
@@ -1164,14 +1148,14 @@ public sealed class AnimationPane : IDisposable
         }
         _generalSelections[actor] = command with { Applied = true };
         Report(
-            _animation.PlaySelectedSlot(
+            _steps.Play(
                 actor, entry.Slot, entry, _playEmoteStart),
             "Animation");
     }
 
     private void ResetGeneral(ActorId actor)
     {
-        var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
+        var reset = _steps.ResetSlot(actor, AnimationSlot.Base);
         if (!reset.Success)
         {
             Report(reset, "Animation reset");
@@ -1179,8 +1163,7 @@ public sealed class AnimationPane : IDisposable
         }
         if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
         {
-            var loop = _animation.SetSlotLoop(
-                actor, AnimationSlot.Base, 0, false);
+            var loop = _steps.SetLoop(actor, AnimationSlot.Base, false);
             if (!loop.Success)
             {
                 Report(loop, "Animation reset");

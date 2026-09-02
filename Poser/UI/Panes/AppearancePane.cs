@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -7,16 +7,15 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Application.Presentation;
+using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Domain.Appearance;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
-using Poser.Game.Presentation;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -24,21 +23,39 @@ namespace Poser.UI;
 /// <summary>
 /// Actor-scoped presentation and appearance controls.
 /// </summary>
-public sealed class AppearancePane
+public sealed partial class AppearancePane
 {
+    private readonly IWardrobeCatalog _wardrobe;
+    private readonly IPropCatalog _props;
+    private readonly Game.Journal.WardrobeSession _wardrobeSession;
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly Func<WardrobeItem, nint> _wardrobeItemTexture;
+    private readonly Func<WardrobeItem, string?> _wardrobeItemBadge;
+    private readonly Func<DyeEntry, Vector4?> _dyeRowFill;
+    private readonly Func<FacewearEntry, nint> _facewearTexture;
+    private static readonly Func<PropRow, string?> _propBadge = static row => row.Detail;
+    private static readonly Func<PropRow, TablerIcon?> _propGlyph = static _ => TablerIcon.Wand;
+    private static readonly string[] ViewLabels = ["Actor", "Appearance", "Equipment"];
+    private readonly ICustomizeCatalog _customize;
+    private readonly Game.Journal.CustomizeSession _customizeSession;
+    private int _view;
+
     private readonly ActorPresentationSession _presentation;
     private readonly ActorModelIdSession _model;
     private readonly ModelCatalog _modelCatalog;
-    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
+    private readonly IModelCatalogLoader _modelLoader;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ITextureProvider _textures;
 
     /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
-    private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
+    private readonly IInvisibleSkinService _invisibleSkin;
+    private readonly Game.Journal.ActorValueSession _values;
+    private readonly Game.Journal.DisruptiveSteps _disruptive;
+    private readonly TransformHistory _history;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -107,22 +124,56 @@ public sealed class AppearancePane
     private ActorId? _mcdfActor;
     private string _mcdfDescription = string.Empty;
 
-    public Func<ActorDescriptor, string>? DisplayNameProvider;
-
     public AppearancePane(
         ActorPresentationSession presentation,
         ActorModelIdSession model,
         ModelCatalog modelCatalog,
-        Game.Appearance.ModelCatalogLoader modelLoader,
+        IModelCatalogLoader modelLoader,
         ActorIntegrationSession integration,
         SceneSession scene,
         IActorSpawnService spawn,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ITextureProvider textures,
         Config.ConfigurationService config,
-        Game.Integration.InvisibleSkinService invisibleSkin,
-        UserNotices notices)
+        IInvisibleSkinService invisibleSkin,
+        UserNotices notices,
+        Game.Journal.ActorValueSession values,
+        Game.Journal.DisruptiveSteps disruptive,
+        TransformHistory history,
+        IWardrobeCatalog wardrobe,
+        IPropCatalog props,
+        Game.Journal.WardrobeSession wardrobeSession,
+        global::Poser.UI.Controls.EntityNameModal names,
+        ICustomizeCatalog customize,
+        Game.Journal.CustomizeSession customizeSession)
     {
+        _customize = customize;
+        _customizeSession = customizeSession;
+        _wardrobe = wardrobe;
+        _props = props;
+        _wardrobeSession = wardrobeSession;
+        _names = names;
+        // The sheet catalogs warm off the draw thread at load, so the first
+        // Appearance or Equipment view draws final on its first frame.
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                (wardrobe as Game.Wardrobe.WardrobeCatalog)?.Warm();
+                (customize as Game.Wardrobe.CustomizeCatalog)?.Warm();
+            }
+            catch (Exception)
+            {
+                // A failed warm-up costs nothing: the views load on demand.
+            }
+        });
+        _wardrobeItemTexture = item => ResolveIcon(item.Icon);
+        _wardrobeItemBadge = item => "#" + item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _dyeRowFill = dye => dye.Id == 0 ? null : DyeColor(dye.Color);
+        _facewearTexture = entry => ResolveIcon(entry.Icon);
+        _values = values;
+        _disruptive = disruptive;
+        _history = history;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -150,18 +201,70 @@ public sealed class AppearancePane
         _mcdfExportBrowser.Draw();
     }
 
+    /// <summary>The view pill stands fixed above the page, as the Pose
+    /// strip does; the page scrolls in its own region under it. The shell
+    /// hands this tab the whole viewport for that.</summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         DrainPicker();
         DrainModelPicker();
+        DrainWardrobePickers();
+        DrainCustomizePickers();
 
-        Crystarium.Page("appearance", origin, size, page =>
-        {
-            if (TargetActor() is not { } actor)
+        float s = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float band = global::Poser.UI.Views.AppShellView.ToolbarHeight * s;
+        float pill = theme.Controls.NavigationHeight * s;
+        ImGui.SetCursorScreenPos(origin + new Vector2(0f, (band - pill) * 0.5f));
+        Crystarium.SegmentedControl(
+            "##appearance-view", ViewLabels, _view,
+            next => _view = next,
+            alignFirstTabToCursor: true,
+            itemHelp: index => index switch
             {
-                page.EmptyState();
-                return;
-            }
+                0 => "The actor in the scene",
+                1 => "How the actor looks",
+                _ => "What the actor wears",
+            });
+
+        float shellLeft = origin.X - global::Poser.UI.Views.AppShellView.MainHorizontalPadding * s;
+        float shellWidth = size.X
+            + (global::Poser.UI.Views.AppShellView.MainHorizontalPadding * 2f + global::Poser.UI.Views.AppShellView.ScrollbarWidth) * s;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            new Vector2(shellLeft, origin.Y + band - 1f * s),
+            new Vector2(shellLeft + shellWidth, origin.Y + band),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.FormSeparator)));
+
+        float bodyHeight = MathF.Max(1f, size.Y - band);
+        ImGui.SetCursorScreenPos(new Vector2(shellLeft, origin.Y + band));
+        Crystarium.ScrollRegion(
+            "appearance-body",
+            shellWidth / s,
+            bodyHeight / s,
+            region =>
+            {
+                var cursor = ImGui.GetCursorScreenPos();
+                Crystarium.Page("appearance", cursor,
+                    new Vector2(region.ContentWidth * s, bodyHeight), page =>
+                {
+                    if (_scene.Selection.PrimaryActor is not { } actor)
+                    {
+                        page.EmptyState();
+                        return;
+                    }
+                    switch (_view)
+                    {
+                        case 1: DrawCustomizeView(page, actor); break;
+                        case 2: DrawEquipmentView(page, actor); break;
+                        default: DrawActorView(page, actor); break;
+                    }
+                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null);
+            });
+    }
+
+    private void DrawActorView(Crystarium.PageScope page, ActorId actor)
+    {
+        {
             _modelLoader.EnsureLoaded();
             // Model controls remain available for creature models.
             bool supported = _presentation.IsSupported(actor)
@@ -208,7 +311,7 @@ public sealed class AppearancePane
                 form => CharacterFileRows(form, actor, external));
             // A body taken from the world is handed back from its own page,
             // as a borrowed light is from its page.
-            if (Describe(actor) is { IsAdopted: true })
+            if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
                 page.Section("Scene", _openScene,
                     next => _openScene = next,
                     form => form.Actions(string.Empty, actions =>
@@ -216,11 +319,45 @@ public sealed class AppearancePane
                             "Release",
                             () => ReleaseAdopted(actor),
                             help: "Hand this actor back to the world")));
-
-        });
+        }
     }
 
     private bool _openScene = true;
+
+
+    /// <summary>What undoes an appearance apply: the previous assignment
+    /// when there was one, the reset when there was not.</summary>
+    private Func<IntegrationResult> CollectionInverse(ActorId actor)
+    {
+        var before = _integration.ReadCollection(actor);
+        return before is { Success: true, Value: { HasIndividualAssignment: true } was }
+            ? () => _integration.SetCollection(actor, was.EffectiveId, was.EffectiveName)
+            : () => _integration.ResetCollection(actor);
+    }
+
+    private Func<IntegrationResult> BodyProfileInverse(ActorId actor)
+    {
+        var before = _integration.OverridesFor(actor);
+        return before.TemporaryBodyProfile is { } profile
+            ? () => _integration.SetBodyProfile(actor, profile, before.BodyProfileName ?? "Profile")
+            : () => _integration.ResetBodyProfile(actor);
+    }
+
+    /// <summary>A model id change redraws: a disruptive step whose inverse
+    /// is the previous id, or the reset when none was owned.</summary>
+    private PresentationResult ModelStep(ActorId actor, string description, Func<PresentationResult> verb)
+    {
+        var before = _model.IsOwned(actor) ? _model.Read(actor) : null;
+        Func<IntegrationResult> inverse = before is { } previous
+            ? () => AsIntegration(_model.Apply(actor, previous))
+            : () => AsIntegration(_model.Reset(actor));
+        PresentationResult outcome = PresentationResult.Ok();
+        _disruptive.Run(actor, description, () => AsIntegration(outcome = verb()), inverse);
+        return outcome;
+    }
+
+    private static IntegrationResult AsIntegration(PresentationResult result) =>
+        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail ?? "Refused.");
 
     private void ReleaseAdopted(ActorId id)
     {
@@ -230,8 +367,17 @@ public sealed class AppearancePane
             _notices.Failed("Release: the actor is no longer in the scene.");
             return;
         }
+        var address = live.Address;
         if (_spawn.RemoveActorFromScene(live))
-            _notices.Done($"Released '{Describe(id)?.Name ?? live.Name}'.");
+        {
+            _notices.Done($"Released '{_scene.Snapshot.FindActor(id)?.Name ?? live.Name}'.");
+            _history.Append(new JournalStep(
+                "Release actor",
+                () => _spawn.AdoptFromWorld(address) is not null,
+                () => _bindings.Resolve(id) is { Success: true, Value: { } again }
+                    ? _spawn.RemoveActorFromScene(again)
+                    : _scene.Snapshot.FindActor(id.LogicalId) is null));
+        }
         else
             _notices.Failed("Release: the actor could not be handed back.");
     }
@@ -327,9 +473,10 @@ public sealed class AppearancePane
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
         Crystarium.Button("Reset",
-            () => ReportModel(_model.Reset(id), "Reset model"),
+            () => ReportModel(ModelStep(id, "Reset model id", () => _model.Reset(id)), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
+            variant: ButtonVariant.Disruptive,
             disabled: !_model.IsOwned(id),
             help: "Back to its own model", id: "appearance-model-reset");
     }
@@ -356,7 +503,7 @@ public sealed class AppearancePane
                 out var next)
             && next >= 0)
         {
-            ReportModel(_model.Apply(id, next), "Model id");
+            ReportModel(ModelStep(id, "Set model id", () => _model.Apply(id, next)), "Model id");
             return;
         }
         _notices.Refused("Model id must be a whole number.");
@@ -408,7 +555,7 @@ public sealed class AppearancePane
             || _modelPickerActor is not { } target)
             return;
         ReportModel(
-            _model.Apply(target, pick.Item.ModelCharaId), pick.Item.Name);
+            ModelStep(target, "Set model id", () => _model.Apply(target, pick.Item.ModelCharaId)), pick.Item.Name);
     }
 
     private PickerOptions<ModelCatalogEntry> ModelPickerOptions() => new()
@@ -495,12 +642,15 @@ public sealed class AppearancePane
             return;
         var picked = pick.Owner switch
         {
-            "Collection" => _integration.SetCollection(
-                target, pick.Item.Id, pick.Item.Name),
-            "Design" => _integration.ApplyDesign(
-                target, pick.Item.Id, pick.Item.Name),
-            "Body profile" => _integration.SetBodyProfile(
-                target, pick.Item.Id, pick.Item.Name),
+            "Collection" => _disruptive.Run(target, "Set collection",
+                () => _integration.SetCollection(target, pick.Item.Id, pick.Item.Name),
+                CollectionInverse(target)),
+            "Design" => _disruptive.Run(target, "Apply design",
+                () => _integration.ApplyDesign(target, pick.Item.Id, pick.Item.Name),
+                () => _integration.ResetDesign(target)),
+            "Body profile" => _disruptive.Run(target, "Set body profile",
+                () => _integration.SetBodyProfile(target, pick.Item.Id, pick.Item.Name),
+                BodyProfileInverse(target)),
             _ => IntegrationResult.Ok(),
         };
         if (!picked.Success)
@@ -516,8 +666,8 @@ public sealed class AppearancePane
     {
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
-            value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "Fade the whole actor");
+            value => Report(_values.SetOpacity(actor, value), "Opacity"),
+            help: "Fade the whole actor", onBegin: _values.Seal);
 
         form.Actions("Appearance", actions =>
         {
@@ -532,14 +682,18 @@ public sealed class AppearancePane
                 disabled: !glamourer.Available,
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
-                () => ReportExternal(_integration.Redraw(actor), "Redraw"));
+                () => ReportExternal(
+                    _disruptive.Run(actor, "Redraw", () => _integration.Redraw(actor)), "Redraw"),
+                variant: ButtonVariant.Disruptive);
             actions.Button("Reset",
-                () => Report(_presentation.ResetActor(actor), "Reset appearance"));
+                () => Report(_values.ResetPresentation(actor), "Reset appearance"),
+                variant: ButtonVariant.Disruptive);
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
                 () => _invisibleSkin.Request(actor, _notices.Failed),
                 disabled: !human,
-                help: human ? null : "Only human actors can hide their body");
+                help: human ? null : "Only human actors can hide their body",
+                variant: ButtonVariant.Disruptive);
         });
     }
 
@@ -561,7 +715,7 @@ public sealed class AppearancePane
                 $"appearance-tint-{what}",
                 TintFor(owned, reading, model) ?? Vector4.One,
                 value => Report(
-                    _presentation.SetTint(actor, model, value), what));
+                    _values.SetTint(actor, model, value), what));
         }
 
         form.Cells(cells =>
@@ -584,7 +738,7 @@ public sealed class AppearancePane
         form.PairRows();
         form.Switch("Override", owned.Wetness != null,
             value => Report(
-                _presentation.SetWetnessEnabled(actor, value), "Wetness override"),
+                _values.SetWetnessEnabled(actor, value), "Wetness override"),
             help: "Hold wetness against weather and water");
 
         // Read the latest override after the switch callback.
@@ -593,20 +747,20 @@ public sealed class AppearancePane
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
 
         form.Slider("Weather", wet.Weather, 0f, 1f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
             help: "Rain wetness",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
             help: "Water soaking",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Depth", wet.Depth, 0f, 3f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
             help: "How far up the body it reaches",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
     }
 
     private void ExternalAppearanceRows(
@@ -626,9 +780,11 @@ public sealed class AppearancePane
             _collectionReadout,
             () => OpenPicker(
                 actor, "Collection", _integration.ListCollections, _collectionKey),
-            () => ReportExternal(_integration.ResetCollection(actor), "Reset Collection"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset collection",
+                () => _integration.ResetCollection(actor), CollectionInverse(actor)), "Reset Collection"),
             available: penumbra.Available && !mcdfOwned,
             owned: external.CollectionOwned,
+            disruptive: true,
             help: "Use a Penumbra collection on this actor only and redraw it. "
                 + "Reset puts the actor's original collection back.",
             disabledHelp: !penumbra.Available
@@ -641,9 +797,11 @@ public sealed class AppearancePane
             "Design",
             external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
             () => OpenPicker(actor, "Design", _integration.ListDesigns),
-            () => ReportExternal(_integration.ResetDesign(actor), "Reset Design"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset design",
+                () => _integration.ResetDesign(actor)), "Reset Design"),
             available: glamourer.Available && !mcdfOwned,
             owned: external.DesignOwned,
+            disruptive: true,
             help: "Apply a saved Glamourer design to this actor only. "
                 + "Reset puts back the look it had before Poser changed it.",
             disabledHelp: !glamourer.Available
@@ -651,17 +809,17 @@ public sealed class AppearancePane
                 : mcdfOwned
                     ? mcdfReason
                     : "Apply a Glamourer design to this actor only");
-
         form.Selector(
             "Body profile",
             external.TemporaryBodyProfile != null
                 ? external.BodyProfileName ?? "Profile"
                 : "Automatic",
             () => OpenPicker(actor, "Body profile", _integration.ListBodyProfiles),
-            () => ReportExternal(
-                _integration.ResetBodyProfile(actor), "Reset Body profile"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset body profile",
+                () => _integration.ResetBodyProfile(actor), BodyProfileInverse(actor)), "Reset Body profile"),
             available: customize.Available && !mcdfOwned && !_bodyBlocked,
             owned: external.TemporaryBodyProfile != null,
+            disruptive: true,
             help: "Apply a saved Customize+ profile to this actor only. "
                 + "Reset removes it and the actor's usual profile returns.",
             disabledHelp: !customize.Available
@@ -671,6 +829,17 @@ public sealed class AppearancePane
                     : _bodyBlocked
                         ? _bodyBlockedDetail
                         : "Apply a saved Customize+ profile to this actor only");
+
+        form.Actions("Look", actions =>
+        {
+            actions.Button("Save design", () => SaveDesign(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
+            actions.Button("Revert", () => RevertLook(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
+                variant: ButtonVariant.Disruptive);
+        });
     }
 
     private void CharacterFileRows(
@@ -708,7 +877,7 @@ public sealed class AppearancePane
             // Character data leaves Poser only for an actor Poser spawned or
             // the player's own character; a friend posed in GPose is not
             // the user's to export.
-            bool owned = Describe(actor)?.IsOwned ?? false;
+            bool owned = _scene.Snapshot.FindActor(actor)?.IsOwned ?? false;
             bool exportable =
                 owned && penumbra.Available && glamourer.Available && !mcdfOwnedNow;
             form.ReadOnlyWithActions(
@@ -720,7 +889,8 @@ public sealed class AppearancePane
                     actions.Button("Import",
                         () => OpenMcdfImport(actor),
                         help: "Apply a Mare character file's mods, appearance, "
-                            + "and body scale to this actor only");
+                            + "and body scale to this actor only",
+                        variant: ButtonVariant.Disruptive);
                     actions.Button("Export",
                         () => OpenMcdfExport(actor),
                         disabled: !exportable,
@@ -737,11 +907,12 @@ public sealed class AppearancePane
                     {
                         actions.Button(
                             mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
-                            () => ReportExternal(
-                                _integration.ResetMcdf(actor), "Reset MCDF"),
+                            () => ReportExternal(_disruptive.Run(actor, "Reset MCDF",
+                                () => _integration.ResetMcdf(actor)), "Reset MCDF"),
                             help: mcdfOwnedNow
                                 ? "Remove everything the imported character file applied to this actor"
-                                : "Retry deleting extracted files left behind by a failed import");
+                                : "Retry deleting extracted files left behind by a failed import",
+                            variant: ButtonVariant.Disruptive);
                     }
                 },
                 help: "Import a Mare character file (.mcdf) onto this actor, "
@@ -823,7 +994,9 @@ public sealed class AppearancePane
             || _bindings.GetActorId(dress.Body) is not { } bound)
             return;
         _pendingMcdfDress = null;
-        var begun = _integration.BeginImport(bound, dress.Path);
+        var begun = _disruptive.Run(bound, "Import character file",
+            () => _integration.BeginImport(bound, dress.Path),
+            () => _integration.ResetMcdf(bound), asset: dress.Path);
         if (!begun.Success)
             _notices.Failed($"Import: {begun.Detail}");
     }
@@ -836,7 +1009,9 @@ public sealed class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             if (_mcdfActor is not { } frozen)
                 return;
-            var begun = _integration.BeginImport(frozen, chosen);
+            var begun = _disruptive.Run(frozen, "Import character file",
+                () => _integration.BeginImport(frozen, chosen),
+                () => _integration.ResetMcdf(frozen), asset: chosen);
             if (!begun.Success)
                 _notices.Failed($"Import: {begun.Detail}");
             _readoutAt = DateTime.MinValue;
@@ -846,8 +1021,8 @@ public sealed class AppearancePane
     private void OpenMcdfExport(ActorId actor)
     {
         _mcdfActor = actor;
-        _mcdfDescription = Describe(actor) is { } described
-            ? DisplayNameProvider?.Invoke(described) ?? described.Name
+        _mcdfDescription = _scene.Snapshot.FindActor(actor) is { } described
+            ? ActorNames.Display(described)
             : "Actor";
         _mcdfExportBrowser.Open(_mcdfPath, chosen =>
         {
@@ -885,24 +1060,6 @@ public sealed class AppearancePane
     private WetnessState CurrentWetness(ActorId actor) =>
         _presentation.OverridesFor(actor).Wetness
         ?? (_presentation.Read(actor) is { } reading ? reading.Wetness : default);
-
-    private ActorId? TargetActor() => _scene.Selection.Primary switch
-    {
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-        { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
-        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor,
-        _ => null,
-    };
-
-    private ActorDescriptor? Describe(ActorId id)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            if (actor.Id.Equals(id))
-                return actor;
-        }
-        return null;
-    }
 
     private void RefreshReadouts(ActorId actor)
     {

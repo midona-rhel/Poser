@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -12,8 +13,6 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Posing;
-using Poser.Game.Transforms;
 using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -45,17 +44,18 @@ public class GizmoOverlayWindow : Window
 {
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IViewportReads _viewport;
     private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly CleanTransformFacade _cleanTransforms;
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly ITransformFacade _cleanTransforms;
+    private readonly IPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
+    private readonly Game.Journal.GazeSession _gazeValues;
     // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
     // Resolves stable selections to live actors.
-    private readonly Game.Bindings.StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
@@ -173,14 +173,15 @@ public class GizmoOverlayWindow : Window
 
     public GizmoOverlayWindow(
         SceneSession scene,
-        Game.Viewport.ViewportProjection viewport,
+        IViewportReads viewport,
         IEditorState editorState,
         ICameraService cameraService,
         IBonePosingService bonePosingService,
-        CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        ITransformFacade cleanTransforms,
+        IPoseFacade cleanPose,
         IGazeService gazeService,
-        Game.Bindings.StableBindingRegistry bindings,
+        Game.Journal.GazeSession gazeValues,
+        IEntityBindings bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
@@ -195,6 +196,11 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
+        // The first click on an unselected entity only selects it: the
+        // press that changed the selection may not begin a drag on the
+        // gizmo that appeared under it (ruled 2026-09-03). The flag clears
+        // on release, as every other suppression does.
+        scene.Selection.SelectionChanged += _ => _beginSuppressed = true;
         _selection = scene.Selection;
         _scene = scene;
         _viewport = viewport;
@@ -204,6 +210,7 @@ public class GizmoOverlayWindow : Window
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
+        _gazeValues = gazeValues;
         _bindings = bindings;
         _virtualCameras = virtualCameras;
         _presentation = presentation;
@@ -359,8 +366,11 @@ public class GizmoOverlayWindow : Window
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
             UpdateGazeGesture(active, actor, io, mouse);
         else
-            // Release ends the drag.
+        {
+            // Release ends the drag, and the drag is one step.
             _gazeGesture = null;
+            _gazeValues.Seal();
+        }
     }
 
     /// <summary>Eight directions used for glyph underpaint.</summary>
@@ -510,9 +520,9 @@ public class GizmoOverlayWindow : Window
         gesture.Accum += step;
         var target = gesture.Start + gesture.Accum;
         if (gesture.Part == GazePart.Anchor)
-            _gazeService.SetGazePosition(actor, target);
+            _gazeValues.SetGazePosition(actor, target);
         else
-            _gazeService.SetPartPosition(actor, ToTargetType(gesture.Part), target);
+            _gazeValues.SetPartPosition(actor, ToTargetType(gesture.Part), target);
     }
 
     /// <summary>Returns whether another interface owns the pointer —
@@ -582,9 +592,6 @@ public class GizmoOverlayWindow : Window
         }
         return counted == 0 ? null : sum / counted;
     }
-
-    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
-        new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
 
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
@@ -733,31 +740,31 @@ public class GizmoOverlayWindow : Window
         else if (isBone &&
             _viewport.GetBoneModelTransform(primaryBone!.Value) is { } boneRest)
         {
-            currentTransform = ToLegacy(boneRest);
+            currentTransform = Transform.FromPose(boneRest);
         }
         else if (primaryActor is { } actorTarget &&
             _viewport.GetActorTransform(actorTarget) is { } actorRest)
         {
-            currentTransform = ToLegacy(actorRest);
+            currentTransform = Transform.FromPose(actorRest);
         }
         else if (primaryLight is { } lightTarget &&
             _viewport.GetModelTransform(TransformTargetId.ForLight(lightTarget))
                 is { } lightRest)
         {
-            currentTransform = ToLegacy(lightRest);
+            currentTransform = Transform.FromPose(lightRest);
         }
         else if (primaryProp is { } propTarget &&
             _viewport.GetModelTransform(TransformTargetId.ForProp(propTarget))
                 is { } propRest)
         {
-            currentTransform = ToLegacy(propRest);
+            currentTransform = Transform.FromPose(propRest);
         }
         else if (primaryWorldObject is { } worldObjectTarget &&
             _viewport.GetModelTransform(
                 TransformTargetId.ForWorldObject(worldObjectTarget))
                 is { } worldObjectRest)
         {
-            currentTransform = ToLegacy(worldObjectRest);
+            currentTransform = Transform.FromPose(worldObjectRest);
         }
         else
         {
@@ -818,7 +825,8 @@ public class GizmoOverlayWindow : Window
             ? WorldGizmo.Build(
                 projection, tool, translateFrame, scaleFrame, ringFrame, uiScale,
                 _gesture != null ? _dragTranslateSigns : null,
-                _gesture != null ? _dragScaleSigns : null)
+                _gesture != null ? _dragScaleSigns : null,
+                universalCenterTranslates: GizmoConfig.UniversalCenterTranslates)
             : null;
 
         var io = ImGui.GetIO();

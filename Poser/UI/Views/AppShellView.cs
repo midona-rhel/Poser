@@ -141,7 +141,6 @@ public sealed class ShellTab
 {
     public string Label = "";
     public bool Active;
-    public bool SceneTab; // drawn after the divider
 }
 
 public sealed class AppShellViewModel
@@ -464,7 +463,6 @@ public static class AppShellView
 
     /// <inheritdoc cref="TitlebarHeight"/>
     public static float CollapsedBarHeight => TitlebarHeight;
-    public static float SidebarWidth => Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
     public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
     public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
     public static float StatusbarHeight => Crystarium.ActiveTheme.Shell.StatusbarHeight;
@@ -474,7 +472,6 @@ public static class AppShellView
     /// exactly as the live dot sits in the one below.</summary>
     public static float FooterHeight => StatusbarHeight * 2f;
     public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
-    public static float ScrollbarRadius => Crystarium.ActiveTheme.Scrollbar.Radius;
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
     public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
 

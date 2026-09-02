@@ -1118,6 +1118,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// GPose — the same body, no copy — and the scene lists it by
     /// reference for as long as GPose lasts. Nothing is written to it
     /// here; the registration is the game's own call.</summary>
+    public IActor? AdoptFromWorld(nint address) => AdoptFromWorldSource(address);
+
     internal IActor? AdoptFromWorldSource(nint sourceAddress)
     {
         if (!OnOwnerThread || sourceAddress == nint.Zero || !_gPoseService.IsGPosing)

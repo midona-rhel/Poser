@@ -283,6 +283,10 @@ public sealed class SelectionSession
 
     public SelectionId? Primary => Target.Primary;
 
+    /// <summary>The actor the primary selection edits: the actor, a bone's
+    /// owner, or a gaze anchor's owner.</summary>
+    public ActorId? PrimaryActor => Primary?.OwningActor;
+
     public SelectionId? Anchor => Target.Anchor;
 
     /// <summary>

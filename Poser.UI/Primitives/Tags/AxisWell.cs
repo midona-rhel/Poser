@@ -12,12 +12,6 @@ public static partial class Crystarium
     private static float _axisEditValue;
     private static bool _axisEditNeedsFocus;
 
-    /// <summary>One wheel notch is worth this many drag pixels. Four puts the
-    /// step within a hair of Ktisis' own (its 0.2°/px rotation speed × 10 =
-    /// 2.0° a notch; Poser's 0.5°/px × 4 = 2.0°) without giving any caller a
-    /// second speed to keep in sync with its drag rate.</summary>
-    private const float WheelStepPixels = 4f;
-
     public static bool AxisWell(
         string id,
         string axis,

@@ -168,6 +168,7 @@ internal static class ServiceRegistration
         services.AddSingleton<SelectionSession>();
         services.AddSingleton<SceneSession>();
         services.AddSingleton<StableBindingRegistry>();
+        services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());
         services.AddSingleton<Application.Scene.SceneGroups>();
         services.AddSingleton<Game.Scene.SceneGroupsLifetime>();
         return services;
@@ -185,6 +186,49 @@ internal static class ServiceRegistration
             return new TransformHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
+        services.AddSingleton<ActorDisruptionEpochs>();
+        services.AddSingleton<IActorStateKeySource, ActorStateKeySource>();
+        services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
+        // Lazy: the snapshot port restores through the pose facade, which
+        // reaches the gesture service the journal sits above.
+        services.AddSingleton(sp => new System.Lazy<IPoseSnapshotPort>(
+            sp.GetRequiredService<IPoseSnapshotPort>));
+        services.AddSingleton<JournalContexts>();
+        services.AddSingleton(sp => new UndoJournal(
+            sp.GetRequiredService<TransformHistory>(),
+            sp.GetRequiredService<IUndoRunner>(),
+            sp.GetRequiredService<IActorStateKeySource>(),
+            sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>(),
+            System.IO.File.Exists,
+            sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
+        services.AddSingleton<ValueJournal>();
+        services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
+        services.AddSingleton<Game.Journal.WorldObjectSession>();
+        services.AddSingleton<Game.Journal.PropSession>();
+        services.AddSingleton<Game.Journal.OverlaySession>();
+        services.AddSingleton<Game.Journal.LightSession>();
+        services.AddSingleton<Game.Journal.CameraSession>();
+        services.AddSingleton<Game.Journal.EnvironmentSession>();
+        services.AddSingleton<Game.Journal.ActorValueSession>();
+        services.AddSingleton<Game.Journal.ExpressionSession>();
+        services.AddSingleton<Game.Journal.GazeSession>();
+        services.AddSingleton<AnimationSteps>();
+        services.AddSingleton<Application.Scene.GroupSteps>();
+        services.AddSingleton<Game.Journal.DisruptiveSteps>();
+        services.AddSingleton<Game.Journal.WardrobeSession>();
+        services.AddSingleton<Game.Journal.CustomizeSession>();
+        services.AddSingleton<Game.Wardrobe.CustomizeCatalog>();
+        services.AddSingleton<ICustomizeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.CustomizeCatalog>());
+        services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();
+        services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
+        services.AddSingleton(sp => new Game.Journal.EntitySessions(
+            sp.GetRequiredService<Game.Journal.ActorValueSession>(),
+            sp.GetRequiredService<Game.Journal.LightSession>(),
+            sp.GetRequiredService<Game.Journal.CameraSession>(),
+            sp.GetRequiredService<Game.Journal.PropSession>(),
+            sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
+            sp.GetRequiredService<Game.Journal.OverlaySession>()));
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
@@ -192,7 +236,26 @@ internal static class ServiceRegistration
         // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
+        services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        // The surfaces' ports over the runtime classes registered elsewhere.
+        services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
+        services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
+        services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
+        services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
+        services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
+        services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
+        services.AddSingleton<IWorldActorDiscovery>(sp => sp.GetRequiredService<WorldActorDiscovery>());
+        services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
+        services.AddSingleton<IWorldAssetCatalog>(sp => sp.GetRequiredService<Game.WorldObjects.WorldAssetCatalog>());
+        services.AddSingleton<IFacialPoseCapture>(sp => sp.GetRequiredService<Game.Animation.FacialPoseCapture>());
+        services.AddSingleton<IInvisibleSkinService>(sp => sp.GetRequiredService<Game.Integration.InvisibleSkinService>());
+        services.AddSingleton<IPropCatalog>(sp => sp.GetRequiredService<Game.PropSpawnService>());
+        services.AddSingleton<IOverlayNodeService>(sp => sp.GetRequiredService<Game.Overlays.OverlayNodeService>());
+        services.AddSingleton<IAnimationCatalogLoader>(sp => sp.GetRequiredService<Game.Animation.AnimationCatalogLoader>());
+        services.AddSingleton<ICompanionCatalogLoader>(sp => sp.GetRequiredService<Game.Companions.CompanionCatalogLoader>());
+        services.AddSingleton<IModelCatalogLoader>(sp => sp.GetRequiredService<Game.Appearance.ModelCatalogLoader>());
         services.AddSingleton<Game.Viewport.ViewportProjection>();
+        services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
         return services;
@@ -324,6 +387,9 @@ internal static class ServiceRegistration
         services.AddSingleton<ICameraService, CameraService>();
         services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
+        services.AddSingleton<Game.Input.KeyEventHook>();
+        services.AddSingleton<global::PosingCore.Services.IKeyEvents>(
+            sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
         services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
         services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
         services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
@@ -453,6 +519,8 @@ internal static class ServiceRegistration
         // The one transient-message channel every surface below speaks
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
+        services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
+        services.AddSingleton<global::Poser.UI.Controls.IssueReportModal>();
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();

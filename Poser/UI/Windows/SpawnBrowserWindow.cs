@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Poser.Scene;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -15,7 +16,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.UI.Views;
 
@@ -93,8 +93,8 @@ public sealed class SpawnBrowserWindow : Window
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly IActorSpawnService _spawnService;
-    private readonly Game.PropSpawnService _propService;
-    private readonly Game.Overlays.OverlayNodeService _overlayService;
+    private readonly IPropCatalog _propService;
+    private readonly IOverlayNodeService _overlayService;
     private readonly OverlayPane _overlayPane;
     private readonly ILightingService _lightingService;
     private readonly LightPane _lightPane;
@@ -102,14 +102,14 @@ public sealed class SpawnBrowserWindow : Window
     private readonly CameraPane _cameraPane;
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
 
     /// <summary>Every entity this browser adds goes through the lifecycle
     /// seam, so the add lands in the shell's undo history.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IGazeService _gaze;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly GameIconResolver _icons;
@@ -171,8 +171,8 @@ public sealed class SpawnBrowserWindow : Window
 
     public SpawnBrowserWindow(
         IActorSpawnService spawnService,
-        Game.PropSpawnService propService,
-        Game.Overlays.OverlayNodeService overlayService,
+        IPropCatalog propService,
+        IOverlayNodeService overlayService,
         OverlayPane overlayPane,
         ILightingService lightingService,
         LightPane lightPane,
@@ -180,22 +180,22 @@ public sealed class SpawnBrowserWindow : Window
         CameraPane cameraPane,
         ISpawnCatalogService catalog,
         SelectionSession selection,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         AnimationSession animation,
         ConfigurationService configuration,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         IGazeService gaze,
         global::Poser.Application.Integration.ActorIntegrationSession integration,
         ITextureProvider textures,
         UserNotices notices,
         ReferenceImageSession referenceImages,
         global::Poser.Library.IPoseLibraryService library,
-        Game.Scene.SceneWorkflow scenes,
-        Game.Scene.PlacementAnchorSource anchors,
-        Game.WorldObjects.WorldObjectService worldObjects,
-        Game.WorldObjects.WorldAssetCatalog assets,
+        ISceneWorkflow scenes,
+        IPlacementAnchorSource anchors,
+        IWorldObjectService worldObjects,
+        IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
-        Game.Appearance.ModelCatalogLoader modelLoader,
+        IModelCatalogLoader modelLoader,
         global::Poser.Application.Appearance.ActorModelIdSession model,
         ScenePane scenePane,
         AppearancePane appearancePane,
@@ -470,32 +470,6 @@ public sealed class SpawnBrowserWindow : Window
             CaptureWorldLight(chosen.Item);
         if (_assetPicker.Draw() is { } asset)
             SpawnWorldAsset(asset.Item.Path);
-    }
-
-    /// <summary>The whole-game catalog: every spawnable path of the given
-    /// list, searched by the file's own name.</summary>
-    private void OpenAssetPicker(
-        string owner,
-        System.Collections.Generic.IReadOnlyList<
-            Game.WorldObjects.WorldAsset> list)
-    {
-        _assetPicker.Open(
-            owner,
-            list,
-            static asset => asset.Label,
-            static asset => asset.Path,
-            string.Empty,
-            loadError: list.Count == 0
-                ? "The path catalog could not be read."
-                : null,
-            options: new PickerOptions<Game.WorldObjects.WorldAsset>
-            {
-                Glyph = static asset => asset.Path.EndsWith(
-                    ".avfx", StringComparison.OrdinalIgnoreCase)
-                    ? TablerIcon.Fire
-                    : TablerIcon.Square,
-                Badge = static asset => asset.Context,
-            });
     }
 
     /// <summary>Spawns one catalog path at the configured placement — the
@@ -802,13 +776,13 @@ public sealed class SpawnBrowserWindow : Window
     private int _actorEntryCount;
 
     private readonly global::Poser.Library.IPoseLibraryService _library;
-    private readonly Game.Scene.SceneWorkflow _scenes;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
-    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
-    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+    private readonly ISceneWorkflow _scenes;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly IWorldObjectService _worldObjects;
+    private readonly IWorldAssetCatalog _assets;
     private readonly global::Poser.Application.Appearance.ModelCatalog
         _modelCatalog;
-    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
+    private readonly IModelCatalogLoader _modelLoader;
     private readonly global::Poser.Application.Appearance.ActorModelIdSession
         _model;
 
@@ -835,7 +809,7 @@ public sealed class SpawnBrowserWindow : Window
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
-    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+    private readonly Crystarium.SearchPicker<WorldAsset>
         _assetPicker = new("spawn-world-asset");
 
     /// <summary>Every SAVED library entry the row list carries after the
@@ -865,7 +839,7 @@ public sealed class SpawnBrowserWindow : Window
                 // centre-relative position re-attaches inside the load.
                 var overlayLoad = _scenes.BeginLoad(
                     saved.Path,
-                    new Game.Scene.SceneLoadOptions
+                    new SceneLoadOptions
                     {
                         IncludeActors = false,
                         IncludeProps = false,
@@ -882,11 +856,11 @@ public sealed class SpawnBrowserWindow : Window
         // The configured default rules here — the portal has no
         // placement dropdown of its own.
         var mode = _configuration.Config.DefaultSpawnPlacement;
-        var options = new Game.Scene.SceneLoadOptions();
+        var options = new SceneLoadOptions();
         if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
             && _anchors.TryCurrentFor(
                 mode, out var anchorPosition, out var anchorYaw, out _))
-            options = new Game.Scene.SceneLoadOptions
+            options = new SceneLoadOptions
             {
                 Placement = mode,
                 PlacementPosition = anchorPosition,
@@ -1175,7 +1149,7 @@ public sealed class SpawnBrowserWindow : Window
                     _ => OverlayNodeKind.Talk,
                 };
                 if (_lifecycle.SpawnOverlay(overlayKind)
-                    is Game.Overlays.OverlayNodeHandle staged)
+                    is IOverlayNode staged)
                 {
                     // The pane owns the pending select and is pumped by the
                     // main window every frame, so the selection lands however

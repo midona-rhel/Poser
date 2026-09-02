@@ -27,6 +27,10 @@ public record struct ContextMenuItem
     /// items so the row shows its new state.</summary>
     public bool KeepOpen;
 
+    /// <summary>A verb that breaks animation state: the row wears the
+    /// Disruptive colour the way a destructive row wears Danger.</summary>
+    public bool Disruptive;
+
     public ContextMenuItem(
         string label,
         TablerIcon icon = TablerIcon.Circle,
@@ -35,12 +39,14 @@ public record struct ContextMenuItem
         bool disabled = false,
         string? help = null,
         ContextMenuItem[]? submenuItems = null,
-        bool keepOpen = false)
+        bool keepOpen = false,
+        bool disruptive = false)
     {
         Label = label;
         Icon = icon;
         Shortcut = shortcut;
         Danger = danger;
+        Disruptive = disruptive;
         Disabled = disabled;
         Help = help;
         SubmenuItems = submenuItems;
@@ -108,8 +114,6 @@ public static partial class Crystarium
         private static int _submenuClicked = -1;
         private static int _submenuClickedParent = -1;
 
-        /// <summary>Debug trace of submenu placement, wired by the host.</summary>
-        public static Action<string>? Trace;
         private static double _phaseStart;
         private static int _lastOwnerFrame = -1;
         private static int _openedFrame = -1;
@@ -475,12 +479,6 @@ public static partial class Crystarium
                     hostBounds.Min + hostBounds.Size, shown.Min + shown.Size);
                 hostBounds = (unionMin, unionMax - unionMin);
             }
-            if (_submenuItems is { } tracedSubmenu && Trace != null && _submenuParent >= 0)
-                Trace(
-                    $"[Menu] parent={_submenuParent} '{_items?[_submenuParent].Label}' rows={tracedSubmenu.Length} "
-                    + $"submenuMin={_submenuMin} size={_submenuSize} predicted={hasPredictedSubmenu} "
-                    + $"host={hostBounds.Min}+{hostBounds.Size} display={ImGui.GetIO().DisplaySize} "
-                    + $"heightFor={HeightFor(tracedSubmenu, s)}");
             ImGui.SetNextWindowPos(hostBounds.Min);
             ImGui.SetNextWindowSize(hostBounds.Size);
             ImGui.SetNextWindowFocus();
@@ -594,7 +592,6 @@ public static partial class Crystarium
             bool openedSubmenu = false;
             if (ReferenceEquals(items, _items))
                 _submenuItems = null;
-            int hoveredRow = -1;
             for (int i = 0; i < items.Length; i++)
             {
                 if (i > 0)
@@ -632,12 +629,6 @@ public static partial class Crystarium
                     if (hit.Clicked && item.SubmenuItems is not { Length: > 0 })
                         clicked = i;
                     hovered = hit.Hovered;
-                    if (hovered && hoveredRow >= 0)
-                        Trace?.Invoke(
-                            $"[Menu] two rows hovered: {hoveredRow} and {i} "
-                            + $"mouse={ImGui.GetMousePos()} row={rowMin}..{rowMax}");
-                    if (hovered)
-                        hoveredRow = i;
                 }
 
                 bool keepAlive = false;
@@ -685,11 +676,17 @@ public static partial class Crystarium
                         ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                             item.Danger
                                 ? Crystarium.ActiveTheme.Chrome.DangerHover
-                                : Crystarium.ActiveTheme.Chrome.WeakOverlay)),
+                                : item.Disruptive
+                                    ? Crystarium.ActiveTheme.Chrome.DisruptiveHover
+                                    : Crystarium.ActiveTheme.Chrome.WeakOverlay)),
                         Crystarium.ActiveTheme.Radii.Control * s);
 
                 float rowAlpha = item.Disabled ? Crystarium.ActiveTheme.Chrome.DisabledOpacity : 1f;
-                var text = (item.Danger ? Crystarium.ActiveTheme.Chrome.Danger : Crystarium.ActiveTheme.Chrome.Text).Fade(rowAlpha);
+                var text = (item.Danger
+                    ? Crystarium.ActiveTheme.Chrome.Danger
+                    : item.Disruptive
+                        ? Crystarium.ActiveTheme.Chrome.Disruptive
+                        : Crystarium.ActiveTheme.Chrome.Text).Fade(rowAlpha);
                 // Raw tint: the canonical icon path applies the global
                 // ImGui alpha exactly once inside the SVG renderer.
                 var iconTint = text.Fade(hovered ? 1f : 0.8f);

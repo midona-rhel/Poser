@@ -24,8 +24,9 @@ public static partial class Crystarium
 
     public static bool Dropdown(
         string id, string[] items, int selected, Action<int> onChange,
-        ControlStyle style = default, bool disabled = false, string? help = null) =>
-        DropdownCore(id, items, selected, onChange, style, disabled, help, null, false);
+        ControlStyle style = default, bool disabled = false, string? help = null,
+        bool disruptive = false) =>
+        DropdownCore(id, items, selected, onChange, style, disabled, help, null, false, disruptive);
 
     public static bool ActionDropdown(
         string id, string[] items, int selected, string previewText, Action<int> onChange,
@@ -36,7 +37,7 @@ public static partial class Crystarium
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
-        string? previewText, bool reselectFires)
+        string? previewText, bool reselectFires, bool disruptive = false)
     {
         if (items.Length == 0) return false;
         string popupId = Ids.Join(id, "_popup");
@@ -66,6 +67,14 @@ public static partial class Crystarium
         var valueMax = trigger.ScreenMax;
 
         var boxPaint = PaintDropdownBox(trigger, disabled);
+        // A disruptive choice wears the purple outline, as a button does.
+        if (disruptive)
+            ImGui.GetWindowDrawList().AddRect(
+                valueMin + new Vector2(0.5f),
+                valueMax - new Vector2(0.5f),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    theme.Chrome.Disruptive.Fade(disabled ? theme.Chrome.DisabledOpacity : 1f))),
+                theme.Radii.Control * scale, ImDrawFlags.RoundCornersAll, 1.5f * scale);
         var labelColor = boxPaint.LabelColor;
         float chevronOpacity = boxPaint.ChevronOpacity;
 
@@ -131,11 +140,15 @@ public static partial class Crystarium
                 AnchorMin = valueMin,
                 AnchorMax = valueMax + new Vector2(
                     0f, popupMetrics.AnchorGapCompensation),
-                Treatment = FloatingSurfaceTreatment.Glass,
+                Treatment = FloatingSurfaceTreatment.Unframed,
             },
             () =>
             {
+                var popupMin = ImGui.GetWindowPos();
+                var popupMax = popupMin + ImGui.GetWindowSize();
                 var popupDrawList = ImGui.GetWindowDrawList();
+                PaintDropdownSurface(popupDrawList, popupMin, popupMax);
+
 
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
                 ScrollRegion(
@@ -159,7 +172,9 @@ public static partial class Crystarium
                             var hitSize = new Vector2(
                                 (scrolls ? region.ContentWidth : regionWidth) * scale,
                                 rowHeight);
-                            var fillSize = new Vector2(regionWidth * scale, rowHeight);
+                            // The highlight stops where the rows stop: a gutter
+                            // short of the scrollbar when there is one.
+                            var fillSize = hitSize;
 
                             ImGui.PushID(i);
                             var itemHit = Interactive.Reserve(
@@ -352,6 +367,36 @@ public static partial class Crystarium
             BorderLeftColor = triggerBorder,
         });
         return new DropdownTriggerPaint(labelColor, ChevronOpacity);
+    }
+
+    /// <summary>The open menu's own colour: the trigger's overlay flattened
+    /// over the page surface, so the menu is opaque by construction and
+    /// reads as the control opened taller.</summary>
+    private static Vector4 DropdownPopupFill(in Theme theme) =>
+        ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
+
+    /// <summary>The open panel itself: the trigger's own surface, radius
+    /// and border, with the panel shadows, drawn against the full display
+    /// so the shadows escape the popup window's clip. Restored to what it
+    /// was before the rewrite (2026-09-02).</summary>
+    private static void PaintDropdownSurface(
+        ImDrawListPtr drawList, Vector2 min, Vector2 max)
+    {
+        var theme = ActiveTheme;
+        var border = theme.Border;
+        drawList.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
+        BoxRenderer.Draw(drawList, min, max, new BoxStyle
+        {
+            BackgroundColor = DropdownPopupFill(theme),
+            BorderWidth = 1f,
+            BorderRadius = theme.Radii.Control,
+            BorderTopColor = border,
+            BorderRightColor = border,
+            BorderBottomColor = border,
+            BorderLeftColor = border,
+            BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
+        });
+        drawList.PopClipRect();
     }
 
     /// <summary>Paints one active or hovered option row.</summary>

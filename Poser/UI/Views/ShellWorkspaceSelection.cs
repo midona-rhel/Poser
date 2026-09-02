@@ -70,8 +70,6 @@ public sealed class ShellWorkspaceSelection : IDisposable
 
     public ShellWorkspace Workspace => _workspace;
 
-    public bool IsLibrary => _workspace == ShellWorkspace.Library;
-
     public bool IsScene => _workspace == ShellWorkspace.Scene;
 
     /// <summary>

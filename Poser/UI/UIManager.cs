@@ -6,8 +6,6 @@ using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Core;
-using Poser.Game;
-using Poser.Game.Transforms;
 using Poser.Services;
 using Poser.UI.Composition;
 using System;
@@ -21,8 +19,9 @@ public sealed class UIManager : IUIManager
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly CleanTransformFacade _cleanTransforms;
+    private readonly ITransformFacade _cleanTransforms;
     private readonly IKeyState _keyState;
+    private readonly global::PosingCore.Services.IKeyEvents _keyEvents;
     private readonly IEditorState _editorState;
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
@@ -34,12 +33,18 @@ public sealed class UIManager : IUIManager
     private readonly Keybind[] _keybinds;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
 
+    private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
+    private readonly Controls.IssueReportModal _issueReport;
+
     public UIManager(
+        global::Poser.Application.Diagnostics.ActionRecorder recorder,
+        Controls.IssueReportModal issueReport,
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
-        CleanTransformFacade cleanTransforms,
+        ITransformFacade cleanTransforms,
         IKeyState keyState,
+        global::PosingCore.Services.IKeyEvents keyEvents,
         IEditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
@@ -49,6 +54,8 @@ public sealed class UIManager : IUIManager
         AnimationSceneActions sceneActions,
         Dalamud.Plugin.Services.IPluginLog log)
     {
+        _recorder = recorder;
+        _issueReport = issueReport;
         _log = log;
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -64,6 +71,8 @@ public sealed class UIManager : IUIManager
         _sceneActions = sceneActions;
 
         _keybinds = BuildKeybinds();
+        _keyEvents = keyEvents;
+        _keyEvents.KeyEvent += OnKeyEvent;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
@@ -118,9 +127,22 @@ public sealed class UIManager : IUIManager
         try
         {
             Interactive.BeginFrame();
-            _windows.System.Draw();
+            try
+            {
+                _windows.System.Draw();
+            }
+            catch (Exception ex)
+            {
+                // Recorded for the issue report, then rethrown: Dalamud
+                // owns what happens to a frame that threw.
+                _recorder.Exception(ex);
+                throw;
+            }
             using (FrameProfiler.Scope("Shell · reference images"))
                 _windows.PumpReferenceImages();
+            // The report dialog is a popup, not a window: it draws from
+            // the frame so it opens from the burger and from Settings alike.
+            _issueReport.Draw();
             using (FrameProfiler.Scope("Shell · floating menus"))
                 Crystarium.FloatingMenu.EndFrame();
             using (FrameProfiler.Scope("Shell · hover help"))
@@ -144,10 +166,6 @@ public sealed class UIManager : IUIManager
         if (_configService.Config.UI.HideWhileMovingCamera
             && (_cameras.FlightActive || EmptySpaceDrag()))
             active = true;
-        if (active != Controls.ManipulationHide.Active)
-            _log.Debug(
-                $"[ManipulationHide] active={active} held={held} shell={shellHeld} "
-                + $"opacity={Controls.ManipulationHide.Opacity:0.00} frame={ImGui.GetFrameCount()}");
         Controls.ManipulationHide.Active = active;
         Controls.ManipulationHide.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
@@ -297,7 +315,10 @@ public sealed class UIManager : IUIManager
             || ImGui.GetIO().WantTextInput)
         {
             foreach (var bind in _keybinds)
+            {
                 bind.Down = false;
+                bind.Queued = false;
+            }
             return;
         }
 
@@ -305,6 +326,18 @@ public sealed class UIManager : IUIManager
         {
             var slots = PoserKeybinds.Slots(bind.Name);
             bind.Sync(slots);
+            if (_keyEvents.Available)
+            {
+                // The key hook decided and took the key from the game on
+                // its message; the bind runs here, on the draw frame, as
+                // every bind always has.
+                if (bind.Queued)
+                {
+                    bind.Queued = false;
+                    bind.Run();
+                }
+                continue;
+            }
 
             bool active = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
             if (active && !bind.Down)
@@ -327,6 +360,63 @@ public sealed class UIManager : IUIManager
                 bind.Down = false;
             }
         }
+    }
+
+    /// <summary>The game's key message, before its keybinds read it. A
+    /// chord Poser binds is taken whole: the press queues the bind and is
+    /// swallowed, the repeats are swallowed, and the release of a taken
+    /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
+    /// reset the game's camera while undoing (2026-09-03); clearing the
+    /// key state on the draw frame came too late for the game's dispatch.</summary>
+    private bool OnKeyEvent(VirtualKey key, global::PosingCore.Services.KeyEventKind kind)
+    {
+        if (Views.FirstRunNoticeView.Pending
+            || !_gPoseService.IsGPosing
+            || ImGui.GetIO().WantTextInput)
+            return false;
+        bool handled = false;
+        // Off, the bind still runs, and the game sees the key as well.
+        // Escape and Enter are never taken whatever the setting: they are
+        // how a user leaves GPose and a game dialog, and Deselect sits on
+        // Escape in every preset (Escape stopped leaving GPose, 2026-09-03).
+        bool keep = _configService.Config.Camera.KeepBoundKeysFromGame
+            && key != VirtualKey.ESCAPE && key != VirtualKey.RETURN;
+        foreach (var bind in _keybinds)
+        {
+            if (!ChordIs(bind.Primary, key) && !ChordIs(bind.Secondary, key))
+                continue;
+            switch (kind)
+            {
+                case global::PosingCore.Services.KeyEventKind.Down:
+                    if (!bind.Down)
+                    {
+                        bind.Down = true;
+                        bind.Queued = true;
+                    }
+                    handled = true;
+                    break;
+                case global::PosingCore.Services.KeyEventKind.Held:
+                    handled = true;
+                    break;
+                case global::PosingCore.Services.KeyEventKind.Released:
+                    if (bind.Down)
+                    {
+                        bind.Down = false;
+                        handled = true;
+                    }
+                    break;
+            }
+        }
+        return handled && keep;
+    }
+
+    private bool ChordIs(KeyChord chord, VirtualKey key)
+    {
+        if (!chord.IsBound || chord.Key != key)
+            return false;
+        return chord.Ctrl == _keyState[VirtualKey.CONTROL]
+            && chord.Shift == _keyState[VirtualKey.SHIFT]
+            && chord.Alt == _keyState[VirtualKey.MENU];
     }
 
     private bool ChordDown(KeyChord chord)
@@ -353,6 +443,9 @@ public sealed class UIManager : IUIManager
         private string _secondaryText = string.Empty;
 
         public bool Down { get; set; }
+
+        /// <summary>The hook took the press; the next draw frame runs it.</summary>
+        public bool Queued { get; set; }
 
         public void Sync(KeybindSlots slots)
         {
@@ -421,6 +514,7 @@ public sealed class UIManager : IUIManager
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _keyEvents.KeyEvent -= OnKeyEvent;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;

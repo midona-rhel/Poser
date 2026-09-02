@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Poser.Domain.Transforms;
+using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -9,15 +11,11 @@ using Poser.Application.Posing;
 using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Entities;
-using Poser.Game;
-using Poser.Game.Transforms;
-using Poser.Game.Posing;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Game.Bindings;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 using Poser.Files;
@@ -34,16 +32,17 @@ public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
-    private readonly Game.Posing.IkBakeCapture _ikBake;
-    private readonly CleanTransformFacade _cleanTransforms;
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly IIkBake _ikBake;
+    private readonly ITransformFacade _cleanTransforms;
+    private readonly IPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
+    private readonly Game.Journal.GazeSession _gazeValues;
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
-    private readonly StableBindingRegistry _bindings;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IEntityBindings _bindings;
+    private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
 
@@ -58,9 +57,6 @@ public class PoseInspectorPane
     // Swaps displayed X and Y rotation columns.
     public Func<bool>? GetSwapRotationXY;
 
-    public Func<IActor, string>? ActorDisplayNameProvider;
-
-    public Func<Domain.Scene.ActorDescriptor, string>? DescriptorDisplayName;
     private int _poseView = 2;
 
     private BoneMatrixViewModel? _matrixVm;
@@ -176,17 +172,18 @@ public class PoseInspectorPane
 
     public PoseInspectorPane(
         IBonePosingService bonePosingService,
-        CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        ITransformFacade cleanTransforms,
+        IPoseFacade cleanPose,
         IGazeService gazeService,
+        Game.Journal.GazeSession gazeValues,
         IEditorState editorState,
         SceneSession scene,
-        StableBindingRegistry bindings,
-        Game.Viewport.ViewportProjection viewport,
+        IEntityBindings bindings,
+        IViewportReads viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,
-        Game.Posing.IkBakeCapture ikBake,
+        IIkBake ikBake,
         IActorSpawnService spawnService,
         CameraPane cameraPane,
         OverlayPane overlayPane,
@@ -212,6 +209,7 @@ public class PoseInspectorPane
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
         _gazeService = gazeService;
+        _gazeValues = gazeValues;
         _editorState = editorState;
         _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
@@ -295,14 +293,11 @@ public class PoseInspectorPane
         return true;
     }
 
-    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
-        new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
-
     private Transform? ViewportBoneModel(BoneId id) =>
-        _viewport.GetBoneModelTransform(id) is { } value ? ToLegacy(value) : null;
+        _viewport.GetBoneModelTransform(id) is { } value ? Transform.FromPose(value) : null;
 
     private Transform? ViewportParentModel(BoneId id) =>
-        _viewport.GetParentModelTransform(id) is { } value ? ToLegacy(value) : null;
+        _viewport.GetParentModelTransform(id) is { } value ? Transform.FromPose(value) : null;
 
     private List<BoneId> SelectedBoneIds()
     {
@@ -339,10 +334,7 @@ public class PoseInspectorPane
         };
         if (lineage is not { } target)
             return null;
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.LogicalId == target)
-                return actor.GetSkeleton(slot);
-        return null;
+        return _scene.Snapshot.FindActor(target)?.GetSkeleton(slot);
     }
 
     // Bone selection stays within its slot skeleton.
@@ -434,23 +426,16 @@ public class PoseInspectorPane
         IBone bone => ($"{ActorDisplayName(bone.Skeleton.Actor)} · ", bone.Name),
         null => ("", ""),
         IActor actor => ("", ActorDisplayName(actor)),
-        { } e => ("", StripIndex(e.Name)),
+        { } e => ("", ActorNames.Clean(e.Name)),
     };
 
-    private static string StripIndex(string name)
-        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
+    private string ActorDisplayName(IActor actor) =>
+        _bindings.GetActorId(actor) is { } id
+            ? ActorNames.Display(id, actor.Name)
+            : ActorNames.Clean(actor.Name);
 
-    private string ActorDisplayName(IActor actor)
-        => ActorDisplayNameProvider?.Invoke(actor) ?? StripIndex(actor.Name);
-
-    private string ActorLabel(ActorId id)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.Equals(id))
-                return Config.ConfigurationService.Instance.GetDisplayName(
-                    id.LogicalId, StripIndex(actor.Name));
-        return "";
-    }
+    private string ActorLabel(ActorId id) =>
+        _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(actor) : "";
 
     // Rotation rings use the current presentation frame.
     /// <summary>The camera the rail ball edits; null off camera
@@ -541,7 +526,7 @@ public class PoseInspectorPane
         global::Poser.Application.Selection.EntitySelection
             .IsMultiEntity(_selection.Selected);
 
-    private global::Poser.Application.Transforms.TransformGestureId? _groupGesture;
+    private TransformGestureId? _groupGesture;
     private readonly int[] _multiHeadCounts = new int[5];
     private string _multiHeadWho = string.Empty;
     private string _multiHeadSub = string.Empty;
@@ -1717,7 +1702,7 @@ public class PoseInspectorPane
             else
             {
                 _gazeActorUnavailableNote = false;
-                Record(_gazeService.SetGazeMode(actor, selected switch
+                Record(_gazeValues.SetMode(actor, selected switch
                 {
                     0 => GazeTargetMode.None,
                     1 => GazeTargetMode.Forward,
@@ -1754,8 +1739,7 @@ public class PoseInspectorPane
             int current = -1;
             for (int i = 0; i < others.Count; i++)
             {
-                _gazeNames[i] = DescriptorDisplayName?.Invoke(others[i])
-                    ?? others[i].Name;
+                _gazeNames[i] = ActorNames.Display(others[i]);
                 if (targetAddress != 0
                     && _bindings.Resolve(others[i].Id) is
                         { Success: true, Value: { } resolved }
@@ -1772,7 +1756,7 @@ public class PoseInspectorPane
                 && _bindings.Resolve(others[next].Id) is
                     { Success: true, Value: { } live })
             {
-                Record(_gazeService.SetGazeTarget(actor, live));
+                Record(_gazeValues.SetTarget(actor, live));
                 state = _gazeService.GetGazeState(actor);
             }
         }
@@ -1854,7 +1838,7 @@ public class PoseInspectorPane
 
         void SetPart(GazeTargetType part, bool next)
         {
-            record(_gazeService.SetGazeParts(
+            record(_gazeValues.SetParts(
                 actor,
                 next
                     ? state.TargetType | part
@@ -1871,7 +1855,7 @@ public class PoseInspectorPane
             bool locked = _gazeService.IsPartLocked(actor, part);
             actions.IconButton(
                 locked ? TablerIcon.Lock : TablerIcon.LockOpen,
-                () => _gazeService.SetPartLock(actor, part, !locked),
+                () => _gazeValues.SetPartLock(actor, part, !locked),
                 disabled: !enabled,
                 help: locked
                     ? "Unfreeze this part so it follows the gaze target again"
@@ -1889,7 +1873,7 @@ public class PoseInspectorPane
                 TablerIcon.CameraSnap,
                 () =>
                 {
-                    _gazeService.SnapPartToCamera(actor, part);
+                    _gazeValues.SnapPartToCamera(actor, part);
                     state = _gazeService.GetGazeState(actor);
                 },
                 disabled: !enabled,
@@ -1942,10 +1926,10 @@ public class PoseInspectorPane
                 PartPoint(part),
                 next =>
                 {
-                    _gazeService.SetPartPosition(actor, part, next);
+                    _gazeValues.SetPartPosition(actor, part, next);
                     state = _gazeService.GetGazeState(actor);
                 },
-                null,
+                _gazeValues.Seal,
                 0.005f,
                 "0.000",
                 help: "The world point this part looks at",
@@ -2122,7 +2106,7 @@ public class PoseInspectorPane
         names[0] = "Any actor";
         for (int i = 0; i < actors.Count; i++)
         {
-            names[i + 1] = DescriptorDisplayName?.Invoke(actors[i]) ?? actors[i].Id.ToString();
+            names[i + 1] = ActorNames.Display(actors[i]);
             if (actors[i].Id == shownActor)
                 actorIndex = i;
         }
@@ -2738,7 +2722,7 @@ public class PoseInspectorPane
 
     /// <summary>The rail pad's overlay node — the camera ball's idiom.
     /// </summary>
-    public Game.Overlays.OverlayNodeHandle? RailOverlayNode() =>
+    public IOverlayNode? RailOverlayNode() =>
         _overlayPane.RailNode;
 
     public bool IsActorSelection =>
@@ -2799,21 +2783,6 @@ public class PoseInspectorPane
         }
     }
 
-    public void FlipWholePose()
-    {
-        if (IsActorSelection)
-        {
-            foreach (var actorId in SelectedActorIds())
-            {
-                if (_bindings.Resolve(actorId) is { Success: true } actor)
-                    _cleanPose.Mirror(actor.Value!);
-            }
-            return;
-        }
-        var skeleton = OwningSkeleton();
-        if (skeleton != null) _cleanPose.Mirror(skeleton.Actor);
-    }
-
 
     private (Transform, bool) ReadTransform()
     {
@@ -2825,7 +2794,7 @@ public class PoseInspectorPane
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
                 // Model overrides stabilize actor transforms during animation.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
-                    ? (ToLegacy(actorValue), true)
+                    ? (Transform.FromPose(actorValue), true)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
                 // Bones use model-space transform values.
@@ -2835,12 +2804,12 @@ public class PoseInspectorPane
             case { Kind: TransformTargetKind.Light, Light: { } lightId }:
                 // Attached lights are read-only.
                 return _viewport.GetLightTransform(lightId) is { } lightValue
-                    ? (ToLegacy(lightValue),
+                    ? (Transform.FromPose(lightValue),
                         _bindings.Resolve(lightId).Value?.AttachedBone == null)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Prop, Prop: { } propId }:
                 return _viewport.GetPropTransform(propId) is { } propValue
-                    ? (ToLegacy(propValue), true)
+                    ? (Transform.FromPose(propValue), true)
                     : (Transform.Identity, false);
             case
             {
@@ -2849,7 +2818,7 @@ public class PoseInspectorPane
             }:
                 return _viewport.GetWorldObjectTransform(worldObjectId)
                     is { } worldObjectValue
-                    ? (ToLegacy(worldObjectValue), true)
+                    ? (Transform.FromPose(worldObjectValue), true)
                     : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);

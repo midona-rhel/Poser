@@ -419,6 +419,13 @@ Narrow-form designs are parked for a future effort.)
   reads as broken. Width honesty sizes the cell; the control takes it.
 - A destructive whole-set verb is ALWAYS the danger color, armed or
   not — red is the warning, arming is the guard.
+- A verb that breaks animation state — Redraw, a character file
+  import or reset, an appearance apply that redraws (design,
+  collection, body profile, model id, clothing only) — is ALWAYS the
+  DISRUPTIVE color: dark purple, `Chrome.Disruptive`, one token, beside
+  Danger red. It warns that the pose survives only as a snapshot; it
+  never arms. `ButtonVariant.Disruptive`, `Selector(disruptive: true)`,
+  `ContextMenuItem(disruptive: true)`.
 - Before placing ANY row in the inspector, prove it fits: the
   inspector is 280 logical wide; minus the page insets (12 + 12) and
   the label column (90) the control cell is ~166 at 100% scale.
@@ -599,6 +606,9 @@ navigation, not a scrollbar — may shift anything.
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
   well, and matrix cell.
+- Ctrl-click on a wardrobe tile — an item's icon, a dye box, the
+  facewear — REMOVES what it wears (ruled 2026-09-02); the tiles carry
+  no remove verbs.
 
 - A destructive whole-set verb (Destroy all) requires an armed
   confirmation — the first press arms ("Confirm destroy all"), the
@@ -758,6 +768,15 @@ is clicked. Single picks take the first click; multi picks keep going
 on Ctrl-click. Escape, right-click or a click on nothing ends it, and
 nothing is selected by a pick. Every SearchPicker focuses its search
 field the frame it opens.
+
+## Modals
+
+A modal is as tall as its body. `Crystarium.Modal` measures the body
+every frame and applies the height the next, drawing a never-measured
+modal's first frame off screen so the user only sees the final size.
+Do not pass a `height` to make a dialog fit; a stated height is for a
+body that scrolls by design (a long list). A body that clips its own
+text is a defect of the caller's height, never of the text.
 
 ## Tooltips
 

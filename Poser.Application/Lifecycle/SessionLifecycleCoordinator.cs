@@ -1,4 +1,4 @@
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 
 namespace Poser.Application.Lifecycle;
 

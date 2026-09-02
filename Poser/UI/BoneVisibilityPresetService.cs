@@ -34,6 +34,29 @@ public sealed class BoneVisibilityPresetService
         _presentation = presentation;
         _config = config;
         _save = save;
+        SeedDefaults();
+    }
+
+    /// <summary>The stock filters, written once per stock version: a
+    /// stock name is replaced with the current list, every other name is
+    /// the user's and is left alone.</summary>
+    private void SeedDefaults()
+    {
+        var skeleton = _config().Skeleton;
+        if (skeleton.DefaultBonePresetsVersion >= DefaultBonePresets.Version)
+            return;
+        var store = skeleton.BoneVisibilityPresets;
+        foreach (var stock in DefaultBonePresets.Build())
+        {
+            int at = store.FindIndex(preset =>
+                string.Equals(preset.Name, stock.Name, StringComparison.OrdinalIgnoreCase));
+            if (at >= 0)
+                store[at] = stock;
+            else
+                store.Add(stock);
+        }
+        skeleton.DefaultBonePresetsVersion = DefaultBonePresets.Version;
+        _save();
     }
 
     private List<BoneVisibilityPreset> Store =>

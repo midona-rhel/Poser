@@ -17,6 +17,9 @@ public enum ButtonVariant
     Secondary,
     Primary,
     Danger,
+    /// <summary>A verb that breaks animation state. Painted like Danger from
+    /// the theme's one Disruptive token.</summary>
+    Disruptive,
 }
 
 public static partial class Crystarium
@@ -69,7 +72,8 @@ public static partial class Crystarium
         string? id = null,
         bool flipX = false,
         float iconSize = 16f,
-        float strokeWidth = 1.5f)
+        float strokeWidth = 1.5f,
+        bool disruptive = false)
     {
         var size = IconButtonSize(style);
         return RenderIconButton(
@@ -81,7 +85,8 @@ public static partial class Crystarium
             (min, max, opacity, background) => DrawButtonIcon(
                 min, max, icon, iconSize, opacity, background, flipX,
                 strokeWidth, filled: style.Selected),
-            onClick);
+            onClick,
+            disruptive);
     }
 
     /// <summary>The registry-NAME form, for the glyphs the enum does not carry
@@ -316,6 +321,12 @@ public static partial class Crystarium
                 DangerBorder,
                 DangerBorder,
                 DangerText),
+            ButtonVariant.Disruptive => (
+                theme.Chrome.Disruptive with { W = 0.08f },
+                theme.Chrome.Disruptive with { W = 0.15f },
+                theme.Chrome.Disruptive with { W = 0.35f },
+                theme.Chrome.Disruptive with { W = 0.35f },
+                theme.Chrome.Disruptive),
             _ => (
                 theme.Chrome.ControlFill,
                 theme.Chrome.ControlHover,
@@ -429,7 +440,8 @@ public static partial class Crystarium
         bool disabled,
         string? help,
         Action<Vector2, Vector2, float, Vector4> content,
-        Action? onClick)
+        Action? onClick,
+        bool disruptive = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var size = logicalSize * scale;
@@ -490,6 +502,14 @@ public static partial class Crystarium
                 radius);
 
             content(hit.ScreenMin, hit.ScreenMax, opacity, background);
+            // A disruptive verb wears the purple outline, as a button does.
+            if (disruptive)
+                draw.AddRect(
+                    hit.ScreenMin + new Vector2(0.5f),
+                    hit.ScreenMax - new Vector2(0.5f),
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                        theme.Chrome.Disruptive.Fade(disabled ? theme.Chrome.DisabledOpacity : 1f))),
+                    radius, ImDrawFlags.RoundCornersAll, 1.5f * scale);
         }
         finally
         {

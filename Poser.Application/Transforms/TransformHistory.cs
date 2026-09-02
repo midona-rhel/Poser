@@ -1,10 +1,17 @@
+using Poser.Domain.Transforms;
+
 namespace Poser.Application.Transforms;
 
 /// <summary>
 /// One undoable action. Transform entries restore captured state; lifecycle
 /// entries run the inverse action through the service that owns the entity.
 /// </summary>
-public abstract record HistoryEntry(string Description);
+public abstract record HistoryEntry(string Description)
+{
+    /// <summary>The keys and snapshots the step was recorded under; null
+    /// for an entry that never invalidates.</summary>
+    public StepContext? Context { get; init; }
+}
 
 public sealed record TransformPatch(
     string Description,
@@ -28,7 +35,7 @@ public sealed class TransformHistory
 {
     /// <summary>The depth used when no setting is supplied (tests, and the
     /// parameterless construction the DI default would use).</summary>
-    public const int DefaultCapacity = 200;
+    public const int DefaultCapacity = 500;
 
     private static readonly Func<int> FixedDefault = static () => DefaultCapacity;
 
@@ -53,6 +60,10 @@ public sealed class TransformHistory
     public bool CanRedo => _redo.Count > 0;
     public string? UndoDescription => CanUndo ? _undo[^1].Description : null;
     public string? RedoDescription => CanRedo ? _redo[^1].Description : null;
+
+    /// <summary>The entry just appended, for observers that read it — the
+    /// action recorder. Observers cannot roll the append back.</summary>
+    public event Action<HistoryEntry>? Appended;
 
     public void Append(HistoryEntry patch)
     {
@@ -81,6 +92,16 @@ public sealed class TransformHistory
                 catch
                 {
                     // Observers have no transaction authority or result channel.
+                }
+        if (Appended is { } readers)
+            foreach (Action<HistoryEntry> reader in readers.GetInvocationList())
+                try
+                {
+                    reader(patch);
+                }
+                catch
+                {
+                    // Same rule: a reader cannot fail the append.
                 }
     }
 
@@ -121,14 +142,82 @@ public sealed class TransformHistory
     /// entry whose light has been undone away is precisely the entry that
     /// must survive to be redone.</para>
     /// </summary>
-    public void Reconcile(Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent)
+    /// <summary>
+    /// Drops what can never come back. A transform patch with a stale target
+    /// survives only while it carries snapshots and every actor it keyed
+    /// still exists — a new generation is an invalidation, not a loss. Any
+    /// keyed entry goes when one of its actors is gone for good.
+    /// </summary>
+    public void Reconcile(
+        Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
+        Func<Guid, bool> lineagePresent,
+        Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
     {
-        bool Stale(HistoryEntry entry) =>
-            entry is TransformPatch patch &&
-            (patch.Before.Any(state => !isCurrent(state.Target)) ||
-                patch.After.Any(state => !isCurrent(state.Target)));
+        bool ActorsGone(HistoryEntry entry) =>
+            entry.Context is { } context &&
+            context.Keys.Any(key => !lineagePresent(key.Lineage));
+        // A patch whose targets went stale is first RE-KEYED: a bone edit
+        // survives the actor's redraw by naming the same bone on the new
+        // body, as Brio's whole-pose snapshot does (ruled 2026-09-03). Only
+        // a patch that cannot be re-keyed is dropped.
+        void Rekey(List<HistoryEntry> stack)
+        {
+            if (rekey is null)
+                return;
+            for (int i = 0; i < stack.Count; i++)
+            {
+                if (stack[i] is not TransformPatch patch)
+                    continue;
+                if (patch.Before.All(state => isCurrent(state.Target))
+                    && patch.After.All(state => isCurrent(state.Target)))
+                    continue;
+                var before = Remap(patch.Before);
+                var after = before is null ? null : Remap(patch.After);
+                if (before is not null && after is not null)
+                    stack[i] = patch with { Before = before, After = after };
+            }
+            List<TransformTargetState>? Remap(IReadOnlyList<TransformTargetState> states)
+            {
+                var mapped = new List<TransformTargetState>(states.Count);
+                foreach (var state in states)
+                {
+                    if (isCurrent(state.Target))
+                    {
+                        mapped.Add(state);
+                        continue;
+                    }
+                    if (rekey(state.Target) is not { } current)
+                        return null;
+                    mapped.Add(state with { Target = current });
+                }
+                return mapped;
+            }
+        }
+        bool Stale(HistoryEntry entry)
+        {
+            if (ActorsGone(entry))
+                return true;
+            if (entry is not TransformPatch patch)
+                return false;
+            bool staleTarget =
+                patch.Before.Any(state => !isCurrent(state.Target)) ||
+                patch.After.Any(state => !isCurrent(state.Target));
+            if (!staleTarget)
+                return false;
+            return patch.Context is not { Before.Count: > 0 };
+        }
+        Rekey(_undo);
+        Rekey(_redo);
         _undo.RemoveAll(entry => Stale(entry));
         _redo.RemoveAll(entry => Stale(entry));
+    }
+
+    /// <summary>Forgets one entry wherever it sits, without an event: the
+    /// journal's answer to a restore that outlived its place.</summary>
+    public void Drop(HistoryEntry entry)
+    {
+        _undo.Remove(entry);
+        _redo.Remove(entry);
     }
 
     /// <summary>

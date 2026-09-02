@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Poser.Domain.Transforms;
+using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -12,14 +14,12 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
-using Poser.Game.Transforms;
 using Poser.Services;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
-using GestureId = Poser.Application.Transforms.TransformGestureId;
+using GestureId = Poser.Domain.Transforms.TransformGestureId;
 
 namespace Poser.UI;
 
@@ -37,17 +37,17 @@ namespace Poser.UI;
 public sealed class LightPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly ILightingService _lighting;
 
     /// <summary>Adding and removing a light goes through the lifecycle seam,
     /// so both land in the shell's undo history.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
-    private readonly CleanTransformFacade _cleanTransforms;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly ITransformFacade _cleanTransforms;
+    private readonly IViewportReads _viewport;
     private readonly ICameraService _camera;
     private readonly ITextureProvider _textures;
 
@@ -99,12 +99,12 @@ public sealed class LightPane
         new("Save Light", new[] { ".xivl" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
         new("Load Light", new[] { ".xivl" });
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder =
+        new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
     // An imported light is only selectable once the scene refresh has bound
     // it, exactly like a spawned one.
-    private ILight? _pendingSelect;
+    private readonly global::Poser.UI.Composition.PendingSelection<ILight> _pendingSelect = new();
 
     /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
     /// the log track, so the tiers read before dragging.</summary>
@@ -118,23 +118,26 @@ public sealed class LightPane
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     private readonly ScenePane _scenePane;
+    private readonly Game.Journal.LightSession _values;
 
     public LightPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         ILightingService lighting,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
-        Game.Scene.PlacementAnchorSource anchors,
-        CleanTransformFacade cleanTransforms,
-        Game.Viewport.ViewportProjection viewport,
+        IPlacementAnchorSource anchors,
+        ITransformFacade cleanTransforms,
+        IViewportReads viewport,
         ICameraService camera,
         ITextureProvider textures,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
-        ScenePane scenePane)
+        ScenePane scenePane,
+        Game.Journal.LightSession values)
     {
+        _values = values;
         _names = names;
         _notices = notices;
         _scene = scene;
@@ -174,12 +177,11 @@ public sealed class LightPane
         _loadBrowser.Draw();
         DrawPickers();
 
-        if (_pendingSelect is { } imported &&
-            _bindings.GetLightId(imported) is { } lightId)
-        {
-            _scene.Selection.Select(SelectionId.ForLight(lightId));
-            _pendingSelect = null;
-        }
+        _pendingSelect.Reconcile(
+            imported => _bindings.GetLightId(imported) is { } id
+                ? SelectionId.ForLight(id)
+                : null,
+            _scene.Selection);
     }
 
     /// <summary>The placement band's labels, positional against
@@ -224,9 +226,8 @@ public sealed class LightPane
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
     {
-        _loadBrowser.Open(_lastPath, path =>
+        _folder.Open(_loadBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // The file service owns the spawn, so the add is RECORDED rather
             // than issued here: a light that arrives from a file is still a
             // light the user added, and undo has to know it.
@@ -239,7 +240,7 @@ public sealed class LightPane
                     refusal ?? "Load: the light file could not be read.");
                 return;
             }
-            _pendingSelect = imported;
+            _pendingSelect.Arm(imported);
         });
     }
 
@@ -313,12 +314,12 @@ public sealed class LightPane
             cells.Cell(
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
-                    value => light.IsOn = value),
+                    value => _values.SetIsOn(light, value)),
                 help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
-                    value => light.HasReflection = value),
+                    value => _values.SetHasReflection(light, value)),
                 help: "Let this light appear in reflective surfaces");
         });
         form.Cells(cells =>
@@ -326,13 +327,13 @@ public sealed class LightPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##light-name", light.Name,
-                    value => light.Name = value),
+                    value => _values.SetName(light, value)),
                 help: "The name this light carries in the sidebar");
             cells.Cell(
                 "Type",
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
-                    selected => light.Kind = (LightKind)selected),
+                    selected => _values.SetKind(light, (LightKind)selected)),
                 help: "Sun, bulb, cone, or panel");
         });
     }
@@ -342,7 +343,7 @@ public sealed class LightPane
         form.ColorWells("Color", wells =>
         {
             wells.Well("Color", ToDisplayColor(light.Color),
-                value => light.Color = ToRawColor(value),
+                value => _values.SetColor(light, ToRawColor(value)),
                 hdr: true);
         }, help: "HDR color; reaches past white");
 
@@ -355,16 +356,16 @@ public sealed class LightPane
             cells.Cell(
                 "Intensity",
                 cell => cell.Slider("##light-intensity", light.Intensity,
-                    0f, 100f, value => light.Intensity = value,
+                    0f, 100f, value => _values.SetIntensity(light, value),
                     scale: SliderScale.Log,
                     marks: IntensityMarks,
-                    logCurvature: 9999f),
+                    logCurvature: 9999f, onBegin: _values.Seal),
                 help: "How much light is emitted");
             cells.Cell(
                 "Range",
                 cell => cell.Slider("##light-range", light.Range, 0f, 999f,
-                    value => light.Range = value,
-                    scale: SliderScale.Log),
+                    value => _values.SetRange(light, value),
+                    scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "How far the light reaches");
         });
         form.Cells(cells =>
@@ -373,13 +374,13 @@ public sealed class LightPane
                 "Falloff type",
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
-                    selected => light.FalloffType = (LightFalloffType)selected),
+                    selected => _values.SetFalloffType(light, (LightFalloffType)selected)),
                 help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
-                    0f, 1000f, value => light.Falloff = value,
-                    scale: SliderScale.Log, logCurvature: 9999f),
+                    0f, 1000f, value => _values.SetFalloff(light, value),
+                    scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "Dimming toward the cone edge");
         });
 
@@ -391,13 +392,13 @@ public sealed class LightPane
                     cells.Cell(
                         "Cone angle",
                         cell => cell.Slider("##light-cone", light.SpotAngle,
-                            0f, 180f, value => light.SpotAngle = value),
+                            0f, 180f, value => _values.SetSpotAngle(light, value), onBegin: _values.Seal),
                         help: "How wide the cone opens, in degrees");
                     cells.Cell(
                         "Falloff angle",
                         cell => cell.Slider("##light-cone-falloff",
                             light.FalloffAngle, 0f, 180f,
-                            value => light.FalloffAngle = value),
+                            value => _values.SetFalloffAngle(light, value), onBegin: _values.Seal),
                         help: "How soft the cone's edge is, in degrees");
                 });
                 break;
@@ -409,20 +410,20 @@ public sealed class LightPane
                         "Angle X",
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
-                            value => light.AreaAngle =
-                                light.AreaAngle with { X = value }),
+                            value => _values.SetAreaAngle(
+                                light, light.AreaAngle with { X = value }), onBegin: _values.Seal),
                         help: "Skew horizontally, degrees");
                     cells.Cell(
                         "Angle Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
-                            value => light.AreaAngle =
-                                light.AreaAngle with { Y = value }),
+                            value => _values.SetAreaAngle(
+                                light, light.AreaAngle with { Y = value }), onBegin: _values.Seal),
                         help: "Skew vertically, degrees");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => light.FalloffAngle = value,
-                    help: "How soft the panel's edge is, in degrees");
+                    value => _values.SetFalloffAngle(light, value),
+                    help: "How soft the panel's edge is, in degrees", onBegin: _values.Seal);
                 break;
         }
 
@@ -447,7 +448,7 @@ public sealed class LightPane
                 cell => cell.Button("##light-gobo-clear", "Clear",
                     () =>
                     {
-                        _lighting.ClearGobo(light);
+                        _values.ClearGobo(light);
                     },
                     disabled: light.GoboPath is null),
                 help: "Project no mask at all");
@@ -485,7 +486,7 @@ public sealed class LightPane
         if (light == null || gobos.Count == 0)
             return;
         int clamped = (int)Math.Min(index, (uint)(gobos.Count - 1));
-        if (!_lighting.ApplyGobo(light, gobos[clamped]))
+        if (!_values.ApplyGobo(light, gobos[clamped]))
             _notices.Failed("Gobo: the texture could not be applied.");
     }
 
@@ -539,40 +540,40 @@ public sealed class LightPane
                 "Dynamic",
                 cell => cell.Switch("##light-shadow-dynamic",
                     light.CastsDynamicShadows,
-                    value => light.CastsDynamicShadows = value),
+                    value => _values.SetCastsDynamicShadows(light, value)),
                 help: "Cast shadows that update as the scene moves");
             cells.Cell(
                 "Characters",
                 cell => cell.Switch("##light-shadow-chara",
                     light.CastsCharacterShadow,
-                    value => light.CastsCharacterShadow = value),
+                    value => _values.SetCastsCharacterShadow(light, value)),
                 help: "Let characters cast shadows from this light");
             cells.Cell(
                 "Objects",
                 cell => cell.Switch("##light-shadow-object",
                     light.CastsObjectShadow,
-                    value => light.CastsObjectShadow = value),
+                    value => _values.SetCastsObjectShadow(light, value)),
                 help: "Let scenery cast shadows from this light");
         });
         form.Slider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => light.CharacterShadowRange = value,
+            0f, 1000f, value => _values.SetCharacterShadowRange(light, value),
             help: "How far character shadows are still drawn",
-            scale: SliderScale.Log);
+            scale: SliderScale.Log, onBegin: _values.Seal);
         form.Cells(cells =>
         {
             cells.Cell(
                 "Shadow near",
                 cell => cell.Slider("##light-shadow-near",
                     light.ShadowPlaneNear, 0f, 10f,
-                    value => light.ShadowPlaneNear = value,
-                    scale: SliderScale.Log),
+                    value => _values.SetShadowPlaneNear(light, value),
+                    scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "The closest distance shadows begin at");
             cells.Cell(
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
                     light.ShadowPlaneFar, 0f, 1000f,
-                    value => light.ShadowPlaneFar = value,
-                    scale: SliderScale.Log, logCurvature: 9999f),
+                    value => _values.SetShadowPlaneFar(light, value),
+                    scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "The furthest distance shadows reach");
         });
     }
@@ -593,7 +594,7 @@ public sealed class LightPane
                     "Detach",
                     () =>
                     {
-                        light.AttachedBone = null;
+                        _values.SetAttachedBone(light, null);
                         _attachLabel = null;
                     },
                     disabled: attached is null,
@@ -627,7 +628,7 @@ public sealed class LightPane
                     if (!descriptor.Id.Equals(boneId))
                         continue;
                     string label =
-                        $"{ActorName(actor)} · {descriptor.DisplayName}";
+                        $"{ActorNames.Display(actor)} · {descriptor.DisplayName}";
                     _attachLabel = (boneId, revision, label);
                     return label;
                 }
@@ -641,7 +642,7 @@ public sealed class LightPane
         _boneChoices.Clear();
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string actorName = ActorName(actor);
+            string actorName = ActorNames.Display(actor);
             foreach (var skeleton in actor.Skeletons)
             {
                 foreach (var descriptor in skeleton.Bones)
@@ -680,15 +681,9 @@ public sealed class LightPane
             _notices.Failed($"Attach: {resolved.Detail}");
             return;
         }
-        light.AttachedBone = bone;
+        _values.SetAttachedBone(light, bone);
         _attachLabel = null;
     }
-
-    /// <summary>Nickname / anonymous-mask aware, like every other surface.
-    /// </summary>
-    private static string ActorName(ActorDescriptor actor) =>
-        ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, actor.Name);
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
@@ -718,9 +713,8 @@ public sealed class LightPane
     /// </summary>
     public void OpenSave(ILight light)
     {
-        _saveBrowser.Open(_lastPath, path =>
+        _folder.Open(_saveBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // The light is frozen at dialog open and can be destroyed while
             // the dialog is up; an invalid handle reads as spawn defaults.
             if (!light.IsValid)
@@ -880,11 +874,4 @@ public sealed class LightPane
 
     // ── transform presentation adapter ──────────────────────────────────
 
-    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
-        new()
-        {
-            Position = value.Position,
-            Rotation = value.Rotation,
-            Scale = value.Scale,
-        };
 }

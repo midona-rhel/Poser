@@ -500,6 +500,12 @@ public class Skeleton : EntityBase, ISkeleton
 
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
+        if (caches == BoneCacheTypes.LastTransform)
+        {
+            RefreshWantedTransforms(gameSkeleton);
+            return;
+        }
+
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -530,6 +536,75 @@ public class Skeleton : EntityBase, ISkeleton
                     bone.LastTransform = transform;
             }
         }
+    }
+
+
+    /// <summary>The draw-phase refresh: the display snapshot of the bones
+    /// someone read within two frames — the finalize hook's own contract —
+    /// walking the registered bones rather than every native index through
+    /// a tuple-keyed lookup. Traced at 0.46 ms a call on one actor before
+    /// (2026-09-02); an overlay shows dozens of bones of hundreds.</summary>
+    private unsafe void RefreshWantedTransforms(GameSkeleton* gameSkeleton)
+    {
+        var partialCount = gameSkeleton->PartialSkeletonCount;
+        hkaPose*[]? poses = null;
+            foreach (var pair in _bonesByIndex)
+            {
+                var bone = pair.Value;
+                if (!bone.TransformWanted)
+                    continue;
+                var (partialIdx, boneIdx) = pair.Key;
+                if (partialIdx < 0 || partialIdx >= partialCount)
+                    continue;
+                poses ??= new hkaPose*[partialCount];
+                var pose = poses[partialIdx];
+                if (pose == null)
+                {
+                    pose = gameSkeleton->PartialSkeletons[partialIdx].GetHavokPose(0);
+                    if (pose == null)
+                        continue;
+                    poses[partialIdx] = pose;
+                }
+                if (boneIdx < 0 || boneIdx >= pose->Skeleton->Bones.Length)
+                    continue;
+                var wantedPtr = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                if (wantedPtr == null)
+                    continue;
+                ref var wanted = ref *wantedPtr;
+                bone.LastTransform = new Transform
+                {
+                    Position = new Vector3(wanted.Translation.X, wanted.Translation.Y, wanted.Translation.Z),
+                    Rotation = new Quaternion(wanted.Rotation.X, wanted.Rotation.Y, wanted.Rotation.Z, wanted.Rotation.W),
+                    Scale = new Vector3(wanted.Scale.X, wanted.Scale.Y, wanted.Scale.Z)
+                };
+            }
+    }
+
+    /// <summary>What a draw surface needs each frame, off ONE resolve of the
+    /// slot's native base: the wanted bones' snapshots refreshed and the
+    /// model matrix. Resolving the base twice a frame per skeleton was a
+    /// third of the overlay's cost (traced 2026-09-03).</summary>
+    /// <summary>Ticks spent resolving the slot's native base in the draw
+    /// refresh, and the calls, for the bridge's profile: the sampler
+    /// charged the resolver a fifth of a millisecond a frame that its
+    /// few pointer reads cannot cost.</summary>
+    public static long ResolveTicks;
+    public static long ResolveCalls;
+
+    public unsafe Matrix4x4? RefreshForDraw()
+    {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
+            _resolveCharacterBase(Actor);
+        ResolveTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+        ResolveCalls++;
+        if (charaBase == null)
+            return null;
+        CharacterBaseAddress = (nint)charaBase;
+        var gameSkeleton = charaBase->Skeleton;
+        if (gameSkeleton != null)
+            RefreshWantedTransforms(gameSkeleton);
+        return ModelMatrixOf(charaBase);
     }
 
     /// <summary>
@@ -637,6 +712,11 @@ public class Skeleton : EntityBase, ISkeleton
         // moves with the hand, not with the actor origin.
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
             _resolveCharacterBase(Actor);
+        return ModelMatrixOf(charaBase);
+    }
+
+    private unsafe Matrix4x4 ModelMatrixOf(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
+    {
         if (charaBase == null)
             return Matrix4x4.Identity;
 

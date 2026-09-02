@@ -1,11 +1,11 @@
 using System;
+using Poser.Game;
+using Poser.Game.Scene;
+using Poser.Services;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Game;
-using Poser.Game.Bindings;
-using Poser.Game.Scene;
 
 namespace Poser.UI;
 
@@ -21,7 +21,7 @@ namespace Poser.UI;
 public sealed class PropsPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly StainCatalog _stains;
 
     /// <summary>The dye sheet's picker; the owner string carries which of
@@ -30,33 +30,36 @@ public sealed class PropsPane
         new("prop-dye");
 
     private string _status = string.Empty;
-    private PropHandle? _animDraftFor;
+    private IPropHandle? _animDraftFor;
     private float _animDraft;
 
     /// <summary>Destroying a prop is a scene-lifecycle act, so it goes through
     /// the seam that files one in the same history the transforms use — not
     /// through the spawn service, which owns the native object and no
     /// history.</summary>
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private bool _openProp = true;
 
     /// <summary>Anything that changes the list, run after the page has drawn.
     /// </summary>
     private Action? _pending;
+    private readonly Game.Journal.PropSession _values;
 
     public PropsPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
-        SceneLifecycleHistory lifecycle,
+        IEntityBindings bindings,
+        ISceneLifecycleHistory lifecycle,
         StainCatalog stains,
         ScenePane scenePane,
-        global::Poser.UI.Controls.EntityNameModal names)
+        global::Poser.UI.Controls.EntityNameModal names,
+        Game.Journal.PropSession values)
     {
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
         _stains = stains;
+        _values = values;
         _scenePane = scenePane;
         _names = names;
     }
@@ -94,7 +97,7 @@ public sealed class PropsPane
             var next = channel == 0
                 ? target.Model with { Stain0 = picked.Item.Id }
                 : target.Model with { Stain1 = picked.Item.Id };
-            _status = target.Respawn(next, out var refusal)
+            _status = _values.SetModel(target, next, out var refusal)
                 ? string.Empty
                 : refusal ?? "The dye could not be applied.";
         }
@@ -104,7 +107,7 @@ public sealed class PropsPane
         pending?.Invoke();
     }
 
-    private void OpenDyePicker(PropHandle prop, int channel)
+    private void OpenDyePicker(IPropHandle prop, int channel)
     {
         byte current = channel == 0
             ? prop.Model.Stain0
@@ -123,19 +126,19 @@ public sealed class PropsPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void PropRows(Crystarium.FormScope form, PropHandle prop)
+    private void PropRows(Crystarium.FormScope form, IPropHandle prop)
     {
         // Identity first, the camera pattern: the name leads the page.
         form.TextInput(
             "Name",
             prop.Name,
-            next => prop.Name = next,
+            next => _values.SetName(prop, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,
-            next => prop.Visible = next,
+            next => _values.SetVisible(prop, next),
             help: "Hide this object without destroying it");
         // The dyes bake at creation, so choosing one respawns the weapon
         // in place — handle, name, and placement survive.
@@ -237,7 +240,7 @@ public sealed class PropsPane
 
     private bool _destroyAllArmed;
 
-    private PropHandle? SelectedProp()
+    private IPropHandle? SelectedProp()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Prop, Prop: { } propId })

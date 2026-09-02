@@ -1,3 +1,5 @@
+using Poser.Scene;
+
 namespace Poser.Game.Scene;
 
 /// <summary>

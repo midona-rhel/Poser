@@ -123,11 +123,32 @@ public static partial class Crystarium
         /// <param name="caption">The tile's caption for an id — a catalog
         /// whose entries have names states them here; unset, the id itself
         /// is the caption.</param>
+        /// <summary>The grid's columns and tile side, per picker: a face
+        /// grid runs five small tiles across, a sky grid three big ones.</summary>
+        private readonly int _columns;
+        private readonly int _rows;
+        private readonly float _tileSize;
+
         public TexturePicker(
             string id, TexturePreview preview, uint count = 1000,
-            Func<uint, string>? caption = null)
+            Func<uint, string>? caption = null,
+            int columns = TextureGridColumns, float tileSize = TextureTileSize,
+            int rows = TextureGridRows, IReadOnlyList<uint>? knownIds = null)
         {
             ArgumentNullException.ThrowIfNull(preview);
+            _columns = Math.Max(1, columns);
+            _rows = Math.Max(1, rows);
+            _tileSize = tileSize;
+            // A catalog that KNOWS its ids skips the walk: the grid opens at
+            // its final size on its first frame, and a tile whose image is
+            // still loading draws its glyph until the handle exists. Walked
+            // catalogs (sky, clouds) grew row by row for a dozen frames.
+            if (knownIds is not null)
+            {
+                _ids.AddRange(knownIds);
+                _ids.Sort();
+                _probeNext = count;
+            }
             _popupId = $"##texture-picker-{id}";
             _gridId = $"{_popupId}-grid";
             _preview = preview;
@@ -157,16 +178,18 @@ public static partial class Crystarium
 
             var theme = ActiveTheme;
             float pad = TextureSurfacePadding;
-            float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
+            float pitch = _tileSize + TextureTileCaption + TextureTileGap;
             // The gutter-as-padding contract: the reserved scrollbar gutter
             // sits ON the surface's right edge and IS the trailing inset —
             // the stated padding covers the other three sides only.
             float width = pad
-                + TextureGridColumns * (TextureTileSize + TextureTileGap)
+                + _columns * (_tileSize + TextureTileGap)
                 - TextureTileGap
                 + theme.Scrollbar.GutterWidth;
+            // The surface fits its rows up to the cap; fewer rows, a
+            // shorter surface, and no scrolling until the cap.
             float height = pad * 2f
-                + TextureGridRows * pitch - TextureTileGap;
+                + RowsShown() * pitch - TextureTileGap;
 
             _picked = null;
             FloatingSurface.Popup(
@@ -263,6 +286,11 @@ public static partial class Crystarium
         /// <summary>Arms the surface under the tile that owns it. The anchor is
         /// the TILE's rect rather than the last reserved item, so the trailing
         /// steppers cannot move the surface.</summary>
+        /// <summary>Arms the surface under a tile the caller drew — a
+        /// bigger one than the field's own.</summary>
+        public void OpenAt(uint selected, Vector2 anchorMin, Vector2 anchorMax) =>
+            Open(selected, anchorMin, anchorMax);
+
         private void Open(uint selected, Vector2 min, Vector2 max)
         {
             _selected = selected;
@@ -312,21 +340,24 @@ public static partial class Crystarium
                 _ids.Insert(~index, id);
         }
 
+        private int RowsShown() =>
+            Math.Clamp((_ids.Count + _columns - 1) / _columns, 1, _rows);
+
         private void DrawBody()
         {
             var min = ImGui.GetWindowPos();
             float scale = ImGuiHelpers.GlobalScale;
-            float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
+            float pitch = _tileSize + TextureTileCaption + TextureTileGap;
             // Left and top insets by hand (the window's own padding is zero);
             // the right inset is the ScrollRegion's reserved gutter itself.
             ImGui.SetCursorScreenPos(
                 min + new Vector2(TextureSurfacePadding * scale));
             ScrollRegion(
                 _gridId,
-                TextureGridColumns * (TextureTileSize + TextureTileGap)
+                _columns * (_tileSize + TextureTileGap)
                     - TextureTileGap
                     + ActiveTheme.Scrollbar.GutterWidth,
-                TextureGridRows * pitch - TextureTileGap,
+                RowsShown() * pitch - TextureTileGap,
                 _grid);
             if (_picked != null)
                 ImGui.CloseCurrentPopup();
@@ -337,10 +368,10 @@ public static partial class Crystarium
         private void DrawGrid(ScrollRegionScope region)
         {
             float scale = ImGuiHelpers.GlobalScale;
-            float side = TextureTileSize * scale;
-            float acrossPitch = (TextureTileSize + TextureTileGap) * scale;
+            float side = _tileSize * scale;
+            float acrossPitch = (_tileSize + TextureTileGap) * scale;
             float pitch =
-                (TextureTileSize + TextureTileCaption + TextureTileGap) * scale;
+                (_tileSize + TextureTileCaption + TextureTileGap) * scale;
             if (_ids.Count == 0)
             {
                 region.Empty(
@@ -356,7 +387,7 @@ public static partial class Crystarium
             try
             {
                 int rows =
-                    (_ids.Count + TextureGridColumns - 1) / TextureGridColumns;
+                    (_ids.Count + _columns - 1) / _columns;
                 var clipper = new ImGuiListClipper();
                 clipper.Begin(rows, pitch);
                 while (clipper.Step())
@@ -366,9 +397,9 @@ public static partial class Crystarium
                         r++)
                     {
                         var band = ImGui.GetCursorScreenPos();
-                        for (int c = 0; c < TextureGridColumns; c++)
+                        for (int c = 0; c < _columns; c++)
                         {
-                            int index = r * TextureGridColumns + c;
+                            int index = r * _columns + c;
                             if (index >= _ids.Count)
                                 break;
                             DrawTile(

@@ -1,13 +1,11 @@
 using System.Globalization;
+using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Game.Bindings;
-using Poser.Game.Scene;
-using Poser.Game.WorldObjects;
 
 namespace Poser.UI;
 
@@ -29,27 +27,27 @@ namespace Poser.UI;
 public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
-    private readonly StableBindingRegistry _bindings;
-    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+    private readonly IEntityBindings _bindings;
+    private readonly IWorldAssetCatalog _assets;
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
-    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+    private readonly Crystarium.SearchPicker<WorldAsset>
         _assetPicker = new("world-object-asset");
 
     /// <summary>The combined picker list — models and effects both, told
     /// apart by their glyphs — minted on first browse.</summary>
-    private List<Game.WorldObjects.WorldAsset>? _assetChoices;
+    private List<WorldAsset>? _assetChoices;
 
     /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
     /// that files one in the same history the transforms use — the seam whose
     /// undo re-adopts the same address.</summary>
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private bool _openObject = true;
 
     private Action? _pending;
-    private AdoptedWorldObject? _pathDraftFor;
+    private IWorldObject? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
 
@@ -57,12 +55,14 @@ public sealed class WorldObjectsPane
 
     public WorldObjectsPane(
         SceneSession scene,
-        StableBindingRegistry bindings,
-        SceneLifecycleHistory lifecycle,
+        IEntityBindings bindings,
+        ISceneLifecycleHistory lifecycle,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.WorldObjects.WorldAssetCatalog assets)
+        IWorldAssetCatalog assets,
+        Game.Journal.WorldObjectSession values)
     {
+        _values = values;
         _names = names;
         _scene = scene;
         _bindings = bindings;
@@ -72,6 +72,7 @@ public sealed class WorldObjectsPane
     }
 
     private readonly ScenePane _scenePane;
+    private readonly Game.Journal.WorldObjectSession _values;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -125,7 +126,7 @@ public sealed class WorldObjectsPane
     {
         if (_assetChoices == null)
         {
-            _assetChoices = new List<Game.WorldObjects.WorldAsset>(
+            _assetChoices = new List<WorldAsset>(
                 _assets.Models.Count + _assets.Effects.Count);
             _assetChoices.AddRange(_assets.Models);
             _assetChoices.AddRange(_assets.Effects);
@@ -139,7 +140,7 @@ public sealed class WorldObjectsPane
             loadError: _assetChoices.Count == 0
                 ? "The path catalog could not be read."
                 : null,
-            options: new PickerOptions<Game.WorldObjects.WorldAsset>
+            options: new PickerOptions<WorldAsset>
             {
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)
@@ -155,7 +156,7 @@ public sealed class WorldObjectsPane
     /// eight, each a live checkbox, plus mono readouts — the manual twin
     /// of the automated gate hunt.</summary>
     private void DebugRows(
-        Crystarium.FormScope form, AdoptedWorldObject worldObject)
+        Crystarium.FormScope form, IWorldObject worldObject)
     {
         ulong flags = worldObject.DebugObjectFlags ?? 0;
         form.ReadOnly(
@@ -220,14 +221,14 @@ public sealed class WorldObjectsPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void ObjectRows(
-        Crystarium.FormScope form, AdoptedWorldObject worldObject)
+        Crystarium.FormScope form, IWorldObject worldObject)
     {
         // Identity first: the name is Poser's to give even on a borrowed
         // thing; the model path below stays the map's fact.
         form.TextInput(
             "Name",
             worldObject.Name,
-            next => worldObject.Name = next,
+            next => _values.SetName(worldObject, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         // A SPAWNED object's model is editable — an explicit-apply field,
@@ -283,7 +284,7 @@ public sealed class WorldObjectsPane
             cell => cell.Switch(
                 "##world-object-visible",
                 worldObject.Visible,
-                next => worldObject.Visible = next,
+                next => _values.SetVisible(worldObject, next),
                 help: "Hide this object without moving it"),
             "Opacity",
             cell => cell.Slider(
@@ -291,16 +292,17 @@ public sealed class WorldObjectsPane
                 worldObject.Opacity,
                 0f,
                 1f,
-                next => worldObject.Opacity = next,
-                help: "Fade the whole object"));
+                next => _values.SetOpacity(worldObject, next),
+                help: "Fade the whole object",
+                onBegin: _values.Seal));
         var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
         if (worldObject.IsVfx)
         {
             form.ColorWells("Tint", wells => wells.Well(
                 "Tint",
                 new Vector4(tint, 1f),
-                value => worldObject.Tint =
-                    new Vector3(value.X, value.Y, value.Z)),
+                value => _values.SetTint(
+                    worldObject, new Vector3(value.X, value.Y, value.Z))),
                 help: "Multiply the effect's colours");
         }
         else
@@ -313,8 +315,8 @@ public sealed class WorldObjectsPane
                 cell => cell.ColorWell(
                     "##world-object-tint",
                     new Vector4(tint, 1f),
-                    value => worldObject.Tint =
-                        new Vector3(value.X, value.Y, value.Z),
+                    value => _values.SetTint(
+                        worldObject, new Vector3(value.X, value.Y, value.Z)),
                     disabled: undyeable,
                     help: undyeable
                         ? "This model takes no dye"
@@ -323,7 +325,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##world-object-night",
                     worldObject.NightState,
-                    next => worldObject.NightState = next,
+                    next => _values.SetNightState(worldObject, next),
                     help: "Toggles night state"));
             // BORROWED scenery only: a spawned copy cannot be animated
             // by the game (the layout drives only its own instances), so
@@ -333,7 +335,7 @@ public sealed class WorldObjectsPane
                 form.Switch(
                     "Paused",
                     worldObject.AnimationPaused,
-                    next => worldObject.AnimationPaused = next,
+                    next => _values.SetAnimationPaused(worldObject, next),
                     help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
@@ -344,7 +346,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-loop",
                     worldObject.LoopVfx,
-                    next => worldObject.LoopVfx = next,
+                    next => _values.SetLoopVfx(worldObject, next),
                     help: "Replay the effect when it runs out"),
                 "Speed",
                 cell => cell.Slider(
@@ -352,14 +354,15 @@ public sealed class WorldObjectsPane
                     worldObject.VfxSpeed,
                     0f,
                     3f,
-                    next => worldObject.VfxSpeed = next,
-                    help: "Playback speed"));
+                    next => _values.SetVfxSpeed(worldObject, next),
+                    help: "Playback speed",
+                    onBegin: _values.Seal));
             form.Pair(
                 "Paused",
                 cell => cell.Switch(
                     "##vfx-paused",
                     worldObject.VfxPaused,
-                    next => worldObject.VfxPaused = next,
+                    next => _values.SetVfxPaused(worldObject, next),
                     help: "Freeze the effect mid-frame"),
                 "Intensity",
                 cell => cell.Slider(
@@ -367,8 +370,9 @@ public sealed class WorldObjectsPane
                     worldObject.VfxIntensity,
                     0f,
                     4f,
-                    next => worldObject.VfxIntensity = next,
-                    help: "Brighten or dim the effect"));
+                    next => _values.SetVfxIntensity(worldObject, next),
+                    help: "Brighten or dim the effect",
+                    onBegin: _values.Seal));
         }
         form.Actions("Library", actions =>
             actions.Button(
@@ -418,7 +422,7 @@ public sealed class WorldObjectsPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private AdoptedWorldObject? SelectedWorldObject()
+    private IWorldObject? SelectedWorldObject()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } id })

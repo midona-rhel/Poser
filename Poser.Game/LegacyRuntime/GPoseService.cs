@@ -1,7 +1,7 @@
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
-using Poser.Application.Operations;
+using Poser.Domain.Operations;
 using Poser.Core;
 using Poser.Game.Posing;
 using Poser.Services;
