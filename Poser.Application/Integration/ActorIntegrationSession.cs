@@ -71,6 +71,26 @@ public sealed class ActorIntegrationSession : IDisposable
         return result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
     }
 
+    // ── the wardrobe ─────────────────────────────
+
+    public IntegrationResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
+        Lift(_port.SetItem(actor, slot, itemId, dye1, dye2));
+
+    public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId) => Lift(_port.SetFacewear(actor, bonusItemId));
+
+    public IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) => Lift(_port.SetMetaSwitch(actor, which, on));
+
+    public IntegrationValue<string> GetStateJson(ActorId actor) => _port.GetGlamourerStateJson(actor);
+
+    public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => Lift(_port.ApplyGlamourerStateJson(actor, stateJson));
+
+    public IntegrationResult RevertState(ActorId actor) => Lift(_port.RevertGlamourerState(actor));
+
+    public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _port.AddDesign(stateJson, name);
+
+    private static IntegrationResult Lift(IntegrationPortResult result) =>
+        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
+
     // ── Selectors ────────────────────────────────────────────────────────
 
     /// <summary>A Penumbra redraw of the actor; nothing else changes.</summary>

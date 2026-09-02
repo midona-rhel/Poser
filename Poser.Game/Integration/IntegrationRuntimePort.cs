@@ -101,6 +101,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<string, uint, int> _unlockStateName;
     private readonly ICallGateSubscriber<object, string, uint, ulong, int> _applyStateName;
     private readonly ICallGateSubscriber<int, object?> _openActorIndex;
+    private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> _setItem;
+    private readonly ICallGateSubscriber<int, byte, ulong, uint, ulong, int> _setBonusItem;
+    private readonly ICallGateSubscriber<int, byte, bool, uint, ulong, int> _setMetaState;
+    private readonly ICallGateSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> _getState;
+    private readonly ICallGateSubscriber<int, uint, ulong, int> _revertState;
+    private readonly ICallGateSubscriber<string, string, (int, Guid)> _addDesign;
 
     // Customize+
     private readonly ICallGateSubscriber<(int Breaking, int Feature)> _customizeVersion;
@@ -153,6 +159,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _unlockStateName = pluginInterface.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
         _applyStateName = pluginInterface.GetIpcSubscriber<object, string, uint, ulong, int>("Glamourer.ApplyStateName");
         _openActorIndex = pluginInterface.GetIpcSubscriber<int, object?>("Glamourer.OpenActorIndex");
+        _setItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V2");
+        _setBonusItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, uint, ulong, int>("Glamourer.SetBonusItem");
+        _setMetaState = pluginInterface.GetIpcSubscriber<int, byte, bool, uint, ulong, int>("Glamourer.SetMetaState");
+        _getState = pluginInterface.GetIpcSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)>("Glamourer.GetState");
+        _revertState = pluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+        _addDesign = pluginInterface.GetIpcSubscriber<string, string, (int, Guid)>("Glamourer.AddDesign");
 
         _customizeVersion = pluginInterface.GetIpcSubscriber<(int, int)>("CustomizePlus.General.GetApiVersion");
         _getProfileList = pluginInterface.GetIpcSubscriber<IList<(Guid, string, string, List<(string, ushort, byte, ushort)>, int, bool)>>("CustomizePlus.Profile.GetList");
@@ -847,6 +859,80 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         });
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    // ── the wardrobe ─────────────────────────────────────────────────────
+
+    public IntegrationPortResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
+        Guarded(Glamourer, "Set item", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new[] { dye1, dye2 }, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the item");
+        });
+
+    public IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId) =>
+        Guarded(Glamourer, "Set facewear", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            const byte glasses = 1;
+            int ec = _setBonusItem.InvokeFunc(index, glasses, bonusItemId, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the facewear");
+        });
+
+    public IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) =>
+        Guarded(Glamourer, "Set switch", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _setMetaState.InvokeFunc(index, (byte)which, on, 0u, ApplyOnce);
+            return GlamourerResult(ec, "setting the switch");
+        });
+
+    public IntegrationValue<string> GetGlamourerStateJson(ActorId actor) =>
+        Guarded<string>(Glamourer, "Read state", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<string>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<string>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<string>.Ok(state.ToString(Newtonsoft.Json.Formatting.None));
+        });
+
+    public IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson) =>
+        Guarded(Glamourer, "Apply state", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _applyState.InvokeFunc(stateJson, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "applying the state");
+        });
+
+    public IntegrationPortResult RevertGlamourerState(ActorId actor) =>
+        Guarded(Glamourer, "Revert", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            int ec = _revertState.InvokeFunc(index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "reverting the state");
+        });
+
+    public IntegrationValue<Guid> AddDesign(string stateJson, string name) =>
+        Guarded<Guid>(Glamourer, "Save design", () =>
+        {
+            var (ec, id) = _addDesign.InvokeFunc(stateJson, name);
+            return ec is GlamourerEcSuccess
+                ? IntegrationValue<Guid>.Ok(id)
+                : IntegrationValue<Guid>.Fail($"Glamourer failed saving the design (code {ec}).");
+        });
 
     private static IntegrationPortResult Guarded(
         IntegrationAvailability availability, string what, Func<IntegrationPortResult> call)

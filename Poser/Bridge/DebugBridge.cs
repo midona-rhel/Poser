@@ -206,6 +206,7 @@ public sealed class DebugBridge : IDisposable
                     {
                         "/actors",
                         "/history", "/undo", "/redo",
+                        "/glamstate?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/apply?actor&slot=1&timeline=8136",
@@ -520,6 +521,20 @@ public sealed class DebugBridge : IDisposable
                             return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/glamstate":
+            {
+                var state = _session.GetStateJson(id);
+                return state.Success ? state.Value! : Json(new { error = state.Detail });
+            }
+            case "/setitem":
+            {
+                var slot = (global::Poser.Domain.Integration.EquipSlot)byte.Parse(query["slot"]);
+                ulong item = ulong.Parse(query["item"]);
+                byte d1 = query.TryGetValue("dye1", out var s1) ? byte.Parse(s1) : (byte)0;
+                byte d2 = query.TryGetValue("dye2", out var s2) ? byte.Parse(s2) : (byte)0;
+                var set = _session.SetItem(id, slot, item, d1, d2);
+                return Json(new { ok = set.Success, set.Detail });
             }
             case "/setbone":
             {
