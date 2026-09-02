@@ -37,6 +37,10 @@ public sealed class CustomizeSession
     /// fold into the open step.</summary>
     public IntegrationResult Set(ActorId actor, CustomizeKey key, int value, string description)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");
@@ -56,6 +60,10 @@ public sealed class CustomizeSession
     public IntegrationResult SetMany(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");

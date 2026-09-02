@@ -57,3 +57,12 @@ place and says why.
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer
 is outbound navigation only. The Appearance tab is actor-scoped.
+
+## The look goes back
+
+The first wardrobe or customize write on an actor takes its look: the
+Glamourer state as it stands is captured once. Revert, the actor leaving
+the scene, and GPose ending put that state back, by the exact object
+while it exists and by the character's name once it has left GPose. This
+is what Brio and Ktisis do on exit, and the reason an actor no longer
+walks out of GPose in the gear it was given there.

@@ -125,6 +125,11 @@ public sealed record IntegrationOverrides
     public bool DesignOwned { get; init; }
     public string? DesignName { get; init; }
 
+    /// <summary>The character's name when the Glamourer baseline was
+    /// captured, so the baseline can be restored by name once the body
+    /// has left GPose and the exact object is gone.</summary>
+    public string? DesignActorName { get; init; }
+
     /// <summary>Poser's temporary Customize+ profile on this actor.</summary>
     public Guid? TemporaryBodyProfile { get; init; }
     public string? BodyProfileName { get; init; }

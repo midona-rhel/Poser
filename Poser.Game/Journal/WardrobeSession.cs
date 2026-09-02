@@ -35,6 +35,10 @@ public sealed class WardrobeSession
     public IntegrationResult SetItem(
         ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2, string description)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
@@ -52,6 +56,10 @@ public sealed class WardrobeSession
     /// <summary>Changes one of the two dyes on what the slot wears.</summary>
     public IntegrationResult SetDye(ActorId actor, EquipSlot slot, int which, byte dye, string description)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
@@ -64,6 +72,10 @@ public sealed class WardrobeSession
 
     public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId, string description)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
@@ -78,6 +90,10 @@ public sealed class WardrobeSession
 
     public IntegrationResult SetSwitch(ActorId actor, MetaSwitch which, bool on)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
@@ -109,6 +125,10 @@ public sealed class WardrobeSession
     public IntegrationResult SetOutfit(
         ActorId actor, string description, Func<EquipSlot, WardrobeSlot?> outfit)
     {
+        // The first write takes the look: its state as it stands is
+        // captured once and put back when the actor leaves or GPose ends.
+        if (_integration.OwnLook(actor) is { Success: false } owned)
+            return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
