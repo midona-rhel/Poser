@@ -1637,6 +1637,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         if (actor.Address == nint.Zero || !OnOwnerThread)
             return false;
+        // An adopted body is the world's: Destroy seats it back where it
+        // was taken and lets it go.
+        if (_actorManager.IsAdopted(actor))
+        {
+            _actorManager.ReleaseWorldActor(actor.Address);
+            return true;
+        }
 
         try
         {
@@ -1755,6 +1762,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         if (actor.Address == nint.Zero)
             return "The actor is no longer in the scene.";
+        // An adopted body is released, not destroyed: Destroy is offered.
+        if (_actorManager.IsAdopted(actor))
+            return null;
 
         // A Poser-owned actor is always removable: it routes to the
         // stronger owned-teardown path, not the scene-table delete.

@@ -263,9 +263,25 @@ public class ActorManager : IActorManager
         RefreshActors();
     }
 
+    public void ReleaseWorldActor(nint address)
+    {
+        if (!_adopted.Remove(address))
+            return;
+        if (_adoptedSeats.Remove(address, out var seat))
+            SeatBack(address, seat);
+        RefreshActors();
+    }
+
     private unsafe void RestoreAdoptedSeats()
     {
         foreach (var (address, seat) in _adoptedSeats)
+            SeatBack(address, seat);
+        _adoptedSeats.Clear();
+    }
+
+    private unsafe void SeatBack(
+        nint address, (Vector3 Position, Quaternion Rotation, Vector3 Scale) seat)
+    {
         {
             try
             {
@@ -284,7 +300,6 @@ public class ActorManager : IActorManager
                 _log?.Warning($"ActorManager: could not seat an adopted actor back: {ex.Message}");
             }
         }
-        _adoptedSeats.Clear();
     }
 
     public bool IsAdopted(IActor actor) => _adopted.Contains(actor.Address);
