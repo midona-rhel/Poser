@@ -1245,6 +1245,7 @@ public unsafe class BonePosingService : IBonePosingService
     /// rotation now, with the authored deltas they were taken under.</summary>
     private HeldTarget? CaptureWorld(IBone endpoint)
     {
+        RefreshCache(endpoint);
         if (BoneWorld(endpoint) is not { } tip)
             return null;
         var authored = GetModification(endpoint);
@@ -1258,8 +1259,8 @@ public unsafe class BonePosingService : IBonePosingService
     /// RELATIVE to the target bone now, with the authored deltas.</summary>
     private HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target)
     {
-        if (target.Skeleton is global::Poser.Entities.Skeleton targetSkeleton && targetSkeleton.IsValid)
-            targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
+        RefreshCache(endpoint);
+        RefreshCache(target);
         if (BoneWorld(endpoint) is not { } tip
             || BoneWorld(target) is not { } anchor)
             return null;
@@ -1308,18 +1309,27 @@ public unsafe class BonePosingService : IBonePosingService
             return null;
         var position = Vector3.Transform(worldPosition, toModel)
             + (authoredPosition - capture.Translation);
-        // Rotations compose bone-then-model: world = model * frame, so
-        // model = world * frame⁻¹; the authored turn since capture rides on
-        // the end, where the delta stack puts it.
+        // System.Numerics multiplies right-to-left: the world rotation is
+        // frame * model (model first, then the actor's frame), so model =
+        // frame⁻¹ * world. The authored turn since capture rides on the
+        // end, where the delta stack puts it.
         var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
         if (!AllFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
         var rotation = Quaternion.Normalize(
-            worldRotation * Quaternion.Inverse(Quaternion.Normalize(frame))
+            Quaternion.Inverse(Quaternion.Normalize(frame)) * worldRotation
             * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
         if (!AllFinite(position) || !AllFinite(rotation))
             return null;
         return (position, rotation);
+    }
+
+    /// <summary>A bone the apply pass never visits (no stack) keeps a
+    /// stale cached transform; a capture reads the live pose.</summary>
+    private static void RefreshCache(IBone bone)
+    {
+        if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
+            skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
     }
 
     private static bool AllFinite(Vector3 v) =>
