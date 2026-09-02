@@ -115,15 +115,29 @@ public sealed class SkeletonOverlayPresentation
         SetVisible(bones, true);
     }
 
+    private ulong _reconciledRevision = ulong.MaxValue;
+    private readonly HashSet<BoneId> _present = new();
+    private readonly List<string> _subsetKeys = new();
+
+    /// <summary>Drops the choices for bones that left the scene. Once per
+    /// scene revision: this ran every frame and rebuilt a set of every
+    /// bone in the scene each time — 9 MB a second of garbage and the
+    /// plugin's largest allocator (profiled 2026-09-03).</summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
-        var present = new HashSet<BoneId>();
+        if (snapshot.Revision == _reconciledRevision)
+            return;
+        _reconciledRevision = snapshot.Revision;
+        var present = _present;
+        present.Clear();
         foreach (var actor in snapshot.Actors)
             foreach (var skeleton in actor.Skeletons)
                 foreach (var bone in skeleton.Bones)
                     present.Add(bone.Id);
         _shown.RemoveWhere(bone => !present.Contains(bone));
-        foreach (var key in new List<string>(_hiddenSubsets.Keys))
+        _subsetKeys.Clear();
+        _subsetKeys.AddRange(_hiddenSubsets.Keys);
+        foreach (var key in _subsetKeys)
         {
             var saved = _hiddenSubsets[key];
             saved.RemoveWhere(bone => !present.Contains(bone));

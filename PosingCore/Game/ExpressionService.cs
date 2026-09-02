@@ -172,6 +172,14 @@ public class ExpressionService : IExpressionService
         }
     }
 
+    // The units' availability changes only when the skeleton is rebuilt,
+    // yet the inspector asked every frame and each ask built a name lookup
+    // of every bone (profiled 2026-09-03).
+    private ISkeleton? _unitsSkeleton;
+    private long _unitsRevision = -1;
+    private string? _unitsKey;
+    private IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)>? _units;
+
     public IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> GetUnits(IActor actor)
     {
         if (!IsAvailable || CatalogKeyFor(actor) is not { } key)
@@ -181,7 +189,18 @@ public class ExpressionService : IExpressionService
         var skeleton = _skeletons.GetSkeleton(actor);
         if (skeleton is not { IsValid: true })
             return units.Select(u => (u.Id, u.Label, u.Bidirectional, true)).ToList();
+        if (_units is not null && ReferenceEquals(_unitsSkeleton, skeleton)
+            && _unitsRevision == skeleton.BuildRevision && _unitsKey == key)
+            return _units;
+        _unitsSkeleton = skeleton;
+        _unitsRevision = skeleton.BuildRevision;
+        _unitsKey = key;
+        return _units = ComputeUnits(units, skeleton);
+    }
 
+    private static List<(string Id, string Label, bool Bidirectional, bool Available)> ComputeUnits(
+        List<ActionUnit> units, ISkeleton skeleton)
+    {
         var byName = BuildBoneLookup(skeleton);
         return units
             .Select(u => (

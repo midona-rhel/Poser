@@ -300,6 +300,10 @@ public class SkeletonOverlayWindow : Window
     /// whole armature is taken away at once.</para></summary>
     public bool UserVisible { get; set; }
 
+    /// <summary>How many bones the last frame collected — the bridge's
+    /// check that a perf capture drew what it meant to.</summary>
+    public int LastBoneCount { get; private set; }
+
     private bool AnySelectionAnchor()
     {
         foreach (var id in _selection.Selected)
@@ -758,6 +762,7 @@ public class SkeletonOverlayWindow : Window
             }
             }
         }
+        LastBoneCount = bones.Count;
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
         // Eyes and ears that move together by default are partners too.
         if (_bonePosing.LinkedBonesEnabled

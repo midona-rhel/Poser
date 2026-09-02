@@ -310,6 +310,17 @@ public sealed class ExpressionInspectorSection
             help: help);
     }
 
+    private readonly Dictionary<string, string> _sliderIds = new();
+
+    /// <summary>The slider's id for a unit, minted once: an interpolated
+    /// string per unit per frame was measurable garbage.</summary>
+    private string SliderId(string id)
+    {
+        if (!_sliderIds.TryGetValue(id, out var made))
+            _sliderIds[id] = made = "##expr-" + id;
+        return made;
+    }
+
     /// <summary>One half of a pair: the cell slider with its numeric
     /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
@@ -319,7 +330,7 @@ public sealed class ExpressionInspectorSection
         float minimum,
         string help) =>
         cell.Slider(
-            $"##expr-{id}",
+            SliderId(id),
             _expressions.GetWeight(actor, id),
             minimum,
             1f,

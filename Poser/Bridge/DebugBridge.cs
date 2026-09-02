@@ -49,6 +49,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly ITransformFacade _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
+    private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
     private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -73,8 +74,10 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Library.IPoseLibraryService library,
         ITransformFacade transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
-        global::Poser.UI.SkeletonOverlayWindow overlay)
+        global::Poser.UI.SkeletonOverlayWindow overlay,
+        global::Poser.UI.SkeletonOverlayPresentation overlayPresentation)
     {
+        _overlayPresentation = overlayPresentation;
         _transforms = transforms;
         _viewport = viewport;
         _overlay = overlay;
@@ -208,7 +211,7 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
-                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1", "/profile",
+                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
@@ -280,7 +283,21 @@ public sealed class DebugBridge : IDisposable
                     skeleton.OnlyActiveActorBones = all != "1";
                 if (query.TryGetValue("visible", out var visible))
                     _overlay.UserVisible = visible == "1";
-                return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen });
+                // show=1 marks every bone of every actor shown, as the
+                // sidebar's toggles would; show=0 hides them all again.
+                if (query.TryGetValue("show", out var show))
+                {
+                    var everyBone = new List<global::Poser.Domain.Identity.BoneId>();
+                    foreach (var each in _actors.Actors)
+                        foreach (var each_skeleton in _skeletons.GetSkeletons(each))
+                            foreach (var bone in each_skeleton.Bones)
+                                if (_bindings.GetBoneId(bone) is { } boneId)
+                                    everyBone.Add(boneId);
+                    _overlayPresentation.SetVisible(everyBone, show == "1");
+                }
+                if (query.TryGetValue("mode", out var mode))
+                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Services.SkeletonViewMode>(mode, true);
+                return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen, bones = _overlay.LastBoneCount, mode = skeleton.SkeletonViewMode.ToString() });
             }
             case "/history":
                 return Json(History());
