@@ -197,7 +197,7 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
             new WorldActorTableAdapter(objectTable),
             gPoseService,
             actorManager,
-            spawnService.CloneFromWorldSource,
+            spawnService.AdoptFromWorldSource,
             framework,
             log)
     {
@@ -386,7 +386,7 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         }
         if (clone is null)
             return WorldActorImportResult.Failed(
-                "The clone failed — GPose may be full or spawning unavailable.");
+                "The actor could not be added to the scene.");
         spawned = clone;
         return WorldActorImportResult.Ok();
     }
@@ -396,6 +396,10 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         var auxiliary = new HashSet<nint>();
         foreach (var aux in _actorManager.AuxiliaryActors)
             auxiliary.Add(aux.Address);
+        // A body the scene already holds — adopted by reference — is not
+        // offered again.
+        foreach (var held in _actorManager.Actors)
+            auxiliary.Add(held.Address);
 
         // The three enumerations overlap in what they can show; identity
         // dedupes by address, first observation wins.

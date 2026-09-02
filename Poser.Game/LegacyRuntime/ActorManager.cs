@@ -219,7 +219,35 @@ public class ActorManager : IActorManager
                 yield return obj;
             }
         }
+        // Adopted overworld bodies keep their own index below the GPose
+        // range; they are listed by address, and one that has left the
+        // world leaves the set.
+        if (_adopted.Count == 0)
+            yield break;
+        foreach (var address in _adopted.ToArray())
+        {
+            IGameObject? obj = null;
+            try { obj = _objectTable.CreateObjectReference(address); }
+            catch { }
+            if (obj is null || !obj.IsValid())
+            {
+                _adopted.Remove(address);
+                continue;
+            }
+            yield return obj;
+        }
     }
+
+    private readonly HashSet<nint> _adopted = new();
+
+    public void AdoptWorldActor(nint address)
+    {
+        if (address == nint.Zero || !_adopted.Add(address))
+            return;
+        RefreshActors();
+    }
+
+    public bool IsAdopted(IActor actor) => _adopted.Contains(actor.Address);
 
     public void RefreshActors()
     {
@@ -401,6 +429,7 @@ public class ActorManager : IActorManager
 
     private void ClearActors()
     {
+        _adopted.Clear();
         foreach (var actor in _actors)
         {
             if (actor is IDisposable disposable)
