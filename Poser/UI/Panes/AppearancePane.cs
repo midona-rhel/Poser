@@ -795,17 +795,6 @@ public sealed partial class AppearancePane
                 : mcdfOwned
                     ? mcdfReason
                     : "Apply a Glamourer design to this actor only");
-        form.Actions("Look", actions =>
-        {
-            actions.Button("Save design", () => SaveDesign(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
-            actions.Button("Revert", () => RevertLook(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
-                variant: ButtonVariant.Disruptive);
-        });
-
         form.Selector(
             "Body profile",
             external.TemporaryBodyProfile != null
@@ -826,6 +815,17 @@ public sealed partial class AppearancePane
                     : _bodyBlocked
                         ? _bodyBlockedDetail
                         : "Apply a saved Customize+ profile to this actor only");
+
+        form.Actions("Look", actions =>
+        {
+            actions.Button("Save design", () => SaveDesign(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
+            actions.Button("Revert", () => RevertLook(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
+                variant: ButtonVariant.Disruptive);
+        });
     }
 
     private void CharacterFileRows(

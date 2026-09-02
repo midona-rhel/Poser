@@ -24,8 +24,9 @@ public static partial class Crystarium
 
     public static bool Dropdown(
         string id, string[] items, int selected, Action<int> onChange,
-        ControlStyle style = default, bool disabled = false, string? help = null) =>
-        DropdownCore(id, items, selected, onChange, style, disabled, help, null, false);
+        ControlStyle style = default, bool disabled = false, string? help = null,
+        bool disruptive = false) =>
+        DropdownCore(id, items, selected, onChange, style, disabled, help, null, false, disruptive);
 
     public static bool ActionDropdown(
         string id, string[] items, int selected, string previewText, Action<int> onChange,
@@ -36,7 +37,7 @@ public static partial class Crystarium
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
-        string? previewText, bool reselectFires)
+        string? previewText, bool reselectFires, bool disruptive = false)
     {
         if (items.Length == 0) return false;
         string popupId = Ids.Join(id, "_popup");
@@ -66,6 +67,14 @@ public static partial class Crystarium
         var valueMax = trigger.ScreenMax;
 
         var boxPaint = PaintDropdownBox(trigger, disabled);
+        // A disruptive choice wears the purple outline, as a button does.
+        if (disruptive)
+            ImGui.GetWindowDrawList().AddRect(
+                valueMin + new Vector2(0.5f),
+                valueMax - new Vector2(0.5f),
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    theme.Chrome.Disruptive.Fade(disabled ? theme.Chrome.DisabledOpacity : 1f))),
+                theme.Radii.Control * scale, ImDrawFlags.RoundCornersAll, 1.5f * scale);
         var labelColor = boxPaint.LabelColor;
         float chevronOpacity = boxPaint.ChevronOpacity;
 

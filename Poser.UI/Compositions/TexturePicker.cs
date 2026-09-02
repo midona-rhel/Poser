@@ -176,8 +176,10 @@ public static partial class Crystarium
                 + _columns * (_tileSize + TextureTileGap)
                 - TextureTileGap
                 + theme.Scrollbar.GutterWidth;
+            // The surface fits its rows up to the cap; fewer rows, a
+            // shorter surface, and no scrolling until the cap.
             float height = pad * 2f
-                + _rows * pitch - TextureTileGap;
+                + RowsShown() * pitch - TextureTileGap;
 
             _picked = null;
             FloatingSurface.Popup(
@@ -328,6 +330,9 @@ public static partial class Crystarium
                 _ids.Insert(~index, id);
         }
 
+        private int RowsShown() =>
+            Math.Clamp((_ids.Count + _columns - 1) / _columns, 1, _rows);
+
         private void DrawBody()
         {
             var min = ImGui.GetWindowPos();
@@ -342,7 +347,7 @@ public static partial class Crystarium
                 _columns * (_tileSize + TextureTileGap)
                     - TextureTileGap
                     + ActiveTheme.Scrollbar.GutterWidth,
-                _rows * pitch - TextureTileGap,
+                RowsShown() * pitch - TextureTileGap,
                 _grid);
             if (_picked != null)
                 ImGui.CloseCurrentPopup();

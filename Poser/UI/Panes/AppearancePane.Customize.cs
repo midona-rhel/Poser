@@ -76,7 +76,7 @@ public sealed partial class AppearancePane
                 form.Slider("Bust", state?.Value(CustomizeKey.BustSize) ?? 0, 0f, 100f,
                     value => Set(actor, CustomizeKey.BustSize, (int)MathF.Round(value), "Set bust size"),
                     help: live ? bust.Name : why, disabled: !live, onBegin: _customizeSession.Seal);
-            else if (menu?.Feature(CustomizeKey.MuscleMass) is { } muscle)
+            if (menu?.Feature(CustomizeKey.MuscleMass) is { } muscle)
                 form.Slider("Muscle", state?.Value(CustomizeKey.MuscleMass) ?? 0, 0f, 100f,
                     value => Set(actor, CustomizeKey.MuscleMass, (int)MathF.Round(value), "Set muscle"),
                     help: live ? muscle.Name : why, disabled: !live, onBegin: _customizeSession.Seal);
@@ -90,11 +90,14 @@ public sealed partial class AppearancePane
             {
                 cells.Cell("Brows", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Eyebrows, live, why));
                 cells.Cell("Eyes", cell => OptionCell(cell, actor, menu, state, CustomizeKey.EyeShape, live, why));
-                cells.Cell("Nose", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Nose, live, why));
             }, help: "Step through the shapes the clan offers");
             form.Cells(cells =>
             {
+                cells.Cell("Nose", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Nose, live, why));
                 cells.Cell("Jaw", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Jaw, live, why));
+            }, help: "Step through the shapes the clan offers");
+            form.Cells(cells =>
+            {
                 cells.Cell("Mouth", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Mouth, live, why));
                 cells.Cell("Small iris", cell => cell.Switch("appearance-small-iris",
                     (state?.Value(CustomizeKey.SmallIris) ?? 0) != 0,
@@ -119,15 +122,14 @@ public sealed partial class AppearancePane
             {
                 cells.Cell("Right eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why));
                 cells.Cell("Left eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why));
-                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
-                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
             }, help: "Each eye has its own colour");
             form.Cells(cells =>
             {
+                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
+                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
                 cells.Cell("Tattoo", cell => ColorCell(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why));
                 cells.Cell("Paint", cell => ColorCell(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why));
-                cells.Cell(string.Empty, _ => { });
-            }, help: "The facial features' and the face paint's colour");
+            }, help: "The lips, the facial features and the face paint");
             form.Checkboxes("Options",
                 new Crystarium.CheckItem("Highlights", highlights,
                     on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),
@@ -186,7 +188,8 @@ public sealed partial class AppearancePane
                     [CustomizeKey.Clan] = clans[index].Clan,
                 }),
                 ControlStyle.Workspace with { Width = UiWidth.Fixed(dropW / s) },
-                !live || clans.Count == 0, live ? "The clan · redraws" : why);
+                !live || clans.Count == 0, live ? "The clan · redraws" : why,
+                disruptive: true);
             Crystarium.TextInBand(
                 new Vector2(seat.X + dropW + gap, row.Origin.Y),
                 new Vector2(captionW, row.RowHeight * s),
@@ -200,7 +203,7 @@ public sealed partial class AppearancePane
                 }),
                 ControlStyle.Square(square), !live,
                 live ? (gender == 1 ? "Female · swap" : "Male · swap") : why,
-                id: "appearance-gender");
+                id: "appearance-gender", disruptive: true);
         }, help: "The clan and the gender redraw the actor");
     }
 
@@ -253,14 +256,16 @@ public sealed partial class AppearancePane
             bool has = live && feature is not null;
             string name = feature?.Name is { Length: > 0 } n ? n : TileName(key);
 
+            bool redraws = key == CustomizeKey.Face;
             ImGui.SetCursorScreenPos(origin);
             bool opened = Crystarium.ImageTile(
                 $"appearance-tile-{key}",
                 option is { Icon: not 0 } ? ResolveIcon(option.Icon) : 0,
                 tile,
                 null,
-                help: has ? name : (feature is null ? "Not for this clan" : why),
-                disabled: !has);
+                help: has ? (redraws ? name + " · redraws" : name) : (feature is null ? "Not for this clan" : why),
+                disabled: !has,
+                disruptive: redraws);
             if (opened && feature is not null && menu is not null)
                 TilePicker(menu, feature).OpenAt((uint)current, ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
 
@@ -281,7 +286,8 @@ public sealed partial class AppearancePane
             StepperAt(
                 new Vector2(x, origin.Y + half + (half - square * s) * 0.5f), width, s,
                 $"appearance-step-{key}", feature, current, has, why,
-                next => Set(actor, key, next, $"Set {name.ToLowerInvariant()}"));
+                next => Set(actor, key, next, $"Set {name.ToLowerInvariant()}"),
+                disruptive: redraws);
         }, help: key switch
         {
             CustomizeKey.Face => "The face",
@@ -311,13 +317,12 @@ public sealed partial class AppearancePane
     /// the nearest valid value, the steppers walk the list.</summary>
     private void StepperAt(
         Vector2 at, float width, float s, string id, CustomizeFeature? feature,
-        int current, bool enabled, string? why, Action<int> apply)
+        int current, bool enabled, string? why, Action<int> apply, bool disruptive = false)
     {
         var theme = Crystarium.ActiveTheme;
         float square = theme.Controls.WorkspaceHeight;
-        // The steppers are narrow: the value is the control, they only walk it.
-        float narrow = square * 0.6f;
-        var stepStyle = ControlStyle.Square(square) with { Width = UiWidth.Fixed(narrow) };
+        float narrow = square;
+        var stepStyle = ControlStyle.Square(square);
         float tight = theme.Spacing.One * s;
         float wellW = MathF.Max(1f, width - (narrow * s + tight) * 2f);
         var options = feature?.Options ?? Array.Empty<CustomizeOption>();
@@ -329,7 +334,7 @@ public sealed partial class AppearancePane
         ImGui.SetCursorScreenPos(at);
         Crystarium.IconButton(TablerIcon.Minus,
             () => apply(options[index < 0 ? 0 : index - 1].Value),
-            stepStyle, !canDown, help ?? "Previous", id: id + "-down");
+            stepStyle, !canDown, help ?? "Previous", id: id + "-down", disruptive: disruptive);
         ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight, at.Y));
         Crystarium.AxisWell(
             id + "-well",
@@ -350,7 +355,7 @@ public sealed partial class AppearancePane
         ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight + wellW + tight, at.Y));
         Crystarium.IconButton(TablerIcon.Plus,
             () => apply(options[index < 0 ? 0 : index + 1].Value),
-            stepStyle, !canUp, help ?? "Next", id: id + "-up");
+            stepStyle, !canUp, help ?? "Next", id: id + "-up", disruptive: disruptive);
     }
 
     /// <summary>The seven facial features and the legacy tattoo as one row
@@ -539,7 +544,7 @@ public sealed partial class AppearancePane
             top + 1,
             columns: 5,
             tileSize: 72f,
-            rows: 4);
+            rows: 6);
         _tilePickers[key] = picker;
         return picker;
     }
