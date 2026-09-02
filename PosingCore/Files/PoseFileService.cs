@@ -706,7 +706,14 @@ public class PoseFileService : IPoseFileService
         IBone bone, PoseFile.BoneData boneData,
         IReadOnlyDictionary<string, PoseFile.BoneData> collection)
     {
+        // A partial root is seated on its parent by the per-frame reparent,
+        // not by the game's hierarchy: its children take the root's move
+        // from that reparent AND from their own absolute delta unless the
+        // root's own write refreshes them first. Roots and cross-partial
+        // parents are therefore always written.
         if (bone.ParentBone is not { } parent
+            || bone.IsPartialRoot
+            || parent.PartialId != bone.PartialId
             || !collection.TryGetValue(parent.BoneName, out var parentData)
             || !TransformMath.IsValidRotation(parentData.Rotation))
             return false;
