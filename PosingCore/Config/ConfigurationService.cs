@@ -138,6 +138,11 @@ public class ConfigurationService : IDisposable
 
         if (Config.Version < 3)
             Config.UI.MigrateKeybindsToSlots();
+        // The old 3.4 px dot was half the references' and hard to take;
+        // a user who never changed it gets Ktisis' size.
+        if (Config.Version < 4
+            && Math.Abs(Config.Skeleton.BoneDotRadius - 3.4f) < 0.01f)
+            Config.Skeleton.BoneDotRadius = new SkeletonConfiguration().BoneDotRadius;
 
         Config.Version = PoserConfiguration.LatestVersion;
         Save();

@@ -22,7 +22,9 @@ public class BoneVisibilityPreset
 public class SkeletonConfiguration
 {
     // Sizes
-    public float BoneDotRadius { get; set; } = 3.4f;
+    /// <summary>Ktisis' DotRadius: the hit box is this plus six, which
+    /// is what makes a dot easy to take.</summary>
+    public float BoneDotRadius { get; set; } = 7f;
 
     /// <summary>The body/face map's circle radius, logical.</summary>
     public float MapDotRadius { get; set; } = 6f;
