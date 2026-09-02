@@ -14,7 +14,15 @@ namespace Poser.UI.Controls;
 /// </summary>
 public sealed class IssueReportModal
 {
-    private const float BodyHeight = 168f;
+    private const string Intro =
+        "Saves a file you can attach to an issue: the last five hundred "
+        + "actions with their values, the notices, any errors, versions, "
+        + "settings and Poser's own log lines. Character names are "
+        + "replaced by Actor 1, Actor 2 and so on. Nothing is sent anywhere.";
+    private const string SceneNote =
+        "Scene data only: poses, looks, lights, cameras, the environment. "
+        + "No modified files and no mods are included.";
+    private const float Gap = 10f;
 
     private readonly IssueReportService _reports;
     private readonly UserNotices _notices;
@@ -42,34 +50,26 @@ public sealed class IssueReportModal
             return;
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
+        var style = new TextStyle { Size = theme.Typography.LabelSize, Color = theme.Text };
+        var hint = new TextStyle { Size = theme.Typography.CaptionSize, Color = theme.FormHint };
         Crystarium.Modal(
             "##issue-report",
             _open,
             next => _open = next,
             "Report an issue",
-            height: BodyHeight,
+            size: ModalSize.Medium,
             body: () =>
             {
-                var style = new TextStyle { Size = theme.Typography.LabelSize, Color = theme.Text };
-                var hint = new TextStyle { Size = theme.Typography.CaptionSize, Color = theme.FormHint };
-                Paragraph(
-                    "Saves a file you can attach to an issue: the last five hundred "
-                    + "actions with their values, the notices, any errors, versions, "
-                    + "settings and Poser's own log lines. Character names are "
-                    + "replaced by Actor 1, Actor 2 and so on. Nothing is sent anywhere.",
-                    style, scale);
-                ImGui.Dummy(new Vector2(0f, 6f * scale));
+                Paragraph(Intro, style, scale);
+                ImGui.Dummy(new Vector2(0f, Gap * scale));
                 Crystarium.Checkbox(
                     "##issue-include-scene", _includeScene,
                     next => _includeScene = next,
                     help: "Add the scene to the report");
                 ImGui.SameLine(0f, 8f * scale);
                 Crystarium.TextAt(ImGui.GetCursorScreenPos(), "Include the scene", style);
-                ImGui.Dummy(new Vector2(0f, 4f * scale));
-                Paragraph(
-                    "Scene data only: poses, looks, lights, cameras, the environment. "
-                    + "No modified files and no mods are included.",
-                    hint, scale);
+                ImGui.Dummy(new Vector2(0f, Gap * scale));
+                Paragraph(SceneNote, hint, scale);
             },
             footer: () =>
             {
