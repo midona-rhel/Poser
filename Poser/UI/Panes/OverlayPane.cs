@@ -545,7 +545,7 @@ public sealed class OverlayPane
 
     /// <summary>Public because the overlay row's context menu speaks this
     /// verb too — one duplication rule, wherever it is asked.</summary>
-    public void Duplicate(OverlayNodeHandle node)
+    public OverlayNodeHandle? Duplicate(OverlayNodeHandle node)
     {
         // The copy is offset so it does not land exactly under the original,
         // where it would look like nothing happened; the NAME is dropped so
@@ -560,10 +560,11 @@ public sealed class OverlayPane
         {
             _pendingSelect = copy;
             _status = string.Empty;
-            return;
+            return copy;
         }
         _status = "The overlay could not be duplicated — the game's interface "
             + "would not take it.";
+        return null;
     }
 
     /// <summary>How far a duplicate lands from its original, in the node's own

@@ -1076,7 +1076,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _log?.Warning("ActorSpawnService: Cannot spawn - no local player");
             return null;
         }
-        return SpawnCloneFrom(localPlayer, reserveCompanionSlot);
+        // A new actor is not a copy of the player as far as mods go: it
+        // wears the player's collection live, not a snapshot of it.
+        return SpawnCloneFrom(localPlayer, reserveCompanionSlot, inheritSource: false);
     }
 
     public IActor? CloneActor(IActor source)
@@ -1155,6 +1157,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         var actor = SpawnCloneFrom(
             localPlayer,
             reserveCompanionSlot: false,
+            inheritSource: false,
             modelCharaId: entry.ModelCharaId,
             name: entry.Name,
             kind: entry.Kind);
@@ -1182,6 +1185,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private IActor? SpawnCloneFrom(
         nint sourceAddress,
         bool reserveCompanionSlot,
+        bool inheritSource = true,
         int modelCharaId = 0,
         string? name = null,
         CompanionKind? kind = null)
@@ -1235,13 +1239,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
             }
             var seeded = descriptor.Value;
             if (_framework is null)
-                InheritSourceCollection(ownership, sourceAddress, seeded);
+                InheritSourceCollection(ownership, sourceAddress, seeded, inheritSource);
             else
                 _framework.RunOnTick(() =>
                 {
                     if (_disposed)
                         return;
-                    InheritSourceCollection(ownership, sourceAddress, seeded);
+                    InheritSourceCollection(ownership, sourceAddress, seeded, inheritSource);
                 }, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
@@ -1540,7 +1544,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private void InheritSourceCollection(
         SpawnOwnershipRecord ownership,
         nint sourceAddress,
-        SpawnNativeDescriptor descriptor)
+        SpawnNativeDescriptor descriptor,
+        bool inheritSource)
     {
         if (_collections is null || sourceAddress == nint.Zero)
             return;
@@ -1548,7 +1553,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IntegrationPortResult result;
         try
         {
-            result = _collections.InheritCollection(sourceAddress, descriptor.Address);
+            // A duplicate carries a snapshot of its source's mods (a locked
+            // or synced source cannot be assigned by name); a plain spawn
+            // simply wears the player's collection.
+            result = inheritSource
+                ? _collections.InheritCollection(sourceAddress, descriptor.Address)
+                : _collections.AssignPlayerCollection(descriptor.Address);
         }
         catch (Exception ex)
         {

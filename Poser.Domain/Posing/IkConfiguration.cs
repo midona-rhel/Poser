@@ -6,6 +6,14 @@ public enum IkSolver
 {
     TwoJoint,
     Ccd,
+    /// <summary>Forward-and-backward reaching: a managed chain solver
+    /// that converges in a few passes on long chains where CCD curls the
+    /// tail first.</summary>
+    Fabrik,
+    /// <summary>A rope: both ends known, the links' total length fixed,
+    /// the slack hanging as a catenary in the vertical plane through the
+    /// ends; straight when the ends are further apart than the rope.</summary>
+    Rope,
 }
 
 public enum IkTargetMode
@@ -38,10 +46,19 @@ public sealed record IkChainConfig(
     float HingeMinDegrees,
     float HingeMaxDegrees,
     Vector3 HingeAxis,
-    bool EnforceEndRotation)
+    bool EnforceEndRotation,
+    float SwivelDegrees = 0f)
 {
     public const int MinDepth = 1;
-    public const int MaxDepth = 20;
+    /// <summary>The game's CCD solver writes NaN through the chain past
+    /// about twenty bones (measured at 40, 2026-09-02); FABRIK, being
+    /// ours, takes the full depth.</summary>
+    public const int MaxCcdDepth = 20;
+    public const int MaxDepth = 50;
+
+    public static int MaxDepthFor(IkSolver solver) =>
+        solver == IkSolver.Ccd ? MaxCcdDepth : MaxDepth;
+    public const float MaxSwivelDegrees = 180f;
     public const int MinIterations = 1;
     public const int MaxIterations = 60;
 
@@ -49,12 +66,17 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
-        if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd))
+        if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
+        if (!float.IsFinite(SwivelDegrees)
+            || SwivelDegrees is < -MaxSwivelDegrees or > MaxSwivelDegrees)
+            return $"Swivel must be within ±{MaxSwivelDegrees}°.";
         if (TargetMode is not (IkTargetMode.Relative or IkTargetMode.Fixed))
             return "IK target mode is unsupported.";
         if (CcdDepth is < MinDepth or > MaxDepth)
-            return $"CCD depth must be {MinDepth}..{MaxDepth}.";
+            return $"Depth must be {MinDepth}..{MaxDepth}.";
+        if (Solver == IkSolver.Ccd && CcdDepth > MaxCcdDepth)
+            return $"CCD bends {MaxCcdDepth} bones at most; FABRIK goes deeper.";
         if (CcdIterations is < MinIterations or > MaxIterations)
             return $"CCD iterations must be {MinIterations}..{MaxIterations}.";
         if (!IsUnit(CcdGain) || !IsUnit(FirstJointGain) ||
@@ -79,8 +101,8 @@ public sealed record IkChainConfig(
     /// parents to <see cref="CcdDepth"/>.
     /// </summary>
     public string? ValidateUndeclared() =>
-        Solver != IkSolver.Ccd
-            ? "Only the CCD solver works on a bone with no arm or leg chain."
+        Solver == IkSolver.TwoJoint
+            ? "Only a chain solver (CCD or FABRIK) works on a bone with no arm or leg chain."
             : Validate();
 
     /// <summary>The same valid configuration with a normalized hinge axis.</summary>
@@ -148,8 +170,10 @@ public sealed record IkChainConfig(
     /// depth 3 and iterations 8 (<c>Brio/Game/Posing/PoseInfo.cs:291-295</c>).
     /// The Two Joint fields keep their harmless values so switching back to a
     /// declared chain never meets an unvalidatable hinge.</summary>
-    public static IkChainConfig DefaultsForCcd(bool enabled = false) =>
-        DefaultsFor(isArm: true, enabled) with { Solver = IkSolver.Ccd };
+    /// <summary>A bone with no declared limb solves as a chain up the
+    /// hierarchy; FABRIK is the default there.</summary>
+    public static IkChainConfig DefaultsForChain(bool enabled = false) =>
+        DefaultsFor(isArm: true, enabled) with { Solver = IkSolver.Fabrik };
 }
 
 /// <summary>

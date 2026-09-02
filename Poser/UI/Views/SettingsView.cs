@@ -84,6 +84,7 @@ public sealed class SettingsViewModel
 
     public float GizmoScale = 1.0f;
     public bool AllowHoldSnap;
+    public int GroupScale;
     public float SnapRotationDegrees = 5.0f;
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
@@ -794,6 +795,8 @@ public static class SettingsView
             "Skeleton settings",
             "Put the bone dot, line and color settings back to their defaults"));
     }
+    private static readonly string[] GroupScaleLabels =
+        ["Sizes and spacing", "Spacing only"];
     private static readonly string[] SkeletonShapeLabels =
         ["Dots", "Octahedra", "Joints"];
     private static readonly string[] BonePickBehaviorLabels =
@@ -822,6 +825,12 @@ public static class SettingsView
                 vm.AllowHoldSnap,
                 next => vm.AllowHoldSnap = next,
                 "Quantise a drag to fixed steps while Z is held; add Shift for a tenth of the step");
+            form.Dropdown(
+                "Group scale",
+                GroupScaleLabels,
+                vm.GroupScale,
+                next => vm.GroupScale = next,
+                help: "Scaling several things: grow them and their spacing, or the spacing alone");
             form.Slider(
                 "Rotation step",
                 vm.SnapRotationDegrees,

@@ -42,6 +42,8 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -59,8 +61,12 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Services.IGazeService gaze,
-        global::Poser.Services.IBonePosingService bonePosing)
+        global::Poser.Services.IBonePosingService bonePosing,
+        global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
+        global::Poser.Services.ISpawnCatalogService catalog)
     {
+        _catalog = catalog;
+        _worldObjects = worldObjects;
         _bonePosing = bonePosing;
         _integration = integration;
         _session = session;
@@ -378,6 +384,65 @@ public sealed class DebugBridge : IDisposable
                 var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
                 return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
             }
+            case "/transfer":
+            {
+                var from = FindActor(query["from"]);
+                if (from == null)
+                    return Json(new { error = "no such source actor" });
+                bool Flag(string key) => !query.TryGetValue(key, out var v) || v != "0";
+                _lifecycle.TransferState(from, actor,
+                    Flag("rot"), Flag("pos"), Flag("scale"), Flag("physics"), Flag("roots"));
+                return Json(new { ok = true, from = from.Name, to = actor.Name });
+            }
+            case "/destroy":
+            {
+                bool gone = _lifecycle.DespawnActor(actor);
+                return Json(new { ok = gone });
+            }
+            case "/ik":
+            {
+                string name = query["name"]; int part = query.TryGetValue("partial", out var ip) ? int.Parse(ip) : 0;
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            var current = _bonePosing.GetIkConfiguration(bone);
+                            if (current == null)
+                                return Json(new { error = "bone cannot use IK" });
+                            var next = current with
+                            {
+                                Enabled = !query.TryGetValue("enabled", out var en) || en != "0",
+                                Solver = query.TryGetValue("solver", out var sv) ? Enum.Parse<global::Poser.Domain.Posing.IkSolver>(sv, true) : current.Solver,
+                                CcdDepth = query.TryGetValue("depth", out var dp) ? int.Parse(dp) : current.CcdDepth,
+                                CcdIterations = query.TryGetValue("iterations", out var it) ? int.Parse(it) : current.CcdIterations,
+                                SwivelDegrees = query.TryGetValue("swivel", out var sw) ? float.Parse(sw, CultureInfo.InvariantCulture) : current.SwivelDegrees,
+                            };
+                            var error = _bonePosing.SetIkConfiguration(bone, next);
+                            return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
+                        }
+                return Json(new { error = "no such bone" });
+            }
+            case "/rotatebone":
+            {
+                string name = query["name"]; int part = query.TryGetValue("partial", out var rp) ? int.Parse(rp) : 0;
+                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
+                var turn = System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f);
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            var raw = bone.LastRawTransform;
+                            float dx = query.TryGetValue("dx", out var dxs) ? float.Parse(dxs, CultureInfo.InvariantCulture) : 0f;
+                            float dy = query.TryGetValue("dy", out var dys) ? float.Parse(dys, CultureInfo.InvariantCulture) : 0f;
+                            float dz = query.TryGetValue("dz", out var dzs) ? float.Parse(dzs, CultureInfo.InvariantCulture) : 0f;
+                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale);
+                            _bonePosing.ApplyTransform(bone, wanted, raw);
+                            var m = _bonePosing.GetModification(bone);
+                            return Json(new { ok = true, modification = m is { } mod ? new { mod.Rotation.X, mod.Rotation.Y, mod.Rotation.Z, mod.Rotation.W } : null });
+                        }
+                return Json(new { error = "no such bone" });
+            }
             case "/scalebone":
             {
                 string name = query["name"]; int part = int.Parse(query["partial"]); float sc = float.Parse(query["s"], CultureInfo.InvariantCulture);
@@ -452,6 +517,40 @@ public sealed class DebugBridge : IDisposable
                 if (!meta.Success || meta.Value is not { } m)
                     return Json(new { error = meta.Detail });
                 return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
+            }
+            case "/spawncatalog":
+            {
+                string want = query.TryGetValue("name", out var cn) ? cn.ToLowerInvariant() : "wind-up titan";
+                global::Poser.Services.SpawnCatalogEntry? entry = null;
+                foreach (var e in _catalog.Entries)
+                    if (e.NameLower == want || (entry == null && e.NameLower.Contains(want)))
+                        entry = e;
+                if (entry is not { } found)
+                    return Json(new { ok = false, detail = "no catalog entry matches" });
+                var spawnedActor = _lifecycle.SpawnActor($"Add {found.Name}", () => _spawner.SpawnCatalogActor(found));
+                return Json(new { ok = spawnedActor != null, name = spawnedActor?.Name, entry = found.Name, kind = found.Kind.ToString() });
+            }
+            case "/spawnobject":
+            {
+                string modelPath = query.TryGetValue("path", out var sp) ? sp : "bgcommon/hou/outdoor/general/0022/bgparts/gar_b0_m0022a.mdl";
+                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Transform.Identity;
+                var placement = new global::Poser.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
+                var made = _worldObjects.Spawn(modelPath, placement, true, out var detail);
+                return Json(new { ok = made != null, detail, address = made == null ? null : $"0x{made.Address:X}", name = made?.Name });
+            }
+            case "/worldobjects":
+            {
+                var rows = new List<object>();
+                unsafe
+                {
+                    foreach (var handle in _worldObjects.Adopted)
+                    {
+                        var node = (byte*)handle.Address;
+                        string tail = node == null ? "" : Convert.ToHexString(new System.ReadOnlySpan<byte>(node + 0xC0, 0x20));
+                        rows.Add(new { handle.Name, handle.Spawned, handle.IsVfx, address = $"0x{handle.Address:X}", paused = handle.AnimationPaused, ready = _worldObjects.IsReadyProbe(handle), tail });
+                    }
+                }
+                return Json(new { rows });
             }
             case "/redraw":
             {

@@ -169,6 +169,7 @@ internal static class ServiceRegistration
         services.AddSingleton<SceneSession>();
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<Application.Scene.SceneGroups>();
+        services.AddSingleton<Game.Scene.SceneGroupsLifetime>();
         return services;
     }
 

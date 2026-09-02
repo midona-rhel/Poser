@@ -1192,7 +1192,8 @@ public class GizmoOverlayWindow : Window
             symmetryFor: isBone ? SymmetryDeltaFor : null,
             relativeSecondaryBones: isBone &&
                 Config.ConfigurationService.Instance.Config
-                    .RelativeSecondaryBones);
+                    .RelativeSecondaryBones,
+            groupScale: Config.ConfigurationService.Instance.Config.Gizmo.GroupScale);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(

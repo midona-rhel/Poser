@@ -94,6 +94,7 @@ public class PoseFileService : IPoseFileService
         // partial's bones go into the slot's matching collection as absolute
         // model-space snapshots (LastRawTransform). Partial roots are skipped
         // except the skeleton root.
+        int degenerate = 0;
         foreach (var skeleton in slots)
         {
             actor ??= skeleton.Actor;
@@ -106,10 +107,21 @@ public class PoseFileService : IPoseFileService
                     continue;
                 if (include != null && !include(bone))
                     continue;
+                // A helper the game never rotates (a zero-scaled leash
+                // chain link) carries an all-zero quaternion; a file cannot
+                // hold it and an import could not apply it. Left out — a
+                // NaN, by contrast, is corruption and still refuses.
+                if (IsZeroRotation(bone.LastRawTransform.Rotation))
+                {
+                    degenerate++;
+                    continue;
+                }
 
                 collection[bone.BoneName] = bone.LastRawTransform;
             }
         }
+        if (degenerate > 0)
+            _log.Debug($"Pose capture left out {degenerate} bone(s) with a degenerate rotation");
 
         // Brio parity (ModelPosingCapability.ExportModelPose): the OWNING
         // ACTOR's transform, written once regardless of slot count.
@@ -134,6 +146,14 @@ public class PoseFileService : IPoseFileService
         }
 
         return poseFile;
+    }
+
+    /// <summary>Finite but too short to be a rotation — the same bar the
+    /// file validator applies; NaN is not this, NaN is corruption.</summary>
+    private static bool IsZeroRotation(Quaternion rotation)
+    {
+        float length = rotation.LengthSquared();
+        return float.IsFinite(length) && length < PoseFileLimits.MinQuaternionLengthSquared;
     }
 
     public bool ExportPose(IReadOnlyList<ISkeleton> slots, string path)
@@ -287,7 +307,7 @@ public class PoseFileService : IPoseFileService
                         var writeComponents = AnchorMask(match, options, components);
                         if (writeComponents == TransformComponents.None)
                             continue;
-                        PlanBoneTransform(plan, bone, boneData, writeComponents);
+                        PlanBoneTransform(plan, bone, boneData, writeComponents, collection);
                         applied = true;
                     }
                     if (applied)
@@ -497,7 +517,7 @@ public class PoseFileService : IPoseFileService
                 var writeComponents = AnchorMask(match, options, boneComponents);
                 if (writeComponents == TransformComponents.None)
                     continue;
-                PlanBoneTransform(plan, bone, boneData, writeComponents);
+                PlanBoneTransform(plan, bone, boneData, writeComponents, poseFile.Bones);
                 applied = true;
             }
             if (applied)
@@ -632,9 +652,19 @@ public class PoseFileService : IPoseFileService
         return BoneFilterMatch.Excluded;
     }
 
-    private static void PlanBoneTransform(
-        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
+    private void PlanBoneTransform(
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components,
+        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
     {
+        // A live bone with no usable rotation (a chain link frozen mid-blend
+        // at zero) cannot be captured for undo and cannot take a delta; it
+        // is left out so the rest of the pose still lands.
+        if (!TransformMath.IsValidRotation(bone.LastTransform.Rotation)
+            || !TransformMath.IsValidRotation(bone.LastRawTransform.Rotation))
+        {
+            _log.Warning($"Pose import: {bone.BoneName} has no usable rotation and was left out.");
+            return;
+        }
         // The FILE transform verbatim: file bones are LastRawTransform
         // snapshots taken AFTER the update phase's post-reparent refresh
         // (CreatePoseFile above; Brio SkeletonService.cs:243). The delta
@@ -648,6 +678,23 @@ public class PoseFileService : IPoseFileService
         // 316-317, :370-401). Excluded components are masked on the DELTA
         // (Brio PoseInfo.cs:108), so the bone's live values stay put without
         // being re-asserted.
+        // A file bone with an all-zero rotation (older captures kept the
+        // game's zero-quaternion helpers) has nothing to apply.
+        if (IsZeroRotation(boneData.Rotation))
+            return;
+        // Position travels as the bone's OFFSET FROM ITS PARENT, not as a
+        // place in model space. A bone whose local offset already matches
+        // the file's — a rigid limb, a chain link, a physics link — gets no
+        // position write: its place is its parent's and the game's to
+        // derive, and a written place fights that derivation (a minion's
+        // leash shortened every rotation down the chain to nothing,
+        // 2026-09-02). A root, a hip, or a bone a Customize+ offset moved
+        // differs locally and is written.
+        if (components.HasFlag(TransformComponents.Position)
+            && LocalOffsetMatches(bone, boneData, collection))
+            components &= ~TransformComponents.Position;
+        if (components == TransformComponents.None)
+            return;
         plan.Writes.Add(new PoseImportWrite(
             bone.Skeleton.Slot,
             bone.PartialId,
@@ -659,6 +706,47 @@ public class PoseFileService : IPoseFileService
                 Scale = boneData.Scale
             },
             components));
+    }
+
+    /// <summary>Whether the file places this bone at the same offset from
+    /// its parent as the live skeleton does, to half a millimetre. A root
+    /// has no parent to measure against and always keeps its position.</summary>
+    private static bool LocalOffsetMatches(
+        IBone bone, PoseFile.BoneData boneData,
+        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
+    {
+        // A partial root is seated on its parent by the per-frame reparent,
+        // not by the game's hierarchy: its children take the root's move
+        // from that reparent AND from their own absolute delta unless the
+        // root's own write refreshes them first. Roots and cross-partial
+        // parents are therefore always written.
+        if (bone.ParentBone is not { } parent
+            || bone.IsPartialRoot
+            || parent.PartialId != bone.PartialId
+            || !collection.TryGetValue(parent.BoneName, out var parentData)
+            || !TransformMath.IsValidRotation(parentData.Rotation))
+            return false;
+        var rawParent = parent.LastRawTransform;
+        if (!TransformMath.IsValidRotation(rawParent.Rotation))
+            return false;
+        var fileLocal = LocalOffset(
+            boneData.Position, parentData.Position, parentData.Rotation, parentData.Scale);
+        var rawLocal = LocalOffset(
+            bone.LastRawTransform.Position, rawParent.Position, rawParent.Rotation, rawParent.Scale);
+        const float halfMillimetreSquared = 0.0005f * 0.0005f;
+        return Vector3.DistanceSquared(fileLocal, rawLocal) < halfMillimetreSquared;
+    }
+
+    private static Vector3 LocalOffset(
+        Vector3 position, Vector3 parentPosition, Quaternion parentRotation, Vector3 parentScale)
+    {
+        var offset = Vector3.Transform(
+            position - parentPosition,
+            Quaternion.Inverse(TransformMath.NormalizeRotation(parentRotation)));
+        return new Vector3(
+            parentScale.X > 0.0001f ? offset.X / parentScale.X : offset.X,
+            parentScale.Y > 0.0001f ? offset.Y / parentScale.Y : offset.Y,
+            parentScale.Z > 0.0001f ? offset.Z / parentScale.Z : offset.Z);
     }
 
     /// <summary>Brio PoseWindow's TransformComponents assembly from the three

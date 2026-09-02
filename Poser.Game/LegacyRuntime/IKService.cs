@@ -7,6 +7,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Container.Array;
+using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
 using Poser.Core;
 using Poser.Domain.Posing;
@@ -92,8 +93,371 @@ public unsafe class IKService : IIKService
 
         if (request.Config.Solver == IkSolver.Ccd)
             SolveCcd(pose, endpoint, request);
+        else if (request.Config.Solver == IkSolver.Fabrik)
+            SolveFabrik(pose, endpoint, request);
+        else if (request.Config.Solver == IkSolver.Rope)
+            SolveRope(pose, endpoint, request);
         else if (request.Chain.TwoJointAvailable)
             SolveTwoJoint(pose, request);
+        else
+            return;
+        if (MathF.Abs(request.Config.SwivelDegrees) > 0.01f)
+            ApplySwivel(pose, endpoint, request);
+    }
+
+    // ── model-space access shared by the managed passes ─────────────────
+
+    private static bool ReadModelSpace(hkaPose* pose, int boneIndex, out Vector3 position, out Quaternion rotation)
+    {
+        var entry = pose->AccessBoneModelSpace(boneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        if (entry == null)
+        {
+            position = default;
+            rotation = Quaternion.Identity;
+            return false;
+        }
+        position = new Vector3(entry->Translation.X, entry->Translation.Y, entry->Translation.Z);
+        rotation = new Quaternion(entry->Rotation.X, entry->Rotation.Y, entry->Rotation.Z, entry->Rotation.W);
+        return true;
+    }
+
+    /// <summary>Writes one bone's place and rotation, root to tip order:
+    /// each write propagates, so what hangs off a chain bone but is not
+    /// itself in the chain (a twist, the fingers past the hand) follows
+    /// from its own local pose, and the next chain bone's own write then
+    /// overrides what that propagation guessed for it.</summary>
+    private static void WriteModelSpace(hkaPose* pose, int boneIndex, Vector3 position, Quaternion rotation)
+    {
+        var entry = pose->AccessBoneModelSpace(boneIndex, hkaPose.PropagateOrNot.Propagate);
+        if (entry == null)
+            return;
+        entry->Translation = *(hkVector4f*)(&position);
+        entry->Rotation = *(hkQuaternionf*)(&rotation);
+    }
+
+    private static Quaternion FromTo(Vector3 from, Vector3 to)
+    {
+        float fl = from.Length(), tl = to.Length();
+        if (fl < 1e-6f || tl < 1e-6f)
+            return Quaternion.Identity;
+        from /= fl;
+        to /= tl;
+        float dot = Math.Clamp(Vector3.Dot(from, to), -1f, 1f);
+        if (dot > 0.99999f)
+            return Quaternion.Identity;
+        if (dot < -0.99999f)
+        {
+            var any = MathF.Abs(from.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
+            var perpendicular = Vector3.Normalize(Vector3.Cross(from, any));
+            return Quaternion.CreateFromAxisAngle(perpendicular, MathF.PI);
+        }
+        var axis = Vector3.Normalize(Vector3.Cross(from, to));
+        return Quaternion.CreateFromAxisAngle(axis, MathF.Acos(dot));
+    }
+
+    // ── FABRIK ──────────────────────────────────────────────────────────
+
+    /// <summary>Forward-and-backward reaching over the chain the depth
+    /// names: link lengths are kept, the tip is dragged to the target and
+    /// the root pinned back, alternating until the tip lands or the
+    /// iterations run out. Each bone then takes the rotation that turns
+    /// its old link direction into its new one.</summary>
+    private void SolveFabrik(hkaPose* pose, IBone endpoint, in IkSolveRequest request)
+    {
+        var bones = GetBonesToDepth(endpoint, request.Config.CcdDepth, true);
+        int count = bones.Count;
+        if (count <= 1)
+            return;
+        // Root first.
+        var indices = new int[count];
+        var positions = new Vector3[count];
+        var rotations = new Quaternion[count];
+        for (int i = 0; i < count; i++)
+        {
+            var bone = bones[count - 1 - i];
+            indices[i] = bone.BoneIndex;
+            if (!ReadModelSpace(pose, indices[i], out positions[i], out rotations[i]))
+                return;
+        }
+        var original = (Vector3[])positions.Clone();
+        var lengths = new float[count - 1];
+        float reach = 0f;
+        for (int i = 0; i < count - 1; i++)
+        {
+            lengths[i] = Vector3.Distance(positions[i + 1], positions[i]);
+            reach += lengths[i];
+        }
+        var root = positions[0];
+        var target = request.Target;
+        if (Vector3.Distance(target, root) >= reach)
+        {
+            // Out of reach: the chain points straight at the target.
+            var direction = target - root;
+            if (direction.LengthSquared() < 1e-12f)
+                return;
+            direction = Vector3.Normalize(direction);
+            for (int i = 0; i < count - 1; i++)
+                positions[i + 1] = positions[i] + direction * lengths[i];
+        }
+        else
+        {
+            const float tolerance = 0.0001f;
+            for (int pass = 0; pass < request.Config.CcdIterations; pass++)
+            {
+                if (Vector3.DistanceSquared(positions[count - 1], target) < tolerance * tolerance)
+                    break;
+                positions[count - 1] = target;
+                for (int i = count - 2; i >= 0; i--)
+                {
+                    var toward = positions[i] - positions[i + 1];
+                    if (toward.LengthSquared() < 1e-12f)
+                        continue;
+                    positions[i] = positions[i + 1] + Vector3.Normalize(toward) * lengths[i];
+                }
+                positions[0] = root;
+                for (int i = 0; i < count - 1; i++)
+                {
+                    var toward = positions[i + 1] - positions[i];
+                    if (toward.LengthSquared() < 1e-12f)
+                        continue;
+                    positions[i + 1] = positions[i] + Vector3.Normalize(toward) * lengths[i];
+                }
+            }
+        }
+        for (int i = 0; i < count - 1; i++)
+            rotations[i] = Quaternion.Normalize(
+                FromTo(original[i + 1] - original[i], positions[i + 1] - positions[i]) * rotations[i]);
+        if (request.Config.EnforceEndRotation)
+            rotations[count - 1] = request.TargetRotation;
+        for (int i = 0; i < count; i++)
+            WriteModelSpace(pose, indices[i], positions[i], rotations[i]);
+    }
+
+    // ── the rope ────────────────────────────────────────────────────────
+
+    /// <summary>The chain hangs between its root and the target as a
+    /// catenary of the links' total length, in the vertical plane through
+    /// both ends; a target further away than the rope pulls it straight.
+    /// Down is the WORLD's, brought into the actor's model space.
+    /// Links are placed along the curve at their own lengths and each takes
+    /// the rotation that turns its old direction into its new one.</summary>
+    private void SolveRope(hkaPose* pose, IBone endpoint, in IkSolveRequest request)
+    {
+        var bones = GetBonesToDepth(endpoint, request.Config.CcdDepth, true);
+        int count = bones.Count;
+        if (count <= 1)
+            return;
+        var indices = new int[count];
+        var positions = new Vector3[count];
+        var rotations = new Quaternion[count];
+        for (int i = 0; i < count; i++)
+        {
+            var bone = bones[count - 1 - i];
+            indices[i] = bone.BoneIndex;
+            if (!ReadModelSpace(pose, indices[i], out positions[i], out rotations[i]))
+                return;
+        }
+        var original = (Vector3[])positions.Clone();
+        var lengths = new float[count - 1];
+        float rope = 0f;
+        for (int i = 0; i < count - 1; i++)
+        {
+            lengths[i] = Vector3.Distance(positions[i + 1], positions[i]);
+            rope += lengths[i];
+        }
+        if (rope < 1e-5f)
+            return;
+        var root = positions[0];
+        var target = request.Target;
+        var down = WorldDownInModelSpace(endpoint);
+        var span = target - root;
+        // The hanging plane: the horizontal direction from root to target,
+        // or, for a target straight above or below, the direction the chain
+        // already leans in, or +X when it leans nowhere.
+        var horizontal = span - Vector3.Dot(span, down) * down;
+        float d = horizontal.Length();
+        Vector3 across;
+        if (d > 1e-5f)
+            across = horizontal / d;
+        else
+        {
+            var lean = Vector3.Zero;
+            for (int i = 1; i < count; i++)
+                lean += original[i] - root;
+            lean -= Vector3.Dot(lean, down) * down;
+            across = lean.LengthSquared() > 1e-10f ? Vector3.Normalize(lean) : Vector3.UnitX;
+        }
+        float h = -Vector3.Dot(span, down); // target height above the root
+        float straight = MathF.Sqrt(d * d + h * h);
+        var samples = new Vector3[count];
+        samples[0] = root;
+        if (straight >= rope - 1e-5f)
+        {
+            var direction = straight > 1e-6f ? span / straight : down;
+            float along = 0f;
+            for (int i = 1; i < count; i++)
+            {
+                along += lengths[i - 1];
+                samples[i] = root + direction * along;
+            }
+        }
+        else
+        {
+            // Catenary y = a cosh(x/a) through both ends with arc length
+            // rope: sqrt(rope² − h²) = 2a sinh(d/2a), a found by bisection.
+            float chord = MathF.Sqrt(MathF.Max(rope * rope - h * h, 1e-8f));
+            float a;
+            if (d < 1e-4f)
+            {
+                // Ends stacked: the rope folds straight down and back up.
+                a = 1e-3f;
+            }
+            else
+            {
+                float low = 1e-4f, high = 1e4f;
+                for (int step = 0; step < 80; step++)
+                {
+                    float mid = MathF.Sqrt(low * high);
+                    float value = 2f * mid * MathF.Sinh(d / (2f * mid));
+                    if (value > chord)
+                        low = mid;
+                    else
+                        high = mid;
+                }
+                a = MathF.Sqrt(low * high);
+            }
+            // Curve parameters: x from the root along 'across', y up.
+            // x0 is where the lowest point sits relative to the root.
+            float x0 = d < 1e-4f ? 0f : 0.5f * d - a * MathF.Asinh(h / (2f * a * MathF.Sinh(d / (2f * a))));
+            float Y(float x) => a * (MathF.Cosh((x - x0) / a) - MathF.Cosh(-x0 / a));
+            float S(float x) => a * (MathF.Sinh((x - x0) / a) - MathF.Sinh(-x0 / a)); // arc length from the root
+            if (d < 1e-4f)
+            {
+                // Down half the slack, then back up to the target.
+                float half = 0.5f * (rope - MathF.Abs(h));
+                float along = 0f;
+                for (int i = 1; i < count; i++)
+                {
+                    along += lengths[i - 1];
+                    float depthDown = h >= 0f ? half : half + MathF.Abs(h);
+                    float y = along <= depthDown ? -along : -depthDown + (along - depthDown);
+                    samples[i] = root - down * y;
+                }
+            }
+            else
+            {
+                float along = 0f;
+                for (int i = 1; i < count; i++)
+                {
+                    along += lengths[i - 1];
+                    // x for this arc length, by bisection on S.
+                    float lowX = 0f, highX = d;
+                    for (int step = 0; step < 40; step++)
+                    {
+                        float midX = 0.5f * (lowX + highX);
+                        if (S(midX) < along)
+                            lowX = midX;
+                        else
+                            highX = midX;
+                    }
+                    float x = 0.5f * (lowX + highX);
+                    samples[i] = root + across * x - down * Y(x);
+                }
+            }
+            samples[count - 1] = target;
+        }
+        for (int i = 0; i < count - 1; i++)
+            rotations[i] = Quaternion.Normalize(
+                FromTo(original[i + 1] - original[i], samples[i + 1] - samples[i]) * rotations[i]);
+        if (request.Config.EnforceEndRotation)
+            rotations[count - 1] = request.TargetRotation;
+        for (int i = 0; i < count; i++)
+            WriteModelSpace(pose, indices[i], samples[i], rotations[i]);
+    }
+
+    /// <summary>World down in the skeleton's model space: the actor's draw
+    /// object rotation undone. Model −Y when the actor cannot be read.</summary>
+    private static Vector3 WorldDownInModelSpace(IBone endpoint)
+    {
+        var charaBase = SlotCharacterBases.Resolve(
+            endpoint.Skeleton.Actor.Address, endpoint.Skeleton.Slot);
+        if (charaBase == null)
+            return -Vector3.UnitY;
+        var raw = charaBase->DrawObject.Object.Rotation;
+        var rotation = new Quaternion(raw.X, raw.Y, raw.Z, raw.W);
+        float length = rotation.LengthSquared();
+        if (!float.IsFinite(length) || length < 1e-6f)
+            return -Vector3.UnitY;
+        return Vector3.Normalize(Vector3.Transform(
+            -Vector3.UnitY, Quaternion.Inverse(Quaternion.Normalize(rotation))));
+    }
+
+    // ── the swivel ──────────────────────────────────────────────────────
+
+    /// <summary>Spins the solved chain about the line from its first joint
+    /// to its tip: the tip stays put, the bones between swing round it —
+    /// the pole angle of an elbow or knee, or of any chain. The tip keeps
+    /// the rotation the solver enforced, else it turns with the rest.</summary>
+    private void ApplySwivel(hkaPose* pose, IBone endpoint, in IkSolveRequest request)
+    {
+        List<IBone> bones;
+        if (request.Config.Solver == IkSolver.TwoJoint)
+        {
+            bones = _chainBuffer;
+            bones.Clear();
+            var current = endpoint;
+            while (current != null && bones.Count < 8)
+            {
+                bones.Add(current);
+                if (current.BoneIndex == request.Chain.FirstJoint)
+                    break;
+                current = current.ParentBone;
+            }
+            if (bones.Count < 2 || bones[^1].BoneIndex != request.Chain.FirstJoint)
+                return;
+        }
+        else
+        {
+            bones = GetBonesToDepth(endpoint, request.Config.CcdDepth, true);
+            if (bones.Count < 2)
+                return;
+        }
+        int count = bones.Count;
+        int startIndex = bones[count - 1].BoneIndex;
+        int endIndex = bones[0].BoneIndex;
+        if (!ReadModelSpace(pose, startIndex, out var start, out _)
+            || !ReadModelSpace(pose, endIndex, out var end, out _))
+            return;
+        var axis = end - start;
+        if (axis.LengthSquared() < 1e-10f)
+            return;
+        var spin = Quaternion.CreateFromAxisAngle(
+            Vector3.Normalize(axis), request.Config.SwivelDegrees * MathF.PI / 180f);
+        bool keepEndRotation = request.Config.Solver == IkSolver.TwoJoint && request.Config.EnforceEndRotation;
+        // The whole chain is read BEFORE anything is written: a write
+        // propagates, so a child read afterwards comes back already spun
+        // by its parent and would be spun again (compounded down the
+        // chain, 2026-09-02).
+        var indices = new int[count];
+        var positions = new Vector3[count];
+        var rotations = new Quaternion[count];
+        for (int i = 0; i < count; i++)
+        {
+            indices[i] = bones[i].BoneIndex;
+            if (!ReadModelSpace(pose, indices[i], out positions[i], out rotations[i]))
+                return;
+        }
+        // Root to tip.
+        for (int i = count - 1; i >= 0; i--)
+        {
+            var swung = i == count - 1
+                ? positions[i]
+                : start + Vector3.Transform(positions[i] - start, spin);
+            var turned = i == 0 && keepEndRotation
+                ? rotations[i]
+                : Quaternion.Normalize(spin * rotations[i]);
+            WriteModelSpace(pose, indices[i], swung, turned);
+        }
     }
 
     /// <summary>

@@ -68,7 +68,10 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowCameraFree = 28;
     private const int RowCameraFromLibrary = 29;
     private const int RowCameraFromFile = 30;
-    private const int ActionRows = 30;
+    // The catalog starts after the LAST fixed row: a row added above
+    // shifted every catalog activation one entry off ("crystal" spawned
+    // the disco lights, 2026-09-02).
+    private const int ActionRows = RowCameraFromFile + 1;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
     /// the stated kind (null = everything) — the from-library rows' one

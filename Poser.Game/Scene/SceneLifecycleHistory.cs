@@ -730,6 +730,25 @@ public sealed class SceneLifecycleHistory
     public void WhenPosable(IActor actor, Action<IActor> act) =>
         _actors.WhenPosable(actor, a => act((IActor)a));
 
+    /// <summary>Debug bridge only: the source's state onto an existing
+    /// actor, unjournaled, with the restore knobs set for the run.</summary>
+    public void TransferState(
+        IActor from, IActor to,
+        bool rotation, bool position, bool scale,
+        bool physicsDeltas, bool rootScales)
+    {
+        if (_actors is ActorServiceLifecycle lifecycle)
+        {
+            lifecycle.DebugRotation = rotation;
+            lifecycle.DebugPosition = position;
+            lifecycle.DebugScale = scale;
+            lifecycle.DebugPhysicsDeltas = physicsDeltas;
+            lifecycle.DebugRootScales = rootScales;
+        }
+        var state = _actors.Read(from);
+        _actors.Restore(to, state);
+    }
+
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
@@ -1130,6 +1149,21 @@ public sealed class SceneLifecycleHistory
     public object? AdoptWorldObject(nint address)
     {
         var worldObject = _worldObjects.Adopt(address);
+        if (worldObject == null)
+            return null;
+        var slot = WorldObjectSlotFor(worldObject);
+        _history.Append(new SceneLifecyclePatch(
+            "Add world object",
+            () => ReleaseWorldObjectSlot(slot),
+            () => RestoreWorldObject(slot)));
+        return worldObject;
+    }
+
+    /// <summary>Spawns one object from a model path, journalled like an
+    /// adoption: undoing it takes the copy out of the scene again.</summary>
+    public object? SpawnWorldObject(string path, Transform placement, bool visible)
+    {
+        var worldObject = _worldObjects.Spawn(path, placement, visible);
         if (worldObject == null)
             return null;
         var slot = WorldObjectSlotFor(worldObject);

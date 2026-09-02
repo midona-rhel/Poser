@@ -737,20 +737,21 @@ again is chrome talking to itself (swept 2026-08-30).
 
 ## Tooltips
 
-CONTEXT MENUS carry no hovers at all (ruled 2026-08-31): a menu
-row's label is its whole explanation, and a row that would need a
-placeholder or an explanation is omitted, never seated disabled with
-a tooltip — a menu never holds an empty seat.
+A hover is a LABEL, not an explanation. Its length follows the verb's
+complexity, and most verbs are one word.
 
-A hover is a short WHAT-IT-DOES phrase and NEVER contains an em
-dash — no appended explainer clauses ("The night look — lamps lit"
-shipped and was rejected on sight, 2026-09-01; it is "Toggles night
-state"). "Preview the expression",
-"Reset the face bones", "Fade the whole actor" — a few words, verb
-first. Every labelled control HAS one; a value's units belong in it
-("Orbit above or below, degrees"). Explanations live in the UI-contract docs and the future
-tutorial, never in a tooltip. A sentence-long tooltip is a defect
-unless truly exceptional.
+- An icon-only control gets one or two words: "Hide", "Show", "Play",
+  "Pause", "Hide handle", "Night". That is the whole hover.
+- A control that already carries text (a "Save to library" button, a
+  "Remove" or "Deselect" verb) gets NO tooltip — the label is the
+  hover. Repeating the label in a sentence is a defect.
+- A hover grows past two words only when the verb is genuinely
+  complex or a value needs its units ("Orbit above or below, degrees").
+  "Let each member keep its own visibility" is the kind of sentence
+  that never belongs in a hover; it belongs in the UI-contract docs and
+  the future tutorial.
+- Group gates read like any other toggle: "Hide"/"Show", "Pause"/"Play".
+  Never describe the gate mechanics in the hover.
 
 ## How to design a surface
 

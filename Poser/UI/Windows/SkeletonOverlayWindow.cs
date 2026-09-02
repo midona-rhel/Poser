@@ -384,21 +384,31 @@ public class SkeletonOverlayWindow : Window
 
         // Which groups are ENGAGED this frame decides which member handles
         // exist at all, so it resolves before any collection loop runs.
-        // THE RULE (2026-08-31): children hidden while their group is
-        // unengaged; only the inner ring while the GROUP is the selection;
-        // full size while a CHILD is the selection.
+        // THE RULE (2026-08-31, depth 2026-09-02): children hidden while
+        // their group is unengaged; only the inner ring while the GROUP is
+        // the selection; full size while a DIRECT CHILD is the selection.
+        // A whole-group selection engages that group and its parent only —
+        // never the nested groups whose members ride along in the
+        // selection — so grandchildren stay behind their own group's dot.
         var wholeGroup = _groups.ActiveSelection(_selection.Selected)?.Id;
         _engagedGroups.Clear();
         foreach (var group in _groups.All)
         {
-            bool engaged = _groups.ActiveGroupId == group.Id;
-            foreach (var id in _selection.Selected)
+            bool engaged;
+            if (wholeGroup is { } selectedGroup)
+                engaged = group.Id == selectedGroup
+                    || group.Children.Contains(selectedGroup);
+            else
             {
-                if (engaged)
-                    break;
-                engaged = group.Members.Contains(id)
-                    || (id.Bone is { } engagedBone && group.Members.Contains(
-                        SelectionId.ForActor(engagedBone.Skeleton.Actor)));
+                engaged = false;
+                foreach (var id in _selection.Selected)
+                {
+                    if (engaged)
+                        break;
+                    engaged = group.Members.Contains(id)
+                        || (id.Bone is { } engagedBone && group.Members.Contains(
+                            SelectionId.ForActor(engagedBone.Skeleton.Actor)));
+                }
             }
             if (engaged)
                 _engagedGroups.Add(group.Id);
@@ -407,6 +417,12 @@ public class SkeletonOverlayWindow : Window
         groupDots.Clear();
         foreach (var group in _groups.All)
         {
+            // A nested group's dot hides behind its parent like any
+            // member does, unless it is engaged itself.
+            if (group.ParentId is { } parentId
+                && !_engagedGroups.Contains(parentId)
+                && !_engagedGroups.Contains(group.Id))
+                continue;
             var memberSum = Vector3.Zero;
             int placed = 0;
             foreach (var member in group.Members)
@@ -1305,11 +1321,12 @@ public class SkeletonOverlayWindow : Window
             && pressed == released
             && !Interactive.PointerOccluded(
                 InteractionOwner.World, ImGui.GetMousePos())
-            && _groups.Find(released) is { Members.Count: > 0 } group)
+            && _groups.Find(released) is { } group
+            && new List<SelectionId>(_groups.Descendants(group)) is { Count: > 0 } everything)
         {
-            _selection.Select(group.Members[0]);
-            for (int i = 1; i < group.Members.Count; i++)
-                _selection.Add(group.Members[i]);
+            _selection.Select(everything[0]);
+            for (int i = 1; i < everything.Count; i++)
+                _selection.Add(everything[i]);
             _groups.ActiveGroupId = group.Id;
         }
         _pressedGroupTarget = null;

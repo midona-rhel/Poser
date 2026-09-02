@@ -629,6 +629,16 @@ public class MainWindow : Window
                 && _groups.Find(lockTag.Id) is { } lockGroup)
                 _groups.SetLocked(lockTag.Id, !lockGroup.Locked);
         };
+        _vm.OnGroupVisibility = row =>
+        {
+            if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
+                SetGroupHidden(group, !group.Hidden);
+        };
+        _vm.OnGroupPause = row =>
+        {
+            if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
+                SetGroupPaused(group, !group.Paused);
+        };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -864,18 +874,24 @@ public class MainWindow : Window
             if (!paused.Success ||
                 paused.Value is not { IsValid: true } handle)
                 return;
-            if (handle.IsVfx)
-            {
-                handle.VfxPaused = !handle.VfxPaused;
-                row.Paused = handle.VfxPaused;
+            if (!handle.IsVfx)
                 return;
-            }
-            // Spawned scenery cannot be animated by the game; its seat
-            // is inert by construction.
-            if (handle.Spawned)
+            handle.VfxPaused = !handle.VfxPaused;
+            row.Paused = handle.VfxPaused;
+        };
+        // The scenery row's sun/moon seat: the same night state the
+        // properties page switches.
+        _vm.OnRowNight = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } nightId })
                 return;
-            handle.AnimationPaused = !handle.AnimationPaused;
-            row.Paused = handle.AnimationPaused;
+            var night = _bindings.Resolve(nightId);
+            if (!night.Success ||
+                night.Value is not { IsValid: true, IsVfx: false } handle)
+                return;
+            handle.NightState = !handle.NightState;
+            row.Night = handle.NightState;
         };
         _vm.OnLightVisibility = row =>
         {
@@ -1000,6 +1016,7 @@ public class MainWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        PumpGroupCopies();
 
         // Keep one shell width across tabs; detached parts release their width.
         float minimumWidth = EffectiveMinimumWidth();
@@ -1855,39 +1872,7 @@ public class MainWindow : Window
             }
             if (_groups.Find(slot.GroupId) is not { } group)
                 continue;
-            string key = "group:" + group.Id;
-            bool expanded = filtering || !_collapsedNodes.Contains(key);
-            _sceneSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = group.Name,
-                Icon = TablerIcon.Folder,
-                // A locked group holds still: no grip, no drops into it.
-                Draggable = !group.Locked,
-                DropContainer = !group.Locked,
-                GroupActions = true,
-                GroupLocked = group.Locked,
-                HasChildren = group.Members.Count > 0,
-                ExpandKey = key,
-                Expanded = expanded,
-                Tag = new GroupRowTag(group.Id),
-            });
-            if (!expanded)
-                continue;
-            int memberStart = _sceneSection.Rows.Count;
-            for (int m = 0; m < group.Members.Count; m++)
-                AddGroupMemberRow(
-                    group.Members[m], snapshot, filter, filtering,
-                    isLast: m == group.Members.Count - 1);
-            // The head-vs-members highlight rule has to know which rows
-            // are grouped; the sweep marks the subtree whole, a grouped
-            // actor's bones included — and a locked group's members lose
-            // their grips with it.
-            for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
-            {
-                _sceneSection.Rows[r].GroupMember = true;
-                if (group.Locked)
-                    _sceneSection.Rows[r].Draggable = false;
-            }
+            AddGroupRows(group, 0, snapshot, filter, filtering);
         }
 
         // A reference picture is an overlay by the same test the nodes are —
@@ -1953,10 +1938,16 @@ public class MainWindow : Window
                 && _groups.Create(entry.Name, members) is { } made)
             {
                 groupIds[entry.Key] = made.Id;
-                _groups.SetLocked(made.Id, entry.Locked);
                 anyResolved = true;
             }
         }
+        // Nesting, then locks: a lock refuses the nest, and the parent
+        // must exist before its child asks.
+        foreach (var entry in pending.Groups)
+            if (entry.Parent is { } parentKey
+                && groupIds.TryGetValue(entry.Key, out var childId)
+                && groupIds.TryGetValue(parentKey, out var parentId))
+                _groups.Nest(childId, parentId);
         if (pending.RootOrder is { } orderRefs)
         {
             var slots =
@@ -2622,11 +2613,13 @@ public class MainWindow : Window
             Tag = SelectionId.ForWorldObject(worldObject.Id),
             LightActions = true,
             LightOn = worldObject.Visible,
-            PauseAction = true,
-            Paused = isVfx
-                ? worldObject.VfxPaused
-                : worldObject.AnimPaused,
-            PauseDisabled = !isVfx && worldObject.Spawned,
+            // Effects play and pause; scenery switches day and night
+            // (its animation pause, borrowed scenery only, lives on the
+            // properties page).
+            PauseAction = isVfx,
+            Paused = worldObject.VfxPaused,
+            NightAction = !isVfx,
+            Night = worldObject.Night,
         };
     }
 
@@ -2688,13 +2681,79 @@ public class MainWindow : Window
     /// <summary>One grouped member's row(s), nested one level in — the
     /// SAME constructions the kind walks use, so a grouped row never
     /// drifts from its ungrouped twin.</summary>
+    /// <summary>A group head at <paramref name="depth"/>, its members one
+    /// level in, then its subgroups the same way — to
+    /// <see cref="global::Poser.Application.Scene.SceneGroups.MaxDepth"/>.</summary>
+    private void AddGroupRows(
+        global::Poser.Application.Scene.SceneGroup group,
+        int depth,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter,
+        bool filtering,
+        bool[]? lines = null,
+        bool isLast = true)
+    {
+        string key = "group:" + group.Id;
+        bool expanded = filtering || !_collapsedNodes.Contains(key);
+        bool locked = _groups.IsLocked(group);
+        lines ??= RootTreeLines;
+        _sceneSection.Rows.Add(new ShellSidebarRow
+        {
+            Label = group.Name,
+            Icon = TablerIcon.Folder,
+            ForceIcon = true,
+            Draggable = !locked,
+            DropContainer = !locked,
+            GroupActions = true,
+            GroupLocked = group.Locked,
+            GroupHidden = group.Hidden,
+            GroupPaused = group.Paused,
+            HasChildren = group.ItemCount > 0,
+            Depth = depth,
+            IsLastChild = isLast,
+            TreeLines = lines,
+            ExpandKey = key,
+            Expanded = expanded,
+            Tag = new GroupRowTag(group.Id),
+        });
+        if (!expanded)
+            return;
+        // The branch lines below this head: a trunk continues at this
+        // level while a later sibling follows the group.
+        // Index k of the lines is level k; a root head's children still
+        // descend one level (index 0 is the root and draws nothing), or
+        // every trunk below sits one level too far left.
+        var childLines = Descend(lines, isLast);
+        int memberStart = _sceneSection.Rows.Count;
+        for (int m = 0; m < group.Members.Count; m++)
+            AddGroupMemberRow(
+                group.Members[m], snapshot, filter, filtering,
+                isLast: m == group.Members.Count - 1 && group.Children.Count == 0,
+                depth: depth + 1,
+                lines: childLines);
+        for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
+        {
+            _sceneSection.Rows[r].GroupMember = true;
+            if (locked)
+                _sceneSection.Rows[r].Draggable = false;
+        }
+        for (int c = 0; c < group.Children.Count; c++)
+            if (_groups.Find(group.Children[c]) is { } child)
+                AddGroupRows(
+                    child, depth + 1, snapshot, filter, filtering,
+                    childLines, isLast: c == group.Children.Count - 1);
+    }
+
     private void AddGroupMemberRow(
         SelectionId member,
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter,
         bool filtering,
-        bool isLast)
+        bool isLast,
+        int depth = 1,
+        bool[]? lines = null)
     {
+        lines ??= RootTreeLines;
         switch (member)
         {
             case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
@@ -2703,7 +2762,7 @@ public class MainWindow : Window
                     {
                         AddActorRows(
                             _sceneSection, actor, snapshot, filter,
-                            filtering, 1, RootTreeLines, isLast);
+                            filtering, depth, lines, isLast);
                         return;
                     }
                 return;
@@ -2711,9 +2770,9 @@ public class MainWindow : Window
                 foreach (var prop in _scene.Snapshot.Props)
                     if (prop.Id.Equals(propId))
                     {
-                        var row = PropRow(prop, 1);
+                        var row = PropRow(prop, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2722,9 +2781,9 @@ public class MainWindow : Window
                 foreach (var worldObject in _scene.Snapshot.WorldObjects)
                     if (worldObject.Id.Equals(worldId))
                     {
-                        var row = WorldObjectRow(worldObject, 1);
+                        var row = WorldObjectRow(worldObject, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2733,9 +2792,9 @@ public class MainWindow : Window
                 foreach (var light in _scene.Snapshot.Lights)
                     if (light.Id.Equals(lightId))
                     {
-                        var row = LightRow(light, 1);
+                        var row = LightRow(light, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2744,9 +2803,9 @@ public class MainWindow : Window
                 foreach (var camera in _scene.Snapshot.Cameras)
                     if (camera.Id.Equals(cameraId))
                     {
-                        var row = CameraRow(camera, 1);
+                        var row = CameraRow(camera, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -2755,9 +2814,9 @@ public class MainWindow : Window
                 foreach (var overlay in _scene.Snapshot.Overlays)
                     if (overlay.Id.Equals(overlayId))
                     {
-                        var row = OverlayRow(overlay, 1);
+                        var row = OverlayRow(overlay, depth);
                         row.IsLastChild = isLast;
-                        row.TreeLines = RootTreeLines;
+                        row.TreeLines = lines;
                         _sceneSection.Rows.Add(row);
                         return;
                     }
@@ -3945,20 +4004,24 @@ public class MainWindow : Window
         // machinery does the rest. Ctrl adds the members instead.
         if (row.Tag is GroupRowTag groupTag)
         {
-            if (_groups.Find(groupTag.Id) is not { } group
-                || group.Members.Count == 0)
+            if (_groups.Find(groupTag.Id) is not { } group)
+                return;
+            var everything = new List<SelectionId>(_groups.Descendants(group));
+            if (everything.Count == 0)
                 return;
             var io2 = ImGui.GetIO();
-            if (io2.KeyCtrl)
+            // A group row's members live one level down; they join a
+            // multi-selection only when it already sits at that level.
+            if (io2.KeyCtrl && SelectionParentIs(group.Id))
             {
-                foreach (var member in group.Members)
+                foreach (var member in everything)
                     _selection.Add(member);
             }
             else
             {
-                _selection.Select(group.Members[0]);
-                for (int i = 1; i < group.Members.Count; i++)
-                    _selection.Add(group.Members[i]);
+                _selection.Select(everything[0]);
+                for (int i = 1; i < everything.Count; i++)
+                    _selection.Add(everything[i]);
                 // The HEAD click alone makes the selection "the group" —
                 // hand-selecting every member stays a member selection.
                 _groups.ActiveGroupId = group.Id;
@@ -3985,18 +4048,22 @@ public class MainWindow : Window
             }
             return;
         }
-        if (io.KeyShift && _selection.Anchor is { } anchor)
+        // Multi-selection keeps ONE parent — the anchor's: root things
+        // with root things, a group's members with each other. A shift or
+        // ctrl click on another level starts over there.
+        Guid? clickedParent = _groups.GroupOf(id)?.Id;
+        if (io.KeyShift && _selection.Anchor is { } anchor
+            && SelectionParentIs(clickedParent))
         {
-            // Range order follows the rows currently visible;
-            // collapsed and filtered-out entries are deliberately excluded.
             var displayOrder = new List<SelectionId>();
             foreach (var section in _vm.Sections)
                 foreach (var visibleRow in section.Rows)
-                    if (visibleRow.Tag is SelectionId visibleId)
+                    if (visibleRow.Tag is SelectionId visibleId
+                        && _groups.GroupOf(visibleId)?.Id == clickedParent)
                         displayOrder.Add(visibleId);
             _selection.SelectRange(anchor, id, displayOrder);
         }
-        else if (io.KeyCtrl)
+        else if (io.KeyCtrl && SelectionParentIs(clickedParent))
         {
             _selection.Toggle(id);
         }
@@ -4052,8 +4119,7 @@ public class MainWindow : Window
             {
                 if (matched is { } named)
                     form.TextInput("Name", named.Name,
-                        value => _groups.Rename(named.Id, value),
-                        help: "Rename the group");
+                        value => _groups.Rename(named.Id, value));
                 for (int i = 0; i < 5; i++)
                     if (_multiCounts[i] > 0)
                         form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
@@ -4065,11 +4131,9 @@ public class MainWindow : Window
                             () => OpenEntityRename(
                                 "Save group to library", group.Name,
                                 name => _scenePane.SaveGroupEntry(
-                                    group.Members, name)),
-                            help: "Save the group as a library entry");
+                                    group.Members, name)));
                         actions.Button("Ungroup",
-                            () => _groups.Dissolve(group.Id),
-                            help: "Dissolve the group; nothing is destroyed");
+                            () => DissolveGroup(group.Id));
                     }
                     else
                     {
@@ -4078,13 +4142,10 @@ public class MainWindow : Window
                                 "Name the group",
                                 $"Group {_groups.All.Count + 1}",
                                 name => _groups.Create(
-                                    name, _selection.Selected)),
-                            help: "Make a named group of the selection");
+                                    name, _selection.Selected)));
                     }
-                    actions.Button("Move to camera", MoveSelectionToCamera,
-                        help: "Place the selection in front of the camera");
-                    actions.Button("Deselect", () => _selection.Clear(),
-                        help: "Drop the whole selection");
+                    actions.Button("Move to camera", MoveSelectionToCamera);
+                    actions.Button("Deselect", () => _selection.Clear());
                 });
             }, divider: false);
         });
@@ -4156,18 +4217,16 @@ public class MainWindow : Window
         ShellSidebarRow? target,
         RowDropPosition position)
     {
+        int pointerLevel = _vm.DropLevel;
+        (target, position) = ResolveDropLevel(target, position);
+        _log.Debug(
+            $"Sidebar drop: {DescribeRow(dragged)} -> {(target == null ? "nothing" : DescribeRow(target))} "
+            + $"{position} at level {pointerLevel}");
         // A group head re-seats among the root slots like anything else;
         // open space is the end of the list.
         if (dragged.Tag is GroupRowTag draggedGroup)
         {
-            if (target == null)
-                _groups.MoveRootToEnd(RootSlot.ForGroup(draggedGroup.Id));
-            else if (position is RowDropPosition.Before or RowDropPosition.After
-                && RootSlotOf(target) is { } groupAnchor)
-                _groups.MoveRoot(
-                    RootSlot.ForGroup(draggedGroup.Id),
-                    groupAnchor,
-                    position == RowDropPosition.After);
+            DropGroup(draggedGroup.Id, target, position);
             return;
         }
 
@@ -4191,7 +4250,11 @@ public class MainWindow : Window
             && position == RowDropPosition.Into)
         {
             foreach (var id in moved)
+            {
+                LeaveGroupOverrides(id);
                 _groups.AddMember(intoGroup.Id, id);
+                JoinGroupOverrides(id);
+            }
             return;
         }
 
@@ -4204,8 +4267,24 @@ public class MainWindow : Window
                 index++;
             foreach (var id in moved)
             {
+                LeaveGroupOverrides(id);
                 _groups.AddMember(host.Id, id, index);
+                JoinGroupOverrides(id);
                 index = host.Members.IndexOf(id) + 1;
+            }
+            return;
+        }
+
+        // Beside a nested group: the dragged rows join that group's parent.
+        if (target?.Tag is GroupRowTag besideGroup
+            && position is RowDropPosition.Before or RowDropPosition.After
+            && _groups.Find(besideGroup.Id) is { ParentId: { } parentId })
+        {
+            foreach (var id in moved)
+            {
+                LeaveGroupOverrides(id);
+                _groups.AddMember(parentId, id);
+                JoinGroupOverrides(id);
             }
             return;
         }
@@ -4219,6 +4298,7 @@ public class MainWindow : Window
             bool after = position == RowDropPosition.After;
             foreach (var id in moved)
             {
+                LeaveGroupOverrides(id);
                 _groups.RemoveMember(id);
                 _groups.MoveRoot(RootSlot.For(id), anchor, after);
                 anchor = RootSlot.For(id);
@@ -4231,6 +4311,7 @@ public class MainWindow : Window
         // caret at the tree's tail marks exactly this.
         foreach (var id in moved)
         {
+            LeaveGroupOverrides(id);
             _groups.RemoveMember(id);
             _groups.MoveRootToEnd(RootSlot.For(id));
         }
@@ -4240,16 +4321,118 @@ public class MainWindow : Window
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference
     /// images, attached rows — answer null and the drop is a no-op.</summary>
+    private string DescribeRow(ShellSidebarRow row) => row.Tag switch
+    {
+        GroupRowTag tag => $"group '{row.Label}' ({tag.Id.ToString()[..8]}, depth {row.Depth})",
+        SelectionId id => $"{id.Kind} '{row.Label}' (depth {row.Depth})",
+        _ => $"'{row.Label}'",
+    };
+
+    /// <summary>The pointer's indent decides the level at a seam. Right of
+    /// a group head's indent, "after" it means "first inside it"; left of a
+    /// group's last row's indent, "after" it means "after the group" — one
+    /// level out per 20px, so a drag can climb out of nested groups in one
+    /// motion. Returns the row to act on and the position against it.</summary>
+    private (ShellSidebarRow? Target, RowDropPosition Position) ResolveDropLevel(
+        ShellSidebarRow? target, RowDropPosition position)
+    {
+        int level = _vm.DropLevel;
+        _vm.DropLevel = -1;
+        if (target == null || level < 0
+            || position is not (RowDropPosition.Before or RowDropPosition.After))
+            return (target, position);
+        if (level > target.Depth)
+        {
+            if (position == RowDropPosition.After && target.Tag is GroupRowTag)
+                return (target, RowDropPosition.Into);
+            return (target, position);
+        }
+        if (level >= target.Depth || position != RowDropPosition.After)
+            return (target, position);
+        // Climb: the group at the pointer's level that contains this row.
+        var host = HostGroupOf(target);
+        var climbed = host;
+        int depth = target.Depth - 1;
+        while (climbed != null && depth > level)
+        {
+            climbed = _groups.ParentOf(climbed);
+            depth--;
+        }
+        if (climbed == null || host == null)
+            return (target, position);
+        var stand = new ShellSidebarRow { Depth = depth, Tag = new GroupRowTag(climbed.Id) };
+        return (stand, RowDropPosition.After);
+    }
+
+    /// <summary>A dragged group: onto a group head it nests there; beside
+    /// a nested row it becomes a sibling in that row's group; beside a root
+    /// row or into nothing it comes out to the root order. A nest past the
+    /// depth limit is refused by name and nothing moves.</summary>
+    private void DropGroup(Guid groupId, ShellSidebarRow? target, RowDropPosition position)
+    {
+        if (target?.Tag is GroupRowTag intoGroup && position == RowDropPosition.Into)
+        {
+            if (_groups.CanNest(groupId, intoGroup.Id, out var reason))
+                _log.Debug($"Sidebar drop: nest -> {_groups.Nest(groupId, intoGroup.Id)}");
+            else
+                _notices.Failed($"Group not moved: {reason}");
+            return;
+        }
+        // Beside a row that lives inside a group: a sibling there.
+        if (target != null && position is RowDropPosition.Before or RowDropPosition.After
+            && HostGroupOf(target) is { } host)
+        {
+            if (!_groups.CanNest(groupId, host.Id, out var reason))
+            {
+                _notices.Failed($"Group not moved: {reason}");
+                return;
+            }
+            int index = target.Tag is GroupRowTag sibling ? host.Children.IndexOf(sibling.Id) : -1;
+            if (index >= 0 && position == RowDropPosition.After)
+                index++;
+            _groups.Nest(groupId, host.Id, index);
+            return;
+        }
+        // The root order.
+        var slot = RootSlot.ForGroup(groupId);
+        if (target != null && position is RowDropPosition.Before or RowDropPosition.After
+            && RootSlotOf(target) is { } anchor)
+        {
+            if (_groups.Find(groupId) is { ParentId: not null })
+                _groups.Unnest(groupId, anchor, position == RowDropPosition.After);
+            else
+                _groups.MoveRoot(slot, anchor, position == RowDropPosition.After);
+            return;
+        }
+        if (_groups.Find(groupId) is { ParentId: not null })
+            _groups.Unnest(groupId);
+        else
+            _groups.MoveRootToEnd(slot);
+    }
+
+    /// <summary>The group a row sits INSIDE: a member's group, or a nested
+    /// group's parent. Null for anything at the root.</summary>
+    private global::Poser.Application.Scene.SceneGroup? HostGroupOf(ShellSidebarRow row)
+    {
+        if (row.Tag is GroupRowTag tag)
+            return _groups.Find(tag.Id) is { } group ? _groups.ParentOf(group) : null;
+        if (row.Tag is SelectionId id)
+            return _groups.GroupOf(id);
+        return null;
+    }
+
     private RootSlot? RootSlotOf(ShellSidebarRow row)
     {
         if (row.Tag is GroupRowTag tag)
-            return RootSlot.ForGroup(tag.Id);
+            return _groups.Find(tag.Id) is { } group
+                ? RootSlot.ForGroup(_groups.RootOf(group).Id)
+                : null;
         if (row.Tag is not SelectionId id
             || !global::Poser.Application.Selection.EntitySelection
                 .IsEntity(id.Kind))
             return null;
         if (_groups.GroupOf(id) is { } host)
-            return RootSlot.ForGroup(host.Id);
+            return RootSlot.ForGroup(_groups.RootOf(host).Id);
         return RootSlot.For(id);
     }
 
@@ -4625,6 +4808,9 @@ public class MainWindow : Window
             return;
         }
         var actor = resolved.Value!;
+        // A companion rides its owner's slot and cannot be copied on its
+        // own (Brio ActorLifetimeCapability.CanClone).
+        bool companion = ResolveActorDescriptor(actorId) is { IsCompanion: true };
 
         var items = new List<ContextMenuItem>
         {
@@ -4633,23 +4819,16 @@ public class MainWindow : Window
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the verb the row performs: resume wears play,
             // pause wears pause.
-            new(!_animation.AnyPlaying(actorId) ? "Resume animation" : "Pause animation",
+            new(!_animation.AnyPlaying(actorId) ? "Play" : "Pause",
                 !_animation.AnyPlaying(actorId)
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
             new("Duplicate", TablerIcon.Copy,
-                help: "A fresh copy wearing this appearance"),
-            new("Duplicate with pose", TablerIcon.Stack2,
-                disabled: !actor.HasSkeleton,
-                help: actor.HasSkeleton
-                    ? "A frozen copy in this exact pose and place"
-                    : "Needs a loaded skeleton"),
+                disabled: companion,
+                submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
             new("Save to library", TablerIcon.Library,
-                disabled: !actor.HasSkeleton,
-                help: actor.HasSkeleton
-                    ? "Saves this actor with its appearance as a library entry"
-                    : "Needs a loaded skeleton"),
+                disabled: !actor.HasSkeleton),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -4699,8 +4878,7 @@ public class MainWindow : Window
                     actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
-            () => Duplicate(actor),
-            () => DuplicateWithPose(actor),
+            null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
@@ -4822,6 +5000,11 @@ public class MainWindow : Window
                 "Bone presets" => _bonePresetActions,
                 "Companion" => companionActions,
                 "Pose" => poseActions,
+                "Duplicate" => new List<Action?>
+                {
+                    () => Duplicate(actor),
+                    () => DuplicateWithPose(actor),
+                },
                 _ => null,
             };
             if (submenu != null && subClicked < submenu.Count)
@@ -5274,7 +5457,7 @@ public class MainWindow : Window
             new(light.IsOn ? "Switch off" : "Switch on",
                 light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
@@ -5352,7 +5535,7 @@ public class MainWindow : Window
             new(prop.Visible ? "Hide" : "Show",
                 prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
@@ -5420,7 +5603,7 @@ public class MainWindow : Window
                 disabled: !canRecenterTracked,
                 help: "Swing the camera back onto whoever it tracks"),
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
             new("Reset transform", TablerIcon.Refresh,
@@ -5513,6 +5696,7 @@ public class MainWindow : Window
             new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
                 worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             // A spawned object is Poser's own and DESTROYS; a borrowed
@@ -5528,6 +5712,12 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
+            () =>
+            {
+                if (DuplicateWorldObject(worldObject) is { } copy
+                    && _bindings.GetWorldObjectId(copy) is { } copyId)
+                    _selection.Select(SelectionId.ForWorldObject(copyId));
+            },
             () => OpenEntityRename(
                 "Save object to library", worldObject.Name,
                 name => _scenePane.SaveWorldObjectEntry(
@@ -5564,34 +5754,44 @@ public class MainWindow : Window
             return;
         }
         bool locked = group.Locked;
+        // The gates read as the group's own state: closed shows the verb
+        // that opens it. A closed gate anywhere above still wins.
         var items = new[]
         {
-            new ContextMenuItem("Rename", TablerIcon.Edit,
-                disabled: locked),
-            new ContextMenuItem("Save to library", TablerIcon.Library,
-                help: "Saves the group and its members as a library entry"),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy,
+                submenuItems: DuplicateSubmenu(posable: true)),
+            new ContextMenuItem("Save to library", TablerIcon.Library),
             new ContextMenuItem(locked ? "Unlock" : "Lock",
-                locked ? TablerIcon.LockOpen : TablerIcon.Lock,
-                help: locked ? null : "Nothing in a locked group moves"),
-            new ContextMenuItem("Ungroup", TablerIcon.X,
-                disabled: locked,
-                help: "Dissolve the group; nothing is destroyed"),
+                locked ? TablerIcon.LockOpen : TablerIcon.Lock),
             ContextMenuItem.Separator,
-            new ContextMenuItem("Destroy", TablerIcon.Trash,
-                danger: true, disabled: locked,
-                help: "Destroy the group AND everything in it; borrowed "
-                    + "things are released instead"),
+            new ContextMenuItem(group.Hidden ? "Show" : "Hide",
+                group.Hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem(group.Paused ? "Play" : "Pause",
+                group.Paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause),
+            new ContextMenuItem(group.Night ? "Day" : "Night",
+                group.Night ? TablerIcon.Sun : TablerIcon.Moon),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Ungroup", TablerIcon.X),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
         };
         var actions = new Action?[]
         {
             () => OpenEntityRename(
                 "Rename group", group.Name,
                 next => _groups.Rename(groupId, next)),
+            null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(group.Members, name)),
             () => _groups.SetLocked(groupId, !group.Locked),
-            () => _groups.Dissolve(groupId),
+            null, // separator
+            () => SetGroupHidden(group, !group.Hidden),
+            () => SetGroupPaused(group, !group.Paused),
+            () => SetGroupNight(group, !group.Night),
+            null, // separator
+            () => DissolveGroup(groupId),
             null, // separator
             // The members go through each kind's own lifetime seam; the
             // emptied group dissolves through the scene prune.
@@ -5606,6 +5806,11 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
+            && items[subParent].Label == "Duplicate")
+            DuplicateGroup(group, withPose: subClicked == 1);
     }
 
     /// <summary>Right-click on any row of a multi-entity selection: one
@@ -5623,11 +5828,18 @@ public class MainWindow : Window
             return;
         }
 
-        // Hide/Show and Pause/Resume drive the set to ONE state: any
-        // visible member means Hide, any running actor means Pause.
-        bool anyVisible = false, anyActor = false, anyRunning = false;
+        // Hide/Show and Pause/Play drive the set to ONE state: any
+        // visible member means Hide, anything running means Pause. The
+        // pause verb exists only when something in the set animates.
+        bool anyVisible = false, anyAnimated = false, anyRunning = false;
+        bool anyActor = false;
         foreach (var id in _selection.Selected)
         {
+            if (PlayingOf(id) is { } playing)
+            {
+                anyAnimated = true;
+                anyRunning |= playing;
+            }
             switch (id)
             {
                 case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
@@ -5636,8 +5848,6 @@ public class MainWindow : Window
                             { Success: true, Value: { } actor }
                         && _spawnService.IsVisible(actor))
                         anyVisible = true;
-                    if (!_animation.IsPaused(actorId))
-                        anyRunning = true;
                     break;
                 case { Kind: SceneEntityKind.Light, Light: { } lightId }:
                     if (_bindings.Resolve(lightId) is
@@ -5664,44 +5874,43 @@ public class MainWindow : Window
         }
 
         var matched = _groups.ActiveSelection(_selection.Selected);
+        // With an actor in the set, Duplicate opens the plain/posed
+        // choice; without one there is nothing to pose.
         var items = new List<ContextMenuItem>
         {
             new("Duplicate", TablerIcon.Copy,
-                help: "Clone every selected thing that can be cloned"),
+                submenuItems: anyActor ? DuplicateSubmenu(posable: true) : null),
             new(anyVisible ? "Hide" : "Show",
                 anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new(anyRunning ? "Pause animation" : "Resume animation",
-                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
-                disabled: !anyActor,
-                help: anyActor ? null : "No actors in the selection"),
-            new("Move to camera", TablerIcon.Crosshair),
-            ContextMenuItem.Separator,
         };
         var actions = new List<Action?>
         {
-            DuplicateSelection,
+            anyActor ? null : () => DuplicateSelection(withPose: false),
             () => SetSelectionVisible(!anyVisible),
-            () => SetSelectionPaused(anyRunning),
-            MoveSelectionToCamera,
-            null, // separator
         };
+        if (anyAnimated)
+        {
+            items.Add(new ContextMenuItem(anyRunning ? "Pause" : "Play",
+                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay));
+            actions.Add(() => SetSelectionPaused(anyRunning));
+        }
+        items.Add(new ContextMenuItem("Move to camera", TablerIcon.Crosshair));
+        actions.Add(MoveSelectionToCamera);
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
         if (matched != null)
         {
             items.Add(new ContextMenuItem(
-                "Save to library", TablerIcon.Library,
-                help: "Saves the group and its members as a library entry"));
+                "Save to library", TablerIcon.Library));
             actions.Add(() => OpenEntityRename(
                 "Save group to library", matched.Name,
                 name => _scenePane.SaveGroupEntry(matched.Members, name)));
-            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
-                disabled: matched.Locked,
-                help: "Dissolve the group; nothing is destroyed"));
-            actions.Add(() => _groups.Dissolve(matched.Id));
+            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
+            actions.Add(() => DissolveGroup(matched.Id));
         }
         else
         {
-            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder,
-                help: "Make a named group of the selection"));
+            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder));
             actions.Add(() => OpenEntityRename(
                 "Name the group",
                 $"Group {_groups.All.Count + 1}",
@@ -5712,10 +5921,7 @@ public class MainWindow : Window
         items.Add(ContextMenuItem.Separator);
         actions.Add(null);
         items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
-            danger: true,
-            disabled: matched is { Locked: true },
-            help: "Destroy what the scene owns; borrowed things are "
-                + "released instead"));
+            danger: true));
         actions.Add(DestroySelection);
         if (_selectionCtxOpenRequested)
         {
@@ -5726,53 +5932,478 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
+            && items[subParent].Label == "Duplicate")
+            DuplicateSelection(withPose: subClicked == 1);
     }
 
-    /// <summary>Clones every clonable selected entity through the same
-    /// history-seamed calls the single menus use. Borrowed objects have
-    /// no clone; the selection stays on the ORIGINALS — the clones' own
-    /// bindings land asynchronously per kind, so re-selecting them here
-    /// would be a guess.</summary>
-    private void DuplicateSelection()
+    /// <summary>Duplicates the selection: a whole group as a new group,
+    /// otherwise each entity by its own kind through the same history-
+    /// seamed calls the single menus use. Borrowed objects with no model
+    /// have no copy; the selection stays on the ORIGINALS — the copies'
+    /// bindings land on the scene's own refresh.</summary>
+    private void DuplicateSelection(bool withPose)
     {
-        foreach (var id in _selection.Selected.ToArray())
+        if (_groups.ActiveSelection(_selection.Selected) is { } whole)
         {
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    if (_bindings.Resolve(actorId) is
-                            { Success: true, Value: { } actor })
-                        _lifecycle.SpawnActor(
-                            $"Clone actor '{DisplayName(actor.Name)}'",
-                            () => _spawnService.CloneActor(actor));
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                    if (_bindings.Resolve(lightId) is
-                            { Success: true, Value: { IsValid: true } light })
-                        _lifecycle.CloneLight(light);
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                    if (_bindings.Resolve(propId) is
-                            { Success: true, Value: { IsValid: true } prop })
-                        _lifecycle.CloneProp(prop);
-                    break;
-                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
-                    if (_bindings.Resolve(cameraId) is
-                            { Success: true, Value: { IsValid: true } camera })
-                        _lifecycle.CloneCamera(camera);
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                    if (_bindings.Resolve(overlayId) is
-                            { Success: true, Value: { } node })
-                        _overlayPane.Duplicate(node);
-                    break;
-            }
+            DuplicateGroup(whole, withPose);
+            return;
+        }
+        foreach (var id in _selection.Selected.ToArray())
+            DuplicateEntity(id, withPose);
+    }
+
+    private static ContextMenuItem[] DuplicateSubmenu(bool posable) =>
+    [
+        new ContextMenuItem("Duplicate", TablerIcon.Copy),
+        new ContextMenuItem("Duplicate with pose", TablerIcon.Stack2,
+            disabled: !posable),
+    ];
+
+    /// <summary>One entity's copy, by kind; the live copy, or null when
+    /// the kind has none or the copy failed.</summary>
+    private object? DuplicateEntity(SelectionId id, bool withPose)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
+                    ? DuplicateActor(actor, withPose)
+                    : null;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
+                    ? _lifecycle.CloneLight(light)
+                    : null;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
+                    ? _lifecycle.CloneProp(prop)
+                    : null;
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                return _bindings.Resolve(cameraId) is { Success: true, Value: { IsValid: true } camera }
+                    ? _lifecycle.CloneCamera(camera)
+                    : null;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
+                    ? _overlayPane.Duplicate(node)
+                    : null;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                return _bindings.Resolve(objectId) is { Success: true, Value: { IsValid: true } worldObject }
+                    ? DuplicateWorldObject(worldObject)
+                    : null;
+            default:
+                return null;
         }
     }
 
-    /// <summary>One visibility for the whole selection — actors' draw,
-    /// objects' and overlays' eyes, lights' on-state. Cameras have no
-    /// visibility and skip.</summary>
+    /// <summary>A spawned copy of a world object: the same model at the
+    /// same place with the same dressing. A borrowed object whose model
+    /// never loaded states its address as the path and has nothing to
+    /// copy from.</summary>
+    private Game.WorldObjects.AdoptedWorldObject? DuplicateWorldObject(
+        Game.WorldObjects.AdoptedWorldObject source)
+    {
+        if (!source.Path.Contains('/'))
+        {
+            _notices.Failed($"'{source.Name}' has no model to copy.");
+            return null;
+        }
+        if (_lifecycle.SpawnWorldObject(source.Path, source.Transform, source.Visible)
+            is not Game.WorldObjects.AdoptedWorldObject copy)
+            return null;
+        copy.Name = source.Name;
+        copy.Opacity = source.Opacity;
+        copy.Tint = source.Tint;
+        if (source.IsVfx)
+        {
+            copy.LoopVfx = source.LoopVfx;
+            copy.VfxSpeed = source.VfxSpeed;
+            copy.VfxIntensity = source.VfxIntensity;
+            copy.VfxPaused = source.VfxPaused;
+        }
+        else
+            copy.NightState = source.NightState;
+        return copy;
+    }
+
+    // ── duplicating groups ───────────────────────────────────────────────
+    // The copies spawn at once; their bindings land on the scene's own
+    // refresh, so the group is assembled from the pump once every copy
+    // has an id (or patience runs out and what did bind is grouped).
+
+    private sealed class GroupCopy
+    {
+        public string Name = "";
+        public bool Hidden, Paused, Night;
+        public readonly List<object> Members = new();
+        public readonly List<GroupCopy> Children = new();
+        public Guid? Parent;
+        public int Index = -1;
+        public global::Poser.Application.Scene.RootSlot? Anchor;
+        public int Frames;
+    }
+
+    private readonly List<GroupCopy> _groupCopies = new();
+    private const int GroupCopyPatience = 120;
+
+    /// <summary>Copies the group and everything beneath it into a new
+    /// group of the same name, seated right after the original at the
+    /// same level, gates and all.</summary>
+    private void DuplicateGroup(global::Poser.Application.Scene.SceneGroup group, bool withPose)
+    {
+        var copy = CopyGroupTree(group, withPose);
+        copy.Parent = group.ParentId;
+        if (group.ParentId is { } parentId && _groups.Find(parentId) is { } parent)
+            copy.Index = parent.Children.IndexOf(group.Id) + 1;
+        else
+            copy.Anchor = global::Poser.Application.Scene.RootSlot.ForGroup(group.Id);
+        _groupCopies.Add(copy);
+    }
+
+    private GroupCopy CopyGroupTree(global::Poser.Application.Scene.SceneGroup group, bool withPose)
+    {
+        var copy = new GroupCopy
+        {
+            Name = group.Name,
+            Hidden = group.Hidden,
+            Paused = group.Paused,
+            Night = group.Night,
+        };
+        foreach (var member in group.Members)
+            if (DuplicateEntity(member, withPose) is { } made)
+                copy.Members.Add(made);
+        foreach (var childId in group.Children)
+            if (_groups.Find(childId) is { } child)
+                copy.Children.Add(CopyGroupTree(child, withPose));
+        return copy;
+    }
+
+    private void PumpGroupCopies()
+    {
+        for (int i = _groupCopies.Count - 1; i >= 0; i--)
+        {
+            var copy = _groupCopies[i];
+            if (!CopyBound(copy) && ++copy.Frames < GroupCopyPatience)
+                continue;
+            _groupCopies.RemoveAt(i);
+            if (RealizeGroupCopy(copy) is not { } made)
+            {
+                _notices.Failed($"'{copy.Name}' could not be duplicated: nothing in it copied.");
+                continue;
+            }
+            if (copy.Parent is { } parentId && _groups.Find(parentId) != null)
+                _groups.Nest(made.Id, parentId, copy.Index);
+            else if (copy.Anchor is { } anchor)
+                _groups.MoveRoot(
+                    global::Poser.Application.Scene.RootSlot.ForGroup(made.Id), anchor, after: true);
+        }
+    }
+
+    private bool CopyBound(GroupCopy copy)
+    {
+        foreach (var member in copy.Members)
+            if (IdOfLive(member) == null)
+                return false;
+        foreach (var child in copy.Children)
+            if (!CopyBound(child))
+                return false;
+        return true;
+    }
+
+    private global::Poser.Application.Scene.SceneGroup? RealizeGroupCopy(GroupCopy copy)
+    {
+        var ids = new List<SelectionId>();
+        foreach (var member in copy.Members)
+            if (IdOfLive(member) is { } id)
+                ids.Add(id);
+        var children = new List<global::Poser.Application.Scene.SceneGroup>();
+        foreach (var child in copy.Children)
+            if (RealizeGroupCopy(child) is { } made)
+                children.Add(made);
+        if (ids.Count + children.Count == 0)
+            return null;
+        var group = _groups.Create(copy.Name, ids, allowThin: true);
+        if (group == null)
+            return null;
+        foreach (var child in children)
+            _groups.Nest(child.Id, group.Id);
+        if (copy.Hidden)
+            SetGroupHidden(group, true);
+        if (copy.Paused)
+            SetGroupPaused(group, true);
+        if (copy.Night)
+            SetGroupNight(group, true);
+        return group;
+    }
+
+    /// <summary>A live entity's selection id once the scene has bound it.</summary>
+    private SelectionId? IdOfLive(object live) => live switch
+    {
+        IActor actor => _bindings.GetActorId(actor) is { } a ? SelectionId.ForActor(a) : null,
+        ILight light => _bindings.GetLightId(light) is { } l ? SelectionId.ForLight(l) : null,
+        Game.PropHandle prop => _bindings.GetPropId(prop) is { } p ? SelectionId.ForProp(p) : null,
+        IVirtualCamera camera => _bindings.GetCameraId(camera) is { } c ? SelectionId.ForCamera(c) : null,
+        Game.Overlays.OverlayNodeHandle node => _bindings.GetOverlayId(node) is { } o ? SelectionId.ForOverlay(o) : null,
+        Game.WorldObjects.AdoptedWorldObject worldObject =>
+            _bindings.GetWorldObjectId(worldObject) is { } w ? SelectionId.ForWorldObject(w) : null,
+        _ => null,
+    };
+
+    // ── group gates: closed hides, pauses or benights everything beneath
+    // and remembers each member's own state; open gives it back — unless
+    // a gate further up is still closed ──────────────────────────────────
+
+    /// <summary>Ungrouping opens every gate first so each member gets its
+    /// own state back.</summary>
+    private void DissolveGroup(Guid id)
+    {
+        if (_groups.Find(id) is { } group)
+        {
+            SetGroupHidden(group, false);
+            SetGroupPaused(group, false);
+            SetGroupNight(group, false);
+        }
+        _groups.Dissolve(id);
+    }
+
+    private bool UnderClosedGate(SelectionId member, Func<global::Poser.Application.Scene.SceneGroup, bool> closed)
+    {
+        if (_groups.GroupOf(member) is not { } own)
+            return false;
+        if (closed(own))
+            return true;
+        foreach (var ancestor in _groups.Ancestors(own))
+            if (closed(ancestor))
+                return true;
+        return false;
+    }
+
+    /// <summary>One gate's mechanics, shared by the three: closing reads
+    /// and remembers each member's own state and imposes the gate's;
+    /// opening gives the remembered state back to every member no other
+    /// closed gate still covers.</summary>
+    private void SetGate(
+        global::Poser.Application.Scene.SceneGroup group,
+        bool close,
+        Dictionary<SelectionId, bool> remembered,
+        Func<global::Poser.Application.Scene.SceneGroup, bool> closedOn,
+        Func<SelectionId, bool?> read,
+        Action<SelectionId, bool> write,
+        bool imposed)
+    {
+        if (close)
+        {
+            foreach (var member in _groups.Descendants(group))
+            {
+                if (read(member) is not { } own)
+                    continue;
+                if (!remembered.ContainsKey(member))
+                    remembered[member] = own;
+                write(member, imposed);
+            }
+        }
+        else
+        {
+            foreach (var (member, own) in remembered)
+                if (!UnderClosedGate(member, closedOn))
+                    write(member, own);
+            remembered.Clear();
+        }
+        _groups.Touch();
+    }
+
+    private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden)
+    {
+        if (group.Hidden == hidden)
+            return;
+        group.Hidden = hidden;
+        SetGate(group, hidden, group.RememberedVisible, g => g.Hidden,
+            IsEntityVisible, SetEntityVisible, imposed: false);
+    }
+
+    private void SetGroupPaused(global::Poser.Application.Scene.SceneGroup group, bool paused)
+    {
+        if (group.Paused == paused)
+            return;
+        group.Paused = paused;
+        SetGate(group, paused, group.RememberedPlaying, g => g.Paused,
+            PlayingOf, SetPlaying, imposed: false);
+    }
+
+    private void SetGroupNight(global::Poser.Application.Scene.SceneGroup group, bool night)
+    {
+        if (group.Night == night)
+            return;
+        group.Night = night;
+        SetGate(group, night, group.RememberedNight, g => g.Night,
+            NightOf, SetNight, imposed: true);
+    }
+
+    /// <summary>A member joining under closed gates takes each gate's
+    /// state from the outermost closed group, which remembers its own.</summary>
+    private void JoinGroupOverrides(SelectionId member)
+    {
+        if (_groups.GroupOf(member) is not { } home)
+            return;
+        var chain = new List<global::Poser.Application.Scene.SceneGroup> { home };
+        chain.AddRange(_groups.Ancestors(home));
+        global::Poser.Application.Scene.SceneGroup? hiding = null, pausing = null, benighting = null;
+        foreach (var group in chain)
+        {
+            if (group.Hidden)
+                hiding = group;
+            if (group.Paused)
+                pausing = group;
+            if (group.Night)
+                benighting = group;
+        }
+        if (hiding != null && IsEntityVisible(member) is { } visible)
+        {
+            hiding.RememberedVisible[member] = visible;
+            SetEntityVisible(member, false);
+        }
+        if (pausing != null && PlayingOf(member) is { } playing)
+        {
+            pausing.RememberedPlaying[member] = playing;
+            SetPlaying(member, false);
+        }
+        if (benighting != null && NightOf(member) is { } night)
+        {
+            benighting.RememberedNight[member] = night;
+            SetNight(member, true);
+        }
+    }
+
+    /// <summary>A member leaving its group gets its own state back from
+    /// whichever group remembered it.</summary>
+    private void LeaveGroupOverrides(SelectionId member)
+    {
+        if (_groups.GroupOf(member) is not { } own)
+            return;
+        var chain = new List<global::Poser.Application.Scene.SceneGroup> { own };
+        chain.AddRange(_groups.Ancestors(own));
+        foreach (var group in chain)
+        {
+            if (group.RememberedVisible.Remove(member, out var visible))
+                SetEntityVisible(member, visible);
+            if (group.RememberedPlaying.Remove(member, out var playing))
+                SetPlaying(member, playing);
+            if (group.RememberedNight.Remove(member, out var night))
+                SetNight(member, night);
+        }
+    }
+
+    /// <summary>Whether this entity is playing its animation: an actor's
+    /// timeline, an effect's playback, borrowed scenery's animation. Null
+    /// for kinds that do not animate, spawned scenery included.</summary>
+    private bool? PlayingOf(SelectionId id)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _animation.AnyPlaying(actorId);
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                if (_bindings.Resolve(objectId) is not
+                        { Success: true, Value: { IsValid: true } handle })
+                    return null;
+                if (handle.IsVfx)
+                    return !handle.VfxPaused;
+                return handle.Spawned ? null : !handle.AnimationPaused;
+            default:
+                return null;
+        }
+    }
+
+    private void SetPlaying(SelectionId id, bool playing)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                if (playing)
+                    _animation.Resume(actorId);
+                else
+                    _animation.Pause(actorId);
+                break;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
+                if (_bindings.Resolve(objectId) is not
+                        { Success: true, Value: { IsValid: true } handle })
+                    return;
+                if (handle.IsVfx)
+                    handle.VfxPaused = !playing;
+                else if (!handle.Spawned)
+                    handle.AnimationPaused = !playing;
+                break;
+        }
+    }
+
+    /// <summary>Scenery's night state; null for everything else.</summary>
+    private bool? NightOf(SelectionId id) =>
+        id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
+        && _bindings.Resolve(objectId) is
+            { Success: true, Value: { IsValid: true, IsVfx: false } handle }
+            ? handle.NightState
+            : null;
+
+    private void SetNight(SelectionId id, bool night)
+    {
+        if (id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
+            && _bindings.Resolve(objectId) is
+                { Success: true, Value: { IsValid: true, IsVfx: false } handle })
+            handle.NightState = night;
+    }
+
+    private bool? IsEntityVisible(SelectionId id)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
+                    ? _spawnService.IsVisible(actor) : null;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
+                    ? light.IsOn : null;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
+                    ? prop.Visible : null;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
+                return _bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed }
+                    ? borrowed.Visible : null;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
+                    ? node.Visible : null;
+            default:
+                return null;
+        }
+    }
+
+    private void SetEntityVisible(SelectionId id, bool visible)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                if (_bindings.Resolve(actorId) is { Success: true, Value: { } actor })
+                    _spawnService.SetVisibility(actor, visible);
+                break;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                if (_bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light })
+                    light.IsOn = visible;
+                break;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                if (_bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop })
+                    prop.Visible = visible;
+                break;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
+                if (_bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed })
+                    borrowed.Visible = visible;
+                break;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                if (_bindings.Resolve(overlayId) is { Success: true, Value: { } node })
+                    node.Visible = visible;
+                break;
+        }
+    }
+
     private void SetSelectionVisible(bool visible)
     {
         foreach (var id in _selection.Selected)
@@ -5813,14 +6444,7 @@ public class MainWindow : Window
     private void SetSelectionPaused(bool paused)
     {
         foreach (var id in _selection.Selected)
-        {
-            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
-                continue;
-            if (paused)
-                _animation.Pause(actorId);
-            else
-                _animation.Resume(actorId);
-        }
+            SetPlaying(id, !paused);
     }
 
     /// <summary>Destroys the whole selection, each kind through its own
@@ -5933,31 +6557,47 @@ public class MainWindow : Window
     /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
     private void Duplicate(IActor actor)
     {
-        var clone = _lifecycle.SpawnActor(
-            $"Duplicate actor '{DisplayName(actor.Name)}'",
-            () => CloneWearingCollection(actor));
-        if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
+        if (DuplicateActor(actor, withPose: false) is { } clone
+            && _bindings.GetActorId(clone) is { } cloneId)
             _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    private void DuplicateWithPose(IActor actor)
+    {
+        if (DuplicateActor(actor, withPose: true) is { } clone
+            && _bindings.GetActorId(clone) is { } cloneId)
+            _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The copy itself, plain or posed; posed falls back to plain
+    /// for an actor with no skeleton to read.</summary>
+    private IActor? DuplicateActor(IActor actor, bool withPose)
+    {
+        if (!withPose || !actor.HasSkeleton)
+            return _lifecycle.SpawnActor(
+                $"Duplicate actor '{DisplayName(actor.Name)}'",
+                () => CloneWearingCollection(actor));
+        return DuplicateActorWithPose(actor);
     }
 
     /// <summary>The posed duplicate: spawned wearing the collection, restored
     /// to the source's pose and place once posable, frozen, and its gaze
     /// frozen with it — a duplicate never animates and never tracks. No
     /// Customize+: the captured bones already carry it.</summary>
-    private void DuplicateWithPose(IActor actor)
+    private IActor? DuplicateActorWithPose(IActor actor)
     {
         var clone = _lifecycle.SpawnActorWithPose(
             $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
             () => CloneWearingCollection(actor),
             actor);
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
-            return;
+            return clone;
         _animation.Pause(cloneId);
         // Before the first draw: a copy that once engaged the camera look-at
         // and was then paused froze mid blend-out, head off its neck
         // (2026-09-02). Detached from the start, nothing ever engages.
         FreezeGaze(clone);
-        _selection.Select(SelectionId.ForActor(cloneId));
+        return clone;
     }
 
     /// <summary>The seed copy plus what the built body needs again: the
@@ -5986,6 +6626,16 @@ public class MainWindow : Window
         var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Detached);
         if (!mode.Success)
             _log.Warning($"Duplicate: the gaze could not be detached: {mode.Detail}");
+    }
+
+    /// <summary>Whether the current selection is empty or every selected
+    /// entity has <paramref name="parent"/> as its group (null = root).</summary>
+    private bool SelectionParentIs(Guid? parent)
+    {
+        foreach (var selected in _selection.Selected)
+            if (_groups.GroupOf(selected)?.Id != parent)
+                return false;
+        return true;
     }
 
     private void OpenEntityRename(

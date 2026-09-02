@@ -592,6 +592,19 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return IntegrationPortResult.Ok();
         });
 
+    public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) =>
+        Guarded(Penumbra, "Player collection", () =>
+        {
+            if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
+                return refusal;
+            var (valid, _, (id, _)) = _getCollectionForObject.InvokeFunc(0);
+            if (!valid)
+                return IntegrationPortResult.Fail("Penumbra cannot identify the player.");
+            var (ec, _) = _setCollectionForObject.InvokeFunc(
+                IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
+            return PenumbraResult(ec, "assigning the player's collection");
+        });
+
     public IntegrationPortResult ReleaseCollection(nint cloneAddress) =>
         Guarded(Penumbra, "Release collection", () =>
         {

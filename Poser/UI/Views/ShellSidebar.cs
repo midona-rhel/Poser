@@ -160,7 +160,7 @@ public sealed class ShellSidebar
                 TablerIcon.Plus,
                 selected: false,
                 style: ControlStyle.Square(side),
-                help: "Add an actor or object to the scene",
+                help: "Add",
                 id: "##sidebar-spawn"))
             vm.OnSpawn?.Invoke(
                 origin + new Vector2(plusX, SearchTop + side) * scale);
@@ -252,8 +252,8 @@ public sealed class ShellSidebar
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
-                        : row.LightActions ? (row.PauseAction ? 3 : 2)
-                        : row.GroupActions ? 1
+                        : row.LightActions ? (row.PauseAction || row.NightAction ? 3 : 2)
+                        : row.GroupActions ? 3
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -392,6 +392,12 @@ public sealed class ShellSidebar
     private ShellSidebarRow? _dragSource;
     private ShellSidebarRow? _dropTarget;
     private RowDropPosition _dropPosition;
+    private bool _dropOnSelf;
+    private bool _paintDropOnSelf;
+    private int _dropLevel = -1;
+    private ShellSidebarRow? _hoverRow;
+    private double _hoverSince;
+    private const double HoverExpandSeconds = 0.6;
     private ShellSidebarRow? _paintDropTarget;
     private RowDropPosition _paintDropPosition;
 
@@ -409,8 +415,11 @@ public sealed class ShellSidebar
         // whichever row the pointer crosses.
         _paintDropTarget = _dropTarget;
         _paintDropPosition = _dropPosition;
+        _paintDropOnSelf = _dropOnSelf;
         _dropTarget = null;
         _dropPosition = RowDropPosition.Out;
+        _dropOnSelf = false;
+        _dropLevel = -1;
 
         var clipper = new ImGuiListClipper();
         clipper.Begin(_slotCount, _pitch * scale);
@@ -436,7 +445,7 @@ public sealed class ShellSidebar
             // No row is the candidate: the drop lands at the END of the
             // root list, leaving any group — the caret at the tree's tail
             // says so instead of saying nothing.
-            if (_paintDropTarget == null)
+            if (_paintDropTarget == null && !_paintDropOnSelf)
             {
                 var tailDl = ImGui.GetWindowDrawList();
                 float tailY = origin.Y + _totalHeight * scale;
@@ -474,9 +483,12 @@ public sealed class ShellSidebar
 
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
-                _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
+                _vm.DropLevel = _dropLevel;
+                if (!_dropOnSelf && !_paintDropOnSelf)
+                    _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
                 _dragSource = null;
                 _dropTarget = null;
+                _hoverRow = null;
                 _dirty = true;
             }
         }
@@ -511,6 +523,16 @@ public sealed class ShellSidebar
         // candidate. Only a CONTAINER (a group head) takes an INTO drop,
         // and never from another container — one depth, always. Every
         // other row splits at its midline into before/after.
+        if (_dragSource is { } self && ReferenceEquals(self, row))
+        {
+            // Over the row being dragged: nothing to do, and no caret —
+            // an empty target used to read as "to the end of the root".
+            float selfHeight = entry.Height * scale;
+            var selfMouse = ImGui.GetMousePos();
+            if (selfMouse.X >= at.X && selfMouse.X < at.X + width * scale
+                && selfMouse.Y >= at.Y && selfMouse.Y < at.Y + selfHeight)
+                _dropOnSelf = true;
+        }
         if (_dragSource is { } source && !ReferenceEquals(source, row))
         {
             float rowHeight = entry.Height * scale;
@@ -520,9 +542,40 @@ public sealed class ShellSidebar
             if (mouse.X >= rectMin.X && mouse.X < rectMax.X
                 && mouse.Y >= rectMin.Y && mouse.Y < rectMax.Y)
             {
-                bool canInto = row.DropContainer && !source.DropContainer;
-                float third = rowHeight / 3f;
+                // A group goes into a group too (nesting); the handler
+                // refuses what would nest too deep.
+                bool canInto = row.DropContainer;
+                // A container takes the middle HALF as "into"; the seams
+                // are the outer quarters.
+                float third = rowHeight / 4f;
                 _dropTarget = row;
+                // The level the pointer points at: the row's own, one
+                // in per 20px to the right of its indent, one out per
+                // 20px to the left.
+                float indent = 20f * scale;
+                float rowContentX = rectMin.X + 12f * scale + row.Depth * indent;
+                _dropLevel = Math.Clamp(
+                    row.Depth + (int)MathF.Floor((mouse.X - rowContentX) / indent),
+                    0, row.Depth + 1);
+                // A collapsed container held under the drag opens up.
+                if (row.HasChildren && !row.Expanded)
+                {
+                    double now = ImGui.GetTime();
+                    if (!ReferenceEquals(_hoverRow, row))
+                    {
+                        _hoverRow = row;
+                        _hoverSince = now;
+                    }
+                    else if (now - _hoverSince > HoverExpandSeconds)
+                    {
+                        _hoverSince = double.MaxValue;
+                        _vm.OnRowExpandToggled?.Invoke(row);
+                    }
+                }
+                else
+                {
+                    _hoverRow = null;
+                }
                 _dropPosition = canInto
                     ? mouse.Y < rectMin.Y + third
                         ? RowDropPosition.Before
@@ -732,9 +785,7 @@ public sealed class ShellSidebar
                         TablerIcon.ArrowsMove,
                         selected: false,
                         style: square,
-                        help: handleShown
-                            ? "Hide this actor's world handle"
-                            : "Show this actor's world handle",
+                        help: handleShown ? "Hide handle" : "Show handle",
                         id: "##handle",
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
@@ -747,9 +798,7 @@ public sealed class ShellSidebar
                         TablerIcon.Crosshair,
                         selected: row.ActorTargeted,
                         style: square,
-                        help: row.ActorTargeted
-                            ? "The game's current target"
-                            : "Target this actor in game",
+                        help: row.ActorTargeted ? "Targeted" : "Target",
                         id: "##target",
                         dimmed: !row.ActorTargeted))
                     _vm.OnActorTarget?.Invoke(row);
@@ -760,7 +809,7 @@ public sealed class ShellSidebar
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
-                        help: row.ActorVisible ? "Hide actor" : "Show actor",
+                        help: row.ActorVisible ? "Hide" : "Show",
                         id: "##visible",
                         dimmed: !row.ActorVisible))
                     _vm.OnActorVisibility?.Invoke(row);
@@ -773,9 +822,7 @@ public sealed class ShellSidebar
                             : TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
-                        help: row.ActorPaused
-                            ? "Resume animation"
-                            : "Pause animation",
+                        help: row.ActorPaused ? "Play" : "Pause",
                         id: "##pause"))
                     _vm.OnActorPause?.Invoke(row);
                 return;
@@ -790,9 +837,7 @@ public sealed class ShellSidebar
                         TablerIcon.ArrowsMove,
                         selected: false,
                         style: square,
-                        help: handleShown
-                            ? "Hide this entity's world handle"
-                            : "Show this entity's world handle",
+                        help: handleShown ? "Hide handle" : "Show handle",
                         id: "##handle",
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
@@ -802,16 +847,28 @@ public sealed class ShellSidebar
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
-                        help: row.LightOn
-                            ? "Switch this off"
-                            : "Switch this on",
+                        help: row.LightOn ? "Hide" : "Show",
                         id: "##light-on",
                         dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
 
-                // Every world-object row's third seat: the actor row's
-                // own play/pause glyph. Spawned scenery cannot be
-                // animated by the game — its seat is inert and slashed.
+                // Scenery's third seat is its night state: the moon
+                // means the lamps are lit, the sun means daytime dressing.
+                if (row.NightAction)
+                {
+                    ImGui.SetCursorScreenPos(
+                        origin + new Vector2(step * 2f, 0f));
+                    if (Crystarium.TemporaryIconToggle(
+                            row.Night ? TablerIcon.Moon : TablerIcon.Sun,
+                            selected: false,
+                            style: square,
+                            help: row.Night ? "Day" : "Night",
+                            id: "##night-seat"))
+                        _vm.OnRowNight?.Invoke(row);
+                }
+
+                // An effect's third seat is the actor row's own
+                // play/pause glyph.
                 if (row.PauseAction)
                 {
                     ImGui.SetCursorScreenPos(
@@ -822,14 +879,8 @@ public sealed class ShellSidebar
                                 : TablerIcon.PlayerPlay,
                             selected: false,
                             style: square,
-                            disabled: row.PauseDisabled,
-                            help: row.PauseDisabled
-                                ? "A spawned copy has no animation"
-                                : row.Paused
-                                    ? "Resume the animation"
-                                    : "Pause the animation",
-                            id: "##pause-seat",
-                            slashed: row.PauseDisabled))
+                            help: row.Paused ? "Play" : "Pause",
+                            id: "##pause-seat"))
                         _vm.OnRowPause?.Invoke(row);
                 }
                 return;
@@ -846,12 +897,32 @@ public sealed class ShellSidebar
                             : TablerIcon.LockOpen,
                         selected: false,
                         style: square,
-                        help: row.GroupLocked
-                            ? "Unlock group"
-                            : "Lock group — nothing in it moves",
+                        help: row.GroupLocked ? "Unlock" : "Lock",
                         id: "##group-lock",
                         dimmed: !row.GroupLocked))
                     _vm.OnGroupLock?.Invoke(row);
+
+                // The group's gates: closed hides or pauses everything
+                // beneath; open gives each member its own flag back.
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupHidden ? TablerIcon.EyeOff : TablerIcon.Eye,
+                        selected: false,
+                        style: square,
+                        help: row.GroupHidden ? "Show" : "Hide",
+                        id: "##group-visible",
+                        dimmed: row.GroupHidden))
+                    _vm.OnGroupVisibility?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupPaused ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
+                        selected: false,
+                        style: square,
+                        help: row.GroupPaused ? "Play" : "Pause",
+                        id: "##group-play",
+                        dimmed: row.GroupPaused))
+                    _vm.OnGroupPause?.Invoke(row);
                 return;
             }
 
@@ -864,9 +935,7 @@ public sealed class ShellSidebar
                         TablerIcon.Crosshair,
                         selected: false,
                         style: square,
-                        help: row.CameraCanRecenter
-                            ? "Recenter on the selected actor"
-                            : "Select an actor to track first",
+                        help: "Recenter",
                         id: "##camera-recenter",
                         dimmed: !row.CameraCanRecenter))
                     _vm.OnCameraRecenter?.Invoke(row);
@@ -876,9 +945,7 @@ public sealed class ShellSidebar
                         TablerIcon.Video,
                         selected: row.CameraLive,
                         style: square,
-                        help: row.CameraLive
-                            ? "The live camera — click to return to the main camera"
-                            : "Look through this camera",
+                        help: row.CameraLive ? "Main camera" : "Look through",
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
@@ -910,9 +977,7 @@ public sealed class ShellSidebar
                             : TablerIcon.LockOpen,
                         selected: false,
                         style: square,
-                        help: row.CameraLocked
-                            ? "Unlock camera"
-                            : "Lock camera",
+                        help: row.CameraLocked ? "Unlock" : "Lock",
                         id: "##camera-lock",
                         dimmed: !row.CameraLocked))
                     _vm.OnCameraLock?.Invoke(row);
@@ -926,16 +991,14 @@ public sealed class ShellSidebar
             ImGui.SetCursorScreenPos(origin);
             string help = state switch
             {
-                0 => "Show in skeleton overlay",
-                1 => "Some of this is in the overlay; show all of it",
-                _ => "Hide from skeleton overlay",
+                0 => "Show bones",
+                1 => "Show all bones",
+                _ => "Hide bones",
             };
             bool changed = state == 1
                 ? Crystarium.SidebarMixedVisibilityToggle(
                     style: square,
-                    help: state == 1
-                        ? "Hide the currently shown bones"
-                        : help,
+                    help: state == 1 ? "Hide shown bones" : help,
                     id: "##overlay")
                 : Crystarium.TemporaryIconToggle(
                     TablerIcon.Eye,

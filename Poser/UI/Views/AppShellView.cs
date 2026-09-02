@@ -35,6 +35,9 @@ public sealed class ShellSidebarRow
     /// <summary>Group-head rows: the lock action seat.</summary>
     public bool GroupActions;
     public bool GroupLocked;
+    /// <summary>A group row's gates: closed hides / pauses everything beneath.</summary>
+    public bool GroupHidden;
+    public bool GroupPaused;
     /// <summary>Camera rows: the kind letter between the live and lock
     /// seats — M main, F free, C camera. A marker, not a control.</summary>
     public string CameraMark = "";
@@ -83,7 +86,9 @@ public sealed class ShellSidebarRow
     /// the game, so its seat is inert and slashed.</summary>
     public bool PauseAction;
     public bool Paused;
-    public bool PauseDisabled;
+    /// <summary>Scenery rows: the sun/moon seat over the object's night state.</summary>
+    public bool NightAction;
+    public bool Night;
     /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;
@@ -304,6 +309,11 @@ public sealed class AppShellViewModel
     /// <summary>A drag released: <c>dragged</c> lands relative to
     /// <c>target</c> (null target = open space, which un-groups).</summary>
     public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
+    /// <summary>The tree level the pointer sat at when the drop landed
+    /// (0 = root), read by the drop handler: dragging out to the left of a
+    /// group's last row climbs out of it, dragging right under a group
+    /// head goes into it. -1 when no row was under the pointer.</summary>
+    public int DropLevel = -1;
 
     /// <summary>A click on the tree's open space below the last row — the
     /// "nothing" target: the shell clears the selection.</summary>
@@ -315,12 +325,15 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
     public Action<ShellSidebarRow>? OnGroupLock;
+    public Action<ShellSidebarRow>? OnGroupVisibility;
+    public Action<ShellSidebarRow>? OnGroupPause;
     public Action<ShellSidebarRow>? OnCameraRecenter;
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
     public Action<ShellSidebarRow>? OnRowPause;
+    public Action<ShellSidebarRow>? OnRowNight;
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;

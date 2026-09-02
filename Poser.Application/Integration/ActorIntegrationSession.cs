@@ -73,6 +73,15 @@ public sealed class ActorIntegrationSession : IDisposable
 
     // ── Selectors ────────────────────────────────────────────────────────
 
+    /// <summary>A Penumbra redraw of the actor; nothing else changes.</summary>
+    public IntegrationResult Redraw(ActorId actor)
+    {
+        var redraw = _port.RequestRedraw(actor);
+        return redraw.Success
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail($"The redraw failed: {redraw.Detail}");
+    }
+
     public IntegrationResult SetCollection(ActorId actor, Guid collection, string name)
     {
         if (McdfGate(actor) is { } gate)

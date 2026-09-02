@@ -52,7 +52,8 @@ public sealed class CleanTransformFacade
         string description = "Transform",
         bool includeLinkedBones = false,
         Func<string, TransformDeltaMode?>? symmetryFor = null,
-        bool relativeSecondaryBones = false)
+        bool relativeSecondaryBones = false,
+        GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing)
     {
         var targets = new List<TransformTargetId>(targetIds);
         if (includeLinkedBones)
@@ -68,7 +69,8 @@ public sealed class CleanTransformFacade
             customPivot,
             description,
             targetModes,
-            relativeSecondaryBones));
+            relativeSecondaryBones,
+            groupScale));
     }
 
     public GestureResult Update(

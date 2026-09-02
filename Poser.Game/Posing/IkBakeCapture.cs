@@ -558,7 +558,7 @@ public sealed class IkBakeCapture : IDisposable
             result.Add(bone);
         }
 
-        if (config.Solver == IkSolver.Ccd)
+        if (config.Solver != IkSolver.TwoJoint)
         {
             var walked = new List<IBone> { endpoint };
             var current = endpoint.ParentBone;

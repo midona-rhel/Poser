@@ -36,6 +36,19 @@ public enum PivotMode
     Custom,
 }
 
+/// <summary>What a scale gesture on a multi-selection does. Members'
+/// offsets from the pivot always scale with the gesture — that is the
+/// group growing or shrinking; whether each member's OWN size follows is
+/// the choice.</summary>
+public enum GroupScaleMode
+{
+    /// <summary>Sizes and spacing: every member grows and moves out.</summary>
+    SizesAndSpacing,
+
+    /// <summary>Spacing only: members keep their size and move out.</summary>
+    SpacingOnly,
+}
+
 public enum TransformDeltaMode
 {
     Direct,
@@ -260,7 +273,21 @@ public static class TransformMath
         TransformDelta delta,
         TransformSpace space,
         Vector3 pivot,
-        bool rotatePosition)
+        bool rotatePosition) =>
+        Apply(baseline, delta, space, pivot, rotatePosition, scalePosition: false, scaleOwn: true);
+
+    /// <summary>With a shared pivot the offset from it rotates with the
+    /// delta and, when <paramref name="scalePosition"/>, scales with it —
+    /// a group grows about its pivot instead of fattening in place.
+    /// <paramref name="scaleOwn"/> is whether the target's own size follows.</summary>
+    public static PoseTransform Apply(
+        PoseTransform baseline,
+        TransformDelta delta,
+        TransformSpace space,
+        Vector3 pivot,
+        bool rotatePosition,
+        bool scalePosition,
+        bool scaleOwn)
     {
         baseline = baseline.Normalized();
         delta = delta.Normalized();
@@ -271,12 +298,15 @@ public static class TransformMath
         var position = baseline.Position + delta.Translation;
         if (rotatePosition)
         {
+            var offset = baseline.Position - pivot;
+            if (scalePosition)
+                offset *= delta.ScaleFactor;
             position = pivot +
-                Vector3.Transform(baseline.Position - pivot, delta.Rotation) +
+                Vector3.Transform(offset, delta.Rotation) +
                 delta.Translation;
         }
 
-        var scale = baseline.Scale * delta.ScaleFactor;
+        var scale = scaleOwn ? baseline.Scale * delta.ScaleFactor : baseline.Scale;
         return PoseTransform.CreateChecked(position, rotation, scale);
     }
 

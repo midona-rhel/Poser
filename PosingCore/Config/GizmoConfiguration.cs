@@ -44,6 +44,11 @@ public class GizmoConfiguration
     /// surprise a stored config must not get.</summary>
     public bool AllowHoldSnap { get; set; } = false;
 
+    /// <summary>What scaling a multi-selection does: grow the members and
+    /// their spacing, or the spacing alone.</summary>
+    public Poser.Domain.Transforms.GroupScaleMode GroupScale { get; set; } =
+        Poser.Domain.Transforms.GroupScaleMode.SizesAndSpacing;
+
     /// <summary>Ktisis' rotate increment: 5°, and 0.5° with Shift.</summary>
     public float SnapRotationDegrees { get; set; } = 5.0f;
 
