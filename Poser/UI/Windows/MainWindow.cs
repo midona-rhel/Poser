@@ -2322,9 +2322,12 @@ public class MainWindow : Window
                         {
                             if (ResolveExactCamera(cameraId, camera) && !camera.IsLocked)
                                 _cameraPane.ToggleTrackedBone(camera, bone);
-                        }),
+                        },
+                        onlyActor: actor?.Id),
                     disabled: locked,
-                    help: "Pick bones in the view");
+                    help: actor == null
+                        ? "Pick bones in the view"
+                        : "Pick bones in the view on this actor");
             });
 
         PumpCameraBonePicker(cameraId, camera, actor);

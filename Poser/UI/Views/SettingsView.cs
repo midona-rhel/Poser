@@ -107,6 +107,7 @@ public sealed class SettingsViewModel
     public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
+    public bool DetachedWindowsRemember;
     public bool TreeGuides = true;
     public bool SwapRotationXY;
     public bool ShowInGPose = true;
@@ -427,6 +428,9 @@ public static class SettingsView
     /// whose title matches shows whole, otherwise the rows whose label or
     /// hover matches. Section titles carry their page's name, and the
     /// results fade in from the moment the search changed.</summary>
+    private static readonly string[] DetachedPlacementOptions =
+        ["Beside the properties window", "Where they were last"];
+
     private static void DrawSearch(SettingsViewModel vm, Crystarium.PageScope page)
     {
         double now = ImGui.GetTime();
@@ -1141,6 +1145,12 @@ public static class SettingsView
                 vm.DetachedShell,
                 next => vm.DetachedShell = next,
                 "The toolbar and the sidebar float as separate windows you can place anywhere");
+            form.Dropdown(
+                "Detached windows open",
+                DetachedPlacementOptions,
+                vm.DetachedWindowsRemember ? 1 : 0,
+                next => vm.DetachedWindowsRemember = next == 1,
+                help: "Where the sidebar and the inspector appear when detached");
             form.Switch(
                 "Tree guide lines",
                 vm.TreeGuides,

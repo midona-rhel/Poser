@@ -605,6 +605,11 @@ public class SkeletonOverlayWindow : Window
             if (Config.OnlyActiveActorBones && !picking
                 && onlyActor != actor.Id.LogicalId)
                 continue;
+            // A pick limited to one actor shows that actor alone.
+            if (picking
+                && global::Poser.UI.Controls.BonePick.OnlyActor is { } pickActor
+                && pickActor != actor.Id)
+                continue;
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             float armatureOpacity = ActorOpacity(actor.Id, activeLineage);
 

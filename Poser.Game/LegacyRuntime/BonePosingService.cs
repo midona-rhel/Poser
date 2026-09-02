@@ -139,9 +139,19 @@ public unsafe class BonePosingService : IBonePosingService
         /// point, Bone mode keeps the tip's world OFFSET from the target
         /// bone. Translation is the authored delta at capture, so a later
         /// drag moves the target by exactly what was dragged.</summary>
-        public (Vector3 Target, Vector3 Translation)? HeldCapture;
+        public HeldTarget? HeldCapture;
         public IBone? TargetBone;
     }
+
+    /// <summary>What a held chain captured: World mode's world point and
+    /// rotation, or Bone mode's offset and relative rotation from the
+    /// target bone, plus the authored deltas at capture so a later drag or
+    /// turn moves the target by exactly that much.</summary>
+    private readonly record struct HeldTarget(
+        Vector3 Target,
+        Quaternion Rotation,
+        Vector3 Translation,
+        Quaternion RotationDelta);
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
         _ikChains = new();
@@ -814,18 +824,27 @@ public unsafe class BonePosingService : IBonePosingService
     /// stack exists: target = captured target + (0 − captured translation).</summary>
     private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik)
     {
-        if (ResolveHeldTarget(ik, bone, Vector3.Zero) is not { } target)
+        if (ResolveHeld(ik, bone, Vector3.Zero, Quaternion.Identity) is not { } held)
             return;
+        var target = held.Position;
         var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
         var currentRotation = new Quaternion(
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
+        bool holdRotation = ik.Config.HoldRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-            target, currentRotation, ik.Config, ik.Chain));
+            target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
         {
             var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
             modelSpace->Translation = *(hkVector4f*)(&target);
+        }
+        if (holdRotation)
+        {
+            // The tip keeps the held rotation too; its children ride along.
+            var heldSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
+            var heldRotation = held.Rotation;
+            heldSpace->Rotation = *(hkQuaternionf*)(&heldRotation);
         }
     }
 
@@ -860,6 +879,7 @@ public unsafe class BonePosingService : IBonePosingService
             ik!.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Actor &&
             ik.HeldCapture != null;
         bool rotationEnforcedByIk = false;
+        Quaternion? heldRotation = null;
         if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
         {
             // Brio-style live IK: the stored delta is the TARGET offset; the
@@ -868,9 +888,6 @@ public unsafe class BonePosingService : IBonePosingService
             // shifted by the authored translation moved since capture, so
             // mode changes never jump or double-apply an existing edit.
             var target = tempPos;
-            if (fixedMode
-                && ResolveHeldTarget(ik!, bone, info.Transform.Position) is { } held)
-                target = held;
 
             // Requested end rotation, computed BEFORE the solve so optional
             // enforcement receives the value the direct apply would produce.
@@ -883,6 +900,20 @@ public unsafe class BonePosingService : IBonePosingService
                     headRotation * info.Transform.Rotation *
                     Quaternion.Inverse(headRotation) * rotBefore)
                 : Quaternion.Normalize(rotBefore * info.Transform.Rotation);
+
+            // A held target brings its own rotation when the chain holds
+            // rotation: the solver aims at it and the write below keeps it.
+            if (fixedMode
+                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation)
+                    is { } held)
+            {
+                target = held.Position;
+                if (ik.Config.HoldRotation)
+                {
+                    requestedRotation = held.Rotation;
+                    heldRotation = held.Rotation;
+                }
+            }
 
             _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
                 target, requestedRotation, ik!.Config, ik.Chain));
@@ -916,6 +947,8 @@ public unsafe class BonePosingService : IBonePosingService
                     headRotation * info.Transform.Rotation *
                     Quaternion.Inverse(headRotation) * beforeRot)
                 : Quaternion.Normalize(beforeRot * info.Transform.Rotation);
+            if (heldRotation is { } keep)
+                tempRot = keep;
             modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
         }
 
@@ -1141,9 +1174,7 @@ public unsafe class BonePosingService : IBonePosingService
         else if (mode == Poser.Domain.Posing.IkTargetMode.World && fresh)
         {
             state.TargetBone = null;
-            state.HeldCapture = BoneWorldPosition(bone) is { } tip
-                ? (tip, GetModification(bone)?.Position ?? Vector3.Zero)
-                : null;
+            state.HeldCapture = CaptureWorld(bone);
         }
         else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
         {
@@ -1197,45 +1228,66 @@ public unsafe class BonePosingService : IBonePosingService
             ? state.TargetBone
             : null;
 
-    /// <summary>The bone's posed position in the world: its cached
+    /// <summary>The bone's posed transform in the world: its cached
     /// model-space transform through the skeleton's model matrix.</summary>
-    private static Vector3? BoneWorldPosition(IBone bone)
+    private static global::Poser.Transform? BoneWorld(IBone bone)
     {
         if (bone.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid)
             return null;
         var world = global::Poser.Transform.FromMatrix(
             bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
-        return AllFinite(world.Position) ? world.Position : null;
+        return AllFinite(world.Position) && AllFinite(world.Rotation)
+            ? world
+            : null;
     }
 
-    /// <summary>The tip's world offset from the target bone right now,
-    /// with the authored translation it was taken under.</summary>
-    private (Vector3 Target, Vector3 Translation)? CaptureBoneOffset(
-        IBone endpoint, IBone target)
+    /// <summary>World mode's capture: the tip's world position and
+    /// rotation now, with the authored deltas they were taken under.</summary>
+    private HeldTarget? CaptureWorld(IBone endpoint)
+    {
+        if (BoneWorld(endpoint) is not { } tip)
+            return null;
+        var authored = GetModification(endpoint);
+        return new HeldTarget(
+            tip.Position, tip.Rotation,
+            authored?.Position ?? Vector3.Zero,
+            authored?.Rotation ?? Quaternion.Identity);
+    }
+
+    /// <summary>Bone mode's capture: the tip's world offset and rotation
+    /// RELATIVE to the target bone now, with the authored deltas.</summary>
+    private HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target)
     {
         if (target.Skeleton is global::Poser.Entities.Skeleton targetSkeleton && targetSkeleton.IsValid)
             targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-        if (BoneWorldPosition(endpoint) is not { } tip
-            || BoneWorldPosition(target) is not { } anchor)
+        if (BoneWorld(endpoint) is not { } tip
+            || BoneWorld(target) is not { } anchor)
             return null;
-        return (tip - anchor, GetModification(endpoint)?.Position ?? Vector3.Zero);
+        var authored = GetModification(endpoint);
+        return new HeldTarget(
+            tip.Position - anchor.Position,
+            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
+            authored?.Position ?? Vector3.Zero,
+            authored?.Rotation ?? Quaternion.Identity);
     }
 
     /// <summary>The held target in the endpoint's model space this frame:
-    /// the captured world point (World) or the target bone's world position
-    /// plus the captured offset (Bone), brought into model space through
-    /// the skeleton's matrix, then moved by what was dragged since capture.
-    /// Null when the target cannot be resolved this frame.</summary>
-    private static Vector3? ResolveHeldTarget(
-        IkChainState ik, IBone endpoint, Vector3 authored)
+    /// the captured world point and rotation (World) or the target bone's
+    /// world transform with the captured offsets (Bone), brought into model
+    /// space through the skeleton's matrix, then moved and turned by what
+    /// was authored since capture. Null when it cannot be resolved.</summary>
+    private static (Vector3 Position, Quaternion Rotation)? ResolveHeld(
+        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation)
     {
         if (ik.HeldCapture is not { } capture)
             return null;
-        Vector3 world;
+        Vector3 worldPosition;
+        Quaternion worldRotation;
         switch (ik.Config.TargetMode)
         {
             case Poser.Domain.Posing.IkTargetMode.World:
-                world = capture.Target;
+                worldPosition = capture.Target;
+                worldRotation = capture.Rotation;
                 break;
             case Poser.Domain.Posing.IkTargetMode.Bone:
                 if (ik.TargetBone is not { } targetBone
@@ -1243,9 +1295,10 @@ public unsafe class BonePosingService : IBonePosingService
                     || !targetSkeleton.IsValid)
                     return null;
                 targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-                if (BoneWorldPosition(targetBone) is not { } anchor)
+                if (BoneWorld(targetBone) is not { } anchor)
                     return null;
-                world = anchor + capture.Target;
+                worldPosition = anchor.Position + capture.Target;
+                worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
                 break;
             default:
                 return null;
@@ -1253,14 +1306,27 @@ public unsafe class BonePosingService : IBonePosingService
         if (endpoint.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid
             || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var toModel))
             return null;
-        var model = Vector3.Transform(world, toModel);
-        if (!AllFinite(model))
+        var position = Vector3.Transform(worldPosition, toModel)
+            + (authoredPosition - capture.Translation);
+        // Rotations compose bone-then-model: world = model * frame, so
+        // model = world * frame⁻¹; the authored turn since capture rides on
+        // the end, where the delta stack puts it.
+        var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
+        if (!AllFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
-        return model + (authored - capture.Translation);
+        var rotation = Quaternion.Normalize(
+            worldRotation * Quaternion.Inverse(Quaternion.Normalize(frame))
+            * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
+        if (!AllFinite(position) || !AllFinite(rotation))
+            return null;
+        return (position, rotation);
     }
 
     private static bool AllFinite(Vector3 v) =>
         float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
+
+    private static bool AllFinite(Quaternion q) =>
+        float.IsFinite(q.X) && float.IsFinite(q.Y) && float.IsFinite(q.Z) && float.IsFinite(q.W);
 
     public bool IsIkTwoJointAvailable(IBone bone)
     {

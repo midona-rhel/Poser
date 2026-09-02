@@ -11,12 +11,15 @@ public static class BonePick
 {
     public static bool Active { get; private set; }
     public static bool Multi { get; private set; }
+    /// <summary>When set, only this actor's bones show and take.</summary>
+    public static ActorId? OnlyActor { get; private set; }
     private static Action<BoneId>? _onPick;
 
-    public static void Begin(bool multi, Action<BoneId> onPick)
+    public static void Begin(bool multi, Action<BoneId> onPick, ActorId? onlyActor = null)
     {
         Active = true;
         Multi = multi;
+        OnlyActor = onlyActor;
         _onPick = onPick;
     }
 
@@ -31,6 +34,7 @@ public static class BonePick
     {
         Active = false;
         Multi = false;
+        OnlyActor = null;
         _onPick = null;
     }
 }

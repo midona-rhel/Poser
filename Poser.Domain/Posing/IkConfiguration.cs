@@ -53,7 +53,8 @@ public sealed record IkChainConfig(
     float HingeMaxDegrees,
     Vector3 HingeAxis,
     bool EnforceEndRotation,
-    float SwivelDegrees = 0f)
+    float SwivelDegrees = 0f,
+    bool HoldRotation = true)
 {
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past

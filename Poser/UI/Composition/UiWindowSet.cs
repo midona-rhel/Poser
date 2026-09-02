@@ -203,7 +203,7 @@ public sealed class UiWindowSet : IDisposable
         // The properties window sheds or regains the rail's width so the
         // split reads as a split, not a widening.
         Main.ApplyRailShift(ui.SplitInspector ? +1 : -1);
-        if (ui.SplitInspector)
+        if (ui.SplitInspector && !ui.DetachedWindowsRemember)
             InspectorPart.PlaceAt(
                 Main.RailSeatScreen,
                 new System.Numerics.Vector2(
@@ -217,7 +217,9 @@ public sealed class UiWindowSet : IDisposable
         var ui = _configService.Config.UI;
         bool detaching = !ui.DetachedShell;
         ui.DetachedShell = detaching;
-        if (detaching)
+        // Seated where it sat attached, unless the window is to open where
+        // it was last: then ImGui's own memory of the window stands.
+        if (detaching && !ui.DetachedWindowsRemember)
         {
             float gs = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
             SidebarPart.PlaceAt(

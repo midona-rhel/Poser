@@ -32,6 +32,11 @@ public class UIConfiguration
         float.IsFinite(value) ? Math.Clamp(value, MinimumFillOpacity, 1f) : 1f;
     public bool DetachedShell { get; set; }
 
+    /// <summary>Where a detached sidebar or inspector opens: beside the
+    /// properties window, where it sat attached (false), or where it was
+    /// the last time it was detached (true).</summary>
+    public bool DetachedWindowsRemember { get; set; }
+
     /// <summary>The settings page last shown; the window opens there.</summary>
     public int LastSettingsPage { get; set; }
     public bool ShowTreeGuides { get; set; } = true;

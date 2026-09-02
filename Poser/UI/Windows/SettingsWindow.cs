@@ -210,6 +210,7 @@ public class SettingsWindow : Window
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
+            DetachedWindowsRemember = c.UI.DetachedWindowsRemember,
             TreeGuides = c.UI.ShowTreeGuides,
             ShowInGPose = c.UI.ShowInGPose,
             HideWhileManipulating = c.UI.HideWhileManipulating,
@@ -448,6 +449,7 @@ public class SettingsWindow : Window
             (global::Poser.Files.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 
         c.UI.DetachedShell = _vm.DetachedShell;
+        c.UI.DetachedWindowsRemember = _vm.DetachedWindowsRemember;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
         c.UI.ShowInGPose = _vm.ShowInGPose;
         c.UI.HideWhileManipulating = _vm.HideWhileManipulating;

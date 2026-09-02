@@ -2114,22 +2114,24 @@ public class PoseInspectorPane
     {
         var actors = _scene.Snapshot.Actors;
         var current = _ikPort.BoneTarget(ikTarget);
-        var shownActor = _ikBoneActor ?? current?.Skeleton.Actor ?? endpoint.Skeleton.Actor;
+        // The dropdown leads with Any actor: the list needs one named, the
+        // pick in the view is limited to the named one and free otherwise.
+        var shownActor = _ikBoneActor ?? current?.Skeleton.Actor;
         int actorIndex = -1;
-        var names = new string[actors.Count];
+        var names = new string[actors.Count + 1];
+        names[0] = "Any actor";
         for (int i = 0; i < actors.Count; i++)
         {
-            names[i] = DescriptorDisplayName?.Invoke(actors[i]) ?? actors[i].Id.ToString();
+            names[i + 1] = DescriptorDisplayName?.Invoke(actors[i]) ?? actors[i].Id.ToString();
             if (actors[i].Id == shownActor)
                 actorIndex = i;
         }
         form.Dropdown(
             "Actor",
             names,
-            Math.Max(0, actorIndex),
-            next => _ikBoneActor = actors[next].Id,
-            disabled: actors.Count == 0,
-            help: "Whose bone to follow");
+            actorIndex + 1,
+            next => _ikBoneActor = next == 0 ? null : actors[next - 1].Id,
+            help: "Whose bone to follow; Any actor lets the pick in the view choose");
         var actorDescriptor = actorIndex >= 0 ? actors[actorIndex] : null;
         string boneLabel = current is { } picked
             ? _ikBoneChoices.FirstOrDefault(choice => choice.BoneId == picked)?.Label
@@ -2167,8 +2169,11 @@ public class PoseInspectorPane
                 help: "Pick the bone from a list");
             actions.IconButton(
                 TablerIcon.Crosshair,
-                () => global::Poser.UI.Controls.BonePick.Begin(multi: false, Aim),
-                help: "Pick the bone in the view");
+                () => global::Poser.UI.Controls.BonePick.Begin(
+                    multi: false, Aim, onlyActor: actorDescriptor?.Id),
+                help: actorDescriptor == null
+                    ? "Pick the bone in the view"
+                    : "Pick the bone in the view on this actor");
         });
         if (_ikBonePicker.Draw() is { } chosen)
             Aim(chosen.Item.BoneId);
@@ -2299,6 +2304,12 @@ public class PoseInspectorPane
             help: "Actor moves the target with the actor, World holds it where it is, Bone follows another bone");
         if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
             DrawIkBoneTarget(form, boneId, ikTarget);
+        form.Switch(
+            "Keep rotation",
+            config.HoldRotation,
+            next => Apply(config with { HoldRotation = next }),
+            disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
+            help: "The tip keeps its rotation to the held spot or bone as well");
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
