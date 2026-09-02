@@ -130,7 +130,10 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
                 string name = row.Name.ExtractText();
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
-                var item = new WardrobeItem(row.RowId, name, (uint)row.Icon, row.DyeCount);
+                ulong packed = row.ModelMain;
+                var item = new WardrobeItem(
+                    row.RowId, name, (uint)row.Icon, row.DyeCount,
+                    (ushort)packed, (ushort)(packed >> 16), (byte)(packed >> 32));
                 byId[row.RowId] = item;
                 foreach (var slot in SlotsOf(row.EquipSlotCategory.Value))
                 {

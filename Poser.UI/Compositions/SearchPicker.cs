@@ -27,6 +27,10 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Whether a row owns a selectable mark in multi-select mode.</summary>
     public Func<T, bool>? IsSelectable;
 
+    /// <summary>A row's own colour under the overlays — a dye's. The text
+    /// on it contrasts against that colour, not the theme.</summary>
+    public Func<T, Vector4?>? RowFill;
+
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
 
@@ -464,6 +468,14 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(
                 new Vector2(bandMin.X, bandMin.Y + PickerRowPitch * scale));
 
+            Vector4? rowFill = _options.RowFill?.Invoke(item);
+            if (rowFill is { } paint)
+                BoxRenderer.Draw(draw, pillMin, pillMin + pillSize, new BoxStyle
+                {
+                    BackgroundColor = paint with { W = 1f },
+                    BorderRadius = theme.Radii.Control,
+                });
+
             // Hover and press use the same overlay above selection.
             var fill = hit.Hovered || hit.Active
                 ? theme.Chrome.WeakOverlay
@@ -559,7 +571,7 @@ public static partial class Crystarium
                     new TextStyle
                     {
                         Size = theme.Typography.BodySize,
-                        Color = theme.Text,
+                        Color = rowFill is { } painted ? painted.ContrastText() : theme.Text,
                     },
                     besideIcon: true);
 

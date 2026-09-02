@@ -215,6 +215,7 @@ internal static class ServiceRegistration
         services.AddSingleton<AnimationSteps>();
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<Game.Journal.DisruptiveSteps>();
+        services.AddSingleton<Game.Journal.WardrobeSession>();
         services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();
         services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
         services.AddSingleton(sp => new Game.Journal.EntitySessions(

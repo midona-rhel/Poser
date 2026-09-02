@@ -82,6 +82,8 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationValue<string> GetStateJson(ActorId actor) => _port.GetGlamourerStateJson(actor);
 
+    public IntegrationValue<WardrobeState> ReadWardrobe(ActorId actor) => _port.GetWardrobeState(actor);
+
     public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => Lift(_port.ApplyGlamourerStateJson(actor, stateJson));
 
     public IntegrationResult RevertState(ActorId actor) => Lift(_port.RevertGlamourerState(actor));

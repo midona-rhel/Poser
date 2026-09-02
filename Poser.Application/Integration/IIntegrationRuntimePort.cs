@@ -151,6 +151,8 @@ public interface IIntegrationRuntimePort
     IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on);
     /// <summary>The actor's whole Glamourer state as JSON.</summary>
     IntegrationValue<string> GetGlamourerStateJson(ActorId actor);
+    /// <summary>The actor's wardrobe read out of that state.</summary>
+    IntegrationValue<WardrobeState> GetWardrobeState(ActorId actor);
     /// <summary>Applies a JSON state; what it carries with Apply set lands.</summary>
     IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
     /// <summary>Hands the actor back to what the game and automation say.</summary>

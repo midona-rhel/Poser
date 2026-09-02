@@ -326,7 +326,7 @@ public static partial class Crystarium
     /// that correct. Grapheme clusters never split; the result is
     /// presentation output and the caller's string is untouched.
     /// </summary>
-    internal static string TruncateText(string text, in TextStyle style, float width)
+    public static string TruncateText(string text, in TextStyle style, float width)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(

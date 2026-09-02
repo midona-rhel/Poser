@@ -206,7 +206,7 @@ public sealed class DebugBridge : IDisposable
                     {
                         "/actors",
                         "/history", "/undo", "/redo",
-                        "/glamstate?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
+                        "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/apply?actor&slot=1&timeline=8136",
@@ -521,6 +521,11 @@ public sealed class DebugBridge : IDisposable
                             return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/wardrobe":
+            {
+                var wardrobe = _session.ReadWardrobe(id);
+                return wardrobe.Success ? Json(wardrobe.Value!) : Json(new { error = wardrobe.Detail });
             }
             case "/glamstate":
             {

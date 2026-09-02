@@ -31,6 +31,19 @@ owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
 before the captured state is restored, including the by-name path after a
 clone is gone; failure of either part keeps the operation owned.
 
+The Appearance tab has two views under one pill. Actor is what the actor
+is in the scene: model, opacity, tints, wet surface, collection, body
+profile, character file. Equipment is what it wears, through Glamourer's
+IPC only: a design to apply, save or revert; the outfit verbs; a card per
+slot with the item, its two dyes and the ids behind it; the facewear; the
+hat, visor and weapon switches; and, closed, the raw model ids. An item
+id is Glamourer's: a sheet row, zero for nothing, a sentinel under the
+32-bit ceiling for nothing-per-slot and smallclothes, and above it a
+packed model id (model, weapon type, variant), which is how a slot wears
+what no item names and how a weapon wears a prop. Every change is one
+journal step whose inverse is the slot's previous state, read before the
+write. Without Glamourer the view disables in place and says why.
+
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer
 is outbound navigation only. The Appearance tab is actor-scoped.

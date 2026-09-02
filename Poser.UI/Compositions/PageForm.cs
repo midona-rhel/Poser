@@ -159,6 +159,7 @@ public static partial class Crystarium
         /// the left track. Set through <see cref="FormScope.FullLine"/>;
         /// consumed by the row that follows.</summary>
         internal bool NextFullLine;
+        internal bool IsTwoTrack => _twoTrack;
 
         /// <summary>Search hooks. A probe sees every (section, label, help)
         /// the page would draw and draws nothing; a row filter drops rows
@@ -499,6 +500,10 @@ public static partial class Crystarium
         /// pairing the standard calls for on short rows
         /// (Override|Weather, Opacity|Tint).</summary>
         public void PairRows() => _page.BeginPairedRows();
+
+        /// <summary>Whether paired rows run two tracks at this width. A
+        /// caller that pairs rows across cards orders them by it.</summary>
+        public bool TwoTrack => _page.IsTwoTrack;
 
         /// <summary>Ends a paired stretch early.</summary>
         public void EndPair() => _page.EndPairedRows();

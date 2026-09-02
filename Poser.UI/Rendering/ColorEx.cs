@@ -36,6 +36,15 @@ public static class ColorEx
     /// reads the same everywhere. It does NOT decide WHICH opacity a
     /// control uses; that stays at the call site.
     /// </summary>
+    /// <summary>Near-black or near-white, whichever reads on the colour.</summary>
+    public static Vector4 ContrastText(this Vector4 color)
+    {
+        float luma = 0.2126f * color.X + 0.7152f * color.Y + 0.0722f * color.Z;
+        return luma > 0.5f
+            ? new Vector4(0.08f, 0.08f, 0.09f, 1f)
+            : new Vector4(0.97f, 0.97f, 0.97f, 1f);
+    }
+
     public static Vector4 Fade(this Vector4 color, float opacity)
         => color with { W = color.W * opacity };
 

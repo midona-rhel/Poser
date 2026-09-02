@@ -103,7 +103,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<int, object?> _openActorIndex;
     private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> _setItem;
     private readonly ICallGateSubscriber<int, byte, ulong, uint, ulong, int> _setBonusItem;
-    private readonly ICallGateSubscriber<int, byte, bool, uint, ulong, int> _setMetaState;
+    private readonly ICallGateSubscriber<int, ulong, bool, uint, ulong, int> _setMetaState;
     private readonly ICallGateSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> _getState;
     private readonly ICallGateSubscriber<int, uint, ulong, int> _revertState;
     private readonly ICallGateSubscriber<string, string, (int, Guid)> _addDesign;
@@ -159,9 +159,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _unlockStateName = pluginInterface.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
         _applyStateName = pluginInterface.GetIpcSubscriber<object, string, uint, ulong, int>("Glamourer.ApplyStateName");
         _openActorIndex = pluginInterface.GetIpcSubscriber<int, object?>("Glamourer.OpenActorIndex");
-        _setItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V2");
+        _setItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V3");
         _setBonusItem = pluginInterface.GetIpcSubscriber<int, byte, ulong, uint, ulong, int>("Glamourer.SetBonusItem");
-        _setMetaState = pluginInterface.GetIpcSubscriber<int, byte, bool, uint, ulong, int>("Glamourer.SetMetaState");
+        _setMetaState = pluginInterface.GetIpcSubscriber<int, ulong, bool, uint, ulong, int>("Glamourer.SetMetaState");
         _getState = pluginInterface.GetIpcSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)>("Glamourer.GetState");
         _revertState = pluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
         _addDesign = pluginInterface.GetIpcSubscriber<string, string, (int, Guid)>("Glamourer.AddDesign");
@@ -868,7 +868,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new[] { dye1, dye2 }, 0u, ApplyOnce);
+            // A byte[] crosses Dalamud IPC as a base64 string and cannot become the
+            // provider's IReadOnlyList<byte>; a List<byte> crosses as a JSON array.
+            int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new List<byte> { dye1, dye2 }, 0u, ApplyOnce);
             return GlamourerResult(ec, "setting the item");
         });
 
@@ -889,7 +891,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            int ec = _setMetaState.InvokeFunc(index, (byte)which, on, 0u, ApplyOnce);
+            int ec = _setMetaState.InvokeFunc(index, (ulong)which, on, 0u, ApplyOnce);
             return GlamourerResult(ec, "setting the switch");
         });
 
@@ -904,6 +906,54 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationValue<string>.Fail($"Glamourer failed reading the state (code {ec}).");
             return IntegrationValue<string>.Ok(state.ToString(Newtonsoft.Json.Formatting.None));
         });
+
+    public IntegrationValue<WardrobeState> GetWardrobeState(ActorId actor) =>
+        Guarded<WardrobeState>(Glamourer, "Read wardrobe", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<WardrobeState>.Fail(detail!);
+            var (ec, state) = _getState.InvokeFunc(index, 0u);
+            if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
+                return IntegrationValue<WardrobeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+            return IntegrationValue<WardrobeState>.Ok(ParseWardrobe(state));
+        });
+
+    private static readonly (EquipSlot Slot, string Key)[] WardrobeSlotKeys =
+    {
+        (EquipSlot.MainHand, "MainHand"), (EquipSlot.OffHand, "OffHand"), (EquipSlot.Head, "Head"),
+        (EquipSlot.Body, "Body"), (EquipSlot.Hands, "Hands"), (EquipSlot.Legs, "Legs"),
+        (EquipSlot.Feet, "Feet"), (EquipSlot.Ears, "Ears"), (EquipSlot.Neck, "Neck"),
+        (EquipSlot.Wrists, "Wrists"), (EquipSlot.RightFinger, "RFinger"), (EquipSlot.LeftFinger, "LFinger"),
+    };
+
+    /// <summary>The wardrobe out of Glamourer's state JSON: the twelve
+    /// slots under Equipment with ItemId, Stain and Stain2; the switches
+    /// under Hat, Visor, Weapon and VieraEars; the glasses under Bonus.</summary>
+    internal static WardrobeState ParseWardrobe(Newtonsoft.Json.Linq.JObject state)
+    {
+        var equipment = state["Equipment"] as Newtonsoft.Json.Linq.JObject;
+        var slots = new Dictionary<EquipSlot, WardrobeSlot>();
+        foreach (var (slot, key) in WardrobeSlotKeys)
+        {
+            if (equipment?[key] is not Newtonsoft.Json.Linq.JObject worn)
+                continue;
+            slots[slot] = new WardrobeSlot(
+                worn.Value<ulong?>("ItemId") ?? 0,
+                worn.Value<byte?>("Stain") ?? 0,
+                worn.Value<byte?>("Stain2") ?? 0);
+        }
+        bool Flag(string key, string field, bool fallback) =>
+            equipment?[key]?[field]?.ToObject<bool>() ?? fallback;
+        ulong facewear = state["Bonus"]?["Glasses"]?["BonusId"]?.ToObject<ulong>() ?? 0;
+        return new WardrobeState(
+            slots,
+            facewear,
+            Flag("Hat", "Show", true),
+            Flag("Visor", "IsToggled", false),
+            Flag("Weapon", "Show", true),
+            Flag("VieraEars", "Show", true));
+    }
 
     public IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson) =>
         Guarded(Glamourer, "Apply state", () =>

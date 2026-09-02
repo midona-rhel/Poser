@@ -1,6 +1,8 @@
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
@@ -14,6 +16,80 @@ public static partial class Crystarium
             ImGui.Image(source.TextureHandle, size, Vector2.Zero, Vector2.One, tint.Value);
         else
             ImGui.Image(source.TextureHandle, size);
+    }
+
+    /// <summary>A square picture that opens something — an item's icon on
+    /// its card. A well-coloured box holds the image inset; without an
+    /// image the fallback glyph stands in. Two rows tall by convention.</summary>
+    public static bool ImageTile(
+        string id, nint texture, float side, Action? onClick = null,
+        TablerIcon fallback = TablerIcon.Photo, string? help = null,
+        bool disabled = false)
+    {
+        var theme = ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        var hit = Interactive.Reserve(id, new Vector2(side * scale), disabled);
+        var draw = ImGui.GetWindowDrawList();
+        var fill = !disabled && (hit.Hovered || hit.Active)
+            ? theme.Chrome.WeakOverlay
+            : theme.Chrome.InputWell;
+        BoxRenderer.Draw(draw, hit.ScreenMin, hit.ScreenMax, new BoxStyle
+        {
+            BackgroundColor = disabled ? fill.Fade(theme.Chrome.DisabledOpacity) : fill,
+            BorderRadius = theme.Radii.Control,
+        });
+        float inset = theme.Spacing.Two * scale;
+        if (texture != 0)
+            draw.AddImage(
+                new ImTextureID(texture),
+                hit.ScreenMin + new Vector2(inset),
+                hit.ScreenMax - new Vector2(inset),
+                Vector2.Zero,
+                Vector2.One,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    disabled ? Vector4.One.Fade(theme.Chrome.DisabledOpacity) : Vector4.One)));
+        else
+        {
+            var center = (hit.ScreenMin + hit.ScreenMax) * 0.5f;
+            var glyph = new Vector2(theme.Controls.IconSize * 0.5f * scale);
+            IconIn(center - glyph, center + glyph, fallback, theme.TextDim, disabled: disabled);
+        }
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        if (hit.Activated)
+            onClick?.Invoke();
+        return hit.Activated;
+    }
+
+    /// <summary>A square of one colour that opens something — a dye's
+    /// swatch beside its name. No colour paints the empty well.</summary>
+    public static bool ColorTile(
+        string id, Vector4? color, float side, Action? onClick = null,
+        string? help = null, bool disabled = false)
+    {
+        var theme = ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        var hit = Interactive.Reserve(id, new Vector2(side * scale), disabled);
+        var draw = ImGui.GetWindowDrawList();
+        var fill = color is { } paint ? paint with { W = 1f } : theme.Chrome.InputWell;
+        BoxRenderer.Draw(draw, hit.ScreenMin, hit.ScreenMax, new BoxStyle
+        {
+            BackgroundColor = disabled ? fill.Fade(theme.Chrome.DisabledOpacity) : fill,
+            BorderRadius = theme.Radii.Control,
+        });
+        if (!disabled && (hit.Hovered || hit.Active))
+            BoxRenderer.Draw(draw, hit.ScreenMin, hit.ScreenMax, new BoxStyle
+            {
+                BackgroundColor = theme.Chrome.WeakOverlay,
+                BorderRadius = theme.Radii.Control,
+            });
+        if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
+                hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
+            HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
+        if (hit.Activated)
+            onClick?.Invoke();
+        return hit.Activated;
     }
 
     /// <summary>Direct overload for Dalamud textures (back-compat with existing call sites).</summary>
