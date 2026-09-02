@@ -257,19 +257,15 @@ public static class SettingsView
 
     public static int PageCount => Nav.Length;
 
-    /// <summary>The search settles a moment after the last keystroke;
-    /// the results shown are for the settled text. Rows that stay slide
-    /// up into their new place, rows that arrive slide in from below
-    /// while fading in; nothing re-animates per keystroke.</summary>
-    private const double SearchSettleSeconds = 0.25;
-    private const float SearchSlideSeconds = 0.18f;
-    private const float SearchArriveOffset = 24f;
+    /// <summary>The search settles a moment after the last keystroke and
+    /// the results for the settled text crossfade in — the way a settings
+    /// search behaves everywhere else (VS Code, Chrome, macOS): nothing
+    /// moves, the old set is replaced by the new one in place.</summary>
+    private const double SearchSettleSeconds = 0.12;
     private static string _lastSearch = string.Empty;
     private static double _searchChangedAt;
     private static string _settledSearch = string.Empty;
     private static double _settledAt;
-    private static Dictionary<string, float> _rowsBefore = new();
-    private static Dictionary<string, float> _rowsNow = new();
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
@@ -445,8 +441,6 @@ public static class SettingsView
         {
             _settledSearch = _lastSearch;
             _settledAt = now;
-            (_rowsBefore, _rowsNow) = (_rowsNow, _rowsBefore);
-            _rowsNow.Clear();
         }
         string needle = _settledSearch;
         if (needle.Length == 0)
@@ -455,29 +449,10 @@ public static class SettingsView
             DrawCategory(vm, page);
             return;
         }
-        float ease = Math.Clamp((float)(now - _settledAt) / SearchSlideSeconds, 0f, 1f);
-        ease = 1f - (1f - ease) * (1f - ease);
-        void Settle(string key, int vtxStart, int vtxEnd, float top)
-        {
-            _rowsNow[key] = top;
-            if (_rowsBefore.TryGetValue(key, out float before))
-            {
-                // A row that stays slides up into its place; one that
-                // would move down simply sits.
-                if (before > top)
-                    Crystarium.ShiftFade(
-                        vtxStart, vtxEnd, new Vector2(0f, (before - top) * (1f - ease)), 1f);
-                return;
-            }
-            Crystarium.ShiftFade(
-                vtxStart, vtxEnd,
-                new Vector2(0f, SearchArriveOffset * ImGuiHelpers.GlobalScale * (1f - ease)),
-                ease);
-        }
-        page.RowPainted = (section, label, vtxStart, vtxEnd, top) =>
-            Settle(section + "|" + label, vtxStart, vtxEnd, top);
-        page.SectionPainted = (title, vtxStart, vtxEnd, top) =>
-            Settle("#" + title, vtxStart, vtxEnd, top);
+        float fade = Crystarium.ActiveTheme.Motion.Fast;
+        float ease = fade <= 0f
+            ? 1f
+            : Math.Clamp((float)(now - _settledAt) / fade, 0f, 1f);
         int mark = Crystarium.VertexMark();
         bool Hit(string? text) =>
             text != null && text.Contains(needle, StringComparison.OrdinalIgnoreCase);
@@ -517,13 +492,9 @@ public static class SettingsView
             vm.Category = saved;
             any++;
         }
-        page.RowPainted = null;
-        page.SectionPainted = null;
         if (any == 0)
-        {
             page.EmptyState($"Nothing matches \"{needle}\".");
-            Crystarium.FadeSince(mark, ease);
-        }
+        Crystarium.FadeSince(mark, ease);
     }
 
     private static void DrawCategory(

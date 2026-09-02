@@ -458,8 +458,14 @@ public static partial class Crystarium
             bool open,
             Action<bool>? onOpenChanged,
             Action<FormScope> content,
-            bool divider = true) =>
+            bool divider = true)
+        {
+            // A standalone section is one of a stack its caller manages:
+            // the caller's divider stands, the page's first-rule rule
+            // does not apply.
+            _anyPainted = true;
             DrawSection(title, open, onOpenChanged, content, divider);
+        }
 
         internal string RowId(string section, string label) =>
             Ids.Row(_id, section, label);
