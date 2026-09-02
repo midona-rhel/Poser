@@ -624,8 +624,14 @@ public sealed class PoseLibraryPane
         DrawApplyMenu();
         DrawTileMenu();
         DrawRenameModal();
-        DrawMetadataModal();
+        // While the image picker is open the modal is not begun: an ImGui
+        // modal that is begun blocks every other window, picker included,
+        // and dims over it. Its state is untouched, so it resumes where it
+        // was when the picker closes.
+        if (!_metaImageBrowser.IsOpen)
+            DrawMetadataModal();
         _metaImageBrowser.Draw();
+        PumpEnrichments();
         DrawDeleteModal();
     }
 
@@ -2132,21 +2138,11 @@ public sealed class PoseLibraryPane
         // Rows that stand keep their rail row and its span: a kick that leaves
         // them showing must not filter them out from under the user while the
         // worker runs.
-        if (!_autoRows)
-        {
-            _rangeStart = -1;
-            _rangeEnd = -1;
-            _vm.SelectedFolder = 0;
-            _vm.Folders.Clear();
-            _vm.Tiles.Clear();
-            _tileTags.Clear();
-            _tileAuthors.Clear();
-            _tileStatus.Clear();
-            _tileKinds.Clear();
-            _vm.Selected = -1;
-            _vm.EmptyText = ScanningText;
-            _refilter = true;
-        }
+        // The previous view stays on screen until the new one is ready to
+        // present; only a scan still running after the grace shows the
+        // Scanning state, so a fast scan never flashes an empty grid.
+        _autoAwaitSince = ImGui.GetTime();
+        _autoAwaiting = !_autoRows;
 
         _autoPending = true;
 
@@ -2248,7 +2244,14 @@ public sealed class PoseLibraryPane
 
             if (files.Count == 0)
                 continue;
-            files.Sort(StringComparer.OrdinalIgnoreCase);
+            // Newest first, by the save time; the name only breaks ties.
+            files.Sort((a, b) =>
+            {
+                int byTime = SafeFileTime(b).CompareTo(SafeFileTime(a));
+                return byTime != 0
+                    ? byTime
+                    : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            });
 
             var entries = new List<AutoSaveEntry>(files.Count);
             foreach (var file in files)
@@ -2278,10 +2281,39 @@ public sealed class PoseLibraryPane
 
     /// <summary>Polls the worker's completed slot. An idle frame costs one
     /// volatile read: no lock, no allocation, nothing to drain.</summary>
+    private const double PresentGraceSeconds = 0.3;
+    private double _autoAwaitSince;
+    private bool _autoAwaiting;
+
+    /// <summary>The Scanning state, shown only when a scan outlives the
+    /// presentation grace: the rail and the grid empty, the word in the
+    /// middle.</summary>
+    private void ShowAutoSavesScanning()
+    {
+        _autoAwaiting = false;
+            _rangeStart = -1;
+            _rangeEnd = -1;
+            _vm.SelectedFolder = 0;
+            _vm.Folders.Clear();
+            _vm.Tiles.Clear();
+            _tileTags.Clear();
+            _tileAuthors.Clear();
+            _tileStatus.Clear();
+            _tileKinds.Clear();
+            _vm.Selected = -1;
+            _vm.EmptyText = ScanningText;
+            _refilter = true;
+            }
+
     private void TakeAutoSaves()
     {
         if (Volatile.Read(ref _autoResult) is null)
+        {
+            if (_autoAwaiting && ImGui.GetTime() - _autoAwaitSince >= PresentGraceSeconds)
+                ShowAutoSavesScanning();
             return;
+        }
+        _autoAwaiting = false;
         // Interlocked rather than a plain null-out: a pass finishing between
         // the read above and the clear is then picked up on the next frame
         // instead of being overwritten.
@@ -2329,8 +2361,13 @@ public sealed class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
 
-        // Day-and-place -> rail row index, for this pass only: a mint runs on
-        // tab entry and on an explicit rescan, never per frame.
+        // Run -> rail row index, for this pass only: a mint runs on tab
+        // entry and on an explicit rescan, never per frame. A run is the
+        // saves of one day at one place, in time order: leaving for another
+        // place and coming back makes two rows, so the rail reads as time.
+        int run = 0;
+        string? runDay = null;
+        string? runPlace = null;
         var rows = new Dictionary<string, int>(StringComparer.Ordinal);
 
         int total = 0;
@@ -2355,7 +2392,15 @@ public sealed class PoseLibraryPane
             for (int e = 0; e < entries.Count; e++)
             {
                 var entry = entries[e];
-                string key = snapshot.Day + KeySeparator + entry.Place;
+                if (!string.Equals(runDay, snapshot.Day, StringComparison.Ordinal)
+                    || !string.Equals(runPlace, entry.Place, StringComparison.Ordinal))
+                {
+                    run++;
+                    runDay = snapshot.Day;
+                    runPlace = entry.Place;
+                }
+                string key = snapshot.Day + KeySeparator + entry.Place
+                    + KeySeparator + run.ToString(CultureInfo.InvariantCulture);
                 if (!rows.TryGetValue(key, out int group))
                 {
                     group = folders.Count;
@@ -3253,6 +3298,88 @@ public sealed class PoseLibraryPane
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         _vm.Selected = index;
+        EnrichTile(index);
+    }
+
+    /// <summary>The information a selection wants — author, tags, status,
+    /// what a scene holds — is read from the file when the tile is
+    /// SELECTED, never at scan time. The read runs off the UI thread and
+    /// its answer is applied to the tile on the next frame.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<TileFacts> _enrichments = new();
+    private readonly record struct TileFacts(
+        string Id, string? Author, IReadOnlyList<string> Tags, string? Sub,
+        PoseLibraryMetadataStatus Status, string Detail);
+
+    private void EnrichTile(int index)
+    {
+        var tile = _vm.Tiles[index];
+        if (tile.Enriched)
+            return;
+        tile.Enriched = true;
+        string path = tile.Id;
+        var kind = PoseLibraryService.KindOf(path);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (kind == PoseLibraryEntryKind.Pose)
+                {
+                    var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
+                    var (status, detail) = PoseLibraryFileActions.Classify(metadata);
+                    _enrichments.Enqueue(new TileFacts(
+                        path,
+                        metadata.Succeeded ? metadata.Author : null,
+                        metadata.Succeeded ? metadata.Tags : [],
+                        null, status, detail));
+                }
+                else if (kind != PoseLibraryEntryKind.Mcdf)
+                {
+                    var metadata = SceneFileStore.Default.ReadMetadata(path);
+                    var (status, detail) = PoseLibraryFileActions.Classify(metadata);
+                    _enrichments.Enqueue(new TileFacts(
+                        path,
+                        metadata.Succeeded ? metadata.Author : null,
+                        [],
+                        metadata.Succeeded && kind == PoseLibraryEntryKind.Scene
+                            ? PoseLibraryService.DescribeScene(metadata)
+                            : null,
+                        status, detail));
+                }
+            }
+            catch (Exception)
+            {
+                // A file that cannot be read shows what the listing knew.
+            }
+        });
+    }
+
+    private void PumpEnrichments()
+    {
+        while (_enrichments.TryDequeue(out var facts))
+        {
+            for (int i = 0; i < _vm.Tiles.Count; i++)
+            {
+                var tile = _vm.Tiles[i];
+                if (!string.Equals(tile.Id, facts.Id, StringComparison.Ordinal))
+                    continue;
+                tile.Author = facts.Author;
+                tile.Tags = facts.Tags;
+                if (facts.Sub is { Length: > 0 } sub)
+                    tile.Sub = sub;
+                if (facts.Status != PoseLibraryMetadataStatus.Valid)
+                {
+                    tile.Flagged = true;
+                    tile.StatusText = StatusText(facts.Status, facts.Detail);
+                }
+                if (i < _tileStatus.Count)
+                    _tileStatus[i] = facts.Status;
+                if (i < _tileAuthors.Count)
+                    _tileAuthors[i] = facts.Author?.ToLowerInvariant() ?? string.Empty;
+                if (i < _tileTags.Count)
+                    _tileTags[i] = facts.Tags.Select(tag => tag.ToLowerInvariant()).ToArray();
+                break;
+            }
+        }
     }
 
     private void SelectFolder(int index)

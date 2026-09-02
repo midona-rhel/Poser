@@ -85,9 +85,13 @@ public sealed class UIManager : IUIManager
             if (config.OpenOnGPoseEnter)
                 _windows.SetPrimaryOpen(true);
         }
-        else if (config.CloseWithGPose)
+        else
         {
-            _windows.CloseAll();
+            // Reference images are the session's; they go with it whether
+            // or not the windows do.
+            _windows.CloseReferenceImages();
+            if (config.CloseWithGPose)
+                _windows.CloseAll();
         }
     }
 

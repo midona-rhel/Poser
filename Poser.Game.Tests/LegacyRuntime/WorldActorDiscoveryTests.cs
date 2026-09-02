@@ -18,9 +18,10 @@ public sealed class WorldActorDiscoveryTests
         var seam = new CloneSeam();
         var discovery = NewDiscovery(adapter, seam);
         var first = discovery.RefreshCandidates();
-        Assert.Equal(2, first.Count);
+        // Another player's character is never lent: "Far" is a Player that
+        // is not the local player, so only the NPC lists.
+        Assert.Single(first);
         Assert.Equal("Near", first[0].Name);
-        Assert.Equal("Far", first[1].Name);
         var near = first[0];
         Assert.True(discovery.CloneCandidate(near.Id, out _).Success);
         adapter.World.Clear();

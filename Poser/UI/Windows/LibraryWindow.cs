@@ -133,6 +133,12 @@ public sealed class LibraryWindow : Window
         ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
         ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
         ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        // Resize feedback — the grip and the lit border edge — is the
+        // theme's accent, never Dalamud's global highlight.
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, Crystarium.ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, Crystarium.ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, Crystarium.ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, Crystarium.ActiveTheme.Accent);
         ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
@@ -150,7 +156,7 @@ public sealed class LibraryWindow : Window
     public override void PostDraw()
     {
         ImGui.PopStyleVar(3);
-        ImGui.PopStyleColor(11);
+        ImGui.PopStyleColor(15);
         base.PostDraw();
     }
 

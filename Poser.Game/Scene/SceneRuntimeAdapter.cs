@@ -202,6 +202,17 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                         "appearance could not be packaged.");
                     continue;
                 }
+                // Only an owned actor's appearance is packaged: one Poser
+                // spawned, or the player's own character. Anyone else's is
+                // posed, never taken.
+                if (_bindings.Resolve(id) is not { Success: true, Value: { } live }
+                    || !(_spawns.IsSpawnedActor(live) || _actors.IsLocalPlayer(live)))
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}' is not yours, so its appearance " +
+                        "was not packaged.");
+                    continue;
+                }
                 created = System.IO.Path.Combine(
                     System.IO.Path.GetTempPath(),
                     $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");

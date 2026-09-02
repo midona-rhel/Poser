@@ -16,13 +16,13 @@ public class AutoSaveConfiguration
     /// default. Entering GPose does not save immediately; the first snapshot
     /// lands one interval in.
     /// </summary>
-    public int IntervalSeconds { get; set; } = 60;
+    public int IntervalSeconds { get; set; } = 180;
 
     /// <summary>
     /// How many snapshot folders are retained on disk. Older folders are pruned
     /// after every save. Floored at 1 by the service.
     /// </summary>
-    public int MaxAutoSaves { get; set; } = 10;
+    public int MaxAutoSaves { get; set; } = 200;
 
     /// <summary>
     /// Delete every snapshot when GPose is left instead of taking a final one

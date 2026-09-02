@@ -679,8 +679,12 @@ public sealed class AppearancePane
             bool showReset = mcdfOwnedNow || cleanupPending;
             var penumbra = _integration.Penumbra;
             var glamourer = _integration.Glamourer;
+            // Character data leaves Poser only for an actor Poser spawned or
+            // the player's own character; a friend posed in GPose is not
+            // the user's to export.
+            bool owned = Describe(actor)?.IsOwned ?? false;
             bool exportable =
-                penumbra.Available && glamourer.Available && !mcdfOwnedNow;
+                owned && penumbra.Available && glamourer.Available && !mcdfOwnedNow;
             form.ReadOnlyWithActions(
                 "File",
                 external.Mcdf?.FileName
@@ -694,7 +698,9 @@ public sealed class AppearancePane
                     actions.Button("Export",
                         () => OpenMcdfExport(actor),
                         disabled: !exportable,
-                        help: !penumbra.Available
+                        help: !owned
+                            ? "Only an actor you spawned or your own character can be exported"
+                            : !penumbra.Available
                             ? penumbra.Detail
                             : !glamourer.Available
                                 ? glamourer.Detail

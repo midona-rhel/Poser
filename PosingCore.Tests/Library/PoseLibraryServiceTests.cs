@@ -57,11 +57,13 @@ public sealed class PoseLibraryServiceTests
         Assert.Equal(new[] { "Alpha", "broken", "future", "zeta" },
             service.Snapshot.Entries.Select(entry => entry.Name));
         var entry = service.Snapshot.Entries[0];
-        Assert.Equal("midona", entry.AuthorLower);
-        Assert.Equal(new[] { "tagone" }, entry.TagsLower);
-        Assert.Equal(PoseLibraryMetadataStatus.Corrupt,
+        // The scan is a listing: author, tags and status are read when a
+        // tile is selected, never at scan time (2026-09-02).
+        Assert.Equal(string.Empty, entry.AuthorLower);
+        Assert.Empty(entry.TagsLower);
+        Assert.Equal(PoseLibraryMetadataStatus.Valid,
             service.Snapshot.Entries.Single(e => e.Name == "broken").MetadataStatus);
-        Assert.Equal(PoseLibraryMetadataStatus.Future,
+        Assert.Equal(PoseLibraryMetadataStatus.Valid,
             service.Snapshot.Entries.Single(e => e.Name == "future").MetadataStatus);
     }
 
@@ -87,7 +89,7 @@ public sealed class PoseLibraryServiceTests
         Assert.True(restored.Succeeded, restored.Detail);
         service.RequestScan();
         WaitUntil(() => !service.IsScanning);
-        Assert.Equal(PoseLibraryMetadataStatus.Corrupt,
+        Assert.Equal(PoseLibraryMetadataStatus.Valid,
             service.Snapshot.Entries.Single(e => e.Name == "broken").MetadataStatus);
     }
 

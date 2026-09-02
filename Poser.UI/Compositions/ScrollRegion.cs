@@ -17,7 +17,8 @@ public static partial class Crystarium
         float width,
         float height,
         Action<ScrollRegionScope> content,
-        float? gutterWidth = null)
+        float? gutterWidth = null,
+        float edgePadding = 0f)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float gutter = gutterWidth
@@ -44,7 +45,14 @@ public static partial class Crystarium
             if (visible)
             {
                 float contentWidth = MathF.Max(0f, width - gutter);
+                // Edge padding lives INSIDE the scrolled content, so the
+                // first and last rows can be brought fully into view clear
+                // of the viewport's edges and any rule beyond them.
+                if (edgePadding > 0f)
+                    ImGui.Dummy(new Vector2(0f, edgePadding * scale));
                 content(new ScrollRegionScope(contentWidth, scale));
+                if (edgePadding > 0f)
+                    ImGui.Dummy(new Vector2(0f, edgePadding * scale));
             }
         }
         finally

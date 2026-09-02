@@ -95,6 +95,9 @@ public sealed class PoseLibraryTileRow
     /// a person for a character file.</summary>
     public TablerIcon Fallback = TablerIcon.Armature;
     public string? Author;
+    /// <summary>Whether the file behind the tile has been read: author,
+    /// tags, status and a scene's contents arrive on selection.</summary>
+    public bool Enriched;
     /// <summary>The info strip's chips. Never null; empty is the norm.
     /// </summary>
     public IReadOnlyList<string> Tags = Array.Empty<string>();
@@ -596,8 +599,13 @@ public static class PoseLibraryView
             new Vector2(origin.X + railWidth - rule, rowTop));
         if (railWidth > rule)
         {
+            // The same fill-opacity recipe as the surfaces around it: the
+            // raised rung at the configured window opacity, never opaque.
             draw.AddRectFilled(
-                rail.Min, rail.Max, Packed(theme.SurfaceRaised));
+                rail.Min, rail.Max, Packed(theme.SurfaceRaised with
+                {
+                    W = Crystarium.FloatingSurface.FillColor.W,
+                }));
             draw.AddRectFilled(
                 new Vector2(rail.Max.X, bandBottom),
                 new Vector2(rail.Max.X + rule, rowTop),

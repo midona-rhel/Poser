@@ -328,7 +328,8 @@ public sealed class StableBindingRegistry
                 skeletonDescriptors,
                 actor.IsPlayer,
                 actor.IsCompanion,
-                !_spawn.IsVisible(actor)));
+                !_spawn.IsVisible(actor),
+                IsOwned: _spawn.IsSpawnedActor(actor) || _actors.IsLocalPlayer(actor)));
             descriptorAddresses.Add(actor.Address);
             if (!actor.IsCompanion)
                 CollectAttachments(actor.Address, actorId, companionOwners);

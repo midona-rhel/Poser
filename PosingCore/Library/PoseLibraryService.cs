@@ -461,10 +461,14 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Flatten(child, folders, entries, cancellation);
     }
 
-    private PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
+    /// <summary>One entry from the directory listing alone: name, kind,
+    /// stamp. Nothing is opened — what a file holds (author, tags, what a
+    /// scene contains, whether it is sound) is read when the entry is
+    /// selected, the way Brio's library works, so a scan of thousands of
+    /// files costs a listing and nothing more.</summary>
+    private static PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
     {
         var name = Path.GetFileNameWithoutExtension(filePath);
-
         DateTime modified;
         try
         {
@@ -474,73 +478,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
         {
             modified = default;
         }
-
         var kind = KindOf(filePath);
         var isLegacy = kind == PoseLibraryEntryKind.Pose
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
-
-        string? author = null;
-        IReadOnlyList<string> tags = [];
-        IReadOnlyList<string> tagsLower = [];
-        var hasThumbnail = false;
-        var status = PoseLibraryMetadataStatus.Valid;
-        var detail = string.Empty;
-        var sceneContents = string.Empty;
-        var scenePlace = string.Empty;
-        DateTimeOffset? sceneCapturedAt = null;
-
-        // A scene is probed through its OWN codec, which validates the whole
-        // bounded document — so an entry the browser offers is an entry the
-        // load will accept, and a corrupt or future file says so in the row
-        // instead of only when it is clicked. An ACTOR entry is the same
-        // container and takes the same probe.
-        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
-            or PoseLibraryEntryKind.Environment
-            or PoseLibraryEntryKind.Overlay
-            or PoseLibraryEntryKind.Group
-            or PoseLibraryEntryKind.WorldObject
-            or PoseLibraryEntryKind.Prop
-            or PoseLibraryEntryKind.Light
-            or PoseLibraryEntryKind.Camera)
-        {
-            var metadata = SceneFileStore.Default.ReadMetadata(filePath);
-            if (metadata.Succeeded)
-            {
-                // The document's OWN author, which Poser's capture never sets,
-                // so this is normally empty. It is emphatically not the
-                // description: Author is what the search box's author term
-                // matches, and a scene must not answer an author search with
-                // words from its description.
-                author = metadata.Author;
-                sceneContents = kind == PoseLibraryEntryKind.Scene
-                    ? DescribeScene(metadata)
-                    : string.Empty;
-                scenePlace = kind == PoseLibraryEntryKind.Scene
-                    ? metadata.PlaceName ?? string.Empty
-                    : string.Empty;
-                sceneCapturedAt = metadata.SavedAt;
-            }
-            // The ONE mapping — shared with the retry probe, exactly as the
-            // pose branch shares its own.
-            (status, detail) = PoseLibraryFileActions.Classify(metadata);
-        }
-        // A .cmp has no header and an .mcdf is a compressed archive: opening
-        // either would cost a read that can never answer.
-        else if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
-        {
-            var metadata = _poseStore.ReadMetadata(filePath);
-            if (metadata.Succeeded)
-            {
-                author = metadata.Author;
-                tags = metadata.Tags;
-                tagsLower = tags.Select(tag => tag.ToLowerInvariant()).ToArray();
-                hasThumbnail = metadata.HasThumbnail;
-            }
-            // The ONE mapping — shared with the retry probe, so a "Retry"
-            // answers exactly what the next scan would.
-            (status, detail) = PoseLibraryFileActions.Classify(metadata);
-        }
-
         return new PoseLibraryEntry
         {
             Kind = kind,
@@ -551,23 +491,24 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 LibraryStamp.DateTimeFormat, CultureInfo.InvariantCulture),
             Modified = modified,
             Folder = folderIndex,
-            Author = author,
-            AuthorLower = author?.ToLowerInvariant() ?? string.Empty,
-            Tags = tags,
-            TagsLower = tagsLower,
-            MetadataStatus = status,
-            MetadataDetail = detail,
+            Author = null,
+            AuthorLower = string.Empty,
+            Tags = [],
+            TagsLower = [],
+            MetadataStatus = PoseLibraryMetadataStatus.Valid,
+            MetadataDetail = string.Empty,
             IsLegacy = isLegacy,
-            HasThumbnail = hasThumbnail,
-            SceneContents = sceneContents,
-            ScenePlace = scenePlace,
-            SceneCapturedAt = sceneCapturedAt
+            // A pose file may carry a thumbnail; the tile asks the cache,
+            // which reads the file only when the tile is on screen.
+            HasThumbnail = kind == PoseLibraryEntryKind.Pose && !isLegacy,
+            SceneContents = string.Empty,
+            ScenePlace = string.Empty,
+            SceneCapturedAt = null
         };
     }
 
-    /// <summary>The scene row's one-line contents, minted at scan time
-    /// because the grid reads it on every keystroke.</summary>
-    private static string DescribeScene(SceneMetadataReadOutcome metadata)
+    /// <summary>What a scene holds, for its tile once it is selected.</summary>
+    public static string DescribeScene(SceneMetadataReadOutcome metadata)
     {
         var parts = new List<string>(4);
         if (metadata.ActorCount > 0)
@@ -598,7 +539,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(PropExtension, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static PoseLibraryEntryKind KindOf(string path)
+    public static PoseLibraryEntryKind KindOf(string path)
     {
         var extension = Path.GetExtension(path);
         if (extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase))

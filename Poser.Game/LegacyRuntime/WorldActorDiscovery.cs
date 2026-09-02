@@ -42,6 +42,10 @@ internal readonly record struct WorldActorObservation(
 /// </summary>
 internal interface IWorldActorTableAdapter
 {
+    /// <summary>The player's own game object id, or 0 when there is no
+    /// player: the one Player-kind actor the world may lend.</summary>
+    ulong LocalPlayerId => 0;
+
     /// <summary>Raw union of the overworld enumerations (character manager,
     /// client, stand objects — Ktisis ActorService.GetOverworldActors' exact
     /// union). Unfiltered: eligibility is the discovery core's job.</summary>
@@ -66,6 +70,9 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 
     public WorldActorTableAdapter(IObjectTable objectTable) =>
         _objectTable = objectTable;
+
+    public ulong LocalPlayerId => _objectTable.LocalPlayer?.GameObjectId ?? 0;
+
 
     public IReadOnlyList<WorldActorObservation> EnumerateOverworld()
     {
@@ -360,6 +367,12 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
             return WorldActorImportResult.Stale(
                 "That world actor is no longer there.");
         }
+        if (!IsLendable(fresh))
+        {
+            Forget(id);
+            return WorldActorImportResult.NotAvailable(
+                "Another player's character cannot be added to the scene.");
+        }
 
         IActor? clone;
         try
@@ -399,13 +412,20 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         return kept;
     }
 
-    private static bool IsEligible(
+    private bool IsEligible(
         in WorldActorObservation observed, HashSet<nint> auxiliary) =>
         observed.Address != nint.Zero
         && observed.Kind is not null
         && observed.IsDrawing
         && !IsProtectedIndex(observed.ObjectIndex)
-        && !auxiliary.Contains(observed.Address);
+        && !auxiliary.Contains(observed.Address)
+        && IsLendable(observed);
+
+    /// <summary>Another player's character is never borrowed: only the
+    /// player's own, and every NPC kind.</summary>
+    private bool IsLendable(in WorldActorObservation observed) =>
+        observed.Kind != WorldActorKind.Player
+        || (observed.GameObjectId != 0 && observed.GameObjectId == _adapter.LocalPlayerId);
 
     /// <summary>200–439: the GPose scan band (201–439) whose occupants every
     /// Poser mutation surface assumes were admitted through the registry
