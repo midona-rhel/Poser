@@ -390,6 +390,7 @@ public sealed class InspectorPartWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        ResizeAccent.Push();
         float width = AppShellView.RailWidth + 2f;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
         if (_pendingCollapsed is { } next)
@@ -436,6 +437,7 @@ public sealed class InspectorPartWindow : Window
     public override void PostDraw()
     {
         ImGui.PopStyleVar(3);
+        ResizeAccent.Pop();
         base.PostDraw();
     }
 

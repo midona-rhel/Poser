@@ -43,6 +43,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Services.IGazeService _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly global::Poser.Library.IPoseLibraryService _library;
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
@@ -65,11 +66,13 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Services.IBonePosingService bonePosing,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
-        global::Poser.Game.Posing.IkBakeCapture ikBake)
+        global::Poser.Game.Posing.IkBakeCapture ikBake,
+        global::Poser.Library.IPoseLibraryService library)
     {
         _ikBake = ikBake;
         _catalog = catalog;
         _worldObjects = worldObjects;
+        _library = library;
         _bonePosing = bonePosing;
         _integration = integration;
         _session = session;
@@ -412,6 +415,27 @@ public sealed class DebugBridge : IDisposable
                             return Json(new { ok = begun.Success, begun.Detail, pending = _ikBake.IsPending });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/library":
+            {
+                // A full rescan, timed: how long the listing takes for
+                // every source, and what it found.
+                var before = _library.Snapshot.Revision;
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                _library.RequestScan();
+                while (clock.ElapsedMilliseconds < 20000
+                    && (_library.IsScanning || _library.Snapshot.Revision == before))
+                    System.Threading.Thread.Sleep(5);
+                clock.Stop();
+                var snapshot = _library.Snapshot;
+                return Json(new
+                {
+                    milliseconds = clock.ElapsedMilliseconds,
+                    scanning = _library.IsScanning,
+                    entries = snapshot.Entries.Count,
+                    folders = snapshot.Folders.Count,
+                    revision = snapshot.Revision,
+                });
             }
             case "/fonts":
             {

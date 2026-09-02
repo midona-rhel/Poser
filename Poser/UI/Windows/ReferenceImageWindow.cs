@@ -247,6 +247,7 @@ public sealed class ReferenceImageWindow : Window
             ConformToAspect,
             null);
 
+        ResizeAccent.Push();
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
@@ -257,6 +258,7 @@ public sealed class ReferenceImageWindow : Window
     public override void PostDraw()
     {
         ImGui.PopStyleVar(3);
+        ResizeAccent.Pop();
         base.PostDraw();
     }
 
