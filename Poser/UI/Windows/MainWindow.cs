@@ -3094,7 +3094,7 @@ public class MainWindow : Window
                 {
                     Label = "Skeleton",
                     Count = "",
-                    Icon = TablerIcon.Armature,
+                    Icon = TablerIcon.Walk,
                     ForceIcon = true,
                     Depth = depth + 1,
                     HasChildren = true,
@@ -4855,10 +4855,10 @@ public class MainWindow : Window
             new("Tree", TablerIcon.Sitemap,
                 submenuItems:
                 [
-                    new ContextMenuItem("Expand", TablerIcon.ChevronDown),
-                    new ContextMenuItem("Collapse", TablerIcon.ChevronRight),
-                    new ContextMenuItem("Expand all", TablerIcon.ChevronDown),
-                    new ContextMenuItem("Collapse all", TablerIcon.ChevronRight),
+                    new ContextMenuItem("Expand", TablerIcon.SquarePlus),
+                    new ContextMenuItem("Collapse", TablerIcon.SquareMinus),
+                    new ContextMenuItem("Expand all", TablerIcon.CopyPlus),
+                    new ContextMenuItem("Collapse all", TablerIcon.CopyMinus),
                 ]),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
@@ -4923,7 +4923,7 @@ public class MainWindow : Window
         // Bone presets belong to this actor.
         items.Add(ContextMenuItem.Separator);
         items.Add(new ContextMenuItem(
-            "Bone presets", TablerIcon.Armature,
+            "Bone presets", TablerIcon.Disabled,
             disabled: !actor.HasSkeleton,
             help: "Named sets of which bones this actor shows in the overlay",
             submenuItems: actor.HasSkeleton
@@ -5018,6 +5018,9 @@ public class MainWindow : Window
             _ctxOpenRequested = false;
             Crystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
         }
+        // The preset rows show live checks: the menu takes this frame's
+        // rows so a toggle shows at once while the menu stays open.
+        Crystarium.FloatingMenu.Refresh("##actor-ctx", items.ToArray());
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
@@ -5074,6 +5077,7 @@ public class MainWindow : Window
                 _bonePresets.IsApplied(actor, name)
                     ? TablerIcon.Check
                     : TablerIcon.Circle,
+                keepOpen: true,
                 help: $"{preset.Bones.Count} bones"));
             _bonePresetActions.Add(() => _bonePresets.Toggle(actor, name));
         }

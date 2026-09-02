@@ -22,6 +22,11 @@ public record struct ContextMenuItem
     /// item to hover, so the menu registers it geometrically.</summary>
     public string? Help;
 
+    /// <summary>A toggle row: clicking it fires but leaves the menu open,
+    /// so several can be set in one visit. Pair it with a refresh of the
+    /// items so the row shows its new state.</summary>
+    public bool KeepOpen;
+
     public ContextMenuItem(
         string label,
         TablerIcon icon = TablerIcon.Circle,
@@ -29,7 +34,8 @@ public record struct ContextMenuItem
         bool danger = false,
         bool disabled = false,
         string? help = null,
-        ContextMenuItem[]? submenuItems = null)
+        ContextMenuItem[]? submenuItems = null,
+        bool keepOpen = false)
     {
         Label = label;
         Icon = icon;
@@ -38,6 +44,7 @@ public record struct ContextMenuItem
         Disabled = disabled;
         Help = help;
         SubmenuItems = submenuItems;
+        KeepOpen = keepOpen;
         IsSeparator = false;
     }
 
@@ -164,6 +171,19 @@ public static partial class Crystarium
 
         public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
 
+        /// <summary>Replaces the open menu's rows in place — a menu whose
+        /// rows show live state (a toggle's check) is rebuilt by its owner
+        /// every frame and handed back here. A closed menu, or another
+        /// menu, ignores it.</summary>
+        public static void Refresh(string id, ContextMenuItem[] items)
+        {
+            if (_phase == Phase.Hidden || _id != id || items.Length != _items?.Length)
+                return;
+            _items = items;
+            if (_submenuParent >= 0 && _submenuParent < items.Length)
+                _submenuItems = items[_submenuParent].SubmenuItems;
+        }
+
         /// <summary>Returns and clears a submenu click.</summary>
         public static int ConsumeSubmenuClick()
         {
@@ -272,9 +292,11 @@ public static partial class Crystarium
             float rightX = parentMin.X + parentSize.X + gap;
             if (rightX + childSize.X > displaySize.X)
                 rightX = parentMin.X - gap - childSize.X;
-            return new Vector2(
-                rightX,
-                triggerRowMin.Y - menuPadding * scale);
+            // A tall submenu slides up so its last row stays on screen.
+            float top = triggerRowMin.Y - menuPadding * scale;
+            top = MathF.Min(top, displaySize.Y - childSize.Y - menuPadding * scale);
+            top = MathF.Max(top, menuPadding * scale);
+            return new Vector2(rightX, top);
         }
 
         /// <summary>Includes the submenu in the menu window bounds.</summary>
@@ -461,7 +483,10 @@ public static partial class Crystarium
             ImGui.End();
             Interactive.EndOwner(menuOwner);
 
-            if (clicked >= 0 || _submenuClicked >= 0)
+            bool keepOpen =
+                _submenuClicked >= 0 && _submenuItems is { } open
+                && _submenuClicked < open.Length && open[_submenuClicked].KeepOpen;
+            if ((clicked >= 0 || _submenuClicked >= 0) && !keepOpen)
                 StartClose();
             return clicked;
         }

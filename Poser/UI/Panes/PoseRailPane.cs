@@ -480,7 +480,11 @@ public class PoseRailPane
 
         ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
         ImGui.InvisibleButton("##rail-gizmo", new Vector2(d, d));
-        bool active = ImGui.IsItemActive();
+        // A held drag rides the mouse button, not the item: the shell can
+        // fade to nothing under it and rebuild its items without the drag
+        // ending until the button is released.
+        bool active = ImGui.IsItemActive()
+            || (_dragAxis >= 0 && ImGui.IsMouseDown(ImGuiMouseButton.Left));
         bool hovered = ImGui.IsItemHovered();
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
@@ -570,7 +574,7 @@ public class PoseRailPane
             }
         }
 
-        if (ImGui.IsItemDeactivated())
+        if (_dragAxis >= 0 && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
             _inspector.CommitRotation();
             _dragAxis = -1;

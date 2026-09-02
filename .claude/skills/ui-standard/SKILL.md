@@ -753,6 +753,19 @@ complexity, and most verbs are one word.
 - Group gates read like any other toggle: "Hide"/"Show", "Pause"/"Play".
   Never describe the gate mechanics in the hover.
 
+## Empty states and readouts
+
+- An empty state (nothing selected, nothing matches) sits centred in
+  its surface, both axes. A line pinned to the top-left corner is a
+  defect.
+- A drag readout (degrees turned, distance moved, scale factor) is
+  numbers, so it renders in the MONO face, the same as every numeric
+  well. It is drawn outside any shell fade so it stays readable while
+  the windows hide for the drag.
+- Error text never appears inline in a form: a failure is a
+  notification. Inline text that appears and disappears reflows the
+  page.
+
 ## How to design a surface
 
 Rules alone do not produce a good page. Before building or changing

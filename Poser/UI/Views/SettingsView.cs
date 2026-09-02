@@ -116,6 +116,8 @@ public sealed class SettingsViewModel
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
     public string PoseFolder = "";
+    /// <summary>The one Poser folder the homes and auto-saves live in.</summary>
+    public string PoserRoot = "";
     public string ObjectsFolder = "";
     public string SceneFolder = "";
     public string McdfFolder = "";
@@ -1305,43 +1307,13 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("Poser folders", form =>
+        page.Section("Poser folder", form =>
         {
             HomeFolder(
-                form, vm, "Poses", vm.PoseFolder,
-                next => vm.PoseFolder = next,
-                LibraryConfiguration.DefaultPoseRoot,
-                "Where saved poses go, and the folder the Poses tab scans");
-            HomeFolder(
-                form, vm, "Objects", vm.ObjectsFolder,
-                next => vm.ObjectsFolder = next,
-                LibraryConfiguration.DefaultObjectsRoot,
-                "Where saved objects, props, lights, cameras and overlays go, and the folder the Objects tab scans");
-            HomeFolder(
-                form, vm, "Scenes", vm.SceneFolder,
-                next => vm.SceneFolder = next,
-                LibraryConfiguration.DefaultSceneRoot,
-                "Where saved scenes go, and the folder the Scenes tab scans");
-            HomeFolder(
-                form, vm, "Character files", vm.McdfFolder,
-                next => vm.McdfFolder = next,
-                LibraryConfiguration.DefaultMcdfRoot,
-                "Where exported character files go, and the folder the MCDF tab scans");
-            HomeFolder(
-                form, vm, "Auto-saves", vm.AutoSaveFolderDraft,
-                next => vm.AutoSaveFolderDraft = next,
-                vm.AutoSaveFolder,
-                "Where auto-save snapshot folders are written");
-            if (vm.AutoSaveFolder.Length > 0 &&
-                !string.Equals(
-                    vm.AutoSaveFolderDraft.Trim(),
-                    vm.AutoSaveFolder,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                form.Status(
-                    "Auto-saves keep writing to " + vm.AutoSaveFolder
-                    + " until Poser is reloaded.");
-            }
+                form, vm, "Folder", vm.PoserRoot,
+                next => vm.PoserRoot = next,
+                LibraryConfiguration.DefaultRoot,
+                "Everything Poser saves lives here: Poses, Objects, Scenes, MCDFs and Auto-saves are folders inside it");
         }, divider: false);
         page.Section("Pose library", form =>
         {

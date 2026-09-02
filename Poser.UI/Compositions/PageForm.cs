@@ -58,7 +58,8 @@ public static partial class Crystarium
             width,
             scale,
             labelColumnWidth,
-            halfRows: halfRows);
+            halfRows: halfRows)
+        { Height = size.Y };
         content(page);
         page.Complete(origin, size.X);
     }
@@ -196,12 +197,22 @@ public static partial class Crystarium
             ? ActiveTheme.Controls.ListRowHeight
             : ActiveTheme.Controls.FormRowHeight;
 
+        /// <summary>The page's own height in screen pixels, when the host
+        /// knows it; an empty state centres in it.</summary>
+        internal float Height { get; init; }
+
+        /// <summary>An empty page says so in the middle of itself, both
+        /// ways — never as a line pinned to the top-left corner.</summary>
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
         {
-            DrawText(new(_origin.X, _origin.Y + ActiveTheme.Spacing.Four * _scale),
-                _width, ActiveTheme.Typography.LabelSize, FontWeight.Regular,
-                FormHintColor, text);
-            _y = ActiveTheme.Controls.FormRowHeight;
+            float size = ActiveTheme.Typography.LabelSize;
+            var measured = MeasureText(text, size, FontWeight.Regular);
+            float x = _origin.X + MathF.Max(0f, (_width - measured.X) * 0.5f);
+            float y = Height > 0f
+                ? _origin.Y + MathF.Max(0f, (Height - measured.Y) * 0.5f)
+                : _origin.Y + ActiveTheme.Spacing.Four * _scale;
+            DrawText(new(x, y), _width, size, FontWeight.Regular, FormHintColor, text);
+            _y = Height > 0f ? Height / _scale : ActiveTheme.Controls.FormRowHeight;
         }
 
         public void Status(string? text, string? help = null)
