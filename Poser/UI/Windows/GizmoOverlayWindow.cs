@@ -13,8 +13,6 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Posing;
-using Poser.Game.Transforms;
 using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -50,8 +48,8 @@ public class GizmoOverlayWindow : Window
     private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
     private readonly IBonePosingService _bonePosingService;
-    private readonly CleanTransformFacade _cleanTransforms;
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly ITransformFacade _cleanTransforms;
+    private readonly IPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
     private readonly Game.Journal.GazeSession _gazeValues;
     // Used for the free-camera speed readout.
@@ -179,8 +177,8 @@ public class GizmoOverlayWindow : Window
         IEditorState editorState,
         ICameraService cameraService,
         IBonePosingService bonePosingService,
-        CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        ITransformFacade cleanTransforms,
+        IPoseFacade cleanPose,
         IGazeService gazeService,
         Game.Journal.GazeSession gazeValues,
         IEntityBindings bindings,

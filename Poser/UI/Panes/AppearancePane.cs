@@ -16,7 +16,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Game.Presentation;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -29,7 +28,7 @@ public sealed class AppearancePane
     private readonly ActorPresentationSession _presentation;
     private readonly ActorModelIdSession _model;
     private readonly ModelCatalog _modelCatalog;
-    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
+    private readonly IModelCatalogLoader _modelLoader;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
@@ -38,7 +37,7 @@ public sealed class AppearancePane
 
     /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
-    private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
+    private readonly IInvisibleSkinService _invisibleSkin;
     private readonly Game.Journal.ActorValueSession _values;
     private readonly Game.Journal.DisruptiveSteps _disruptive;
     private readonly TransformHistory _history;
@@ -114,14 +113,14 @@ public sealed class AppearancePane
         ActorPresentationSession presentation,
         ActorModelIdSession model,
         ModelCatalog modelCatalog,
-        Game.Appearance.ModelCatalogLoader modelLoader,
+        IModelCatalogLoader modelLoader,
         ActorIntegrationSession integration,
         SceneSession scene,
         IActorSpawnService spawn,
         IEntityBindings bindings,
         ITextureProvider textures,
         Config.ConfigurationService config,
-        Game.Integration.InvisibleSkinService invisibleSkin,
+        IInvisibleSkinService invisibleSkin,
         UserNotices notices,
         Game.Journal.ActorValueSession values,
         Game.Journal.DisruptiveSteps disruptive,

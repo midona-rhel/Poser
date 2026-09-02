@@ -64,7 +64,7 @@ namespace Poser.Game.Posing;
 /// written in this same pass has moved this bone. Computing it from outside the
 /// pass, on any tick, cannot see that state.
 /// </summary>
-public sealed class IkBakeCapture : IDisposable
+public sealed class IkBakeCapture : IDisposable, IIkBake
 {
     /// <summary>Framework ticks a registered batch is given to reach a pass
     /// before the bake gives up and rolls back. The batch normally lands in

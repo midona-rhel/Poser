@@ -1,10 +1,10 @@
 using System;
+using Poser.Game;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game;
 
 namespace Poser.UI;
 

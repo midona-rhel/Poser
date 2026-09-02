@@ -19,7 +19,7 @@ namespace Poser.Game.WorldObjects;
 /// are opaque, and the full path stays searchable and shown as the row's
 /// badge context elsewhere.</para>
 /// </summary>
-public sealed class WorldAssetCatalog
+public sealed class WorldAssetCatalog : IWorldAssetCatalog
 {
     /// <summary>The user's own names, beside the config: a plain JSON
     /// object of path → label, overlaid on the derived names at catalog

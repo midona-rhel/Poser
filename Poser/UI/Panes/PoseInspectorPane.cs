@@ -11,9 +11,6 @@ using Poser.Application.Posing;
 using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Entities;
-using Poser.Game;
-using Poser.Game.Transforms;
-using Poser.Game.Posing;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -35,9 +32,9 @@ public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
-    private readonly Game.Posing.IkBakeCapture _ikBake;
-    private readonly CleanTransformFacade _cleanTransforms;
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly IIkBake _ikBake;
+    private readonly ITransformFacade _cleanTransforms;
+    private readonly IPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
     private readonly Game.Journal.GazeSession _gazeValues;
     private readonly IEditorState _editorState;
@@ -175,8 +172,8 @@ public class PoseInspectorPane
 
     public PoseInspectorPane(
         IBonePosingService bonePosingService,
-        CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        ITransformFacade cleanTransforms,
+        IPoseFacade cleanPose,
         IGazeService gazeService,
         Game.Journal.GazeSession gazeValues,
         IEditorState editorState,
@@ -186,7 +183,7 @@ public class PoseInspectorPane
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,
-        Game.Posing.IkBakeCapture ikBake,
+        IIkBake ikBake,
         IActorSpawnService spawnService,
         CameraPane cameraPane,
         OverlayPane overlayPane,

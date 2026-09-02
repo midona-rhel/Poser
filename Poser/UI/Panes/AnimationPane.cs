@@ -27,8 +27,8 @@ public sealed class AnimationPane : IDisposable
     private readonly AnimationCatalog _catalog;
 
     // The expression workspace may open before another catalog row.
-    private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
-    private readonly Game.Animation.FacialPoseCapture _facialCapture;
+    private readonly IAnimationCatalogLoader _catalogLoader;
+    private readonly IFacialPoseCapture _facialCapture;
     private readonly IFramework _framework;
     private readonly IEntityBindings _bindings;
     private readonly ISessionGenerationSource _sessionGeneration;
@@ -134,8 +134,8 @@ public sealed class AnimationPane : IDisposable
         AnimationSession animation,
         AnimationSteps steps,
         AnimationCatalog catalog,
-        Game.Animation.AnimationCatalogLoader catalogLoader,
-        Game.Animation.FacialPoseCapture facialCapture,
+        IAnimationCatalogLoader catalogLoader,
+        IFacialPoseCapture facialCapture,
         IFramework framework,
         IEntityBindings bindings,
         ISessionGenerationSource sessionGeneration,

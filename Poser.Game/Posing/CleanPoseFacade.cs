@@ -13,7 +13,7 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 /// <summary>Legacy IEntity presentation bridge into stable-id pose commands.</summary>
-public sealed class CleanPoseFacade
+public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
     private readonly PoseEditService _edits;

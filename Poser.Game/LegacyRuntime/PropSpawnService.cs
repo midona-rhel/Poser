@@ -165,7 +165,7 @@ public sealed unsafe class PropHandle : IPropHandle
 /// the GPose session only: they are destroyed on GPose exit and plugin
 /// disposal (render cleanup + destructor), never leaked into the world.
 /// </summary>
-public sealed unsafe class PropSpawnService : IDisposable
+public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
 {
     private readonly IObjectTable _objectTable;
     private readonly IEventBus _events;

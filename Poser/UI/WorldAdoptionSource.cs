@@ -128,9 +128,9 @@ public sealed class WorldAdoptionSource
     // The concrete discovery service, for the same reason the spawn browser
     // takes it: the import overload that hands the clone wrapper back — the
     // thing a pending-select needs — is not on the read port.
-    private readonly Game.WorldActorDiscovery _worldActors;
+    private readonly IWorldActorDiscovery _worldActors;
     private readonly ILightingService _lighting;
-    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly IWorldObjectService _worldObjects;
 
     // The point every handle's range is measured from. Never the player's.
     private readonly ICameraService _camera;
@@ -154,9 +154,9 @@ public sealed class WorldAdoptionSource
     private IWorldObject? _pendingSelectWorldObject;
 
     public WorldAdoptionSource(
-        Game.WorldActorDiscovery worldActors,
+        IWorldActorDiscovery worldActors,
         ILightingService lighting,
-        Game.WorldObjects.WorldObjectService worldObjects,
+        IWorldObjectService worldObjects,
         ICameraService camera,
         ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings,
@@ -288,7 +288,7 @@ public sealed class WorldAdoptionSource
     /// are cleared together: the restore has to write back what THIS hover
     /// found, not a value stated anywhere else.</summary>
     private WorldAdoptionCandidate? _hoveredCandidate;
-    private byte _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+    private byte _hoveredOutline = WorldObjectOutline.None;
     private bool _hoveredActorPainted;
 
     /// <summary>
@@ -336,7 +336,7 @@ public sealed class WorldAdoptionSource
         }
 
         _hoveredCandidate = null;
-        _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+        _hoveredOutline = WorldObjectOutline.None;
         _hoveredActorPainted = false;
 
         if (candidate is not { } next)
@@ -351,7 +351,7 @@ public sealed class WorldAdoptionSource
                         next.WorldObject, out _hoveredOutline))
                     return;
                 _worldObjects.WriteOutline(
-                    next.WorldObject, Game.WorldObjects.WorldObjectOutline.Hover);
+                    next.WorldObject, WorldObjectOutline.Hover);
                 break;
             case WorldAdoptionKind.Actor:
                 _hoveredActorPainted =
@@ -475,7 +475,7 @@ public sealed class WorldAdoptionSource
     /// Takes one BG object into the scene BY REFERENCE — the map's own object,
     /// not a copy of it. Nothing is written to it here: the claim records where
     /// it stood, and every way that claim can end writes that back (see
-    /// WorldObjectService's restore contract). The adoption is journaled, so an
+    /// IWorldObjectService's restore contract). The adoption is journaled, so an
     /// undo releases it and the map has its object back.
     /// </summary>
     private void AdoptWorldObject(nint address)

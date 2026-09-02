@@ -6,8 +6,6 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Game.Scene;
-using Poser.Game.WorldObjects;
 
 namespace Poser.UI;
 
@@ -30,7 +28,7 @@ public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
-    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+    private readonly IWorldAssetCatalog _assets;
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
@@ -61,7 +59,7 @@ public sealed class WorldObjectsPane
         ISceneLifecycleHistory lifecycle,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.WorldObjects.WorldAssetCatalog assets,
+        IWorldAssetCatalog assets,
         Game.Journal.WorldObjectSession values)
     {
         _values = values;

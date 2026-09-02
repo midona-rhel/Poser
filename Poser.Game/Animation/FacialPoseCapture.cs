@@ -26,7 +26,7 @@ namespace Poser.Game.Animation;
 /// The result is exact for the captured facial output and can drift while a
 /// running animation continues to change that output.
 /// </summary>
-public sealed class FacialPoseCapture : IDisposable
+public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;

@@ -6,7 +6,6 @@ using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using Poser.Files;
-using Poser.Game.Scene;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -66,7 +65,7 @@ public sealed class EnvironmentPane
     private readonly IFestivalService _festivals;
     private readonly Game.Journal.EnvironmentSession _values;
     private readonly ITextureProvider _textures;
-    private readonly SceneWorkflow _workflow;
+    private readonly ISceneWorkflow _workflow;
 
     private const string TimeUnavailable =
         "Poser could not hook the game clock, so the time cannot be held";
@@ -181,7 +180,7 @@ public sealed class EnvironmentPane
         IWorldRenderingService rendering,
         IFestivalService festivals,
         ITextureProvider textures,
-        SceneWorkflow workflow,
+        ISceneWorkflow workflow,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         Game.Journal.EnvironmentSession values)

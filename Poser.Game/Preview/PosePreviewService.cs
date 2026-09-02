@@ -14,7 +14,7 @@ using Poser.Services;
 
 namespace Poser.Game.Preview;
 
-public sealed unsafe class PosePreviewService : IDisposable
+public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
 {
     /// <summary>The slot the CharaView spawns its hidden body into. Outside
     /// the GPose scan range (201-439) on purpose: the preview must never

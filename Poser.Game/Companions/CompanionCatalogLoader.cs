@@ -1,4 +1,5 @@
 using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
@@ -23,7 +24,7 @@ namespace Poser.Game.Companions;
 /// title-cased here rather than in the UI — the catalog is the one place
 /// that knows the string came from game data.
 /// </summary>
-public sealed class CompanionCatalogLoader
+public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly CompanionCatalog _catalog;

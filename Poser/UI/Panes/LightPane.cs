@@ -14,7 +14,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Transforms;
 using Poser.Services;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -46,8 +45,8 @@ public sealed class LightPane
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
-    private readonly CleanTransformFacade _cleanTransforms;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
     private readonly ICameraService _camera;
     private readonly ITextureProvider _textures;
@@ -128,8 +127,8 @@ public sealed class LightPane
         ISceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
-        Game.Scene.PlacementAnchorSource anchors,
-        CleanTransformFacade cleanTransforms,
+        IPlacementAnchorSource anchors,
+        ITransformFacade cleanTransforms,
         IViewportReads viewport,
         ICameraService camera,
         ITextureProvider textures,

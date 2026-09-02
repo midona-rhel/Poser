@@ -93,8 +93,8 @@ public sealed class SpawnBrowserWindow : Window
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly IActorSpawnService _spawnService;
-    private readonly Game.PropSpawnService _propService;
-    private readonly Game.Overlays.OverlayNodeService _overlayService;
+    private readonly IPropCatalog _propService;
+    private readonly IOverlayNodeService _overlayService;
     private readonly OverlayPane _overlayPane;
     private readonly ILightingService _lightingService;
     private readonly LightPane _lightPane;
@@ -171,8 +171,8 @@ public sealed class SpawnBrowserWindow : Window
 
     public SpawnBrowserWindow(
         IActorSpawnService spawnService,
-        Game.PropSpawnService propService,
-        Game.Overlays.OverlayNodeService overlayService,
+        IPropCatalog propService,
+        IOverlayNodeService overlayService,
         OverlayPane overlayPane,
         ILightingService lightingService,
         LightPane lightPane,
@@ -190,12 +190,12 @@ public sealed class SpawnBrowserWindow : Window
         UserNotices notices,
         ReferenceImageSession referenceImages,
         global::Poser.Library.IPoseLibraryService library,
-        Game.Scene.SceneWorkflow scenes,
-        Game.Scene.PlacementAnchorSource anchors,
-        Game.WorldObjects.WorldObjectService worldObjects,
-        Game.WorldObjects.WorldAssetCatalog assets,
+        ISceneWorkflow scenes,
+        IPlacementAnchorSource anchors,
+        IWorldObjectService worldObjects,
+        IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
-        Game.Appearance.ModelCatalogLoader modelLoader,
+        IModelCatalogLoader modelLoader,
         global::Poser.Application.Appearance.ActorModelIdSession model,
         ScenePane scenePane,
         AppearancePane appearancePane,
@@ -776,13 +776,13 @@ public sealed class SpawnBrowserWindow : Window
     private int _actorEntryCount;
 
     private readonly global::Poser.Library.IPoseLibraryService _library;
-    private readonly Game.Scene.SceneWorkflow _scenes;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
-    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
-    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+    private readonly ISceneWorkflow _scenes;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly IWorldObjectService _worldObjects;
+    private readonly IWorldAssetCatalog _assets;
     private readonly global::Poser.Application.Appearance.ModelCatalog
         _modelCatalog;
-    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
+    private readonly IModelCatalogLoader _modelLoader;
     private readonly global::Poser.Application.Appearance.ActorModelIdSession
         _model;
 

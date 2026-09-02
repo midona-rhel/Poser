@@ -380,7 +380,7 @@ public sealed class AdoptedWorldObject : IWorldObject
 /// every release path restores that state and drops the claim. A missing or
 /// replaced native address is ignored rather than written blindly.
 /// </summary>
-public sealed class WorldObjectService : IDisposable
+public sealed class WorldObjectService : IDisposable, IWorldObjectService
 {
     private readonly IWorldObjectPort _port;
     private readonly IEventBus _events;
@@ -686,6 +686,9 @@ public sealed class WorldObjectService : IDisposable
     /// not blip; the draw pump remains the fallback when the camera
     /// signature is gone.</summary>
     public bool AnchorPumpedFromRender { get; set; }
+
+    IWorldObject? IWorldObjectService.Spawn(string path, Transform placement, bool visible, out string? detail) =>
+        Spawn(path, placement, visible, out detail);
 
     /// <summary>The ANIMATION ANCHOR. Best seated in the render seam
     /// (see <see cref="AnchorPumpedFromRender"/>); otherwise the

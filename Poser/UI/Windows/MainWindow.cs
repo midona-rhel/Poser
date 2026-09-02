@@ -15,10 +15,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
-using Poser.Game;
-using Poser.Game.Transforms;
 using Poser.Domain.Companions;
-using Poser.Game.Posing;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -105,7 +102,7 @@ public partial class MainWindow : Window
     /// order sync, retained to keep the cold path allocation-flat.</summary>
     private readonly List<SelectionId> _rootEntities = new();
 
-    private readonly Game.Scene.SceneWorkflow _sceneWorkflow;
+    private readonly ISceneWorkflow _sceneWorkflow;
 
     /// <summary>Rebuilds this pending structure has waited through: the
     /// spawned entities bind within a publish or two, so a stage nothing
@@ -170,9 +167,9 @@ public partial class MainWindow : Window
 
     private readonly IEditorState _editorState;
 
-    private readonly CleanTransformFacade _cleanTransforms;
+    private readonly ITransformFacade _cleanTransforms;
 
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly IPoseFacade _cleanPose;
 
     private readonly IBonePosingService _bonePosingService;
 
@@ -208,9 +205,9 @@ public partial class MainWindow : Window
 
     private readonly PoseFileInspectorSection _poseFileSection;
 
-    private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
+    private readonly IAnimationCatalogLoader _animationCatalog;
 
-    private readonly Game.Companions.CompanionCatalogLoader _companionCatalog;
+    private readonly ICompanionCatalogLoader _companionCatalog;
 
     private readonly PoseRailPane _poseRail;
 
@@ -499,8 +496,8 @@ public partial class MainWindow : Window
         SceneSession scene,
         IEntityBindings bindings,
         IEditorState editorState,
-        CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        ITransformFacade cleanTransforms,
+        IPoseFacade cleanPose,
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,
@@ -513,14 +510,14 @@ public partial class MainWindow : Window
         ScenePane scenePane,
         PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
-        Game.Animation.AnimationCatalogLoader animationCatalog,
-        Game.Companions.CompanionCatalogLoader companionCatalog,
+        IAnimationCatalogLoader animationCatalog,
+        ICompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,
         GraphicalBonePane graphicalBonePane,
-        Game.PropSpawnService propService,
+        IPropCatalog propService,
         PropsPane propsPane,
         WorldObjectsPane worldObjectsPane,
-        Game.Overlays.OverlayNodeService overlayService,
+        IOverlayNodeService overlayService,
         OverlayPane overlayPane,
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
@@ -535,7 +532,7 @@ public partial class MainWindow : Window
         global::Poser.Application.Scene.SceneGroups groups,
         global::Poser.Application.Scene.GroupSteps groupSteps,
         Controls.EntityNameModal names,
-        Game.Scene.SceneWorkflow sceneWorkflow,
+        ISceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         IViewportReads viewportProjection,
         Game.Journal.EntitySessions sessions,
@@ -1246,13 +1243,13 @@ public partial class MainWindow : Window
 
     private ActorId? SelectedActorId() => _selection.PrimaryActor;
 
-    private readonly Game.PropSpawnService _propService;
+    private readonly IPropCatalog _propService;
 
     private readonly PropsPane _propsPane;
 
     private readonly WorldObjectsPane _worldObjectsPane;
 
-    private readonly Game.Overlays.OverlayNodeService _overlayService;
+    private readonly IOverlayNodeService _overlayService;
 
     private readonly OverlayPane _overlayPane;
 

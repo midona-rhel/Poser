@@ -1,4 +1,5 @@
 ﻿using Poser.Scene;
+using Poser.Game.Scene;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,7 +10,6 @@ using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Poser.Config;
 using Poser.Files;
-using Poser.Game.Scene;
 using Dalamud.Bindings.ImGui;
 using Poser.Library;
 using Poser.Services;
@@ -34,8 +34,8 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ScenePane
 {
-    private readonly SceneWorkflow _workflow;
-    private readonly PlacementAnchorSource _anchors;
+    private readonly ISceneWorkflow _workflow;
+    private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
@@ -354,14 +354,14 @@ public sealed class ScenePane
     }
 
     public ScenePane(
-        SceneWorkflow workflow,
+        ISceneWorkflow workflow,
         SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        PlacementAnchorSource anchors)
+        IPlacementAnchorSource anchors)
     {
         _anchors = anchors;
         _config = config;

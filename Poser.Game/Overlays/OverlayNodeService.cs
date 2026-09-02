@@ -186,7 +186,7 @@ public sealed class OverlayNodeHandle : IOverlayNode
 /// hand its name back — for the same reason a prop's does not: an undo that
 /// restores a node must not collide with one spawned since.</para>
 /// </summary>
-public sealed class OverlayNodeService : IDisposable
+public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 {
     private readonly IOverlayNodePort _port;
     private readonly IEventBus _events;

@@ -230,6 +230,23 @@ internal static class ServiceRegistration
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        // The surfaces' ports over the runtime classes registered elsewhere.
+        services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
+        services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
+        services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
+        services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
+        services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
+        services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
+        services.AddSingleton<IWorldActorDiscovery>(sp => sp.GetRequiredService<WorldActorDiscovery>());
+        services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
+        services.AddSingleton<IWorldAssetCatalog>(sp => sp.GetRequiredService<Game.WorldObjects.WorldAssetCatalog>());
+        services.AddSingleton<IFacialPoseCapture>(sp => sp.GetRequiredService<Game.Animation.FacialPoseCapture>());
+        services.AddSingleton<IInvisibleSkinService>(sp => sp.GetRequiredService<Game.Integration.InvisibleSkinService>());
+        services.AddSingleton<IPropCatalog>(sp => sp.GetRequiredService<Game.PropSpawnService>());
+        services.AddSingleton<IOverlayNodeService>(sp => sp.GetRequiredService<Game.Overlays.OverlayNodeService>());
+        services.AddSingleton<IAnimationCatalogLoader>(sp => sp.GetRequiredService<Game.Animation.AnimationCatalogLoader>());
+        services.AddSingleton<ICompanionCatalogLoader>(sp => sp.GetRequiredService<Game.Companions.CompanionCatalogLoader>());
+        services.AddSingleton<IModelCatalogLoader>(sp => sp.GetRequiredService<Game.Appearance.ModelCatalogLoader>());
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
         services.AddSingleton<CleanPoseFacade>();

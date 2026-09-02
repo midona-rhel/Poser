@@ -1,4 +1,5 @@
 ﻿using Poser.Scene;
+using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,7 +38,7 @@ namespace Poser.Game.Scene;
 /// publish a Failed receipt whose outcome names every refusal — typed
 /// partial recovery, never a silent detach and never a silent skip.
 /// </summary>
-public sealed class SceneWorkflow : IDisposable
+public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 {
     /// <summary>Bound for the spawned actors' skeleton readiness barrier —
     /// same bound the MCDF redraw barrier uses.</summary>

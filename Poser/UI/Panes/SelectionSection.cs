@@ -4,9 +4,6 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Game;
-using Poser.Game.Overlays;
-using Poser.Game.Scene;
 using Poser.Services;
 
 namespace Poser.UI;

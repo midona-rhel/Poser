@@ -1,4 +1,5 @@
 using System;
+using Poser.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
@@ -15,7 +16,7 @@ namespace Poser.Game.Appearance;
 /// build is retained for the lifetime of this loader. A failed build stays
 /// failed until an explicit retry.
 /// </summary>
-public sealed class ModelCatalogLoader
+public sealed class ModelCatalogLoader : IModelCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly ModelCatalog _catalog;

@@ -37,7 +37,7 @@ public sealed class CameraPane
     /// <summary>Camera creation and removal use the lifecycle history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
+    private readonly IPlacementAnchorSource _anchors;
     private readonly global::Poser.Files.ObjectPlacementPreferences _placement;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
@@ -86,7 +86,7 @@ public sealed class CameraPane
         IActorSpawnService spawnService,
         ISceneLifecycleHistory lifecycle,
         ICameraFileService cameraFiles,
-        Game.Scene.PlacementAnchorSource anchors,
+        IPlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,

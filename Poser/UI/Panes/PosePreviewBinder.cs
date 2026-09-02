@@ -4,13 +4,11 @@ using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Posing;
-using Poser.Game.Preview;
 
 namespace Poser.UI;
 
 /// <summary>
-/// The shared drive of <see cref="PosePreviewService"/>. There is exactly ONE
+/// The shared drive of <see cref="IPosePreview"/>. There is exactly ONE
 /// CharaView, so every surface that shows a pose preview — the library rail,
 /// the import dialog's preview column — states the same three things through
 /// one binder: whose appearance the hidden body borrows, which file it holds,
@@ -54,8 +52,8 @@ internal sealed class PosePreviewBinder
     /// alone.</summary>
     private sealed record Capture(int Generation, PoseFile? Pose);
 
-    private readonly PosePreviewService _preview;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPosePreview _preview;
+    private readonly IPoseFacade _poses;
 
     /// <summary>The actor the preview is borrowing an appearance from — and
     /// whose current pose is the rebase baseline: both call sites drive the
@@ -82,7 +80,7 @@ internal sealed class PosePreviewBinder
     private int _baselineGeneration;
     private int _baselineArmedAt = -1000;
 
-    public PosePreviewBinder(PosePreviewService preview, CleanPoseFacade poses)
+    public PosePreviewBinder(IPosePreview preview, IPoseFacade poses)
     {
         _preview = preview;
         _poses = poses;
@@ -231,7 +229,7 @@ internal sealed class PosePreviewBinder
     /// Arms the target's own pose as a file. Asynchronous by nature — the
     /// export pipeline hands the pose back only once the apply pass has made
     /// every raw transform cache current (see
-    /// <see cref="CleanPoseFacade.CapturePoseFile"/>) — so the callback tags
+    /// <see cref="IPoseFacade.CapturePoseFile"/>) — so the callback tags
     /// itself with the session and the draw thread decides whether it still
     /// matters.
     /// </summary>

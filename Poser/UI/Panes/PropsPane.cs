@@ -1,11 +1,11 @@
 using System;
+using Poser.Game;
+using Poser.Game.Scene;
 using Poser.Services;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Game;
-using Poser.Game.Scene;
 
 namespace Poser.UI;
 

@@ -1,4 +1,6 @@
 ﻿using System;
+using Poser.Game.Overlays;
+using Poser.Game.Scene;
 using Poser.Services;
 using System.Collections.Generic;
 using System.Numerics;
@@ -7,8 +9,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
-using Poser.Game.Overlays;
-using Poser.Game.Scene;
 
 namespace Poser.UI;
 

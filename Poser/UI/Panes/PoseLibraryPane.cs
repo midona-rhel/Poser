@@ -1,4 +1,7 @@
 ﻿using System;
+using Poser.Game.Posing;
+using Poser.Game.Preview;
+using Poser.Game.Scene;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -17,9 +20,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Posing;
-using Poser.Game.Preview;
-using Poser.Game.Scene;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
@@ -141,17 +141,17 @@ public sealed partial class PoseLibraryPane
 
     private readonly PoseThumbnailCache _thumbs;
 
-    private readonly CleanPoseFacade _poseFacade;
+    private readonly IPoseFacade _poseFacade;
 
     private readonly IActorSpawnService _spawnService;
 
-    private readonly SceneWorkflow _scenes;
+    private readonly ISceneWorkflow _scenes;
 
     private readonly LightPane _lightPane;
 
     private readonly CameraPane _cameraPane;
 
-    private readonly Game.Scene.PlacementAnchorSource _anchors;
+    private readonly IPlacementAnchorSource _anchors;
 
     private readonly ObjectPlacementPreferences _placement;
 
@@ -438,7 +438,7 @@ public sealed partial class PoseLibraryPane
         ConfigurationService config,
         IPoseLibraryService library,
         PoseThumbnailCache thumbs,
-        CleanPoseFacade poseFacade,
+        IPoseFacade poseFacade,
         IActorSpawnService spawnService,
         SelectionSession selection,
         IEntityBindings bindings,
@@ -446,12 +446,12 @@ public sealed partial class PoseLibraryPane
         IAutoSaveService autoSave,
         PoseFileInspectorSection files,
         IActorManager actors,
-        PosePreviewService preview,
-        SceneWorkflow scenes,
+        IPosePreview preview,
+        ISceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
         LightPane lightPane,
         CameraPane cameraPane,
-        Game.Scene.PlacementAnchorSource anchors,
+        IPlacementAnchorSource anchors,
         ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,

@@ -13,7 +13,6 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Library;
-using Poser.Game.Posing;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -27,11 +26,11 @@ public sealed class PoseFileInspectorSection
     private bool _typeBody;
     private bool _typeExpression;
 
-    private readonly CleanPoseFacade _poseFacade;
+    private readonly IPoseFacade _poseFacade;
     private readonly SelectionSession _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
-    private readonly Game.Preview.PosePreviewService _preview;
+    private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
     private readonly IPoseLibraryService _library;
 
@@ -85,11 +84,11 @@ public sealed class PoseFileInspectorSection
     public event Action? OnLibraryRequested;
 
     public PoseFileInspectorSection(
-        CleanPoseFacade poseFacade,
+        IPoseFacade poseFacade,
         SelectionSession selection,
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
-        Game.Preview.PosePreviewService preview,
+        IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,
         UserNotices notices)

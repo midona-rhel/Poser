@@ -6,8 +6,6 @@ using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Core;
-using Poser.Game;
-using Poser.Game.Transforms;
 using Poser.Services;
 using Poser.UI.Composition;
 using System;
@@ -21,7 +19,7 @@ public sealed class UIManager : IUIManager
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly CleanTransformFacade _cleanTransforms;
+    private readonly ITransformFacade _cleanTransforms;
     private readonly IKeyState _keyState;
     private readonly IEditorState _editorState;
     private readonly ConfigurationService _configService;
@@ -38,7 +36,7 @@ public sealed class UIManager : IUIManager
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
-        CleanTransformFacade cleanTransforms,
+        ITransformFacade cleanTransforms,
         IKeyState keyState,
         IEditorState editorState,
         ConfigurationService configService,
