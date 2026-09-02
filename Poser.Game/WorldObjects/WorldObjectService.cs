@@ -814,6 +814,10 @@ public sealed class WorldObjectService : IDisposable
     /// that releases while reading must work off a snapshot.</summary>
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
 
+    /// <summary>Debug: whether the object's model reports loaded.</summary>
+    public bool IsReadyProbe(AdoptedWorldObject handle) =>
+        !_disposed && _port.IsAlive(handle.Address) && _port.IsBgReady(handle.Address);
+
     public int Count => _adopted.Count;
 
     /// <summary>Whether the world's graph can be reached at all right now.

@@ -42,6 +42,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -59,8 +60,10 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Services.IGazeService gaze,
-        global::Poser.Services.IBonePosingService bonePosing)
+        global::Poser.Services.IBonePosingService bonePosing,
+        global::Poser.Game.WorldObjects.WorldObjectService worldObjects)
     {
+        _worldObjects = worldObjects;
         _bonePosing = bonePosing;
         _integration = integration;
         _session = session;
@@ -452,6 +455,28 @@ public sealed class DebugBridge : IDisposable
                 if (!meta.Success || meta.Value is not { } m)
                     return Json(new { error = meta.Detail });
                 return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
+            }
+            case "/spawnobject":
+            {
+                string modelPath = query.TryGetValue("path", out var sp) ? sp : "bgcommon/hou/outdoor/general/0022/bgparts/gar_b0_m0022a.mdl";
+                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Transform.Identity;
+                var placement = new global::Poser.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
+                var made = _worldObjects.Spawn(modelPath, placement, true, out var detail);
+                return Json(new { ok = made != null, detail, address = made == null ? null : $"0x{made.Address:X}", name = made?.Name });
+            }
+            case "/worldobjects":
+            {
+                var rows = new List<object>();
+                unsafe
+                {
+                    foreach (var handle in _worldObjects.Adopted)
+                    {
+                        var node = (byte*)handle.Address;
+                        string tail = node == null ? "" : Convert.ToHexString(new System.ReadOnlySpan<byte>(node + 0xC0, 0x20));
+                        rows.Add(new { handle.Name, handle.Spawned, handle.IsVfx, address = $"0x{handle.Address:X}", paused = handle.AnimationPaused, ready = _worldObjects.IsReadyProbe(handle), tail });
+                    }
+                }
+                return Json(new { rows });
             }
             case "/redraw":
             {
