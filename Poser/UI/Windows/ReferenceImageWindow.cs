@@ -109,8 +109,23 @@ public sealed class ReferenceImageWindow : Window
             return;
         var current = data->CurrentSize;
         var desired = data->DesiredSize;
+        float dx = desired.X - current.X;
+        float dy = desired.Y - current.Y;
+        // A CORNER drag moves both axes, and their deltas trade places from
+        // frame to frame; choosing a dominant axis each frame flipped the
+        // derived side back and forth — the flicker. The corner takes the
+        // closest on-ratio size to what the hand asked for, a projection
+        // onto the aspect line that is smooth in both deltas. An EDGE drag
+        // moves one axis and keeps that axis authoritative.
+        if (MathF.Abs(dx) > 0.5f && MathF.Abs(dy) > 0.5f)
+        {
+            float width = (desired.X * aspect * aspect + desired.Y * aspect)
+                / (aspect * aspect + 1f);
+            data->DesiredSize = new Vector2(width, width / aspect);
+            return;
+        }
         data->DesiredSize =
-            MathF.Abs(desired.X - current.X) >= MathF.Abs(desired.Y - current.Y)
+            MathF.Abs(dx) >= MathF.Abs(dy)
                 ? new Vector2(desired.X, desired.X / aspect)
                 : new Vector2(desired.Y * aspect, desired.Y);
     }
