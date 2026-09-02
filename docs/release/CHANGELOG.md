@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.4-beta — the look goes back, the keys stay yours, stock filters
+
+**The look goes back.** The first wardrobe or customize write on an actor
+captures its Glamourer state once; Revert, the actor leaving the scene and
+GPose ending put it back, by the exact object while it exists and by the
+character's name once it has left GPose. An actor no longer walks out of
+GPose in the gear it was given there, as in Brio and Ktisis.
+
+**The keys stay yours.** A chord Poser binds is taken from the game at its
+key message, so Ctrl+Z undoes in Poser and no longer resets the game's
+camera. Escape and Enter are never taken: they are how you leave GPose and
+a game dialog. The "keep every key" option, which ate the WASD pan and the
+game's own shortcuts, is gone; "Keep bound keys from the game" is on by
+default and takes only what Poser binds.
+
+**Stock bone filters.** Body (hips to head, with the abdomen), Head, Arms,
+Hands, Legs, Feet, Breasts, Privates — built from the sidebar's own
+categories, each region with its IVCS bones: fingers with the hands, toes
+with the feet, the muscles with the arms and legs.
+
+**Smaller.** The whole UI no longer vanishes for one frame a couple of
+seconds after loading: the standby fonts warm on their own atlas, and a
+ready UI never skips a frame. A dialog is as tall as its content. Bone
+dots wear a thicker ring. The 0.9.3 release notes describe the whole
+stretch since 0.9.2.
+
 ## 0.9.3-beta — the world, the journal, the wardrobe, and the overlay
 
 Sixty-two commits and eleven merged pull requests since 0.9.2-beta.
