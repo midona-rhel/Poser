@@ -1303,13 +1303,14 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Disk-based retention: the newest <c>MaxAutoSaves</c> SAVE EVENTS by date
-    /// are kept, everything older is deleted. One event is what a single save
-    /// wrote — the files sharing one time prefix inside a day folder, or one
-    /// whole folder of the old one-folder-per-save layout, which is how
-    /// pre-existing snapshots join the same ordering and age out without a
-    /// migration. Reading the disk rather than a session queue is what makes
-    /// retention hold across restarts.
+    /// Disk-based retention: the newest <c>MaxAutoSaves</c> FILES by date are
+    /// kept, everything older is deleted — a file is what the auto-saves tab
+    /// lists and what the cap means to the user (a save of three actors is
+    /// three auto-saves). A whole folder of the old one-folder-per-save
+    /// layout counts as one, which is how pre-existing snapshots join the
+    /// same ordering and age out without a migration. Reading the disk
+    /// rather than a session queue is what makes retention hold across
+    /// restarts.
     ///
     /// <para>Date, not name (Brio's semantic): a save is written once and never
     /// touched again, so its last-write time IS the save date, and a folder or
@@ -1336,7 +1337,7 @@ public class AutoSaveService : IAutoSaveService
 
                 dayFolders.Add(dir);
                 foreach (var group in Directory.EnumerateFiles(dir)
-                             .GroupBy(file => EventKey(Path.GetFileName(file))))
+                             .GroupBy(file => Path.GetFileName(file)))
                 {
                     var files = group.ToList();
                     var newest = DateTime.MinValue;

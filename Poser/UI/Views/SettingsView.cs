@@ -57,7 +57,7 @@ public sealed class SettingsViewModel
     public bool ShowFrameProfiler;
 
     public bool AutoSaveEnabled = true;
-    public float AutoSaveIntervalSeconds = 60f;
+    public float AutoSaveIntervalSeconds = 180f;
     public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
     public bool SceneSnapshotsEnabled = true;
