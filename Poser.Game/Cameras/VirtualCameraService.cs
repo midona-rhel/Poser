@@ -784,18 +784,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             if (atk == null || atk->AtkModule.IsTextInputActive())
                 return;
 
-            // Brio's EnableConsumeAllInput, opt-in: the whole frame of keys
-            // goes, except Escape and Return. Those two are how a user leaves
-            // a game dialog, and a plugin that swallows them strands them.
-            if (keyboard != null && CameraSettings.ConsumeAllGameInput)
-            {
-                for (int i = 0; i < KeyboardFrame.KeyStateLength; i++)
-                {
-                    if (i == (int)VirtualKey.ESCAPE || i == (int)VirtualKey.RETURN)
-                        continue;
-                    keyboard->KeyState[i] = 0;
-                }
-            }
 
             FlightActive = false;
             if (live.Kind == CameraKind.Free)

@@ -102,7 +102,7 @@ public sealed class SettingsViewModel
     public float CameraFastMultiplier = 3f;
     public float CameraSlowMultiplier = 0.3f;
     public bool CameraConsumeModifiers = true;
-    public bool CameraConsumeAllInput;
+    public bool KeepBoundKeysFromGame = true;
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
     public int DefaultSpawnPlacement;
@@ -1131,10 +1131,10 @@ public static class SettingsView
                 next => vm.CameraConsumeModifiers = next,
                 "While a free camera flies, the game does not see Space, C, Shift or Ctrl");
             form.Switch(
-                "Keep every key from the game",
-                vm.CameraConsumeAllInput,
-                next => vm.CameraConsumeAllInput = next,
-                "While in GPose the game sees no keys at all except Escape and Enter");
+                "Keep bound keys from the game",
+                vm.KeepBoundKeysFromGame,
+                next => vm.KeepBoundKeysFromGame = next,
+                "A key Poser binds never reaches the game's own keybind");
             form.Switch(
                 "Flip fly keys past 90°",
                 vm.CameraFlipPastNinety,

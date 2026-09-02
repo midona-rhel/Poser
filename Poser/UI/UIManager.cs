@@ -375,6 +375,8 @@ public sealed class UIManager : IUIManager
             || ImGui.GetIO().WantTextInput)
             return false;
         bool handled = false;
+        // Off, the bind still runs, and the game sees the key as well.
+        bool keep = _configService.Config.Camera.KeepBoundKeysFromGame;
         foreach (var bind in _keybinds)
         {
             if (!ChordIs(bind.Primary, key) && !ChordIs(bind.Secondary, key))
@@ -401,7 +403,7 @@ public sealed class UIManager : IUIManager
                     break;
             }
         }
-        return handled;
+        return handled && keep;
     }
 
     private bool ChordIs(KeyChord chord, VirtualKey key)

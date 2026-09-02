@@ -208,7 +208,7 @@ public class SettingsWindow : Window
             CameraFastMultiplier = c.Camera.FastMultiplier,
             CameraSlowMultiplier = c.Camera.SlowMultiplier,
             CameraConsumeModifiers = c.Camera.ConsumeModifiersWhileFlying,
-            CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
+            KeepBoundKeysFromGame = c.Camera.KeepBoundKeysFromGame,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
@@ -449,7 +449,7 @@ public class SettingsWindow : Window
         c.Camera.FastMultiplier = Math.Clamp(_vm.CameraFastMultiplier, 1f, 10f);
         c.Camera.SlowMultiplier = Math.Clamp(_vm.CameraSlowMultiplier, 0.05f, 1f);
         c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
-        c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
+        c.Camera.KeepBoundKeysFromGame = _vm.KeepBoundKeysFromGame;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
         c.DefaultSpawnPlacement =

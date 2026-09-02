@@ -40,12 +40,14 @@ public class CameraConfiguration
     public bool ConsumeModifiersWhileFlying { get; set; } = true;
 
     /// <summary>
-    /// Whether every key is eaten while in GPose — Brio's
-    /// <c>EnableConsumeAllInput</c>, off by default. Escape and Enter are
-    /// never taken: they are how a user leaves a game dialog, and a plugin
-    /// that swallows them strands them.
+    /// Whether a chord Poser binds is taken from the game at its key
+    /// message, so the game's own keybind on the same key never runs
+    /// (Ctrl+Z undid in Poser and reset the game's camera). On by default.
+    /// Eating every key, Brio's <c>EnableConsumeAllInput</c>, was retired
+    /// 2026-09-03: it took the WASD pan and the game's UI shortcuts, which
+    /// interfere with nothing.
     /// </summary>
-    public bool ConsumeAllGameInput { get; set; }
+    public bool KeepBoundKeysFromGame { get; set; } = true;
 
     /// <summary>
     /// Whether the lateral and vertical fly keys invert once the camera is
