@@ -217,18 +217,17 @@ public sealed class UiWindowSet : IDisposable
         var ui = _configService.Config.UI;
         bool detaching = !ui.DetachedShell;
         ui.DetachedShell = detaching;
-        // Seated where it sat attached, unless the window is to open where
-        // it was last: then ImGui's own memory of the window stands.
-        if (detaching && !ui.DetachedWindowsRemember)
+        if (detaching)
         {
-            float gs = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-            SidebarPart.PlaceAt(
-                Main.LastPosition,
-                new System.Numerics.Vector2(
-                    Main.LastSidebarWidth, Main.LastHeight));
-            // The toolbar is ALWAYS its own window with its own remembered
-            // position — detaching the shell must not move it.
-            _ = gs;
+            // Seated where it sat attached, unless the window is to open
+            // where it was last: then ImGui's own memory of the window
+            // stands. The toolbar is ALWAYS its own window with its own
+            // remembered position — detaching the shell must not move it.
+            if (!ui.DetachedWindowsRemember)
+                SidebarPart.PlaceAt(
+                    Main.LastPosition,
+                    new System.Numerics.Vector2(
+                        Main.LastSidebarWidth, Main.LastHeight));
             Main.ApplyDetachShift(+1);
         }
         else
