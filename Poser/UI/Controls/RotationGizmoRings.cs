@@ -532,5 +532,13 @@ public static class GizmoPointerOwnership
         _ownedUntilFrame = ImGui.GetFrameCount() + 1;
 
     public static bool Owned =>
-        ImGui.GetFrameCount() <= _ownedUntilFrame;
+        !Suppressed && ImGui.GetFrameCount() <= _ownedUntilFrame;
+
+    /// <summary>Brio's rule, asked for by the overlay each frame a dot is
+    /// hovered or its popup is open: the gizmo takes no pointer.</summary>
+    private static int _suppressedFrame = -1;
+    public static void Suppress() =>
+        _suppressedFrame = ImGui.GetFrameCount();
+    public static bool Suppressed =>
+        ImGui.GetFrameCount() == _suppressedFrame;
 }
