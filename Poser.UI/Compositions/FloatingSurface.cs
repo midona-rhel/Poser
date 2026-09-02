@@ -20,6 +20,10 @@ public enum FloatingSurfaceTreatment
 {
     Glass,
     Unframed,
+    /// <summary>A control's own menu: the control's fill, opaque, under a
+    /// white line — no glass, no blur, and immune to the shell's opacity,
+    /// because a menu is a control, not a surface.</summary>
+    Solid,
 }
 
 public static partial class Crystarium
@@ -37,6 +41,9 @@ public static partial class Crystarium
         }
 
         public static Vector4 FillColor => GlassChrome.BackgroundColor;
+
+        /// <summary>The white line around a solid menu.</summary>
+        private static readonly Vector4 SolidMenuLine = new(1f, 1f, 1f, 0.85f);
 
         public static void PrependShellBlur(
             ImDrawListPtr drawList,
@@ -130,6 +137,9 @@ public static partial class Crystarium
                     {
                         var owner = Interactive.BeginOwner(
                             id, InteractionLayer.Popup, min, max);
+                        bool solid = props.Treatment == FloatingSurfaceTreatment.Solid;
+                        if (solid)
+                            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 1f);
                         try
                         {
                             if (props.Treatment == FloatingSurfaceTreatment.Glass)
@@ -138,10 +148,26 @@ public static partial class Crystarium
                                     min,
                                     max,
                                     Crystarium.ActiveTheme.Radii.Surface);
+                            else if (solid)
+                            {
+                                var theme = Crystarium.ActiveTheme;
+                                BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
+                                {
+                                    BackgroundColor = theme.Chrome.ControlHover with { W = 1f },
+                                    BorderWidth = 1f,
+                                    BorderRadius = theme.Radii.Surface,
+                                    BorderTopColor = SolidMenuLine,
+                                    BorderRightColor = SolidMenuLine,
+                                    BorderBottomColor = SolidMenuLine,
+                                    BorderLeftColor = SolidMenuLine,
+                                });
+                            }
                             body();
                         }
                         finally
                         {
+                            if (solid)
+                                ImGui.PopStyleVar();
                             Interactive.EndOwner(owner);
                         }
                     }

@@ -90,14 +90,11 @@ public sealed partial class AppearancePane
             {
                 cells.Cell("Brows", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Eyebrows, live, why));
                 cells.Cell("Eyes", cell => OptionCell(cell, actor, menu, state, CustomizeKey.EyeShape, live, why));
-            }, help: "Step through the shapes the clan offers");
-            form.Cells(cells =>
-            {
                 cells.Cell("Nose", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Nose, live, why));
-                cells.Cell("Jaw", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Jaw, live, why));
             }, help: "Step through the shapes the clan offers");
             form.Cells(cells =>
             {
+                cells.Cell("Jaw", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Jaw, live, why));
                 cells.Cell("Mouth", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Mouth, live, why));
                 cells.Cell("Small iris", cell => cell.Switch("appearance-small-iris",
                     (state?.Value(CustomizeKey.SmallIris) ?? 0) != 0,
@@ -122,14 +119,15 @@ public sealed partial class AppearancePane
             {
                 cells.Cell("Right eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why));
                 cells.Cell("Left eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why));
+                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
+                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
             }, help: "Each eye has its own colour");
             form.Cells(cells =>
             {
-                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
-                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
                 cells.Cell("Tattoo", cell => ColorCell(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why));
                 cells.Cell("Paint", cell => ColorCell(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why));
-            }, help: "The lips, the facial features and the face paint");
+                cells.Cell(string.Empty, _ => { });
+            }, help: "The facial features' and the face paint's colour");
             form.Checkboxes("Options",
                 new Crystarium.CheckItem("Highlights", highlights,
                     on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),

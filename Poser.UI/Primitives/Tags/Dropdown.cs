@@ -140,7 +140,8 @@ public static partial class Crystarium
                 AnchorMin = valueMin,
                 AnchorMax = valueMax + new Vector2(
                     0f, popupMetrics.AnchorGapCompensation),
-                Treatment = FloatingSurfaceTreatment.Glass,
+                // A combo's menu is a control: solid, in the box's own colour.
+                Treatment = FloatingSurfaceTreatment.Solid,
             },
             () =>
             {
