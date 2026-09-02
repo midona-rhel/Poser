@@ -3949,7 +3949,9 @@ public class MainWindow : Window
                 || group.Members.Count == 0)
                 return;
             var io2 = ImGui.GetIO();
-            if (io2.KeyCtrl)
+            // A group row's members live one level down; they join a
+            // multi-selection only when it already sits at that level.
+            if (io2.KeyCtrl && SelectionParentIs(group.Id))
             {
                 foreach (var member in group.Members)
                     _selection.Add(member);
@@ -3985,18 +3987,22 @@ public class MainWindow : Window
             }
             return;
         }
-        if (io.KeyShift && _selection.Anchor is { } anchor)
+        // Multi-selection keeps ONE parent — the anchor's: root things
+        // with root things, a group's members with each other. A shift or
+        // ctrl click on another level starts over there.
+        Guid? clickedParent = _groups.GroupOf(id)?.Id;
+        if (io.KeyShift && _selection.Anchor is { } anchor
+            && SelectionParentIs(clickedParent))
         {
-            // Range order follows the rows currently visible;
-            // collapsed and filtered-out entries are deliberately excluded.
             var displayOrder = new List<SelectionId>();
             foreach (var section in _vm.Sections)
                 foreach (var visibleRow in section.Rows)
-                    if (visibleRow.Tag is SelectionId visibleId)
+                    if (visibleRow.Tag is SelectionId visibleId
+                        && _groups.GroupOf(visibleId)?.Id == clickedParent)
                         displayOrder.Add(visibleId);
             _selection.SelectRange(anchor, id, displayOrder);
         }
-        else if (io.KeyCtrl)
+        else if (io.KeyCtrl && SelectionParentIs(clickedParent))
         {
             _selection.Toggle(id);
         }
@@ -5986,6 +5992,16 @@ public class MainWindow : Window
         var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Detached);
         if (!mode.Success)
             _log.Warning($"Duplicate: the gaze could not be detached: {mode.Detail}");
+    }
+
+    /// <summary>Whether the current selection is empty or every selected
+    /// entity has <paramref name="parent"/> as its group (null = root).</summary>
+    private bool SelectionParentIs(Guid? parent)
+    {
+        foreach (var selected in _selection.Selected)
+            if (_groups.GroupOf(selected)?.Id != parent)
+                return false;
+        return true;
     }
 
     private void OpenEntityRename(

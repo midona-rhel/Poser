@@ -43,6 +43,17 @@ public sealed class SceneGroups
 {
     private readonly List<SceneGroup> _groups = new();
 
+    /// <summary>Forgets every group and the root order.</summary>
+    public void Clear()
+    {
+        if (_groups.Count == 0 && _order.Count == 0 && ActiveGroupId == null)
+            return;
+        _groups.Clear();
+        _order.Clear();
+        ActiveGroupId = null;
+        Revision++;
+    }
+
     /// <summary>The root list in the USER'S order, kinds interleaved:
     /// group heads and ungrouped entities, one slot each. Attached and
     /// grouped entities hold no slot; <see cref="SyncRoot"/> reconciles
