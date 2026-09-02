@@ -181,6 +181,11 @@ public class SkeletonOverlayWindow : Window
     private Vector2[] _screenScratch = Array.Empty<Vector2>();
     private Vector3[] _worldScratch = Array.Empty<Vector3>();
     private bool[] _placedScratch = Array.Empty<bool>();
+    /// <summary>Which descriptor indices are selected, built once per
+    /// skeleton per frame from the few selected ids — a selection id is a
+    /// wide record struct, and building and hashing one per bone per frame
+    /// was the overlay's second cost (traced 2026-09-02).</summary>
+    private bool[] _selectedScratch = Array.Empty<bool>();
     private readonly Dictionary<SkeletonId,
         (IReadOnlyList<BoneDescriptor> Source, Dictionary<BoneId, int> Map)> _indexMaps = new();
     /// <summary>Brio's popup: the cluster FROZEN at the press or the
@@ -646,6 +651,17 @@ public class SkeletonOverlayWindow : Window
 
             var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
+            var index = IndexMapFor(slotSkeleton);
+            int count = descriptors.Count;
+            EnsureScratch(count);
+            var selectedMask = _selectedScratch;
+            Array.Clear(selectedMask, 0, count);
+            foreach (var id in _selection.Selected)
+                if (id.Kind == SceneEntityKind.Bone
+                    && id.Bone is { } selectedBone
+                    && selectedBone.Skeleton.Equals(slotSkeleton.Id)
+                    && index.TryGetValue(selectedBone, out int at))
+                    selectedMask[at] = true;
 
             // The anchor rule extends to IMPLICATED bones: partners the
             // selection's symmetry or link will also move, and armed IK
@@ -654,10 +670,11 @@ public class SkeletonOverlayWindow : Window
             var symmetryConfig = ConfigurationService.Instance.Config;
             HashSet<string>? implicated =
                 armedIkBones != null ? new(armedIkBones) : null;
-            foreach (var bone in descriptors)
+            for (int b = 0; b < count; b++)
             {
-                if (!selectedIds.Contains(SelectionId.ForBone(bone.Id)))
+                if (!selectedMask[b])
                     continue;
+                var bone = descriptors[b];
                 var canonical = bone.Id.CanonicalName;
                 if (Core.BoneSymmetry.EffectiveMode(
                         symmetryConfig.PerBoneSymmetry,
@@ -681,9 +698,6 @@ public class SkeletonOverlayWindow : Window
             if (_bindings.Resolve(descriptors[0].Id) is not
                 { Success: true, Value: { Skeleton: { } live } })
                 continue;
-            var index = IndexMapFor(slotSkeleton);
-            int count = descriptors.Count;
-            EnsureScratch(count);
             var screen = _screenScratch;
             var world = _worldScratch;
             var placed = _placedScratch;
@@ -699,8 +713,7 @@ public class SkeletonOverlayWindow : Window
                     || (UserVisible && _presentation.IsVisible(bone.Id));
                 if (bone.IsHidden
                     || (!shown
-                        && !selectedIds.Contains(
-                            SelectionId.ForBone(bone.Id))
+                        && !selectedMask[b]
                         && implicated?.Contains(bone.Id.CanonicalName)
                             != true))
                     continue;
@@ -734,7 +747,7 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = screen[b],
                     ParentScreenPos = parentScreenPos,
                     CameraDistance = Vector3.Distance(cameraPosition, world[b]),
-                    IsSelected = selectedIds.Contains(selectionId),
+                    IsSelected = selectedMask[b],
                     IsIkChain = armedIkBones?.Contains(bone.Id.CanonicalName) == true,
                     Opacity = armatureOpacity,
                 });
@@ -1724,6 +1737,7 @@ public class SkeletonOverlayWindow : Window
         _screenScratch = new Vector2[size];
         _worldScratch = new Vector3[size];
         _placedScratch = new bool[size];
+        _selectedScratch = new bool[size];
     }
 
     private void CommitPendingSelection(

@@ -149,6 +149,12 @@ public sealed class ViewportProjection : IViewportReads
     /// cache update — surfaces reading through this query never touch the
     /// live skeleton themselves.
     /// </summary>
+    /// <summary>The frame stamp each skeleton was last refreshed at. The
+    /// refresh walks every bone of the skeleton, and every overlay and
+    /// gizmo asked for it once per skeleton per frame — traced at 0.6 ms a
+    /// frame on one actor (2026-09-02). Once per frame is the whole need.</summary>
+    private readonly Dictionary<Skeleton, long> _refreshedAt = new();
+
     public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -160,9 +166,17 @@ public sealed class ViewportProjection : IViewportReads
             return null;
         // Draw-phase refresh: Customize+ has already stamped the model pose
         // by now, so the raw cache must not be written here or its scale
-        // leaks into every delta diffed against LastRawTransform.
-        skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-        _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
+        // leaks into every delta diffed against LastRawTransform. Once per
+        // frame per skeleton: the framework's update stamp is the frame.
+        long stamp = _framework.LastUpdateUTC.Ticks;
+        if (!_refreshedAt.TryGetValue(skeleton, out long at) || at != stamp)
+        {
+            if (_refreshedAt.Count > 64)
+                _refreshedAt.Clear();
+            skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+            _bonePosing.RegisterSkeletonForCacheUpdate(skeleton);
+            _refreshedAt[skeleton] = stamp;
+        }
         return skeleton.GetModelMatrix();
     }
 
