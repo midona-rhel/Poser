@@ -419,6 +419,13 @@ Narrow-form designs are parked for a future effort.)
   reads as broken. Width honesty sizes the cell; the control takes it.
 - A destructive whole-set verb is ALWAYS the danger color, armed or
   not — red is the warning, arming is the guard.
+- A verb that breaks animation state — Redraw, a character file
+  import or reset, an appearance apply that redraws (design,
+  collection, body profile, model id, clothing only) — is ALWAYS the
+  DISRUPTIVE color: dark purple, `Chrome.Disruptive`, one token, beside
+  Danger red. It warns that the pose survives only as a snapshot; it
+  never arms. `ButtonVariant.Disruptive`, `Selector(disruptive: true)`,
+  `ContextMenuItem(disruptive: true)`.
 - Before placing ANY row in the inspector, prove it fits: the
   inspector is 280 logical wide; minus the page insets (12 + 12) and
   the label column (90) the control cell is ~166 at 100% scale.

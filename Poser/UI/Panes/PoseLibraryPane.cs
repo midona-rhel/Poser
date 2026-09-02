@@ -2938,6 +2938,7 @@ public sealed class PoseLibraryPane
         // A scene has no target to pick: it IS the session. Its primary needs
         // a highlighted file and nothing else, and it names the transaction it
         // starts rather than the picker it does not open.
+        _vm.ApplyDisruptive = false;
         if (_type == LibraryType.Scenes)
         {
             _vm.CanApply = true;
@@ -2954,8 +2955,10 @@ public sealed class PoseLibraryPane
             return;
         }
 
-        // The primary opens the actor picker; its caption is constant.
+        // The primary opens the actor picker; its caption is constant. A
+        // character file redraws the actor, so its verb is Disruptive.
         _vm.ApplyLabel = "Apply";
+        _vm.ApplyDisruptive = _type == LibraryType.Mcdf;
     }
 
     /// <summary>Whom a pose or character file applies to: the scene's

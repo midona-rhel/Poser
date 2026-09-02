@@ -328,6 +328,7 @@ public sealed class AppearancePane
             () => ReportModel(_model.Reset(id), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
+            variant: ButtonVariant.Disruptive,
             disabled: !_model.IsOwned(id),
             help: "Back to its own model", id: "appearance-model-reset");
     }
@@ -530,14 +531,17 @@ public sealed class AppearancePane
                 disabled: !glamourer.Available,
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
-                () => ReportExternal(_integration.Redraw(actor), "Redraw"));
+                () => ReportExternal(_integration.Redraw(actor), "Redraw"),
+                variant: ButtonVariant.Disruptive);
             actions.Button("Reset",
-                () => Report(_presentation.ResetActor(actor), "Reset appearance"));
+                () => Report(_presentation.ResetActor(actor), "Reset appearance"),
+                variant: ButtonVariant.Disruptive);
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
                 () => _invisibleSkin.Request(actor, _notices.Failed),
                 disabled: !human,
-                help: human ? null : "Only human actors can hide their body");
+                help: human ? null : "Only human actors can hide their body",
+                variant: ButtonVariant.Disruptive);
         });
     }
 
@@ -627,6 +631,7 @@ public sealed class AppearancePane
             () => ReportExternal(_integration.ResetCollection(actor), "Reset Collection"),
             available: penumbra.Available && !mcdfOwned,
             owned: external.CollectionOwned,
+            disruptive: true,
             help: "Use a Penumbra collection on this actor only and redraw it. "
                 + "Reset puts the actor's original collection back.",
             disabledHelp: !penumbra.Available
@@ -642,6 +647,7 @@ public sealed class AppearancePane
             () => ReportExternal(_integration.ResetDesign(actor), "Reset Design"),
             available: glamourer.Available && !mcdfOwned,
             owned: external.DesignOwned,
+            disruptive: true,
             help: "Apply a saved Glamourer design to this actor only. "
                 + "Reset puts back the look it had before Poser changed it.",
             disabledHelp: !glamourer.Available
@@ -660,6 +666,7 @@ public sealed class AppearancePane
                 _integration.ResetBodyProfile(actor), "Reset Body profile"),
             available: customize.Available && !mcdfOwned && !_bodyBlocked,
             owned: external.TemporaryBodyProfile != null,
+            disruptive: true,
             help: "Apply a saved Customize+ profile to this actor only. "
                 + "Reset removes it and the actor's usual profile returns.",
             disabledHelp: !customize.Available
@@ -718,7 +725,8 @@ public sealed class AppearancePane
                     actions.Button("Import",
                         () => OpenMcdfImport(actor),
                         help: "Apply a Mare character file's mods, appearance, "
-                            + "and body scale to this actor only");
+                            + "and body scale to this actor only",
+                        variant: ButtonVariant.Disruptive);
                     actions.Button("Export",
                         () => OpenMcdfExport(actor),
                         disabled: !exportable,
@@ -739,7 +747,8 @@ public sealed class AppearancePane
                                 _integration.ResetMcdf(actor), "Reset MCDF"),
                             help: mcdfOwnedNow
                                 ? "Remove everything the imported character file applied to this actor"
-                                : "Retry deleting extracted files left behind by a failed import");
+                                : "Retry deleting extracted files left behind by a failed import",
+                            variant: ButtonVariant.Disruptive);
                     }
                 },
                 help: "Import a Mare character file (.mcdf) onto this actor, "

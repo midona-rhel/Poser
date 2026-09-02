@@ -298,6 +298,10 @@ public readonly record struct Theme
             Danger = PictoTokens.Dark.Negative,
             // Derivation: --color-negative at the hover-fill alpha.
             DangerHover = PictoTokens.Dark.Negative with { W = 0.12f },
+            // The one violet: a verb that breaks animation state wears it,
+            // beside Danger red. Its fills derive from it the way Danger's do.
+            Disruptive = new(139f / 255f, 92f / 255f, 246f / 255f, 1f),  // #8b5cf6
+            DisruptiveHover = new(139f / 255f, 92f / 255f, 246f / 255f, 0.12f),
             UnavailableFill = new(0f, 0f, 0f, 0.12f),
             ColorWellBorder = PictoTokens.Dark.BorderPrimary,
             PickerWell = PictoTokens.Dark.BgApp,
@@ -811,6 +815,11 @@ public readonly record struct Theme
         public Vector4 Checkmark { get; init; }
         public Vector4 Danger { get; init; }
         public Vector4 DangerHover { get; init; }
+        /// <summary>The colour of a verb that breaks animation state
+        /// (redraw, a character file, an appearance apply that redraws):
+        /// the pose survives only as a snapshot. Beside Danger, never armed.</summary>
+        public Vector4 Disruptive { get; init; }
+        public Vector4 DisruptiveHover { get; init; }
         public Vector4 UnavailableFill { get; init; }
         public Vector4 ColorWellBorder { get; init; }
         public Vector4 PickerWell { get; init; }

@@ -1018,8 +1018,10 @@ public static partial class Crystarium
         /// <summary>Draws a picker with an optional reset action.</summary>
         public void Selector(string label, string value, Action select, Action reset,
             bool available, bool owned, string? help = null,
-            string? disabledHelp = null, ControlStyle style = default)
+            string? disabledHelp = null, ControlStyle style = default,
+            bool disruptive = false)
         {
+            var variant = disruptive ? ButtonVariant.Disruptive : ButtonVariant.Secondary;
             string id = Id(label);
             var row = _page.BeginRow(label, help);
             if (!row.Visible)
@@ -1046,7 +1048,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
             Crystarium.Button(
                 display, select, style: triggerStyle,
-                disabled: !available, help: disabledHelp, id: id);
+                disabled: !available, help: disabledHelp, variant: variant, id: id);
 
             if (owned)
             {
@@ -1056,6 +1058,7 @@ public static partial class Crystarium
                 Crystarium.Button(
                     "Reset", reset, style: resetStyle,
                     help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
+                    variant: variant,
                     id: Ids.Join(id, "-reset"));
             }
             _page.EndRow(row, id, help);

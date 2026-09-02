@@ -17,6 +17,9 @@ public enum ButtonVariant
     Secondary,
     Primary,
     Danger,
+    /// <summary>A verb that breaks animation state. Painted like Danger from
+    /// the theme's one Disruptive token.</summary>
+    Disruptive,
 }
 
 public static partial class Crystarium
@@ -316,6 +319,12 @@ public static partial class Crystarium
                 DangerBorder,
                 DangerBorder,
                 DangerText),
+            ButtonVariant.Disruptive => (
+                theme.Chrome.Disruptive with { W = 0.08f },
+                theme.Chrome.Disruptive with { W = 0.15f },
+                theme.Chrome.Disruptive with { W = 0.35f },
+                theme.Chrome.Disruptive with { W = 0.35f },
+                theme.Chrome.Disruptive),
             _ => (
                 theme.Chrome.ControlFill,
                 theme.Chrome.ControlHover,
