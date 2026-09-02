@@ -880,11 +880,4 @@ public sealed class LightPane
 
     // ── transform presentation adapter ──────────────────────────────────
 
-    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
-        new()
-        {
-            Position = value.Position,
-            Rotation = value.Rotation,
-            Scale = value.Scale,
-        };
 }

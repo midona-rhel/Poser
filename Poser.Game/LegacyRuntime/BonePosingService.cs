@@ -42,13 +42,6 @@ public unsafe class BonePosingService : IBonePosingService
     /// rather than by any of the three things a rebuild invalidates (address,
     /// skeleton instance, draw object).</summary>
 
-    /// <summary>Ktisis's "position root": the first REAL bone of partial 0, the
-    /// only bone whose position delta is restored after a rebuild. Poser's
-    /// <c>IsSkeletonRoot</c> is the parentless <c>n_root</c> instead, whose
-    /// position is the actor's world placement — carrying that would fight the
-    /// model transform override, so it is deliberately not used here.</summary>
-    private const string PositionRootBoneName = "n_hara";
-
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
     private readonly Hook<UpdateBonePhysicsDelegate>? _updateBonePhysicsHook;
@@ -459,13 +452,6 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-
-    /// <summary>Stack deltas are additive for position/scale and multiplicative
-    /// for rotation, so identity is (0, identity quaternion, 0).</summary>
-    private static bool IsIdentityDelta(Transform delta) =>
-        delta.Position == Vector3.Zero &&
-        delta.Scale == Vector3.Zero &&
-        MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < 1e-6f;
 
     private void ApplyAllBoneTransforms()
     {

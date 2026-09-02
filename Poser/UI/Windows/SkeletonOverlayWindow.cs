@@ -73,9 +73,6 @@ public class SkeletonOverlayWindow : Window
     private static bool ShowNsfwBones =>
         ConfigurationService.Instance.Config.Display.ShowNsfwBones;
 
-    private static GizmoConfiguration GizmoConfig =>
-        ConfigurationService.Instance.Config.Gizmo;
-
     // ── the per-frame display model ──────────────────────────────────────
     // One VALUE per drawn handle, held in buffers this window owns and
     // clears at the top of each frame. The rebuild itself is the design

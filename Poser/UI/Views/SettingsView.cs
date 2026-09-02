@@ -151,8 +151,6 @@ public sealed class SettingsViewModel
     /// after three blind fixes; the probe reports, nobody theorizes.</summary>
     public Action<string>? DebugLog;
     public string RebindProbe = string.Empty;
-    public int RebindProbeFrame;
-
     /// <summary>A refused capture's standing answer — a chord already
     /// bound elsewhere is never applied; the message stands until a new
     /// chord lands or the capture disarms.</summary>
@@ -233,8 +231,6 @@ public static class SettingsView
 
     public static float DesignHeight =>
         Crystarium.ActiveTheme.Settings.Height;
-    private const float NavigationIconMargin = 2f;
-
     private const float NavigationPillRadius = 5f;
 
     /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>

@@ -445,14 +445,6 @@ public sealed class PoseFileInspectorSection
             },
             DrawBoneFilterBody);
 
-    public void DrawOptionsRail(Vector2 origin, Vector2 size)
-    {
-        DrawOptionsSections(
-            origin, size.X, withPresets: false,
-            previewCap: size.Y,
-            dense: true);
-    }
-
 
     private const float ImportPreviewImageWidth = 256f;
 

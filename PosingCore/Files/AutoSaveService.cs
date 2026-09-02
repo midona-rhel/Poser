@@ -1412,24 +1412,6 @@ public class AutoSaveService : IAutoSaveService
             DateTimeStyles.None,
             out _);
 
-    /// <summary>Files sharing one valid <c>"HH-mm-ss "</c> prefix are one save;
-    /// anything else (a user-renamed file) is its own event under its full
-    /// name.</summary>
-    private static string EventKey(string? fileName)
-    {
-        if (fileName != null &&
-            fileName.Length > TimePrefixLength &&
-            fileName[TimePrefixLength] == ' ' &&
-            DateTime.TryParseExact(
-                fileName[..TimePrefixLength],
-                TimePrefixFormat,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out _))
-            return fileName[..TimePrefixLength];
-        return fileName ?? string.Empty;
-    }
-
     private bool CleanAll()
     {
         List<string> folders;

@@ -393,37 +393,6 @@ public sealed class ScenePane
             new FileSidePanel(SaveBandHeight, DrawSaveOptionsBand);
     }
 
-    /// <summary>Asks for the save destination from ANOTHER surface — the
-    /// library's scene tab, which is where a user goes looking for scenes. The
-    /// open is deferred to the browser pump rather than run inline: the caller
-    /// is mid-draw inside its own pane, and a dialog opened there claims the
-    /// frame a pane is still using.</summary>
-    public void RequestSave() => _saveRequested = true;
-
-    /// <summary>The library's inspector rail on the scenes and auto-saves
-    /// tabs: the SAME load options the workspace states, mounted where the
-    /// tiles that start those loads live.</summary>
-    public void DrawLibraryRail(Vector2 origin, Vector2 size)
-    {
-        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset * scale;
-        float width = size.X - inset * 2f;
-        var cursor = origin + new Vector2(inset, inset);
-
-        Crystarium.TextAt(cursor, "Load options", new TextStyle
-        {
-            Size = theme.Typography.CaptionSize,
-            Color = theme.FormHint,
-        });
-        cursor.Y += (theme.Typography.CaptionSize + 8f) * scale;
-
-        // One table: both groups share the section label column, so the
-        // rows align whatever group they sit in.
-        cursor.Y += DrawLoadSceneOptions(cursor, width);
-        DrawLoadIncludeOptions(cursor, width);
-    }
-
     private bool _librarySaveOpen;
     private string _librarySaveName = string.Empty;
 
@@ -515,19 +484,12 @@ public sealed class ScenePane
         });
     }
 
-    private bool _saveRequested;
-
     /// <summary>Pumped every frame by the window: a dialog must survive the
     /// frames in which this pane's mode is not the one being drawn. Deferred
     /// opens run HERE, at the root pump, before anything claims the frame.
     /// </summary>
     public void DrawBrowsers()
     {
-        if (_saveRequested)
-        {
-            _saveRequested = false;
-            OpenSave();
-        }
         _saveBrowser.Draw();
         DrawLibrarySaveModal();
         _loadBrowser.Draw();

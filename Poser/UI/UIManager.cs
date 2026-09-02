@@ -144,10 +144,6 @@ public sealed class UIManager : IUIManager
         if (_configService.Config.UI.HideWhileMovingCamera
             && (_cameras.FlightActive || EmptySpaceDrag()))
             active = true;
-        if (active != Controls.ManipulationHide.Active)
-            _log.Debug(
-                $"[ManipulationHide] active={active} held={held} shell={shellHeld} "
-                + $"opacity={Controls.ManipulationHide.Opacity:0.00} frame={ImGui.GetFrameCount()}");
         Controls.ManipulationHide.Active = active;
         Controls.ManipulationHide.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;

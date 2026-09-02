@@ -87,7 +87,6 @@ public sealed class DebugBridge : IDisposable
         _lifecycle = lifecycle;
         _spawner = spawner;
         _listener = new TcpListener(IPAddress.Loopback, Port);
-        global::Poser.UI.Crystarium.FloatingMenu.Trace = line => _log.Debug(line);
         try
         {
             _listener.Start();

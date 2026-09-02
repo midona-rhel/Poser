@@ -472,32 +472,6 @@ public sealed class SpawnBrowserWindow : Window
             SpawnWorldAsset(asset.Item.Path);
     }
 
-    /// <summary>The whole-game catalog: every spawnable path of the given
-    /// list, searched by the file's own name.</summary>
-    private void OpenAssetPicker(
-        string owner,
-        System.Collections.Generic.IReadOnlyList<
-            Game.WorldObjects.WorldAsset> list)
-    {
-        _assetPicker.Open(
-            owner,
-            list,
-            static asset => asset.Label,
-            static asset => asset.Path,
-            string.Empty,
-            loadError: list.Count == 0
-                ? "The path catalog could not be read."
-                : null,
-            options: new PickerOptions<Game.WorldObjects.WorldAsset>
-            {
-                Glyph = static asset => asset.Path.EndsWith(
-                    ".avfx", StringComparison.OrdinalIgnoreCase)
-                    ? TablerIcon.Fire
-                    : TablerIcon.Square,
-                Badge = static asset => asset.Context,
-            });
-    }
-
     /// <summary>Spawns one catalog path at the configured placement — the
     /// world-object spawn every picked asset lands through.</summary>
     private void SpawnWorldAsset(string path)

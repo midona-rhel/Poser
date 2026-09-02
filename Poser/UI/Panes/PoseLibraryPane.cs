@@ -1147,16 +1147,6 @@ public sealed class PoseLibraryPane
         Part(metadata.OverlayCount, "Overlays");
     }
 
-    private static string Anchors(
-        PlacementAnchorData? camera, PlacementAnchorData? actor) =>
-        (camera, actor) switch
-        {
-            (not null, not null) => "camera and actor",
-            (not null, null) => "camera",
-            (null, not null) => "actor",
-            _ => "none",
-        };
-
     /// <summary>
     /// An object tile's one action, by what the file is. An actor entry
     /// SPAWNS its actor — through the same scene workflow a scene load uses,

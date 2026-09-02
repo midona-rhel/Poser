@@ -2799,21 +2799,6 @@ public class PoseInspectorPane
         }
     }
 
-    public void FlipWholePose()
-    {
-        if (IsActorSelection)
-        {
-            foreach (var actorId in SelectedActorIds())
-            {
-                if (_bindings.Resolve(actorId) is { Success: true } actor)
-                    _cleanPose.Mirror(actor.Value!);
-            }
-            return;
-        }
-        var skeleton = OwningSkeleton();
-        if (skeleton != null) _cleanPose.Mirror(skeleton.Actor);
-    }
-
 
     private (Transform, bool) ReadTransform()
     {

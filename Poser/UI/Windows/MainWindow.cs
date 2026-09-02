@@ -1202,7 +1202,6 @@ public class MainWindow : Window
     /// orchestration reads it to seat the split windows where their parts
     /// stood.</summary>
     internal Vector2 LastPosition => _lastPosition;
-    internal float LastWidth => _lastWidth;
     internal float LastHeight => _lastHeight;
 
     /// <summary>Where the rail's top-left stands on screen — the split
@@ -1463,19 +1462,6 @@ public class MainWindow : Window
     internal PoseLibraryPane LibraryPane => _libraryPane;
     internal PoseFileInspectorSection PoseFiles => _poseFileSection;
     internal ScenePane Scene => _scenePane;
-
-    /// <summary>Puts the workspace into scene mode. Openers only, exactly like
-    /// the library's, and releasing the entity selection exactly like it: the
-    /// two modes and the entity selection are one track.</summary>
-    public void ShowSceneFiles()
-    {
-        // The scene workspace died in the inspector-mode redesign: the
-        // whole panel lives in the inspector's Scene mode now.
-        Config.ConfigurationService.Instance.Config.UI.InspectorMode = 2;
-        Config.ConfigurationService.Instance.Save();
-        _scenePane.OnShown();
-        ResyncTabLayout();
-    }
 
     /// <summary>
     /// The one mode has been left — by an opener, or by any surface selecting

@@ -10,18 +10,18 @@ public sealed class UiWindowSet : IDisposable
 {
     public WindowSystem System { get; } = new(PluginConstants.PluginName);
     public MainWindow Main { get; }
-    public GizmoOverlayWindow GizmoOverlay { get; }
+    private GizmoOverlayWindow GizmoOverlay { get; }
     public SkeletonOverlayWindow SkeletonOverlay { get; }
     public SettingsWindow Settings { get; }
     public SpawnBrowserWindow SpawnBrowser { get; }
-    public SidebarPartWindow SidebarPart { get; }
-    public InspectorPartWindow InspectorPart { get; }
-    public ToolbarPartWindow ToolbarPart { get; }
-    public LibraryWindow LibraryPart { get; }
+    private SidebarPartWindow SidebarPart { get; }
+    private InspectorPartWindow InspectorPart { get; }
+    private ToolbarPartWindow ToolbarPart { get; }
+    private LibraryWindow LibraryPart { get; }
 
     /// <summary>The PERF panel. Up exactly while its setting is on — the
     /// switch IS the window, so nothing else opens or closes it.</summary>
-    public FrameProfilerWindow FrameProfilerPanel { get; }
+    private FrameProfilerWindow FrameProfilerPanel { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
