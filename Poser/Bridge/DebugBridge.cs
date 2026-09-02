@@ -426,14 +426,17 @@ public sealed class DebugBridge : IDisposable
             {
                 string name = query["name"]; int part = query.TryGetValue("partial", out var rp) ? int.Parse(rp) : 0;
                 float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
-                var turn = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY, deg * MathF.PI / 180f);
+                var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
+                var turn = System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f);
                 foreach (var skeleton in _skeletons.GetSkeletons(actor))
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && bone.PartialId == part)
                         {
                             var raw = bone.LastRawTransform;
+                            float dx = query.TryGetValue("dx", out var dxs) ? float.Parse(dxs, CultureInfo.InvariantCulture) : 0f;
                             float dy = query.TryGetValue("dy", out var dys) ? float.Parse(dys, CultureInfo.InvariantCulture) : 0f;
-                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(0f, dy, 0f), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale);
+                            float dz = query.TryGetValue("dz", out var dzs) ? float.Parse(dzs, CultureInfo.InvariantCulture) : 0f;
+                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale);
                             _bonePosing.ApplyTransform(bone, wanted, raw);
                             var m = _bonePosing.GetModification(bone);
                             return Json(new { ok = true, modification = m is { } mod ? new { mod.Rotation.X, mod.Rotation.Y, mod.Rotation.Z, mod.Rotation.W } : null });

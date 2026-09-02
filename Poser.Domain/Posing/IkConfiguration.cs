@@ -10,6 +10,10 @@ public enum IkSolver
     /// that converges in a few passes on long chains where CCD curls the
     /// tail first.</summary>
     Fabrik,
+    /// <summary>A rope: both ends known, the links' total length fixed,
+    /// the slack hanging as a catenary in the vertical plane through the
+    /// ends; straight when the ends are further apart than the rope.</summary>
+    Rope,
 }
 
 public enum IkTargetMode
@@ -62,7 +66,7 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
-        if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik))
+        if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
         if (!float.IsFinite(SwivelDegrees)
             || SwivelDegrees is < -MaxSwivelDegrees or > MaxSwivelDegrees)

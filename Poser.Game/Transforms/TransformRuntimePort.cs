@@ -315,7 +315,11 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         if (!resolved.Success)
             return FromBinding(resolved.Status, resolved.Detail);
         var bone = resolved.Value!;
-        var converted = FromLegacy(bone.LastTransform);
+        // A bone the game left with no usable rotation (a chain link frozen
+        // mid-blend at zero) is captured sane rather than refusing the
+        // whole edit: its undo puts back the sane value.
+        var converted = FromLegacy(bone.LastTransform)
+            ?? FromLegacy(Sanitized(bone.LastTransform));
         if (converted == null)
             return TransformPortResult.Fail(
                 TransformPortStatus.InvalidTransform,
@@ -362,6 +366,20 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             out _)
             ? converted
             : null;
+
+    private static LegacyTransform Sanitized(LegacyTransform value)
+    {
+        var rotation = Poser.Domain.Transforms.TransformMath.IsValidRotation(value.Rotation)
+            ? Poser.Domain.Transforms.TransformMath.NormalizeRotation(value.Rotation)
+            : System.Numerics.Quaternion.Identity;
+        var position = Poser.Domain.Transforms.TransformMath.IsFinite(value.Position)
+            ? value.Position
+            : System.Numerics.Vector3.Zero;
+        var scale = Poser.Domain.Transforms.TransformMath.IsFinite(value.Scale)
+            ? value.Scale
+            : System.Numerics.Vector3.One;
+        return new LegacyTransform(position, rotation, scale);
+    }
 
     private static LegacyTransform ToLegacy(DomainTransform value) =>
         new(value.Position, value.Rotation, value.Scale);

@@ -652,10 +652,19 @@ public class PoseFileService : IPoseFileService
         return BoneFilterMatch.Excluded;
     }
 
-    private static void PlanBoneTransform(
+    private void PlanBoneTransform(
         PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components,
         IReadOnlyDictionary<string, PoseFile.BoneData> collection)
     {
+        // A live bone with no usable rotation (a chain link frozen mid-blend
+        // at zero) cannot be captured for undo and cannot take a delta; it
+        // is left out so the rest of the pose still lands.
+        if (!TransformMath.IsValidRotation(bone.LastTransform.Rotation)
+            || !TransformMath.IsValidRotation(bone.LastRawTransform.Rotation))
+        {
+            _log.Warning($"Pose import: {bone.BoneName} has no usable rotation and was left out.");
+            return;
+        }
         // The FILE transform verbatim: file bones are LastRawTransform
         // snapshots taken AFTER the update phase's post-reparent refresh
         // (CreatePoseFile above; Brio SkeletonService.cs:243). The delta
