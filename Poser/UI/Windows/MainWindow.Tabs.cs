@@ -406,7 +406,7 @@ public partial class MainWindow
         // The library paints its own bands and rules, so it takes the
         // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
         _vm.ContentFlush = tab is "Library";
-        _vm.ContentOwnsViewport = tab is "Pose";
+        _vm.ContentOwnsViewport = tab is "Pose" or "Appearance";
         // Every environment tab is a PageForm, as the one it replaced was.
         // "Light" is deliberately shared: it is a light's whole editor and the
         // environment's lighting tab, and both are pages, so the layout answer

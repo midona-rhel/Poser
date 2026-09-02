@@ -62,15 +62,17 @@ public static partial class Crystarium
         return hit.Activated;
     }
 
-    /// <summary>A square of one colour that opens something — a dye's
-    /// swatch beside its name. No colour paints the empty well.</summary>
+    /// <summary>A box of one colour that opens something — a dye's row,
+    /// the colour being the value. A label reads in contrast on it. No
+    /// colour paints the empty well.</summary>
     public static bool ColorTile(
-        string id, Vector4? color, float side, Action? onClick = null,
-        string? help = null, bool disabled = false)
+        string id, Vector4? color, float width, float height,
+        Action? onClick = null, string? label = null, string? help = null,
+        bool disabled = false)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
-        var hit = Interactive.Reserve(id, new Vector2(side * scale), disabled);
+        var hit = Interactive.Reserve(id, new Vector2(width * scale, height * scale), disabled);
         var draw = ImGui.GetWindowDrawList();
         var fill = color is { } paint ? paint with { W = 1f } : theme.Chrome.InputWell;
         BoxRenderer.Draw(draw, hit.ScreenMin, hit.ScreenMax, new BoxStyle
@@ -84,6 +86,19 @@ public static partial class Crystarium
                 BackgroundColor = theme.Chrome.WeakOverlay,
                 BorderRadius = theme.Radii.Control,
             });
+        if (!string.IsNullOrEmpty(label))
+        {
+            var style = new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Color = color is { } painted ? painted.ContrastText() : theme.Text,
+                Disabled = disabled,
+            };
+            float inset = theme.Spacing.Six * scale;
+            var bandMin = hit.ScreenMin + new Vector2(inset, 0f);
+            var bandSize = hit.ScreenMax - hit.ScreenMin - new Vector2(inset * 2f, 0f);
+            TextInBand(bandMin, bandSize, TruncateText(label!, style, bandSize.X), style);
+        }
         if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
                 hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -181,40 +181,59 @@ public sealed partial class AppearancePane
         _mcdfExportBrowser.Draw();
     }
 
+    /// <summary>The view pill stands fixed above the page, as the Pose
+    /// strip does; the page scrolls in its own region under it. The shell
+    /// hands this tab the whole viewport for that.</summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         DrainPicker();
         DrainModelPicker();
         DrainWardrobePickers();
 
-        Crystarium.Page("appearance", origin, size, page =>
-        {
-            if (_scene.Selection.PrimaryActor is not { } actor)
+        float s = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float band = global::Poser.UI.Views.AppShellView.ToolbarHeight * s;
+        float pill = theme.Controls.NavigationHeight * s;
+        ImGui.SetCursorScreenPos(origin + new Vector2(0f, (band - pill) * 0.5f));
+        Crystarium.SegmentedControl(
+            "##appearance-view", ViewLabels, _view,
+            next => _view = next,
+            alignFirstTabToCursor: true,
+            itemHelp: index => index == 0
+                ? "The actor in the scene"
+                : "What the actor wears");
+
+        float shellLeft = origin.X - global::Poser.UI.Views.AppShellView.MainHorizontalPadding * s;
+        float shellWidth = size.X
+            + (global::Poser.UI.Views.AppShellView.MainHorizontalPadding * 2f + global::Poser.UI.Views.AppShellView.ScrollbarWidth) * s;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            new Vector2(shellLeft, origin.Y + band - 1f * s),
+            new Vector2(shellLeft + shellWidth, origin.Y + band),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.FormSeparator)));
+
+        float bodyHeight = MathF.Max(1f, size.Y - band);
+        ImGui.SetCursorScreenPos(new Vector2(shellLeft, origin.Y + band));
+        Crystarium.ScrollRegion(
+            "appearance-body",
+            shellWidth / s,
+            bodyHeight / s,
+            region =>
             {
-                page.EmptyState();
-                return;
-            }
-            // The view pill leads the page: Actor is what the actor IS in
-            // the scene, Equipment what it wears through Glamourer.
-            page.Section(string.Empty, form => form.Custom(string.Empty,
-                Crystarium.ActiveTheme.Controls.NavigationHeight, row =>
+                var cursor = ImGui.GetCursorScreenPos();
+                Crystarium.Page("appearance", cursor,
+                    new Vector2(region.ContentWidth * s, bodyHeight), page =>
                 {
-                    ImGui.SetCursorScreenPos(row.Origin);
-                    Crystarium.SegmentedControl(
-                        "##appearance-view", ViewLabels, _view,
-                        next => _view = next,
-                        alignFirstTabToCursor: true,
-                        itemHelp: index => index == 0
-                            ? "The actor in the scene"
-                            : "What the actor wears");
-                }), divider: false);
-            if (_view == 1)
-            {
-                DrawEquipmentView(page, actor);
-                return;
-            }
-            DrawActorView(page, actor);
-        });
+                    if (_scene.Selection.PrimaryActor is not { } actor)
+                    {
+                        page.EmptyState();
+                        return;
+                    }
+                    if (_view == 1)
+                        DrawEquipmentView(page, actor);
+                    else
+                        DrawActorView(page, actor);
+                });
+            });
     }
 
     private void DrawActorView(Crystarium.PageScope page, ActorId actor)
@@ -232,7 +251,8 @@ public sealed partial class AppearancePane
                     if (supported && _presentation.Read(actor) is { } r)
                         GeneralRows(form, actor,
                             _presentation.OverridesFor(actor), r);
-                });
+                },
+                divider: false);
             bool first = false;
 
             if (supported && _presentation.Read(actor) is { } reading)
@@ -746,6 +766,33 @@ public sealed partial class AppearancePane
                 : mcdfOwned
                     ? mcdfReason
                     : "Choose the Penumbra collection for this actor");
+
+        form.Selector(
+            "Design",
+            external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
+            () => OpenPicker(actor, "Design", _integration.ListDesigns),
+            () => ReportExternal(_disruptive.Run(actor, "Reset design",
+                () => _integration.ResetDesign(actor)), "Reset Design"),
+            available: glamourer.Available && !mcdfOwned,
+            owned: external.DesignOwned,
+            disruptive: true,
+            help: "Apply a saved Glamourer design to this actor only. "
+                + "Reset puts back the look it had before Poser changed it.",
+            disabledHelp: !glamourer.Available
+                ? glamourer.Detail
+                : mcdfOwned
+                    ? mcdfReason
+                    : "Apply a Glamourer design to this actor only");
+        form.Actions("Look", actions =>
+        {
+            actions.Button("Save design", () => SaveDesign(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
+            actions.Button("Revert", () => RevertLook(actor),
+                disabled: !glamourer.Available,
+                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
+                variant: ButtonVariant.Disruptive);
+        });
 
         form.Selector(
             "Body profile",

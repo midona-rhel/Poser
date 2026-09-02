@@ -10,13 +10,14 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// The Equipment view: what the actor wears, through Glamourer. The look
-/// (design, save, revert) and the outfit verbs lead; then a card per slot
-/// — the icon two rows tall beside the slot's readout and its picker, the
-/// two dyes under it — the facewear, the visibility switches; and last,
-/// closed, the raw model ids for what no item names. Every change is one
-/// journal step through <see cref="Game.Journal.WardrobeSession"/>.
-/// Without Glamourer everything disables in place and says why.
+/// The Equipment view: what the actor wears, through Glamourer. A card
+/// per slot — the icon two rows tall beside the item picker, which IS the
+/// value, with the remove and prop verbs under it — then the two dyes as
+/// colour-filled rows under one label; the facewear; the visibility
+/// switches; the raw model ids, closed; and the outfit verbs last. Every
+/// change is one journal step through
+/// <see cref="Game.Journal.WardrobeSession"/>. Without Glamourer
+/// everything disables in place and says why.
 /// </summary>
 public sealed partial class AppearancePane
 {
@@ -41,9 +42,9 @@ public sealed partial class AppearancePane
         EquipSlot.Neck, EquipSlot.Wrists, EquipSlot.RightFinger, EquipSlot.LeftFinger,
     };
 
-    private bool _openLook = true;
     private bool _openGear = true;
     private bool _openModelIds;
+    private bool _openOutfit = true;
 
     private static readonly TimeSpan WardrobeInterval = TimeSpan.FromSeconds(1);
     private ActorId? _wardrobeActor;
@@ -91,60 +92,20 @@ public sealed partial class AppearancePane
         bool ready = glamourer.Available;
         string? blocked = ready ? null : glamourer.Detail;
         var state = ready ? ReadWardrobe(actor) : null;
-        var external = _integration.OverridesFor(actor);
-        bool mcdfOwned = external.Mcdf != null;
-        const string mcdfReason =
-            "An imported character file is controlling this actor's appearance. Reset MCDF first.";
-
-        page.Section("Look", _openLook, next => _openLook = next, form =>
-        {
-            form.Selector(
-                "Design",
-                external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
-                () => OpenPicker(actor, "Design", _integration.ListDesigns),
-                () => ReportExternal(_disruptive.Run(actor, "Reset design",
-                    () => _integration.ResetDesign(actor)), "Reset Design"),
-                available: ready && !mcdfOwned,
-                owned: external.DesignOwned,
-                disruptive: true,
-                help: "Apply a saved Glamourer design",
-                disabledHelp: !ready ? blocked : mcdfOwned ? mcdfReason : "Apply a Glamourer design to this actor only");
-            form.Actions("Presets", actions =>
-            {
-                actions.Button("Save design", () => SaveDesign(actor),
-                    disabled: !ready,
-                    help: ready ? "Save this look as a design" : blocked);
-                actions.Button("Revert", () => RevertLook(actor),
-                    disabled: !ready,
-                    help: ready ? "Back to the game's own look" : blocked,
-                    variant: ButtonVariant.Disruptive);
-            });
-            form.Actions("Outfit", actions =>
-            {
-                actions.IconButton(TablerIcon.Eraser,
-                    () => Outfit(actor, "Remove all", static _ => new WardrobeSlot(0, 0, 0)),
-                    disabled: !ready, help: ready ? "Remove all" : blocked, id: "wardrobe-outfit-none");
-                actions.IconButton(TablerIcon.Shirt,
-                    () => Outfit(actor, "Wear smallclothes", SmallclothesFor),
-                    disabled: !ready, help: ready ? "Smallclothes" : blocked, id: "wardrobe-outfit-small");
-                actions.IconButton(TablerIcon.Crown,
-                    () => Outfit(actor, "Wear the Emperor's set", EmperorsFor),
-                    disabled: !ready, help: ready ? "Emperor's set" : blocked, id: "wardrobe-outfit-emperor");
-                actions.IconButton(TablerIcon.Ghost,
-                    () => Outfit(actor, "Wear invisible clothes", InvisibleFor),
-                    disabled: !ready, help: ready ? "Invisible clothes" : blocked, id: "wardrobe-outfit-invisible");
-            });
-            if (ready && state is null && _wardrobeDetail is { } detail)
-                form.Status(detail);
-        });
 
         page.Section("Gear", _openGear, next => _openGear = next, form =>
         {
+            if (!ready)
+                form.Status(blocked);
+            else if (state is null && _wardrobeDetail is { } detail)
+                form.Status(detail);
             form.PairRows();
             if (form.TwoTrack)
             {
                 for (int i = 0; i < LeftTrack.Length; i++)
                 {
+                    if (i > 0)
+                        form.Divider();
                     ItemRow(form, actor, LeftTrack[i], state, ready, blocked);
                     ItemRow(form, actor, RightTrack[i], state, ready, blocked);
                     for (int dye = 0; dye < 2; dye++)
@@ -156,13 +117,16 @@ public sealed partial class AppearancePane
             }
             else
             {
-                foreach (var slot in Stacked)
+                for (int i = 0; i < Stacked.Length; i++)
                 {
-                    ItemRow(form, actor, slot, state, ready, blocked);
-                    DyeRow(form, actor, slot, 0, state, ready, blocked);
-                    DyeRow(form, actor, slot, 1, state, ready, blocked);
+                    if (i > 0)
+                        form.Divider();
+                    ItemRow(form, actor, Stacked[i], state, ready, blocked);
+                    DyeRow(form, actor, Stacked[i], 0, state, ready, blocked);
+                    DyeRow(form, actor, Stacked[i], 1, state, ready, blocked);
                 }
             }
+            form.Divider();
             form.FullLine();
             FacewearRow(form, actor, state, ready, blocked);
             form.EndPair();
@@ -176,20 +140,37 @@ public sealed partial class AppearancePane
                 new Crystarium.CheckItem("Weapon", state?.WeaponVisible ?? true,
                     on => Switch(actor, MetaSwitch.WeaponVisible, on),
                     ready ? "Show the weapons" : blocked, !ready));
-        });
+        }, divider: false);
 
         page.Section("Model ids", _openModelIds, next => _openModelIds = next, form =>
         {
             foreach (var slot in Stacked)
                 ModelIdRow(form, actor, slot, state, ready, blocked);
         });
+
+        page.Section("Outfit", _openOutfit, next => _openOutfit = next, form =>
+            form.Actions(string.Empty, actions =>
+            {
+                actions.Button("Remove all",
+                    () => Outfit(actor, "Remove all", static _ => new WardrobeSlot(0, 0, 0)),
+                    disabled: !ready, help: ready ? "Take everything off" : blocked);
+                actions.Button("Smallclothes",
+                    () => Outfit(actor, "Wear smallclothes", SmallclothesFor),
+                    disabled: !ready, help: ready ? "The NPC smallclothes" : blocked);
+                actions.Button("Emperor's",
+                    () => Outfit(actor, "Wear the Emperor's set", EmperorsFor),
+                    disabled: !ready, help: ready ? "The Emperor's New set" : blocked);
+                actions.Button("Invisible",
+                    () => Outfit(actor, "Wear invisible clothes", InvisibleFor),
+                    disabled: !ready, help: ready ? "Clothes that do not draw" : blocked);
+            }, fullWidth: true));
     }
 
     // ── rows ────────────────────────────────────────────────────────────
 
-    /// <summary>The slot's card head: the icon two rows tall, the ids it
-    /// carries on the first line, the picker — which is the value — on the
-    /// second, with the prop search on weapons and the remove verb.</summary>
+    /// <summary>The slot's card head: the icon two rows tall; beside it
+    /// the picker, which is the value, on the first line and the remove
+    /// and prop verbs on the second.</summary>
     private void ItemRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot,
         WardrobeState? state, bool ready, string? blocked)
@@ -218,65 +199,50 @@ public sealed partial class AppearancePane
                 disabled: !ready);
 
             float x = origin.X + side + gap;
-            float width = MathF.Max(0f, row.ControlWidth - side - gap);
-
-            // The first line says what the picker's name cannot: the ids.
-            Crystarium.TextInBand(
-                new Vector2(x, origin.Y),
-                new Vector2(width, half),
-                worn is { } ids ? IdReadout(ids, item) : "—",
-                new TextStyle
-                {
-                    Size = theme.Typography.CaptionSize,
-                    Family = FontFamily.Mono,
-                    Color = theme.FormLabel,
-                });
-
-            bool weapon = slot is EquipSlot.MainHand or EquipSlot.OffHand;
+            float width = MathF.Max(1f, row.ControlWidth - side - gap);
             float square = theme.Controls.WorkspaceHeight;
-            float verbs = square * s + gap + (weapon ? square * s + gap : 0f);
-            float nameW = MathF.Max(1f, width - verbs);
-            float top = origin.Y + half + (half - square * s) * 0.5f;
+            float top = origin.Y + (half - square * s) * 0.5f;
             ImGui.SetCursorScreenPos(new Vector2(x, top));
             Crystarium.Button(
                 Crystarium.TruncateText(
                     worn is { } w2 ? WornName(w2, item) : "—",
                     new TextStyle { Size = theme.Typography.LabelSize },
-                    MathF.Max(1f, nameW - theme.Spacing.Six * 2f * s)),
+                    MathF.Max(1f, width - theme.Spacing.Six * 2f * s)),
                 () => OpenItemPicker(actor, slot),
-                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(nameW / s) },
+                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(width / s) },
                 disabled: !ready,
                 help: ready ? "Choose an item" : blocked,
                 id: $"wardrobe-{slot}-pick");
-            x += nameW + gap;
-            if (weapon)
-            {
-                ImGui.SetCursorScreenPos(new Vector2(x, top));
-                Crystarium.IconButton(TablerIcon.Wand,
-                    () => OpenPropPicker(actor, slot),
-                    ControlStyle.Square(square), !ready,
-                    ready ? "Wear a prop" : blocked,
-                    id: $"wardrobe-{slot}-prop");
-                x += square * s + gap;
-            }
+
+            float second = origin.Y + half + (half - square * s) * 0.5f;
             bool empty = worn is not { } w3 || WardrobeIds.IsNothing(w3.ItemId);
-            ImGui.SetCursorScreenPos(new Vector2(x, top));
+            ImGui.SetCursorScreenPos(new Vector2(x, second));
             Crystarium.IconButton(TablerIcon.X,
                 () => SetItem(actor, slot, 0, 0, 0, $"Remove {SlotName(slot).ToLowerInvariant()}"),
                 ControlStyle.Square(square), !ready || empty,
                 ready ? "Remove" : blocked,
                 id: $"wardrobe-{slot}-clear");
+            if (slot is EquipSlot.MainHand or EquipSlot.OffHand)
+            {
+                ImGui.SetCursorScreenPos(new Vector2(x + square * s + gap, second));
+                Crystarium.IconButton(TablerIcon.Wand,
+                    () => OpenPropPicker(actor, slot),
+                    ControlStyle.Square(square), !ready,
+                    ready ? "Wear a prop" : blocked,
+                    id: $"wardrobe-{slot}-prop");
+            }
         }, help: SlotHelp(slot));
     }
 
-    /// <summary>One dye: the square in its colour, the name — the picker —
-    /// and the clear. Disabled in place on an item that takes fewer.</summary>
+    /// <summary>One dye as a row filled with its colour — the colour is
+    /// the value — and the clear beside it. The first row carries the
+    /// label for both. Disabled in place on an item that takes fewer.</summary>
     private void DyeRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot, int which,
         WardrobeState? state, bool ready, string? blocked)
     {
         var theme = Crystarium.ActiveTheme;
-        form.Custom(which == 0 ? "Dye 1" : "Dye 2", theme.Controls.FormRowHeight, row =>
+        form.Custom(which == 0 ? "Dye" : string.Empty, theme.Controls.FormRowHeight, row =>
         {
             float s = row.Scale;
             float gap = theme.Page.ActionGap * s;
@@ -296,36 +262,24 @@ public sealed partial class AppearancePane
                 : null;
 
             var seat = row.CenterControl(square);
-            float x = seat.X;
-            ImGui.SetCursorScreenPos(new Vector2(x, seat.Y));
+            float fillW = MathF.Max(1f, row.ControlWidth - square * s - gap);
+            ImGui.SetCursorScreenPos(seat);
             Crystarium.ColorTile(
-                $"wardrobe-{slot}-dye{which}-swatch",
+                $"wardrobe-{slot}-dye{which}",
                 dye is { } paint ? DyeColor(paint.Color) : null,
+                fillW / s,
                 square,
                 () => OpenDyePicker(actor, slot, which),
-                help: enabled ? (dye?.Name ?? "No dye") : why,
-                disabled: !enabled);
-            x += square * s + gap;
-            float nameW = MathF.Max(1f, row.ControlWidth - (square * s + gap) * 2f);
-            ImGui.SetCursorScreenPos(new Vector2(x, seat.Y));
-            Crystarium.Button(
-                Crystarium.TruncateText(
-                    dye?.Name ?? "No dye",
-                    new TextStyle { Size = theme.Typography.LabelSize },
-                    MathF.Max(1f, nameW - theme.Spacing.Six * 2f * s)),
-                () => OpenDyePicker(actor, slot, which),
-                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(nameW / s) },
-                disabled: !enabled,
+                label: dye?.Name ?? "No dye",
                 help: enabled ? "Choose a dye" : why,
-                id: $"wardrobe-{slot}-dye{which}-pick");
-            x += nameW + gap;
-            ImGui.SetCursorScreenPos(new Vector2(x, seat.Y));
+                disabled: !enabled);
+            ImGui.SetCursorScreenPos(new Vector2(seat.X + fillW + gap, seat.Y));
             Crystarium.IconButton(TablerIcon.X,
                 () => SetDye(actor, slot, which, 0),
                 ControlStyle.Square(square), !enabled || dyeId == 0,
                 enabled ? "Clear the dye" : why,
                 id: $"wardrobe-{slot}-dye{which}-clear");
-        });
+        }, help: which == 0 ? "The item's two dyes" : null);
     }
 
     private void FacewearRow(
@@ -334,7 +288,7 @@ public sealed partial class AppearancePane
     {
         var theme = Crystarium.ActiveTheme;
         float tile = theme.Controls.FormRowHeight * CardTile;
-        form.Custom("Facewear", tile, row =>
+        form.Custom("Face", tile, row =>
         {
             float s = row.Scale;
             float gap = theme.Page.ActionGap * s;
@@ -354,34 +308,21 @@ public sealed partial class AppearancePane
                 disabled: !ready);
 
             float x = origin.X + side + gap;
-            float width = MathF.Max(0f, row.ControlWidth - side - gap);
-            Crystarium.TextInBand(
-                new Vector2(x, origin.Y),
-                new Vector2(width, half),
-                state is null ? "—" : entry is { } known
-                    ? "#" + known.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    : "none",
-                new TextStyle
-                {
-                    Size = theme.Typography.CaptionSize,
-                    Family = FontFamily.Mono,
-                    Color = theme.FormLabel,
-                });
+            float width = MathF.Max(1f, row.ControlWidth - side - gap);
             float square = theme.Controls.WorkspaceHeight;
-            float nameW = MathF.Max(1f, width - square * s - gap);
-            float top = origin.Y + half + (half - square * s) * 0.5f;
+            float top = origin.Y + (half - square * s) * 0.5f;
             ImGui.SetCursorScreenPos(new Vector2(x, top));
             Crystarium.Button(
                 Crystarium.TruncateText(
                     state is null ? "—" : entry?.Name ?? "None",
                     new TextStyle { Size = theme.Typography.LabelSize },
-                    MathF.Max(1f, nameW - theme.Spacing.Six * 2f * s)),
+                    MathF.Max(1f, width - theme.Spacing.Six * 2f * s)),
                 () => OpenFacewearPicker(actor),
-                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(nameW / s) },
+                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(width / s) },
                 disabled: !ready,
                 help: ready ? "Choose a facewear" : blocked,
                 id: "wardrobe-facewear-pick");
-            ImGui.SetCursorScreenPos(new Vector2(x + nameW + gap, top));
+            ImGui.SetCursorScreenPos(new Vector2(x, origin.Y + half + (half - square * s) * 0.5f));
             Crystarium.IconButton(TablerIcon.X,
                 () => SetFacewear(actor, 0, "Remove facewear"),
                 ControlStyle.Square(square), !ready || entry is null,
@@ -557,6 +498,7 @@ public sealed partial class AppearancePane
         : IsAccessory(slot) ? new WardrobeSlot(WardrobeIds.EmperorsAccessory, 0, 0)
         : null;
 
+    /// <summary>Saves the look as a Glamourer design under a typed name.</summary>
     private void SaveDesign(ActorId actor)
     {
         string suggested = _scene.Snapshot.FindActor(actor) is { } described
@@ -618,6 +560,7 @@ public sealed partial class AppearancePane
             });
     }
 
+    /// <summary>Items by name, or by id when the search is a number.</summary>
     private IReadOnlyList<WardrobeItem> ItemSearch(string search)
     {
         if (_itemMemoQuery == search && _itemMemoSlot == _pickerSlot)
@@ -625,12 +568,23 @@ public sealed partial class AppearancePane
         _itemMemoQuery = search;
         _itemMemoSlot = _pickerSlot;
         var all = _wardrobe.ItemsFor(_pickerSlot);
-        if (string.IsNullOrWhiteSpace(search))
+        string trimmed = search.Trim();
+        if (trimmed.Length == 0)
             return _itemMemo = all;
+        bool byId = uint.TryParse(
+            trimmed, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out uint id);
         var found = new List<WardrobeItem>();
         foreach (var item in all)
-            if (item.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
+        {
+            if (byId && item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    .StartsWith(trimmed, StringComparison.Ordinal))
                 found.Add(item);
+            else if (item.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+                found.Add(item);
+        }
+        if (byId)
+            found.Sort((a, b) => a.Id == id ? -1 : b.Id == id ? 1 : 0);
         return _itemMemo = found;
     }
 
@@ -780,23 +734,12 @@ public sealed partial class AppearancePane
         if (WardrobeIds.IsNothing(worn.ItemId))
             return "Nothing";
         if (WardrobeIds.IsCustom(worn.ItemId))
-            return "Model";
-        return "Unknown item";
-    }
-
-    private static string IdReadout(WardrobeSlot worn, WardrobeItem? item)
-    {
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
-        if (item is not null)
-            return $"#{item.Id.ToString(culture)} · {item.Model.ToString(culture)}·{item.WeaponType.ToString(culture)}·{item.Variant.ToString(culture)}";
-        if (WardrobeIds.IsCustom(worn.ItemId))
         {
             var (model, type, variant) = WardrobeIds.Split(worn.ItemId);
-            return $"{model.ToString(culture)}·{type.ToString(culture)}·{variant.ToString(culture)}";
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            return $"Model {model.ToString(culture)}·{type.ToString(culture)}·{variant.ToString(culture)}";
         }
-        if (WardrobeIds.IsNothing(worn.ItemId) || WardrobeIds.IsSmallclothes(worn.ItemId))
-            return "—";
-        return "#" + worn.ItemId.ToString(culture);
+        return "Unknown item";
     }
 
     private FacewearEntry? FacewearById(ulong id)
