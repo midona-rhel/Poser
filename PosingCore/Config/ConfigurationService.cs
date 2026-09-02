@@ -148,6 +148,17 @@ public class ConfigurationService : IDisposable
         Save();
     }
 
+    /// <summary>The plugin's own config directory, for caches that live
+    /// beside the config; null where the host has none (tests).</summary>
+    public string? PluginDirectory
+    {
+        get
+        {
+            try { return _pluginInterface.GetPluginConfigDirectory(); }
+            catch { return null; }
+        }
+    }
+
     public void Save()
     {
         _pluginInterface.SavePluginConfig(Config);

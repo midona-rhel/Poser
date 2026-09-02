@@ -512,7 +512,8 @@ public static partial class Crystarium
                         if (hit.Activated)
                             picked = i;
                     }
-                });
+                },
+                edgePadding: ActiveTheme.Spacing.Two);
             // Applied after the region closes: travelling refills the listing
             // the loop is walking.
             if (picked >= 0)
@@ -728,7 +729,8 @@ public static partial class Crystarium
                         picked = i;
                         second = hit.DoubleClicked;
                     }
-                });
+                },
+                edgePadding: ActiveTheme.Spacing.Two);
             if (picked >= 0)
                 PickEntry(picked, second);
         }

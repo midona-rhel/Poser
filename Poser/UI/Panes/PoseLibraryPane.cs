@@ -624,7 +624,12 @@ public sealed class PoseLibraryPane
         DrawApplyMenu();
         DrawTileMenu();
         DrawRenameModal();
-        DrawMetadataModal();
+        // While the image picker is open the modal is not begun: an ImGui
+        // modal that is begun blocks every other window, picker included,
+        // and dims over it. Its state is untouched, so it resumes where it
+        // was when the picker closes.
+        if (!_metaImageBrowser.IsOpen)
+            DrawMetadataModal();
         _metaImageBrowser.Draw();
         DrawDeleteModal();
     }

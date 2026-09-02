@@ -596,8 +596,13 @@ public static class PoseLibraryView
             new Vector2(origin.X + railWidth - rule, rowTop));
         if (railWidth > rule)
         {
+            // The same fill-opacity recipe as the surfaces around it: the
+            // raised rung at the configured window opacity, never opaque.
             draw.AddRectFilled(
-                rail.Min, rail.Max, Packed(theme.SurfaceRaised));
+                rail.Min, rail.Max, Packed(theme.SurfaceRaised with
+                {
+                    W = Crystarium.FloatingSurface.FillColor.W,
+                }));
             draw.AddRectFilled(
                 new Vector2(rail.Max.X, bandBottom),
                 new Vector2(rail.Max.X + rule, rowTop),

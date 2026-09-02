@@ -66,6 +66,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         _poseStore = poseStore;
         _observeDirectory = observeDirectory;
         _sourceSignature = BuildSourceSignature();
+        LoadIndex();
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
 
@@ -265,6 +266,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             // Single reference swap is the last step, so a reader either sees
             // the whole previous snapshot or the whole new one.
             var revision = _snapshot.Revision + 1;
+            PersistIndex();
             Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
             {
                 Revision = revision,
@@ -451,11 +453,19 @@ public sealed class PoseLibraryService : IPoseLibraryService
             ObjectsCount = node.ObjectsCount
         });
 
-        foreach (var file in node.Files)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            entries.Add(CreateEntry(file, folderIndex));
-        }
+        // The reads are the cost: entries build in parallel and land in
+        // file order. An unchanged file never reaches a read at all.
+        var built = new PoseLibraryEntry[node.Files.Count];
+        System.Threading.Tasks.Parallel.For(
+            0,
+            node.Files.Count,
+            new System.Threading.Tasks.ParallelOptions
+            {
+                CancellationToken = cancellation,
+                MaxDegreeOfParallelism = ScanParallelism,
+            },
+            i => built[i] = CreateEntry(node.Files[i], folderIndex));
+        entries.AddRange(built);
 
         foreach (var child in node.Children)
             Flatten(child, folders, entries, cancellation);
@@ -464,20 +474,52 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
     {
         var name = Path.GetFileNameWithoutExtension(filePath);
-
         DateTime modified;
+        long length;
         try
         {
-            modified = File.GetLastWriteTime(filePath);
+            var info = new FileInfo(filePath);
+            modified = info.LastWriteTime;
+            length = info.Length;
         }
         catch (Exception)
         {
             modified = default;
+            length = -1;
         }
-
         var kind = KindOf(filePath);
         var isLegacy = kind == PoseLibraryEntryKind.Pose
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
+        // The index answers for a file whose stamp and size have not
+        // changed since it was last read — no open, no parse.
+        if (length >= 0
+            && _index.TryGetValue(filePath, out var indexed)
+            && indexed.Ticks == modified.Ticks
+            && indexed.Length == length)
+        {
+            return new PoseLibraryEntry
+            {
+                Kind = kind,
+                FilePath = filePath,
+                Name = name,
+                NameLower = name.ToLowerInvariant(),
+                ModifiedText = modified.ToString(
+                    LibraryStamp.DateTimeFormat, CultureInfo.InvariantCulture),
+                Modified = modified,
+                Folder = folderIndex,
+                Author = indexed.Author,
+                AuthorLower = indexed.Author?.ToLowerInvariant() ?? string.Empty,
+                Tags = indexed.Tags,
+                TagsLower = indexed.Tags.Select(tag => tag.ToLowerInvariant()).ToArray(),
+                MetadataStatus = (PoseLibraryMetadataStatus)indexed.Status,
+                MetadataDetail = indexed.Detail,
+                IsLegacy = isLegacy,
+                HasThumbnail = indexed.HasThumbnail,
+                SceneContents = indexed.SceneContents,
+                ScenePlace = indexed.ScenePlace,
+                SceneCapturedAt = indexed.SceneCapturedAt,
+            };
+        }
 
         string? author = null;
         IReadOnlyList<string> tags = [];
@@ -541,6 +583,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
             (status, detail) = PoseLibraryFileActions.Classify(metadata);
         }
 
+        if (length >= 0)
+        {
+            _index[filePath] = new IndexedEntry(
+                modified.Ticks, length, author, tags.ToArray(), hasThumbnail,
+                (int)status, detail, sceneContents, scenePlace, sceneCapturedAt);
+            _indexDirty = true;
+        }
         return new PoseLibraryEntry
         {
             Kind = kind,
@@ -567,6 +616,78 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     /// <summary>The scene row's one-line contents, minted at scan time
     /// because the grid reads it on every keystroke.</summary>
+    // ── the index ──────────────────────────────────────────────────────
+    // What a read of a file yielded, keyed by path and stamped with the
+    // file's write time and size: a rescan reads only what changed, and a
+    // reopen of the library reads nothing. Saved beside the config after
+    // a scan that learned something.
+    private const int ScanParallelism = 4;
+    private const string IndexFileName = "library-index.json";
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IndexedEntry> _index =
+        new(StringComparer.OrdinalIgnoreCase);
+    private volatile bool _indexDirty;
+
+    private sealed record IndexedEntry(
+        long Ticks,
+        long Length,
+        string? Author,
+        string[] Tags,
+        bool HasThumbnail,
+        int Status,
+        string Detail,
+        string SceneContents,
+        string ScenePlace,
+        DateTimeOffset? SceneCapturedAt);
+
+    private string? IndexPath()
+    {
+        var directory = _config.PluginDirectory;
+        return string.IsNullOrEmpty(directory)
+            ? null
+            : Path.Combine(directory, IndexFileName);
+    }
+
+    private void LoadIndex()
+    {
+        try
+        {
+            if (IndexPath() is not { } path || !File.Exists(path))
+                return;
+            var stored = System.Text.Json.JsonSerializer.Deserialize<
+                Dictionary<string, IndexedEntry>>(File.ReadAllText(path));
+            if (stored == null)
+                return;
+            foreach (var (file, entry) in stored)
+                if (entry.Tags != null && entry.Detail != null)
+                    _index[file] = entry;
+        }
+        catch (Exception)
+        {
+            // A damaged index is rebuilt by the next scan.
+            _index.Clear();
+        }
+    }
+
+    private void PersistIndex()
+    {
+        if (!_indexDirty)
+            return;
+        _indexDirty = false;
+        try
+        {
+            if (IndexPath() is not { } path)
+                return;
+            var snapshot = new Dictionary<string, IndexedEntry>(_index, StringComparer.OrdinalIgnoreCase);
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, System.Text.Json.JsonSerializer.Serialize(snapshot));
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception)
+        {
+            // The index is a cache: losing a save costs one rescan's reads.
+        }
+    }
+
     private static string DescribeScene(SceneMetadataReadOutcome metadata)
     {
         var parts = new List<string>(4);
