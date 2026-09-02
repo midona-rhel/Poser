@@ -279,7 +279,8 @@ public sealed class CleanSceneLifecycle : IDisposable
             _gestures.ReconcileScene(_scene.Contains);
             _history.Reconcile(
                 _scene.Contains,
-                lineage => _scene.Snapshot.FindActor(lineage) is not null);
+                lineage => _scene.Snapshot.FindActor(lineage) is not null,
+                _bindings.CurrentTarget);
             // Animation follows the same exact-generation rule: a replaced
             // actor's old entry is released without touching the new body.
             // The port's detour-facing address index is rebuilt from the

@@ -136,11 +136,49 @@ public sealed class TransformHistory
     /// </summary>
     public void Reconcile(
         Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
-        Func<Guid, bool> lineagePresent)
+        Func<Guid, bool> lineagePresent,
+        Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
     {
         bool ActorsGone(HistoryEntry entry) =>
             entry.Context is { } context &&
             context.Keys.Any(key => !lineagePresent(key.Lineage));
+        // A patch whose targets went stale is first RE-KEYED: a bone edit
+        // survives the actor's redraw by naming the same bone on the new
+        // body, as Brio's whole-pose snapshot does (ruled 2026-09-03). Only
+        // a patch that cannot be re-keyed is dropped.
+        void Rekey(List<HistoryEntry> stack)
+        {
+            if (rekey is null)
+                return;
+            for (int i = 0; i < stack.Count; i++)
+            {
+                if (stack[i] is not TransformPatch patch)
+                    continue;
+                if (patch.Before.All(state => isCurrent(state.Target))
+                    && patch.After.All(state => isCurrent(state.Target)))
+                    continue;
+                var before = Remap(patch.Before);
+                var after = before is null ? null : Remap(patch.After);
+                if (before is not null && after is not null)
+                    stack[i] = patch with { Before = before, After = after };
+            }
+            List<TransformTargetState>? Remap(IReadOnlyList<TransformTargetState> states)
+            {
+                var mapped = new List<TransformTargetState>(states.Count);
+                foreach (var state in states)
+                {
+                    if (isCurrent(state.Target))
+                    {
+                        mapped.Add(state);
+                        continue;
+                    }
+                    if (rekey(state.Target) is not { } current)
+                        return null;
+                    mapped.Add(state with { Target = current });
+                }
+                return mapped;
+            }
+        }
         bool Stale(HistoryEntry entry)
         {
             if (ActorsGone(entry))
@@ -154,6 +192,8 @@ public sealed class TransformHistory
                 return false;
             return patch.Context is not { Before.Count: > 0 };
         }
+        Rekey(_undo);
+        Rekey(_redo);
         _undo.RemoveAll(entry => Stale(entry));
         _redo.RemoveAll(entry => Stale(entry));
     }

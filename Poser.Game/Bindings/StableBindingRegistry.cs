@@ -876,6 +876,39 @@ public sealed class StableBindingRegistry : IEntityBindings
         return null;
     }
 
+    /// <summary>The current-generation id for a target whose actor is still
+    /// in the scene: the same bone by slot, partial, index and name on the
+    /// redrawn body, or the actor's current id. Null when nothing matches.
+    /// Used only on reconcile, so the scans are not per frame.</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target)
+    {
+        switch (target.Kind)
+        {
+            case TransformTargetKind.Bone when target.Bone is { } bone:
+                foreach (var pair in _boneBindings)
+                {
+                    var key = pair.Key;
+                    if (key.Skeleton.Actor.LogicalId == bone.Skeleton.Actor.LogicalId
+                        && key.Skeleton.Slot == bone.Skeleton.Slot
+                        && key.PartialId == bone.PartialId
+                        && key.BoneIndex == bone.BoneIndex
+                        && key.CanonicalName.Equals(bone.CanonicalName, StringComparison.Ordinal))
+                        return TransformTargetId.ForBone(key);
+                }
+                return null;
+            case TransformTargetKind.Actor when target.Actor is { } actor:
+                foreach (var pair in _boneBindings)
+                {
+                    var current = pair.Key.Skeleton.Actor;
+                    if (current.LogicalId == actor.LogicalId)
+                        return TransformTargetId.ForActor(current);
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
     public BindingResult<IBone> Resolve(BoneId id)
     {
         if (_boneBindings.TryGetValue(id, out var bone))

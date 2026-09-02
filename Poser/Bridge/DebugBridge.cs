@@ -208,7 +208,7 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
-                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1",
+                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
@@ -250,6 +250,27 @@ public sealed class DebugBridge : IDisposable
         {
             case "/actors":
                 return Json(ListActors());
+            case "/profile":
+            {
+                // The frame profiler's own ledger — the instrument Midona reads
+                // — plus the GC counters, so a stopwatch cost the sampler
+                // cannot see (a collection pausing the render thread) shows.
+                global::Poser.UI.FrameProfiler.SetEnabled(true);
+                var samples = new global::Poser.UI.FrameProfiler.Sample[64];
+                int n = global::Poser.UI.FrameProfiler.Snapshot(samples);
+                var units = new List<object>();
+                for (int i = 0; i < n; i++)
+                    units.Add(new { samples[i].Label, self = Math.Round(samples[i].AverageSelfMs, 3), peak = Math.Round(samples[i].PeakSelfMs, 1), incl = Math.Round(samples[i].AverageInclusiveMs, 3), samples[i].Hits });
+                return Json(new
+                {
+                    frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount(),
+                    avgMs = Math.Round(global::Poser.UI.FrameProfiler.AverageFrameMs, 3),
+                    peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
+                    gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
+                    allocated = GC.GetTotalAllocatedBytes(false),
+                    units,
+                });
+            }
             case "/overlay":
             {
                 // The overlay's scope and visibility, for perf captures:
