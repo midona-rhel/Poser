@@ -172,6 +172,13 @@ public static partial class Crystarium
         public string? SectionPrefix { get; set; }
         private string _section = string.Empty;
 
+        /// <summary>Paint hooks: every row and every section header the
+        /// page paints reports its section, label, vertex range and top,
+        /// so a host can move or fade what was just painted.</summary>
+        public Action<string, string, int, int, float>? RowPainted { get; set; }
+        public Action<string, int, int, float>? SectionPainted { get; set; }
+        private bool _anyPainted;
+
         internal PageScope(string id, Vector2 origin, float width, float scale,
             float? labelColumnWidth = null, bool dense = false,
             bool halfRows = false)
@@ -256,6 +263,11 @@ public static partial class Crystarium
             if (SectionFilter != null && !SectionFilter(title))
                 return;
             var page = ActiveTheme.Page;
+            // The first thing on a page never leads with a rule, whatever
+            // the caller asked: a search draws sections out of their order.
+            if (!_anyPainted)
+                divider = false;
+            int sectionVertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size;
             if (divider)
             {
                 _y += page.SectionMarginTop;
@@ -297,6 +309,9 @@ public static partial class Crystarium
                 hit, headerIdentity,
                 SectionPrefix == null ? title : SectionPrefix + title,
                 open, new(_origin.X, headerTop), _width);
+            _anyPainted = true;
+            SectionPainted?.Invoke(
+                title, sectionVertexStart, ImGui.GetWindowDrawList().VtxBuffer.Size, headerTop);
 
             _y += page.SectionHeaderHeight;
             if (open)
@@ -370,7 +385,11 @@ public static partial class Crystarium
             var row = new FormRowScope(
                 new(x, top), _trackWidth, _scale, column / _scale,
                 RowHeight, visible)
-            { HasLabel = !string.IsNullOrEmpty(label) };
+            {
+                HasLabel = !string.IsNullOrEmpty(label),
+                Label = label,
+                VertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size,
+            };
             if (visible && !string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
@@ -400,6 +419,13 @@ public static partial class Crystarium
             if (row.Skipped)
                 return;
             float height = logicalHeight ?? RowHeight;
+            if (row.Visible)
+            {
+                _anyPainted = true;
+                RowPainted?.Invoke(
+                    _section, row.Label, row.VertexStart,
+                    ImGui.GetWindowDrawList().VtxBuffer.Size, row.Origin.Y);
+            }
             // The help anchors on the LABEL band — a full-row rect would
             // shadow the controls' own hovers.
             float helpWidth = row.HasLabel ? row.LabelWidth : row.Width;
@@ -2252,6 +2278,11 @@ public static partial class Crystarium
 
         /// <summary>A row a search dropped: nothing drawn, no layout.</summary>
         public bool Skipped { get; internal init; }
+
+        /// <summary>The label the row was begun with, and where the draw
+        /// list stood then — what the paint hook reports.</summary>
+        public string Label { get; internal init; } = string.Empty;
+        public int VertexStart { get; internal init; }
 
         internal FormRowScope(
             Vector2 origin, float width, float scale, float labelWidth,

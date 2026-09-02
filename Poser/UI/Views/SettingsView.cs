@@ -189,6 +189,29 @@ public sealed class SettingsViewModel
     public Action? OnOpenRepository;
     public Action<string>? OnOpenUrl;
     public Action<string>? OnOpenFolder;
+    /// <summary>Opens a folder picker seeded at the first argument and
+    /// hands the chosen path to the second.</summary>
+    public Action<string, Action<string>>? OnBrowseFolder;
+
+    /// <summary>A hash over every value the pages edit: the window
+    /// applies the view model whenever it changes.</summary>
+    public int Signature()
+    {
+        var hash = new HashCode();
+        foreach (var field in typeof(SettingsViewModel).GetFields())
+        {
+            if (field.FieldType.IsPrimitive || field.FieldType == typeof(string)
+                || field.FieldType == typeof(Vector4) || field.FieldType.IsEnum)
+                hash.Add(field.GetValue(this));
+        }
+        foreach (var source in LibrarySources)
+        {
+            hash.Add(source.Name);
+            hash.Add(source.Path);
+            hash.Add(source.Enabled);
+        }
+        return hash.ToHashCode();
+    }
     public Action<UITheme, int>? OnThemePreview;
     public Action<float, bool>? OnSurfaceEffectsPreview;
     public Action<ConfigResetScope>? OnResetConfig;
@@ -234,10 +257,19 @@ public static class SettingsView
 
     public static int PageCount => Nav.Length;
 
-    /// <summary>When the search text last changed: the results fade in
-    /// from that moment.</summary>
+    /// <summary>The search settles a moment after the last keystroke;
+    /// the results shown are for the settled text. Rows that stay slide
+    /// up into their new place, rows that arrive slide in from below
+    /// while fading in; nothing re-animates per keystroke.</summary>
+    private const double SearchSettleSeconds = 0.25;
+    private const float SearchSlideSeconds = 0.18f;
+    private const float SearchArriveOffset = 24f;
     private static string _lastSearch = string.Empty;
     private static double _searchChangedAt;
+    private static string _settledSearch = string.Empty;
+    private static double _settledAt;
+    private static Dictionary<string, float> _rowsBefore = new();
+    private static Dictionary<string, float> _rowsNow = new();
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
@@ -401,12 +433,51 @@ public static class SettingsView
     /// results fade in from the moment the search changed.</summary>
     private static void DrawSearch(SettingsViewModel vm, Crystarium.PageScope page)
     {
-        string needle = vm.Search.Trim();
-        if (!string.Equals(needle, _lastSearch, StringComparison.Ordinal))
+        double now = ImGui.GetTime();
+        string typed = vm.Search.Trim();
+        if (!string.Equals(typed, _lastSearch, StringComparison.Ordinal))
         {
-            _lastSearch = needle;
-            _searchChangedAt = ImGui.GetTime();
+            _lastSearch = typed;
+            _searchChangedAt = now;
         }
+        if (!string.Equals(_settledSearch, _lastSearch, StringComparison.Ordinal)
+            && now - _searchChangedAt >= SearchSettleSeconds)
+        {
+            _settledSearch = _lastSearch;
+            _settledAt = now;
+            (_rowsBefore, _rowsNow) = (_rowsNow, _rowsBefore);
+            _rowsNow.Clear();
+        }
+        string needle = _settledSearch;
+        if (needle.Length == 0)
+        {
+            // Nothing has settled yet: the page stays until it does.
+            DrawCategory(vm, page);
+            return;
+        }
+        float ease = Math.Clamp((float)(now - _settledAt) / SearchSlideSeconds, 0f, 1f);
+        ease = 1f - (1f - ease) * (1f - ease);
+        void Settle(string key, int vtxStart, int vtxEnd, float top)
+        {
+            _rowsNow[key] = top;
+            if (_rowsBefore.TryGetValue(key, out float before))
+            {
+                // A row that stays slides up into its place; one that
+                // would move down simply sits.
+                if (before > top)
+                    Crystarium.ShiftFade(
+                        vtxStart, vtxEnd, new Vector2(0f, (before - top) * (1f - ease)), 1f);
+                return;
+            }
+            Crystarium.ShiftFade(
+                vtxStart, vtxEnd,
+                new Vector2(0f, SearchArriveOffset * ImGuiHelpers.GlobalScale * (1f - ease)),
+                ease);
+        }
+        page.RowPainted = (section, label, vtxStart, vtxEnd, top) =>
+            Settle(section + "|" + label, vtxStart, vtxEnd, top);
+        page.SectionPainted = (title, vtxStart, vtxEnd, top) =>
+            Settle("#" + title, vtxStart, vtxEnd, top);
         int mark = Crystarium.VertexMark();
         bool Hit(string? text) =>
             text != null && text.Contains(needle, StringComparison.OrdinalIgnoreCase);
@@ -446,13 +517,13 @@ public static class SettingsView
             vm.Category = saved;
             any++;
         }
+        page.RowPainted = null;
+        page.SectionPainted = null;
         if (any == 0)
+        {
             page.EmptyState($"Nothing matches \"{needle}\".");
-        float fade = Crystarium.ActiveTheme.Motion.Fast;
-        float alpha = fade <= 0f
-            ? 1f
-            : Math.Clamp((float)(ImGui.GetTime() - _searchChangedAt) / fade, 0f, 1f);
-        Crystarium.FadeSince(mark, alpha);
+            Crystarium.FadeSince(mark, ease);
+        }
     }
 
     private static void DrawCategory(
@@ -1394,11 +1465,18 @@ public static class SettingsView
             label,
             value,
             onChange,
-            actions => actions.Button(
-                "Open",
-                () => vm.OnOpenFolder?.Invoke(
-                    value.Trim().Length == 0 ? shipped : value.Trim()),
-                help: "Show this folder in Windows Explorer"),
+            actions =>
+            {
+                actions.Button(
+                    "Browse",
+                    () => vm.OnBrowseFolder?.Invoke(
+                        value.Trim().Length == 0 ? shipped : value.Trim(),
+                        onChange));
+                actions.Button(
+                    "Open",
+                    () => vm.OnOpenFolder?.Invoke(
+                        value.Trim().Length == 0 ? shipped : value.Trim()));
+            },
             placeholder: shipped,
             help: help);
 

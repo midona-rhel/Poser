@@ -58,6 +58,8 @@ public class SettingsWindow : Window
     /// closing without Save, puts it back — every change previews live on
     /// the config while the window is open.</summary>
     private SettingsViewModel? _snapshot;
+    private int _appliedSignature;
+    private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager _folderDialog = new();
 
     public override void OnOpen()
     {
@@ -73,6 +75,7 @@ public class SettingsWindow : Window
         {
             _vm = _snapshot;
             ApplyToConfig(preview: true);
+            ConfigurationService.Instance.ApplyChange(save: false);
             var ui = ConfigurationService.Instance.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
             Crystarium.FloatingSurface.ConfigureEffects(
@@ -107,10 +110,16 @@ public class SettingsWindow : Window
         try
         {
             SettingsView.Draw(_vm, min);
-            // Live preview: the config carries the edits as they happen;
-            // only Save persists them and only Cancel takes them back.
-            if (_snapshot != null)
+            _folderDialog.Draw();
+            // Live: a change lands on the config and is announced the
+            // frame it happens, so every consumer follows at once; only
+            // Save persists it and only Cancel takes it back.
+            if (_snapshot != null && _vm.Signature() != _appliedSignature)
+            {
+                _appliedSignature = _vm.Signature();
                 ApplyToConfig(preview: true);
+                ConfigurationService.Instance.ApplyChange(save: false);
+            }
         }
         finally
         {
@@ -229,6 +238,15 @@ public class SettingsWindow : Window
             OnSurfaceEffectsPreview = Crystarium.FloatingSurface.ConfigureEffects,
         };
         vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
+        vm.OnBrowseFolder = (start, chosen) =>
+            _folderDialog.OpenFolderDialog(
+                "Choose the Poser folder",
+                (ok, path) =>
+                {
+                    if (ok && !string.IsNullOrWhiteSpace(path))
+                        chosen(path);
+                },
+                string.IsNullOrWhiteSpace(start) ? null : start);
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
@@ -505,6 +523,7 @@ public class SettingsWindow : Window
         foreach (var (home, _) in LibraryConfiguration.Homes)
             if (string.Equals(name, home, StringComparison.Ordinal))
                 return true;
-        return false;
+        // The MCDF home once carried this name; an old config still does.
+        return string.Equals(name, "Poser MCDFs", StringComparison.Ordinal);
     }
 }

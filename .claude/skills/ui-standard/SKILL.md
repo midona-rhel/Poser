@@ -766,6 +766,16 @@ complexity, and most verbs are one word.
   notification. Inline text that appears and disappears reflows the
   page.
 
+- A search over rows settles a quarter second after the last keystroke
+  and only then re-renders: rows that stay slide UP into their new place,
+  rows that arrive slide in from below while fading in, nothing animates
+  per keystroke. The first painted section on any page leads with no
+  rule, whatever the caller passed (`PageScope` enforces it).
+- A window that must stay interactive while it is "hidden" (a drag held
+  on one of its controls) fades to a hair above zero alpha, never zero:
+  ImGui hides a zero-alpha window and skips its items, and the held item
+  is torn away.
+
 ## How to design a surface
 
 Rules alone do not produce a good page. Before building or changing

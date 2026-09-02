@@ -30,6 +30,7 @@ public sealed class UIManager : IUIManager
     private readonly IVirtualCameraService _cameras;
     private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly Keybind[] _keybinds;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
 
@@ -45,8 +46,10 @@ public sealed class UIManager : IUIManager
         PoseFileInspectorSection poseFileSection,
         IVirtualCameraService cameras,
         SceneSession scene,
-        AnimationSceneActions sceneActions)
+        AnimationSceneActions sceneActions,
+        Dalamud.Plugin.Services.IPluginLog log)
     {
+        _log = log;
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
@@ -128,10 +131,15 @@ public sealed class UIManager : IUIManager
         // Hide-while-manipulating (#77): the windows fade down while a
         // world drag is HELD — hover never hides — so the scene is clear
         // under the gesture.
-        Controls.ManipulationHide.Active =
-            _configService.Config.UI.HideWhileManipulating
-            && (Controls.ManipulationDrag.Held
-                || Controls.ManipulationDrag.ShellHeld);
+        bool held = Controls.ManipulationDrag.Held;
+        bool shellHeld = Controls.ManipulationDrag.ShellHeld;
+        bool active = _configService.Config.UI.HideWhileManipulating
+            && (held || shellHeld);
+        if (active != Controls.ManipulationHide.Active)
+            _log.Debug(
+                $"[ManipulationHide] active={active} held={held} shell={shellHeld} "
+                + $"opacity={Controls.ManipulationHide.Opacity:0.00} frame={ImGui.GetFrameCount()}");
+        Controls.ManipulationHide.Active = active;
         Controls.ManipulationHide.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
         Controls.ManipulationHide.Advance();

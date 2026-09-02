@@ -465,9 +465,13 @@ public static class ManipulationHide
     public static FadeHandle FadeScope()
     {
         bool pushed = Opacity < 1f;
+        // Never exactly zero: ImGui hides a window whose alpha is zero
+        // and skips its items, and a drag held on one of them would end.
+        // A hair above zero is invisible and alive.
         if (pushed)
             ImGui.PushStyleVar(
-                ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Opacity);
+                ImGuiStyleVar.Alpha,
+                ImGui.GetStyle().Alpha * MathF.Max(0.002f, Opacity));
         return new FadeHandle(pushed);
     }
 

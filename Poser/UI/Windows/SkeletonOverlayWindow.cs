@@ -637,7 +637,7 @@ public class SkeletonOverlayWindow : Window
                     && Core.PoseMath.GetMirrorBoneName(canonical)
                         is { } mirror)
                     (implicated ??= new()).Add(mirror);
-                if (_bonePosing.LinkedBonesEnabled)
+                if (_bonePosing.LinkedBonesEnabled || symmetryConfig.AutoLinkPairedBones)
                     foreach (var linked in global::Poser.Domain.Posing
                         .BoneLinkCatalog.GetLinked(canonical))
                         (implicated ??= new()).Add(linked);
@@ -704,7 +704,9 @@ public class SkeletonOverlayWindow : Window
         // one with the same delta, one flipped — so BOTH modes show it,
         // resolved PER BONE through the one symmetry rule.
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
-        if (_bonePosing.LinkedBonesEnabled)
+        // Eyes and ears that move together by default are partners too.
+        if (_bonePosing.LinkedBonesEnabled
+            || ConfigurationService.Instance.Config.AutoLinkPairedBones)
             MarkLinkPartners(bones);
 
         // No armature filter here anymore: every entry above was already
@@ -761,9 +763,10 @@ public class SkeletonOverlayWindow : Window
                 !bone.IsHovered && !IsPriorityBone(bone));
 
         // Draw skeleton
-        // The custom gizmo holds shared pointer ownership on hover AND
-        // drag, so this single check covers both engagement states.
-        var isGizmoActive = Controls.GizmoPointerOwnership.Owned;
+        // A HELD drag, world gizmo or inspector ball: hovering a handle
+        // is not a manipulation and hides nothing (Midona, 2026-09-02).
+        var isGizmoActive = Controls.ManipulationDrag.Held
+            || Controls.ManipulationDrag.ShellHeld;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
         // Brio's HideSkeletonWhenGizmoActive: the armature goes away for the
         // length of a drag rather than fading. Hover and press were resolved

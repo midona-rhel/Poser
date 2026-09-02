@@ -4852,13 +4852,13 @@ public class MainWindow : Window
                 submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
             new("Save to library", TablerIcon.Library,
                 disabled: !actor.HasSkeleton),
-            new("Tree", TablerIcon.Sitemap,
+            new("Expand", TablerIcon.SquarePlus),
+            new("Collapse", TablerIcon.SquareMinus),
+            new("All actors", TablerIcon.Copy,
                 submenuItems:
                 [
-                    new ContextMenuItem("Expand", TablerIcon.SquarePlus),
-                    new ContextMenuItem("Collapse", TablerIcon.SquareMinus),
-                    new ContextMenuItem("Expand all", TablerIcon.CopyPlus),
-                    new ContextMenuItem("Collapse all", TablerIcon.CopyMinus),
+                    new ContextMenuItem("Expand all", TablerIcon.Copy),
+                    new ContextMenuItem("Collapse all", TablerIcon.Copy),
                 ]),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
@@ -4915,7 +4915,9 @@ public class MainWindow : Window
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
-            null, // Tree — child clicks are read separately.
+            () => SetTreeCollapsed("actor:" + actorId, false),
+            () => SetTreeCollapsed("actor:" + actorId, true),
+            null, // All actors — child clicks are read separately.
             null, // separator
             null, // Companion — child clicks are read separately.
         };
@@ -4923,7 +4925,7 @@ public class MainWindow : Window
         // Bone presets belong to this actor.
         items.Add(ContextMenuItem.Separator);
         items.Add(new ContextMenuItem(
-            "Bone presets", TablerIcon.Disabled,
+            "Bone presets", TablerIcon.Eye,
             disabled: !actor.HasSkeleton,
             help: "Named sets of which bones this actor shows in the overlay",
             submenuItems: actor.HasSkeleton
@@ -5040,10 +5042,8 @@ public class MainWindow : Window
                     () => Duplicate(actor),
                     () => DuplicateWithPose(actor),
                 },
-                "Tree" => new List<Action?>
+                "All actors" => new List<Action?>
                 {
-                    () => SetTreeCollapsed("actor:" + actorId, false),
-                    () => SetTreeCollapsed("actor:" + actorId, true),
                     () => SetTreeCollapsed(null, false),
                     () => SetTreeCollapsed(null, true),
                 },
@@ -5075,7 +5075,7 @@ public class MainWindow : Window
             _bonePresetItems.Add(new ContextMenuItem(
                 name,
                 _bonePresets.IsApplied(actor, name)
-                    ? TablerIcon.Check
+                    ? TablerIcon.CircleDot
                     : TablerIcon.Circle,
                 keepOpen: true,
                 help: $"{preset.Bones.Count} bones"));
@@ -5085,7 +5085,7 @@ public class MainWindow : Window
         _bonePresetItems.Add(ContextMenuItem.Separator);
         _bonePresetActions.Add(null);
         _bonePresetItems.Add(new ContextMenuItem(
-            "Show bones no preset covers", TablerIcon.Crosshair,
+            "Show uncovered bones", TablerIcon.Crosshair,
             disabled: presets.Count == 0,
             help: "Hide everything the presets claim and show the rest"));
         _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
