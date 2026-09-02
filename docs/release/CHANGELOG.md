@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.9.3-beta — the journal, the wardrobe, the overlay, and issue reports
+
+**Undo everything.** Every value the UI changes is a step with an inverse:
+lights, cameras, the environment, expressions, gaze, IK, animation choices,
+groups, adoption, world objects, scene loads. A step remembers which body it
+was made on. When that actor was redrawn or its animation changed since,
+undo restores the pose from a snapshot instead of applying a stale delta,
+and says so once. Bone edits survive a redraw. Verbs that break animation
+state — Redraw, MCDF import, design and collection applies — wear purple.
+Undo depth is 500.
+
+**Wear anything.** The Appearance tab has three views through Glamourer:
+Actor, Appearance and Equipment. Equipment is a card per slot with the
+item's icon, its name and two dye boxes; the icon opens a search by name or
+id, Ctrl-click removes the item or the dye, and an Outfit row puts on
+nothing, smallclothes, the Emperor's set or the invisible set. Appearance
+is laid out as Ktisis lays it: one clan dropdown with the gender beside it,
+face, hair and feature tiles as cards, the game's own colour palettes, and
+steppers that walk only through values that exist.
+
+**The overlay costs less.** Bone dots are baked circles drawn in one batch,
+connectors are soft strips drawn in one batch, and the camera projection
+is fetched once per frame. Four visible skeletons went from 2.9 to 1.1 ms
+of overlay time. Three per-frame allocators are gone.
+
+**Report an issue.** From the burger menu or Settings ▸ About. It saves one
+zip in the plugin's own folder: the last five hundred actions with their
+values before and after, the notices you saw, any error the UI caught,
+versions, loaded plugins, settings and Poser's own log lines. Character
+names are replaced by Actor 1, Actor 2 and so on; paths lose your user
+name. The scene is an option, off by default: scene data only, no modified
+files, no mods. Nothing is sent anywhere; you attach the file.
+
+**Smaller.** The first click on an unselected entity only selects it; the
+next press drags. The Universal tool's centre handle can move instead of
+scale (Settings ▸ Gizmo). The Body and Face maps decode at load, so the
+first visit finds them ready. The combo menu paints as it did before the
+shell redesign. A debug bridge and MCP server let the plugin be driven from
+outside the game for development.
+
+**Under the hood.** The main window and the library pane are partial files,
+one concern each. Surfaces reach the runtime through ports, never through
+runtime classes. Duplicated facts have one home each.
+
 ## 0.9.2-beta — groups, the redesigned shell, and the input contract
 
 **Group anything.** Select two or more things of any kinds — actors, lights,
