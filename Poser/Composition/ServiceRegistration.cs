@@ -230,6 +230,9 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
             sp.GetRequiredService<Game.Journal.OverlaySession>()));
         services.AddSingleton<TransformCommandService>();
+        services.AddSingleton<GroupTransformState>();
+        services.AddSingleton<IGroupTransformSource, GroupTransformSource>();
+        services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
         services.AddSingleton<CleanTransformFacade>();

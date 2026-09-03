@@ -1,4 +1,6 @@
 using Poser.Domain.Identity;
+using Poser.Application.Transforms;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Scene;
 
@@ -25,22 +27,38 @@ public sealed class GroupsSnapshot : IEquatable<GroupsSnapshot>
     public GroupsSnapshot(
         IReadOnlyList<GroupRecord> groups,
         IReadOnlyList<RootSlot> order,
-        Guid? activeGroupId)
+        Guid? activeGroupId,
+        IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot>? transforms = null)
     {
         Groups = groups;
         Order = order;
         ActiveGroupId = activeGroupId;
+        Transforms = transforms;
     }
 
     public IReadOnlyList<GroupRecord> Groups { get; }
     public IReadOnlyList<RootSlot> Order { get; }
     public Guid? ActiveGroupId { get; }
+    public IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot>? Transforms { get; }
+
+    public GroupsSnapshot WithTransforms(
+        IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot> transforms) =>
+        new(Groups, Order, ActiveGroupId, transforms);
 
     public bool Equals(GroupsSnapshot? other) =>
         other is not null
         && Order.SequenceEqual(other.Order)
+        && ActiveGroupId == other.ActiveGroupId
+        && SameTransforms(Transforms, other.Transforms)
         && Groups.Count == other.Groups.Count
         && Groups.Zip(other.Groups).All(pair => Same(pair.First, pair.Second));
+
+    private static bool SameTransforms(
+        IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot>? a,
+        IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot>? b) =>
+        (a?.Count ?? 0) == (b?.Count ?? 0)
+        && (a == null || a.All(pair => b != null && b.TryGetValue(pair.Key, out var value)
+            && pair.Value.ContentEquals(value)));
 
     private static bool Same(GroupRecord a, GroupRecord b) =>
         a.Id == b.Id

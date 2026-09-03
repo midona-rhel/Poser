@@ -26,6 +26,8 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
     private readonly TransformHistory _history;
+    private readonly GroupTransformCoordinator? _groupCoordinator;
+    private readonly IGroupTransformSource? _groupSource;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
@@ -66,13 +68,17 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Game.Animation.FacialPoseCapture facialCapture,
         IEventBus events,
         IFramework framework,
-        IPluginLog? log = null)
+        IPluginLog? log = null,
+        GroupTransformCoordinator? groupCoordinator = null,
+        IGroupTransformSource? groupSource = null)
     {
         _log = log;
         _bindings = bindings;
         _scene = scene;
         _gestures = gestures;
         _history = history;
+        _groupCoordinator = groupCoordinator;
+        _groupSource = groupSource;
         _animation = animation;
         _presentation = presentation;
         _modelId = modelId;
@@ -257,6 +263,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // NoChange: exact ids/generations are still checked by the registry
             // against the admitted structural snapshot before map publication.
             _bindings.CommitCandidate(staged, _scene.Snapshot);
+            _groupCoordinator?.BindingsPublished();
             admitted = true;
             _log?.Debug(
                 "Scene bindings: published " +
@@ -280,7 +287,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             _history.Reconcile(
                 _scene.Contains,
                 lineage => _scene.Snapshot.FindActor(lineage) is not null,
-                _bindings.CurrentTarget);
+                target => _groupSource?.CurrentTarget(target) ?? _bindings.CurrentTarget(target));
             // Animation follows the same exact-generation rule: a replaced
             // actor's old entry is released without touching the new body.
             // The port's detour-facing address index is rebuilt from the

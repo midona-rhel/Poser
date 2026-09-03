@@ -57,6 +57,10 @@ public sealed record JournalStep(
     Func<bool> Undo,
     Func<bool> Redo) : HistoryEntry(Description)
 {
+    /// <summary>A group membership restore can wait for readable member poses;
+    /// repeated temporary refusal must not discard its preserved authored state.</summary>
+    public Func<bool>? HasDeferredGroupCapture { get; init; }
+
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }

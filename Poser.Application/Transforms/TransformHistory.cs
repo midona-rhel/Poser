@@ -8,6 +8,9 @@ namespace Poser.Application.Transforms;
 /// </summary>
 public abstract record HistoryEntry(string Description)
 {
+    // Re-keying replaces the immutable patch while an async restore may
+    // still hold the old object. The operation identity survives that copy.
+    public Guid Id { get; init; } = Guid.NewGuid();
     /// <summary>The keys and snapshots the step was recorded under; null
     /// for an entry that never invalidates.</summary>
     public StepContext? Context { get; init; }
@@ -16,7 +19,13 @@ public abstract record HistoryEntry(string Description)
 public sealed record TransformPatch(
     string Description,
     IReadOnlyList<TransformTargetState> Before,
-    IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description);
+    IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description)
+{
+    /// <summary>Optional named/anonymous group presentation state changed by
+    /// the same gesture. It is restored with the target snapshots, never by
+    /// a post-commit observer.</summary>
+    public GroupTransformHistoryChange? GroupState { get; init; }
+}
 
 /// <summary>
 /// A scene-lifecycle action. Its undo and redo delegates report whether the
@@ -110,9 +119,10 @@ public sealed class TransformHistory
 
     public void CommitUndo(HistoryEntry patch)
     {
-        if (!CanUndo || !ReferenceEquals(_undo[^1], patch))
+        if (!CanUndo || _undo[^1].Id != patch.Id)
             throw new InvalidOperationException(
                 "Undo history changed before commit.");
+        patch = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         _redo.Add(patch);
     }
@@ -122,9 +132,10 @@ public sealed class TransformHistory
 
     public void CommitRedo(HistoryEntry patch)
     {
-        if (!CanRedo || !ReferenceEquals(_redo[^1], patch))
+        if (!CanRedo || _redo[^1].Id != patch.Id)
             throw new InvalidOperationException(
                 "Redo history changed before commit.");
+        patch = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         _undo.Add(patch);
     }
@@ -173,8 +184,11 @@ public sealed class TransformHistory
                     continue;
                 var before = Remap(patch.Before);
                 var after = before is null ? null : Remap(patch.After);
-                if (before is not null && after is not null)
-                    stack[i] = patch with { Before = before, After = after };
+                var group = patch.GroupState?.Remap(target =>
+                    isCurrent(target) ? target : rekey(target));
+                if (before is not null && after is not null
+                    && (patch.GroupState == null || group != null))
+                    stack[i] = patch with { Before = before, After = after, GroupState = group };
             }
             List<TransformTargetState>? Remap(IReadOnlyList<TransformTargetState> states)
             {

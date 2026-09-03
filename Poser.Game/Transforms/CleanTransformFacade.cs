@@ -14,6 +14,7 @@ public sealed class CleanTransformFacade : ITransformFacade
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
     private readonly TransformCommandService _commands;
+    private readonly GroupTransformCoordinator _groups;
 
     private readonly UndoJournal _journal;
 
@@ -21,12 +22,14 @@ public sealed class CleanTransformFacade : ITransformFacade
         SceneSession scene,
         TransformGestureService gestures,
         TransformCommandService commands,
-        UndoJournal journal)
+        UndoJournal journal,
+        GroupTransformCoordinator groups)
     {
         _scene = scene;
         _gestures = gestures;
         _commands = commands;
         _journal = journal;
+        _groups = groups;
     }
 
     public TransformGestureId? ActiveGesture =>
@@ -56,8 +59,22 @@ public sealed class CleanTransformFacade : ITransformFacade
         bool includeLinkedBones = false,
         Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false,
-        GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing)
+        GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
+        Guid? groupId = null,
+        bool groupTransform = false)
     {
+        // All entity multi-target entry points (rail, world gizmo and move
+        // commands) share admission and metadata, including old callers.
+        groupTransform |= (targetIds.Count > 1
+            || Poser.Application.Selection.EntitySelection.IsMultiEntity(_scene.Selection.Selected))
+            && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
+        if (groupTransform)
+        {
+            if (!_groups.Admit(targetIds, groupScale, out groupId, out var refusal))
+                return GestureResult.Fail(refusal ?? "The group cannot be transformed.");
+            pivotMode = PivotMode.Centroid;
+            space = TransformSpace.World;
+        }
         var targets = new List<TransformTargetId>(targetIds);
         if (includeLinkedBones)
             AddLinkedBoneTargets(targets);
@@ -73,7 +90,9 @@ public sealed class CleanTransformFacade : ITransformFacade
             description,
             targetModes,
             relativeSecondaryBones,
-            groupScale));
+            groupScale,
+            groupId,
+            groupTransform));
     }
 
     public GestureResult Update(

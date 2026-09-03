@@ -77,6 +77,7 @@ public class GizmoOverlayWindow : Window
         public required TransformTool Tool { get; init; }
         public required TransformOrientation Orientation { get; init; }
         public required DomainSpace Space { get; init; }
+        public global::Poser.Domain.Transforms.GroupScaleMode GroupScale { get; init; }
         public required LegacyTransform Start { get; init; }
         public LegacyTransform Current;
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
@@ -613,7 +614,8 @@ public class GizmoOverlayWindow : Window
             ClearGesture(suppress: true);
             return null;
         }
-        if (gesture.Tool != currentTool ||
+        if (gesture.GroupScale != Config.ConfigurationService.Instance.Config.Gizmo.GroupScale ||
+            gesture.Tool != currentTool ||
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
         {
@@ -1169,7 +1171,7 @@ public class GizmoOverlayWindow : Window
             _ => DomainOperation.Rotate,
         };
         // Rings use world space; linear handles use the selected orientation.
-        var space = ringHandle
+        var space = ringHandle || (!isBone && targets.Count > 1)
             ? DomainSpace.World
             : orientation == TransformOrientation.Global
                 ? DomainSpace.World
@@ -1231,6 +1233,7 @@ public class GizmoOverlayWindow : Window
             Tool = tool,
             Orientation = orientation,
             Space = space,
+            GroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale,
             Start = currentTransform,
             Current = currentTransform,
             PivotMode = cleanPivotMode,

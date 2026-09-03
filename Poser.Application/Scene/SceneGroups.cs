@@ -455,6 +455,35 @@ public sealed class SceneGroups
     public SceneGroup? Find(Guid id) =>
         _groups.Find(group => group.Id == id);
 
+    public void RemapTransformMembers(Func<TransformTargetId, TransformTargetId?> resolve)
+    {
+        bool changed = false;
+        SelectionId Remap(SelectionId id) =>
+            Transforms.GroupTransformCoordinator.Target(id) is { } target
+                && resolve(target) is { } current ? current.ToSelectionId() : id;
+        foreach (var group in _groups)
+        {
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var current = Remap(group.Members[i]);
+                if (current != group.Members[i]) { group.Members[i] = current; changed = true; }
+            }
+            RemapFlags(group.RememberedVisible);
+            RemapFlags(group.RememberedPlaying);
+            RemapFlags(group.RememberedNight);
+        }
+        for (int i = 0; i < _order.Count; i++)
+            if (_order[i].Entity is { } id && Remap(id) is var current && current != id)
+            { _order[i] = RootSlot.For(current); changed = true; }
+        if (changed) Revision++;
+        void RemapFlags(Dictionary<SelectionId, bool> flags)
+        {
+            foreach (var (id, value) in flags.ToArray())
+                if (Remap(id) is var current && current != id)
+                { flags.Remove(id); flags[current] = value; changed = true; }
+        }
+    }
+
     /// <summary>The group an entity sits in directly.</summary>
     public SceneGroup? GroupOf(SelectionId member) =>
         _groups.Find(group => group.Members.Contains(member));

@@ -41,6 +41,9 @@ public class PoseInspectorPane
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
+    private readonly GroupTransformCoordinator _groupCoordinator;
+    private GroupTransformFrame? _cleanGroupFrame;
+    private GroupScaleMode _cleanGroupScale;
     private readonly IEntityBindings _bindings;
     private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
@@ -103,7 +106,9 @@ public class PoseInspectorPane
             ClearTransformSession();
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
-        else if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        else if (ImGui.IsKeyPressed(ImGuiKey.Escape)
+            || (_cleanGroupFrame != null
+                && _cleanGroupScale != Config.ConfigurationService.Instance.Config.Gizmo.GroupScale))
         {
             ClearTransformSession(cancel: true);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
@@ -189,9 +194,11 @@ public class PoseInspectorPane
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
         UserNotices notices,
-        global::Poser.Application.Scene.SceneGroups groups)
+        global::Poser.Application.Scene.SceneGroups groups,
+        GroupTransformCoordinator groupCoordinator)
     {
         _groups = groups;
+        _groupCoordinator = groupCoordinator;
         _overlayPresentation = overlayPresentation;
         _notices = notices;
         _ikPort = ikPort;
@@ -261,6 +268,7 @@ public class PoseInspectorPane
     private ulong _effectiveRevision;
     private bool _effectivePrimed;
     private EffectiveTransformSelection? _effective;
+    private string? _groupTransformUnavailableReason;
 
     private EffectiveTransformSelection? EffectiveSelection()
     {
@@ -445,10 +453,16 @@ public class PoseInspectorPane
 
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
-        // The anonymous group rotates in WORLD axes about its centroid —
-        // one set point in space, whatever frame any member carries.
+        // Rail axes are the creation-camera frame plus authored rotation;
+        // input deltas convert through the frozen frame into world space.
         if (IsMultiEntitySelection)
-            return (Quaternion.Identity, Quaternion.Identity, true);
+        {
+            var (group, groupCanEdit) = ReadTransform();
+            var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame();
+            return groupFrame is { } value
+                ? (Quaternion.Normalize(value.Rotation * group.Rotation), value.Rotation, groupCanEdit)
+                : (Quaternion.Identity, Quaternion.Identity, false);
+        }
         var (transform, canEdit) = ReadTransform();
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
         {
@@ -490,11 +504,6 @@ public class PoseInspectorPane
     // Rotation deltas apply to the gesture baseline.
     public void RotateSelectionGizmo(Quaternion totalDelta)
     {
-        if (IsMultiEntitySelection)
-        {
-            RotateGroup(totalDelta);
-            return;
-        }
         UpdateGestureGuards();
         if (_gestureRestartSuppressed)
             return;
@@ -510,12 +519,6 @@ public class PoseInspectorPane
 
     public void CommitRotation()
     {
-        if (_groupGesture is { } group)
-        {
-            _cleanTransforms.Commit(group);
-            _groupGesture = null;
-            return;
-        }
         CommitTransformSession();
         ClearTransformSession();
     }
@@ -526,7 +529,6 @@ public class PoseInspectorPane
         global::Poser.Application.Selection.EntitySelection
             .IsMultiEntity(_selection.Selected);
 
-    private TransformGestureId? _groupGesture;
     private readonly int[] _multiHeadCounts = new int[5];
     private string _multiHeadWho = string.Empty;
     private string _multiHeadSub = string.Empty;
@@ -584,69 +586,22 @@ public class PoseInspectorPane
         return (_multiHeadWho, _multiHeadSub);
     }
 
-    private void RotateGroup(Quaternion totalDelta)
-    {
-        if (_groupGesture == null)
-        {
-            var resolved = global::Poser.Application.Transforms
-                .TransformTargetResolver.Resolve(
-                    _selection.Selected, _scene.Snapshot,
-                    id => _groups.IsLockedChild(id, _selection.Selected));
-            if (resolved is not { } selection)
-                return;
-            var begin = _cleanTransforms.Begin(
-                selection.Targets,
-                DomainOperation.Rotate,
-                global::Poser.Domain.Transforms.TransformSpace.World,
-                global::Poser.Domain.Transforms.PivotMode.Centroid,
-                description: "Rotate selection");
-            if (!begin.Success || begin.GestureId is not { } gestureId)
-                return;
-            _groupGesture = gestureId;
-        }
-        _cleanTransforms.Update(
-            _groupGesture.Value,
-            new global::Poser.Domain.Transforms.TransformDelta(
-                Vector3.Zero, totalDelta, Vector3.One));
-    }
-
     /// <summary>One undoable translate: the whole selection moves so its
     /// centroid lands at <paramref name="goal"/>, every member keeping its
     /// offset from the others.</summary>
     public void GroupMoveTowards(Vector3 goal)
     {
-        var resolved = global::Poser.Application.Transforms
-            .TransformTargetResolver.Resolve(
-                _selection.Selected, _scene.Snapshot,
-                id => _groups.IsLockedChild(id, _selection.Selected));
-        if (resolved is not { } selection)
+        if (!_groupCoordinator.Resolve(_selection.Selected, out var targets, out _)
+            || !_groupCoordinator.TryReadSelection(
+                Config.ConfigurationService.Instance.Config.Gizmo.GroupScale, out var current, out _))
             return;
-        var sum = Vector3.Zero;
-        int counted = 0;
-        foreach (var target in selection.Targets)
-        {
-            var pose = target is
-                { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                    ? _viewport.GetActorTransform(actor)
-                    : _viewport.GetModelTransform(target);
-            if (pose is not { } position)
-                continue;
-            sum += position.Position;
-            counted++;
-        }
-        if (counted == 0)
-            return;
-        var begin = _cleanTransforms.Begin(
-            selection.Targets,
-            DomainOperation.Translate,
-            global::Poser.Domain.Transforms.TransformSpace.World,
-            description: "Move to camera");
-        if (!begin.Success || begin.GestureId is not { } gestureId)
-            return;
-        _cleanTransforms.Update(gestureId,
-            new global::Poser.Domain.Transforms.TransformDelta(
-                goal - sum / counted, Quaternion.Identity, Vector3.One));
-        _cleanTransforms.Commit(gestureId);
+        var begin = _cleanTransforms.Begin(targets, DomainOperation.Translate,
+            DomainSpace.World, DomainPivot.Centroid, description: "Move to camera");
+        if (!begin.Success || begin.GestureId is not { } gestureId) return;
+        var update = _cleanTransforms.Update(gestureId,
+            new DomainDelta(goal - current.Position, Quaternion.Identity, Vector3.One));
+        if (update.Success) _cleanTransforms.Commit(gestureId);
+        else _cleanTransforms.Cancel(gestureId);
     }
 
     public void GroupDeselect() => _selection.Clear();
@@ -706,6 +661,19 @@ public class PoseInspectorPane
 
         if (_primary == null)
         {
+            stack.Finish();
+            return;
+        }
+
+        if (IsMultiEntitySelection)
+        {
+            stack.Section(
+                "translation",
+                "",
+                _openTranslation,
+                next => _openTranslation = next,
+                DrawTransform,
+                divider: false);
             stack.Finish();
             return;
         }
@@ -1587,9 +1555,10 @@ public class PoseInspectorPane
                 // metric rows keep their thousandths.
                 r => r == 1 ? "0.0" : "0.000",
                 _ => !canEdit,
-                _ => _entity is IActor
-                    ? "Freeze the animation to move"
-                    : null,
+                _ => _groupTransformUnavailableReason
+                    ?? (_entity is IActor
+                        ? "Freeze the animation to move"
+                        : canEdit ? null : "Transform is unavailable."),
                 altReset: r => r == 1 ? 0f : r == 2 ? 1f : null));
 
         // If Alt is released between well callbacks, return immediately to
@@ -1617,7 +1586,7 @@ public class PoseInspectorPane
         Transform current,
         bool canEdit)
     {
-        if (EffectiveSelection()?.Primary is not
+        if (_selection.Selected.Count != 1 || EffectiveSelection()?.Primary is not
             { Kind: TransformTargetKind.Actor } target)
             return;
 
@@ -2789,6 +2758,21 @@ public class PoseInspectorPane
         if (_cleanGesture != null && _cleanDisplayedCurrent is { } current)
             return (current, true);
 
+        if (IsMultiEntitySelection)
+        {
+            var scaleMode = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale;
+            if (_groupCoordinator.TryReadSelection(scaleMode, out var group, out var error))
+            {
+                _groupTransformUnavailableReason = null;
+                return (new Transform { Position = group.Position, Rotation = group.Rotation,
+                    Scale = group.Scale }, true);
+            }
+            _groupTransformUnavailableReason = error;
+            return (Transform.Identity, false);
+        }
+
+        _groupTransformUnavailableReason = null;
+
         switch (EffectiveSelection()?.Primary)
         {
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
@@ -2824,6 +2808,8 @@ public class PoseInspectorPane
                 return (Transform.Identity, false);
         }
     }
+
+
 
     private void BeginTransformSession(
         Transform displayedStart,
@@ -2906,7 +2892,14 @@ public class PoseInspectorPane
             relativeSecondaryBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
                 Config.ConfigurationService.Instance.Config
-                    .RelativeSecondaryBones);
+                    .RelativeSecondaryBones,
+            groupScale: IsMultiEntitySelection
+                ? Config.ConfigurationService.Instance.Config.Gizmo.GroupScale
+                : global::Poser.Domain.Transforms.GroupScaleMode.SizesAndSpacing,
+            groupId: IsMultiEntitySelection
+                ? _groups.ActiveSelection(_selection.Selected)?.Id
+                : null,
+            groupTransform: IsMultiEntitySelection);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
 
@@ -2914,11 +2907,13 @@ public class PoseInspectorPane
         _cleanModelStart = modelStart;
         _cleanDisplayedCurrent = displayedStart;
         _cleanGesture = gesture;
+        _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame() : null;
+        _cleanGroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale;
     }
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        if (_entity is not (IActor or IBone) &&
+        if (!IsMultiEntitySelection && _entity is not (IActor or IBone) &&
             _primary is not { Kind: SceneEntityKind.Light } &&
             _primary is not { Kind: SceneEntityKind.Prop } &&
             _primary is not { Kind: SceneEntityKind.WorldObject })
@@ -2935,6 +2930,8 @@ public class PoseInspectorPane
                 modelAfter.Rotation *
                 Quaternion.Conjugate(modelStart.Rotation)),
             DivideComponents(modelAfter.Scale, modelStart.Scale));
+        if (_cleanGroupFrame is { } frame)
+            delta = delta with { Rotation = frame.ToWorldDelta(delta.Rotation) };
         var update = _cleanTransforms.Update(gesture, delta);
         if (!update.Success)
         {
@@ -2961,6 +2958,7 @@ public class PoseInspectorPane
         _dragStart = null;
         _dragEuler = null;
         _cleanGesture = null;
+        _cleanGroupFrame = null;
         _cleanModelStart = null;
         _cleanDisplayedCurrent = null;
         _scaleGestureAxis = -1;
@@ -2995,7 +2993,7 @@ public class PoseInspectorPane
             1 => changed.Y,
             _ => changed.Z,
         };
-        float factor = MathF.Abs(start) < 0.00001f
+        float factor = start == 0f
             ? 1f
             : current / start;
         return frozenStart * factor;
@@ -3025,7 +3023,7 @@ public class PoseInspectorPane
         Vector3 denominator)
     {
         static float Divide(float left, float right) =>
-            MathF.Abs(right) < 0.00001f
+            right == 0f
                 ? 1f
                 : left / right;
         return new Vector3(

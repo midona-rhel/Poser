@@ -287,10 +287,18 @@ public static class TransformMath
         Vector3 pivot,
         bool rotatePosition,
         bool scalePosition,
-        bool scaleOwn)
+        bool scaleOwn,
+        bool groupFactors = false)
     {
         baseline = baseline.Normalized();
-        delta = delta.Normalized();
+        if (groupFactors)
+        {
+            if (!GroupTransformControls.ValidDelta(delta))
+                throw new ArgumentOutOfRangeException(nameof(delta));
+            delta = delta with { Rotation = NormalizeRotation(delta.Rotation) };
+        }
+        else
+            delta = delta.Normalized();
         var rotation = space == TransformSpace.Local
             ? NormalizeRotation(baseline.Rotation * delta.Rotation)
             : NormalizeRotation(delta.Rotation * baseline.Rotation);

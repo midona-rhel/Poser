@@ -6,6 +6,7 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
 
@@ -226,6 +227,35 @@ public static class SceneFileValidation
         if (scene.Environment is { } environment &&
             ValidateEnvironment(environment) is { } environmentFailure)
             return environmentFailure;
+
+        if (SceneGroupTransformCodec.Validate(scene) is { } groupFailure)
+            return Fail(SceneFileValidationFailureKind.Relationship, groupFailure);
+        if (scene.Groups is { } groups)
+            foreach (var group in groups)
+            {
+                if (group.InitialFrameRotation is { } frame &&
+                    (!IsFinite(frame) ||
+                     frame.LengthSquared() < SceneFileLimits.MinQuaternionLengthSquared))
+                    return Fail(SceneFileValidationFailureKind.DegenerateQuaternion,
+                        $"Group '{group.Name}' has an invalid initial frame rotation.");
+                if (group.Transform is { } transform)
+                {
+                    if (!IsFinite(transform.FrameOrigin) ||
+                        !IsFinite(transform.Position) ||
+                        !IsFinite(transform.FrameRotation) ||
+                        !IsFinite(transform.Rotation) ||
+                        !IsFinite(transform.SpacingScale) ||
+                        !IsFinite(transform.OwnScale) ||
+                        !TransformMath.IsValidRotation(transform.FrameRotation) ||
+                        !TransformMath.IsValidRotation(transform.Rotation))
+                        return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                            $"Group '{group.Name}' has an invalid transform state.");
+                    foreach (var member in transform.Members)
+                        if (!member.Initial.IsValid || !member.Expected.IsValid)
+                            return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                                $"Group '{group.Name}' has an invalid member transform.");
+                }
+            }
 
         return SceneFileValidationOutcome.Ok();
     }
