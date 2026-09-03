@@ -21,6 +21,29 @@ public readonly record struct WorldObjectRow(
     byte Flags,
     bool IsEffect = false);
 
+/// <summary>The native instance identity captured by a claim. Address alone
+/// is not sufficient: the game can recycle an object slot while an old
+/// handle is still in Poser's list.</summary>
+public readonly record struct WorldObjectIncarnation(
+    nint Address,
+    long Generation,
+    nint ResourceIdentity,
+    bool IsVfx = false);
+
+public enum VfxPlaybackState
+{
+    Unavailable,
+    Playing,
+    Paused,
+    Inactive,
+}
+
+public readonly record struct VfxStateSnapshot(
+    System.Numerics.Vector4 Color,
+    System.Numerics.Vector3 Intensity,
+    float Speed,
+    VfxPlaybackState Playback);
+
 /// <summary>
 /// The NATIVE seam under <see cref="WorldObjectService"/>: the walk of the
 /// game's own scene graph, and the reads and writes to the BG objects it
@@ -71,6 +94,16 @@ public interface IWorldObjectPort
     /// written and never restored onto.</summary>
     bool IsAlive(nint address);
 
+    /// <summary>Reads the current native incarnation. Implementations that
+    /// cannot expose a resource identity may return a stable address token;
+    /// native VFX/BG ports should provide their generation/resource pair.</summary>
+    bool TryReadIncarnation(
+        nint address, out WorldObjectIncarnation incarnation)
+    {
+        incarnation = new WorldObjectIncarnation(address, 0, nint.Zero);
+        return IsAlive(address);
+    }
+
     /// <summary>Reads one object's current placement. False leaves
     /// <paramref name="placement"/> at its default and means the address is
     /// not readable.</summary>
@@ -79,6 +112,18 @@ public interface IWorldObjectPort
     /// <summary>Writes one object's placement and re-states the render and
     /// culling caches that hang off it.</summary>
     void Write(nint address, in Transform placement);
+
+    /// <summary>Writes and refreshes a VFX transform without an implicit
+    /// replay. Playback commands are separate so a drag cannot restart a
+    /// playing effect; paused and inactive effects remain stopped.</summary>
+    void WriteVfxTransform(nint address, in Transform placement) =>
+        Write(address, placement);
+
+    bool TryWriteVfxTransform(nint address, in Transform placement)
+    {
+        WriteVfxTransform(address, placement);
+        return true;
+    }
 
     /// <summary>Reads one object's draw flags — the byte that carries, among
     /// other things, whether it is drawn at all.</summary>
@@ -120,6 +165,12 @@ public interface IWorldObjectPort
     /// that is not a live VFX.</summary>
     void SetVfxSpeed(nint address, float speed);
 
+    bool TrySetVfxSpeed(nint address, float speed)
+    {
+        SetVfxSpeed(address, speed);
+        return true;
+    }
+
     /// <summary>Writes a VFX's colour multiplier (RGB; the effect's alpha
     /// stays the opacity's). A no-op on a BG object — model staining needs
     /// natives this port does not carry yet.</summary>
@@ -133,8 +184,20 @@ public interface IWorldObjectPort
     /// </summary>
     void PauseVfx(nint address);
 
+    bool TryPauseVfx(nint address)
+    {
+        PauseVfx(address);
+        return true;
+    }
+
     /// <summary>Plays a paused effect again at the stated speed.</summary>
     void ResumeVfx(nint address, float speed);
+
+    bool TryResumeVfx(nint address, float speed)
+    {
+        ResumeVfx(address, speed);
+        return true;
+    }
 
     /// <summary>Whether the effect is still playing.</summary>
     bool IsVfxActive(nint address);
@@ -146,6 +209,29 @@ public interface IWorldObjectPort
         out System.Numerics.Vector3 intensity,
         out float speed);
 
+    /// <summary>Reads the complete state needed for exact VFX rollback.
+    /// Returning false means playback is not safely observable.</summary>
+    bool TryReadVfxSnapshot(
+        nint address, out VfxStateSnapshot snapshot)
+    {
+        snapshot = default;
+        if (!TryReadVfxState(address, out var color, out var intensity,
+                out var speed)
+            || !TryReadVfxPlayback(address, out var playback))
+            return false;
+        snapshot = new VfxStateSnapshot(color, intensity, speed, playback);
+        return true;
+    }
+
+    /// <summary>Reads Playing, Paused or Inactive separately. Unavailable is
+    /// returned as false because it is a refusal to capture.</summary>
+    bool TryReadVfxPlayback(
+        nint address, out VfxPlaybackState playback)
+    {
+        playback = VfxPlaybackState.Unavailable;
+        return false;
+    }
+
     /// <summary>Puts a captured effect state back on release.</summary>
     void RestoreVfxState(
         nint address,
@@ -153,6 +239,17 @@ public interface IWorldObjectPort
         System.Numerics.Vector3 intensity,
         float speed,
         bool resume);
+
+    /// <summary>Exact rollback including inactive/paused state. The legacy
+    /// method remains for ports that only support the earlier bool contract.
+    /// </summary>
+    bool TryRestoreVfxState(
+        nint address, VfxStateSnapshot snapshot)
+    {
+        RestoreVfxState(address, snapshot.Color, snapshot.Intensity,
+            snapshot.Speed, snapshot.Playback == VfxPlaybackState.Playing);
+        return true;
+    }
 
     /// <summary>Dyes a BG object; null clears to white. False while the
     /// model has not produced its stain buffer yet — retry next tick.
@@ -199,5 +296,27 @@ public interface IWorldObjectPort
     /// both. Never called with an adopted address — the map's own objects
     /// are always restored instead.</summary>
     void Destroy(nint address);
+
+    /// <summary>Reports whether teardown actually completed. The default
+    /// preserves the old void seam for test/fallback ports.</summary>
+    bool TryDestroy(nint address)
+    {
+        Destroy(address);
+        return true;
+    }
+
+    /// <summary>Destroys only the exact VFX incarnation named by a claim.
+    /// A replacement at the same address must never be destroyed.</summary>
+    bool TryDestroyVfx(WorldObjectIncarnation incarnation)
+    {
+        if (!TryReadIncarnation(incarnation.Address, out var current)
+            || current != incarnation)
+            return false;
+        return TryDestroy(incarnation.Address);
+    }
+
+    /// <summary>Releases an exact VFX claim after its native object vanished,
+    /// without touching a replacement at the same address.</summary>
+    bool TryReleaseVfxClaim(WorldObjectIncarnation incarnation) => false;
 }
 

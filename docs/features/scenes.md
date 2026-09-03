@@ -116,6 +116,18 @@ The workspace manages the LIVE scene. Browsing saved scenes — recent files and
 automatic snapshots — belongs to the Library, which already scans the scene
 extension.
 
+World VFX claims retain their observed kind independently of a readable
+filename. Adoption captures Playing, Paused, or Inactive playback and refuses
+when native playback is unavailable or ambiguous; release restores that exact
+state. Transform writes place the effect, notify, and re-cull without
+replaying it on every drag tick; this avoids repeated playback restarts, while
+paused and inactive effects remain stopped. Native effects may still impose
+their own emission behavior after a move; the contract does not promise a
+universal particle-origin refresh. Spawned
+effect resource-path claims are case-insensitive, reference-counted, and live
+until the last exact teardown; failed creation and failed teardown retain or
+roll back ownership rather than reporting success.
+
 ## Portable appearance
 
 `Modded appearance` makes a save PORTABLE: the scene carries each actor's
