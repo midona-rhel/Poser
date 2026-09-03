@@ -22,6 +22,7 @@ public sealed class UIManager : IUIManager
     private readonly ITransformFacade _cleanTransforms;
     private readonly IKeyState _keyState;
     private readonly global::PosingCore.Services.IKeyEvents _keyEvents;
+    private readonly global::Poser.Application.Transforms.ValueJournal _values;
     private readonly IEditorState _editorState;
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
@@ -45,6 +46,7 @@ public sealed class UIManager : IUIManager
         ITransformFacade cleanTransforms,
         IKeyState keyState,
         global::PosingCore.Services.IKeyEvents keyEvents,
+        global::Poser.Application.Transforms.ValueJournal values,
         IEditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
@@ -73,6 +75,10 @@ public sealed class UIManager : IUIManager
         _keybinds = BuildKeybinds();
         _keyEvents = keyEvents;
         _keyEvents.KeyEvent += OnKeyEvent;
+        // A released drag or an accepted typed value seals the journal's
+        // open step, so every control's edit is one step, press to release.
+        _values = values;
+        Crystarium.ValueCommitted += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
@@ -515,6 +521,7 @@ public sealed class UIManager : IUIManager
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _keyEvents.KeyEvent -= OnKeyEvent;
+        Crystarium.ValueCommitted -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;
