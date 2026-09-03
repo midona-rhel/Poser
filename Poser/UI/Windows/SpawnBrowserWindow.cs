@@ -167,6 +167,10 @@ public sealed class SpawnBrowserWindow : Window
     private int _lastRow = -1;
     private double _lastActivatedAt;
     private IActor? _pendingSelectSpawned;
+
+    /// <summary>The catalog label a spawned actor takes as its nickname once
+    /// it is bound; its game name stays a Poser name Penumbra can identify.</summary>
+    private string? _pendingNickname;
     private ILight? _pendingSelectSpawnedLight;
 
     public SpawnBrowserWindow(
@@ -1286,6 +1290,10 @@ public sealed class SpawnBrowserWindow : Window
             _notices.Failed(SpawnFailedNote);
             return;
         }
+        // The catalog label names the row; the game object keeps a Poser
+        // name so Penumbra can identify it. The nickname lands with the
+        // selection, once the actor is bound.
+        _pendingNickname = entry.Name;
         SelectSpawned(spawned);
     }
 
@@ -1345,6 +1353,11 @@ public sealed class SpawnBrowserWindow : Window
             return;
         _selection.Select(SelectionId.ForActor(id));
         _pendingSelectSpawned = null;
+        if (_pendingNickname is { } nickname)
+        {
+            _configuration.SetNickname(id.LogicalId, nickname);
+            _pendingNickname = null;
+        }
         FreezeIfRequested(id);
     }
 

@@ -1149,7 +1149,11 @@ public unsafe class ActorSpawnService : IActorSpawnService
             reserveCompanionSlot: false,
             inheritSource: false,
             modelCharaId: entry.ModelCharaId,
-            name: entry.Name,
+            // The game name stays a Poser name: Penumbra identifies a
+            // player-kind object by a two-word capitalized name and answered
+            // InvalidIdentifier (16) for "Morbol seedling", so the actor got
+            // no collection (2026-09-03). The label is the nickname instead.
+            name: null,
             kind: entry.Kind);
         return actor;
     }
