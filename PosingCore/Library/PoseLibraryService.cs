@@ -35,13 +35,21 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
         Revision = 0,
+        Generation = 0,
+        TerminalResult = PoseLibraryScanResult.Initial,
         Entries = [],
-        Folders = []
+        Folders = [],
+        Sources = []
     };
 
     private readonly ConfigurationService _config;
     private readonly AtomicPoseFileStore _poseStore;
     private readonly Func<string, bool>? _observeDirectory;
+    private readonly Func<string, IEnumerable<string>> _enumerateFiles;
+    private readonly Func<string, IEnumerable<string>> _enumerateDirectories;
+    private readonly int _maxFiles;
+    private readonly int _maxFolders;
+    private readonly int _maxSources;
     private readonly object _sync = new();
 
     private PoseLibrarySnapshot _snapshot = EmptySnapshot;
@@ -60,12 +68,32 @@ public sealed class PoseLibraryService : IPoseLibraryService
     internal PoseLibraryService(
         ConfigurationService config,
         AtomicPoseFileStore poseStore,
-        Func<string, bool>? observeDirectory = null)
+        Func<string, bool>? observeDirectory = null,
+        Func<string, IEnumerable<string>>? enumerateFiles = null,
+        Func<string, IEnumerable<string>>? enumerateDirectories = null,
+        int maxFiles = PoseLibraryLimits.MaxFiles,
+        int maxFolders = PoseLibraryLimits.MaxFolders,
+        int maxSources = PoseLibraryLimits.MaxSources)
     {
         _config = config;
         _poseStore = poseStore;
         _observeDirectory = observeDirectory;
+        _enumerateFiles = enumerateFiles ?? Directory.EnumerateFiles;
+        _enumerateDirectories = enumerateDirectories ?? Directory.EnumerateDirectories;
+        _maxFiles = Math.Clamp(maxFiles, 1, PoseLibraryLimits.MaxFiles);
+        _maxFolders = Math.Clamp(maxFolders, 1, PoseLibraryLimits.MaxFolders);
+        _maxSources = Math.Clamp(maxSources, 1, PoseLibraryLimits.MaxSources);
         _sourceSignature = BuildSourceSignature();
+        _snapshot = new PoseLibrarySnapshot
+        {
+            Revision = 0,
+            Generation = 0,
+            TerminalResult = PoseLibraryScanResult.Initial,
+            Entries = [],
+            Folders = [],
+            Sources = CaptureSources(PoseLibrarySourceHealth.Unscanned),
+            SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - _maxSources)
+        };
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
 
@@ -117,9 +145,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         _config.OnConfigurationChanged -= OnConfigurationChanged;
     }
 
-    // A config save fires for every setting; only a change to which roots are
-    // scanned, their names (the root folder labels), or their order
-    // invalidates the snapshot.
+    // A config save fires for every setting; source identity, enabled state,
+    // path, and order are the only changes that invalidate the snapshot.
     private void OnConfigurationChanged()
     {
         var signature = BuildSourceSignature();
@@ -138,9 +165,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var builder = new StringBuilder();
         foreach (var source in _config.Config.Library.Sources)
         {
-            if (!source.Enabled)
-                continue;
-
+            builder.Append(source.Enabled ? '1' : '0');
+            builder.Append('\0');
             builder.Append(source.Name);
             builder.Append('\0');
             builder.Append(source.Path);
@@ -179,12 +205,14 @@ public sealed class PoseLibraryService : IPoseLibraryService
             }
             catch (ScanAbortException)
             {
-                // IO, traversal, and bound failures retain the last snapshot.
+                // Source failures are handled inside RunScan. This guard is
+                // for an unexpected pass-level failure only.
+                PublishFailure(generation, token, "The library scan failed.");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // A scan never surfaces: a failed pass leaves the previous
-                // snapshot in place rather than tearing down the browser.
+                PublishFailure(generation, token, BoundDetail(
+                    "The library scan failed: " + ex.Message));
             }
 
             lock (_sync)
@@ -216,38 +244,103 @@ public sealed class PoseLibraryService : IPoseLibraryService
     {
         var folders = new List<PoseLibraryFolder>();
         var entries = new List<PoseLibraryEntry>();
-        var folderCount = 0;
-        var fileCount = 0;
-
         var sources = _config.Config.Library.Sources
+            .Take(_maxSources)
             .Select(source => new SourceSpec(source.Name, source.Path, source.Enabled))
             .ToArray();
+        var skippedSources = Math.Max(0, _config.Config.Library.Sources.Count - sources.Length);
 
+        var sourceSnapshots = new List<PoseLibrarySourceSnapshot>(sources.Length);
+        var failedSources = skippedSources;
+        var readySources = 0;
         for (var i = 0; i < sources.Length; i++)
         {
             cancellation.ThrowIfCancellationRequested();
             var source = sources[i];
-            if (!source.Enabled || string.IsNullOrWhiteSpace(source.Path))
-                continue;
-
-            if (!ObserveDirectory(source.Path))
+            if (!source.Enabled)
             {
-                throw new ScanAbortException(
-                    $"The configured pose library root could not be observed: {source.Path}");
+                sourceSnapshots.Add(new PoseLibrarySourceSnapshot
+                {
+                    Index = i,
+                    Name = source.Name,
+                    Path = source.Path,
+                    Enabled = false,
+                    Health = PoseLibrarySourceHealth.Disabled,
+                    Detail = "Source is disabled."
+                });
+                continue;
             }
 
-            var root = BuildNode(
-                i,
-                source.Name,
-                source.Path,
-                "",
-                0,
-                isRoot: true,
-                cancellation,
-                ref folderCount,
-                ref fileCount);
-            if (root is not null)
-                Flatten(root, folders, entries, cancellation);
+            var observation = ObserveSource(source.Path);
+            if (observation.Health != PoseLibrarySourceHealth.Ready)
+            {
+                failedSources++;
+                sourceSnapshots.Add(new PoseLibrarySourceSnapshot
+                {
+                    Index = i,
+                    Name = source.Name,
+                    Path = source.Path,
+                    Enabled = true,
+                    Health = observation.Health,
+                    Detail = observation.Detail
+                });
+                continue;
+            }
+
+            // Validate each source before reserving aggregate capacity. A huge
+            // or broken source leaves the remaining budget for later roots.
+            var folderCount = 0;
+            var fileCount = 0;
+            try
+            {
+                var root = BuildNode(
+                    i,
+                    source.Name,
+                    source.Path,
+                    "",
+                    0,
+                    isRoot: true,
+                    cancellation,
+                    ref folderCount,
+                    ref fileCount);
+                if (root is not null)
+                {
+                    if (entries.Count + root.Count > _maxFiles
+                        || folders.Count + CountFolders(root) > _maxFolders)
+                        throw new ScanAbortException(
+                            $"Source '{source.Path}' exceeds the remaining library capacity " +
+                            $"({_maxFiles} files / {_maxFolders} folders overall). Disable another source or narrow this root.");
+                    // The entire tree was validated before appending. Flatten
+                    // assigns indexes directly into the aggregate folder list.
+                    Flatten(root, folders, entries, cancellation);
+                }
+                readySources++;
+                sourceSnapshots.Add(new PoseLibrarySourceSnapshot
+                {
+                    Index = i,
+                    Name = source.Name,
+                    Path = source.Path,
+                    Enabled = true,
+                    Health = PoseLibrarySourceHealth.Ready
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (ScanAbortException ex)
+            {
+                failedSources++;
+                sourceSnapshots.Add(new PoseLibrarySourceSnapshot
+                {
+                    Index = i,
+                    Name = source.Name,
+                    Path = source.Path,
+                    Enabled = true,
+                    Health = ex.Health,
+                    Detail = BoundDetail(ex.Message)
+                });
+            }
         }
 
         entries.Sort(static (a, b) =>
@@ -268,8 +361,16 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
             {
                 Revision = revision,
+                Generation = generation,
+                TerminalResult = failedSources == 0
+                    ? PoseLibraryScanResult.Success
+                    : readySources == 0
+                        ? PoseLibraryScanResult.Failure
+                        : PoseLibraryScanResult.PartialFailure,
                 Entries = entries,
-                Folders = folders
+                Folders = folders,
+                Sources = sourceSnapshots,
+                SkippedSourceCount = skippedSources
             });
         }
     }
@@ -291,9 +392,12 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     private readonly record struct SourceSpec(string Name, string Path, bool Enabled);
 
+    private static int CountFolders(ScanNode node) =>
+        1 + node.Children.Sum(CountFolders);
+
     /// <summary>
     /// Builds one directory subtree. Any traversal failure or bound breach
-    /// aborts the pass, because publishing a partial tree is misleading.
+    /// rejects this source, because publishing a partial tree is misleading.
     /// </summary>
     private ScanNode? BuildNode(
         int sourceIndex,
@@ -308,9 +412,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
     {
         cancellation.ThrowIfCancellationRequested();
         if (depth > PoseLibraryLimits.MaxDepth)
-            throw new ScanAbortException("The pose library directory depth exceeded its bound.");
-        if (++folderCount > PoseLibraryLimits.MaxFolders)
-            throw new ScanAbortException("The pose library folder count exceeded its bound.");
+            throw new ScanAbortException($"Folder '{directory}' exceeds the nesting limit.");
+        var observation = ObserveSource(directory);
+        if (observation.Health != PoseLibrarySourceHealth.Ready)
+            throw new ScanAbortException(
+                $"Folder '{directory}': {observation.Detail}", observation.Health);
+        if (++folderCount > _maxFolders)
+            throw new ScanAbortException($"Source traversal at '{directory}' exceeds the folder limit.");
 
         var node = new ScanNode
         {
@@ -323,13 +431,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var files = new List<string>();
         try
         {
-            foreach (var file in Directory.EnumerateFiles(directory))
+            foreach (var file in _enumerateFiles(directory))
             {
                 cancellation.ThrowIfCancellationRequested();
                 if (!IsLibraryFile(file))
                     continue;
-                if (++fileCount > PoseLibraryLimits.MaxFiles)
-                    throw new ScanAbortException("The pose library file count exceeded its bound.");
+                if (++fileCount > _maxFiles)
+                    throw new ScanAbortException($"Source traversal at '{directory}' exceeds the file limit.");
                 files.Add(file);
             }
         }
@@ -337,7 +445,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         {
             if (ex is ScanAbortException or OperationCanceledException)
                 throw;
-            throw new ScanAbortException($"Enumerating pose library files failed: {ex.Message}", ex);
+            throw new ScanAbortException($"Reading files in '{directory}' failed: {ex.Message}", ex);
         }
 
         node.Files.AddRange(files);
@@ -345,11 +453,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var subdirectories = new List<string>();
         try
         {
-            foreach (var subdirectory in Directory.EnumerateDirectories(directory))
+            foreach (var subdirectory in _enumerateDirectories(directory))
             {
                 cancellation.ThrowIfCancellationRequested();
-                if (folderCount + subdirectories.Count + 1 > PoseLibraryLimits.MaxFolders)
-                    throw new ScanAbortException("The pose library folder count exceeded its bound.");
+                if (folderCount + subdirectories.Count + 1 > _maxFolders)
+                    throw new ScanAbortException($"Source traversal at '{directory}' exceeds the folder limit.");
                 subdirectories.Add(subdirectory);
             }
         }
@@ -357,7 +465,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         {
             if (ex is ScanAbortException or OperationCanceledException)
                 throw;
-            throw new ScanAbortException($"Enumerating pose library folders failed: {ex.Message}", ex);
+            throw new ScanAbortException($"Reading folders in '{directory}' failed: {ex.Message}", ex);
         }
 
         subdirectories.Sort(StringComparer.OrdinalIgnoreCase);
@@ -565,42 +673,154 @@ public sealed class PoseLibraryService : IPoseLibraryService
         return PoseLibraryEntryKind.Pose;
     }
 
-    private bool ObserveDirectory(string path)
+    private IReadOnlyList<PoseLibrarySourceSnapshot> CaptureSources(
+        PoseLibrarySourceHealth health,
+        string? detail = null)
     {
+        var sources = _config.Config.Library.Sources;
+        var result = new List<PoseLibrarySourceSnapshot>(Math.Min(sources.Count, _maxSources));
+        for (var i = 0; i < Math.Min(sources.Count, _maxSources); i++)
+        {
+            var source = sources[i];
+            var state = source.Enabled ? health : PoseLibrarySourceHealth.Disabled;
+            result.Add(new PoseLibrarySourceSnapshot
+            {
+                Index = i,
+                Name = source.Name,
+                Path = source.Path,
+                Enabled = source.Enabled,
+                Health = state,
+                Detail = state == PoseLibrarySourceHealth.Disabled
+                    ? "Source is disabled."
+                    : detail ?? string.Empty
+            });
+        }
+        return result;
+    }
+
+    private void PublishFailure(
+        long generation,
+        CancellationToken cancellation,
+        string detail)
+    {
+        if (cancellation.IsCancellationRequested)
+            return;
+        lock (_sync)
+        {
+            if (_disposed || generation != _generation)
+                return;
+            var revision = _snapshot.Revision + 1;
+            Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
+            {
+                Revision = revision,
+                Generation = generation,
+                TerminalResult = PoseLibraryScanResult.Failure,
+                Entries = [],
+                Folders = [],
+                Sources = CaptureSources(PoseLibrarySourceHealth.Failed, detail),
+                SkippedSourceCount = Math.Max(0, _config.Config.Library.Sources.Count - _maxSources)
+            });
+        }
+    }
+
+    private SourceObservation ObserveSource(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return new(
+                PoseLibrarySourceHealth.Invalid,
+                "Source path is blank.");
+
+        try
+        {
+            _ = Path.GetFullPath(path);
+        }
+        catch (Exception ex)
+        {
+            return new(
+                PoseLibrarySourceHealth.Invalid,
+                BoundDetail("Source path is invalid: " + ex.Message));
+        }
+
         if (_observeDirectory is not null)
         {
             try
             {
-                return _observeDirectory(path);
+                return _observeDirectory(path)
+                    ? new(PoseLibrarySourceHealth.Ready, string.Empty)
+                    : new(PoseLibrarySourceHealth.Missing,
+                        "Source folder does not exist.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return new(PoseLibrarySourceHealth.Denied,
+                    BoundDetail("Access to source folder was denied: " + ex.Message));
             }
             catch (Exception ex)
             {
-                throw new ScanAbortException(
-                    $"Observing the configured pose library root failed: {ex.Message}",
-                    ex);
+                return new(PoseLibrarySourceHealth.Failed,
+                    BoundDetail("Observing source folder failed: " + ex.Message));
             }
         }
 
         try
         {
-            return Directory.Exists(path);
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) == 0)
+                return new(
+                    PoseLibrarySourceHealth.Failed,
+                    "Configured source path is a file, not a folder.");
+            return new(PoseLibrarySourceHealth.Ready, string.Empty);
         }
-        catch (Exception)
+        catch (DirectoryNotFoundException)
         {
-            return false;
+            return new(
+                PoseLibrarySourceHealth.Missing,
+                "Source folder does not exist.");
+        }
+        catch (FileNotFoundException)
+        {
+            return new(
+                PoseLibrarySourceHealth.Missing,
+                "Source folder does not exist.");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new(
+                PoseLibrarySourceHealth.Denied,
+                BoundDetail("Access to source folder was denied: " + ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return new(
+                PoseLibrarySourceHealth.Failed,
+                BoundDetail("Observing source folder failed: " + ex.Message));
         }
     }
 
+    private static string BoundDetail(string detail) =>
+        detail.Length <= 4096 ? detail : detail[..4096];
+
+    private readonly record struct SourceObservation(
+        PoseLibrarySourceHealth Health,
+        string Detail);
+
     private sealed class ScanAbortException : Exception
     {
-        public ScanAbortException(string message)
+        public PoseLibrarySourceHealth Health { get; }
+
+        public ScanAbortException(string message,
+            PoseLibrarySourceHealth health = PoseLibrarySourceHealth.Failed)
             : base(message)
         {
+            Health = health;
         }
 
         public ScanAbortException(string message, Exception inner)
             : base(message, inner)
         {
+            Health = inner is UnauthorizedAccessException
+                ? PoseLibrarySourceHealth.Denied
+                : PoseLibrarySourceHealth.Failed;
         }
     }
 }

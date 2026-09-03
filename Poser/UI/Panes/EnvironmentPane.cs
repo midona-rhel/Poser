@@ -1024,7 +1024,12 @@ public sealed class EnvironmentPane
     private void SaveToLibrary(string name)
     {
         var root = Config.ConfigurationService.Instance.Config.Library
-            .EnsureObjectsRootExists();
+            .ResolveObjectsRoot();
+        if (!global::Poser.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
+        {
+            _notices.Refused(detail);
+            return;
+        }
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
             root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(

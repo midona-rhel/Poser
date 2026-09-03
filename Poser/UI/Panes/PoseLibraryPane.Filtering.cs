@@ -357,8 +357,8 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        // No counter (user: pointless beside the single action row) — the
-        // caption carries only the scan state, and notes above win.
+        // No counter (user: pointless beside the single action row). Source
+        // failures remain available through the separate Source issues action.
         _vm.Status = scanning ? ScanningText : string.Empty;
     }
 

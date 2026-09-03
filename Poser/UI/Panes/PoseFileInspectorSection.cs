@@ -2305,8 +2305,8 @@ public sealed class PoseFileInspectorSection
                     help: problem,
                     id: "library-export-confirm"))
             {
-                ConfirmExportToLibrary(skeleton, sources[selected], trimmed);
-                _libraryExportOpen = false;
+                if (ConfirmExportToLibrary(skeleton, sources[selected], trimmed))
+                    _libraryExportOpen = false;
             }
             ImGui.SameLine(0f, gap);
             if (Crystarium.Button(
@@ -2315,13 +2315,16 @@ public sealed class PoseFileInspectorSection
         });
     }
 
-    private void ConfirmExportToLibrary(
+    private bool ConfirmExportToLibrary(
         ISkeleton skeleton,
         LibrarySourceConfig source,
         string name)
     {
-        _config.Config.Library.LastExportSourcePath = source.Path;
-        _config.Save();
+        if (!LibraryConfiguration.TryEnsureDirectory(source.Path, out var detail))
+        {
+            _notices.Failed("Library: " + detail);
+            return false;
+        }
 
         string path = System.IO.Path.Combine(source.Path, name + ".pose");
         var armed = _poseFacade.ExportPose(skeleton.Actor, path, exported =>
@@ -2336,7 +2339,14 @@ public sealed class PoseFileInspectorSection
                     "Library: the pose file could not be written.");
         });
         if (!armed.Success)
+        {
             _notices.Failed($"Library: {armed.Detail}");
+            return false;
+        }
+
+        _config.Config.Library.LastExportSourcePath = source.Path;
+        _config.Save();
+        return true;
     }
 
     public PoseImportOptions BuildImportOptions() => BuildOptions();

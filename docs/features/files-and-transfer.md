@@ -30,11 +30,37 @@ matching libraries. Auto-saves default under the plugin configuration folder.
 They are written and cleaned up, not shown in a library. File browsers open in
 the matching folder; light and camera files use Documents.
 
-Library scans run in the background. If a scan fails or is cancelled, the
-previous list stays visible. Bad, future, and oversized files stay in the list
-with an explanation. Search uses name, author, and tags. Moving a file keeps
-its favourite status. File actions ask for a fresh scan; metadata is never
-changed for unreadable or future files.
+Library scans run in the background and publish one immutable snapshot. A pass
+records configured sources (name, path, enabled state, health, and safe
+detail), its generation, and a terminal result: initial, success, partial
+failure, or failure. Missing, denied, invalid, and traversal-failed sources
+are reported independently; a failed source contributes no truncated subtree,
+and any entries previously published for that source are omitted from the new
+snapshot. Healthy sources publish their fresh entries. Source order and
+index-based folder keys remain stable even when roots overlap. A cancelled or
+stale pass does not publish.
+
+Publication is limited to 64 configured source records, 32,768 files and 4,096
+folders overall. Excess source records have an explicit skipped count; a source
+that cannot fit is reported as failed without consuming the remaining capacity.
+Later small roots can still publish. Traversal limits also apply to each source.
+
+The library distinguishes no enabled sources, a healthy empty library, and
+source failures. Source issues opens readable paths, reasons, and explicit
+Create, Retry, Open, Disable and settings actions. Optional external roots are
+never created by a scan. Refresh and source configuration changes start a new
+pass; after copying files externally, press Refresh. Bad, future, and oversized
+files stay in the list with an explanation. Search uses name, author, and tags.
+Moving a file keeps its favourite status; metadata is never changed for
+unreadable or future files.
+Before a library export, the selected root is created and checked. A failed
+check reports the requested path and stops the write; it never redirects the
+file to Documents.
+
+The title-bar Open in Explorer action opens the configured Poser root containing
+the managed homes. This explicit action may create a missing root after a checked
+request; a failure is reported without redirecting. Source-specific Open actions
+in Source issues remain separate.
 
 ## Autosave
 

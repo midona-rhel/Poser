@@ -132,7 +132,16 @@ public class LibraryConfiguration
     /// poses home when it ends in its reserved leaf, else the default.</summary>
     public string ResolveRoot()
     {
-        var poses = ResolvePoseRoot().TrimEnd('\\', '/');
+        // The managed root is a configuration choice even if its pose source
+        // is temporarily disabled. External source selection never changes it.
+        var poses = DefaultPoseRoot;
+        foreach (var source in Sources)
+            if (source.Name == PoseSourceName && !string.IsNullOrWhiteSpace(source.Path))
+            {
+                poses = source.Path;
+                break;
+            }
+        poses = poses.TrimEnd('\\', '/');
         var parent = System.IO.Path.GetDirectoryName(poses);
         return parent != null
             && string.Equals(
@@ -209,28 +218,41 @@ public class LibraryConfiguration
     }
 
     /// <summary>
-    /// Makes one home exist and answers with the path a save should open at.
-    /// It is a CONFIGURED library root and the scan refuses to publish a
-    /// partial snapshot — a root it cannot observe aborts the whole pass — so
-    /// a home that has never been created would take every tab down with it.
-    /// Creation failures fall back to Documents, which always exists.
+    /// Makes one home exist and answers with the configured path a file dialog
+    /// should open at. Failure is deliberately not redirected to Documents:
+    /// the caller that writes a library file must use
+    /// <see cref="TryEnsureDirectory"/> and stop when it fails.
     /// Idempotent; every surface that needs a home calls it.
     /// </summary>
     public string EnsureHomeRootExists(string sourceName, string shipped)
     {
         var root = ResolveHomeRoot(sourceName, shipped);
-        // A save must land where its tab can SEE: a home source that was
-        // dropped or disabled comes back, enabled, the moment a save
-        // needs it — the save itself is the consent.
-        EnsureHomeSourceListed(sourceName, root);
+        _ = TryEnsureDirectory(root, out _);
+        return root;
+    }
+
+    /// <summary>Checked command used immediately before a library write. The
+    /// requested path is the only path this method creates or approves.</summary>
+    public static bool TryEnsureDirectory(string path, out string detail)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            detail = "The library folder path is blank.";
+            return false;
+        }
+
         try
         {
-            System.IO.Directory.CreateDirectory(root);
-            return root;
+            System.IO.Directory.CreateDirectory(path);
+            detail = string.Empty;
+            return true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            detail = ex.Message.Length <= 4096
+                ? $"Could not create library folder '{path}': {ex.Message}"
+                : $"Could not create library folder '{path}': {ex.Message[..4096]}";
+            return false;
         }
     }
 
@@ -273,39 +295,53 @@ public class LibraryConfiguration
         return path;
     }
 
-    /// <summary>
-    /// Creates every home before the library service is constructed. The scan
-    /// aborts on the FIRST configured root it cannot observe, so one missing
-    /// home is every tab missing.
-    /// </summary>
+    /// <summary>Best-effort startup preparation. A home creation failure is
+    /// left visible to the library source-health scan and never throws from
+    /// service registration.</summary>
     public void EnsureHomeRootsExist()
     {
-        foreach (var (name, shipped) in Homes)
-            EnsureHomeRootExists(name, shipped);
+        // Startup creates only configured, enabled managed homes. Optional
+        // external sources and disabled user choices require an explicit action.
+        foreach (var source in Sources)
+        {
+            if (!source.Enabled)
+                continue;
+            foreach (var (name, _) in Homes)
+                if (string.Equals(source.Name, name, StringComparison.Ordinal))
+                {
+                    _ = TryEnsureDirectory(source.Path, out _);
+                    break;
+                }
+        }
     }
 
     /// <summary>
     /// Appends the shipped Brio and Anamnesis roots the first time only, and
     /// each Poser home under its own flag.
     /// </summary>
-    public void EnsureDefaults()
-    {
-        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    public void EnsureDefaults() =>
+        EnsureDefaults(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
-        SeedHome(PoseSourceName, DefaultPoseRoot, PoseRootSeeded,
+    // The production seeding sequence, with a disposable Documents location
+    // supplied by focused filesystem tests.
+    internal void EnsureDefaults(string documents)
+    {
+        var root = Path.Combine(documents, "Poser");
+
+        SeedHome(PoseSourceName, Path.Combine(root, PosesLeaf), PoseRootSeeded,
             () => PoseRootSeeded = true);
-        SeedHome(SceneSourceName, DefaultSceneRoot, SceneRootSeeded,
+        SeedHome(SceneSourceName, Path.Combine(root, ScenesLeaf), SceneRootSeeded,
             () => SceneRootSeeded = true);
-        SeedHome(McdfSourceName, DefaultMcdfRoot, McdfRootSeeded,
+        SeedHome(McdfSourceName, Path.Combine(root, McdfLeaf), McdfRootSeeded,
             () => McdfRootSeeded = true);
-        SeedHome(ObjectsSourceName, DefaultObjectsRoot, ObjectsRootSeeded,
+        SeedHome(ObjectsSourceName, Path.Combine(root, ObjectsLeaf), ObjectsRootSeeded,
             () => ObjectsRootSeeded = true);
         // The settings save once rebuilt the source list without the
         // objects home (it had no folder row there), deleting it on every
         // save while the seed flag kept it from ever coming back. No UI
         // can delete this home deliberately, so a missing objects home is
         // always that bug's residue: it returns at startup.
-        EnsureHomeSourceListed(ObjectsSourceName, DefaultObjectsRoot);
+        EnsureHomeSourceListed(ObjectsSourceName, Path.Combine(root, ObjectsLeaf));
 
         if (DefaultsSeeded)
             return;
@@ -332,7 +368,6 @@ public class LibraryConfiguration
             if (!string.Equals(
                     source.Name, sourceName, StringComparison.Ordinal))
                 continue;
-            source.Enabled = true;
             return;
         }
         Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = path });
@@ -343,7 +378,16 @@ public class LibraryConfiguration
     {
         if (seeded)
             return;
-        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = shipped });
+        var exists = false;
+        foreach (var source in Sources)
+        {
+            if (!string.Equals(source.Name, sourceName, StringComparison.Ordinal))
+                continue;
+            exists = true;
+            break;
+        }
+        if (!exists)
+            Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = shipped });
         markSeeded();
     }
 }

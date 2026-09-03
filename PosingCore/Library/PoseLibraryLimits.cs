@@ -1,8 +1,9 @@
 namespace Poser.Library;
 
 /// <summary>
-/// Hard bounds for one library traversal. A pass that reaches any bound is
-/// abandoned and its previous coherent snapshot remains published.
+/// Per-source traversal and aggregate publication bounds. A source that
+/// exceeds a bound is reported as failed and contributes no entries; later
+/// sources can still use the remaining publication capacity.
 /// </summary>
 public static class PoseLibraryLimits
 {
@@ -14,6 +15,10 @@ public static class PoseLibraryLimits
 
     /// <summary>Maximum library files in one published snapshot.</summary>
     public const int MaxFiles = 32_768;
+
+    /// <summary>Maximum sources observed and retained in a snapshot. Additional
+    /// configured sources are reported by SkippedSourceCount.</summary>
+    public const int MaxSources = 64;
 
     /// <summary>Cancellation is cooperative and aborts the whole pass.</summary>
     public const bool CancellationAbortsPass = true;

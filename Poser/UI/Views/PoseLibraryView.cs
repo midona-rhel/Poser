@@ -235,6 +235,12 @@ public sealed class PoseLibraryViewModel
     /// instead of the grid.</summary>
     public bool ShowNoSources;
 
+    /// <summary>Binder-minted explanation for a source configuration or
+    /// all-source failure state.</summary>
+    public string NoSourcesTitle = "No pose sources found.";
+    public string NoSourcesDetail = string.Empty;
+    public bool NoSourcesHasFailures;
+
     /// <summary>The grid's empty caption, minted by the binder.</summary>
     public string EmptyText = "No matches.";
 
@@ -393,6 +399,7 @@ public sealed class PoseLibraryViewModel
     public Action<float>? OnIconSize;
     public Action? OnRefresh;
     public Action? OnOpenSettings;
+    public Action? OnSourceHealth;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // every one of these closes over nothing but this model.
@@ -1086,24 +1093,37 @@ public static class PoseLibraryView
         };
         float row = theme.Controls.ListRowHeight * scale;
         float button = theme.Controls.ComfortableHeight * scale;
-        float block = row + theme.Spacing.Three * scale + button;
+        float detail = vm.NoSourcesDetail.Length == 0 ? 0f
+            : row + theme.Spacing.One * scale;
+        float block = row + detail + theme.Spacing.Three * scale + button;
         float top = body.Min.Y + (body.Size.Y - block) * 0.5f;
 
         Crystarium.TextInBand(
             new Vector2(body.Min.X, top),
             new Vector2(body.Size.X, row),
-            "No pose sources found.",
+            vm.NoSourcesTitle,
             style,
             TextAlign.Center);
 
+        if (detail > 0f)
+        {
+            Crystarium.TextInBand(
+                new Vector2(body.Min.X, top + row),
+                new Vector2(body.Size.X, row),
+                vm.NoSourcesDetail,
+                style,
+                TextAlign.Center);
+        }
+
         float width = Crystarium.MeasureButton(
-            "Open Settings", ControlStyle.Comfortable).X;
+            vm.NoSourcesHasFailures ? "Source details" : "Open Settings",
+            ControlStyle.Comfortable).X;
         ImGui.SetCursorScreenPos(new Vector2(
             body.Min.X + (body.Size.X - width) * 0.5f,
-            top + row + theme.Spacing.Three * scale));
+            top + row + detail + theme.Spacing.Three * scale));
         Crystarium.Button(
-            "Open Settings",
-            vm.OnOpenSettings,
+            vm.NoSourcesHasFailures ? "Source details" : "Open Settings",
+            vm.NoSourcesHasFailures ? vm.OnSourceHealth : vm.OnOpenSettings,
             style: ControlStyle.Comfortable,
             id: SettingsId);
     }

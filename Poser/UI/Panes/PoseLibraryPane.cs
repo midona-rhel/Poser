@@ -399,6 +399,7 @@ public sealed partial class PoseLibraryPane
     /// <summary>The auto-save tab's minted recovery line and the observation
     /// key it was minted from — one format per CHANGE, not per frame.</summary>
     private string _autoStatusText = string.Empty;
+    private string _libraryHealthText = string.Empty;
 
     private (DateTime? Updated, AutoSaveHealthStatus? Health,
         AutoSaveTerminalStatus Terminal) _autoStatusKey;
@@ -536,6 +537,7 @@ public sealed partial class PoseLibraryPane
         _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
         _vm.OnEditMetadata = OpenMetadataEditor;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
+        _vm.OnSourceHealth = OpenSourceHealth;
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
         // null when the game refuses, which is a note rather than a gate.
@@ -630,6 +632,7 @@ public sealed partial class PoseLibraryPane
         _metaImageBrowser.Draw();
         PumpEnrichments();
         DrawDeleteModal();
+        DrawSourceHealthModal();
     }
 
     /// <summary>The footer primary's actor picker: every scene actor
@@ -681,6 +684,8 @@ public sealed partial class PoseLibraryPane
     private void DrawFooterLead(Crystarium.ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
+        if (_type != LibraryType.AutoSaves && _libraryHealthText.Length > 0)
+            scope.Button("Source issues", OpenSourceHealth, help: _libraryHealthText);
         scope.Label(_vm.Status);
     }
 
@@ -1061,8 +1066,49 @@ public sealed partial class PoseLibraryPane
         ClearTileSelection();
         _vm.ShowRail = true;
         _vm.RailHeads = 2;
-        _vm.ShowNoSources = folders.Count <= 2;
-        _vm.EmptyText = "No matches.";
+        var sources = snapshot.Sources;
+        int enabled = 0;
+        int ready = 0;
+        int failures = snapshot.SkippedSourceCount;
+        foreach (var source in sources)
+        {
+            if (!source.Enabled)
+                continue;
+            enabled++;
+            if (source.Health == PoseLibrarySourceHealth.Ready)
+            {
+                ready++;
+                continue;
+            }
+            if (source.Health != PoseLibrarySourceHealth.Unscanned)
+                failures++;
+        }
+        _libraryHealthText = failures == 0
+            ? string.Empty
+            : $"{failures} source(s) need attention. Open Source issues for paths and actions.";
+        _vm.ShowNoSources = enabled == 0 ||
+            (ready == 0 && snapshot.TerminalResult == PoseLibraryScanResult.Failure);
+        _vm.NoSourcesHasFailures = _vm.ShowNoSources
+            && failures > 0
+            && snapshot.TerminalResult != PoseLibraryScanResult.Initial;
+        _vm.NoSourcesTitle = enabled == 0 && failures == 0
+            ? "No enabled library sources."
+            : _vm.ShowNoSources
+                ? "Library sources unavailable."
+                : string.Empty;
+        _vm.NoSourcesDetail = enabled == 0 && failures == 0
+            ? "Enable a source in Settings to browse the library."
+            : "Open source details to create a missing folder, retry, or change its settings.";
+        var emptyKind = _type switch
+        {
+            LibraryType.Mcdf => "character files",
+            LibraryType.Scenes => "scenes",
+            LibraryType.Objects => "objects",
+            _ => "poses",
+        };
+        _vm.EmptyText = total == 0 && _queryLower.Length == 0 && _tagLower is null
+            ? $"No {emptyKind} found."
+            : "No matches.";
         // The rows standing from here on are the SCANNED library's, so an
         // auto-save kick has to clear them rather than leave them showing
         // under a rail-less tab.
