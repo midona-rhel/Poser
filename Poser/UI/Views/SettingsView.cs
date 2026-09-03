@@ -9,12 +9,6 @@ using Poser.Entities;
 using Poser.Library;
 
 namespace Poser.UI.Views;
-public sealed class LibrarySourceVm
-{
-    public string Name = "";
-    public string Path = "";
-    public bool Enabled = true;
-}
 public sealed record IntegrationStatusVm(
     string Name, bool Available, string Detail);
 
@@ -117,14 +111,16 @@ public sealed class SettingsViewModel
     public bool HideWhileMovingCamera;
     public bool HideGizmoWhileManipulating;
     public bool ShowWhenGameUiHidden;
-    public List<LibrarySourceVm> LibrarySources = [];
-    public string PoseFolder = "";
-    /// <summary>The one Poser folder the homes and auto-saves live in.</summary>
-    public string PoserRoot = "";
-    public string ObjectsFolder = "";
-    public string SceneFolder = "";
-    public string McdfFolder = "";
-    public string AutoSaveFolderDraft = "";
+    public LibrarySettingsDraft Library = new(new LibraryConfiguration());
+    public LibraryConfiguration SavedLibrary = new();
+    public PoseLibrarySnapshot? SourceSnapshot;
+    public bool SourceScanBusy;
+    public bool ShowSourceIssues;
+    public bool ResetPageScroll;
+    public string LibraryStatus = "";
+    public float LibraryContentWidth;
+    public Action? OnRetrySources;
+    public Action<LibrarySourceIssue>? OnRepairSource;
 
     public bool UseLibraryWhenImporting;
     public bool LibraryShowExtensions;
@@ -190,7 +186,7 @@ public sealed class SettingsViewModel
     public Action? OnOpenRepository;
     public Action? OnReportIssue;
     public Action<string>? OnOpenUrl;
-    public Action<string>? OnOpenFolder;
+    public Action<LibrarySourceDraft>? OnOpenSource;
     /// <summary>Opens a folder picker seeded at the first argument and
     /// hands the chosen path to the second.</summary>
     public Action<string, Action<string>>? OnBrowseFolder;
@@ -206,7 +202,8 @@ public sealed class SettingsViewModel
                 || field.FieldType == typeof(Vector4) || field.FieldType.IsEnum)
                 hash.Add(field.GetValue(this));
         }
-        foreach (var source in LibrarySources)
+        hash.Add(Library.Root);
+        foreach (var source in Library.Sources)
         {
             hash.Add(source.Name);
             hash.Add(source.Path);
@@ -226,8 +223,9 @@ public enum ConfigResetScope
     Skeleton,
     UI,
 }
-public static class SettingsView
+public static partial class SettingsView
 {
+    public const int LibraryPage = 7;
     public static float DesignWidth =>
         Crystarium.ActiveTheme.Settings.Width;
 
@@ -343,6 +341,8 @@ public static class SettingsView
             {
                 vm.Category = i;
                 vm.Search = string.Empty;
+                vm.ShowSourceIssues = false;
+                vm.ResetPageScroll = true;
             }
         }
     }
@@ -408,19 +408,30 @@ public static class SettingsView
             "##settings-page-scroll",
             body.Size.X / scale,
             height / scale,
-            region => Crystarium.Page(
-                "settings-page",
-                ImGui.GetCursorScreenPos(),
-                new Vector2(region.ContentWidth * scale, height),
-                page =>
+            region =>
+            {
+                if (vm.ResetPageScroll)
                 {
-                    if (vm.Search.Trim().Length == 0)
-                        DrawCategory(vm, page);
-                    else
-                        DrawSearch(vm, page);
-                },
-                labelColumnWidth:
-                    Crystarium.ActiveTheme.Settings.LabelColumnWidth));
+                    ImGui.SetScrollY(0f);
+                    vm.ResetPageScroll = false;
+                }
+                vm.LibraryContentWidth = MathF.Min(
+                    region.ContentWidth - Crystarium.ActiveTheme.Page.Inset,
+                    Crystarium.ActiveTheme.Page.MaximumContentWidth);
+                Crystarium.Page(
+                    "settings-page",
+                    ImGui.GetCursorScreenPos(),
+                    new Vector2(region.ContentWidth * scale, height),
+                    page =>
+                    {
+                        if (vm.Search.Trim().Length == 0)
+                            DrawCategory(vm, page);
+                        else
+                            DrawSearch(vm, page);
+                    },
+                    labelColumnWidth:
+                        Crystarium.ActiveTheme.Settings.LabelColumnWidth);
+            });
     }
 
     /// <summary>Every page is probed for what it would draw; a section
@@ -1362,141 +1373,6 @@ public static class SettingsView
         vm.Bindings = KeybindRegistry.Bindings((KeybindPreset)vm.PresetIndex);
         vm.BindingRevision++;
         vm.PresetStatus = $"{name} chords loaded. Save to keep them.";
-    }
-
-    private static void DrawLibrary(
-        SettingsViewModel vm,
-        Crystarium.PageScope page)
-    {
-        page.Section("Poser folder", form =>
-        {
-            HomeFolder(
-                form, vm, "Folder", vm.PoserRoot,
-                next => vm.PoserRoot = next,
-                LibraryConfiguration.DefaultRoot,
-                "Everything Poser saves lives here: Poses, Objects, Scenes, MCDFs and Auto-saves are folders inside it");
-        }, divider: false);
-        page.Section("Pose library", form =>
-        {
-            form.Switch(
-                "Use library for Import",
-                vm.UseLibraryWhenImporting,
-                next => vm.UseLibraryWhenImporting = next,
-                "Import buttons open the pose library instead of the file dialog");
-            form.Switch(
-                "Show file extensions",
-                vm.LibraryShowExtensions,
-                next => vm.LibraryShowExtensions = next,
-                "Tile names carry .pose / .cmp");
-        }, divider: false);
-        page.Section("Source folders", form =>
-        {
-            int removing = -1;
-            for (int i = 0; i < vm.LibrarySources.Count; i++)
-            {
-                int index = i;
-                var source = vm.LibrarySources[index];
-                form.SwitchActions(
-                    string.IsNullOrWhiteSpace(source.Name)
-                        ? $"Source {index + 1}"
-                        : source.Name,
-                    source.Enabled,
-                    next => source.Enabled = next,
-                    actions =>
-                    {
-                        actions.Button(
-                            "Open",
-                            () => vm.OnOpenFolder?.Invoke(source.Path),
-                            disabled: string.IsNullOrWhiteSpace(source.Path),
-                            help: "Show this folder in Windows Explorer");
-                        actions.Button(
-                            "Remove",
-                            () => removing = index,
-                            help: "Stop scanning this folder");
-                    },
-                    "Scan this folder for poses");
-                form.Status(source.Path);
-            }
-            if (removing >= 0)
-                vm.LibrarySources.RemoveAt(removing);
-
-            form.TextInput(
-                "Name",
-                vm.LibraryNewName,
-                next => vm.LibraryNewName = next,
-                placeholder: "Taken from the folder when left blank");
-            form.TextInput(
-                "Folder",
-                vm.LibraryNewPath,
-                next => vm.LibraryNewPath = next,
-                placeholder: "Full path to a folder of poses");
-            form.Actions(
-                string.Empty,
-                actions => actions.Button(
-                    "Add",
-                    () => AddLibrarySource(vm),
-                    disabled: string.IsNullOrWhiteSpace(vm.LibraryNewPath)));
-            string pending = vm.LibraryNewPath.Trim();
-            if (pending.Length > 0 && !System.IO.Directory.Exists(pending))
-                form.Status(
-                    "Folder does not exist yet — it is scanned once it does.");
-        });
-    }
-    private static void HomeFolder(
-        Crystarium.FormScope form,
-        SettingsViewModel vm,
-        string label,
-        string value,
-        Action<string> onChange,
-        string shipped,
-        string help)
-    {
-        form.TextInputActions(
-            label,
-            value,
-            onChange,
-            actions =>
-            {
-                actions.Button(
-                    "Browse",
-                    () => vm.OnBrowseFolder?.Invoke(
-                        value.Trim().Length == 0 ? shipped : value.Trim(),
-                        onChange));
-                actions.Button(
-                    "Open",
-                    () => vm.OnOpenFolder?.Invoke(
-                        value.Trim().Length == 0 ? shipped : value.Trim()));
-            },
-            placeholder: shipped,
-            help: help);
-
-        string typed = value.Trim();
-        if (typed.Length == 0)
-            form.Status("Using " + shipped);
-        else if (!System.IO.Directory.Exists(typed))
-            form.Status("Folder does not exist yet — Poser creates it.");
-    }
-    private static void AddLibrarySource(SettingsViewModel vm)
-    {
-        string path = vm.LibraryNewPath.Trim();
-        if (path.Length == 0)
-            return;
-
-        string name = vm.LibraryNewName.Trim();
-        if (name.Length == 0)
-            name = System.IO.Path.GetFileName(path.TrimEnd(
-                System.IO.Path.DirectorySeparatorChar,
-                System.IO.Path.AltDirectorySeparatorChar));
-        if (name.Length == 0)
-            name = path;
-
-        vm.LibrarySources.Add(new LibrarySourceVm
-        {
-            Name = name,
-            Path = path,
-        });
-        vm.LibraryNewName = string.Empty;
-        vm.LibraryNewPath = string.Empty;
     }
 
     private static void DrawAbout(

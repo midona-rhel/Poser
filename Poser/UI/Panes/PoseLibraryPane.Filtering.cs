@@ -358,7 +358,7 @@ public sealed partial class PoseLibraryPane
         }
 
         // No counter (user: pointless beside the single action row). Source
-        // failures remain available through the separate Source issues action.
+        // failures are presented beside their saved folders in Settings.
         _vm.Status = scanning ? ScanningText : string.Empty;
     }
 

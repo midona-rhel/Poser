@@ -239,7 +239,6 @@ public sealed class PoseLibraryViewModel
     /// all-source failure state.</summary>
     public string NoSourcesTitle = "No pose sources found.";
     public string NoSourcesDetail = string.Empty;
-    public bool NoSourcesHasFailures;
 
     /// <summary>The grid's empty caption, minted by the binder.</summary>
     public string EmptyText = "No matches.";
@@ -399,7 +398,6 @@ public sealed class PoseLibraryViewModel
     public Action<float>? OnIconSize;
     public Action? OnRefresh;
     public Action? OnOpenSettings;
-    public Action? OnSourceHealth;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // every one of these closes over nothing but this model.
@@ -1116,14 +1114,14 @@ public static class PoseLibraryView
         }
 
         float width = Crystarium.MeasureButton(
-            vm.NoSourcesHasFailures ? "Source details" : "Open Settings",
+            "Open Settings",
             ControlStyle.Comfortable).X;
         ImGui.SetCursorScreenPos(new Vector2(
             body.Min.X + (body.Size.X - width) * 0.5f,
             top + row + detail + theme.Spacing.Three * scale));
         Crystarium.Button(
-            vm.NoSourcesHasFailures ? "Source details" : "Open Settings",
-            vm.NoSourcesHasFailures ? vm.OnSourceHealth : vm.OnOpenSettings,
+            "Open Settings",
+            vm.OnOpenSettings,
             style: ControlStyle.Comfortable,
             id: SettingsId);
     }

@@ -22,13 +22,18 @@ public class SettingsWindow : Window
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Dalamud.Plugin.Services.IKeyState _keyState;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
+    private readonly IPoseLibraryService _library;
+    private readonly UserNotices _notices;
+    private bool _openLibrary;
 
     public SettingsWindow(
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
         IIntegrationRuntimePort integrations,
-        Controls.IssueReportModal issueReport)
+        Controls.IssueReportModal issueReport,
+        IPoseLibraryService library,
+        UserNotices notices)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -39,6 +44,8 @@ public class SettingsWindow : Window
         _issueReport = issueReport;
         _keyState = keyState;
         _log = log;
+        _library = library;
+        _notices = notices;
         WireRuntime();
         RespectCloseHotkey = false;
     }
@@ -58,8 +65,8 @@ public class SettingsWindow : Window
     }
 
     /// <summary>What the config held when the window opened: Cancel, or
-    /// closing without Save, puts it back — every change previews live on
-    /// the config while the window is open.</summary>
+    /// closing without Save, puts previewed settings back. Library sources
+    /// remain a separate draft until Save and are never restored on Cancel.</summary>
     private SettingsViewModel? _snapshot;
     private int _appliedSignature;
     private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager _folderDialog = new();
@@ -70,6 +77,29 @@ public class SettingsWindow : Window
         LoadFromConfig();
         _snapshot = BuildViewModel();
         WireRuntime();
+        if (_openLibrary)
+        {
+            _vm.Category = SettingsView.LibraryPage;
+            _vm.Search = string.Empty;
+            _vm.ResetPageScroll = true;
+            _openLibrary = false;
+        }
+    }
+
+    public void OpenLibrary()
+    {
+        if (IsOpen)
+        {
+            _vm.Category = SettingsView.LibraryPage;
+            _vm.Search = string.Empty;
+            _vm.ShowSourceIssues = false;
+            _vm.ResetPageScroll = true;
+        }
+        else
+        {
+            _openLibrary = true;
+            IsOpen = true;
+        }
     }
 
     public override void OnClose()
@@ -112,6 +142,9 @@ public class SettingsWindow : Window
             min + ImGui.GetWindowSize());
         try
         {
+            _vm.SourceSnapshot = _library.Snapshot;
+            _vm.SavedLibrary = ConfigurationService.Instance.Config.Library;
+            _vm.SourceScanBusy = _library.IsScanning;
             SettingsView.Draw(_vm, min);
             _folderDialog.Draw();
             // Live: a change lands on the config and is announced the
@@ -226,12 +259,8 @@ public class SettingsWindow : Window
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
-            PoserRoot = c.Library.ResolveRoot(),
-            PoseFolder = c.Library.ResolvePoseRoot(),
-            ObjectsFolder = c.Library.ResolveObjectsRoot(),
-            SceneFolder = c.Library.ResolveSceneRoot(),
-            McdfFolder = c.Library.ResolveMcdfRoot(),
-            AutoSaveFolderDraft = c.AutoSave.RootDirectory,
+            Library = new LibrarySettingsDraft(c.Library),
+            SavedLibrary = c.Library,
 
             ConfigLoadFailure = ConfigurationService.Instance.LoadFailure,
 
@@ -257,30 +286,41 @@ public class SettingsWindow : Window
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
-        vm.OnOpenFolder = path =>
+        vm.OnOpenSource = source =>
         {
-            if (string.IsNullOrWhiteSpace(path))
+            if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, ConfigurationService.Instance.Config.Library))
+            {
+                _notices.Refused("The source changed. Save or cancel pending edits and retry.");
                 return;
+            }
+            var path = source.Path;
             try
             {
-                System.IO.Directory.CreateDirectory(path);
+                if (!System.IO.Directory.Exists(path))
+                {
+                    _notices.Failed($"Folder '{path}' is missing or inaccessible. No folder was created.");
+                    return;
+                }
                 Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             }
-            catch
+            catch (Exception ex)
             {
+                _notices.Failed($"Could not open '{path}': {ex.Message}");
             }
         };
-        foreach (var source in c.Library.Sources)
+        vm.OnRetrySources = () =>
         {
-            if (IsHomeSource(source.Name))
-                continue;
-            vm.LibrarySources.Add(new LibrarySourceVm
-            {
-                Name = source.Name,
-                Path = source.Path,
-                Enabled = source.Enabled,
-            });
-        }
+            vm.LibraryStatus = string.Empty;
+            _library.RequestScan();
+        };
+        vm.OnRepairSource = issue =>
+        {
+            if (vm.Library.TryRepair(issue, ConfigurationService.Instance.Config.Library, out var detail))
+                _notices.Done("Folder created. Retrying saved sources.");
+            else
+                _notices.Failed(detail);
+            _library.RequestScan();
+        };
 
         ReadIntegrations(vm);
         vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
@@ -334,6 +374,13 @@ public class SettingsWindow : Window
 
     private void SaveToConfig()
     {
+        if (!_vm.Library.TryApply(ConfigurationService.Instance.Config.Library, out var detail))
+        {
+            _vm.LibraryStatus = detail;
+            _notices.Refused(detail);
+            _vm.Category = SettingsView.LibraryPage;
+            return;
+        }
         ApplyToConfig(preview: false);
         var svc = ConfigurationService.Instance;
         var c = svc.Config;
@@ -342,6 +389,7 @@ public class SettingsWindow : Window
         Crystarium.FloatingSurface.ConfigureEffects(
             c.UI.FillOpacity, c.UI.BackdropBlur);
         svc.ApplyChange();
+        _library.RequestScan();
         IsOpen = false;
     }
 
@@ -478,62 +526,10 @@ public class SettingsWindow : Window
 
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
         c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
-        // The objects home has no folder row here, so the rebuild below
-        // must carry its configured path across — dropping it stranded
-        // every entry save in a folder no tab scanned.
-        // One root, reserved leaves: the homes and the auto-save folder
-        // are named inside it, never chosen apart.
-        string root = _vm.PoserRoot.Trim().Length == 0
-            ? LibraryConfiguration.DefaultRoot
-            : _vm.PoserRoot.Trim();
-        _vm.PoseFolder = System.IO.Path.Combine(root, LibraryConfiguration.PosesLeaf);
-        _vm.ObjectsFolder = System.IO.Path.Combine(root, LibraryConfiguration.ObjectsLeaf);
-        _vm.SceneFolder = System.IO.Path.Combine(root, LibraryConfiguration.ScenesLeaf);
-        _vm.McdfFolder = System.IO.Path.Combine(root, LibraryConfiguration.McdfLeaf);
-        _vm.AutoSaveFolderDraft = System.IO.Path.Combine(root, LibraryConfiguration.AutoSavesLeaf);
-        c.Library.Sources.Clear();
-        c.Library.SetHomeRoot(
-            LibraryConfiguration.PoseSourceName,
-            LibraryConfiguration.DefaultPoseRoot,
-            _vm.PoseFolder);
-        c.Library.SetHomeRoot(
-            LibraryConfiguration.ObjectsSourceName,
-            LibraryConfiguration.DefaultObjectsRoot,
-            _vm.ObjectsFolder);
-        c.Library.SetHomeRoot(
-            LibraryConfiguration.SceneSourceName,
-            LibraryConfiguration.DefaultSceneRoot,
-            _vm.SceneFolder);
-        c.Library.SetHomeRoot(
-            LibraryConfiguration.McdfSourceName,
-            LibraryConfiguration.DefaultMcdfRoot,
-            _vm.McdfFolder);
-        foreach (var source in _vm.LibrarySources)
-        {
-            string path = source.Path.Trim();
-            string name = source.Name.Trim();
-            if (path.Length == 0 && name.Length == 0)
-                continue;
-            if (IsHomeSource(name))
-                continue;
-            c.Library.Sources.Add(new LibrarySourceConfig
-            {
-                Name = name,
-                Path = path,
-                Enabled = source.Enabled,
-            });
-        }
+        // Sources are committed once by the draft transaction in SaveToConfig;
+        // preview and Cancel never replace them.
         c.Library.EnsureHomeRootsExist();
-        c.AutoSave.RootDirectory = _vm.AutoSaveFolderDraft.Trim().Length == 0
-            ? _autoSave.RootDirectory
-            : _vm.AutoSaveFolderDraft.Trim();
-    }
-    private static bool IsHomeSource(string name)
-    {
-        foreach (var (home, _) in LibraryConfiguration.Homes)
-            if (string.Equals(name, home, StringComparison.Ordinal))
-                return true;
-        // The MCDF home once carried this name; an old config still does.
-        return string.Equals(name, "Poser MCDFs", StringComparison.Ordinal);
+        c.AutoSave.RootDirectory = System.IO.Path.Combine(
+            _vm.Library.EffectiveRoot, LibraryConfiguration.AutoSavesLeaf);
     }
 }

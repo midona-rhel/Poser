@@ -469,6 +469,7 @@ public partial class MainWindow : Window
     // overlay window flag.
 
     public event Action? OnSettingsRequested;
+    public event Action? OnLibrarySettingsRequested;
 
     /// <summary>Raised by every creation affordance — the titlebar plus, the
     /// section header plusses, and the shell menu — with the pointer position
@@ -603,7 +604,7 @@ public partial class MainWindow : Window
         _scenePane.OpenLibrary = ShowLibrary;
         // The library's "Add source…" and its empty state both mean the same
         // thing the titlebar gear does, so they travel the one settings route.
-        _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
+        _libraryPane.OnSettingsRequested += () => OnLibrarySettingsRequested?.Invoke();
         // Saving from the scenes tab is the scene workspace's own dialog: one
         // destination browser and one description field, wherever it is asked
         // for.

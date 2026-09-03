@@ -10,6 +10,7 @@ namespace Poser.Library;
 [Serializable]
 public class LibrarySourceConfig
 {
+    public LibrarySourceKind Kind { get; set; }
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
     public bool Enabled { get; set; } = true;
@@ -20,7 +21,7 @@ public class LibrarySourceConfig
 /// how the browser is presented.
 /// </summary>
 [Serializable]
-public class LibraryConfiguration
+public partial class LibraryConfiguration
 {
     public List<LibrarySourceConfig> Sources { get; set; } = [];
 
@@ -136,7 +137,7 @@ public class LibraryConfiguration
         // is temporarily disabled. External source selection never changes it.
         var poses = DefaultPoseRoot;
         foreach (var source in Sources)
-            if (source.Name == PoseSourceName && !string.IsNullOrWhiteSpace(source.Path))
+            if (Classify(source) == LibrarySourceKind.PoserPoses && !string.IsNullOrWhiteSpace(source.Path))
             {
                 poses = source.Path;
                 break;
@@ -175,7 +176,7 @@ public class LibraryConfiguration
         foreach (var source in Sources)
         {
             if (source.Enabled &&
-                string.Equals(source.Name, sourceName, StringComparison.Ordinal) &&
+                Classify(source) == HomeKind(sourceName) &&
                 !string.IsNullOrWhiteSpace(source.Path))
                 return source.Path;
         }
@@ -208,13 +209,14 @@ public class LibraryConfiguration
         var chosen = string.IsNullOrWhiteSpace(path) ? shipped : path!.Trim();
         foreach (var source in Sources)
         {
-            if (!string.Equals(source.Name, sourceName, StringComparison.Ordinal))
+            if (Classify(source) != HomeKind(sourceName))
                 continue;
+            source.Kind = HomeKind(sourceName);
             source.Path = chosen;
             source.Enabled = true;
             return;
         }
-        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = chosen });
+        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = chosen, Kind = HomeKind(sourceName) });
     }
 
     /// <summary>
@@ -306,12 +308,8 @@ public class LibraryConfiguration
         {
             if (!source.Enabled)
                 continue;
-            foreach (var (name, _) in Homes)
-                if (string.Equals(source.Name, name, StringComparison.Ordinal))
-                {
-                    _ = TryEnsureDirectory(source.Path, out _);
-                    break;
-                }
+            if (IsManaged(Classify(source)))
+                _ = TryEnsureDirectory(source.Path, out _);
         }
     }
 
@@ -346,31 +344,31 @@ public class LibraryConfiguration
         if (DefaultsSeeded)
             return;
 
-        Sources.Add(new LibrarySourceConfig
-        {
-            Name = "Brio Poses",
-            Path = System.IO.Path.Combine(documents, "Brio", "Poses")
-        });
-
-        Sources.Add(new LibrarySourceConfig
-        {
-            Name = "Anamnesis Poses",
-            Path = System.IO.Path.Combine(documents, "Anamnesis", "Poses")
-        });
+        SeedReference("Brio Poses", Path.Combine(documents, "Brio", "Poses"), LibrarySourceKind.Brio);
+        SeedReference("Anamnesis Poses", Path.Combine(documents, "Anamnesis", "Poses"), LibrarySourceKind.Anamnesis);
 
         DefaultsSeeded = true;
+    }
+
+    private void SeedReference(string name, string path, LibrarySourceKind kind)
+    {
+        foreach (var source in Sources)
+            if (Classify(source) == kind || (source.Name == name && SamePath(source.Path, path)))
+                return;
+        Sources.Add(new LibrarySourceConfig { Name = name, Path = path, Kind = kind });
     }
 
     private void EnsureHomeSourceListed(string sourceName, string path)
     {
         foreach (var source in Sources)
         {
-            if (!string.Equals(
-                    source.Name, sourceName, StringComparison.Ordinal))
+            if (Classify(source) != HomeKind(sourceName)
+                && !(source.Kind == LibrarySourceKind.Legacy && source.Name == sourceName
+                    && SamePath(source.Path, path)))
                 continue;
             return;
         }
-        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = path });
+        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = path, Kind = HomeKind(sourceName) });
     }
 
     private void SeedHome(
@@ -378,16 +376,7 @@ public class LibraryConfiguration
     {
         if (seeded)
             return;
-        var exists = false;
-        foreach (var source in Sources)
-        {
-            if (!string.Equals(source.Name, sourceName, StringComparison.Ordinal))
-                continue;
-            exists = true;
-            break;
-        }
-        if (!exists)
-            Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = shipped });
+        EnsureHomeSourceListed(sourceName, shipped);
         markSeeded();
     }
 }

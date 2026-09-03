@@ -81,6 +81,7 @@ public sealed class UIManager : IUIManager
         Crystarium.ValueCommitted += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
+        _windows.Main.OnLibrarySettingsRequested += OpenLibrarySettings;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested += OpenPoseLibrary;
         _configService.OnConfigurationChanged += ApplyConfiguration;
@@ -489,6 +490,8 @@ public sealed class UIManager : IUIManager
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
+    private void OpenLibrarySettings() => _windows.Settings.OpenLibrary();
+
     private void OpenSpawnBrowserAt(
         System.Numerics.Vector2 anchor, Views.SpawnBrowserTab tab)
         => _windows.SpawnBrowser.OpenAt(anchor, tab);
@@ -524,6 +527,7 @@ public sealed class UIManager : IUIManager
         Crystarium.ValueCommitted -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
+        _windows.Main.OnLibrarySettingsRequested -= OpenLibrarySettings;
         _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
         _configService.OnConfigurationChanged -= ApplyConfiguration;

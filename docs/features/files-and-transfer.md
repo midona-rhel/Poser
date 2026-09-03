@@ -46,10 +46,12 @@ that cannot fit is reported as failed without consuming the remaining capacity.
 Later small roots can still publish. Traversal limits also apply to each source.
 
 The library distinguishes no enabled sources, a healthy empty library, and
-source failures. Source issues opens readable paths, reasons, and explicit
-Create, Retry, Open, Disable and settings actions. Optional external roots are
-never created by a scan. Refresh and source configuration changes start a new
-pass; after copying files externally, press Refresh. Bad, future, and oversized
+source failures. Settings > Library owns source management: failed saved paths
+have red reasons beside their rows. The bottom Source issues button is disabled
+when no issues remain; its in-page detail view lists only enabled failed sources
+and skipped-capacity notices, with a resolved state when errors clear.
+Refresh and source configuration changes start a new pass; after copying files
+externally, press Refresh. Bad, future, and oversized
 files stay in the list with an explanation. Search uses name, author, and tags.
 Moving a file keeps its favourite status; metadata is never changed for
 unreadable or future files.
@@ -57,10 +59,28 @@ Before a library export, the selected root is created and checked. A failed
 check reports the requested path and stops the write; it never redirects the
 file to Documents.
 
-The title-bar Open in Explorer action opens the configured Poser root containing
-the managed homes. This explicit action may create a missing root after a checked
-request; a failure is reported without redirecting. Source-specific Open actions
-in Source issues remain separate.
+Source edits are drafts until Settings Save. A changed row says Pending Save,
+never presenting the saved path's health as validation of its replacement.
+Issue details label saved paths and pending edits explicitly. Disable/remove
+affect custom drafts only; Cancel discards them. Save refuses a concurrently
+changed source list or a root change that the candidate sources cannot resolve;
+either refusal leaves saved sources untouched. Explicit checked folder repair is
+a filesystem action, not a configuration edit, and is not undone by Cancel.
+Scans never create roots.
+
+New sources carry explicit ownership: managed homes, Brio/Anamnesis references,
+or custom. Untagged legacy records are recognized only by exact known default
+name plus normalized absolute path, or one unambiguous complete four-home layout.
+Duplicates, conflicting layouts, invalid paths and unmatched legacy records stay
+custom; classification does no filesystem work and never rewrites paths. Settings
+preserves those custom records even when their names match built-ins. Poser homes
+are read-only derived leaves under one editable root. Root changes affect only
+identified managed homes. Third-party references are read-only and never created
+by Settings repair or startup; custom sources remain editable.
+
+The Library title-bar Open in Explorer action opens the configured Poser root,
+independent of source selection. This explicit action may create a missing root
+after a checked request; a failure is reported without redirecting.
 
 ## Autosave
 
