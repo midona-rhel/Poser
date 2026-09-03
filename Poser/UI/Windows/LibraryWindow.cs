@@ -250,8 +250,8 @@ public sealed class LibraryWindow : Window
         }
     }
 
-    /// <summary>The bar: the title and the close — NOTHING else lives in
-    /// a titlebar. The type strip gets its own band below.</summary>
+    /// <summary>The title, managed-root action, close and collapse. The type
+    /// strip keeps its own band below.</summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
@@ -294,6 +294,23 @@ public sealed class LibraryWindow : Window
             help: "Close the library",
             id: "##library-close");
 
+        const string explorerLabel = "Open in Explorer";
+        var explorerStyle = ControlStyle.Square(closeSide) with
+        {
+            Width = UiWidth.Fixed(
+                Crystarium.MeasureText(explorerLabel,
+                    new TextStyle { Size = theme.Typography.LabelSize }).X / s
+                + theme.Spacing.Six * 2f)
+        };
+        var explorerSize = Crystarium.MeasureButton(explorerLabel, explorerStyle);
+        ImGui.SetCursorScreenPos(new Vector2(
+            actionX - (theme.Page.ActionGap + closeSide) * s
+                - theme.Page.ActionGap * s - explorerSize.X,
+            min.Y + (height - explorerSize.Y) * 0.5f));
+        Crystarium.Button(explorerLabel, _main.LibraryPane.OpenLibraryInExplorer,
+            style: explorerStyle, help: "Open the configured Poser library root",
+            id: "##library-open-explorer");
+
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
             new Vector2(min.X, MathF.Round(min.Y + height - rule)),
@@ -302,7 +319,7 @@ public sealed class LibraryWindow : Window
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
 
         // Double-clicking the bar's open band collapses — the chevron's
-        // gesture twin, the shell's own rule. The two buttons above keep
+        // gesture twin, the shell's own rule. The title actions above keep
         // their clicks.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
             && !ImGui.IsAnyItemHovered())

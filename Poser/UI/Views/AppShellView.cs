@@ -899,23 +899,6 @@ public static class AppShellView
                 { Width = UiWidth.Fixed(buttonWidth) },
                 help: "Open the library",
                 id: "##shell-library");
-            x -= theme.Page.ActionGap * s;
-        }
-        // The sidebar's own fold: the COLUMN goes, this cell stays — the
-        // brand, burger, library and this chevron keep their seats.
-        if (vm.OnSidebarCollapse is { } onSidebarCollapse)
-        {
-            x -= side * s;
-            IconAt(
-                new Vector2(x, y),
-                TablerIcon.ChevronRight,
-                side,
-                () => onSidebarCollapse(!vm.SidebarCollapsed),
-                "##shell-sidebar-fold",
-                flipX: !vm.SidebarCollapsed,
-                help: vm.SidebarCollapsed
-                    ? "Show the sidebar"
-                    : "Fold the sidebar away");
         }
     }
 

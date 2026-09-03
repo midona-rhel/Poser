@@ -66,8 +66,9 @@ public sealed partial class PoseLibraryPane
         _movePath = path;
         var items = new List<ContextMenuItem>();
         string current = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
-        var sources = _config.Config.Library.Sources;
-        foreach (var folder in _library.Snapshot.Folders)
+        var snapshot = _library.Snapshot;
+        var sources = snapshot.Sources;
+        foreach (var folder in snapshot.Folders)
         {
             int bar = folder.Key.IndexOf('|');
             if (bar < 0

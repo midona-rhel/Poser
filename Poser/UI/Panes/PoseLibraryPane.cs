@@ -1061,8 +1061,43 @@ public sealed partial class PoseLibraryPane
         ClearTileSelection();
         _vm.ShowRail = true;
         _vm.RailHeads = 2;
-        _vm.ShowNoSources = folders.Count <= 2;
-        _vm.EmptyText = "No matches.";
+        var sources = snapshot.Sources;
+        int enabled = 0;
+        int ready = 0;
+        int failures = snapshot.SkippedSourceCount;
+        foreach (var source in sources)
+        {
+            if (!source.Enabled)
+                continue;
+            enabled++;
+            if (source.Health == PoseLibrarySourceHealth.Ready)
+            {
+                ready++;
+                continue;
+            }
+            if (source.Health != PoseLibrarySourceHealth.Unscanned)
+                failures++;
+        }
+        _vm.ShowNoSources = enabled == 0 ||
+            (ready == 0 && snapshot.TerminalResult == PoseLibraryScanResult.Failure);
+        _vm.NoSourcesTitle = enabled == 0 && failures == 0
+            ? "No enabled library sources."
+            : _vm.ShowNoSources
+                ? "Library sources unavailable."
+                : string.Empty;
+        _vm.NoSourcesDetail = enabled == 0 && failures == 0
+            ? "Enable a source in Settings to browse the library."
+            : "Open Settings > Library to review source folders.";
+        var emptyKind = _type switch
+        {
+            LibraryType.Mcdf => "character files",
+            LibraryType.Scenes => "scenes",
+            LibraryType.Objects => "objects",
+            _ => "poses",
+        };
+        _vm.EmptyText = total == 0 && _queryLower.Length == 0 && _tagLower is null
+            ? $"No {emptyKind} found."
+            : "No matches.";
         // The rows standing from here on are the SCANNED library's, so an
         // auto-save kick has to clear them rather than leave them showing
         // under a rail-less tab.

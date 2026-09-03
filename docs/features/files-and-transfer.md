@@ -30,11 +30,57 @@ matching libraries. Auto-saves default under the plugin configuration folder.
 They are written and cleaned up, not shown in a library. File browsers open in
 the matching folder; light and camera files use Documents.
 
-Library scans run in the background. If a scan fails or is cancelled, the
-previous list stays visible. Bad, future, and oversized files stay in the list
-with an explanation. Search uses name, author, and tags. Moving a file keeps
-its favourite status. File actions ask for a fresh scan; metadata is never
-changed for unreadable or future files.
+Library scans run in the background and publish one immutable snapshot. A pass
+records configured sources (name, path, enabled state, health, and safe
+detail), its generation, and a terminal result: initial, success, partial
+failure, or failure. Missing, denied, invalid, and traversal-failed sources
+are reported independently; a failed source contributes no truncated subtree,
+and any entries previously published for that source are omitted from the new
+snapshot. Healthy sources publish their fresh entries. Source order and
+index-based folder keys remain stable even when roots overlap. A cancelled or
+stale pass does not publish.
+
+Publication is limited to 64 configured source records, 32,768 files and 4,096
+folders overall. Excess source records have an explicit skipped count; a source
+that cannot fit is reported as failed without consuming the remaining capacity.
+Later small roots can still publish. Traversal limits also apply to each source.
+
+The library distinguishes no enabled sources, a healthy empty library, and
+source failures. Settings > Library owns source management: failed saved paths
+have red reasons beside their rows. The bottom Source issues button is disabled
+when no issues remain; its in-page detail view lists only enabled failed sources
+and skipped-capacity notices, with a resolved state when errors clear.
+Refresh and source configuration changes start a new pass; after copying files
+externally, press Refresh. Bad, future, and oversized
+files stay in the list with an explanation. Search uses name, author, and tags.
+Moving a file keeps its favourite status; metadata is never changed for
+unreadable or future files.
+Before a library export, the selected root is created and checked. A failed
+check reports the requested path and stops the write; it never redirects the
+file to Documents.
+
+Source edits are drafts until Settings Save. A changed row says Pending Save,
+never presenting the saved path's health as validation of its replacement.
+Issue details label saved paths and pending edits explicitly. Disable/remove
+affect custom drafts only; Cancel discards them. Save refuses a concurrently
+changed source list or a root change that the candidate sources cannot resolve;
+either refusal leaves saved sources untouched. Explicit checked folder repair is
+a filesystem action, not a configuration edit, and is not undone by Cancel.
+Scans never create roots.
+
+New sources carry explicit ownership: managed homes, Brio/Anamnesis references,
+or custom. Untagged legacy records are recognized only by exact known default
+name plus normalized absolute path, or one unambiguous complete four-home layout.
+Duplicates, conflicting layouts, invalid paths and unmatched legacy records stay
+custom; classification does no filesystem work and never rewrites paths. Settings
+preserves those custom records even when their names match built-ins. Poser homes
+are read-only derived leaves under one editable root. Root changes affect only
+identified managed homes. Third-party references are read-only and never created
+by Settings repair or startup; custom sources remain editable.
+
+The Library title-bar Open in Explorer action opens the configured Poser root,
+independent of source selection. This explicit action may create a missing root
+after a checked request; a failure is reported without redirecting.
 
 ## Autosave
 

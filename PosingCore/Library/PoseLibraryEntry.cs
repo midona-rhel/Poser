@@ -80,6 +80,43 @@ public enum PoseLibraryMetadataStatus : byte
     Oversized,
 }
 
+/// <summary>What the most recent library pass learned about one configured
+/// source. Disabled and invalid are configuration states; the remaining
+/// states describe an enabled source's filesystem health.</summary>
+public enum PoseLibrarySourceHealth : byte
+{
+    Unscanned,
+    Ready,
+    Missing,
+    Denied,
+    Failed,
+    Disabled,
+    Invalid,
+}
+
+/// <summary>The terminal result of a library pass. Initial is distinct from a
+/// successful empty library so the UI can tell "not scanned" from "nothing
+/// found".</summary>
+public enum PoseLibraryScanResult : byte
+{
+    Initial,
+    Success,
+    PartialFailure,
+    Failure,
+}
+
+/// <summary>An immutable description of a configured library source and the
+/// latest health observed for it.</summary>
+public sealed class PoseLibrarySourceSnapshot
+{
+    public required int Index { get; init; }
+    public required string Name { get; init; }
+    public required string Path { get; init; }
+    public required bool Enabled { get; init; }
+    public required PoseLibrarySourceHealth Health { get; init; }
+    public string Detail { get; init; } = string.Empty;
+}
+
 /// <summary>
 /// One library file the scan found. Every string the browser reads per frame is
 /// minted here, at scan time, because the grid touches all of them on each
@@ -218,9 +255,21 @@ public sealed class PoseLibrarySnapshot
 {
     public required int Revision { get; init; }
 
+    /// <summary>Monotonic request generation represented by this publication.
+    /// A stale or disposed worker never publishes its generation.</summary>
+    public required long Generation { get; init; }
+
+    public required PoseLibraryScanResult TerminalResult { get; init; }
+
+    /// <summary>Configured sources beyond the observation bound. Their
+    /// omission is an explicit failure, never a successful empty scan.</summary>
+    public int SkippedSourceCount { get; init; }
+
     /// <summary>Sorted by folder order, then <c>NameLower</c> ordinal.</summary>
     private IReadOnlyList<PoseLibraryEntry> _entries = Array.Empty<PoseLibraryEntry>();
     private IReadOnlyList<PoseLibraryFolder> _folders = Array.Empty<PoseLibraryFolder>();
+    private IReadOnlyList<PoseLibrarySourceSnapshot> _sources =
+        Array.Empty<PoseLibrarySourceSnapshot>();
 
     public required IReadOnlyList<PoseLibraryEntry> Entries
     {
@@ -233,6 +282,14 @@ public sealed class PoseLibrarySnapshot
     {
         get => _folders;
         init => _folders = Freeze(value);
+    }
+
+    /// <summary>Configured sources in their persisted order, including
+    /// disabled and invalid entries.</summary>
+    public required IReadOnlyList<PoseLibrarySourceSnapshot> Sources
+    {
+        get => _sources;
+        init => _sources = Freeze(value);
     }
 
     private static IReadOnlyList<T> Freeze<T>(IReadOnlyList<T>? values) =>

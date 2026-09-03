@@ -172,7 +172,9 @@ public sealed class ScenePane
     /// node, written into the objects home as a .xivo.</summary>
     public bool SaveOverlayEntry(Guid logicalKey, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.OverlayEntryExtension);
         var result = _workflow.BeginSave(
@@ -222,7 +224,9 @@ public sealed class ScenePane
                 "The group needs at least two members to save.");
             return false;
         }
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.GroupEntryExtension);
         if (!includeAppearance)
@@ -248,7 +252,9 @@ public sealed class ScenePane
     /// pane-direct LightFile write built legacy).</summary>
     public bool SaveLightEntry(Guid logicalId, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.LightEntryExtension);
         var result = _workflow.BeginSave(
@@ -266,7 +272,9 @@ public sealed class ScenePane
     /// twin.</summary>
     public bool SaveCameraEntry(Guid logicalId, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.CameraEntryExtension);
         var result = _workflow.BeginSave(
@@ -284,7 +292,9 @@ public sealed class ScenePane
     /// model, dyes, pose variant — written as a .xivp.</summary>
     public bool SavePropEntry(Guid logicalId, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.PropEntryExtension);
         var result = _workflow.BeginSave(
@@ -302,7 +312,9 @@ public sealed class ScenePane
     /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
     public bool SaveWorldObjectEntry(Guid logicalId, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.WorldObjectEntryExtension);
         var result = _workflow.BeginSave(
@@ -340,7 +352,9 @@ public sealed class ScenePane
 
     public bool SaveActorEntry(Guid logicalId, string displayName)
     {
-        var root = _libraryConfig.EnsureObjectsRootExists();
+        var root = _libraryConfig.ResolveObjectsRoot();
+        if (!PrepareLibraryRoot(root))
+            return false;
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.ActorEntryExtension);
         var result = _workflow.BeginSave(
@@ -400,6 +414,15 @@ public sealed class ScenePane
     /// choice that changes what the file contains — then the save lands in
     /// the scenes home the tab is already scanning. No file dialog detour.
     /// </summary>
+    private bool PrepareLibraryRoot(string root)
+    {
+        if (LibraryConfiguration.TryEnsureDirectory(root, out var detail))
+            return true;
+        _notices.Refused(detail);
+        _library.RequestScan();
+        return false;
+    }
+
     public void RequestLibrarySave()
     {
         _librarySaveName = string.Empty;
@@ -472,7 +495,9 @@ public sealed class ScenePane
                 var name = _librarySaveName.Trim();
                 if (name.Length == 0)
                     name = "Scene";
-                var root = _libraryConfig.EnsureSceneRootExists();
+                var root = _libraryConfig.ResolveSceneRoot();
+                if (!PrepareLibraryRoot(root))
+                    return;
                 var path = LibraryConfiguration.NewEntryPath(
                     root, name, SceneFile.Extension);
                 var begun = _workflow.BeginSave(path, null, SaveOptions);
