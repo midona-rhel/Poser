@@ -24,20 +24,24 @@ public sealed class AdoptedWorldObject : IWorldObject
         string name,
         string path,
         nint address,
+        WorldObjectIncarnation identity,
         Transform initialPlacement,
         byte initialFlags,
         bool initialVisible,
-        bool spawned = false)
+        bool spawned = false,
+        bool isVfx = false)
     {
         _owner = owner;
         Id = id;
         Name = name;
         Path = path;
         Address = address;
+        Identity = identity;
         InitialPlacement = initialPlacement;
         InitialFlags = initialFlags;
         InitialVisible = initialVisible;
         Spawned = spawned;
+        _isVfx = isVfx;
         _placement = initialPlacement;
     }
 
@@ -75,10 +79,19 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// every id bound to it survive the churn.</summary>
     public nint Address { get; internal set; }
 
-    /// <summary>Whether this is a world VFX rather than a model — spawned
-    /// from an .avfx path, playing rather than standing.</summary>
-    public bool IsVfx =>
-        Path.EndsWith(".avfx", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Identity of the native incarnation currently behind the
+    /// handle. Address reuse never authorizes a stale handle to write.</summary>
+    internal WorldObjectIncarnation Identity { get; set; }
+
+    /// <summary>Whether this is a world VFX rather than a model. Borrowed
+    /// handles carry the graph's observed kind even when no resource filename
+    /// is readable; spawned handles classify at the requested-path boundary.
+    /// </summary>
+    public bool IsVfx => _isVfx;
+    internal bool _isVfx;
+
+    internal VfxPlaybackState VfxPlayback { get; set; } =
+        VfxPlaybackState.Playing;
 
     /// <summary>Whether the effect replays on the refresh interval. Most
     /// world effects are one-shots the game retires; looping them is the
@@ -92,13 +105,13 @@ public sealed class AdoptedWorldObject : IWorldObject
         get => _vfxSpeed;
         set
         {
-            _vfxSpeed = Math.Clamp(value, 0f, 5f);
-            if (!_released)
-                _owner.WriteVfxSpeed(this, _vfxSpeed);
+            float stated = Math.Clamp(value, 0f, 5f);
+            if (!_released && _owner.TryWriteVfxSpeed(this, stated))
+                _vfxSpeed = stated;
         }
     }
 
-    private float _vfxSpeed = 1f;
+    internal float _vfxSpeed = 1f;
 
     /// <summary>One uniform brightness on the effect's intensity triple,
     /// 1 as authored, up to Brio's 4.</summary>
@@ -123,13 +136,12 @@ public sealed class AdoptedWorldObject : IWorldObject
         get => _vfxPaused;
         set
         {
-            _vfxPaused = value;
-            if (!_released)
-                _owner.WriteVfxPaused(this);
+            if (!_released && _owner.TryWriteVfxPaused(this, value))
+                _vfxPaused = value;
         }
     }
 
-    private bool _vfxPaused;
+    internal bool _vfxPaused;
 
     /// <summary>The drawn opacity, 1 fully drawn: a VFX's alpha, a BG
     /// object's dither. Composed with <see cref="Visible"/> — hiding
@@ -199,12 +211,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// </summary>
     internal bool? InitialNightState;
 
-    /// <summary>An adopted EFFECT's own colour, intensity and speed,
-    /// put back on release — otherwise a tint or a pause sticks on the
-    /// zone's effect until the zone reloads (the stuck-glow report).
-    /// </summary>
-    internal (Vector4 Color, Vector3 Intensity, float Speed)?
-        InitialVfxState;
+    internal VfxStateSnapshot? InitialVfxSnapshot;
 
     /// <summary>Whether the state write is still owed, once the model
     /// streams in.</summary>
@@ -359,12 +366,16 @@ public sealed class AdoptedWorldObject : IWorldObject
             if (!IsVfx && !_animationPaused
                 && (AnimRef is not null || EngageNext))
                 AnimationPaused = true;
+            // A failed/stale native write must not make the handle claim a
+            // placement it never reached. Commit the desired value only
+            // after the lifecycle owner accepts the current incarnation.
+            if (!_owner.WritePlacementTracked(this, value))
+                return;
             _placement = value;
             // A paused object still goes where the user drags it: the
             // hold re-writes THIS value from then on.
             if (HeldPause is not null)
                 HeldPause = value;
-            _owner.WritePlacementTracked(this, value);
         }
     }
 
@@ -386,10 +397,13 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly Dalamud.Plugin.Services.IFramework? _framework;
+    private readonly VfxLifecycleOwner _vfx;
     private readonly List<AdoptedWorldObject> _adopted = new();
+    private readonly List<WorldObjectIncarnation> _pendingTeardowns = new();
 
     private int _nextId;
     private bool _disposed;
+    private bool _teardownOnly;
 
     /// <summary>How often a looping effect is even CHECKED for having
     /// run out. The loop replays the same instance in place (Brio's
@@ -408,6 +422,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         _events = events;
         _log = log;
         _framework = framework;
+        _vfx = new VfxLifecycleOwner(port);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         if (_framework != null)
             _framework.Update += OnFrameworkUpdate;
@@ -418,7 +433,16 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// several effects in one frame stutters for nothing.</summary>
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework frame)
     {
-        if (_disposed || _adopted.Count == 0)
+        if (_disposed)
+            return;
+        RetryPendingTeardowns();
+        if (_teardownOnly)
+        {
+            ReleaseAll();
+            RetryPendingTeardowns();
+            return;
+        }
+        if (_adopted.Count == 0)
             return;
         // Stain writes that beat their model's load land here, once the
         // stain buffer exists.
@@ -454,7 +478,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 && current != handle.NightState)
                 _port.WriteBgNightState(handle.Address, handle.NightState);
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
-                || handle.VfxPaused)
+                || handle.VfxPlayback != VfxPlaybackState.Playing
+                || !IsHandleCurrent(handle))
                 continue;
             if (now < handle.NextVfxRefresh)
                 continue;
@@ -462,7 +487,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             // Replay the SAME instance only once it actually ran out —
             // no recreate, so nothing blinks.
             if (!_port.IsVfxActive(handle.Address))
+            {
                 _port.ResumeVfx(handle.Address, handle.VfxSpeed);
+                handle.VfxPlayback = VfxPlaybackState.Playing;
+            }
         }
     }
 
@@ -475,7 +503,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         AdoptedWorldObject handle, string path, out string? detail)
     {
         detail = null;
-        if (_disposed || !handle.Spawned || !_adopted.Contains(handle))
+        if (_disposed || _teardownOnly || !handle.Spawned
+            || !_adopted.Contains(handle))
         {
             detail = "Only a spawned object can respawn.";
             return false;
@@ -485,6 +514,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             detail = "The path names nothing.";
             return false;
         }
+        path = path.Trim();
         var placement = handle.Transform;
         bool visible = handle.Visible;
         var fresh = _port.Spawn(path, placement);
@@ -494,18 +524,46 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 + "game did not take it.";
             return false;
         }
-        var old = handle.Address;
+        if (!_port.TryReadIncarnation(fresh, out var freshIdentity)
+            || (NativeWorldObjectPort.IsVfxPath(path.Trim())
+                && (!freshIdentity.IsVfx
+                    || freshIdentity.ResourceIdentity == nint.Zero)))
+        {
+            bool cleaned = TryCleanupUnidentifiedFresh(path, fresh);
+            detail = cleaned
+                ? "The new native incarnation could not be identified."
+                : "Respawn cleanup remains outstanding.";
+            return false;
+        }
+        if (!IsHandleCurrent(handle))
+        {
+            // The replacement is not committed while old teardown is
+            // uncertain. This preserves the old claim and avoids reporting a
+            // successful respawn with an unowned native leak.
+            bool cleaned = TryCleanupRespawnFresh(freshIdentity);
+            detail = cleaned
+                ? "The old native incarnation could not be torn down."
+                : "Respawn cleanup remains outstanding.";
+            return false;
+        }
+        bool oldDestroyed = handle.IsVfx
+            ? _port.TryDestroyVfx(handle.Identity)
+            : _port.TryDestroy(handle.Address);
+        if (!oldDestroyed)
+        {
+            bool freshDestroyed = TryCleanupRespawnFresh(freshIdentity);
+            detail = freshDestroyed
+                ? "The old native incarnation could not be torn down."
+                : "Respawn cleanup remains outstanding.";
+            return false;
+        }
         handle.Address = fresh;
-        handle.Path = path.Trim();
-        try
-        {
-            _port.Destroy(old);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"WorldObjectService: destroying the old incarnation failed: {ex.Message}");
-        }
+        handle.Identity = freshIdentity;
+        handle.Path = path;
+        handle._isVfx = NativeWorldObjectPort.IsVfxPath(path);
+        handle.VfxPlayback = handle.IsVfx
+            ? VfxPlaybackState.Playing
+            : VfxPlaybackState.Unavailable;
         if (!visible)
             handle.Visible = false;
         if (handle.IsVfx)
@@ -543,33 +601,80 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         return true;
     }
 
-    internal void WriteVfxSpeed(AdoptedWorldObject handle, float speed)
+    internal bool TryWriteVfxSpeed(AdoptedWorldObject handle, float speed)
     {
-        if (_disposed || !_port.IsAlive(handle.Address))
-            return;
-        _port.SetVfxSpeed(handle.Address, speed);
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !handle.IsVfx || !IsHandleCurrent(handle))
+        {
+            LogVfxRefusal("speed");
+            return false;
+        }
+        try
+        {
+            if (_port.TrySetVfxSpeed(handle.Address, speed))
+                return true;
+            LogVfxRefusal("speed");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"WorldObjectService: VFX speed write failed: {ex.Message}");
+            return false;
+        }
     }
 
     internal void WriteVfxIntensity(AdoptedWorldObject handle)
     {
-        if (_disposed || !_port.IsAlive(handle.Address) || !handle.IsVfx)
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle) || !handle.IsVfx)
             return;
         _port.SetVfxIntensity(handle.Address, handle.VfxIntensity);
     }
 
-    internal void WriteVfxPaused(AdoptedWorldObject handle)
+    internal bool TryWriteVfxPaused(
+        AdoptedWorldObject handle, bool paused)
     {
-        if (_disposed || !_port.IsAlive(handle.Address) || !handle.IsVfx)
-            return;
-        if (handle.VfxPaused)
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle) || !handle.IsVfx)
         {
-            _port.PauseVfx(handle.Address);
-            handle.NextVfxRefresh = DateTime.MaxValue;
+            LogVfxRefusal("pause/resume");
+            return false;
         }
-        else
+        try
         {
-            _port.ResumeVfx(handle.Address, handle.VfxSpeed);
-            handle.NextVfxRefresh = DateTime.UtcNow;
+            if (!_port.TryReadVfxPlayback(
+                    handle.Address, out var currentPlayback)
+                || currentPlayback == VfxPlaybackState.Unavailable)
+            {
+                LogVfxRefusal("pause/resume");
+                return false;
+            }
+            if (paused)
+            {
+                if (!_port.TryPauseVfx(handle.Address))
+                {
+                    LogVfxRefusal("pause");
+                    return false;
+                }
+                handle.VfxPlayback = VfxPlaybackState.Paused;
+                handle.NextVfxRefresh = DateTime.MaxValue;
+            }
+            else
+            {
+                if (!_port.TryResumeVfx(handle.Address, handle.VfxSpeed))
+                {
+                    LogVfxRefusal("resume");
+                    return false;
+                }
+                handle.VfxPlayback = VfxPlaybackState.Playing;
+                handle.NextVfxRefresh = DateTime.UtcNow;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"WorldObjectService: VFX playback write failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -579,30 +684,30 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
 
     internal ulong? ReadObjectFlags(AdoptedWorldObject handle) =>
-        _disposed || !_port.IsAlive(handle.Address)
+        _disposed || !IsHandleCurrent(handle)
             ? null
             : _port.ReadBgObjectFlags(handle.Address);
 
     internal void WriteObjectFlags(AdoptedWorldObject handle, ulong flags)
     {
-        if (!_disposed && _port.IsAlive(handle.Address))
+        if (!_disposed && IsHandleCurrent(handle))
             _port.WriteBgObjectFlags(handle.Address, flags);
     }
 
     internal byte? ReadDebugByte(AdoptedWorldObject handle, int offset) =>
-        _disposed || !_port.IsAlive(handle.Address)
+        _disposed || !IsHandleCurrent(handle)
             ? null
             : _port.ReadBgTailByte(handle.Address, offset);
 
     internal void WriteDebugByte(
         AdoptedWorldObject handle, int offset, byte value)
     {
-        if (!_disposed && _port.IsAlive(handle.Address))
+        if (!_disposed && IsHandleCurrent(handle))
             _port.WriteBgTailByte(handle.Address, offset, value);
     }
 
     internal bool? CanDye(AdoptedWorldObject handle) =>
-        _disposed || !_port.IsAlive(handle.Address)
+        _disposed || !IsHandleCurrent(handle)
             ? false
             : handle.IsVfx
                 ? true
@@ -706,7 +811,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             return;
         foreach (var handle in _adopted)
         {
-            if (handle.IsVfx || !_port.IsAlive(handle.Address))
+            if (handle.IsVfx || !IsHandleCurrent(handle))
                 continue;
             if (handle.AnimationPaused)
             {
@@ -779,7 +884,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     internal void WriteNightState(AdoptedWorldObject handle)
     {
-        if (_disposed || !_port.IsAlive(handle.Address) || handle.IsVfx)
+        if (_disposed || !IsHandleCurrent(handle) || handle.IsVfx)
             return;
         if (_port.IsBgReady(handle.Address))
             _port.WriteBgNightState(handle.Address, handle.NightState);
@@ -791,7 +896,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     internal void WriteTint(AdoptedWorldObject handle)
     {
-        if (_disposed || !_port.IsAlive(handle.Address))
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle))
             return;
         if (handle.IsVfx)
         {
@@ -807,7 +913,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// hidden writes zero, shown writes the stated opacity.</summary>
     internal void WriteOpacity(AdoptedWorldObject handle)
     {
-        if (_disposed || !_port.IsAlive(handle.Address))
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle))
             return;
         _port.WriteOpacity(
             handle.Address, handle.Visible ? handle.Opacity : 0f);
@@ -819,7 +926,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>
-        !_disposed && _port.IsAlive(handle.Address) && _port.IsBgReady(handle.Address);
+        !_disposed && IsHandleCurrent(handle) && _port.IsBgReady(handle.Address);
 
     public int Count => _adopted.Count;
 
@@ -922,7 +1029,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         string path, Transform placement, bool visible, out string? detail)
     {
         detail = null;
-        if (_disposed || !_port.IsAvailable)
+        if (_disposed || _teardownOnly || !_port.IsAvailable)
         {
             detail = "The world cannot be reached right now.";
             return null;
@@ -934,20 +1041,38 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 + "game did not take the model.";
             return null;
         }
+        if (!_port.TryReadIncarnation(address, out var identity)
+            || (NativeWorldObjectPort.IsVfxPath(path.Trim())
+                && (!identity.IsVfx
+                    || identity.ResourceIdentity == nint.Zero)))
+        {
+            bool cleaned = TryCleanupUnidentifiedFresh(path, address);
+            detail = cleaned
+                ? "The spawned native object could not be identified."
+                : "Spawn cleanup remains outstanding.";
+            return null;
+        }
+        path = path.Trim();
+        bool isVfx = NativeWorldObjectPort.IsVfxPath(path);
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
             UniqueName(DisplayName(path)),
             path,
             address,
+            identity,
             placement,
             0,
             true,
-            spawned: true);
+            spawned: true,
+            isVfx: isVfx);
         if (!visible)
             handle.Visible = false;
         if (handle.IsVfx)
+        {
+            handle.VfxPlayback = VfxPlaybackState.Playing;
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+        }
         else
             // The raw native object ships lit; the default dressing is
             // day, written once the model streams in.
@@ -959,7 +1084,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     public AdoptedWorldObject? Adopt(nint address)
     {
-        if (_disposed)
+        if (_disposed || _teardownOnly)
             return null;
         if (Find(address) is { } existing)
             return existing;
@@ -974,24 +1099,45 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (!_port.TryReadVisible(address, out bool visible))
             visible = true;
 
-        string path = PathOf(address);
+        var observed = RowOf(address);
+        string path = observed?.Path
+            ?? address.ToString("X", CultureInfo.InvariantCulture);
+        WorldObjectIncarnation identity;
+        VfxStateSnapshot snapshot = default;
+        if (!_port.TryReadIncarnation(address, out identity))
+            return null;
+        // The graph's object type is authoritative even when its resource
+        // filename was unreadable; never route an observed VFX through BG
+        // restore merely because RowOf could not supply a path.
+        bool isVfx = observed?.IsEffect == true || identity.IsVfx;
+        if (isVfx && !_vfx.TryCapture(
+                address, out identity, out snapshot))
+        {
+            _log.Warning(
+                $"WorldObjectService: refusing VFX {address:X}; its playback state is unavailable.");
+            return null;
+        }
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
             UniqueName(DisplayName(path)),
             path,
             address,
+            identity,
             placement,
             flags,
-            visible);
+            visible,
+            isVfx: isVfx);
         // The original's own dressing, put back on release; the handle
         // starts from the same value so the buttons read true.
         handle.InitialNightState = _port.ReadBgNightState(address);
-        if (handle.IsVfx
-            && _port.TryReadVfxState(
-                address, out var vfxColor, out var vfxIntensity,
-                out var vfxSpeed))
-            handle.InitialVfxState = (vfxColor, vfxIntensity, vfxSpeed);
+        if (isVfx)
+        {
+            handle.InitialVfxSnapshot = snapshot;
+            handle.VfxPlayback = snapshot.Playback;
+            handle._vfxSpeed = snapshot.Speed;
+            handle._vfxPaused = snapshot.Playback == VfxPlaybackState.Paused;
+        }
         if (handle.InitialNightState is { } adoptedState)
             handle.SeedNightState(adoptedState);
         _adopted.Add(handle);
@@ -1034,9 +1180,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     {
         if (handle == null)
             return false;
-        if (!_adopted.Remove(handle))
+        if (!_adopted.Contains(handle))
             return false;
-        RestoreNative(handle);
+        if (!RestoreNative(handle))
+            return false;
+        _adopted.Remove(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return true;
     }
@@ -1045,42 +1193,108 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// body of the GPose-exit and unload edges.</summary>
     public void ReleaseAll()
     {
+        RetryPendingTeardowns();
         if (_adopted.Count == 0)
             return;
-        for (int i = 0; i < _adopted.Count; i++)
-            RestoreNative(_adopted[i]);
-        _adopted.Clear();
+        foreach (var handle in _adopted.ToArray())
+            if (RestoreNative(handle))
+                _adopted.Remove(handle);
         _events.Publish(new WorldObjectListChangedEvent());
     }
 
     // ── the handle's write-through half ──────────────────────────────────
 
     internal bool IsLive(AdoptedWorldObject handle) =>
-        !_disposed && _adopted.Contains(handle) && _port.IsAlive(handle.Address);
+        !_disposed && _adopted.Contains(handle) && IsHandleCurrent(handle);
+
+    private bool IsHandleCurrent(AdoptedWorldObject handle) =>
+        handle.IsVfx
+            ? _vfx.IsCurrent(handle.Identity)
+            : _port.IsAlive(handle.Address);
 
     internal Transform ReadPlacement(AdoptedWorldObject handle, Transform fallback) =>
-        _port.TryRead(handle.Address, out var placement) ? placement : fallback;
+        IsHandleCurrent(handle)
+            && _port.TryRead(handle.Address, out var placement)
+                ? placement
+                : fallback;
 
-    internal void WritePlacementTracked(
+    internal bool WritePlacementTracked(
         AdoptedWorldObject handle, in Transform placement)
     {
+        if (!WritePlacement(handle, placement))
+            return false;
         handle.LastWritten = placement;
-        WritePlacement(handle, placement);
+        return true;
     }
 
-    internal void WritePlacement(AdoptedWorldObject handle, in Transform placement)
+    private bool TryCleanupRespawnFresh(WorldObjectIncarnation identity)
     {
-        if (_disposed || !_port.IsAlive(handle.Address))
-            return;
-        _port.Write(handle.Address, placement);
+        bool cleaned = identity.IsVfx
+            ? _port.TryDestroyVfx(identity)
+            : _port.TryDestroy(identity.Address);
+        if (!cleaned && !_pendingTeardowns.Contains(identity))
+            _pendingTeardowns.Add(identity);
+        return cleaned;
     }
+
+    private bool TryCleanupUnidentifiedFresh(string path, nint address)
+    {
+        if (NativeWorldObjectPort.IsVfxPath(path.Trim()))
+        {
+            // A failed identity read cannot safely authorize a raw-address
+            // VFX destroy: that address may already hold a replacement.
+            return false;
+        }
+        return _port.TryDestroy(address);
+    }
+
+    private void RetryPendingTeardowns()
+    {
+        for (int i = _pendingTeardowns.Count - 1; i >= 0; i--)
+        {
+            var identity = _pendingTeardowns[i];
+            bool cleaned = identity.IsVfx
+                ? _port.TryDestroyVfx(identity)
+                : _port.TryDestroy(identity.Address);
+            if (cleaned)
+                _pendingTeardowns.RemoveAt(i);
+        }
+    }
+
+    internal bool WritePlacement(AdoptedWorldObject handle, in Transform placement)
+    {
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle))
+            return false;
+        if (handle.IsVfx)
+        {
+            if (_vfx.WriteTransform(
+                    handle.Identity, placement, out var actualPlayback)
+                != VfxTransformWriteResult.Written)
+            {
+                LogVfxRefusal("transform");
+                return false;
+            }
+            handle.VfxPlayback = actualPlayback;
+            return true;
+        }
+        _port.Write(handle.Address, placement);
+        return true;
+    }
+
+    private void LogVfxRefusal(string operation) =>
+        _log.Warning($"WorldObjectService: VFX {operation} command refused.");
 
     internal bool ReadVisible(AdoptedWorldObject handle, bool fallback) =>
-        _port.TryReadVisible(handle.Address, out bool visible) ? visible : fallback;
+        IsHandleCurrent(handle)
+            && _port.TryReadVisible(handle.Address, out bool visible)
+                ? visible
+                : fallback;
 
     internal void WriteVisible(AdoptedWorldObject handle, bool visible)
     {
-        if (_disposed || !_port.IsAlive(handle.Address))
+        if (_disposed || (_teardownOnly && handle.IsVfx)
+            || !IsHandleCurrent(handle))
             return;
         _port.WriteVisible(handle.Address, visible);
         // A dimmed object re-shows at ITS opacity, not full: the two facts
@@ -1094,69 +1308,77 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// <summary>The one place a captured pair is written back. An address that
     /// has stopped being a BG object is left alone: restoring onto whatever
     /// took its place is the single way this contract could do harm.</summary>
-    private void RestoreNative(AdoptedWorldObject handle)
+    private bool RestoreNative(AdoptedWorldObject handle)
     {
         // A SPAWNED object has nothing to restore: it is Poser's own, and
         // its end is destruction.
         if (handle.Spawned)
         {
-            try
+            if (!IsHandleCurrent(handle))
             {
-                _port.Destroy(handle.Address);
+                if (handle.IsVfx
+                    && !_port.TryReleaseVfxClaim(handle.Identity))
+                {
+                    _log.Warning(
+                        $"WorldObjectService: releasing stale VFX {handle.Address:X} claim remains outstanding.");
+                    return false;
+                }
+                handle.MarkReleased(handle.InitialPlacement);
+                return true;
             }
-            catch (Exception ex)
+            if (handle.IsVfx
+                ? !_port.TryDestroyVfx(handle.Identity)
+                : !_port.TryDestroy(handle.Address))
             {
                 _log.Warning(
-                    $"WorldObjectService: destroying a spawned object failed: {ex.Message}");
+                    $"WorldObjectService: destroying spawned {handle.Address:X} remains pending.");
+                return false;
             }
-            finally
-            {
-                handle.MarkReleased(handle.InitialPlacement);
-            }
-            return;
+            handle.MarkReleased(handle.InitialPlacement);
+            return true;
+        }
+        if (!IsHandleCurrent(handle))
+        {
+            // The address was replaced by the game. Refuse all native writes,
+            // then drop our stale claim without touching the replacement.
+            handle.MarkReleased(handle.InitialPlacement);
+            return true;
         }
         try
         {
-            if (_port.IsAlive(handle.Address))
-            {
-                _port.Write(handle.Address, handle.InitialPlacement);
-                _port.WriteFlags(handle.Address, handle.InitialFlags);
-                if (handle.InitialNightState is { } dressing)
-                    _port.WriteBgNightState(handle.Address, dressing);
-                if (handle.AnimationPaused)
-                    _port.WriteBgAnimationSpeed(handle.Address, 1f);
-                if (handle.InitialVfxState is { } effect)
-                    _port.RestoreVfxState(
-                        handle.Address,
-                        effect.Color,
-                        effect.Intensity,
-                        effect.Speed,
-                        resume: handle.VfxPaused);
-                // Written BESIDE the flags rather than left to them: whether
-                // the drawn bit lives inside that byte is the game's business,
-                // and this contract may not rest on the answer.
+            _port.Write(handle.Address, handle.InitialPlacement);
+            _port.WriteFlags(handle.Address, handle.InitialFlags);
+            if (handle.InitialNightState is { } dressing)
+                _port.WriteBgNightState(handle.Address, dressing);
+            if (handle.AnimationPaused)
+                _port.WriteBgAnimationSpeed(handle.Address, 1f);
+            if (handle.InitialVfxSnapshot is { } snapshot
+                && !_vfx.Restore(handle.Identity, snapshot))
+                return false;
+            // Written BESIDE the flags rather than left to them: whether
+            // the drawn bit lives inside that byte is the game's business.
+            // VFX visibility is Color.W/alpha, which the snapshot restore
+            // already put back exactly; WriteVisible would quantize a
+            // fractional alpha to 0 or 1. BG keeps the legacy flag write.
+            if (handle.InitialVfxSnapshot is null)
                 _port.WriteVisible(handle.Address, handle.InitialVisible);
-            }
+            handle.MarkReleased(handle.InitialPlacement);
+            return true;
         }
         catch (Exception ex)
         {
             _log.Warning(
                 $"WorldObjectService: restoring a world object failed: {ex.Message}");
-        }
-        finally
-        {
-            // The claim ends even when the write threw: a handle whose restore
-            // half-ran must never be handed back to the port.
-            handle.MarkReleased(handle.InitialPlacement);
+            return false;
         }
     }
 
-    private string PathOf(nint address)
+    private WorldObjectRow? RowOf(nint address)
     {
         foreach (var row in _port.Enumerate())
             if (row.Address == address)
-                return row.Path;
-        return address.ToString("X", CultureInfo.InvariantCulture);
+                return row;
+        return null;
     }
 
     /// <summary>
@@ -1215,8 +1437,14 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     private void OnGPoseChanged(GPoseStateChangedEvent evt)
     {
-        if (!evt.IsGPosing)
-            ReleaseAll();
+        if (evt.IsGPosing)
+        {
+            if (_adopted.Count == 0 && _pendingTeardowns.Count == 0)
+                _teardownOnly = false;
+            return;
+        }
+        _teardownOnly = true;
+        ReleaseAll();
     }
 
     public void Dispose()
@@ -1226,10 +1454,15 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (_framework != null)
             _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+        _teardownOnly = true;
         // Released BEFORE the disposed flag goes up: the restore writes go
         // through the same guarded path every other release does, and a
         // service that has already said it is disposed refuses them.
         ReleaseAll();
-        _disposed = true;
+        RetryPendingTeardowns();
+        // Keep the service recoverable when native teardown refused. The
+        // outstanding claim remains in the list and can be retried by the
+        // caller; declaring disposal complete would silently strand it.
+        _disposed = _adopted.Count == 0 && _pendingTeardowns.Count == 0;
     }
 }

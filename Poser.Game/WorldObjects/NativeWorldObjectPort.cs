@@ -22,7 +22,7 @@ namespace Poser.Game.WorldObjects;
 /// Native fields are accessed through FFXIVClientStructs; writes refresh the
 /// render and culling state that depends on placement.
 /// </summary>
-public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
+public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 {
     /// <summary>The hard stop on one walk. A zone's graph is thousands of
     /// nodes, not hundreds of thousands; a count this high can only mean the
@@ -56,9 +56,15 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 
     private readonly Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
     private readonly object _handledLock = new();
-    private readonly HashSet<string> _handledVfxPaths =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly VfxPathClaimOwner _vfxClaims = new();
+    private readonly VfxOwnedAllocationLedger _vfxOwnership = new();
+    private readonly Dictionary<nint, (nint Resource, long Generation)>
+        _incarnations = new();
+    private long _nextGeneration;
+    private bool _disposed;
+    private bool _resourceHookDisposed;
     private readonly bool _vfxReady;
+
 
     public NativeWorldObjectPort(
         ISigScanner sigScanner,
@@ -184,6 +190,34 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 
     public bool IsAlive(nint address) => Resolve(address) != null;
 
+    public bool TryReadIncarnation(
+        nint address, out WorldObjectIncarnation incarnation)
+    {
+        incarnation = default;
+        var node = Resolve(address);
+        if (node == null)
+            return false;
+        nint resource = node->GetObjectType() == ObjectType.VfxObject
+            ? (nint)((CSVfx*)node)->VfxResourceInstance
+            : (nint)((BgObject*)node)->ModelResourceHandle;
+        bool isVfx = node->GetObjectType() == ObjectType.VfxObject;
+        if (isVfx)
+        {
+            incarnation = _vfxOwnership.Observe(address, resource);
+            return true;
+        }
+        lock (_handledLock)
+        {
+            if (!_incarnations.TryGetValue(address, out var prior)
+                || prior.Resource != resource)
+                prior = (resource, ++_nextGeneration);
+            _incarnations[address] = prior;
+            incarnation = new WorldObjectIncarnation(
+                address, prior.Generation, resource, isVfx);
+            }
+        return true;
+    }
+
     public bool TryRead(nint address, out Transform placement)
     {
         placement = Transform.Identity;
@@ -226,6 +260,46 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             return;
         bg->UpdateCulling();
         bg->UpdateTransforms(false);
+    }
+
+    public void WriteVfxTransform(nint address, in Transform placement)
+    {
+        Write(address, placement);
+    }
+
+    public bool TryWriteVfxTransform(nint address, in Transform placement)
+    {
+        if (!TryReadVfxState(address, out _, out _, out _))
+            return false;
+        WriteVfxTransform(address, placement);
+        // Placement itself is synchronous; the playback readback confirms
+        // that playback remains observable after the write.
+        return TryReadVfxPlayback(address, out var playback)
+            && playback != VfxPlaybackState.Unavailable;
+    }
+
+    public bool TryReadVfxPlayback(
+        nint address, out VfxPlaybackState playback)
+    {
+        playback = VfxPlaybackState.Unavailable;
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return false;
+        var instance = (VfxResourceInstance*)((CSVfx*)node)->VfxResourceInstance;
+        if (instance == null)
+            return false;
+        bool active = IsVfxActive(address);
+        // Active and speed are deliberately considered together: inactive +
+        // zero has no distinguishable native signal and must be refused.
+        if (active && instance->Speed > 0.0001f)
+            playback = VfxPlaybackState.Playing;
+        else if (active)
+            playback = VfxPlaybackState.Paused;
+        else if (instance->Speed > 0.0001f)
+            playback = VfxPlaybackState.Inactive;
+        else
+            return false;
+        return true;
     }
 
     /// <summary>Whether the BG object's model has fully streamed in —
@@ -602,6 +676,39 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             _vfxSetSpeed(instance, speed);
     }
 
+    public bool TrySetVfxSpeed(nint address, float speed)
+    {
+        if (!TryReadVfxState(address, out _, out _, out _)
+            || _vfxSetSpeed == null)
+            return false;
+        SetVfxSpeed(address, speed);
+        return TryReadVfxState(address, out _, out _, out var actual)
+            && Math.Abs(actual - speed) <= 0.0001f;
+    }
+
+    public bool TryPauseVfx(nint address)
+    {
+        if (!TryReadVfxState(address, out _, out _, out _)
+            || _vfxPause == null || _vfxSetSpeed == null)
+            return false;
+        PauseVfx(address);
+        return TryReadVfxPlayback(address, out var playback)
+            && playback == VfxPlaybackState.Paused;
+    }
+
+    public bool TryResumeVfx(nint address, float speed)
+    {
+        if (!_vfxReady
+            || !TryReadVfxState(address, out _, out _, out _)
+            || _vfxPlayStatic == null || _vfxSetSpeed == null)
+            return false;
+        ResumeVfx(address, speed);
+        return TryReadVfxPlayback(address, out var playback)
+            && playback == VfxPlaybackState.Playing
+            && TryReadVfxState(address, out _, out _, out var actual)
+            && Math.Abs(actual - speed) <= 0.0001f;
+    }
+
     /// <summary>The effect state an adoption may edit — captured at
     /// adopt so the release can hand the ZONE's effect back exactly as
     /// found. Tint, intensity, speed and pause otherwise stick on the
@@ -654,6 +761,70 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         vfx->NotifyTransformChanged();
         vfx->UpdateCulling();
     }
+
+    public bool TryRestoreVfxState(
+        nint address, VfxStateSnapshot snapshot)
+    {
+        bool canPause = _vfxPause != null && _vfxSetSpeed != null;
+        bool canPlay = _vfxReady && _vfxPlayStatic != null
+            && _vfxSetSpeed != null;
+        if (snapshot.Playback == VfxPlaybackState.Unavailable
+            || (snapshot.Playback == VfxPlaybackState.Playing
+                ? !canPlay
+                : !canPause))
+            return false;
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return false;
+        var vfx = (CSVfx*)node;
+        vfx->Color = snapshot.Color;
+        var instance = (VfxResourceInstance*)vfx->VfxResourceInstance;
+        if (instance == null)
+            return false;
+        *(System.Numerics.Vector3*)((byte*)instance + VfxIntensityOffset) =
+            snapshot.Intensity;
+        switch (snapshot.Playback)
+        {
+            case VfxPlaybackState.Playing:
+                ResumeVfx(address, snapshot.Speed);
+                break;
+            case VfxPlaybackState.Paused:
+                PauseVfx(address);
+                SetVfxSpeed(address, snapshot.Speed);
+                break;
+            case VfxPlaybackState.Inactive:
+                // Stop first, then restore authored speed as data. A retired
+                // effect with positive speed re-observes as inactive without
+                // replay; zero-speed inactive is intentionally ambiguous.
+                PauseVfx(address);
+                SetVfxSpeed(address, snapshot.Speed);
+                break;
+            default:
+                return false;
+        }
+        vfx->NotifyTransformChanged();
+        vfx->UpdateCulling();
+        return TryReadVfxState(
+                address, out var color, out var intensity, out var actualSpeed)
+            && TryReadVfxPlayback(address, out var terminal)
+            && terminal == snapshot.Playback
+            && NearlyEqual(color, snapshot.Color)
+            && NearlyEqual(intensity, snapshot.Intensity)
+            && Math.Abs(actualSpeed - snapshot.Speed) <= 0.0001f;
+    }
+
+    private static bool NearlyEqual(
+        System.Numerics.Vector4 left, System.Numerics.Vector4 right) =>
+        Math.Abs(left.X - right.X) <= 0.0001f
+        && Math.Abs(left.Y - right.Y) <= 0.0001f
+        && Math.Abs(left.Z - right.Z) <= 0.0001f
+        && Math.Abs(left.W - right.W) <= 0.0001f;
+
+    private static bool NearlyEqual(
+        System.Numerics.Vector3 left, System.Numerics.Vector3 right) =>
+        Math.Abs(left.X - right.X) <= 0.0001f
+        && Math.Abs(left.Y - right.Y) <= 0.0001f
+        && Math.Abs(left.Z - right.Z) <= 0.0001f;
 
     /// <summary>Whether the effect is still playing — Brio's
     /// IsActiveStatic native, with the resource instance's own flags
@@ -739,27 +910,82 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         }
     }
 
-    public void Destroy(nint address)
+    public void Destroy(nint address) => TryDestroy(address);
+
+    public bool TryDestroy(nint address)
     {
         var node = Resolve(address);
         if (node == null)
-            return;
+        {
+            // A native object that already disappeared is fully torn down;
+            // retire only the claim we can associate with this address.
+            // No address-only claim is retired here; only exact VFX leases
+            // may be released.
+            return true;
+        }
+        if (node->GetObjectType() == ObjectType.VfxObject)
+        {
+            if (!TryReadIncarnation(address, out var identity))
+                return false;
+            return TryDestroyCurrentVfx(identity);
+        }
+        return TryDestroyNative(address, null);
+    }
+
+    private bool TryDestroyCurrentVfx(WorldObjectIncarnation identity)
+    {
+        if (!TryDestroyNative(identity.Address, identity))
+            return false;
+        // The exact destructor has completed above; release this exact lease
+        // directly. The public stale-release seam intentionally refuses an
+        // ambiguous live native, but this path has already proved teardown.
+        return _vfxOwnership.Release(identity);
+    }
+
+    /// <summary>Teardown receives an exact VFX identity when one exists. It
+    /// never finds a claim by address, because a recycled address may have
+    /// both an old failed teardown and a new live generation.</summary>
+    private bool TryDestroyNative(
+        nint address, WorldObjectIncarnation? expected)
+    {
+        var node = Resolve(address);
+        if (node == null)
+        {
+            if (expected is { } vanished)
+            {
+                return _vfxOwnership.Release(vanished);
+            }
+            lock (_handledLock)
+                _incarnations.Remove(address);
+            return true;
+        }
+        if (expected is { } exact
+            && (!TryReadIncarnation(address, out var current)
+                || current != exact))
+            return _vfxOwnership.Release(exact);
+        WorldObjectIncarnation? currentIdentity = null;
+        if (expected is null
+            && TryReadIncarnation(address, out var currentObserved))
+            currentIdentity = currentObserved;
         try
         {
             // Brio's teardown order (BGOObject.Destroy): render cleanup
             // first, then the freeing destructor. VfxObject shares the
-            // same virtual seats, so one call site serves both types. A
-            // destroyed vfx's path stays HANDLED for the session — the
-            // unbind patch is idempotent, and forgetting it would unpatch
-            // a second live copy of the same effect (Brio's caveat).
+            // same virtual seats, so one call site serves both types.
             var bg = (BgObject*)node;
             bg->CleanupRender();
             bg->Dtor(1);
+            if (expected is { } destroyed)
+                RetireIncarnation(destroyed);
+            else if (currentIdentity is { } observedIdentity)
+                RetireIncarnation(observedIdentity);
+            return true;
         }
         catch (Exception ex)
         {
             _log.Error(
                 $"NativeWorldObjectPort: destroying {address:X} failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -773,24 +999,145 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     {
         if (!_vfxReady)
             return nint.Zero;
+        string claimedPath = path.Trim();
+        var claim = _vfxClaims.Acquire(claimedPath);
+        CSVfx* vfx = null;
+        VfxAllocationLease lease = default;
+        bool leased = false;
+        bool committed = false;
+        WorldObjectIncarnation identity = default;
+        bool cleaned = false;
+        try
+        {
+            vfx = CSVfx.Create(path, string.Empty);
+            if (vfx == null)
+            {
+                claim.Dispose();
+                return nint.Zero;
+            }
+            lease = _vfxOwnership.Reserve((nint)vfx, claim);
+            leased = true;
+            vfx->SomeFlags &= 0xF7;
+            vfx->Update(0f);
+            var node = (CSObject*)vfx;
+            node->Position = placement.Position;
+            node->Rotation = placement.Rotation;
+            node->Scale = placement.Scale;
+            vfx->NotifyTransformChanged();
+            vfx->UpdateCulling();
+            PlayVfx(vfx);
+            *(float*)((byte*)vfx + VfxAlphaOffset) = 1f;
+
+            // The resource instance is attached by the create/update/play
+            // sequence. Only this synchronous allocation may promote its
+            // reserved zero-resource identity to a live claim.
+            var resource = ReadVfxResourceIdentity((nint)vfx);
+            if (!_vfxOwnership.TryPromote(lease, resource, out identity))
+                throw new InvalidOperationException(
+                    "the created VFX allocation was not ready to claim");
+            committed = true;
+            return (nint)vfx;
+        }
+        catch
+        {
+            // Creation can fail after allocation (update, placement, or
+            // playback). Tear down that exact allocation before dropping the
+            // pending claim; otherwise a failed spawn leaks native state.
+            try
+            {
+                if (vfx != null)
+                {
+                    vfx->CleanupRender();
+                    vfx->Dtor(1);
+                }
+                cleaned = true;
+            }
+            catch (Exception ex)
+            {
+                _log.Error(
+                    $"NativeWorldObjectPort: failed VFX cleanup for '{claimedPath}': {ex.Message}");
+            }
+            if (!leased)
+            {
+                // CSVfx.Create can throw before returning an allocation;
+                // rollback the path token even though no native cleanup is
+                // possible.
+                claim.Dispose();
+            }
+            else if (cleaned && vfx != null)
+            {
+                _vfxOwnership.Release(committed ? identity : lease.Identity);
+            }
+            throw;
+        }
+    }
+
+    public bool TryReleaseVfxClaim(WorldObjectIncarnation incarnation)
+    {
+        var current = ReadCurrentVfx(incarnation.Address);
+        return _vfxOwnership.TryReleaseIfVanishedOrReplaced(
+            incarnation, current);
+    }
+
+    public bool TryDestroyVfx(WorldObjectIncarnation incarnation)
+    {
+        var match = _vfxOwnership.Match(
+            incarnation, ReadCurrentVfx(incarnation.Address));
+        if (match is VfxAllocationMatch.Vanished
+            or VfxAllocationMatch.Replaced)
+            return _vfxOwnership.Release(incarnation);
+        if (match != VfxAllocationMatch.Exact)
+            return false;
+        return TryDestroyCurrentVfx(incarnation);
+    }
+
+    private bool TryDestroyPendingVfx(nint address)
+    {
+        bool allClean = true;
+        foreach (var lease in _vfxOwnership.PendingLeases)
+        {
+            if (lease.Identity.Address != address)
+                continue;
+            var match = _vfxOwnership.Match(
+                lease.Identity, ReadCurrentVfx(address));
+            if (match is VfxAllocationMatch.Vanished
+                or VfxAllocationMatch.Replaced)
+            {
+                _vfxOwnership.Release(lease.Identity);
+                continue;
+            }
+            if (match != VfxAllocationMatch.Exact
+                || !TryDestroyCurrentVfx(lease.Identity))
+                allClean = false;
+        }
+        return allClean;
+    }
+
+    private nint ReadVfxResourceIdentity(nint address)
+    {
+        return ReadCurrentVfx(address).ResourceIdentity;
+    }
+
+    private VfxCurrentObservation ReadCurrentVfx(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null)
+            return new VfxCurrentObservation(false, false, nint.Zero);
+        if (node->GetObjectType() != ObjectType.VfxObject)
+            return new VfxCurrentObservation(true, false, nint.Zero);
+        return new VfxCurrentObservation(
+            true, true, (nint)((CSVfx*)node)->VfxResourceInstance);
+    }
+
+    private void RetireIncarnation(WorldObjectIncarnation identity)
+    {
         lock (_handledLock)
         {
-            _handledVfxPaths.Add(path);
+            if (_incarnations.TryGetValue(identity.Address, out var current)
+                && current.Generation == identity.Generation
+                && current.Resource == identity.ResourceIdentity)
+                _incarnations.Remove(identity.Address);
         }
-        var vfx = CSVfx.Create(path, string.Empty);
-        if (vfx == null)
-            return nint.Zero;
-        vfx->SomeFlags &= 0xF7;
-        vfx->Update(0f);
-        var node = (CSObject*)vfx;
-        node->Position = placement.Position;
-        node->Rotation = placement.Rotation;
-        node->Scale = placement.Scale;
-        vfx->NotifyTransformChanged();
-        vfx->UpdateCulling();
-        PlayVfx(vfx);
-        *(float*)((byte*)vfx + VfxAlphaOffset) = 1f;
-        return (nint)vfx;
     }
 
     private void PlayVfx(CSVfx* vfx)
@@ -812,7 +1159,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             bool any;
             lock (_handledLock)
             {
-                any = _handledVfxPaths.Count > 0;
+                any = _vfxClaims.HasClaims;
             }
             if (any && filePath != null && avfxData != null && dataSize > 0)
             {
@@ -822,7 +1169,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
                 bool handled;
                 lock (_handledLock)
                 {
-                    handled = _handledVfxPaths.Contains(path);
+                    handled = _vfxClaims.Contains(path);
                 }
                 if (handled)
                     UnbindAllTimelineItems(avfxData, (int)dataSize);
@@ -994,5 +1341,37 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             path,
             new Transform(node->Position, node->Rotation, node->Scale),
             ((DrawObject*)node)->Flags);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        var claims = _vfxOwnership.LiveIdentities;
+        var pending = _vfxOwnership.PendingLeases;
+        foreach (var identity in claims)
+        {
+            if (!TryDestroyVfx(identity))
+                _log.Warning(
+                    $"NativeWorldObjectPort: VFX {identity.Address:X} teardown remains outstanding during unload.");
+        }
+        foreach (var lease in pending)
+        {
+            if (!TryDestroyPendingVfx(lease.Identity.Address))
+                _log.Warning(
+                    $"NativeWorldObjectPort: pending VFX {lease.Identity.Address:X} teardown remains outstanding during unload.");
+        }
+        if (!_resourceHookDisposed)
+        {
+            _vfxResourceLoad?.Dispose();
+            _resourceHookDisposed = true;
+        }
+        lock (_handledLock)
+        {
+            if (!_vfxOwnership.HasClaims)
+                _incarnations.Clear();
+            _disposed = !_vfxOwnership.HasClaims;
+        }
+        GC.SuppressFinalize(this);
     }
 }
