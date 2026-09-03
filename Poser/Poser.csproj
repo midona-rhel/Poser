@@ -14,7 +14,7 @@
 		     "beta" reads in the punchline and the changelog, never in the
 		     version string. Keep this in lockstep with Poser.json's
 		     AssemblyVersion. -->
-		<Version>0.9.4.0</Version>
+		<Version>0.9.5.0</Version>
 	</PropertyGroup>
 
 

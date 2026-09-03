@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.5-beta — spawned creatures get their collection; a drag is one step
+
+**Spawned creatures get their collection.** A creature spawned from the
+catalog kept the catalog label as its game name, and Penumbra, which
+identifies a player-kind object by a two-word capitalized name, refused
+to assign it a collection. The game object now keeps a Poser name and the
+label is its nickname, so the Morbol seedling wears the player collection
+like every other spawn.
+
+**A drag is one step.** Every slider, well and field commits through one
+seam that seals the undo journal: a drag is one step from press to
+release, a typed value one from focus to unfocus, and the next touch of
+the same control opens a new step. Two drags of one slider no longer undo
+as one.
+
 ## 0.9.4-beta — the look goes back, the keys stay yours, stock filters
 
 **The look goes back.** The first wardrobe or customize write on an actor
