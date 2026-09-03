@@ -146,7 +146,7 @@ public static partial class Crystarium
             }
         }
         if (hit.DragEnded)
-            onCommit?.Invoke();
+            Commit(onCommit);
 
         DrawSliderWell(
             pos, size, value, minimum, maximum, scale, logCurvature,
@@ -299,7 +299,7 @@ public static partial class Crystarium
 
         if (changed) onChange(value);
         if (hit.DragEnded)
-            onCommit?.Invoke();
+            Commit(onCommit);
         if (!string.IsNullOrEmpty(help) && hit.Hovered)
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
 

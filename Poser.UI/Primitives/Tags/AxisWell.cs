@@ -53,7 +53,7 @@ public static partial class Crystarium
                 value = fallback;
                 changed = true;
             }
-            onCommit?.Invoke();
+            Commit(onCommit);
         }
         else if (hit.DoubleClicked)
         {
@@ -76,7 +76,7 @@ public static partial class Crystarium
         }
 
         if (hit.DragEnded)
-            onCommit?.Invoke();
+            Commit(onCommit);
 
         // NO wheel stepping: the wheel belongs to the page scroll, and a
         // well that stepped on a notch hijacked it (the Brio behaviour was
@@ -210,7 +210,7 @@ public static partial class Crystarium
         if (enter || editedOnDeactivate)
         {
             onChange(_axisEditValue);
-            onCommit?.Invoke();
+            Commit(onCommit);
             CancelAxisEdit();
             return _axisEditValue != value;
         }
