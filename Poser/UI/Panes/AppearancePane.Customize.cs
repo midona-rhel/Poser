@@ -114,10 +114,10 @@ public sealed partial class AppearancePane
                 ("Hair", CustomizeKey.HairColor, menu?.HairColors, live, why),
                 ("Highlight", CustomizeKey.HighlightsColor, _customize.Palettes.Highlights,
                     live && highlights, live && !highlights ? "Highlights are off" : why),
-                ("Right eye", CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why),
-                ("Left eye", CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why),
                 ("Lips", CustomizeKey.LipColor, _customize.Palettes.Lips,
                     live && lipstick, live && !lipstick ? "Lipstick is off" : why),
+                ("Left eye", CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why),
+                ("Right eye", CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why),
                 ("Tattoo", CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why),
                 ("Paint", CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
             };
