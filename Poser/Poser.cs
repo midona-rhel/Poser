@@ -41,7 +41,8 @@ public class Poser : IDalamudPlugin
         ITextureProvider textureProvider,
         ITargetManager targetManager,
         IChatGui chatGui,
-        INotificationManager notificationManager)
+        INotificationManager notificationManager,
+        ISeStringEvaluator seStringEvaluator)
     {
         log.Info($"Starting {PluginConstants.PluginName}...");
 
@@ -61,7 +62,8 @@ public class Poser : IDalamudPlugin
             textureProvider,
             targetManager,
             chatGui,
-            notificationManager);
+            notificationManager,
+            seStringEvaluator);
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
@@ -177,7 +179,8 @@ public class Poser : IDalamudPlugin
         ITextureProvider textureProvider,
         ITargetManager targetManager,
         IChatGui chatGui,
-        INotificationManager notificationManager)
+        INotificationManager notificationManager,
+        ISeStringEvaluator seStringEvaluator)
     {
         return new ServiceCollection()
             .AddDalamudDependencies(
@@ -194,7 +197,8 @@ public class Poser : IDalamudPlugin
                 textureProvider,
                 targetManager,
                 chatGui,
-                notificationManager)
+                notificationManager,
+                seStringEvaluator)
             .AddPoserCore()
             .AddPoserFeatures()
             .AddPoserPresentation()

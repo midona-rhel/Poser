@@ -61,9 +61,11 @@ internal static class ServiceRegistration
         ITextureProvider textureProvider,
         ITargetManager targetManager,
         IChatGui chatGui,
-        INotificationManager notificationManager)
+        INotificationManager notificationManager,
+        ISeStringEvaluator seStringEvaluator)
     {
         services.AddSingleton(notificationManager);
+        services.AddSingleton(seStringEvaluator);
         services.AddSingleton(pluginInterface);
         services.AddSingleton(log);
         services.AddSingleton(clientState);

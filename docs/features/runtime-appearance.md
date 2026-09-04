@@ -95,6 +95,12 @@ nonhuman body has only General: visibility, opacity, character tint, wetness,
 reset, and owner-routed Change/Detach. It never exposes model-id, customize,
 equipment, external appearance, or character-file editors.
 
+Both attachment and spawn catalogs admit ornaments with a nonzero model and
+representable nonzero row ID even when `Ornament.Singular` is empty. Names use
+Dalamud's localized ornament action-string evaluator, then `Ornament {id}` as
+a fallback, matching Brio's catalog compatibility rule. Identity stays
+`(CompanionKind, row ID)`; a missing display name never removes a valid parasol.
+
 ## The look goes back
 
 Custom colours are nullable intent, separate from observed shader readings.
