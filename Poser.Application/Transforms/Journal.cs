@@ -61,14 +61,17 @@ public sealed record JournalStep(
     /// repeated temporary refusal must not discard its preserved authored state.</summary>
     public Func<bool>? HasDeferredGroupCapture { get; init; }
 
+    /// <summary>Result-aware value edits retain refused inverses for retry.</summary>
+    public bool RetainOnFailure { get; init; }
+    public Func<string?>? FailureDetail { get; init; }
+
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }
     public object? AfterValue { get; init; }
 }
 
-/// <summary>The current key of an actor, by lineage. Null when the actor
-/// is gone.</summary>
+/// <summary>The current key of an actor, by lineage. Null when the actor is gone.</summary>
 public interface IActorStateKeySource
 {
     ActorStateKey? Current(Guid lineage);

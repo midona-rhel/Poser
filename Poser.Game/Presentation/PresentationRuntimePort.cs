@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
+using Poser.Application.Integration;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
@@ -39,7 +40,7 @@ namespace Poser.Game.Presentation;
 /// back as a new capture. A missing weapon model resolves to null and
 /// fails; it is never redirected to another model.
 /// </summary>
-public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, IDisposable
+public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntimePort, IDisposable
 {
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
@@ -49,7 +50,9 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
     {
         public readonly Dictionary<PresentationModel, Vector4> Tints = new();
         public WetnessState? Wetness;
-        public bool IsEmpty => Tints.Count == 0 && Wetness == null;
+        public readonly Dictionary<AppearanceColorChannel, Vector4> Colors = new();
+        public bool ColorsSuspended;
+        public bool IsEmpty => Tints.Count == 0 && Wetness == null && Colors.Count == 0;
     }
 
     // Authoritative, stable-id keyed.
@@ -73,11 +76,13 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
         IFramework framework,
         IGameInteropProvider hooking,
         IPluginLog log,
-        StableBindingRegistry bindings)
+        StableBindingRegistry bindings,
+        IIntegrationRuntimePort integration)
     {
         _framework = framework;
         _log = log;
         _bindings = bindings;
+        _integration = integration;
 
         try
         {
@@ -276,6 +281,7 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
 
     public void ClearOwned(ActorId actor)
     {
+        SuspendColors(actor);
         if (_owned.Remove(actor))
             RebuildTintIndex();
     }
@@ -311,12 +317,16 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
             return;
 
         var rebuilt = new HashSet<nint>();
-        foreach (var (actor, owned) in _owned)
+        foreach (var (actor, owned) in _owned.ToArray())
         {
+            EnforceColors(actor, owned);
+            if (_colorsDisposed) return;
+            if (!_owned.TryGetValue(actor, out var currentOwned) || !ReferenceEquals(currentOwned, owned)) continue;
             var resolved = _bindings.Resolve(actor);
             if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
                 continue;
             var character = (CSCharacter*)legacy.Address;
+
 
             foreach (var (model, tint) in owned.Tints)
             {
@@ -362,6 +372,7 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
 
     public void Dispose()
     {
+        _colorsDisposed = true;
         _framework.Update -= EnforceOwned;
         _owned.Clear();
         _ownedTintBases = new HashSet<nint>();

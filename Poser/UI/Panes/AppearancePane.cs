@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
@@ -39,8 +38,29 @@ public sealed partial class AppearancePane
     private readonly ICustomizeCatalog _customize;
     private readonly Game.Journal.CustomizeSession _customizeSession;
     private int _view;
+    private ActorId? _accessActor;
+    private DateTime _accessAt = DateTime.MinValue;
+    private GlamourerAccess _appearanceAccess = GlamourerAccess.Editable;
+
+    private void RefreshAppearanceAccess(ActorId actor)
+    {
+        var now = DateTime.UtcNow;
+        if (_accessActor == actor && now - _accessAt < TimeSpan.FromSeconds(1))
+            return;
+        var previous = _appearanceAccess;
+        bool changedActor = _accessActor != actor;
+        _accessActor = actor;
+        _accessAt = now;
+        _appearanceAccess = _integration.AppearanceAccess(actor);
+        if (changedActor || previous != _appearanceAccess)
+        {
+            InvalidateWardrobe();
+            _customizeAt = DateTime.MinValue;
+        }
+    }
 
     private readonly ActorPresentationSession _presentation;
+    private readonly IAppearanceColorControl _colors;
     private readonly ActorModelIdSession _model;
     private readonly ModelCatalog _modelCatalog;
     private readonly IModelCatalogLoader _modelLoader;
@@ -105,7 +125,7 @@ public sealed partial class AppearancePane
     private readonly Dictionary<(ModelCatalogKind Kind, uint RowId), string>
         _modelRowKeys = new();
     private readonly Dictionary<int, string> _modelIdText = new();
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly Dictionary<uint, DateTime> _iconRetryAt = new();
 
     private static readonly TimeSpan ReadoutInterval = TimeSpan.FromSeconds(2);
     private ActorId? _readoutActor;
@@ -145,10 +165,12 @@ public sealed partial class AppearancePane
         Game.Journal.WardrobeSession wardrobeSession,
         global::Poser.UI.Controls.EntityNameModal names,
         ICustomizeCatalog customize,
-        Game.Journal.CustomizeSession customizeSession)
+        Game.Journal.CustomizeSession customizeSession,
+        IAppearanceColorControl colors)
     {
         _customize = customize;
         _customizeSession = customizeSession;
+        _colors = colors;
         _wardrobe = wardrobe;
         _props = props;
         _wardrobeSession = wardrobeSession;
@@ -249,16 +271,26 @@ public sealed partial class AppearancePane
                 {
                     if (_scene.Selection.PrimaryActor is not { } actor)
                     {
+                        _accessActor = null;
                         page.EmptyState();
                         return;
                     }
+                    RefreshAppearanceAccess(actor);
+                    if (!_appearanceAccess.CanEdit)
+                        page.Section("Appearance access", true, _ => { }, form =>
+                        {
+                            form.Status(_appearanceAccess.Detail ?? "Glamourer appearance access is unavailable.");
+                            form.Actions("Glamourer", actions => actions.Button("Open in Glamourer",
+                                () => ReportExternal(_integration.OpenGlamourer(actor), "Open in Glamourer"),
+                                disabled: !_integration.Glamourer.Available));
+                        }, divider: false);
                     switch (_view)
                     {
-                        case 1: DrawCustomizeView(page, actor); break;
+                        case 1: DrawCustomizeView(page, actor); DrawCustomColours(page, actor); break;
                         case 2: DrawEquipmentView(page, actor); break;
                         default: DrawActorView(page, actor); break;
                     }
-                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null);
+                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null, responsive: true);
             });
     }
 
@@ -614,25 +646,40 @@ public sealed partial class AppearancePane
         return text;
     }
 
-    /// <summary>Resolves a row icon and remembers missing ids.</summary>
-    private nint ResolveIcon(uint iconId)
+    /// <summary>Resolves a row icon with a short retry delay after failures.</summary>
+    private nint ResolveIcon(uint iconId) => ResolveIcon(iconId, out _);
+
+    private nint ResolveIcon(uint iconId, out TextureProbe probe)
     {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
+        probe = TextureProbe.Ready; // An absent preview still has a valid selectable value.
+        if (iconId == 0)
             return 0;
-        IDalamudTextureWrap? wrap = null;
+        var now = DateTime.UtcNow;
+        if (_iconRetryAt.TryGetValue(iconId, out var retryAt) && now < retryAt)
+            return 0;
         try
         {
             if (_textures.TryGetFromGameIcon(
                     new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
+            {
+                if (shared.TryGetWrap(out var wrap, out var error))
+                {
+                    _iconRetryAt.Remove(iconId);
+                    return (nint)wrap.Handle.Handle;
+                }
+                if (error is null)
+                {
+                    probe = TextureProbe.Pending;
+                    return 0;
+                }
+            }
         }
         catch (Exception)
         {
-            _missingIcons.Add(iconId);
+            // A provider failure must not blacklist an icon for the session.
         }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        _iconRetryAt[iconId] = now.AddSeconds(1);
+        return 0;
     }
 
     /// <summary>Dispatches a pick to the actor captured when it opened.</summary>
@@ -799,12 +846,12 @@ public sealed partial class AppearancePane
             () => OpenPicker(actor, "Design", _integration.ListDesigns),
             () => ReportExternal(_disruptive.Run(actor, "Reset design",
                 () => _integration.ResetDesign(actor)), "Reset Design"),
-            available: glamourer.Available && !mcdfOwned,
+            available: glamourer.Available && !mcdfOwned && _appearanceAccess.CanEdit,
             owned: external.DesignOwned,
             disruptive: true,
             help: "Apply a saved Glamourer design to this actor only. "
                 + "Reset puts back the look it had before Poser changed it.",
-            disabledHelp: !glamourer.Available
+            disabledHelp: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : !glamourer.Available
                 ? glamourer.Detail
                 : mcdfOwned
                     ? mcdfReason
@@ -833,11 +880,11 @@ public sealed partial class AppearancePane
         form.Actions("Look", actions =>
         {
             actions.Button("Save design", () => SaveDesign(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
+                disabled: !glamourer.Available || !_appearanceAccess.CanEdit,
+                help: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : glamourer.Available ? "Save this look as a design" : glamourer.Detail);
             actions.Button("Revert", () => RevertLook(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
+                disabled: !glamourer.Available || !_appearanceAccess.CanEdit,
+                help: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
                 variant: ButtonVariant.Disruptive);
         });
     }
@@ -1051,7 +1098,10 @@ public sealed partial class AppearancePane
     /// <summary>Reports an integration result and invalidates its readout.</summary>
     private void ReportExternal(IntegrationResult result, string what)
     {
-        if (!result.Success)
+        bool appearanceHeld = result.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld;
+        if (appearanceHeld)
+            _accessAt = DateTime.MinValue;
+        if (!result.Success && !appearanceHeld)
             _notices.Failed($"{what}: {result.Detail}");
         _readoutAt = DateTime.MinValue;
     }

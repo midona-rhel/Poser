@@ -1,7 +1,8 @@
 # Runtime appearance
 
 Poser owns opacity, whole-model tint for Character, MainHand, and OffHand, and
-the granular wet-surface override. Opacity is
+the granular wet-surface override, and explicit custom skin, hair, highlight,
+left-eye, right-eye, mouth, and feature colours. Opacity is
 separate from visibility; zero opacity does not invoke the visibility action.
 Glamourer and other external systems own equipment, customization, dyes,
 materials, and saved designs.
@@ -25,6 +26,19 @@ or a temporary saved Customize+ profile. Incoming state is captured once per
 component. Reset and teardown restore it. Foreign locks and unreadable
 temporary profiles are refused before changes.
 
+Glamourer access is actor-generation scoped: editable, Poser-held,
+foreign-held, or unavailable. A refused unkeyed read is probed read-only
+with Poser's key; only another key refusal identifies a foreign hold.
+The API does not identify the owning plugin, so the UI never guesses its
+name. One top-of-pane status disables dependent appearance actions while
+keeping Open in Glamourer and the independent opacity, tint, and wetness controls available.
+Selected-actor access refreshes at most once per second; actor changes
+invalidate it. Commands independently check fresh access, and unkeyed
+native writes arbitrate acquisition races. No probe unlocks or claims a
+state. Custom-colour commands and native enforcement independently require fresh
+editable access for the exact actor generation. Poser's keyed MCDF recovery remains separate; failed restores keep
+their baseline and pending cleanup evidence until recovery succeeds.
+
 MCDF import temporarily owns extracted resources and integration state until
 the collection is gone and redraw allows cleanup. A failed barrier remains
 owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
@@ -39,8 +53,13 @@ disruptive step), height and body sliders, the face, hair, tail and face
 paint off the character-making sheet's own tiles, the named options, the
 facial features as icon toggles, and the colours off the palettes the
 game's own UI shows (the human colour file). A single value is a step
-that folds while a slider drags; the whole customization is applied at
-once so Glamourer reads every value. Equipment is what it wears, through
+that folds while a slider drags; separate palette picks are separate steps.
+Customization requests retain the full value set for Glamourer's structural
+validation, but apply only requested fields and required body structure.
+Snapshot shader parameters and material edits never accompany a palette edit;
+pre-existing external overrides are not cleared. Refused writes do not append
+or fold history, and refused inverses retain their step and failure detail for
+retry. Equipment is what it wears, through
 Glamourer's IPC only: a design to apply, save or revert; the outfit verbs; a card per
 slot with the item, its two dyes and the ids behind it; the facewear; the
 hat, visor and weapon switches; and, closed, the raw model ids. An item
@@ -54,13 +73,48 @@ or the facewear removes it, "None" leads the dye and facewear lists, and
 Remove all takes everything off. Without Glamourer the view disables in
 place and says why.
 
+Fixed game palettes show every entry in eight row-major columns, with its
+zero-based native index on the swatch. No sorting, gap compaction, scroll
+viewport, or padded rows may change that shape. Popup bounds follow the
+complete grid; small displays compact it uniformly. Packed ABGR UI colours,
+clan/gender blocks, and the separate alpha ranges retain the Ktisis UI-palette
+interpretation rather than Brio's shader-colour blocks.
+
+Hair previews use the matching race/clan/gender HairMakeType menu's explicit
+CharaMakeCustomize references and retain FeatureID as the selection/write
+identity, following Brio's reference-based lookup rather than assuming a
+contiguous range. The older menu is a fallback when that sheet is unavailable.
+Model-only additions remain selectable with an honest missing-image fallback.
+Pending images retry on subsequent frames; failed lookups retry after a short
+delay and never permanently blacklist a valid option.
+
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer
 is outbound navigation only. The Appearance tab is actor-scoped.
 
 ## The look goes back
 
-The first wardrobe or customize write on an actor takes its look: the
+Custom colours are nullable intent, separate from observed shader readings.
+Opening their picker claims nothing; an edit enables that channel. Like Brio's
+explicit shader override, it remains enforced over palette edits until Reset.
+RGB uses the shared standard picker; mouth also exposes linear alpha. No
+material, specular, muscle, HDR, or exposure controls are part of this contract.
+
+A channel Reset synchronously writes its captured incoming colour into the
+current shader buffer, then relinquishes only that channel. No redraw or provider
+reset is requested. Its original capture remains available for later edits and
+lifecycle restoration. Failed writes retain intent/capture and do not append or
+move history. Undo of the first custom edit and redo of Reset restore the capture;
+undo of Reset restores the custom value. Exact-generation and fresh access checks
+apply to every native write, and unrelated channels and shader lanes stay untouched.
+Each channel uses one compact colour-and-reset group; an accent outline marks
+active custom intent and its tooltip explains the reset.
+The existing whole-presentation Reset records all nullable intent and original
+captures. Its inverse retains recovery evidence and stays in history if any
+field refuses restoration. Dead-generation value steps follow the existing
+no-op journal policy and never redirect to a replacement actor.
+
+The first wardrobe, customize, or custom-colour write on an actor takes its look: the
 Glamourer state as it stands is captured once. Revert, the actor leaving
 the scene, and GPose ending put that state back, by the exact object
 while it exists and by the character's name once it has left GPose. This

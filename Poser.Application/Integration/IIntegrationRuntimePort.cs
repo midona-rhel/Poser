@@ -20,6 +20,9 @@ public interface IIntegrationRuntimePort
     IntegrationAvailability Glamourer { get; }
     IntegrationAvailability CustomizePlus { get; }
 
+    /// <summary>Fresh, non-mutating access probe for the exact actor generation.</summary>
+    GlamourerAccess ProbeGlamourerAccess(ActorId actor);
+
     /// <summary>Runs one transaction phase on the framework thread. Executes
     /// inline when already there.</summary>
     Task<T> OnFrameworkThread<T>(Func<T> action);

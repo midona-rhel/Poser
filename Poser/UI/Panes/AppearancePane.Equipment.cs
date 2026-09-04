@@ -96,15 +96,15 @@ public sealed partial class AppearancePane
     private void DrawEquipmentView(Crystarium.PageScope page, ActorId actor)
     {
         var glamourer = _integration.Glamourer;
-        bool ready = glamourer.Available;
-        string? blocked = ready ? null : glamourer.Detail;
+        bool ready = glamourer.Available && _appearanceAccess.CanEdit;
+        string? blocked = !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : ready ? null : glamourer.Detail;
         var state = ready ? ReadWardrobe(actor) : null;
 
         page.Section("Gear", _openGear, next => _openGear = next, form =>
         {
-            if (!ready)
+            if (!ready && _appearanceAccess.CanEdit)
                 form.Status(blocked);
-            else if (state is null && _wardrobeDetail is { } detail)
+            else if (ready && state is null && _wardrobeDetail is { } detail)
                 form.Status(detail);
             form.PairRows();
             if (form.TwoTrack)
@@ -510,15 +510,11 @@ public sealed partial class AppearancePane
             : "Design";
         _names.Open("Save design", suggested, name =>
         {
-            var json = _integration.GetStateJson(actor);
-            if (!json.Success || json.Value is null)
-            {
-                _notices.Failed($"Save design: {json.Detail}");
-                return;
-            }
-            var saved = _integration.SaveDesign(json.Value, name);
+            var saved = _integration.SaveActorDesign(actor, name);
             if (saved.Success)
                 _notices.Done($"Saved design '{name}'.");
+            else if (saved.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld)
+                _accessAt = DateTime.MinValue;
             else
                 _notices.Failed($"Save design: {saved.Detail}");
         }, placeholder: "Design name");

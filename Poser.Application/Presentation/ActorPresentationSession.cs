@@ -31,7 +31,7 @@ public readonly record struct PresentationResult(bool Success, string? Detail = 
 /// field, not a named layer, not a transform gesture, and never a second
 /// undo journal.
 /// </summary>
-public sealed class ActorPresentationSession
+public sealed partial class ActorPresentationSession
 {
     private readonly IPresentationRuntimePort _port;
     private readonly Dictionary<ActorId, PresentationOverrides> _overrides = new();
@@ -165,6 +165,37 @@ public sealed class ActorPresentationSession
 
     // ── Restoration ───────────────────────────────────────────────────
 
+    /// <summary>Replays a reset's saved intent using the original captures.
+    /// Partial failure retains recovery evidence and must not commit history.</summary>
+    public PresentationResult RestoreOverrides(ActorId actor, PresentationOverrides? requested)
+    {
+        var reset = ResetActor(actor);
+        if (!reset.Success || requested is null || !requested.HasAny) return reset;
+        if (!_port.IsSupported(actor)) return PresentationResult.Fail("The actor is no longer available.");
+        // A failed replay still needs the original baseline, including channels
+        // already individually released before the reset. Never recapture a redraw.
+        _overrides[actor] = requested with
+        {
+            Opacity = null, Tints = new Dictionary<PresentationModel, Vector4>(),
+            Wetness = null, Colors = new Dictionary<AppearanceColorChannel, Vector4>(),
+        };
+        var failures = new List<string>();
+        void Check(bool success, string? detail) { if (!success) failures.Add(detail ?? "Presentation restore failed."); }
+        if (requested.Opacity is { } opacity)
+        { var result = SetOpacity(actor, opacity); Check(result.Success, result.Detail); }
+        foreach (var (model, tint) in requested.Tints)
+        { var result = SetTint(actor, model, tint); Check(result.Success, result.Detail); }
+        if (requested.Wetness is { } wetness)
+        {
+            var enabled = SetWetnessEnabled(actor, true);
+            Check(enabled.Success, enabled.Detail);
+            if (enabled.Success) { var result = SetWetness(actor, wetness); Check(result.Success, result.Detail); }
+        }
+        foreach (var (channel, color) in requested.Colors)
+        { var result = SetColor(actor, channel, color); Check(result.Success, result.Detail); }
+        return failures.Count == 0 ? PresentationResult.Ok() : PresentationResult.Fail(string.Join("; ", failures));
+    }
+
     /// <summary>
     /// Restores every owned field for one actor and forgets it. Each
     /// field is released ONLY when its own restore succeeded; failures
@@ -173,6 +204,7 @@ public sealed class ActorPresentationSession
     /// </summary>
     public PresentationResult ResetActor(ActorId actor)
     {
+        _port.SuspendColors(actor);
         if (!_overrides.TryGetValue(actor, out var owned))
         {
             _port.ClearOwned(actor);
@@ -218,6 +250,13 @@ public sealed class ActorPresentationSession
 
         if (owned.WetnessCapture is { } wetness && Try(_port.ClearWetness(actor, wetness)))
             remaining = remaining with { Wetness = null, WetnessCapture = null };
+
+        if (owned.ColorCaptures.Count > 0 && Try(_port.RestoreColors(actor, owned.ColorCaptures)))
+            remaining = remaining with
+            {
+                Colors = new Dictionary<AppearanceColorChannel, Vector4>(),
+                ColorCaptures = new Dictionary<AppearanceColorChannel, Vector4>(),
+            };
 
         if (remaining.HasAny)
         {

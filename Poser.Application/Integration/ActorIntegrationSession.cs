@@ -50,6 +50,16 @@ public sealed class ActorIntegrationSession : IDisposable
     public IntegrationAvailability Glamourer => _port.Glamourer;
     public IntegrationAvailability CustomizePlus => _port.CustomizePlus;
 
+    public GlamourerAccess AppearanceAccess(ActorId actor) => _port.ProbeGlamourerAccess(actor);
+
+    private IntegrationResult EditLook(ActorId actor, Func<IntegrationPortResult> edit)
+    {
+        if (McdfGate(actor) is { } gate)
+            return gate;
+        var access = AppearanceAccess(actor);
+        return access.CanEdit ? Lift(edit()) : IntegrationResult.Refused(access);
+    }
+
     public IntegrationOverrides OverridesFor(ActorId actor) =>
         _overrides.TryGetValue(actor, out var overrides)
             ? overrides
@@ -74,29 +84,49 @@ public sealed class ActorIntegrationSession : IDisposable
     // ── the wardrobe ─────────────────────────────
 
     public IntegrationResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
-        Lift(_port.SetItem(actor, slot, itemId, dye1, dye2));
+        EditLook(actor, () => _port.SetItem(actor, slot, itemId, dye1, dye2));
 
-    public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId) => Lift(_port.SetFacewear(actor, bonusItemId));
+    public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId) => EditLook(actor, () => _port.SetFacewear(actor, bonusItemId));
 
-    public IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) => Lift(_port.SetMetaSwitch(actor, which, on));
+    public IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) => EditLook(actor, () => _port.SetMetaSwitch(actor, which, on));
 
-    public IntegrationValue<string> GetStateJson(ActorId actor) => _port.GetGlamourerStateJson(actor);
+    private IntegrationValue<T> ReadLook<T>(ActorId actor, Func<IntegrationValue<T>> read)
+    {
+        var access = AppearanceAccess(actor);
+        return access.CanEdit ? read() : IntegrationValue<T>.Refused(access);
+    }
 
-    public IntegrationValue<WardrobeState> ReadWardrobe(ActorId actor) => _port.GetWardrobeState(actor);
+    public IntegrationValue<string> GetStateJson(ActorId actor) => ReadLook(actor, () => _port.GetGlamourerStateJson(actor));
 
-    public IntegrationValue<CustomizeState> ReadCustomize(ActorId actor) => _port.GetCustomizeState(actor);
+    public IntegrationValue<WardrobeState> ReadWardrobe(ActorId actor) => ReadLook(actor, () => _port.GetWardrobeState(actor));
+
+    public IntegrationValue<CustomizeState> ReadCustomize(ActorId actor) => ReadLook(actor, () => _port.GetCustomizeState(actor));
 
     public IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
-        Lift(_port.SetCustomize(actor, values));
+        EditLook(actor, () => _port.SetCustomize(actor, values));
 
-    public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => Lift(_port.ApplyGlamourerStateJson(actor, stateJson));
+    public IntegrationResult ApplyStateJson(ActorId actor, string stateJson) => EditLook(actor, () => _port.ApplyGlamourerStateJson(actor, stateJson));
 
-    public IntegrationResult RevertState(ActorId actor) => Lift(_port.RevertGlamourerState(actor));
+    public IntegrationResult RevertState(ActorId actor) => EditLook(actor, () => _port.RevertGlamourerState(actor));
+
+    public IntegrationValue<Guid> SaveActorDesign(ActorId actor, string name)
+    {
+        var access = AppearanceAccess(actor);
+        if (!access.CanEdit)
+            return IntegrationValue<Guid>.Refused(access);
+        var state = GetStateJson(actor);
+        if (!state.Success || state.Value is null)
+            return new(false, default, state.Detail, state.AppearanceRefusal);
+        // Recheck after capture: a save must not knowingly consume a look
+        // that became foreign-held while the name dialog was open.
+        access = AppearanceAccess(actor);
+        return access.CanEdit ? _port.AddDesign(state.Value, name) : IntegrationValue<Guid>.Refused(access);
+    }
 
     public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _port.AddDesign(stateJson, name);
 
     private static IntegrationResult Lift(IntegrationPortResult result) =>
-        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
+        result.Success ? IntegrationResult.Ok() : new(false, result.Detail, result.AppearanceRefusal);
 
     // ── Selectors ────────────────────────────────────────────────────────
 
@@ -199,6 +229,9 @@ public sealed class ActorIntegrationSession : IDisposable
     {
         if (McdfGate(actor) is { } gate)
             return gate;
+        var access = AppearanceAccess(actor);
+        if (!access.CanEdit)
+            return IntegrationResult.Refused(access);
         var current = OverridesFor(actor);
 
         var state = current.Baseline.GlamourerState;
@@ -207,13 +240,13 @@ public sealed class ActorIntegrationSession : IDisposable
             // A state locked by another plugin fails HERE, before mutation.
             var incoming = _port.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } captured)
-                return IntegrationResult.Fail(incoming.Detail ?? "The incoming Glamourer state could not be captured.");
+                return new(false, incoming.Detail ?? "The incoming Glamourer state could not be captured.", incoming.AppearanceRefusal);
             state = captured;
         }
 
         var applied = _port.ApplyDesign(actor, design);
         if (!applied.Success)
-            return IntegrationResult.Fail(applied.Detail!);
+            return Lift(applied);
 
         Mutate(actor, current with
         {
@@ -236,6 +269,9 @@ public sealed class ActorIntegrationSession : IDisposable
     {
         if (McdfGate(actor) is { } gate)
             return gate;
+        var access = AppearanceAccess(actor);
+        if (!access.CanEdit)
+            return IntegrationResult.Refused(access);
         var current = OverridesFor(actor);
         if (current.DesignOwned && current.Baseline.GlamourerState != null)
             return IntegrationResult.Ok();
@@ -244,7 +280,7 @@ public sealed class ActorIntegrationSession : IDisposable
         {
             var incoming = _port.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } captured)
-                return IntegrationResult.Fail(incoming.Detail ?? "The Glamourer state could not be captured.");
+                return new(false, incoming.Detail ?? "The Glamourer state could not be captured.", incoming.AppearanceRefusal);
             state = captured;
         }
         Mutate(actor, current with
@@ -265,6 +301,11 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationResult ResetDesign(ActorId actor)
     {
+        if (McdfGate(actor) is { } gate)
+            return gate;
+        var access = AppearanceAccess(actor);
+        if (!access.CanEdit)
+            return IntegrationResult.Refused(access);
         var current = OverridesFor(actor);
         if (!current.DesignOwned)
             return IntegrationResult.Ok();
@@ -275,7 +316,7 @@ public sealed class ActorIntegrationSession : IDisposable
         // game's own appearance.
         var restored = _port.RestoreGlamourerState(actor, state);
         if (!restored.Success)
-            return IntegrationResult.Fail(restored.Detail!);
+            return Lift(restored);
 
         Mutate(actor, current with
         {
@@ -424,20 +465,25 @@ public sealed class ActorIntegrationSession : IDisposable
                 // No exact object to write into: the body left GPose. The
                 // character name still names it, so the baseline goes back
                 // by name; without a name the state died with the object.
+                bool released = true;
                 if (current.Baseline.GlamourerState is { } byNameState
                     && current.DesignActorName is { } byName)
                 {
                     var restoredByName = _port.RestoreGlamourerStateByName(byName, byNameState);
                     if (!restoredByName.Success)
+                    {
+                        released = false;
                         failures.Add(restoredByName.Detail!);
+                    }
                 }
-                current = current with
-                {
-                    Baseline = current.Baseline with { GlamourerState = null },
-                    DesignOwned = false,
-                    DesignName = null,
-                    DesignActorName = null,
-                };
+                if (released)
+                    current = current with
+                    {
+                        Baseline = current.Baseline with { GlamourerState = null },
+                        DesignOwned = false,
+                        DesignName = null,
+                        DesignActorName = null,
+                    };
             }
             else if (current.Baseline.GlamourerState is { } state)
             {

@@ -43,17 +43,22 @@ public sealed class CustomizeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");
-        int before = state.Value.Value(key);
+            return new(false, state.Detail ?? "The look could not be read.", state.AppearanceRefusal);
+        if (!state.Value.Values.TryGetValue(key, out int before))
+            return IntegrationResult.Fail($"The look carries no {key} value.");
         if (before == value)
             return IntegrationResult.Ok();
         IntegrationResult result = IntegrationResult.Ok();
-        _journal.Set((actor, key), description,
+        var written = _journal.TrySet((actor, key), description,
             () => before,
-            next => result = Apply(actor, new Dictionary<CustomizeKey, int> { [key] = next }),
+            next =>
+            {
+                result = Apply(actor, new Dictionary<CustomizeKey, int> { [key] = next });
+                return new ValueWriteResult(result.Success, result.Detail);
+            },
             value,
             () => Alive(actor));
-        return result;
+        return written.Success ? result : new(false, written.Detail, result.AppearanceRefusal);
     }
 
     /// <summary>Several values as one step.</summary>
@@ -66,15 +71,26 @@ public sealed class CustomizeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");
+            return new(false, state.Detail ?? "The look could not be read.", state.AppearanceRefusal);
         var before = new Dictionary<CustomizeKey, int>();
         foreach (var key in values.Keys)
-            before[key] = state.Value.Value(key);
+        {
+            if (!state.Value.Values.TryGetValue(key, out int value))
+                return IntegrationResult.Fail($"The look carries no {key} value.");
+            before[key] = value;
+        }
+        if (values.All(pair => before[pair.Key] == pair.Value))
+            return IntegrationResult.Ok();
         var result = Apply(actor, values);
         if (!result.Success)
             return result;
-        _journal.Record<IReadOnlyDictionary<CustomizeKey, int>>(description, before, values,
-            next => Apply(actor, next), () => Alive(actor));
+        var after = new Dictionary<CustomizeKey, int>(values);
+        _journal.RecordResult<IReadOnlyDictionary<CustomizeKey, int>>(description, before, after,
+            next =>
+            {
+                var applied = Apply(actor, next);
+                return new ValueWriteResult(applied.Success, applied.Detail);
+            }, () => Alive(actor));
         return result;
     }
 

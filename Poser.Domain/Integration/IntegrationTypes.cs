@@ -3,25 +3,40 @@ using System.Collections.Generic;
 
 namespace Poser.Domain.Integration;
 
+public enum GlamourerAccessKind { Editable, PoserHeld, ForeignHeld, Unavailable }
+
+public sealed record GlamourerAccess(GlamourerAccessKind Kind, string? Detail = null)
+{
+    public bool CanEdit => Kind == GlamourerAccessKind.Editable;
+    public static readonly GlamourerAccess Editable = new(GlamourerAccessKind.Editable);
+    public static readonly GlamourerAccess ForeignHeld = new(GlamourerAccessKind.ForeignHeld,
+        "This actor's Glamourer appearance is locked by another plugin. Release it there to edit in Poser.");
+    public static readonly GlamourerAccess PoserHeld = new(GlamourerAccessKind.PoserHeld,
+        "Poser's imported character file holds this actor's appearance. Reset MCDF first.");
+}
+
 /// <summary>Session-level result for external integration commands.</summary>
-public readonly record struct IntegrationResult(bool Success, string? Detail = null)
+public readonly record struct IntegrationResult(bool Success, string? Detail = null, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationResult Ok() => new(true);
     public static IntegrationResult Fail(string detail) => new(false, detail);
+    public static IntegrationResult Refused(GlamourerAccess access) => new(false, access.Detail, access.Kind);
 }
 
 /// <summary>Runtime-port result for one external call.</summary>
-public readonly record struct IntegrationPortResult(bool Success, string? Detail = null)
+public readonly record struct IntegrationPortResult(bool Success, string? Detail = null, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationPortResult Ok() => new(true);
     public static IntegrationPortResult Fail(string detail) => new(false, detail);
+    public static IntegrationPortResult Refused(GlamourerAccess access) => new(false, access.Detail, access.Kind);
 }
 
 /// <summary>Runtime-port result carrying a value.</summary>
-public sealed record IntegrationValue<T>(bool Success, T? Value, string? Detail)
+public sealed record IntegrationValue<T>(bool Success, T? Value, string? Detail, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationValue<T> Ok(T value) => new(true, value, null);
     public static IntegrationValue<T> Fail(string detail) => new(false, default, detail);
+    public static IntegrationValue<T> Refused(GlamourerAccess access) => new(false, default, access.Detail, access.Kind);
 }
 
 /// <summary>
