@@ -4,7 +4,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
-using Dalamud.Plugin;
 using Poser.Application.Integration;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Presentation;
@@ -53,7 +52,6 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         public WetnessState? Wetness;
         public readonly Dictionary<AppearanceColorChannel, Vector4> Colors = new();
         public bool ColorsSuspended;
-        public ulong ColorRevision;
         public bool IsEmpty => Tints.Count == 0 && Wetness == null && Colors.Count == 0;
     }
 
@@ -79,21 +77,12 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        IIntegrationRuntimePort integration,
-        IDalamudPluginInterface pluginInterface)
+        IIntegrationRuntimePort integration)
     {
         _framework = framework;
         _log = log;
         _bindings = bindings;
         _integration = integration;
-        _colorRelease = new ColorReleaseCoordinator(ColorIntentFor, ResolveColorTarget, InspectColor,
-            actor =>
-            {
-                var result = _integration.RequestRedraw(actor);
-                return result.Success ? PresentationPortResult.Ok() : PresentationPortResult.Fail(result.Detail!);
-            }, ReleaseColor, EnforceInspectedColors);
-        _redrawn = pluginInterface.GetIpcSubscriber<nint, int, object?>("Penumbra.GameObjectRedrawn");
-        _redrawn.Subscribe(OnColorRedrawn);
 
         try
         {
@@ -324,14 +313,13 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     /// </summary>
     private void EnforceOwned(IFramework framework)
     {
-        _colorRelease.AdvanceFrame();
         if (_owned.Count == 0)
             return;
 
         var rebuilt = new HashSet<nint>();
         foreach (var (actor, owned) in _owned.ToArray())
         {
-            _colorRelease.Tick(actor);
+            EnforceColors(actor, owned);
             if (_colorsDisposed) return;
             if (!_owned.TryGetValue(actor, out var currentOwned) || !ReferenceEquals(currentOwned, owned)) continue;
             var resolved = _bindings.Resolve(actor);
@@ -385,8 +373,6 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     public void Dispose()
     {
         _colorsDisposed = true;
-        _colorRelease.Dispose();
-        _redrawn.Unsubscribe(OnColorRedrawn);
         _framework.Update -= EnforceOwned;
         _owned.Clear();
         _ownedTintBases = new HashSet<nint>();

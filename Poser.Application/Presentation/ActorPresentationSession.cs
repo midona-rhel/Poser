@@ -204,7 +204,6 @@ public sealed partial class ActorPresentationSession
     /// </summary>
     public PresentationResult ResetActor(ActorId actor)
     {
-        CancelColorRelease(actor);
         _port.SuspendColors(actor);
         if (!_overrides.TryGetValue(actor, out var owned))
         {

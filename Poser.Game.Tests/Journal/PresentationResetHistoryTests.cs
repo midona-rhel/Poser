@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Presentation;
+using Poser.Application.Integration;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
@@ -15,6 +16,75 @@ namespace Poser.Game.Tests.Journal;
 
 public sealed class PresentationResetHistoryTests
 {
+    [Fact]
+    public void First_custom_set_and_clear_have_synchronous_captured_value_inverses()
+    {
+        var f = new Fixture();
+        Assert.True(f.ColorValues.Set(f.Actor, AppearanceColorChannel.Skin, Vector4.Zero).Success);
+        Assert.True(f.Journal.Undo().Success);
+        Assert.Equal(Vector4.One, f.Port.Colors[AppearanceColorChannel.Skin]);
+        Assert.Null(f.ColorValues.Override(f.Actor, AppearanceColorChannel.Skin));
+        Assert.True(f.Journal.Redo().Success);
+        Assert.Equal(Vector4.Zero, f.Port.Colors[AppearanceColorChannel.Skin]);
+        f.Port.Colors[AppearanceColorChannel.Skin] = new Vector4(0.8f);
+        Assert.True(f.ColorValues.Clear(f.Actor, AppearanceColorChannel.Skin).Success);
+        Assert.Equal(Vector4.One, f.Port.Colors[AppearanceColorChannel.Skin]);
+        Assert.True(f.Journal.Undo().Success);
+        Assert.Equal(Vector4.Zero, f.Port.Colors[AppearanceColorChannel.Skin]);
+        Assert.True(f.Journal.Redo().Success);
+        Assert.Equal(Vector4.One, f.Port.Colors[AppearanceColorChannel.Skin]);
+        Assert.Null(f.ColorValues.Override(f.Actor, AppearanceColorChannel.Skin));
+    }
+
+    [Fact]
+    public void Failed_clear_adds_no_step_and_failed_inverse_stays_retryable()
+    {
+        var f = new Fixture();
+        Assert.True(f.ColorValues.Set(f.Actor, AppearanceColorChannel.Skin, Vector4.Zero).Success);
+        var set = f.History.PeekUndo();
+        f.Port.RefuseRestore = true;
+        Assert.False(f.ColorValues.Clear(f.Actor, AppearanceColorChannel.Skin).Success);
+        Assert.Same(set, f.History.PeekUndo());
+        Assert.False(f.Journal.Undo().Success);
+        Assert.False(f.Journal.Undo().Success);
+        Assert.Same(set, f.History.PeekUndo());
+        Assert.False(f.History.CanRedo);
+        Assert.Equal(Vector4.Zero, f.ColorValues.Override(f.Actor, AppearanceColorChannel.Skin));
+        f.Port.RefuseRestore = false;
+        Assert.True(f.ColorValues.Clear(f.Actor, AppearanceColorChannel.Skin).Success);
+        var clear = f.History.PeekUndo();
+        f.Port.RefuseSet = true;
+        Assert.False(f.Journal.Undo().Success);
+        Assert.Same(clear, f.History.PeekUndo());
+        f.Port.RefuseSet = false;
+        Assert.True(f.Journal.Undo().Success);
+        f.Port.RefuseRestore = true;
+        Assert.False(f.Journal.Redo().Success);
+        Assert.Same(clear, f.History.PeekRedo());
+    }
+
+    [Fact]
+    public void Dead_generation_history_never_writes_to_replacement()
+    {
+        var f = new Fixture();
+        f.ColorValues.Set(f.Actor, AppearanceColorChannel.Skin, Vector4.Zero);
+        ((BindingProxy)(object)f.Bindings).Alive = false;
+        f.Port.Colors[AppearanceColorChannel.Skin] = new Vector4(0.6f);
+        Assert.True(f.Journal.Undo().Success);
+        Assert.True(f.Journal.Redo().Success);
+        Assert.Equal(new Vector4(0.6f), f.Port.Colors[AppearanceColorChannel.Skin]);
+    }
+
+    [Fact]
+    public void Failed_first_custom_set_adds_no_history()
+    {
+        var f = new Fixture();
+        f.Port.RefuseSet = true;
+        Assert.False(f.ColorValues.Set(f.Actor, AppearanceColorChannel.Hair, Vector4.Zero).Success);
+        Assert.False(f.History.CanUndo);
+        Assert.Empty(f.Session.OverridesFor(f.Actor).ColorCaptures);
+    }
+
     [Fact]
     public void Actor_page_reset_undo_redo_restores_colours_tint_wetness_and_original_captures()
     {
@@ -69,8 +139,7 @@ public sealed class PresentationResetHistoryTests
     public void Already_released_channel_remains_nullable_across_reset_history()
     {
         var f = new Fixture(); f.Edit();
-        f.Session.BeginClearColor(f.Actor, AppearanceColorChannel.Skin,
-            mutation => { mutation(); return PresentationPortResult.Ok(); }, _ => { });
+        Assert.True(f.Session.ClearColor(f.Actor, AppearanceColorChannel.Skin).Success);
         Assert.False(f.Session.OverridesFor(f.Actor).Colors.ContainsKey(AppearanceColorChannel.Skin));
         f.Values.ResetPresentation(f.Actor);
         Assert.True(f.Journal.Undo().Success);
@@ -95,15 +164,20 @@ public sealed class PresentationResetHistoryTests
         public readonly Port Port = new();
         public readonly ActorPresentationSession Session;
         public readonly ActorValueSession Values;
+        public readonly AppearanceColorSession ColorValues;
+        public readonly IEntityBindings Bindings = DispatchProxy.Create<IEntityBindings, BindingProxy>();
         public readonly TransformHistory History = new();
         public readonly UndoJournal Journal;
         public Fixture()
         {
             Session = new(Port);
-            Values = new(new ValueJournal(History), Session, null!, null!, DispatchProxy.Create<IEntityBindings, BindingProxy>());
+            var values = new ValueJournal(History);
+            Values = new(values, Session, null!, null!, Bindings);
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
             Journal = new(History, runner, new Keys(), new Lazy<IPoseSnapshotPort>(() => throw new Exception()), _ => true, _ => { });
+            var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
+            ColorValues = new(Session, integration, values, runner, Bindings);
         }
         public void Edit()
         {
@@ -117,9 +191,20 @@ public sealed class PresentationResetHistoryTests
 
     public class BindingProxy : DispatchProxy
     {
+        public bool Alive = true;
         private readonly IActor _actor = DispatchProxy.Create<IActor, UnusedProxy>();
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            new BindingResult<IActor>(BindingStatus.Success, _actor);
+            Alive ? new BindingResult<IActor>(BindingStatus.Success, _actor) : new BindingResult<IActor>(BindingStatus.Missing);
+    }
+    public class IntegrationProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => targetMethod?.Name switch
+        {
+            "ProbeGlamourerAccess" => GlamourerAccess.Editable,
+            "CaptureGlamourerState" => IntegrationValue<string>.Ok("{}"),
+            "GetActorName" => IntegrationValue<string>.Ok("Actor"),
+            _ => throw new InvalidOperationException("Unexpected integration call: " + targetMethod?.Name),
+        };
     }
     public class UnusedProxy : DispatchProxy
     {
@@ -142,7 +227,8 @@ public sealed class PresentationResetHistoryTests
         { if (RefuseSet) return PresentationPortResult.Fail("colour refused"); Colors[channel] = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
         { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); foreach (var (channel, value) in captures) Colors[channel] = value; return PresentationPortResult.Ok(); }
-        public void BeginClearColor(ActorId actor, AppearanceColorChannel channel, Func<Action, PresentationPortResult> commit, Action<PresentationPortResult> completed) => completed(commit(() => { }));
+        public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+        { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); Colors[channel] = incoming; return PresentationPortResult.Ok(); }
         public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult SetWetness(ActorId actor, WetnessState value) { Wetness = value; return PresentationPortResult.Ok(); }

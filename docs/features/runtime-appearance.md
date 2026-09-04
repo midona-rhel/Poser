@@ -100,20 +100,19 @@ explicit shader override, it remains enforced over palette edits until Reset.
 RGB uses the shared standard picker; mouth also exposes linear alpha. No
 material, specular, muscle, HDR, or exposure controls are part of this contract.
 
-A channel Reset reveals the current underlying palette/provider state by
-redrawing with only that channel suspended. A matching Penumbra redraw event
-and a later readable Human parameter buffer must both arrive within five seconds.
-Only then do ownership and history commit together, under the normal gesture
-transition guard. Pending resets block other custom-colour edits on that actor;
-failure retains intent and history for retry. Reset, departure, disposal, changed
-history (including folded edits), or a foreign hold invalidates completion.
-Other custom channels stay owned; unrelated shader lanes are never overwritten.
+A channel Reset synchronously writes its captured incoming colour into the
+current shader buffer, then relinquishes only that channel. No redraw or provider
+reset is requested. Its original capture remains available for later edits and
+lifecycle restoration. Failed writes retain intent/capture and do not append or
+move history. Undo of the first custom edit and redo of Reset restore the capture;
+undo of Reset restores the custom value. Exact-generation and fresh access checks
+apply to every native write, and unrelated channels and shader lanes stay untouched.
+Each channel uses one compact colour-and-reset group; an accent outline marks
+active custom intent and its tooltip explains the reset.
 The existing whole-presentation Reset records all nullable intent and original
 captures. Its inverse retains recovery evidence and stays in history if any
 field refuses restoration. Dead-generation value steps follow the existing
 no-op journal policy and never redirect to a replacement actor.
-Provider-managed colours can be reapplied on redraw. Untracked third-party raw
-shader writes cannot universally survive a redraw and are not reconstructed.
 
 The first wardrobe, customize, or custom-colour write on an actor takes its look: the
 Glamourer state as it stands is captured once. Revert, the actor leaving

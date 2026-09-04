@@ -64,22 +64,12 @@ public sealed record JournalStep(
     /// <summary>Result-aware value edits retain refused inverses for retry.</summary>
     public bool RetainOnFailure { get; init; }
     public Func<string?>? FailureDetail { get; init; }
-    public DeferredJournalWrite? DeferredUndo { get; init; }
-    public DeferredJournalWrite? DeferredRedo { get; init; }
-    public ulong Revision { get; internal set; }
 
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }
     public object? AfterValue { get; init; }
 }
-
-/// <summary>Completes an inverse through the supplied guarded commit; success
-/// without invoking commit does not move history.</summary>
-public delegate void DeferredJournalWrite(
-    Func<Action, ValueWriteResult> commit, Action<ValueWriteResult> completed);
-public delegate void DeferredValueWrite<T>(T value,
-    Func<Action, ValueWriteResult> commit, Action<ValueWriteResult> completed);
 
 /// <summary>The current key of an actor, by lineage. Null when the actor is gone.</summary>
 public interface IActorStateKeySource

@@ -11,8 +11,7 @@ public interface IAppearanceColorControl
 {
     IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> Read(ActorId actor);
     Vector4? Override(ActorId actor, AppearanceColorChannel channel);
-    bool IsPending(ActorId actor);
     ValueWriteResult Set(ActorId actor, AppearanceColorChannel channel, Vector4 value);
-    void Clear(ActorId actor, AppearanceColorChannel channel, Action<ValueWriteResult> completed);
+    ValueWriteResult Clear(ActorId actor, AppearanceColorChannel channel);
     void Seal();
 }

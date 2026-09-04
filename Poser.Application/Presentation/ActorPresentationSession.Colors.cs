@@ -7,13 +7,10 @@ namespace Poser.Application.Presentation;
 
 public sealed partial class ActorPresentationSession
 {
-    private readonly Dictionary<ActorId, Guid> _colorReleases = new();
-    public bool IsColorPending(ActorId actor) => _colorReleases.ContainsKey(actor);
     public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor) => _port.ReadColors(actor);
 
     public PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
-        if (IsColorPending(actor)) return PresentationPortResult.Fail("A colour reset is pending for this actor.");
         if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(value)))
             return PresentationPortResult.Fail("The colour is invalid.");
         var owned = OverridesFor(actor);
@@ -29,46 +26,21 @@ public sealed partial class ActorPresentationSession
         return result;
     }
 
-    public void BeginClearColor(ActorId actor, AppearanceColorChannel channel,
-        Func<Action, PresentationPortResult> commit, Action<PresentationPortResult> completed)
+    public PresentationPortResult ClearColor(ActorId actor, AppearanceColorChannel channel)
     {
-        if (IsColorPending(actor)) { completed(PresentationPortResult.Fail("A colour reset is pending for this actor.")); return; }
-        if (!OverridesFor(actor).Colors.ContainsKey(channel))
+        var owned = OverridesFor(actor);
+        if (!owned.Colors.ContainsKey(channel)) return PresentationPortResult.Ok();
+        if (!owned.ColorCaptures.TryGetValue(channel, out var incoming))
+            return PresentationPortResult.Fail("The incoming colour was not captured.");
+        var result = _port.RestoreColor(actor, channel, incoming);
+        if (!result.Success) return result;
+        // Keep the original capture for later edits and whole-actor reset.
+        Mutate(actor, state =>
         {
-            var reading = _port.ReadColors(actor);
-            completed(!reading.Success ? PresentationPortResult.Fail(reading.Detail ?? "The actor's shader is unavailable.")
-                : commit(() => { }));
-            return;
-        }
-        var token = Guid.NewGuid();
-        bool finished = false;
-        bool applied = false;
-        _colorReleases[actor] = token;
-        bool Current() => _colorReleases.TryGetValue(actor, out var current) && current == token;
-        void Complete(PresentationPortResult result)
-        {
-            if (finished) return;
-            finished = true;
-            if (Current()) _colorReleases.Remove(actor);
-            completed(result);
-        }
-        try { _port.BeginClearColor(actor, channel, mutation =>
-        {
-            if (finished || applied || !Current()) return PresentationPortResult.Fail("The colour reset was cancelled.");
-            return commit(() =>
-            {
-                mutation();
-                applied = true;
-                Mutate(actor, state =>
-                {
-                    var colors = new Dictionary<AppearanceColorChannel, Vector4>(state.Colors);
-                    colors.Remove(channel);
-                    return state with { Colors = colors };
-                });
-            });
-        }, Complete); }
-        catch (Exception ex) { Complete(PresentationPortResult.Fail(ex.Message)); }
+            var colors = new Dictionary<AppearanceColorChannel, Vector4>(state.Colors);
+            colors.Remove(channel);
+            return state with { Colors = colors };
+        });
+        return result;
     }
-
-    private void CancelColorRelease(ActorId actor) => _colorReleases.Remove(actor);
 }

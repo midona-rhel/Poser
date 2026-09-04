@@ -32,9 +32,8 @@ public interface IPresentationRuntimePort
         => IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Fail("Shader colours are unavailable.");
     PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
         => PresentationPortResult.Fail("Shader colours are unavailable.");
-    void BeginClearColor(ActorId actor, AppearanceColorChannel channel,
-        Func<Action, PresentationPortResult> commit, Action<PresentationPortResult> completed)
-        => completed(PresentationPortResult.Fail("Shader colours are unavailable."));
+    PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+        => PresentationPortResult.Fail("Shader colours are unavailable.");
     void SuspendColors(ActorId actor) { }
     PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
         => PresentationPortResult.Fail("Shader colours are unavailable.");

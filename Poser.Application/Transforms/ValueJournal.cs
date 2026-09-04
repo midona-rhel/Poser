@@ -90,7 +90,6 @@ public sealed class ValueJournal
         {
             write(value);
             open.SetAfter(value!);
-            if (open.Entry is JournalStep folded) folded.Revision++;
             Folded?.Invoke(open.Entry, value);
             return;
         }
@@ -138,8 +137,7 @@ public sealed class ValueJournal
     /// <summary>Like Set, but a refused write never appends or changes the
     /// open step. Refused inverses stay available for retry with their detail.</summary>
     public ValueWriteResult TrySet<T>(object key, string description, Func<T> read,
-        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null,
-        DeferredValueWrite<T>? deferred = null)
+        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
     {
         var before = read();
         if (EqualityComparer<T>.Default.Equals(before, value))
@@ -151,12 +149,11 @@ public sealed class ValueJournal
             && ReferenceEquals(_history.PeekUndo(), open.Entry))
         {
             open.SetAfter(value!);
-            if (open.Entry is JournalStep folded) folded.Revision++;
             Folded?.Invoke(open.Entry, value);
             return result;
         }
         var box = new Box<T> { Value = value };
-        var entry = ResultStep(description, before, value, () => box.Value, write, alive, deferred);
+        var entry = ResultStep(description, before, value, () => box.Value, write, alive);
         _history.Append(entry);
         _open = new OpenStep(key, entry, next => box.Value = (T)next);
         return result;
@@ -164,18 +161,16 @@ public sealed class ValueJournal
 
     /// <summary>Records an already successful transaction whose inverses can refuse.</summary>
     public void RecordResult<T>(string description, T before, T after,
-        Func<T, ValueWriteResult> write, Func<bool>? alive = null,
-        DeferredValueWrite<T>? deferred = null)
+        Func<T, ValueWriteResult> write, Func<bool>? alive = null)
     {
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
-        _history.Append(ResultStep(description, before, after, () => after, write, alive, deferred));
+        _history.Append(ResultStep(description, before, after, () => after, write, alive));
         _open = null;
     }
 
     private static JournalStep ResultStep<T>(string description, T before, T after,
-        Func<T> latest, Func<T, ValueWriteResult> write, Func<bool>? alive,
-        DeferredValueWrite<T>? deferred)
+        Func<T> latest, Func<T, ValueWriteResult> write, Func<bool>? alive)
     {
         string? failure = null;
         bool PutResult(T value)
@@ -187,19 +182,12 @@ public sealed class ValueJournal
             failure = result.Detail;
             return result.Success;
         }
-        void PutDeferred(T value, Func<Action, ValueWriteResult> commit, Action<ValueWriteResult> done)
-        {
-            if (alive is not null && !alive()) { done(commit(() => { })); return; }
-            deferred!(value, commit, done);
-        }
         return new JournalStep(description, () => PutResult(before), () => PutResult(latest()))
         {
             BeforeValue = before,
             AfterValue = after,
             RetainOnFailure = true,
             FailureDetail = () => failure,
-            DeferredUndo = deferred is null ? null : (commit, done) => PutDeferred(before, commit, done),
-            DeferredRedo = deferred is null ? null : (commit, done) => PutDeferred(latest(), commit, done),
         };
     }
 

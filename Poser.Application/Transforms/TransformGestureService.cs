@@ -508,8 +508,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
-        if (entry is JournalStep { DeferredUndo: not null })
-            return GestureResult.Fail("Use the undo journal for this deferred step.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
                 lifecycle.Undo,
@@ -558,8 +556,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
-        if (entry is JournalStep { DeferredRedo: not null })
-            return GestureResult.Fail("Use the undo journal for this deferred step.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
                 lifecycle.Redo,
@@ -574,12 +570,12 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return RestorePatch(patch, false, () => History.CommitRedo(patch));
     }
 
-    public GestureResult RunDeferredTransition(Action action)
+    public GestureResult RunValueTransition(Action action)
     {
         if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
         using var transition = TryEnterTransition();
         if (transition == null) return Busy();
-        if (_active != null) return GestureResult.Fail("Cancel the active gesture before changing history.");
+        if (_active != null) return GestureResult.Fail("Cancel the active gesture before changing actor values.");
         try { action(); return GestureResult.Ok(); }
         catch (Exception ex) { return GestureResult.Fail(ex.Message); }
     }

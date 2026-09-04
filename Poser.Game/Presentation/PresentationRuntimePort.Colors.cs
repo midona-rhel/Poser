@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using Dalamud.Plugin.Ipc;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Shader;
 using Poser.Application.Integration;
@@ -17,63 +15,24 @@ namespace Poser.Game.Presentation;
 public sealed unsafe partial class PresentationRuntimePort
 {
     private readonly IIntegrationRuntimePort _integration;
-    private readonly ICallGateSubscriber<nint, int, object?> _redrawn;
-    private readonly ColorReleaseCoordinator _colorRelease;
     private bool _colorsDisposed;
 
-    private ColorIntent? ColorIntentFor(ActorId actor) =>
-        _owned.TryGetValue(actor, out var owned)
-            ? new(owned.ColorRevision, owned.ColorsSuspended, owned.Colors) : null;
-
-    private ColorTarget? ResolveColorTarget(ActorId actor)
+    private void EnforceColors(ActorId actor, Owned owned)
     {
-        var character = Resolve(actor, out _);
-        return character == null ? null : new((nint)character, character->GameObject.ObjectIndex);
-    }
-
-    private ColorInspection InspectColor(ActorId actor)
-    {
-        var target = ResolveColorTarget(actor);
-        if (target is null) return new(null, false, false, "The actor is no longer available.");
-        var access = _integration.ProbeGlamourerAccess(actor);
-        if (!access.CanEdit) return new(target, false, false, access.Detail);
-        var buffer = ColorBuffer(actor, out var detail, probeAccess: false);
-        bool readable = !buffer.IsEmpty;
-        if (readable)
-            foreach (var channel in Enum.GetValues<AppearanceColorChannel>())
-                readable &= AppearanceColorSpace.IsFinite(ReadColor(ref buffer[0], channel));
-        return new(target, true, readable, detail);
-    }
-
-    private void ReleaseColor(ActorId actor, AppearanceColorChannel channel)
-    {
-        var owned = _owned[actor];
-        owned.Colors.Remove(channel);
-        owned.ColorRevision++;
-    }
-
-    private void EnforceInspectedColors(ActorId actor, ColorTarget target,
-        IReadOnlyDictionary<AppearanceColorChannel, Vector4> values)
-    {
-        if (ResolveColorTarget(actor) != target) return;
-        // Called only within the coordinator's freshly inspected operation.
-        // This resolves the buffer again, but never repeats the same IPC probe.
-        var buffer = ColorBuffer(actor, out _, probeAccess: false);
+        if (owned.ColorsSuspended || owned.Colors.Count == 0) return;
+        var buffer = ColorBuffer(actor, out _);
         if (buffer.IsEmpty) return;
-        foreach (var (channel, value) in values) WriteColor(ref buffer[0], channel, value);
+        foreach (var (channel, value) in owned.Colors) WriteColor(ref buffer[0], channel, value);
     }
 
-    private Span<CustomizeParameter> ColorBuffer(ActorId actor, out string? detail, bool probeAccess = true)
+    private Span<CustomizeParameter> ColorBuffer(ActorId actor, out string? detail)
     {
         detail = null;
         if (_colorsDisposed) { detail = "Presentation is stopped."; return default; }
         var character = Resolve(actor, out detail);
         if (character == null) return default;
-        if (probeAccess)
-        {
-            var access = _integration.ProbeGlamourerAccess(actor);
-            if (!access.CanEdit) { detail = access.Detail ?? "Appearance editing is unavailable."; return default; }
-        }
+        var access = _integration.ProbeGlamourerAccess(actor);
+        if (!access.CanEdit) { detail = access.Detail ?? "Appearance editing is unavailable."; return default; }
         var model = BaseFor(character, PresentationModel.Character);
         if (character->GameObject.RenderFlags != 0 || model == null
             || model->GetModelType() != CharacterBase.ModelType.Human)
@@ -150,7 +109,6 @@ public sealed unsafe partial class PresentationRuntimePort
 
     public PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
-        if (_colorRelease.IsPending(actor)) return PresentationPortResult.Fail("A colour reset is pending for this actor.");
         if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(value)))
             return PresentationPortResult.Fail("The colour is invalid.");
         var buffer = ColorBuffer(actor, out var detail);
@@ -159,24 +117,24 @@ public sealed unsafe partial class PresentationRuntimePort
         WriteColor(ref buffer[0], channel, value);
         owned.Colors[channel] = value;
         owned.ColorsSuspended = false;
-        owned.ColorRevision++;
         return PresentationPortResult.Ok();
     }
 
-    public void BeginClearColor(ActorId actor, AppearanceColorChannel channel,
-        Func<Action, PresentationPortResult> commit, Action<PresentationPortResult> completed) =>
-        _colorRelease.Begin(actor, channel, commit, completed);
-
-    private void OnColorRedrawn(nint address, int index)
+    public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
     {
-        if (_framework.IsInFrameworkUpdateThread && !_colorsDisposed)
-            _colorRelease.Redrawn(address, index);
+        if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(incoming)))
+            return PresentationPortResult.Fail("The captured colour is invalid.");
+        var buffer = ColorBuffer(actor, out var detail);
+        if (buffer.IsEmpty) return PresentationPortResult.Fail(detail!);
+        WriteColor(ref buffer[0], channel, incoming);
+        // Relinquish only after the captured value reaches the current buffer.
+        Release(actor, owned => owned.Colors.Remove(channel));
+        return PresentationPortResult.Ok();
     }
 
     public void SuspendColors(ActorId actor)
     {
-        if (_owned.TryGetValue(actor, out var owned)) { owned.ColorsSuspended = true; owned.ColorRevision++; }
-        _colorRelease.Cancel(actor);
+        if (_owned.TryGetValue(actor, out var owned)) owned.ColorsSuspended = true;
     }
 
     public PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)

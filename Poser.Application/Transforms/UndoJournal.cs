@@ -9,8 +9,6 @@ public interface IUndoRunner
     GestureResult Undo();
     GestureResult Redo();
     GestureResult? RecoverPending() => null;
-    GestureResult RunDeferredTransition(Action action) =>
-        GestureResult.Fail("This runner does not support deferred history.");
     GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
     {
         commit();
@@ -25,7 +23,7 @@ public interface IUndoRunner
 /// instead, silently, with one notice. A redo that depends on a file asks
 /// for the file first.
 /// </summary>
-public sealed partial class UndoJournal
+public sealed class UndoJournal
 {
     public const string RestoredFromSnapshot =
         "Undo restored the pose from a snapshot: the actor changed since.";
@@ -58,7 +56,7 @@ public sealed partial class UndoJournal
         _snapshots = snapshots;
         _assetExists = assetExists;
         _notice = notice;
-        _history.Cleared += () => { _restoring = null; _deferredToken = null; };
+        _history.Cleared += () => _restoring = null;
     }
 
     /// <summary>True while a snapshot restore is in flight; undo and redo
@@ -90,8 +88,6 @@ public sealed partial class UndoJournal
                     () => _history.PeekUndo()?.Id == entry.Id,
                     () => _history.CommitUndo(entry));
         }
-        if (entry is JournalStep { DeferredUndo: { } deferred } step)
-            return RunDeferred(step, deferred, true);
         return GiveUpOnRepeat(entry, _runner.Undo());
     }
 
@@ -141,8 +137,6 @@ public sealed partial class UndoJournal
                     () => _history.PeekRedo()?.Id == entry.Id,
                     () => _history.CommitRedo(entry));
         }
-        if (entry is JournalStep { DeferredRedo: { } deferred } step)
-            return RunDeferred(step, deferred, false);
         return GiveUpOnRepeat(entry, _runner.Redo());
     }
 

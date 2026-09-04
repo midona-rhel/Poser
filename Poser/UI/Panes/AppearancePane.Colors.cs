@@ -22,32 +22,45 @@ public sealed partial class AppearancePane
     {
         page.Section("Custom colours", _openCustomColours, next => _openCustomColours = next, form =>
         {
-            bool pending = _colors.IsPending(actor);
             var reading = _colors.Read(actor);
-            if (pending) form.Status("Resetting colour — waiting for the actor to redraw…");
-            else if (!reading.Success) form.Status(reading.Detail ?? "Custom colours are unavailable.");
+            if (!reading.Success) form.Status(reading.Detail ?? "Custom colours are unavailable.");
             foreach (var (channel, label) in CustomColourRows)
             {
                 var owned = _colors.Override(actor, channel);
                 Vector4 observed = reading.Value is { } values && values.TryGetValue(channel, out var value)
                     ? value : Vector4.One;
-                bool disabled = pending || !reading.Success || !_appearanceAccess.CanEdit;
-                form.Cells(cells =>
+                bool disabled = !reading.Success || !_appearanceAccess.CanEdit;
+                var theme = Crystarium.ActiveTheme;
+                form.Custom(label, theme.Controls.FormRowHeight, row =>
                 {
-                    cells.Cell(label, cell =>
-                    {
-                        ImGui.SetCursorScreenPos(cell.Center(Crystarium.ActiveTheme.Controls.ColorWellSize));
-                        Crystarium.ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
-                            next => ReportColour(_colors.Set(actor, channel, next)),
-                            rgbOnly: channel != AppearanceColorChannel.Mouth, disabled: disabled,
-                            help: "Edit to use a custom colour. Reset returns to the current palette or design.",
-                            onBegin: _colors.Seal, onCommit: _colors.Seal);
-                    });
-                    cells.Cell("Source", cell => cell.Text(owned.HasValue ? "Custom" : "Palette / design"));
-                    cells.Cell("", cell => cell.Button($"reset-custom-{channel}", "Reset",
-                        () => _colors.Clear(actor, channel, ReportColour),
+                    var origin = row.CenterControl(theme.Controls.ColorWellSize);
+                    float side = theme.Controls.ColorWellSize * row.Scale;
+                    ImGui.SetCursorScreenPos(origin);
+                    ImGui.BeginGroup();
+                    Crystarium.ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
+                        next => ReportColour(_colors.Set(actor, channel, next)),
+                        rgbOnly: channel != AppearanceColorChannel.Mouth, disabled: disabled,
+                        help: owned.HasValue
+                            ? "Custom colour active. Reset restores the captured incoming colour."
+                            : "No custom colour. Edit to enable an override.",
+                        onBegin: _colors.Seal, onCommit: _colors.Seal);
+                    if (owned.HasValue)
+                        ImGui.GetWindowDrawList().AddRect(origin - new Vector2(row.Scale),
+                            origin + new Vector2(side + row.Scale),
+                            ImGui.ColorConvertFloat4ToU32(theme.Accent),
+                            theme.Radii.Control * row.Scale, ImDrawFlags.None, row.Scale);
+                    // One fixed group in one form row: reset stays beside its well
+                    // even when the surrounding form uses a narrow layout.
+                    var resetAt = row.CenterControl(theme.Controls.WorkspaceHeight);
+                    resetAt.X = origin.X + side + theme.Page.ActionGap * row.Scale;
+                    ImGui.SetCursorScreenPos(resetAt);
+                    Crystarium.IconButton(TablerIcon.ArrowBackUp,
+                        () => ReportColour(_colors.Clear(actor, channel)),
+                        ControlStyle.Square(theme.Controls.WorkspaceHeight),
                         disabled: disabled || !owned.HasValue,
-                        help: "Reveal this channel's current palette or design colour"));
+                        help: "Reset to the captured incoming colour",
+                        id: $"reset-custom-{actor}-{channel}");
+                    ImGui.EndGroup();
                 });
             }
         });
