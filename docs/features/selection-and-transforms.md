@@ -34,8 +34,20 @@ external or unrepresentable edit disables the surface instead of producing a
 plausible geometric fit. The record is keyed by effective membership, never
 selection order, binding generation, or the primary member. Position is the
 world centroid; authored rotation is relative to the captured camera axes.
-World rotation deltas are conjugated through that frame. Scale continues to
-act on world-axis offsets, not camera-axis offsets.
+World rotation deltas are conjugated through that frame. The group's world
+orientation is `creationFrame.Rotation * authoredRotation`,
+never a member's rotation. Local overlay handles use that orientation; World
+translation and rotation handles remain world-aligned. Scale handles always
+use the group orientation. Spacing scale converts centroid offsets into those
+axes frozen at gesture start, multiplies components, then converts back to
+world space. Numeric scale uses the same axes, independent of the World/Local
+toggle. Member own-size scaling remains native component scaling, without
+affine decomposition. Active previews derive from the frozen gesture baseline.
+Both surfaces read the transaction's proposed snapshot during a group gesture,
+validated against all live members; committed metadata and history remain
+unchanged until commit. Presentation reads refuse during native writes or
+recovery, and for stale or unrelated transactions. They never admit a second
+gesture or repair state.
 
 `SpacingOnly` and `SizesAndSpacing` keep separate authored spacing and own-size
 factors. The displayed scale is the factor for the selected mode; changing

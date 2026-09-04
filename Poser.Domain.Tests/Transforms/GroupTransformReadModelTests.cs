@@ -7,6 +7,28 @@ namespace Poser.Domain.Tests.Transforms;
 public sealed class GroupTransformReadModelTests
 {
     [Fact]
+    public void Local_and_world_rotation_intents_share_orientation_but_not_axes()
+    {
+        var frame = new GroupTransformFrame(Vector3.Zero,
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f));
+        var authored = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .8f);
+        var worldOrientation = frame.ToWorldOrientation(authored);
+        var increment = Quaternion.CreateFromAxisAngle(Vector3.UnitX, .3f);
+        // Overlay rotates around displayed local X; numeric input requests Q * increment.
+        var overlay = Quaternion.CreateFromAxisAngle(Vector3.Transform(Vector3.UnitX, worldOrientation), .3f);
+        var numeric = frame.ToWorldDelta(authored * increment * Quaternion.Inverse(authored));
+        Assert.True(MathF.Abs(Quaternion.Dot(overlay, numeric)) > .99999f);
+        var controls = GroupTransformControls.Identity(Vector3.Zero) with { Rotation = authored };
+        Assert.True(controls.TryAdvance(frame, new(Vector3.Zero, overlay, Vector3.One),
+            GroupScaleMode.SpacingOnly, Vector3.Zero, out var local));
+        Assert.True(MathF.Abs(Quaternion.Dot(frame.ToWorldOrientation(local.Rotation), worldOrientation * increment)) > .99999f);
+        Assert.True(controls.TryAdvance(frame, new(Vector3.Zero, increment, Vector3.One),
+            GroupScaleMode.SpacingOnly, Vector3.Zero, out var world));
+        Assert.True(MathF.Abs(Quaternion.Dot(frame.ToWorldOrientation(world.Rotation), increment * worldOrientation)) > .99999f);
+        Assert.True(MathF.Abs(Quaternion.Dot(local.Rotation, world.Rotation)) < .9999f);
+    }
+
+    [Fact]
     public void Authored_read_is_independent_of_member_order_and_quaternion_sign()
     {
         var first = Target();

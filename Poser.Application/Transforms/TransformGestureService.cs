@@ -59,6 +59,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         _groupCoordinator = groupCoordinator;
         if (groupCoordinator != null)
         {
+            groupCoordinator.ReadPresentation = ReadGroupPresentation;
             groupCoordinator.CaptureAllowed = () => PendingRecovery == null && _active == null;
             groupCoordinator.BeforeSelectionCapture = () =>
             {
@@ -71,6 +72,18 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public TransformHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
+
+    private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)
+    {
+        // Never publish midway through native writes, rollback, or recovery.
+        if (_transitionActive || PendingRecovery != null) return default;
+        if (_active is not { } active) return new(true, null);
+        if (active.GroupBefore is not { } before || active.Command.GroupId != named
+            || active.SceneRevision != _scene.Revision || !before.HasSameMembership(targets)
+            || _groupTransforms?.IsCurrent(GroupTransformKey.For(named, targets), before) != true)
+            return default;
+        return new(false, active.GroupProposed ?? before);
+    }
 
     /// <summary>The point the running gesture rotates and scales ABOUT, frozen
     /// at Begin. Published because a surface that draws a handle has to draw it
@@ -321,7 +334,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 rotatePosition,
                 scalePosition,
                 scaleOwn,
-                groupFactors: active.GroupBefore != null);
+                groupFactors: active.GroupBefore != null,
+                scaleFrame: active.GroupBefore?.WorldRotation);
         }
         }
         catch (ArgumentOutOfRangeException)
@@ -558,6 +572,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public void Dispose()
     {
+        if (_groupCoordinator != null) _groupCoordinator.ReadPresentation = (_, _) => default;
         _scene.Selection.SelectionChanged -= OnSelectionChanged;
         if (PendingRecovery != null)
             return;

@@ -59,6 +59,7 @@ public class GizmoOverlayWindow : Window
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
+    private readonly GroupTransformCoordinator _groupCoordinator;
 
     private static Config.GizmoConfiguration GizmoConfig =>
         Config.ConfigurationService.Instance.Config.Gizmo;
@@ -78,6 +79,7 @@ public class GizmoOverlayWindow : Window
         public required TransformOrientation Orientation { get; init; }
         public required DomainSpace Space { get; init; }
         public global::Poser.Domain.Transforms.GroupScaleMode GroupScale { get; init; }
+        public bool IsGroup { get; init; }
         public required LegacyTransform Start { get; init; }
         public LegacyTransform Current;
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
@@ -186,6 +188,7 @@ public class GizmoOverlayWindow : Window
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
+        GroupTransformCoordinator groupCoordinator,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -216,6 +219,7 @@ public class GizmoOverlayWindow : Window
         _virtualCameras = virtualCameras;
         _presentation = presentation;
         _groups = groups;
+        _groupCoordinator = groupCoordinator;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -572,28 +576,6 @@ public class GizmoOverlayWindow : Window
             _selection.Selected, _scene.Snapshot,
             id => _groups.IsLockedChild(id, _selection.Selected));
 
-    /// <summary>The live average of the targets' world positions — the
-    /// group seat. Null when any member cannot answer, matching the
-    /// resolver's all-or-nothing rule.</summary>
-    private Vector3? SelectionCentroid(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        var sum = Vector3.Zero;
-        int counted = 0;
-        foreach (var target in targets)
-        {
-            var pose =
-                target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                    ? _viewport.GetActorTransform(actor)
-                    : _viewport.GetModelTransform(target);
-            if (pose is not { } resolved)
-                return null;
-            sum += resolved.Position;
-            counted++;
-        }
-        return counted == 0 ? null : sum / counted;
-    }
-
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
@@ -718,26 +700,22 @@ public class GizmoOverlayWindow : Window
 
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
-        // THE GROUP SEAT: a multi-entity selection (mixed kinds included)
-        // manipulates from the AVERAGE of its members' positions with a
-        // world-aligned frame — one set point in space. The centroid is
-        // LIVE: translation carries it, rotation and scale leave it
-        // (Centroid pivot), so the seat never orbits its own members.
-        if (!isBone
-            && (targetType == GizmoTargetType.Mixed || targets.Count > 1))
+        bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
+        if (gesture is { } presented)
         {
-            if (SelectionCentroid(targets) is not { } centroid)
+            currentTransform = presented.Current;
+        }
+        else if (isGroup)
+        {
+            if (!_groupCoordinator.TryReadWorldSelection(
+                Config.ConfigurationService.Instance.Config.Gizmo.GroupScale, out var group, out _))
                 return;
             currentTransform = new Transform
             {
-                Position = centroid,
-                Rotation = Quaternion.Identity,
-                Scale = Vector3.One,
+                Position = group.Position,
+                Rotation = group.Rotation,
+                Scale = group.Scale,
             };
-        }
-        else if (gesture is { } presented)
-        {
-            currentTransform = presented.Current;
         }
         else if (isBone &&
             _viewport.GetBoneModelTransform(primaryBone!.Value) is { } boneRest)
@@ -796,7 +774,9 @@ public class GizmoOverlayWindow : Window
 
         bool ringDrag = gesture is { Handle.Kind: WorldHandleKind.RotateRing or WorldHandleKind.Roll };
         Quaternion ringFrame;
-        if (ringDrag)
+        // Group preview axes follow the total rotation from the frozen start;
+        // pointer mapping still uses the ring axis captured at Begin.
+        if (ringDrag && !isGroup)
         {
             ringFrame = _dragRingFrame;
         }
@@ -1234,6 +1214,7 @@ public class GizmoOverlayWindow : Window
             Orientation = orientation,
             Space = space,
             GroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale,
+            IsGroup = !isBone && targets.Count > 1,
             Start = currentTransform,
             Current = currentTransform,
             PivotMode = cleanPivotMode,
@@ -1318,8 +1299,8 @@ public class GizmoOverlayWindow : Window
                 };
                 if (!DispatchUpdate(gesture, newTransform))
                     return;
-                // Custom and centroid pivots orbit the primary target.
-                if (gesture.PivotMode is PivotMode.Custom or PivotMode.Centroid)
+                // A group presents the centroid itself, which never orbits.
+                if (!gesture.IsGroup && gesture.PivotMode is (PivotMode.Custom or PivotMode.Centroid))
                 {
                     newTransform = newTransform with
                     {
@@ -1432,7 +1413,7 @@ public class GizmoOverlayWindow : Window
     {
         var update = _cleanTransforms.Update(
             gesture.Id,
-            ToDomainDelta(gesture.Start, newTransform, gesture.Space));
+            ToDomainDelta(gesture.Start, newTransform, gesture.Space, gesture.IsGroup));
         if (update.Success)
             return true;
         _log.Verbose(
@@ -1445,7 +1426,8 @@ public class GizmoOverlayWindow : Window
     private static TransformDelta ToDomainDelta(
         LegacyTransform start,
         LegacyTransform desired,
-        DomainSpace space)
+        DomainSpace space,
+        bool isGroup)
     {
         var rotation = space == DomainSpace.Local
             ? Quaternion.Normalize(
@@ -1453,8 +1435,8 @@ public class GizmoOverlayWindow : Window
             : Quaternion.Normalize(
                 desired.Rotation * Quaternion.Conjugate(start.Rotation));
 
-        static float ScaleFactor(float before, float after) =>
-            MathF.Abs(before) < 0.00001f
+        float ScaleFactor(float before, float after) =>
+            (isGroup ? before == 0f : MathF.Abs(before) < 0.00001f)
                 ? 1f
                 : after / before;
 

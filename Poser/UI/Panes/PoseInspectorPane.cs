@@ -460,7 +460,7 @@ public class PoseInspectorPane
             var (group, groupCanEdit) = ReadTransform();
             var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame();
             return groupFrame is { } value
-                ? (Quaternion.Normalize(value.Rotation * group.Rotation), value.Rotation, groupCanEdit)
+                ? (value.ToWorldOrientation(group.Rotation), value.Rotation, groupCanEdit)
                 : (Quaternion.Identity, Quaternion.Identity, false);
         }
         var (transform, canEdit) = ReadTransform();

@@ -11,6 +11,214 @@ namespace Poser.Application.Tests.Transforms;
 
 public sealed class GroupTransformStateTests
 {
+    [Theory]
+    [InlineData(GroupScaleMode.SpacingOnly, false)]
+    [InlineData(GroupScaleMode.SpacingOnly, true)]
+    [InlineData(GroupScaleMode.SizesAndSpacing, false)]
+    [InlineData(GroupScaleMode.SizesAndSpacing, true)]
+    public void Both_surfaces_read_active_preview_without_publishing_it(GroupScaleMode mode, bool commit)
+    {
+        using var f = new Fixture(3, noncollinear: true);
+        var before = f.Snapshot;
+        var id = f.Begin(mode);
+        AssertPresentation(f, before.Controls, before.WorldRotation, mode);
+        GroupTransformControls expected = default;
+        foreach (float angle in new[] { .4f, .8f, .4f })
+        {
+            var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle);
+            var delta = new TransformDelta(new(2, 3, 1), rotation, new(2, 1, 1));
+            Assert.True(f.Service.Update(id, delta).Success);
+            Assert.True(before.Controls.TryAdvance(before.Baseline.Frame, delta, mode,
+                GroupTransformBaseline.Centroid(f.Live.Values), out expected));
+            var writes = f.Writes;
+            AssertPresentation(f, expected, before.Baseline.Frame.ToWorldOrientation(expected.Rotation), mode);
+            Assert.Equal(writes, f.Writes);
+            Assert.Same(before, f.Snapshot);
+            Assert.False(f.History.CanUndo);
+            Assert.False(f.Service.Begin(new(f.Targets, TransformOperation.Scale, TransformSpace.World,
+                PivotMode.Centroid, IsGroupTransform: true)).Success);
+        }
+        if (commit)
+        {
+            Assert.True(f.Coordinator.TryReadSelection(mode, out var preview, out _));
+            Assert.True(f.Service.Commit(id).Success);
+            AssertPresentation(f, expected, f.Snapshot.WorldRotation, mode);
+            Assert.Equal(preview, f.Snapshot.Controls.Display(mode));
+            Assert.True(f.History.CanUndo);
+        }
+        else
+        {
+            Assert.True(f.Service.Cancel(id).Success);
+            AssertPresentation(f, before.Controls, before.WorldRotation, mode);
+            Assert.True(before.ContentEquals(f.Snapshot));
+            Assert.False(f.History.CanUndo);
+        }
+    }
+
+    [Fact]
+    public void Presentation_refuses_mid_write_and_pending_recovery_even_if_live_matches_committed()
+    {
+        using var f = new Fixture(3, noncollinear: true);
+        var before = f.Snapshot;
+        f.AfterApply = () => AssertPresentationRefused(f);
+        var id = f.Begin();
+        Assert.True(f.Service.Update(id, new(Vector3.One, Quaternion.Identity, Vector3.One)).Success);
+        AssertPresentation(f, before.Controls with { Position = before.Controls.Position + Vector3.One },
+            before.WorldRotation, GroupScaleMode.SizesAndSpacing);
+        f.FailApply = true;
+        f.FailRestore = true;
+        Assert.False(f.Service.Update(id, new(new(2), Quaternion.Identity, Vector3.One)).Success);
+        Assert.NotNull(f.Service.PendingRecovery);
+        AssertPresentationRefused(f);
+        foreach (var (target, pose) in before.Expected) f.Live[target] = pose;
+        AssertPresentationRefused(f); // barrier, not merely an expected-pose mismatch
+        Assert.Same(before, f.Snapshot);
+        Assert.False(f.History.CanUndo);
+        f.FailRestore = false;
+        Assert.True(f.Service.RetryRecovery(f.Service.PendingRecovery!).Success);
+        AssertPresentation(f, before.Controls, before.WorldRotation, GroupScaleMode.SizesAndSpacing);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Active_presentation_rejects_stale_generation_or_external_deformation(bool stale)
+    {
+        using var f = new Fixture();
+        var id = f.Begin();
+        Assert.True(f.Service.Update(id, new(Vector3.One, Quaternion.Identity, Vector3.One)).Success);
+        if (stale) f.Stale = f.Targets[0];
+        else f.Live[f.Targets[0]] = Pose(new(9, 8, 7));
+        AssertPresentationRefused(f);
+        Assert.False(f.History.CanUndo);
+    }
+
+    [Fact]
+    public void Replacing_frozen_record_does_not_publish_an_unrelated_active_preview()
+    {
+        using var f = new Fixture();
+        var id = f.Begin();
+        Assert.True(f.Service.Update(id, new(Vector3.One, Quaternion.Identity, Vector3.One)).Success);
+        Assert.True(f.State.Initialize(null, f.Live, GroupTransformFrame.World(Vector3.Zero), out _));
+        AssertPresentationRefused(f);
+    }
+
+    [Fact]
+    public void Unrelated_transaction_blocks_group_presentation_until_it_ends()
+    {
+        using var f = new Fixture();
+        var before = f.Snapshot;
+        var begin = f.Service.Begin(new([f.Targets[0]], TransformOperation.Translate,
+            TransformSpace.World, PivotMode.PerTarget));
+        Assert.True(begin.Success);
+        AssertPresentationRefused(f);
+        Assert.True(f.Service.Cancel(begin.GestureId!.Value).Success);
+        AssertPresentation(f, before.Controls, before.WorldRotation, GroupScaleMode.SizesAndSpacing);
+    }
+
+    [Fact]
+    public void Scene_revision_change_refuses_preview_before_any_further_transition()
+    {
+        using var f = new Fixture();
+        var id = f.Begin();
+        Assert.True(f.Service.Update(id, new(Vector3.One, Quaternion.Identity, Vector3.One)).Success);
+        f.Publish();
+        AssertPresentationRefused(f);
+        Assert.False(f.History.CanUndo);
+    }
+
+    private static void AssertPresentation(Fixture f, GroupTransformControls expected, Quaternion world, GroupScaleMode mode)
+    {
+        Assert.True(f.Coordinator.TryReadSelection(mode, out var authored, out var error), error);
+        Assert.True(f.Coordinator.TryReadWorldSelection(mode, out var overlay, out error), error);
+        Assert.True(Vector3.Distance(expected.Position, authored.Position) < .00001f);
+        Assert.True(MathF.Abs(Quaternion.Dot(expected.Rotation, authored.Rotation)) > .99999f);
+        Assert.Equal(expected.DisplayScale(mode), authored.Scale);
+        Assert.Equal(authored.Position, overlay.Position);
+        Assert.Equal(authored.Scale, overlay.Scale);
+        Assert.True(MathF.Abs(Quaternion.Dot(world, overlay.Rotation)) > .99999f);
+    }
+
+    private static void AssertPresentationRefused(Fixture f)
+    {
+        Assert.False(f.Coordinator.TryReadSelection(GroupScaleMode.SizesAndSpacing, out _, out _));
+        Assert.False(f.Coordinator.TryReadWorldSelection(GroupScaleMode.SizesAndSpacing, out _, out _));
+    }
+
+    [Fact]
+    public void Combined_preview_keeps_scale_axes_at_begin_not_at_previous_preview()
+    {
+        using var f = new Fixture(3, noncollinear: true);
+        var before = f.Snapshot;
+        var axis = Vector3.Transform(Vector3.UnitX, before.WorldRotation);
+        var pivot = before.Controls.Position;
+        var id = f.Begin(GroupScaleMode.SpacingOnly);
+        foreach (float angle in new[] { .4f, .8f, .4f })
+        {
+            var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle);
+            Assert.True(f.Service.Update(id, new(Vector3.Zero, rotation, new(2, 1, 1))).Success);
+            foreach (var target in f.Targets)
+            {
+                var offset = before.Expected[target].Position - pivot;
+                var scaled = offset + axis * Vector3.Dot(offset, axis);
+                var expected = pivot + Vector3.Transform(scaled, rotation);
+                Assert.True(Vector3.Distance(expected, f.Live[target].Position) < .00001f);
+            }
+        }
+        Assert.True(f.Service.Cancel(id).Success);
+        Assert.True(before.ContentEquals(f.Snapshot));
+    }
+
+    [Theory]
+    [InlineData(GroupScaleMode.SpacingOnly, 2f)]
+    [InlineData(GroupScaleMode.SizesAndSpacing, 2f)]
+    [InlineData(GroupScaleMode.SpacingOnly, -2f)]
+    [InlineData(GroupScaleMode.SizesAndSpacing, -2f)]
+    public void Rotated_group_scales_on_frozen_display_axes_and_replays_exactly(GroupScaleMode mode, float x)
+    {
+        using var f = new Fixture(3, noncollinear: true);
+        var frame = f.Snapshot.Baseline.Frame;
+        var authored = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .8f);
+        f.Perform(new(Vector3.Zero, frame.ToWorldDelta(authored), Vector3.One));
+        var before = f.Snapshot;
+        var native = f.Live.ToDictionary();
+        Assert.True(f.Coordinator.TryReadWorldSelection(mode, out var display, out _));
+        Assert.True(MathF.Abs(Quaternion.Dot(frame.Rotation * authored, display.Rotation)) > .99999f);
+        var axis = Vector3.Transform(Vector3.UnitX, display.Rotation);
+        var factors = new Vector3(x, 1, 1);
+        var delta = new TransformDelta(Vector3.Zero, Quaternion.Identity, factors);
+        var id = f.Begin(mode);
+        f.Camera = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 1.2f);
+        Assert.True(f.Service.Update(id, delta).Success);
+        foreach (var target in f.Targets)
+        {
+            var offset = native[target].Position - display.Position;
+            // Independent projection oracle: only the displayed X component changes.
+            var expected = native[target].Position + axis * (Vector3.Dot(offset, axis) * (x - 1));
+            Assert.True(Vector3.Distance(expected, f.Live[target].Position) < .00001f);
+            Assert.Equal(mode == GroupScaleMode.SpacingOnly ? Vector3.One : factors, f.Live[target].Scale);
+        }
+        Assert.True(Vector3.Distance(display.Position, GroupTransformBaseline.Centroid(f.Live.Values)) < .00001f);
+        var once = f.Live.ToDictionary();
+        Assert.True(f.Service.Update(id, delta).Success);
+        Assert.Equal(once, f.Live);
+        Assert.True(f.Service.Cancel(id).Success);
+        Assert.Equal(native, f.Live);
+        Assert.True(before.ContentEquals(f.Snapshot));
+        f.Perform(delta, mode);
+        Assert.Equal(once, f.Live);
+        var after = f.Snapshot;
+        Assert.Equal(before.Controls.Rotation, after.Controls.Rotation);
+        Assert.True(f.Service.Undo().Success);
+        Assert.Equal(native, f.Live);
+        Assert.True(before.ContentEquals(f.Snapshot));
+        Assert.True(f.Service.Redo().Success);
+        Assert.Equal(once, f.Live);
+        Assert.True(after.ContentEquals(f.Snapshot));
+        Assert.True(f.Coordinator.TryReadWorldSelection(mode, out var final, out _));
+        Assert.Equal(display.Rotation, final.Rotation);
+    }
+
     [Fact]
     public void Selection_captures_frame_once_before_read_and_reads_are_pure()
     {
@@ -565,21 +773,23 @@ public sealed class GroupTransformStateTests
         public Quaternion Camera = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
         public int FrameReads, Writes;
         public bool FailApply, FailRestore;
-        public TransformTargetId? Refused, Unreadable;
+        public TransformTargetId? Refused, Unreadable, Stale;
+        public Action? AfterApply;
         public GroupTransformSnapshot Snapshot => State.Snapshot(null, Targets)!;
         private ulong _revision;
-        public Fixture(int count = 2)
+        public Fixture(int count = 2, bool noncollinear = false)
         {
             Scene = new(Selection);
             Targets = Enumerable.Range(0, count).Select(_ => TransformTargetId.ForActor(ActorId.New())).ToArray();
             for (int i = 0; i < count; i++) Live[Targets[i]] = Pose(new(i * 2, 0, 0));
+            if (noncollinear) Live[Targets[2]] = Pose(new(1, 3, 2));
             Publish();
             Coordinator = new(Scene, Groups, State, this);
             Service = new(Scene, this, History, groupTransforms: State, groupSource: this,
                 groupCoordinator: Coordinator);
             foreach (var member in Selected) Selection.Add(member);
         }
-        private void Publish() => Assert.True(Scene.TryRefresh(new SceneSnapshot(++_revision,
+        public void Publish() => Assert.True(Scene.TryRefresh(new SceneSnapshot(++_revision,
             Targets.Select(target => new ActorDescriptor(target.Actor!.Value, "Actor", [])).ToArray(), [], [], [])).Accepted);
         public void Rebind()
         {
@@ -633,7 +843,7 @@ public sealed class GroupTransformStateTests
         public bool TryFrame(Vector3 origin, out GroupTransformFrame frame)
         { FrameReads++; frame = new(origin, Camera); return true; }
         public TransformTargetId? CurrentTarget(TransformTargetId target) =>
-            Live.Keys.Cast<TransformTargetId?>().FirstOrDefault(current =>
+            target == Stale ? null : Live.Keys.Cast<TransformTargetId?>().FirstOrDefault(current =>
                 current!.Value.Kind == target.Kind
                 && GroupTransformIdentity.LogicalId(current.Value) == GroupTransformIdentity.LogicalId(target));
         public TransformPortResult Capture(TransformTargetId target) => Read(target) is { } pose
@@ -642,6 +852,7 @@ public sealed class GroupTransformStateTests
         public TransformPortResult ApplyAbsolute(TransformTargetState baseline, PoseTransform desired, bool rawBaseline = false)
         {
             Writes++; Live[baseline.Target] = desired;
+            AfterApply?.Invoke();
             return FailApply ? TransformPortResult.Fail(TransformPortStatus.Rejected, "Injected apply") : TransformPortResult.Ok();
         }
         public TransformPortResult Restore(TransformTargetState state)

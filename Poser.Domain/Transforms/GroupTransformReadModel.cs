@@ -38,6 +38,8 @@ public readonly record struct GroupTransformFrame(Vector3 Origin, Quaternion Rot
         Rotation * local * Quaternion.Inverse(Rotation));
     public Quaternion ToFrameDelta(Quaternion world) => TransformMath.NormalizeRotation(
         Quaternion.Inverse(Rotation) * world * Rotation);
+    public Quaternion ToWorldOrientation(Quaternion authored) =>
+        TransformMath.NormalizeRotation(Rotation * authored);
 }
 
 public sealed class GroupTransformBaseline
@@ -135,6 +137,7 @@ public sealed class GroupTransformSnapshot
     public GroupTransformBaseline Baseline { get; }
     public IReadOnlyDictionary<TransformTargetId, PoseTransform> Expected { get; }
     public GroupTransformControls Controls { get; }
+    public Quaternion WorldRotation => Baseline.Frame.ToWorldOrientation(Controls.Rotation);
     public bool IsValid => Controls.IsValid && Baseline.HasSameMembership(Expected.Keys)
         && Expected.Values.All(value => value.IsValid);
     public bool HasSameMembership(IEnumerable<TransformTargetId> targets) =>

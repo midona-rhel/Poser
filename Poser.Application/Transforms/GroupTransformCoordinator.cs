@@ -6,6 +6,9 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
+// A blocked transaction must not fall back to potentially partial live state.
+internal readonly record struct GroupTransformPresentation(bool UseCommitted, GroupTransformSnapshot? Snapshot);
+
 /// <summary>Read/capability and camera data supplied by Game, never inferred by UI.</summary>
 public interface IGroupTransformSource
 {
@@ -32,6 +35,7 @@ public sealed class GroupTransformCoordinator : IDisposable
     public void Dispose() => _scene.Selection.SelectionChanged -= SelectionChanged;
     public Func<bool>? BeforeSelectionCapture { get; set; }
     public Func<bool>? CaptureAllowed { get; set; }
+    internal Func<Guid?, IReadOnlyList<TransformTargetId>, GroupTransformPresentation>? ReadPresentation { get; set; }
     private void SelectionChanged(IReadOnlyList<SelectionId> _)
     {
         if (BeforeSelectionCapture?.Invoke() != false) InitializeSelection();
@@ -183,16 +187,36 @@ public sealed class GroupTransformCoordinator : IDisposable
         return true;
     }
     public bool TryReadSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error)
+        => TryReadPresentation(mode, false, out display, out error);
+
+    private bool TryReadPresentation(GroupScaleMode mode, bool world,
+        out GroupTransformDisplay display, out string? error)
     {
         display = default;
-        return Resolve(_scene.Selection.Selected, out var targets, out error)
-            && _state.TryRead(NamedSelection(targets), targets, _source.Read, mode, out display, out error);
+        if (!Resolve(_scene.Selection.Selected, out var targets, out error)) return false;
+        var named = NamedSelection(targets);
+        var presentation = ReadPresentation?.Invoke(named, targets) ?? new(true, null);
+        var snapshot = presentation.UseCommitted ? _state.Snapshot(named, targets) : presentation.Snapshot;
+        if (snapshot == null)
+        { error = "The group transform presentation is unavailable."; return false; }
+        var current = new Dictionary<TransformTargetId, PoseTransform>();
+        foreach (var target in targets)
+        {
+            if (_source.CurrentTarget(target) != target || _source.Read(target) is not { } pose)
+            { error = "A group member is unavailable or stale."; return false; }
+            current[target] = pose;
+        }
+        if (!GroupTransformReadModel.TryRead(snapshot, current, mode, out display, out error)) return false;
+        if (world) display = display with { Rotation = snapshot.WorldRotation };
+        return true;
     }
     public GroupTransformFrame? SelectionFrame()
     {
         if (!Resolve(_scene.Selection.Selected, out var targets, out _)) return null;
         return _state.Snapshot(NamedSelection(targets), targets)?.Baseline.Frame;
     }
+    public bool TryReadWorldSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error)
+        => TryReadPresentation(mode, true, out display, out error);
     public bool Admit(IReadOnlyList<TransformTargetId> requested, GroupScaleMode mode,
         out Guid? named, out string? error)
     {

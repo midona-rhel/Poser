@@ -288,7 +288,8 @@ public static class TransformMath
         bool rotatePosition,
         bool scalePosition,
         bool scaleOwn,
-        bool groupFactors = false)
+        bool groupFactors = false,
+        Quaternion? scaleFrame = null)
     {
         baseline = baseline.Normalized();
         if (groupFactors)
@@ -307,8 +308,15 @@ public static class TransformMath
         if (rotatePosition)
         {
             var offset = baseline.Position - pivot;
-            if (scalePosition)
-                offset *= delta.ScaleFactor;
+            if (scalePosition && delta.ScaleFactor != Vector3.One)
+            {
+                // Group spacing follows the displayed axes frozen at Begin,
+                // independently of each member's native own-size axes.
+                offset = scaleFrame is { } frame
+                    ? Vector3.Transform(Vector3.Transform(offset, Quaternion.Inverse(frame))
+                        * delta.ScaleFactor, frame)
+                    : offset * delta.ScaleFactor;
+            }
             position = pivot +
                 Vector3.Transform(offset, delta.Rotation) +
                 delta.Translation;
