@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -221,6 +222,12 @@ public partial class MainWindow
         }
 
         bool anyResolved = false;
+        // Wait before creating anything: a partial pass must not manufacture
+        // a new baseline or duplicate groups when the remaining bindings arrive.
+        if (pending.Groups.SelectMany(group => group.Members).Any(reference =>
+                pending.Tokens.ContainsKey(reference.Key) && Resolve(reference) == null)
+            && ++_pendingStructureAttempts <= 30)
+            return;
         var groupIds = new Dictionary<Guid, Guid>();
         foreach (var entry in pending.Groups)
         {
@@ -228,8 +235,7 @@ public partial class MainWindow
             foreach (var member in entry.Members)
                 if (Resolve(member) is { } id)
                     members.Add(id);
-            if (members.Count >= 2
-                && _groups.Create(entry.Name, members) is { } made)
+            if (_groups.Create(entry.Name, members, allowThin: true) is { } made)
             {
                 groupIds[entry.Key] = made.Id;
                 anyResolved = true;
@@ -242,6 +248,14 @@ public partial class MainWindow
                 && groupIds.TryGetValue(entry.Key, out var childId)
                 && groupIds.TryGetValue(parentKey, out var parentId))
                 _groups.Nest(childId, parentId);
+
+        // Placement and binding are settled now. Restore the complete
+        // baseline before any selection can ask for a group read; legacy
+        // entries capture the current camera frame explicitly here.
+        foreach (var entry in pending.Groups)
+            if (groupIds.TryGetValue(entry.Key, out var restoredId)
+                && _groups.Find(restoredId) is { } restored)
+                RestoreGroupTransform(entry, restored, Resolve);
         if (pending.RootOrder is { } orderRefs)
         {
             var slots =
@@ -271,6 +285,20 @@ public partial class MainWindow
             _pendingStructureAttempts = 0;
             _sceneWorkflow.ClearPendingStructure();
         }
+    }
+
+    private void RestoreGroupTransform(
+        global::Poser.Files.SceneGroupEntry entry,
+        SceneGroup group,
+        Func<global::Poser.Files.SceneStructureRef, SelectionId?> resolve)
+    {
+        var targets = _groups.Descendants(group).Select(GroupTransformCoordinator.Target).ToArray();
+        GroupTransformSnapshot? snapshot = null;
+        if (entry.Transform is { } saved && targets.All(target => target != null))
+            snapshot = global::Poser.Files.SceneGroupTransformCodec.Decode(saved,
+                targets.Select(target => target!.Value).ToArray(),
+                reference => resolve(reference) is { } member ? GroupTransformCoordinator.Target(member) : null);
+        _groupCoordinator.Import(group, snapshot, entry.Transform != null, entry.InitialFrameRotation);
     }
 
     /// <summary>One root entity's row(s) at depth 0 — the kind dispatch

@@ -8,6 +8,7 @@ using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
 using Poser.Services;
 
 namespace Poser.Files;
@@ -604,8 +605,8 @@ public class SceneStructureRef
     public Guid Key { get; set; }
 }
 
-/// <summary>One named sidebar group: naming and structure only — a group
-/// owns no transform, here exactly as it owns none live.</summary>
+/// <summary>One named sidebar group: naming, structure, and its optional
+/// stable transform presentation state.</summary>
 [Serializable]
 public class SceneGroupEntry
 {
@@ -615,6 +616,37 @@ public class SceneGroupEntry
 
     /// <summary>The group this one nests in, by key; null at the root.</summary>
     public Guid? Parent { get; set; }
+
+    /// <summary>Optional exact group transform state. Older scene files omit
+    /// it; the loader initializes a legacy group after placement and binding
+    /// are valid.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public SceneGroupTransformEntry? Transform { get; set; }
+
+    /// <summary>Compatibility with the first additive frame-only draft. New
+    /// saves use <see cref="Transform"/>; old files remain readable.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public Quaternion? InitialFrameRotation { get; set; }
+}
+
+[Serializable]
+public class SceneGroupTransformEntry
+{
+    public Vector3 FrameOrigin { get; set; }
+    public Quaternion FrameRotation { get; set; } = Quaternion.Identity;
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; } = Quaternion.Identity;
+    public Vector3 SpacingScale { get; set; } = Vector3.One;
+    public Vector3 OwnScale { get; set; } = Vector3.One;
+    public List<SceneGroupTransformMember> Members { get; set; } = new();
+}
+
+[Serializable]
+public class SceneGroupTransformMember
+{
+    public SceneStructureRef Member { get; set; } = new();
+    public PoseTransform Initial { get; set; }
+    public PoseTransform Expected { get; set; }
 }
 
 [Serializable]

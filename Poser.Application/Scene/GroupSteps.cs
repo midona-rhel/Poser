@@ -1,5 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Scene;
 
@@ -15,12 +16,22 @@ public sealed class GroupSteps
     private readonly SceneGroups _groups;
     private readonly TransformHistory _history;
     private readonly ValueJournal _values;
+    private readonly GroupTransformState? _groupTransforms;
+    private readonly GroupTransformCoordinator? _groupCoordinator;
+    private int _assemblyDepth;
 
-    public GroupSteps(SceneGroups groups, TransformHistory history, ValueJournal values)
+    public GroupSteps(
+        SceneGroups groups,
+        TransformHistory history,
+        ValueJournal values,
+        GroupTransformState? groupTransforms = null,
+        GroupTransformCoordinator? groupCoordinator = null)
     {
         _groups = groups;
         _history = history;
         _values = values;
+        _groupTransforms = groupTransforms;
+        _groupCoordinator = groupCoordinator;
     }
 
     /// <summary>The routine that makes the world match every group's gates
@@ -32,38 +43,74 @@ public sealed class GroupSteps
     /// appends on its own fold into the step.</summary>
     public T Run<T>(string description, Func<T> act)
     {
-        var before = _groups.Capture();
+        if (_assemblyDepth != 0) return act();
+        var before = Capture();
         var top = _history.PeekUndo();
         T result;
         try
         {
+            _assemblyDepth++;
             result = act();
         }
         finally
         {
+            _assemblyDepth--;
             while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
                 _history.Drop(inner);
         }
-        var after = _groups.Capture();
+        _groupCoordinator?.SynchronizeNamed();
+        _groupTransforms?.ForgetMissingGroups(_groups.All.Select(group => group.Id));
+        var after = Capture();
+        bool deferredCapture = false;
         if (!before.Equals(after))
             _history.Append(new JournalStep(
                 description,
-                () => Put(before),
-                () => Put(after)));
+                () => Put(ref before, out deferredCapture),
+                () => Put(ref after, out deferredCapture))
+            {
+                HasDeferredGroupCapture = () => deferredCapture,
+            });
         return result;
     }
+
+    private GroupsSnapshot Capture() =>
+        _groups.Capture().WithTransforms(
+            _groupTransforms?.CaptureNamed()
+                ?? new Dictionary<GroupTransformKey, GroupTransformSnapshot>());
 
     public void Run(string description, Action act) =>
         Run(description, () => { act(); return true; });
 
-    private bool Put(GroupsSnapshot snapshot)
+    private bool Put(ref GroupsSnapshot snapshot, out bool deferredCapture)
     {
+        deferredCapture = false;
         using (_values.Suspend())
         {
-            _groups.Restore(snapshot);
+            var previous = Capture();
+            Restore(snapshot);
+            if (_groupCoordinator?.CompleteRestoredMembership() == false)
+            {
+                // Do not commit a structure whose deferred member capture is
+                // still refused. No native gates have run; restore the model
+                // and leave this history direction available for retry.
+                Restore(previous);
+                deferredCapture = true;
+                return false;
+            }
             ReapplyGates?.Invoke();
+            // Seal a deferred capture on its first successful restore. Later
+            // undo/redo replays this complete snapshot, not fresh geometry.
+            snapshot = Capture();
         }
         return true;
+    }
+
+    private void Restore(GroupsSnapshot snapshot)
+    {
+        _groups.Restore(snapshot);
+        if (snapshot.Transforms is not { } transforms) return;
+        if (_groupCoordinator != null) _groupCoordinator.RestoreNamed(transforms);
+        else _groupTransforms?.RestoreNamed(transforms);
     }
 
     public SceneGroup? Create(string name, IReadOnlyList<SelectionId> members, bool allowThin = false) =>

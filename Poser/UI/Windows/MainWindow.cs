@@ -81,6 +81,8 @@ public partial class MainWindow : Window
 
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly global::Poser.Application.Scene.GroupSteps _groupSteps;
+    private readonly global::Poser.Application.Transforms.GroupTransformState _groupTransforms;
+    private readonly global::Poser.Application.Transforms.GroupTransformCoordinator _groupCoordinator;
 
     /// <summary>A group row's click target — selects the whole membership.
     /// </summary>
@@ -532,6 +534,8 @@ public partial class MainWindow : Window
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
         global::Poser.Application.Scene.GroupSteps groupSteps,
+        global::Poser.Application.Transforms.GroupTransformState groupTransforms,
+        global::Poser.Application.Transforms.GroupTransformCoordinator groupCoordinator,
         Controls.EntityNameModal names,
         Controls.IssueReportModal issueReport,
         ISceneWorkflow sceneWorkflow,
@@ -630,9 +634,11 @@ public partial class MainWindow : Window
         _log = log;
         _groups = groups;
         _groupSteps = groupSteps;
+        _groupTransforms = groupTransforms;
         _groupSteps.ReapplyGates = ReapplyGroupGates;
         _gameCamera = gameCamera;
         _viewportProjection = viewportProjection;
+        _groupCoordinator = groupCoordinator;
         _sessions = sessions;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene

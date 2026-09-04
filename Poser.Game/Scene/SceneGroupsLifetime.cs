@@ -1,5 +1,6 @@
 using System;
 using Poser.Application.Scene;
+using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Services;
 
@@ -14,23 +15,32 @@ public sealed class SceneGroupsLifetime : IDisposable
 {
     private readonly IEventBus _events;
     private readonly SceneGroups _groups;
+    private readonly GroupTransformState _groupTransforms;
 
-    public SceneGroupsLifetime(IEventBus events, SceneGroups groups)
+    public SceneGroupsLifetime(
+        IEventBus events,
+        SceneGroups groups,
+        GroupTransformState groupTransforms)
     {
         _events = events;
         _groups = groups;
+        _groupTransforms = groupTransforms;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
         if (!e.IsGPosing)
+        {
             _groups.Clear();
+            _groupTransforms.Clear();
+        }
     }
 
     public void Dispose()
     {
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _groups.Clear();
+        _groupTransforms.Clear();
     }
 }

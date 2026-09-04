@@ -8,6 +8,12 @@ public interface IUndoRunner
 {
     GestureResult Undo();
     GestureResult Redo();
+    GestureResult? RecoverPending() => null;
+    GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
+    {
+        commit();
+        return GestureResult.Ok();
+    }
 }
 
 /// <summary>
@@ -64,6 +70,8 @@ public sealed class UndoJournal
 
     public GestureResult Undo()
     {
+        if (_runner.RecoverPending() is { } recovered)
+            return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
         var entry = _history.PeekUndo();
@@ -76,8 +84,8 @@ public sealed class UndoJournal
                 return Refuse(ActorGone);
             if (validity == KeyState.Moved)
                 return RestoreSnapshots(
-                    entry, context.Before, RestoredFromSnapshot,
-                    () => _history.PeekUndo() == entry,
+                    entry, context.Before, true, RestoredFromSnapshot,
+                    () => _history.PeekUndo()?.Id == entry.Id,
                     () => _history.CommitUndo(entry));
         }
         return GiveUpOnRepeat(entry, _runner.Undo());
@@ -90,7 +98,7 @@ public sealed class UndoJournal
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
     {
-        if (result.Success || entry is not JournalStep step)
+        if (result.Success || entry is not JournalStep step || step.HasDeferredGroupCapture?.Invoke() == true)
         {
             _refused = null;
             return result;
@@ -108,6 +116,8 @@ public sealed class UndoJournal
 
     public GestureResult Redo()
     {
+        if (_runner.RecoverPending() is { } recovered)
+            return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
         var entry = _history.PeekRedo();
@@ -122,8 +132,8 @@ public sealed class UndoJournal
                 return Refuse(ActorGone);
             if (validity == KeyState.Moved)
                 return RestoreSnapshots(
-                    entry, context.After, RedoneFromSnapshot,
-                    () => _history.PeekRedo() == entry,
+                    entry, context.After, false, RedoneFromSnapshot,
+                    () => _history.PeekRedo()?.Id == entry.Id,
                     () => _history.CommitRedo(entry));
         }
         return GiveUpOnRepeat(entry, _runner.Redo());
@@ -163,6 +173,7 @@ public sealed class UndoJournal
     private GestureResult RestoreSnapshots(
         HistoryEntry entry,
         IReadOnlyList<ActorSnapshot> snapshots,
+        bool before,
         string done,
         Func<bool> stillOnTop,
         Action commit)
@@ -213,8 +224,16 @@ public sealed class UndoJournal
             }
             if (stillOnTop())
             {
-                commit();
-                _notice(done);
+                var result = _runner.CompleteSnapshotRestore(entry, before, () =>
+                {
+                    if (stillOnTop())
+                    {
+                        commit();
+                        _notice(done);
+                    }
+                });
+                if (!result.Success)
+                    _notice(result.Detail ?? RestoreFailed);
             }
             else
             {

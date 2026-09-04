@@ -339,6 +339,7 @@ public static class SceneRelativePlacement
                 document.Position += offset;
         }
 
+        SceneGroupTransformCodec.Rebase(scene, point => point + offset, Quaternion.Identity);
         return null;
     }
 }
@@ -428,6 +429,8 @@ public static class ScenePlacementRebase
                 };
             }
         }
+
+        SceneGroupTransformCodec.Rebase(scene, Move, turn);
         return null;
     }
 }

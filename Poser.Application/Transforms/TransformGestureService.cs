@@ -17,7 +17,9 @@ public sealed record BeginTransformGesture(
     /// <summary>When enabled, secondary bones rotate in the primary's frame
     /// instead of receiving the primary's raw delta.</summary>
     bool RelativeSecondaryBones = false,
-    GroupScaleMode GroupScale = GroupScaleMode.SizesAndSpacing);
+    GroupScaleMode GroupScale = GroupScaleMode.SizesAndSpacing,
+    Guid? GroupId = null,
+    bool IsGroupTransform = false);
 
 /// <summary>
 /// Idempotent transform gesture, recovery, and patch-history coordinator.
@@ -33,22 +35,55 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     private bool _transitionActive;
 
     private readonly JournalContexts? _journal;
+    private readonly GroupTransformState? _groupTransforms;
+    private readonly IGroupTransformSource? _groupSource;
+    private readonly GroupTransformCoordinator? _groupCoordinator;
+    private Action? _recoveryCompleted;
+    private bool _recoveryRemap;
 
     public TransformGestureService(
         SceneSession scene,
         ITransformRuntimePort runtime,
         TransformHistory history,
-        JournalContexts? journal = null)
+        JournalContexts? journal = null,
+        GroupTransformState? groupTransforms = null,
+        IGroupTransformSource? groupSource = null,
+        GroupTransformCoordinator? groupCoordinator = null)
     {
         _scene = scene;
         _runtime = runtime;
         History = history;
         _journal = journal;
+        _groupTransforms = groupTransforms;
+        _groupSource = groupSource;
+        _groupCoordinator = groupCoordinator;
+        if (groupCoordinator != null)
+        {
+            groupCoordinator.ReadPresentation = ReadGroupPresentation;
+            groupCoordinator.CaptureAllowed = () => PendingRecovery == null && _active == null;
+            groupCoordinator.BeforeSelectionCapture = () =>
+            {
+                OnSelectionChanged(Array.Empty<SelectionId>());
+                return PendingRecovery == null && _active == null;
+            };
+        }
         _scene.Selection.SelectionChanged += OnSelectionChanged;
     }
 
     public TransformHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
+
+    private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)
+    {
+        // Never publish midway through native writes, rollback, or recovery.
+        if (_transitionActive || PendingRecovery != null) return default;
+        if (_active is not { } active) return new(true, null);
+        if (active.GroupBefore is not { } before || active.Command.GroupId != named
+            || active.SceneRevision != _scene.Revision || !before.HasSameMembership(targets)
+            || _groupTransforms?.IsCurrent(GroupTransformKey.For(named, targets), before) != true)
+            return default;
+        return new(false, active.GroupProposed ?? before);
+    }
 
     /// <summary>The point the running gesture rotates and scales ABOUT, frozen
     /// at Begin. Published because a surface that draws a handle has to draw it
@@ -74,6 +109,12 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return Busy();
         if (_active != null)
             return GestureResult.Fail("A transform gesture is already active.");
+        if (!Enum.IsDefined(command.GroupScale))
+            return GestureResult.Fail("The group scale mode is invalid.");
+        if (command.IsGroupTransform && (command.Space != TransformSpace.World
+            || command.PivotMode != PivotMode.Centroid
+            || command.Targets.Any(target => target.Kind == TransformTargetKind.Bone)))
+            return GestureResult.Fail("Entity group gestures require a world-space centroid.");
         if (command.Targets.Count == 0)
             return GestureResult.Fail("A transform gesture requires a target.");
         if (command.Targets.Distinct().Count() != command.Targets.Count)
@@ -125,12 +166,29 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         };
 
         var id = TransformGestureId.New();
+        GroupTransformSnapshot? groupBefore = null;
+        if (command.IsGroupTransform)
+        {
+            groupBefore = _groupTransforms?.Snapshot(
+                command.GroupId, command.Targets);
+            if (groupBefore == null)
+                return GestureResult.Fail(
+                    "The group transform frame is not initialized.");
+            var capturedMap = captured.ToDictionary(state => state.Target, state => state.Transform);
+            if (!GroupTransformReadModel.TryRead(groupBefore, capturedMap,
+                    command.GroupScale, out _, out var refusal))
+                return GestureResult.Fail(refusal!);
+            foreach (var target in command.Targets)
+                if (_groupSource?.Refusal(target) is { } capability)
+                    return GestureResult.Fail(capability);
+        }
         _active = new ActiveGestureState(
             id,
             _scene.Revision,
             command,
             pivot,
             captured.ToArray(),
+            groupBefore,
             _journal?.BeginActorStep(
                 captured.Select(state => state.Target.ActorLineage)));
         return GestureResult.Ok(id);
@@ -176,11 +234,25 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 "Scene changed during transform gesture.",
                 cancellation.Recovery!);
         }
-        if (!delta.IsValid)
+        if (active.GroupBefore != null ? !GroupTransformControls.ValidDelta(delta) : !delta.IsValid)
             return GestureResult.Fail("Transform delta is invalid.");
 
-        delta = Filter(delta.Normalized(), active.Command.Operation);
+        delta = Filter(delta with { Rotation = TransformMath.NormalizeRotation(delta.Rotation) },
+            active.Command.Operation);
+        GroupTransformControls? nextControls = null;
+        if (active.GroupBefore is { } frozen)
+        {
+            if (_groupTransforms == null || !_groupTransforms.IsCurrent(
+                GroupTransformKey.For(active.Command.GroupId, active.Command.Targets), frozen))
+                return CancelWithFailure(active, "The group changed during this gesture.");
+            if (!frozen.Controls.TryAdvance(frozen.Baseline.Frame, delta,
+                    active.Command.GroupScale, frozen.Controls.Position + delta.Translation, out var controls))
+                return GestureResult.Fail("The cumulative group factors would overflow or become zero.");
+            nextControls = controls;
+        }
         var desired = new PoseTransform[active.Before.Count];
+        try
+        {
         for (var index = 0; index < active.Before.Count; index++)
         {
             var baseline = active.Before[index];
@@ -261,7 +333,14 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 pivot,
                 rotatePosition,
                 scalePosition,
-                scaleOwn);
+                scaleOwn,
+                groupFactors: active.GroupBefore != null,
+                scaleFrame: active.GroupBefore?.WorldRotation);
+        }
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return GestureResult.Fail("A group member transform would exceed the supported numeric range.");
         }
 
         for (var index = 0; index < active.Before.Count; index++)
@@ -286,7 +365,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             // A runtime apply failure ends the gesture. Every frozen Before
             // state is attempted in order even after a restore failure, and
             // the complete receipt remains available for exact retry.
-            var rollback = AttemptRecovery(active.Before);
+            var rollback = RecoverGesture(active);
             _active = null;
             var applyDetail =
                 result.Detail ??
@@ -294,6 +373,14 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return FailureAfterRecovery(applyDetail, rollback);
         }
 
+        active = active with {
+            GroupProposed = nextControls is { } proposed
+                ? new GroupTransformSnapshot(active.GroupBefore!.Baseline,
+                    active.Before.Select((state, i) => (state.Target, Value: desired[i]))
+                        .ToDictionary(pair => pair.Target, pair => pair.Value),
+                    proposed with { Position = GroupTransformBaseline.Centroid(desired) }) : null
+        };
+        _active = active;
         return GestureResult.Ok(gestureId);
     }
 
@@ -331,7 +418,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             }
             if (!result.Success || result.State == null)
             {
-                var rollback = AttemptRecovery(active.Before);
+                var rollback = RecoverGesture(active);
                 _active = null;
                 return FailureAfterRecovery(
                     result.Detail ??
@@ -341,12 +428,35 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             after.Add(result.State);
         }
 
+        GroupTransformHistoryChange? groupChange = null;
+        if (active.GroupBefore is { } frozen)
+        {
+            var key = GroupTransformKey.For(active.Command.GroupId, active.Command.Targets);
+            var afterMap = after.ToDictionary(state => state.Target, state => state.Transform);
+            var proposed = active.GroupProposed ?? frozen;
+            if (_groupTransforms == null || !_groupTransforms.IsCurrent(key, frozen)
+                || !GroupTransformReadModel.TryRead(proposed, afterMap,
+                    active.Command.GroupScale, out _, out _))
+                return CancelWithFailure(active, "The group changed before commit.");
+            if (proposed.Controls == frozen.Controls
+                && active.Before.All(state => GroupTransformReadModel.Equivalent(
+                    state.Transform, afterMap[state.Target])))
+            {
+                _active = null;
+                return GestureResult.Ok(gestureId);
+            }
+            var committed = new GroupTransformSnapshot(frozen.Baseline, afterMap, proposed.Controls);
+            groupChange = new GroupTransformHistoryChange(key, frozen, committed);
+            _groupTransforms.Put(key, committed);
+        }
+
         History.Append(new TransformPatch(
             active.Command.Description,
             active.Before,
             after)
         {
             Context = active.Journal?.Complete(),
+            GroupState = groupChange,
         });
         _active = null;
         return GestureResult.Ok(gestureId);
@@ -388,8 +498,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public GestureResult Undo()
     {
-        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
-            return RecoveryRequired(pending);
+        if (RecoverPending() is { } recovered)
+            return recovered;
         using var transition = TryEnterTransition();
         if (transition == null)
             return Busy();
@@ -409,10 +519,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 $"Could not undo {step.Description.ToLowerInvariant()}.",
                 () => History.CommitUndo(entry));
         var patch = (TransformPatch)entry;
-        var recovery = AttemptRecovery(patch.Before);
-        if (recovery.Complete)
-            History.CommitUndo(patch);
-        return RecoveryResult(recovery);
+        return RestorePatch(patch, true, () => History.CommitUndo(patch));
     }
 
     /// <summary>
@@ -439,8 +546,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public GestureResult Redo()
     {
-        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
-            return RecoveryRequired(pending);
+        if (RecoverPending() is { } recovered)
+            return recovered;
         using var transition = TryEnterTransition();
         if (transition == null)
             return Busy();
@@ -460,14 +567,12 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 $"Could not redo {step.Description.ToLowerInvariant()}.",
                 () => History.CommitRedo(entry));
         var patch = (TransformPatch)entry;
-        var recovery = AttemptRecovery(patch.After);
-        if (recovery.Complete)
-            History.CommitRedo(patch);
-        return RecoveryResult(recovery);
+        return RestorePatch(patch, false, () => History.CommitRedo(patch));
     }
 
     public void Dispose()
     {
+        if (_groupCoordinator != null) _groupCoordinator.ReadPresentation = (_, _) => default;
         _scene.Selection.SelectionChanged -= OnSelectionChanged;
         if (PendingRecovery != null)
             return;
@@ -510,23 +615,60 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 Recovery = pending,
             };
 
-        var retried = TransformRecovery.RestoreAll(
-            _runtime,
-            recovery.Attempts.Select(attempt => attempt.RequestedState));
-        if (retried.Complete)
-            PendingRecovery = null;
-        else
-            PendingRecovery = retried;
+        var retried = AttemptRecovery(
+            recovery.Attempts.Select(attempt => attempt.RequestedState).ToArray(),
+            _recoveryCompleted, _recoveryRemap);
         return RecoveryResult(retried);
     }
 
     internal TransformRecoveryReceipt AttemptRecovery(
-        IReadOnlyList<TransformTargetState> states)
+        IReadOnlyList<TransformTargetState> states,
+        Action? completed = null,
+        bool remap = false)
     {
-        var recovery = TransformRecovery.RestoreAll(_runtime, states);
-        if (!recovery.Complete)
-            PendingRecovery = recovery;
+        var requested = remap && _groupSource != null
+            ? states.Select(state => _groupSource.CurrentTarget(state.Target) is { } current
+                ? state with { Target = current } : state).ToArray()
+            : states;
+        var recovery = TransformRecovery.RestoreAll(_runtime, requested);
+        PendingRecovery = recovery.Complete ? null : recovery;
+        _recoveryCompleted = recovery.Complete ? null : completed;
+        _recoveryRemap = !recovery.Complete && remap;
+        if (recovery.Complete)
+        {
+            completed?.Invoke();
+            _groupCoordinator?.BindingsPublished();
+        }
         return recovery;
+    }
+
+    public GestureResult? RecoverPending() =>
+        PendingRecovery is { } pending ? RetryRecovery(pending) : null;
+
+    private GestureResult RestorePatch(TransformPatch patch, bool before, Action commit)
+    {
+        var recovery = AttemptRecovery(before ? patch.Before : patch.After, () =>
+        {
+            if (patch.GroupState is { } change)
+            {
+                var current = _groupSource == null ? change : change.Remap(_groupSource.CurrentTarget);
+                if (current != null)
+                    _groupTransforms?.Restore(current, before);
+            }
+            commit();
+        }, remap: patch.GroupState != null);
+        return RecoveryResult(recovery);
+    }
+
+    public GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
+    {
+        if (entry is TransformPatch { GroupState: not null } patch)
+        {
+            using var transition = TryEnterTransition();
+            return transition == null ? Busy() : RestorePatch(patch, before, commit);
+        }
+        commit();
+        return GestureResult.Ok();
     }
 
     /// <summary>
@@ -546,10 +688,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         using var transition = TryEnterTransition();
         if (transition == null)
             return false;
-        var retried = TransformRecovery.RestoreAll(
-            _runtime,
-            pending.Attempts.Select(attempt => attempt.RequestedState));
-        PendingRecovery = retried.Complete ? null : retried;
+        var retried = AttemptRecovery(
+            pending.Attempts.Select(attempt => attempt.RequestedState).ToArray(),
+            _recoveryCompleted, _recoveryRemap);
         return retried.Complete;
     }
 
@@ -595,10 +736,26 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     private GestureResult CancelActive(ActiveGestureState active)
     {
-        var recovery = AttemptRecovery(active.Before);
         _active = null;
-        return RecoveryResult(recovery);
+        return RecoveryResult(RecoverGesture(active));
     }
+
+    private GestureResult CancelWithFailure(ActiveGestureState active, string detail)
+    {
+        _active = null;
+        return FailureAfterRecovery(detail, RecoverGesture(active));
+    }
+
+    private TransformRecoveryReceipt RecoverGesture(ActiveGestureState active) =>
+        AttemptRecovery(active.Before, () =>
+        {
+            if (active.GroupBefore is not { } frozen || _groupTransforms == null)
+                return;
+            var restored = _groupSource == null ? frozen : frozen.Remap(_groupSource.CurrentTarget);
+            if (restored != null)
+                _groupTransforms.Put(GroupTransformKey.For(active.Command.GroupId,
+                    restored.Expected.Keys), restored);
+        }, remap: active.GroupBefore != null);
 
     /// <summary>
     /// A thrown port call is mutation-unknown, exactly like an explicit
@@ -611,7 +768,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         Exception exception,
         IReadOnlyList<TransformTargetState> baselines)
     {
-        var recovery = AttemptRecovery(baselines);
+        var recovery = _active is { } active ? RecoverGesture(active) : AttemptRecovery(baselines);
         _active = null;
         return FailureAfterRecovery(
             $"{operation}: {exception.Message}",
@@ -708,5 +865,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         BeginTransformGesture Command,
         Vector3 Pivot,
         IReadOnlyList<TransformTargetState> Before,
-        JournalContexts.StepScope? Journal = null);
+        GroupTransformSnapshot? GroupBefore = null,
+        JournalContexts.StepScope? Journal = null,
+        GroupTransformSnapshot? GroupProposed = null);
 }

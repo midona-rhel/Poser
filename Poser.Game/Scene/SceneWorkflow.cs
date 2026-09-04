@@ -133,13 +133,14 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         Poser.Application.Selection.SelectionSession selection,
         Poser.Application.Scene.SceneGroups sceneGroups,
         Poser.Library.IPoseLibraryService library,
-        Dalamud.Plugin.Services.IPluginLog log)
+        Dalamud.Plugin.Services.IPluginLog log,
+        Poser.Application.Transforms.GroupTransformState? groupTransforms = null)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
             worldObjects, place, mcdfHashes, selection, log), log, sceneGroups,
-            library)
+            library, groupTransforms)
     {
     }
 
@@ -147,12 +148,14 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         ISceneRuntime runtime,
         Dalamud.Plugin.Services.IPluginLog? log = null,
         Poser.Application.Scene.SceneGroups? groups = null,
-        Poser.Library.IPoseLibraryService? library = null)
+        Poser.Library.IPoseLibraryService? library = null,
+        Poser.Application.Transforms.GroupTransformState? groupTransforms = null)
     {
         _runtime = runtime;
         _log = log;
         _groups = groups;
         _library = library;
+        _groupTransforms = groupTransforms;
     }
 
     /// <summary>The sidebar's structure store — null only under the test
@@ -163,6 +166,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// entry lists without anyone rescanning by hand. Null under the test
     /// runtime.</summary>
     private readonly Poser.Library.IPoseLibraryService? _library;
+
+    private readonly Poser.Application.Transforms.GroupTransformState? _groupTransforms;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -452,7 +457,21 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                     Guard(operation, cancellation)
                         ?? _runtime.ArmSceneCapture(
                             operation.SceneScopeId, description,
-                            outcome => completion.TrySetResult(outcome)));
+                            outcome =>
+                            {
+                                try
+                                {
+                                    if (outcome.Success && outcome.Scene is { } document
+                                        && options.IncludeStructure && _groups != null)
+                                        WriteStructure(document, outcome.ActorIdentities);
+                                }
+                                catch (Exception exception)
+                                {
+                                    completion.TrySetException(exception);
+                                    return;
+                                }
+                                completion.TrySetResult(outcome);
+                            }));
             }
             catch (Exception ex)
             {
@@ -534,8 +553,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             // The sidebar's structure rides the document: named groups and
             // the user's root order, referencing the entity lists by the
             // keys they already carry.
-            if (options.IncludeStructure && _groups != null)
-                WriteStructure(scene, actorIdentities);
 
             // The group-entry save narrows to the group's members, the
             // actor-entry rule generalized: everything else leaves, and
@@ -556,7 +573,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 scene.WorldObjects?.RemoveAll(
                     entry => !keep.Contains(entry.Key));
                 scene.Groups?.RemoveAll(group =>
-                    !group.Members.All(member => keep.Contains(member.Key)));
+                    !(group.Transform?.Members.Select(member => member.Member) ?? group.Members)
+                        .All(member => keep.Contains(member.Key)));
                 // A parent that fell out takes its nesting with it.
                 if (scene.Groups is { } remaining)
                     foreach (var group in remaining)
@@ -1607,6 +1625,24 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return new SceneStructureRef { Kind = kind, Key = key };
             }
 
+            SceneStructureRef? TransformRefOf(
+                global::Poser.Domain.Identity.TransformTargetId target)
+            {
+                return target switch
+                {
+                    { Kind: TransformTargetKind.Actor, Actor: { } actor }
+                        when actorKeys.TryGetValue(actor.LogicalId, out var key) =>
+                        new SceneStructureRef { Kind = "actor", Key = key },
+                    { Kind: TransformTargetKind.Prop, Prop: { } prop } =>
+                        new SceneStructureRef { Kind = "prop", Key = prop.LogicalId },
+                    { Kind: TransformTargetKind.WorldObject, WorldObject: { } world } =>
+                        new SceneStructureRef { Kind = "worldObject", Key = world.LogicalId },
+                    { Kind: TransformTargetKind.Light, Light: { } light } =>
+                        new SceneStructureRef { Kind = "light", Key = light.LogicalId },
+                    _ => null,
+                };
+            }
+
             var groups = new List<SceneGroupEntry>();
             foreach (var group in _groups!.All)
             {
@@ -1616,10 +1652,33 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                     Name = group.Name,
                     Parent = group.ParentId,
                 };
+                if (_groupTransforms?.NamedSnapshot(group.Id) is { } groupState)
+                {
+                    var transform = new SceneGroupTransformEntry
+                    {
+                        FrameOrigin = groupState.Baseline.Frame.Origin,
+                        FrameRotation = groupState.Baseline.Frame.Rotation,
+                        Position = groupState.Controls.Position,
+                        Rotation = groupState.Controls.Rotation,
+                        SpacingScale = groupState.Controls.SpacingScale,
+                        OwnScale = groupState.Controls.OwnScale,
+                    };
+                    foreach (var (target, initial) in groupState.Baseline.InitialTransforms)
+                        if (TransformRefOf(target) is { } reference
+                            && groupState.Expected.TryGetValue(target, out var expected))
+                            transform.Members.Add(new SceneGroupTransformMember
+                            {
+                                Member = reference,
+                                Initial = initial,
+                                Expected = expected,
+                            });
+                    if (transform.Members.Count == groupState.Baseline.InitialTransforms.Count)
+                        entry.Transform = transform;
+                }
                 foreach (var member in group.Members)
                     if (RefOf(member) is { } reference)
                         entry.Members.Add(reference);
-                if (entry.Members.Count + group.Children.Count >= 2)
+                if (_groups.Descendants(group).Count() >= 2)
                     groups.Add(entry);
             }
             if (groups.Count > 0)
@@ -1641,10 +1700,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             if (order.Count > 0)
                 scene.RootOrder = order;
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
-            scene.Groups = null;
-            scene.RootOrder = null;
+            throw new InvalidOperationException("Could not capture scene group state.", exception);
         }
     }
 

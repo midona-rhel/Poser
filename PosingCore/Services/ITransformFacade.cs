@@ -23,7 +23,7 @@ public interface ITransformFacade
     bool CanRedo { get; }
     string? UndoDescription { get; }
     string? RedoDescription { get; }
-    GestureResult Begin( IReadOnlyList<TransformTargetId> targetIds, TransformOperation operation, TransformSpace space, PivotMode pivotMode = PivotMode.PerTarget, Vector3? customPivot = null, string description = "Transform", bool includeLinkedBones = false, Func<string, TransformDeltaMode?>? symmetryFor = null, bool relativeSecondaryBones = false, GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing);
+    GestureResult Begin( IReadOnlyList<TransformTargetId> targetIds, TransformOperation operation, TransformSpace space, PivotMode pivotMode = PivotMode.PerTarget, Vector3? customPivot = null, string description = "Transform", bool includeLinkedBones = false, Func<string, TransformDeltaMode?>? symmetryFor = null, bool relativeSecondaryBones = false, GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing, Guid? groupId = null, bool groupTransform = false);
     GestureResult Update( TransformGestureId id, TransformDelta delta);
     GestureResult Commit(TransformGestureId id);
     GestureResult Cancel(TransformGestureId id);

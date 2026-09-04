@@ -287,10 +287,19 @@ public static class TransformMath
         Vector3 pivot,
         bool rotatePosition,
         bool scalePosition,
-        bool scaleOwn)
+        bool scaleOwn,
+        bool groupFactors = false,
+        Quaternion? scaleFrame = null)
     {
         baseline = baseline.Normalized();
-        delta = delta.Normalized();
+        if (groupFactors)
+        {
+            if (!GroupTransformControls.ValidDelta(delta))
+                throw new ArgumentOutOfRangeException(nameof(delta));
+            delta = delta with { Rotation = NormalizeRotation(delta.Rotation) };
+        }
+        else
+            delta = delta.Normalized();
         var rotation = space == TransformSpace.Local
             ? NormalizeRotation(baseline.Rotation * delta.Rotation)
             : NormalizeRotation(delta.Rotation * baseline.Rotation);
@@ -299,8 +308,15 @@ public static class TransformMath
         if (rotatePosition)
         {
             var offset = baseline.Position - pivot;
-            if (scalePosition)
-                offset *= delta.ScaleFactor;
+            if (scalePosition && delta.ScaleFactor != Vector3.One)
+            {
+                // Group spacing follows the displayed axes frozen at Begin,
+                // independently of each member's native own-size axes.
+                offset = scaleFrame is { } frame
+                    ? Vector3.Transform(Vector3.Transform(offset, Quaternion.Inverse(frame))
+                        * delta.ScaleFactor, frame)
+                    : offset * delta.ScaleFactor;
+            }
             position = pivot +
                 Vector3.Transform(offset, delta.Rotation) +
                 delta.Translation;

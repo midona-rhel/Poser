@@ -123,7 +123,10 @@ public class PoseRailPane
                 _inspector.GroupDeselect();
             cursor.Y += 36f * s;
 
-            DrawRotationGizmo(dl, cursor, width, s);
+            cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
+            // Group TRS follows the same gizmo and precision wells. The
+            // inspector owns the shared read model; this rail only lays it out.
+            _inspector.DrawRailSections(cursor, width);
             return;
         }
 

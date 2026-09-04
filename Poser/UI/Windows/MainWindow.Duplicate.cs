@@ -173,16 +173,22 @@ public partial class MainWindow
             if (!CopyBound(copy) && ++copy.Frames < GroupCopyPatience)
                 continue;
             _groupCopies.RemoveAt(i);
-            if (RealizeGroupCopy(copy) is not { } made)
+            var made = _groupSteps.Run("Duplicate group", () =>
+            {
+                var result = RealizeGroupCopy(copy);
+                if (result == null) return null;
+                if (copy.Parent is { } parentId && _groups.Find(parentId) != null)
+                    _groupSteps.Nest(result.Id, parentId, copy.Index);
+                else if (copy.Anchor is { } anchor)
+                    _groupSteps.MoveRoot(
+                        global::Poser.Application.Scene.RootSlot.ForGroup(result.Id), anchor, after: true);
+                return result;
+            });
+            if (made == null)
             {
                 _notices.Failed($"'{copy.Name}' could not be duplicated: nothing in it copied.");
                 continue;
             }
-            if (copy.Parent is { } parentId && _groups.Find(parentId) != null)
-                _groupSteps.Nest(made.Id, parentId, copy.Index);
-            else if (copy.Anchor is { } anchor)
-                _groupSteps.MoveRoot(
-                    global::Poser.Application.Scene.RootSlot.ForGroup(made.Id), anchor, after: true);
         }
     }
 
