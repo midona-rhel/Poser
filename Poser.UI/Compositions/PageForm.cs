@@ -37,12 +37,14 @@ public static partial class Crystarium
     private const float TwoTrackMinimum = 480f;
 
     /// <param name="labelColumnWidth">Optional logical label-column width.</param>
+    /// <param name="responsive">Fill the host width and wrap cell groups
+    /// at the shared minimum track width. The default retains the readable cap.</param>
     /// <param name="halfRows">Rows flow into two half-width tracks; a
     /// full-line row reserves its whole line but paints only the left
     /// track. Below <see cref="TwoTrackMinimum"/> everything stacks into
     /// one half-width column — the small-monitor layout under test.</param>
     public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
-        float? labelColumnWidth = null, bool halfRows = false)
+        float? labelColumnWidth = null, bool halfRows = false, bool responsive = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
@@ -50,8 +52,9 @@ public static partial class Crystarium
         // the gutter, and the gutter IS the trailing margin — a second
         // right inset made the right edge twice the left (the
         // gutter-symmetry rule, measured at last).
-        float width = MathF.Min(MathF.Max(0f, size.X - inset),
-            ActiveTheme.Page.MaximumContentWidth * scale);
+        float width = MathF.Max(0f, size.X - inset);
+        if (!responsive)
+            width = MathF.Min(width, ActiveTheme.Page.MaximumContentWidth * scale);
         var page = new PageScope(
             id,
             origin + new Vector2(inset, 0f),
@@ -59,7 +62,7 @@ public static partial class Crystarium
             scale,
             labelColumnWidth,
             halfRows: halfRows)
-        { Height = size.Y };
+        { Height = size.Y, Responsive = responsive };
         content(page);
         page.Complete(origin, size.X);
     }
@@ -208,6 +211,7 @@ public static partial class Crystarium
         /// <summary>The page's own height in screen pixels, when the host
         /// knows it; an empty state centres in it.</summary>
         internal float Height { get; init; }
+        internal bool Responsive { get; init; }
 
         /// <summary>An empty page says so in the middle of itself, both
         /// ways — never as a line pinned to the top-left corner.</summary>
@@ -1639,22 +1643,28 @@ public static partial class Crystarium
             var row = _page.BeginRow(string.Empty);
             // Leave a gap between adjacent tracks.
             float gap = ActiveTheme.Spacing.Six * row.Scale;
+            // Responsive pages retain room for a label and a stepper before
+            // adding another cell. Other pages keep their designed row count.
+            int columns = _page.Responsive
+                ? Math.Clamp((int)((row.Width + gap) / (TwoTrackMinimum / 2f * row.Scale + gap)), 1, items.Count)
+                : items.Count;
             float track =
-                (row.Width - gap * (items.Count - 1)) / items.Count;
+                (row.Width - gap * (columns - 1)) / columns;
             float column = MathF.Min(row.LabelWidth, track * FormCellLabelShare);
             float bandHeight = ActiveTheme.Controls.FormRowHeight * row.Scale;
             bool perCellHelp = false;
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
-                float x = row.Origin.X + i * (track + gap);
+                float x = row.Origin.X + i % columns * (track + gap);
+                float y = row.Origin.Y + i / columns * bandHeight;
                 float cellMargin = ActiveTheme.Spacing.Three * row.Scale;
                 if (!string.IsNullOrEmpty(item.Label))
                     FormLabel(
-                        new Vector2(x, row.Origin.Y), column, row.Scale,
+                        new Vector2(x, y), column, row.Scale,
                         item.Label);
                 item.Draw(new FormPairCell(
-                    new Vector2(x + column + cellMargin, row.Origin.Y),
+                    new Vector2(x + column + cellMargin, y),
                     MathF.Max(0f, track - column - cellMargin),
                     row.Scale));
                 // The hover answers for exactly what the pointer is on:
@@ -1671,11 +1681,14 @@ public static partial class Crystarium
                     continue;
                 RegisterHelp(
                     Ids.Join(id, "-", item.Label),
-                    new Vector2(x, row.Origin.Y),
-                    new Vector2(x + column, row.Origin.Y + bandHeight),
+                    new Vector2(x, y),
+                    new Vector2(x + column, y + bandHeight),
                     cellHelp);
             }
-            _page.EndRow(row, id, null);
+            _page.EndRow(row, id, null,
+                _page.Responsive
+                    ? (items.Count + columns - 1) / columns * ActiveTheme.Controls.FormRowHeight
+                    : null);
         }
 
         private static void DrawHalf(

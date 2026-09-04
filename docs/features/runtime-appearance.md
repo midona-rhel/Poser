@@ -66,6 +66,21 @@ or the facewear removes it, "None" leads the dye and facewear lists, and
 Remove all takes everything off. Without Glamourer the view disables in
 place and says why.
 
+Fixed game palettes show every entry in eight row-major columns, with its
+zero-based native index on the swatch. No sorting, gap compaction, scroll
+viewport, or padded rows may change that shape. Popup bounds follow the
+complete grid; small displays compact it uniformly. Packed ABGR UI colours,
+clan/gender blocks, and the separate alpha ranges retain the Ktisis UI-palette
+interpretation rather than Brio's shader-colour blocks.
+
+Hair previews use the matching race/clan/gender HairMakeType menu's explicit
+CharaMakeCustomize references and retain FeatureID as the selection/write
+identity, following Brio's reference-based lookup rather than assuming a
+contiguous range. The older menu is a fallback when that sheet is unavailable.
+Model-only additions remain selectable with an honest missing-image fallback.
+Pending images retry on subsequent frames; failed lookups retry after a short
+delay and never permanently blacklist a valid option.
+
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer
 is outbound navigation only. The Appearance tab is actor-scoped.

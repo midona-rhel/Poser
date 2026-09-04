@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
@@ -125,7 +124,7 @@ public sealed partial class AppearancePane
     private readonly Dictionary<(ModelCatalogKind Kind, uint RowId), string>
         _modelRowKeys = new();
     private readonly Dictionary<int, string> _modelIdText = new();
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly Dictionary<uint, DateTime> _iconRetryAt = new();
 
     private static readonly TimeSpan ReadoutInterval = TimeSpan.FromSeconds(2);
     private ActorId? _readoutActor;
@@ -288,7 +287,7 @@ public sealed partial class AppearancePane
                         case 2: DrawEquipmentView(page, actor); break;
                         default: DrawActorView(page, actor); break;
                     }
-                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null);
+                }, labelColumnWidth: _view == 2 ? EquipmentLabelWidth : null, responsive: true);
             });
     }
 
@@ -644,25 +643,40 @@ public sealed partial class AppearancePane
         return text;
     }
 
-    /// <summary>Resolves a row icon and remembers missing ids.</summary>
-    private nint ResolveIcon(uint iconId)
+    /// <summary>Resolves a row icon with a short retry delay after failures.</summary>
+    private nint ResolveIcon(uint iconId) => ResolveIcon(iconId, out _);
+
+    private nint ResolveIcon(uint iconId, out TextureProbe probe)
     {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
+        probe = TextureProbe.Ready; // An absent preview still has a valid selectable value.
+        if (iconId == 0)
             return 0;
-        IDalamudTextureWrap? wrap = null;
+        var now = DateTime.UtcNow;
+        if (_iconRetryAt.TryGetValue(iconId, out var retryAt) && now < retryAt)
+            return 0;
         try
         {
             if (_textures.TryGetFromGameIcon(
                     new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
+            {
+                if (shared.TryGetWrap(out var wrap, out var error))
+                {
+                    _iconRetryAt.Remove(iconId);
+                    return (nint)wrap.Handle.Handle;
+                }
+                if (error is null)
+                {
+                    probe = TextureProbe.Pending;
+                    return 0;
+                }
+            }
         }
         catch (Exception)
         {
-            _missingIcons.Add(iconId);
+            // A provider failure must not blacklist an icon for the session.
         }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        _iconRetryAt[iconId] = now.AddSeconds(1);
+        return 0;
     }
 
     /// <summary>Dispatches a pick to the actor captured when it opened.</summary>

@@ -126,7 +126,6 @@ public sealed partial class AppearancePane
             {
                 cells.Cell("Tattoo", cell => ColorCell(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why));
                 cells.Cell("Paint", cell => ColorCell(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why));
-                cells.Cell(string.Empty, _ => { });
             }, help: "The facial features' and the face paint's colour");
             form.Checkboxes("Options",
                 new Crystarium.CheckItem("Highlights", highlights,
@@ -534,10 +533,8 @@ public sealed partial class AppearancePane
                     return TextureProbe.Missing;
                 if (icon == 0)
                     return TextureProbe.Ready;
-                handle = ResolveIcon(icon);
-                if (handle != 0)
-                    return TextureProbe.Ready;
-                return _missingIcons.Contains(icon) ? TextureProbe.Ready : TextureProbe.Pending;
+                handle = ResolveIcon(icon, out var probe);
+                return probe;
             },
             top + 1,
             columns: 5,

@@ -8,7 +8,7 @@ namespace Poser.Game.Wardrobe;
 /// <summary>
 /// The character-making data from the game: the races and clans from
 /// their sheets, the menu per clan and gender from CharaMakeType (with
-/// the long hair and face-paint lists from CharaMakeCustomize), and the
+/// HairMakeType's explicit hair references and the legacy face-paint range), and the
 /// colours from the human colour file the game's own UI reads. Built
 /// once on first use.
 ///
@@ -282,6 +282,8 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
                     features[key] = new CustomizeFeature(key, name, options, icons);
                 }
 
+                ApplyHairReferences(features, row.Race.RowId, clan, gender);
+
                 // The seven facial-feature icons, per face the row offers.
                 var faceIcons = new Dictionary<byte, uint[]>();
                 if (features.TryGetValue(CustomizeKey.Face, out var faces)
@@ -356,5 +358,51 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         var slice = new uint[take];
         Array.Copy(colors, start, slice, 0, take);
         return slice;
+    }
+
+    private void ApplyHairReferences(
+        Dictionary<CustomizeKey, CustomizeFeature> features, uint race, byte clan, byte gender)
+    {
+        if (!features.TryGetValue(CustomizeKey.Hairstyle, out var hair))
+            return;
+        try
+        {
+            var customize = _data.GetExcelSheet<CharaMakeCustomize>();
+            var options = new List<CustomizeOption>();
+            var known = new HashSet<byte>();
+            foreach (var row in _data.GetExcelSheet<HairMakeType>())
+            {
+                if (row.Race.RowId != race || row.Tribe.RowId != clan || row.Gender != gender)
+                    continue;
+                foreach (var menu in row.CharaMakeStruct)
+                {
+                    if (KeyOf(menu.Customize) != CustomizeKey.Hairstyle)
+                        continue;
+                    // HairMakeType holds explicit customize-row references, not
+                    // a contiguous range. Use the typed menu rather than Brio's
+                    // version-specific offsets; FeatureID remains the write id.
+                    // Lumina currently names the six trailing reference slots
+                    // Unknown0. Native menus with 101–105 entries use them;
+                    // SubMenuNum bounds the combined list (not all 106 slots).
+                    foreach (uint reference in menu.SubMenuParam.Concat(menu.Unknown0).Take(menu.SubMenuNum))
+                    {
+                        if (reference == 0 || !customize.HasRow(reference))
+                            continue;
+                        var entry = customize.GetRow(reference);
+                        if (entry.FeatureID == 0 || !known.Add(entry.FeatureID))
+                            continue;
+                        options.Add(new CustomizeOption(entry.FeatureID, entry.Icon));
+                    }
+                }
+            }
+            // Older/unavailable sheets retain the legacy menu. Discover later
+            // adds genuinely present model-only hairs without inventing icons.
+            if (options.Count > 0)
+                features[CustomizeKey.Hairstyle] = hair with { Options = options };
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Customize: hair references could not be read for {clan}/{gender}: {ex.Message}");
+        }
     }
 }
