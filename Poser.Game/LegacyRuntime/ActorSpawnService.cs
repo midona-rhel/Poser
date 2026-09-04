@@ -933,10 +933,16 @@ internal static class SpawnOwnershipCleanup
 public unsafe class ActorSpawnService : IActorSpawnService
 {
     private const int CreateRecoveryTimeoutMs = 5000;
+    private const int CompanionTransitionTimeoutMs = 1000;
+    // Ready/empty can become observable before a mount/ornament transition
+    // finishes resetting its owner. Keep the exact state stable for a short
+    // interval while the pre-transition placement override is reasserted.
+    private const int CompanionSettleMs = 100;
 
     private readonly IGPoseService _gPoseService;
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
+    private readonly IPosingService? _posing;
     private readonly IPluginLog? _log;
     private readonly IFramework? _framework;
     private readonly Func<nint> _localPlayerAddress;
@@ -977,7 +983,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IFramework framework,
         ISigScanner sigScanner,
         IGameInteropProvider hooking,
-        ISpawnCollectionPort collections)
+        ISpawnCollectionPort collections,
+        IPosingService posing)
         : this(
             gPoseService,
             actorManager,
@@ -991,7 +998,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             null,
             collections,
             ownsAdapter: true,
-            objectAddressAt: objectTable.GetObjectAddress)
+            objectAddressAt: objectTable.GetObjectAddress,
+            posing: posing)
     {
     }
 
@@ -1008,10 +1016,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Func<long>? clock = null,
         ISpawnCollectionPort? collections = null,
         bool ownsAdapter = false,
-        Func<int, nint>? objectAddressAt = null)
+        Func<int, nint>? objectAddressAt = null,
+        IPosingService? posing = null)
     {
         _framework = framework;
         _collections = collections;
+        _posing = posing;
         _gPoseService = gPoseService;
         _actorManager = actorManager;
         _eventBus = eventBus;
@@ -1969,40 +1979,115 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // may be emptied and refilled.
         if (!_native.TryReadCompanion(descriptor, out var existing))
             return false;
-        if (existing is { } attached
-            && !_native.WriteCompanion(descriptor, attached.Kind, 0))
-            return false;
-        if (container is not { } want)
+
+        if (existing is null && container is null)
             return true;
 
-        if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id))
+        if (_posing is null)
+        {
+            _log?.Warning(
+                "ActorSpawnService: companion change skipped - owner placement cannot be preserved");
+            return false;
+        }
+        var placement = _posing.GetEffectiveTransform(owner);
+        if (!TryReassertOwnerPlacement(owner, placement))
             return false;
 
-        // The companion needs a few frames before it can draw. Bounded poll (with a
-        // hard timeout + log), not a blind tick delay — matches the redraw policy.
-        PollUntil(
+        if (existing is { } attached)
+        {
+            if (!_native.WriteCompanion(descriptor, attached.Kind, 0)
+                || !TryReassertOwnerPlacement(owner, placement))
+                return false;
+        }
+        if (container is not { } want)
+        {
+            PollForCompanionTransition(
+                ownership,
+                descriptor,
+                owner,
+                placement,
+                () => _native.TryReadCompanion(descriptor, out var current)
+                    && current is null,
+                onSettled: null,
+                what: "companion detach");
+            return true;
+        }
+
+        if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id)
+            || !TryReassertOwnerPlacement(owner, placement))
+            return false;
+
+        PollForCompanionTransition(
             ownership,
             descriptor,
+            owner,
+            placement,
             () => _native.IsCompanionReady(descriptor, want),
             () => _native.EnableCompanionDraw(descriptor),
-            timeoutMs: 1000,
-            what: $"companion {want.Kind} {want.Id}",
-            skipFrames: 1);
+            what: $"companion {want.Kind} {want.Id}");
 
         return true;
     }
 
+    private void PollForCompanionTransition(
+        SpawnOwnershipRecord? ownership,
+        SpawnNativeDescriptor descriptor,
+        IActor owner,
+        Transform placement,
+        Func<bool> exactState,
+        Action? onSettled,
+        string what)
+    {
+        long? stableSince = null;
+        PollUntil(
+            ownership,
+            descriptor,
+            () =>
+            {
+                if (_posing!.GetTransformOverride(owner) is not { } armed
+                    || armed != placement)
+                {
+                    stableSince = null;
+                    return false;
+                }
+                if (!exactState())
+                {
+                    stableSince = null;
+                    return false;
+                }
+
+                var now = _clock();
+                stableSince ??= now;
+                return now - stableSince.Value >= CompanionSettleMs;
+            },
+            () =>
+            {
+                if (TryReassertOwnerPlacement(owner, placement))
+                    onSettled?.Invoke();
+            },
+            CompanionTransitionTimeoutMs,
+            what,
+            skipFrames: 1,
+            onTick: () => _posing!.SetTransformOverride(owner, placement));
+    }
+
+    private bool TryReassertOwnerPlacement(
+        IActor owner,
+        Transform placement)
+    {
+        _posing!.SetTransformOverride(owner, placement);
+        if (_posing.GetTransformOverride(owner) is { } armed
+            && armed == placement)
+            return true;
+
+        _log?.Warning(
+            "ActorSpawnService: companion transition could not preserve owner placement");
+        return false;
+    }
+
     public void DestroyCompanion(IActor owner)
     {
-        if (!OnOwnerThread)
-            return;
-        if (!TryResolveActorForOperation(owner, out var descriptor, out _))
-            return;
-
-        if (!_native.TryReadCompanion(descriptor, out var info)
-            || info is not { } attached)
-            return;
-        _native.WriteCompanion(descriptor, attached.Kind, 0);
+        _ = SetCompanion(owner, null);
     }
 
     public CompanionAttachment? GetCompanionInfo(IActor owner)
@@ -2083,6 +2168,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// frames after a native mutation can answer a readiness question with the
     /// state that preceded it, so a condition that must not be believed too
     /// early skips them outright rather than trusting the first answer.
+    /// <paramref name="onTick"/> runs only after the exact lifetime check and
+    /// before both the skip and condition, so guarded state can be enforced
+    /// even during skipped frames.
     /// </summary>
     private void PollUntil(
         SpawnOwnershipRecord? ownership,
@@ -2091,7 +2179,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Action onSatisfied,
         int timeoutMs,
         string what,
-        int skipFrames = 0)
+        int skipFrames = 0,
+        Action? onTick = null)
     {
         if (_framework is null)
             return;
@@ -2114,6 +2203,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                     _framework.Update -= Tick;
                     return;
                 }
+                onTick?.Invoke();
                 if (remainingSkips > 0)
                 {
                     // Still inside the window where the condition would answer
