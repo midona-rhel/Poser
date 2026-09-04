@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
@@ -38,7 +39,7 @@ public sealed class IdentityAndSceneBaselineTests
         var prop = PropId.New();
         var snapshot = new SceneSnapshot(
             19,
-            [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(bone.Skeleton, [new BoneDescriptor(bone, "Hand", null, IsHidden: true)])]), new ActorDescriptor(companion, "Companion", [], IsCompanion: true, OwnerActor: actor)],
+            [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(bone.Skeleton, [new BoneDescriptor(bone, "Hand", null, IsHidden: true)])]), new ActorDescriptor(companion, "Companion", [], IsCompanion: true, OwnerActor: actor, AttachmentKind: CompanionKind.Companion)],
             [new LightDescriptor(light, "Light", LightKind.Point, false, LightOwnership.World, bone)],
             [new CameraDescriptor(camera, "Camera", CameraKind.Free, true, false, true, actor, bone, new Vector3(1, 2, 3))],
             [new PropDescriptor(prop, "Prop", false)],
@@ -58,6 +59,12 @@ public sealed class IdentityAndSceneBaselineTests
         var copy = new SceneSnapshot(19, actors, snapshot.Lights, snapshot.Cameras, snapshot.Props, snapshot.Environment, snapshot.GazeStates);
         actors.Clear();
         Assert.True(snapshot.ContentEquals(copy));
+        Assert.False(snapshot.ContentEquals(copy with
+        {
+            Actors = copy.Actors.Select(item => item.OwnerActor is null
+                ? item
+                : item with { AttachmentKind = CompanionKind.Mount }).ToArray(),
+        }));
         Assert.False(snapshot.ContentEquals(copy with { Revision = 20 }));
         Assert.False(snapshot.ContentEquals(copy with { Environment = new EnvironmentDescriptor(616, 12, 42) }));
         Assert.Equal(actor.LogicalId, TransformTargetId.ForActor(actor).ActorLineage);

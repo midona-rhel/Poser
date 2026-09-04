@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Dalamud.Plugin.Services;
 using Poser.Application.Companions;
+using Poser.Application.Scene;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -15,17 +16,19 @@ namespace Poser.UI;
 /// <summary>
 /// The companion-slot attach surface: a <see cref="Crystarium.SearchPicker{T}"/>
 /// over the whole minion/mount/ornament catalog, opened from an actor's
-/// context menu and applied to that actor's native slot. Deliberately NOT a
-/// pane section — standalone creatures come from the spawn browser, and the
-/// slot only matters for riding a mount or carrying an ornament, so the
-/// surface stays out of the way until asked for.
+/// context menu or Actor &gt; General and applied to that actor's native slot.
+/// Standalone creatures still come from the spawn browser; this control owns
+/// only an actor's native minion, mount, or ornament slot.
 /// </summary>
 public sealed class CompanionSection
 {
     private readonly CompanionCatalog _catalog;
+    private readonly ICompanionCatalogLoader _catalogLoader;
     private readonly IActorSpawnService _spawn;
     private readonly IEntityBindings _bindings;
+    private readonly SceneSession _scene;
     private readonly Game.Journal.ActorValueSession _values;
+    private readonly UserNotices _notices;
 
     private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
         new("companion");
@@ -35,6 +38,7 @@ public sealed class CompanionSection
     /// change while the popover is up never retargets the pending pick.
     /// </summary>
     private ActorId? _pickOwner;
+    private ActorId? _pickSubject;
 
     /// <summary>The strip's selection, controlled and persistent like every
     /// other picker strip; an open with something attached reseeds it because
@@ -73,15 +77,21 @@ public sealed class CompanionSection
 
     public CompanionSection(
         CompanionCatalog catalog,
+        ICompanionCatalogLoader catalogLoader,
         IActorSpawnService spawn,
         IEntityBindings bindings,
+        SceneSession scene,
         ITextureProvider textures,
-        Game.Journal.ActorValueSession values)
+        Game.Journal.ActorValueSession values,
+        UserNotices notices)
     {
         _values = values;
         _catalog = catalog;
+        _catalogLoader = catalogLoader;
         _spawn = spawn;
         _bindings = bindings;
+        _scene = scene;
+        _notices = notices;
         _icons = new GameIconResolver(textures);
         _query = Compute;
         _entryKey = RowKey;
@@ -92,13 +102,27 @@ public sealed class CompanionSection
 
     // ── the one surface ──────────────────────────────────────────────────
 
-    /// <summary>Opens the picker against the owner frozen here, seeded to what
-    /// the slot already carries so an attach reads as a swap when one is
-    /// there.</summary>
-    public void OpenAttachPicker(ActorId ownerId)
+    /// <summary>The exact owner-routed verbs available to an actor row.</summary>
+    public readonly record struct ActionState(bool IsAttachedChild, bool Occupied);
+
+    /// <summary>Describes the current exact relationship. Attached bodies route
+    /// through their owner; root actors are admitted only when they own a slot.</summary>
+    public ActionState? ActionsFor(ActorId subjectId)
     {
-        if (Resolve(ownerId) is not { } owner)
-            return;
+        if (!TryResolveOwner(subjectId, out _, out var owner, out bool child))
+            return null;
+        return new ActionState(child, _spawn.GetCompanionInfo(owner) is not null);
+    }
+
+    /// <summary>Opens the picker against the exact owner resolved from either
+    /// the owner row or its attached child. A stale child cannot retarget a new
+    /// relationship because the descriptor and binding must both still match.</summary>
+    public bool OpenAttachPicker(ActorId subjectId)
+    {
+        if (!TryResolveOwner(subjectId, out var ownerId, out var owner, out _))
+            return false;
+        _catalogLoader.EnsureLoaded();
+        _pickSubject = subjectId;
         _pickOwner = ownerId;
         var current = _spawn.GetCompanionInfo(owner);
         if (current is { } attached)
@@ -117,6 +141,16 @@ public sealed class CompanionSection
             // Opened from a context menu: the click IS the initiating
             // control, so the surface spawns where the user clicked.
             anchor: ImGui.GetMousePos());
+        return true;
+    }
+
+    /// <summary>Detaches through the current exact owner relationship.</summary>
+    public bool Detach(ActorId subjectId)
+    {
+        if (!TryResolveOwner(subjectId, out _, out var owner, out _)
+            || _spawn.GetCompanionInfo(owner) is null)
+            return false;
+        return _values.SetCompanion(owner, null);
     }
 
     /// <summary>The strip is CONTROLLED — its selection lives here — so the
@@ -130,16 +164,23 @@ public sealed class CompanionSection
         _picker.SetLoadStatus(
             _catalog.IsLoaded ? null : "Building minion catalog…");
         _picker.Update(Options());
-        if (_picker.Draw() is not { } chosen || _pickOwner is not { } ownerId)
+        if (_picker.Draw() is not { } chosen
+            || _pickSubject is not { } subjectId
+            || _pickOwner is not { } frozenOwner)
             return;
-        if (Resolve(ownerId) is not { } owner)
+        if (!TryResolveOwner(
+                subjectId, out var ownerId, out var owner, out _)
+            || ownerId != frozenOwner)
             return;
         // One call both attaches and swaps: the backend empties the slot
-        // before it fills it. A failure is the service's log line — the menu
-        // item that opens this surface is gated on the slot existing.
-        _values.SetCompanion(
-            owner,
-            new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id));
+        // before it fills it. The menu item that opens this surface is gated
+        // on the slot existing, but the native write can still be refused.
+        if (!_values.SetCompanion(
+                owner,
+                new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id)))
+            _notices.Refused(
+                "Attachment",
+                "The game refused the companion-slot change.");
     }
 
     private PickerOptions<CompanionEntry> Options() => new()
@@ -171,6 +212,46 @@ public sealed class CompanionSection
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
+
+    private bool TryResolveOwner(
+        ActorId subjectId,
+        out ActorId ownerId,
+        out IActor owner,
+        out bool attachedChild)
+    {
+        ownerId = default;
+        owner = null!;
+        attachedChild = false;
+        CompanionKind? childKind = null;
+        if (_scene.Snapshot.FindActor(subjectId) is not { } subject)
+            return false;
+
+        if (subject.OwnerActor is { } linkedOwner)
+        {
+            if (subject.AttachmentKind is not { } linkedKind
+                || Resolve(subjectId) is null)
+                return false;
+            ownerId = linkedOwner;
+            attachedChild = true;
+            childKind = linkedKind;
+        }
+        else
+        {
+            ownerId = subject.Id;
+        }
+
+        if (Resolve(ownerId) is not { } exactOwner
+            || !_spawn.HasCompanionSlot(exactOwner))
+            return false;
+        if (attachedChild)
+        {
+            var current = _spawn.GetCompanionInfo(exactOwner);
+            if (current is null || current.Value.Kind != childKind)
+                return false;
+        }
+        owner = exactOwner;
+        return true;
+    }
 
     private IActor? Resolve(ActorId id)
     {

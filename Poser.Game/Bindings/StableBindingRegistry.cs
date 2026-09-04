@@ -1,5 +1,6 @@
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -18,6 +19,10 @@ namespace Poser.Game.Bindings;
 /// </summary>
 public readonly record struct AuxiliaryBindingKey(
     ActorId Actor, SkeletonId? Skeleton, int Bones);
+
+internal readonly record struct ActorAttachment(
+    ActorId Owner,
+    CompanionKind Kind);
 
 /// <summary>
 /// Private identity map between domain ids and current legacy/native entities.
@@ -184,7 +189,7 @@ public sealed class StableBindingRegistry : IEntityBindings
             new Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>();
         var actorDescriptors = new List<ActorDescriptor>();
         var descriptorAddresses = new List<nint>();
-        var companionOwners = new Dictionary<nint, ActorId>();
+        var companionOwners = new Dictionary<nint, ActorAttachment>();
         var auxiliaryBindings = new List<AuxiliaryBindingKey>();
 
         foreach (var actor in _actors.Actors)
@@ -657,7 +662,7 @@ public sealed class StableBindingRegistry : IEntityBindings
     private static unsafe void CollectAttachments(
         nint address,
         ActorId owner,
-        Dictionary<nint, ActorId> companionOwners)
+        Dictionary<nint, ActorAttachment> companionOwners)
     {
         if (address == nint.Zero)
             return;
@@ -666,18 +671,27 @@ public sealed class StableBindingRegistry : IEntityBindings
             return;
 
         if (native->CompanionData.CompanionObject != null)
-            companionOwners[(nint)native->CompanionData.CompanionObject] = owner;
+            companionOwners[(nint)native->CompanionData.CompanionObject] =
+                new(owner, CompanionKind.Companion);
         if (native->Mount.MountObject != null)
-            companionOwners[(nint)native->Mount.MountObject] = owner;
+            companionOwners[(nint)native->Mount.MountObject] =
+                new(owner, CompanionKind.Mount);
         if (native->OrnamentData.OrnamentObject != null)
-            companionOwners[(nint)native->OrnamentData.OrnamentObject] = owner;
+            companionOwners[(nint)native->OrnamentData.OrnamentObject] =
+                new(owner, CompanionKind.Ornament);
     }
 
-    private static void LinkCompanionOwners(
+    /// <summary>Projects the native owner pointers onto the already-minted
+    /// actor identities. Both the exact owner generation and slot kind travel
+    /// together; an unrelated or self-referential address remains a root.</summary>
+    internal static void LinkCompanionOwners(
         List<ActorDescriptor> descriptors,
         List<nint> addresses,
-        Dictionary<nint, ActorId> companionOwners)
+        Dictionary<nint, ActorAttachment> companionOwners)
     {
+        if (descriptors.Count != addresses.Count)
+            throw new ArgumentException(
+                "Actor descriptors and native addresses must be positional peers.");
         if (companionOwners.Count == 0)
             return;
         for (int i = 0; i < descriptors.Count; i++)
@@ -685,9 +699,13 @@ public sealed class StableBindingRegistry : IEntityBindings
             var descriptor = descriptors[i];
             if (!descriptor.IsCompanion)
                 continue;
-            if (companionOwners.TryGetValue(addresses[i], out var owner) &&
-                !owner.Equals(descriptor.Id))
-                descriptors[i] = descriptor with { OwnerActor = owner };
+            if (companionOwners.TryGetValue(addresses[i], out var attachment) &&
+                !attachment.Owner.Equals(descriptor.Id))
+                descriptors[i] = descriptor with
+                {
+                    OwnerActor = attachment.Owner,
+                    AttachmentKind = attachment.Kind,
+                };
         }
     }
 

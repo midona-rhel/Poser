@@ -394,7 +394,7 @@ public partial class MainWindow : Window
     [
         new() { Label = "Pose" },
         new() { Label = "Animation" },
-        new() { Label = "Appearance" },
+        new() { Label = "Actor" },
     ];
 
     /// <summary>A spawned object's strip, the camera strip's sibling: while
@@ -1057,7 +1057,7 @@ public partial class MainWindow : Window
         // allocation; its nested ScrollRegion consumes the same physical
         // gutter the shell reserved, so mode changes cannot alter width.
         // Animation is a document and uses the shell's scroll.
-        // Appearance has no pose rail; its content takes the released
+        // Actor has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
         // Library mode's rail hosts the import options;
         // every other mode keeps the selection-typed rail.

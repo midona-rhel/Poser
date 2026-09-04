@@ -34,7 +34,8 @@ public sealed partial class AppearancePane
     private readonly Func<FacewearEntry, nint> _facewearTexture;
     private static readonly Func<PropRow, string?> _propBadge = static row => row.Detail;
     private static readonly Func<PropRow, TablerIcon?> _propGlyph = static _ => TablerIcon.Wand;
-    private static readonly string[] ViewLabels = ["Actor", "Appearance", "Equipment"];
+    private static readonly string[] ViewLabels = ["General", "Appearance", "Equipment"];
+    private static readonly string[] AttachedViewLabels = ["General"];
     private readonly ICustomizeCatalog _customize;
     private readonly Game.Journal.CustomizeSession _customizeSession;
     private int _view;
@@ -68,6 +69,7 @@ public sealed partial class AppearancePane
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
     private readonly IEntityBindings _bindings;
+    private readonly CompanionSection _companions;
     private readonly ITextureProvider _textures;
 
     /// <summary>Stores action results for the notification channel.</summary>
@@ -153,6 +155,7 @@ public sealed partial class AppearancePane
         SceneSession scene,
         IActorSpawnService spawn,
         IEntityBindings bindings,
+        CompanionSection companions,
         ITextureProvider textures,
         Config.ConfigurationService config,
         IInvisibleSkinService invisibleSkin,
@@ -207,6 +210,7 @@ public sealed partial class AppearancePane
         _scene = scene;
         _spawn = spawn;
         _bindings = bindings;
+        _companions = companions;
         _textures = textures;
         _modelQuery = ComputeModelSearch;
         _modelEntryKey = ModelRowKey;
@@ -237,9 +241,16 @@ public sealed partial class AppearancePane
         var theme = Crystarium.ActiveTheme;
         float band = global::Poser.UI.Views.AppShellView.ToolbarHeight * s;
         float pill = theme.Controls.NavigationHeight * s;
+        var selectedId = _scene.Selection.PrimaryActor;
+        var selectedDescriptor = selectedId is { } selectedActor
+            ? _scene.Snapshot.FindActor(selectedActor)
+            : null;
+        bool attached = selectedDescriptor?.OwnerActor is not null;
+        if (attached)
+            _view = 0;
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, (band - pill) * 0.5f));
         Crystarium.SegmentedControl(
-            "##appearance-view", ViewLabels, _view,
+            "##appearance-view", attached ? AttachedViewLabels : ViewLabels, _view,
             next => _view = next,
             alignFirstTabToCursor: true,
             itemHelp: index => index switch
@@ -275,8 +286,11 @@ public sealed partial class AppearancePane
                         page.EmptyState();
                         return;
                     }
-                    RefreshAppearanceAccess(actor);
-                    if (!_appearanceAccess.CanEdit)
+                    var descriptor = _scene.Snapshot.FindActor(actor);
+                    bool attachedActor = descriptor?.OwnerActor is not null;
+                    if (!attachedActor)
+                        RefreshAppearanceAccess(actor);
+                    if (!attachedActor && !_appearanceAccess.CanEdit)
                         page.Section("Appearance access", true, _ => { }, form =>
                         {
                             form.Status(_appearanceAccess.Detail ?? "Glamourer appearance access is unavailable.");
@@ -284,6 +298,11 @@ public sealed partial class AppearancePane
                                 () => ReportExternal(_integration.OpenGlamourer(actor), "Open in Glamourer"),
                                 disabled: !_integration.Glamourer.Available));
                         }, divider: false);
+                    if (attachedActor)
+                    {
+                        DrawAttachedActorView(page, actor);
+                        return;
+                    }
                     switch (_view)
                     {
                         case 1: DrawCustomizeView(page, actor); DrawCustomColours(page, actor); break;
@@ -311,6 +330,7 @@ public sealed partial class AppearancePane
                             _presentation.OverridesFor(actor), r);
                 },
                 divider: false);
+            DrawAttachmentSection(page, actor);
             bool first = false;
 
             if (supported && _presentation.Read(actor) is { } reading)
@@ -352,6 +372,66 @@ public sealed partial class AppearancePane
                             () => ReleaseAdopted(actor),
                             help: "Hand this actor back to the world")));
         }
+    }
+
+    private void DrawAttachedActorView(
+        Crystarium.PageScope page,
+        ActorId actor)
+    {
+        bool supported = _presentation.IsSupported(actor)
+            && _presentation.Read(actor) is not null;
+        page.Section("General", _openGeneral,
+            next => _openGeneral = next,
+            form =>
+            {
+                if (supported && _presentation.Read(actor) is { } reading)
+                    BasicPresentationRows(
+                        form, actor, _presentation.OverridesFor(actor), reading);
+            }, divider: false);
+
+        if (supported && _presentation.Read(actor) is { } present)
+        {
+            var owned = _presentation.OverridesFor(actor);
+            page.Section("Tint", _openModel,
+                next => _openModel = next,
+                form => CharacterTintRow(form, actor, owned, present));
+            page.Section("Wet surface", _openWetSurface,
+                next => _openWetSurface = next,
+                form => WetSurfaceRows(form, actor, owned, present));
+        }
+        DrawAttachmentSection(page, actor);
+    }
+
+    private void DrawAttachmentSection(
+        Crystarium.PageScope page,
+        ActorId actor)
+    {
+        if (_companions.ActionsFor(actor) is not { } state)
+            return;
+        page.Section(
+            state.IsAttachedChild ? "Attachment" : "Companion",
+            true,
+            _ => { },
+            form => form.Actions(string.Empty, actions =>
+            {
+                actions.Button(
+                    state.Occupied ? "Change" : "Attach",
+                    () =>
+                    {
+                        if (!_companions.OpenAttachPicker(actor))
+                            _notices.Refused("The attachment relationship changed.");
+                    },
+                    variant: ButtonVariant.Disruptive);
+                if (state.Occupied)
+                    actions.Button(
+                        "Detach",
+                        () =>
+                        {
+                            if (!_companions.Detach(actor))
+                                _notices.Refused("The attachment relationship changed.");
+                        },
+                        variant: ButtonVariant.Disruptive);
+            }));
     }
 
     private bool _openScene = true;
@@ -705,12 +785,43 @@ public sealed partial class AppearancePane
         _readoutAt = DateTime.MinValue;
     }
 
+    private void BasicPresentationRows(
+        Crystarium.FormScope form,
+        ActorId actor,
+        PresentationOverrides owned,
+        PresentationReading reading)
+    {
+        var resolved = _bindings.Resolve(actor);
+        var live = resolved.Success ? resolved.Value : null;
+        form.Switch(
+            "Visible",
+            live is not null && _spawn.IsVisible(live),
+            value => SetActorVisibility(actor, value),
+            help: "Hide this actor without moving it",
+            disabled: live is null);
+        form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
+            value => Report(_values.SetOpacity(actor, value), "Opacity"),
+            help: "Fade the whole actor", onBegin: _values.Seal);
+        form.Actions("Appearance", actions => actions.Button(
+            "Reset",
+            () => Report(_values.ResetPresentation(actor), "Reset appearance"),
+            variant: ButtonVariant.Disruptive));
+    }
+
     private void GeneralRows(
         Crystarium.FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
     {
+        var resolved = _bindings.Resolve(actor);
+        var live = resolved.Success ? resolved.Value : null;
+        form.Switch(
+            "Visible",
+            live is not null && _spawn.IsVisible(live),
+            value => SetActorVisibility(actor, value),
+            help: "Hide this actor without moving it",
+            disabled: live is null);
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_values.SetOpacity(actor, value), "Opacity"),
@@ -742,6 +853,34 @@ public sealed partial class AppearancePane
                 help: human ? null : "Only human actors can hide their body",
                 variant: ButtonVariant.Disruptive);
         });
+    }
+
+    private void SetActorVisibility(ActorId actor, bool visible)
+    {
+        var resolved = _bindings.Resolve(actor);
+        if (!resolved.Success || resolved.Value is not { } live)
+        {
+            _notices.Refused("The actor is no longer available.");
+            return;
+        }
+        var result = _values.SetVisibility(live, visible);
+        if (!result.Success)
+            _notices.Refused("Visibility", result.Detail ?? "The change was refused.");
+    }
+
+    private void CharacterTintRow(
+        Crystarium.FormScope form,
+        ActorId actor,
+        PresentationOverrides owned,
+        PresentationReading reading)
+    {
+        form.ColorWells("Character", wells => wells.Well(
+            "Character",
+            TintFor(owned, reading, PresentationModel.Character) ?? Vector4.One,
+            value => Report(
+                _values.SetTint(actor, PresentationModel.Character, value),
+                "Character")),
+            help: "White leaves the model unchanged");
     }
 
     /// <summary>One row of equidistant tint cells — character, main

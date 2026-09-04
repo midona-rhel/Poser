@@ -63,7 +63,18 @@ recheck that record on the framework thread. An unresolved or uncertain delete
 stays pending and is retried only while the same occupant is proven. A record
 without a usable slot is never probed. These records last only for the session.
 The create/copy/model-before-draw/GPose order is an intentional Brio-compatible
-choice.
+choice. Companion replacement follows Brio's `ActorSpawnService.CreateCompanion`
+order and one-frame readiness delay, while `ModelTransformService`-style transform
+ownership remains independent: an attachment change never creates an override.
+
+A character-backed minion, mount, or ornament in an owner's native slot is an
+ordinary actor state owner. Its descriptor carries both the exact owner
+`ActorId` and `CompanionKind`; its pose, transform, presentation, and animation
+state stay keyed to its own exact generation. Changing the slot never migrates
+active ownership to the replacement. Attach, change, and detach are the one
+exception: those lifetime verbs always resolve and write through the current
+exact owner. Non-character-backed ornaments fail discovery and remain
+owner-controlled.
 
 Overworld discovery is read-only and separate from the GPose scan. It exposes
 ids, rechecks the full observation before use, and can only be used to create a

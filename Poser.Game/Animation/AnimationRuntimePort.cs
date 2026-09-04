@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Animation;
+using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Entities;
@@ -25,6 +26,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private readonly Dalamud.Plugin.Services.IGameInteropProvider _hooking;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
+    private readonly SceneSession _scene;
     private readonly PosingService _posing;
     // Authoritative, stable-id keyed.
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
@@ -238,6 +240,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
+        SceneSession scene,
         PosingService posing,
         IDataManager data)
     {
@@ -247,6 +250,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
         _log = log;
         _bindings = bindings;
+        _scene = scene;
         _posing = posing;
         _framework.Update += OnFrameworkUpdate;
 
@@ -345,8 +349,21 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         if (!_framework.IsInFrameworkUpdateThread)
             return false;
         var resolved = _bindings.Resolve(actor);
-        return resolved.Success && resolved.Value is { CanControlAnimation: true };
+        if (!resolved.Success || resolved.Value is not { } live)
+            return false;
+        return IsSupportedActor(live, _scene.Snapshot.FindActor(actor));
     }
+
+    internal static bool IsSupportedActor(
+        IActor live,
+        Poser.Domain.Scene.ActorDescriptor? descriptor) =>
+        live.CanControlAnimation
+        || descriptor is
+        {
+            IsCompanion: true,
+            OwnerActor: not null,
+            AttachmentKind: not null,
+        };
 
     // ── Enforcement index ─────────────────────────────────────────────
 

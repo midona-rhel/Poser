@@ -227,7 +227,7 @@ public partial class MainWindow
             { Kind: SceneEntityKind.WorldObject } =>
                 (_worldObjectTabs, "world-object"),
             // Creatures share the actor strip: their skeleton poses, their
-            // battle-chara body animates, and the Appearance pane hides the
+            // battle-chara body animates, and the Actor pane hides the
             // humanoid-only sections itself.
             _ => (_selectionTabs, "actor"),
         };
@@ -324,6 +324,14 @@ public partial class MainWindow
     /// companions keep the paw; everything else is a person.</summary>
     private TablerIcon SidebarActorIcon(ActorDescriptor actor)
     {
+        if (actor.AttachmentKind is { } attachmentKind)
+            return attachmentKind switch
+            {
+                CompanionKind.Companion => TablerIcon.Paw,
+                CompanionKind.Mount => TablerIcon.Horse,
+                CompanionKind.Ornament => TablerIcon.Diamond,
+                _ => TablerIcon.Paw,
+            };
         var resolved = _bindings.Resolve(actor.Id);
         var kind = resolved.Success && resolved.Value is { } live
             ? _spawnService.GetSpawnedKind(live)
@@ -406,7 +414,7 @@ public partial class MainWindow
         // The library paints its own bands and rules, so it takes the
         // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
         _vm.ContentFlush = tab is "Library";
-        _vm.ContentOwnsViewport = tab is "Pose" or "Appearance";
+        _vm.ContentOwnsViewport = tab is "Pose" or "Actor";
         // Every environment tab is a PageForm, as the one it replaced was.
         // "Light" is deliberately shared: it is a light's whole editor and the
         // environment's lighting tab, and both are pages, so the layout answer
@@ -416,7 +424,7 @@ public partial class MainWindow
         // page missing from this list, so the shell was insetting it a second
         // time on top of the Page's own.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Object" or "Light"
+            tab is "Animation" or "Actor" or "Object" or "Light"
                 or "Environment" or "Scene" or "Selection"
                 or "Lighting" or "Sky" or "Atmosphere" or "World"
                 or "Camera"
@@ -606,7 +614,7 @@ public partial class MainWindow
             return;
         }
 
-        if (_activeTab == "Appearance")
+        if (_activeTab == "Actor")
         {
             _appearancePane.Draw(origin, size);
             return;

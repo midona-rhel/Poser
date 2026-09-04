@@ -802,7 +802,7 @@ public class PoseInspectorPane
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
         Crystarium.SegmentedControl(
             "##pose-surface",
-            new[] { "Body", "Face", "Matrix", "3D", "Expression", "Actor" },
+            new[] { "Body", "Face", "Matrix", "3D", "Expression", "Other" },
             _poseView,
             selected => _poseView = selected,
             alignFirstTabToCursor: true);

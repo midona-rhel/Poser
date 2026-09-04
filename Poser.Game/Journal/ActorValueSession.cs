@@ -138,12 +138,26 @@ public sealed class ActorValueSession
     };
 
     // ── visibility and companion ────────────────────────────────────────
-    public void SetVisibility(IActor actor, bool visible)
+    public ValueWriteResult SetVisibility(IActor actor, bool visible)
     {
         var id = _bindings.GetActorId(actor);
-        _journal.Set((actor, "Visible"), visible ? "Show actor" : "Hide actor",
-            () => _spawns.IsVisible(actor), x => _spawns.SetVisibility(actor, x), visible,
-            () => id is { } actorId && Alive(actorId));
+        if (id is not { } actorId || !Alive(actorId))
+            return new(false, "The actor is no longer available.");
+        return _journal.TrySet(
+            (actorId, "Visible"),
+            visible ? "Show actor" : "Hide actor",
+            () => _spawns.IsVisible(actor),
+            next =>
+            {
+                if (!Alive(actorId))
+                    return new(false, "The actor is no longer available.");
+                _spawns.SetVisibility(actor, next);
+                return _spawns.IsVisible(actor) == next
+                    ? ValueWriteResult.Ok()
+                    : new(false, "The game refused the visibility change.");
+            },
+            visible,
+            () => Alive(actorId));
     }
 
     public bool SetCompanion(IActor owner, CompanionAttachment? attachment)
