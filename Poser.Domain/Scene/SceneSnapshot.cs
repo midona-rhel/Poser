@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 
@@ -24,6 +25,8 @@ public sealed record SkeletonDescriptor(
 /// <param name="OwnerActor">The exact actor generation this companion is
 /// attached to, when that relationship is known. The companion remains its
 /// own actor and state owner.</param>
+/// <param name="AttachmentKind">The exact owner-slot relationship. Null for
+/// root actors and standalone catalog creatures.</param>
 public sealed record ActorDescriptor(
     ActorId Id,
     string Name,
@@ -32,6 +35,7 @@ public sealed record ActorDescriptor(
     bool IsCompanion = false,
     bool IsHidden = false,
     ActorId? OwnerActor = null,
+    CompanionKind? AttachmentKind = null,
     bool IsOwned = true,
     bool IsAdopted = false)
 {
@@ -428,6 +432,7 @@ public sealed record SceneSnapshot
                 first.IsCompanion != second.IsCompanion ||
                 first.IsHidden != second.IsHidden ||
                 first.OwnerActor != second.OwnerActor ||
+                first.AttachmentKind != second.AttachmentKind ||
                 !SkeletonsEqual(first.Skeletons, second.Skeletons))
                 return false;
         }

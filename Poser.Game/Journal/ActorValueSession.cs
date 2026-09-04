@@ -1,5 +1,4 @@
 using System.Numerics;
-using Poser.Application.Animation;
 using Poser.Application.Appearance;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
@@ -24,22 +23,19 @@ public sealed class ActorValueSession
     private readonly ActorModelIdSession _model;
     private readonly IActorSpawnService _spawns;
     private readonly IEntityBindings _bindings;
-    private readonly AnimationSession _animation;
 
     public ActorValueSession(
         ValueJournal journal,
         ActorPresentationSession presentation,
         ActorModelIdSession model,
         IActorSpawnService spawns,
-        IEntityBindings bindings,
-        AnimationSession animation)
+        IEntityBindings bindings)
     {
         _journal = journal;
         _presentation = presentation;
         _model = model;
         _spawns = spawns;
         _bindings = bindings;
-        _animation = animation;
     }
 
     public void Seal() => _journal.Seal();
@@ -142,58 +138,36 @@ public sealed class ActorValueSession
     };
 
     // ── visibility and companion ────────────────────────────────────────
-    public void SetVisibility(IActor actor, bool visible)
+    public ValueWriteResult SetVisibility(IActor actor, bool visible)
     {
         var id = _bindings.GetActorId(actor);
-        _journal.Set((actor, "Visible"), visible ? "Show actor" : "Hide actor",
-            () => _spawns.IsVisible(actor), x => _spawns.SetVisibility(actor, x), visible,
-            () => id is { } actorId && Alive(actorId));
+        if (id is not { } actorId || !Alive(actorId))
+            return new(false, "The actor is no longer available.");
+        return _journal.TrySet(
+            (actorId, "Visible"),
+            visible ? "Show actor" : "Hide actor",
+            () => _spawns.IsVisible(actor),
+            next =>
+            {
+                if (!Alive(actorId))
+                    return new(false, "The actor is no longer available.");
+                _spawns.SetVisibility(actor, next);
+                return _spawns.IsVisible(actor) == next
+                    ? ValueWriteResult.Ok()
+                    : new(false, "The game refused the visibility change.");
+            },
+            visible,
+            () => Alive(actorId));
     }
 
     public bool SetCompanion(IActor owner, CompanionAttachment? attachment)
     {
         var before = _spawns.GetCompanionInfo(owner);
-        if (!ApplyCompanion(owner, attachment))
+        if (!_spawns.SetCompanion(owner, attachment))
             return false;
         var id = _bindings.GetActorId(owner);
-        _journal.RecordResult(
-            attachment is null ? "Remove companion" : "Set companion",
-            before,
-            attachment,
-            next => ApplyCompanion(owner, next)
-                ? ValueWriteResult.Ok()
-                : new ValueWriteResult(
-                    false, "The companion change was refused."),
-            () => id is { } actorId && Alive(actorId));
+        _journal.Record(attachment is null ? "Remove companion" : "Set companion", before, attachment,
+            next => _spawns.SetCompanion(owner, next), () => id is { } actorId && Alive(actorId));
         return true;
-    }
-
-    private bool ApplyCompanion(IActor owner, CompanionAttachment? attachment)
-    {
-        var id = _bindings.GetActorId(owner);
-        ActorId? pauseOwner = id is { } actorId
-            && _animation.OverridesFor(actorId).OverallSpeed is 0f
-                ? actorId
-                : null;
-        if (pauseOwner is { } paused
-            && !_animation.ReleaseOverallPause(paused).Success)
-            return false;
-
-        bool completed = false;
-        void Complete(bool _)
-        {
-            if (completed)
-                return;
-            completed = true;
-            if (pauseOwner is { } pausedActor
-                && _animation.OverridesFor(pausedActor).OverallSpeed is null)
-                _animation.SetSpeed(pausedActor, 0f);
-        }
-
-        bool accepted = _spawns.SetCompanion(
-            owner, attachment, Complete);
-        if (!accepted)
-            Complete(false);
-        return accepted;
     }
 }

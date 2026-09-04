@@ -66,9 +66,15 @@ The create/copy/model-before-draw/GPose order is an intentional Brio-compatible
 choice. Companion replacement follows Brio's `ActorSpawnService.CreateCompanion`
 order and one-frame readiness delay, while `ModelTransformService`-style transform
 ownership remains independent: an attachment change never creates an override.
-When Poser owns a whole-actor pause, the actor-value session releases only that
-hold until the exact typed attach or detach state arrives, then restores it on
-success or failure; existing per-slot holds remain owned throughout.
+
+A character-backed minion, mount, or ornament in an owner's native slot is an
+ordinary actor state owner. Its descriptor carries both the exact owner
+`ActorId` and `CompanionKind`; its pose, transform, presentation, and animation
+state stay keyed to its own exact generation. Changing the slot never migrates
+active ownership to the replacement. Attach, change, and detach are the one
+exception: those lifetime verbs always resolve and write through the current
+exact owner. Non-character-backed ornaments fail discovery and remain
+owner-controlled.
 
 Overworld discovery is read-only and separate from the GPose scan. It exposes
 ids, rechecks the full observation before use, and can only be used to create a

@@ -2,17 +2,13 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Dalamud.Plugin.Services;
-using Poser.Application.Animation;
 using Poser.Application.Transforms;
 using Poser.Entities;
 using Poser.Core;
-using Poser.Domain.Animation;
 using Poser.Domain.Companions;
-using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game;
 using Poser.Game.Integration;
-using Poser.Game.Journal;
 using Poser.Services;
 
 namespace Poser.Game.Tests.LegacyRuntime;
@@ -210,176 +206,6 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.False(native.CompanionDrawEnabled);
     }
 
-    [Fact]
-    public void Paused_companion_attach_releases_only_overall_hold_until_exact_ready()
-    {
-        var actor = Actor(0x846);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(846, actor.Address, 846))
-        {
-            CompanionReady = true,
-        };
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native, new FakeActorManager(actor), framework: framework);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-        Assert.True(animation.PauseSlot(actorId, AnimationSlot.Base).Success);
-        Assert.True(animation.Pause(actorId).Success);
-
-        Assert.True(values.SetCompanion(
-            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
-
-        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
-        Assert.Equal(new float?[] { 0f, null }, port.OverallWrites);
-        Assert.Equal("Set companion", Assert.Single(port.HistoryEntries).Description);
-
-        framework.RaiseUpdate();
-
-        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
-
-        framework.RaiseUpdate();
-
-        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
-        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
-        Assert.Equal(2, port.SlotWrites.Count);
-        Assert.True(native.CompanionDrawEnabled);
-    }
-
-    [Fact]
-    public void Slot_paused_companion_attach_never_releases_or_creates_overall_hold()
-    {
-        var actor = Actor(0x847);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(847, actor.Address, 847))
-        {
-            CompanionReady = true,
-        };
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native, new FakeActorManager(actor), framework: framework);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-        Assert.True(animation.PauseSlot(actorId, AnimationSlot.Base).Success);
-
-        Assert.True(values.SetCompanion(
-            actor, new CompanionAttachment(CompanionKind.Ornament, 44)));
-        framework.RaiseUpdate();
-        framework.RaiseUpdate();
-
-        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
-        Assert.Empty(port.OverallWrites);
-        Assert.Single(port.SlotWrites);
-        Assert.True(native.CompanionDrawEnabled);
-    }
-
-    [Fact]
-    public void Unpaused_companion_attach_remains_unpaused()
-    {
-        var actor = Actor(0x84B);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(851, actor.Address, 851))
-        {
-            CompanionReady = true,
-        };
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native, new FakeActorManager(actor), framework: framework);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-
-        Assert.True(values.SetCompanion(
-            actor, new CompanionAttachment(CompanionKind.Companion, 45)));
-        framework.RaiseUpdate();
-        framework.RaiseUpdate();
-
-        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Empty(port.OverallWrites);
-        Assert.True(native.CompanionDrawEnabled);
-    }
-
-    [Fact]
-    public void Paused_companion_detach_restores_hold_after_exact_typed_empty_state()
-    {
-        var actor = Actor(0x848);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(848, actor.Address, 848))
-        {
-            Companion = new CompanionAttachment(CompanionKind.Mount, 9),
-            GenericCompanionChildPresent = true,
-        };
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native, new FakeActorManager(actor), framework: framework);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-        Assert.True(animation.Pause(actorId).Success);
-
-        Assert.True(values.SetCompanion(actor, null));
-
-        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
-        Assert.NotEqual(
-            nint.Zero,
-            native.ReadCompanionAddress(new(848, actor.Address, 848)));
-
-        framework.RaiseUpdate();
-        framework.RaiseUpdate();
-
-        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
-    }
-
-    [Fact]
-    public void Paused_companion_attach_timeout_restores_hold()
-    {
-        long now = 0;
-        var actor = Actor(0x849);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(849, actor.Address, 849));
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native,
-            new FakeActorManager(actor),
-            framework: framework,
-            clock: () => now);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-        Assert.True(animation.Pause(actorId).Success);
-
-        Assert.True(values.SetCompanion(
-            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
-        framework.RaiseUpdate();
-        now = 1001;
-        framework.RaiseUpdate();
-
-        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
-        Assert.False(native.CompanionDrawEnabled);
-    }
-
-    [Fact]
-    public void Paused_companion_attach_lifetime_cancellation_restores_hold()
-    {
-        var actor = Actor(0x84A);
-        var actorId = new ActorId(Guid.NewGuid(), 1);
-        var native = new FakeNative(new(850, actor.Address, 850))
-        {
-            CompanionReady = true,
-        };
-        var framework = new FakeFramework();
-        using var service = NewService(
-            native, new FakeActorManager(actor), framework: framework);
-        var (values, animation, port) = NewValues(service, actor, actorId);
-        Assert.True(animation.Pause(actorId).Success);
-
-        Assert.True(values.SetCompanion(
-            actor, new CompanionAttachment(CompanionKind.Ornament, 44)));
-        native.ExternallyDestroyCurrent();
-        framework.RaiseUpdate();
-
-        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
-        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
-        Assert.False(native.CompanionDrawEnabled);
-    }
-
     private static SpawnOwnershipLedger NewBoundLedger(
         out SpawnOwnershipRecord record,
         out IActor actor)
@@ -416,36 +242,6 @@ public sealed class ActorSpawnServiceOwnershipTests
             expectedIdentity ?? (address => new EntityId($"test-{address}")),
             clock,
             collections);
-
-    private static (ActorValueSession Values, AnimationSession Animation, AnimationPortProxy Port)
-        NewValues(ActorSpawnService service, IActor actor, ActorId actorId)
-    {
-        var animationPort = DispatchProxy.Create<IAnimationRuntimePort, AnimationPortProxy>();
-        var port = (AnimationPortProxy)(object)animationPort;
-        port.Reading = ActorAnimationReading.Empty with
-        {
-            Slots =
-            [
-                new(AnimationSlot.Base, 3, 1f),
-                new(AnimationSlot.UpperBody, 4, 1f),
-            ],
-        };
-        var animation = new AnimationSession(animationPort);
-        var bindings = DispatchProxy.Create<IEntityBindings, CompanionBindingProxy>();
-        var binding = (CompanionBindingProxy)(object)bindings;
-        binding.Actor = actor;
-        binding.ActorId = actorId;
-        var history = new TransformHistory();
-        history.Appended += port.HistoryEntries.Add;
-        var values = new ActorValueSession(
-            new ValueJournal(history),
-            null!,
-            null!,
-            service,
-            bindings,
-            animation);
-        return (values, animation, port);
-    }
 
     private static void ThrowNativeDelete() =>
         throw new InvalidOperationException("native delete");
@@ -839,62 +635,6 @@ public sealed class ActorSpawnServiceOwnershipTests
 
         public void GameSetPosition(Transform requested) =>
             NativeTransform = Override ?? requested;
-    }
-
-    public class CompanionBindingProxy : DispatchProxy
-    {
-        public IActor Actor = null!;
-        public ActorId ActorId;
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            targetMethod?.Name switch
-            {
-                "GetActorId" => ActorId,
-                "Resolve" when args?[0] is ActorId id && id == ActorId =>
-                    new BindingResult<IActor>(BindingStatus.Success, Actor),
-                _ => throw new InvalidOperationException(
-                    "Unexpected binding call: " + targetMethod?.Name),
-            };
-    }
-
-    public class AnimationPortProxy : DispatchProxy
-    {
-        public ActorAnimationReading Reading = ActorAnimationReading.Empty;
-        public List<float?> OverallWrites { get; } = new();
-        public List<(AnimationSlot Slot, float Speed)> SlotWrites { get; } = new();
-        public List<HistoryEntry> HistoryEntries { get; } = new();
-        public bool LoopsSuspended { get; set; }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            switch (targetMethod?.Name)
-            {
-                case "Read":
-                    return Reading;
-                case "SetOverallSpeed":
-                    OverallWrites.Add((float)args![1]!);
-                    return AnimationPortResult.Ok();
-                case "ClearOverallSpeed":
-                    OverallWrites.Add(null);
-                    return AnimationPortResult.Ok();
-                case "SetSlotSpeed":
-                    SlotWrites.Add(((AnimationSlot)args![1]!, (float)args[2]!));
-                    return AnimationPortResult.Ok();
-                case "get_LoopsSuspended":
-                    return LoopsSuspended;
-                case "set_LoopsSuspended":
-                    LoopsSuspended = (bool)args![0]!;
-                    return null;
-                case "get_SupportsForceLoop":
-                case "get_SupportsStance":
-                case "get_IsPhysicsFrozen":
-                case "IsSupported":
-                    return true;
-                default:
-                    throw new InvalidOperationException(
-                        "Unexpected animation call: " + targetMethod?.Name);
-            }
-        }
     }
 
     private sealed class FakeActorManager : IActorManager

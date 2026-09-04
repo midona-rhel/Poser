@@ -194,6 +194,16 @@ public sealed class AnimationPane : IDisposable
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
+            if (IsAttachedActor(actor))
+            {
+                page.Section(
+                    "Animation",
+                    _openGeneral,
+                    next => _openGeneral = next,
+                    form => DrawAttachedAnimation(form, actor, reading, owned),
+                    divider: false);
+                return;
+            }
             bool advanced = _advancedActors.Contains(actor);
             page.Section(
                 "General",
@@ -210,6 +220,78 @@ public sealed class AnimationPane : IDisposable
         });
 
         DrawPicker();
+    }
+
+    private bool IsAttachedActor(ActorId actor) =>
+        _scene.Snapshot.FindActor(actor) is { OwnerActor: not null };
+
+    /// <summary>Character-backed slot children get Brio's conservative common
+    /// animation surface: Base selection, whole-actor speed/playback, and the
+    /// verified Base scrub. Humanoid stance and advanced layer controls stay
+    /// on root actors.</summary>
+    private void DrawAttachedAnimation(
+        Crystarium.FormScope form,
+        ActorId actor,
+        ActorAnimationReading reading,
+        AnimationOverrides owned)
+    {
+        const AnimationSlot slot = AnimationSlot.Base;
+        ushort live = reading.TimelineFor(slot);
+        _layerSelections.TryGetValue((actor, slot), out var choice);
+        ushort selected = choice is { } exact ? (ushort)exact.TimelineId : (ushort)0;
+        if (choice != null && _animation.SelectedFor(actor, slot) != selected)
+        {
+            _layerSelections.Remove((actor, slot));
+            choice = null;
+            selected = 0;
+        }
+
+        var actionStyle = FixedActionStyle();
+        form.ReadOnlyWithActions(
+            "Animation",
+            DisplayName(live, slot, choice, "None"),
+            actions =>
+            {
+                actions.Button(
+                    choice?.Name ?? "Choose animation",
+                    () => OpenPicker(_baseFeed, actor, choice),
+                    style: FixedSelectionStyle());
+                actions.Button(
+                    "Apply",
+                    () => Report(
+                        _steps.Play(
+                            actor, slot, choice, _playEmoteStart, resume: false),
+                        "Animation playback"),
+                    style: actionStyle,
+                    disabled: selected == 0);
+                actions.Button(
+                    "Reset",
+                    () => ResetLayer(actor, slot, "Animation"),
+                    style: actionStyle,
+                    disabled: !_animation.OwnsSlot(actor, slot));
+            },
+            id: "anim-attached-base");
+
+        bool playing = _animation.AnyPlaying(actor);
+        form.Slider(
+            "Speed",
+            owned.OverallSpeed ?? reading.OverallSpeed,
+            0f,
+            2f,
+            next => Report(_animation.SetSpeed(actor, next), "Animation speed"),
+            format: "0.00",
+            marks: UnitMarks,
+            actions: actions => actions.Button(
+                playing ? "Pause" : "Play",
+                () => Report(
+                    playing
+                        ? _animation.Pause(actor)
+                        : _animation.Resume(actor),
+                    "Animation playback"),
+                style: actionStyle),
+            id: "anim-attached-speed");
+
+        DrawScrub(form, actor, slot, actionStyle, disabled: false);
     }
 
 

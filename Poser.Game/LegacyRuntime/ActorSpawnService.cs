@@ -496,10 +496,10 @@ internal interface IActorSpawnNativeAdapter
         SpawnNativeDescriptor descriptor,
         out CompanionAttachment? attachment);
 
-    /// <summary>The generic child object's address; zero when no child storage
-    /// exists or the descriptor no longer revalidates. Typed attachment state
-    /// can already be empty while this storage remains alive, so transition
-    /// completion must use <see cref="TryReadCompanion"/> instead.</summary>
+    /// <summary>The attached child object's address; zero when the slot is
+    /// empty or the descriptor no longer revalidates. It is the companion's
+    /// own BODY — the attachment ids alone name a sheet row, not a posable
+    /// object.</summary>
     nint ReadCompanionAddress(SpawnNativeDescriptor descriptor);
 
     bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id);
@@ -1952,80 +1952,34 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
-    public bool SetCompanion(IActor owner, CompanionAttachment? container) =>
-        SetCompanionCore(owner, container, null);
-
-    /// <summary>
-    /// Session orchestration uses completion to keep a temporary animation
-    /// release alive until the game's typed companion transition finishes.
-    /// The public spawn boundary retains Brio's fire-and-poll behavior.
-    /// </summary>
-    public bool SetCompanion(
-        IActor owner,
-        CompanionAttachment? container,
-        Action<bool> completion) =>
-        SetCompanionCore(owner, container, completion);
-
-    private bool SetCompanionCore(
-        IActor owner,
-        CompanionAttachment? container,
-        Action<bool>? completion)
+    public bool SetCompanion(IActor owner, CompanionAttachment? container)
     {
         if (!OnOwnerThread)
-        {
-            NotifyCompanionCompletion(completion, false);
             return false;
-        }
         if (!TryResolveActorForOperation(owner, out var descriptor, out var ownership))
-        {
-            NotifyCompanionCompletion(completion, false);
             return false;
-        }
 
         if (!_native.HasCompanionSlot(descriptor))
         {
             _log?.Warning($"ActorSpawnService: actor has no companion slot (spawned without reservation?)");
-            NotifyCompanionCompletion(completion, false);
             return false;
         }
 
         // An unreadable slot is not an empty one: only a slot we could read
         // may be emptied and refilled.
         if (!_native.TryReadCompanion(descriptor, out var existing))
-        {
-            NotifyCompanionCompletion(completion, false);
             return false;
-        }
-
         if (existing is { } attached
             && !_native.WriteCompanion(descriptor, attached.Kind, 0))
-        {
-            NotifyCompanionCompletion(completion, false);
             return false;
-        }
         if (container is not { } want)
-        {
-            if (completion is null)
-                return true;
-            PollUntil(
-                ownership,
-                descriptor,
-                () => _native.TryReadCompanion(descriptor, out var current)
-                    && current is null,
-                () => { },
-                timeoutMs: 1000,
-                what: "companion detach",
-                skipFrames: 1,
-                completion: completion);
             return true;
-        }
 
         if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id))
-        {
-            NotifyCompanionCompletion(completion, false);
             return false;
-        }
 
+        // The companion needs a few frames before it can draw. Bounded poll (with a
+        // hard timeout + log), not a blind tick delay — matches the redraw policy.
         PollUntil(
             ownership,
             descriptor,
@@ -2033,25 +1987,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
             () => _native.EnableCompanionDraw(descriptor),
             timeoutMs: 1000,
             what: $"companion {want.Kind} {want.Id}",
-            skipFrames: 1,
-            completion: completion);
+            skipFrames: 1);
 
         return true;
-    }
-
-    private void NotifyCompanionCompletion(Action<bool>? completion, bool success)
-    {
-        if (completion is null)
-            return;
-        try
-        {
-            completion(success);
-        }
-        catch (Exception ex)
-        {
-            _log?.Error(
-                $"ActorSpawnService: companion completion failed: {ex.Message}");
-        }
     }
 
     public void DestroyCompanion(IActor owner)
@@ -2153,41 +2091,27 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Action onSatisfied,
         int timeoutMs,
         string what,
-        int skipFrames = 0,
-        Action<bool>? completion = null)
+        int skipFrames = 0)
     {
         if (_framework is null)
-        {
-            NotifyCompanionCompletion(completion, false);
             return;
-        }
         if (!_native.IsLifetimeAuthoritative)
         {
             _log?.Warning(
                 $"ActorSpawnService: delayed {what} skipped - no authoritative lifetime");
-            NotifyCompanionCompletion(completion, false);
             return;
         }
 
         var token = ownership?.Token;
         var deadline = _clock() + timeoutMs;
         var remainingSkips = skipFrames;
-        bool finished = false;
-        void Finish(bool success)
-        {
-            if (finished)
-                return;
-            finished = true;
-            _framework.Update -= Tick;
-            NotifyCompanionCompletion(completion, success);
-        }
         void Tick(IFramework fw)
         {
             try
             {
                 if (!IsCallbackCurrent(token, lifetime))
                 {
-                    Finish(false);
+                    _framework.Update -= Tick;
                     return;
                 }
                 if (remainingSkips > 0)
@@ -2201,22 +2125,22 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 {
                     if (!IsCallbackCurrent(token, lifetime))
                     {
-                        Finish(false);
+                        _framework.Update -= Tick;
                         return;
                     }
                     onSatisfied();
-                    Finish(true);
+                    _framework.Update -= Tick;
                 }
                 else if (_clock() > deadline)
                 {
                     _log?.Warning($"ActorSpawnService: timed out waiting for {what}");
-                    Finish(false);
+                    _framework.Update -= Tick;
                 }
             }
             catch (Exception ex)
             {
                 _log?.Error($"ActorSpawnService: poll for {what} failed: {ex.Message}");
-                Finish(false);
+                _framework.Update -= Tick;
             }
         }
         _framework.Update += Tick;

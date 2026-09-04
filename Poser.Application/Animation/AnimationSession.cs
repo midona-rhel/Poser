@@ -395,32 +395,6 @@ public sealed class AnimationSession
 
     public AnimationResult ClearSpeed(ActorId actor) => ClearSpeedCore(actor);
 
-    /// <summary>
-    /// Releases only the whole-actor pause for a native transition. Clearing
-    /// overall speed touches every Havok control immediately, so existing
-    /// per-slot ownership is reasserted in the same call and never handed back.
-    /// </summary>
-    public AnimationResult ReleaseOverallPause(ActorId actor)
-    {
-        var before = OverridesFor(actor);
-        if (before.OverallSpeed is not 0f)
-            return AnimationResult.Ok();
-        var released = ClearSpeedCore(actor);
-        if (!released.Success)
-            return released;
-        foreach (var (slot, speed) in before.SlotSpeeds)
-        {
-            var held = SetSlotSpeedCore(actor, slot, speed);
-            if (held.Success)
-                continue;
-            // A partially reasserted slot set is safe under the original
-            // whole-actor hold; restore that hold before refusing the change.
-            SetSpeedCore(actor, 0f);
-            return held;
-        }
-        return AnimationResult.Ok();
-    }
-
     private AnimationResult ClearSpeedCore(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;

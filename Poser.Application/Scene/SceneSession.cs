@@ -409,10 +409,21 @@ public sealed class SceneSession
         foreach (var actor in actors.Values)
         {
             if (actor.OwnerActor is not { } owner)
+            {
+                if (actor.AttachmentKind is not null)
+                    return Fail(
+                        $"Root actor {actor.Id} has an attachment kind.",
+                        out validationError);
                 continue;
+            }
             if (!actor.IsCompanion)
                 return Fail(
                     $"Actor {actor.Id} has OwnerActor but is not a companion.",
+                    out validationError);
+            if (actor.AttachmentKind is not { } attachmentKind
+                || !Enum.IsDefined(attachmentKind))
+                return Fail(
+                    $"Attached actor {actor.Id} has no valid attachment kind.",
                     out validationError);
             if (owner == actor.Id)
                 return Fail($"Actor {actor.Id} cannot own itself.", out validationError);

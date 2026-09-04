@@ -17,6 +17,24 @@ namespace Poser.Game.Tests.Journal;
 public sealed class PresentationResetHistoryTests
 {
     [Fact]
+    public void Visibility_refusal_reports_failure_and_adds_no_history()
+    {
+        var f = new Fixture();
+        var bindings = (BindingProxy)(object)f.Bindings;
+        var spawn = f.Visibility;
+
+        Assert.True(f.Values.SetVisibility(bindings.Actor, false).Success);
+        var accepted = f.History.PeekUndo();
+        spawn.Refuse = true;
+
+        var refused = f.Values.SetVisibility(bindings.Actor, true);
+
+        Assert.False(refused.Success);
+        Assert.Contains("refused", refused.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(accepted, f.History.PeekUndo());
+    }
+
+    [Fact]
     public void First_custom_set_and_clear_have_synchronous_captured_value_inverses()
     {
         var f = new Fixture();
@@ -166,19 +184,24 @@ public sealed class PresentationResetHistoryTests
         public readonly ActorValueSession Values;
         public readonly AppearanceColorSession ColorValues;
         public readonly IEntityBindings Bindings = DispatchProxy.Create<IEntityBindings, BindingProxy>();
+        public readonly IActorSpawnService Spawn =
+            DispatchProxy.Create<IActorSpawnService, VisibilitySpawnProxy>();
         public readonly TransformHistory History = new();
         public readonly UndoJournal Journal;
         public Fixture()
         {
+            ((BindingProxy)(object)Bindings).ActorId = Actor;
             Session = new(Port);
             var values = new ValueJournal(History);
-            Values = new(values, Session, null!, null!, Bindings, null!);
+            Values = new(values, Session, null!, Spawn, Bindings);
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
             Journal = new(History, runner, new Keys(), new Lazy<IPoseSnapshotPort>(() => throw new Exception()), _ => true, _ => { });
             var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
             ColorValues = new(Session, integration, values, runner, Bindings);
         }
+        public VisibilitySpawnProxy Visibility =>
+            (VisibilitySpawnProxy)(object)Spawn;
         public void Edit()
         {
             Session.SetColor(Actor, AppearanceColorChannel.Skin, Vector4.Zero);
@@ -192,9 +215,38 @@ public sealed class PresentationResetHistoryTests
     public class BindingProxy : DispatchProxy
     {
         public bool Alive = true;
-        private readonly IActor _actor = DispatchProxy.Create<IActor, UnusedProxy>();
+        public ActorId ActorId;
+        public IActor Actor { get; } = DispatchProxy.Create<IActor, UnusedProxy>();
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
-            Alive ? new BindingResult<IActor>(BindingStatus.Success, _actor) : new BindingResult<IActor>(BindingStatus.Missing);
+            targetMethod?.Name switch
+            {
+                "GetActorId" => Alive ? ActorId : null,
+                "Resolve" => Alive
+                    ? new BindingResult<IActor>(BindingStatus.Success, Actor)
+                    : new BindingResult<IActor>(BindingStatus.Missing),
+                _ => throw new InvalidOperationException(
+                    "Unexpected binding call: " + targetMethod?.Name),
+            };
+    }
+    public class VisibilitySpawnProxy : DispatchProxy
+    {
+        public bool Visible = true;
+        public bool Refuse;
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            targetMethod?.Name switch
+            {
+                "IsVisible" => Visible,
+                "SetVisibility" => Set((bool)args![1]!),
+                _ => throw new InvalidOperationException(
+                    "Unexpected spawn call: " + targetMethod?.Name),
+            };
+
+        private object? Set(bool visible)
+        {
+            if (!Refuse)
+                Visible = visible;
+            return null;
+        }
     }
     public class IntegrationProxy : DispatchProxy
     {

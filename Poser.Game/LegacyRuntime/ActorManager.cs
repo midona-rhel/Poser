@@ -70,6 +70,24 @@ public class ActorManager : IActorManager
         _ => ActorKind.None
     };
 
+    /// <summary>
+    /// GPose actor admission is both kind- and runtime-type-gated. Mounts and
+    /// ornaments may occupy object-table slots, but only an actual Character
+    /// wrapper is safe for the shared transform, skeleton, presentation and
+    /// animation paths.
+    /// </summary>
+    internal static bool IsDiscoverableActor(
+        ObjectKind objectKind,
+        bool characterBacked) =>
+        characterBacked && objectKind is
+            ObjectKind.Pc or
+            ObjectKind.BattleNpc or
+            ObjectKind.EventNpc or
+            ObjectKind.Companion or
+            ObjectKind.Mount or
+            ObjectKind.Ornament or
+            ObjectKind.Retainer;
+
     private readonly IObjectTable _objectTable;
     private readonly IGPoseService _gPoseService;
     private readonly IFramework _framework;
@@ -210,12 +228,9 @@ public class ActorManager : IActorManager
         for (int i = GPoseStart; i <= GPoseEnd; i++)
         {
             var obj = _objectTable[i];
-            if (obj != null && (
-                obj.ObjectKind == ObjectKind.Pc ||
-                obj.ObjectKind == ObjectKind.BattleNpc ||
-                obj.ObjectKind == ObjectKind.EventNpc ||
-                obj.ObjectKind == ObjectKind.Companion ||
-                obj.ObjectKind == ObjectKind.Retainer))
+            if (obj != null && IsDiscoverableActor(
+                    obj.ObjectKind,
+                    obj is ICharacter))
             {
                 yield return obj;
             }

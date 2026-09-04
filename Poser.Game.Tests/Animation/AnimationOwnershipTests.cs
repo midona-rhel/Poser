@@ -15,6 +15,19 @@ public sealed class AnimationOwnershipTests
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
 
     [Fact]
+    public void Replacement_generation_does_not_inherit_animation_ownership()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        var replacement = Actor with { Generation = Actor.Generation + 1 };
+
+        Assert.True(session.SetSpeed(Actor, 0.5f).Success);
+
+        Assert.Equal(0.5f, session.OverridesFor(Actor).OverallSpeed);
+        Assert.False(session.OverridesFor(replacement).HasAny);
+    }
+
+    [Fact]
     public void Base_repeat_restores_its_first_capture_and_refuses_an_unsafe_layout()
     {
         var port = FakePort.Create();

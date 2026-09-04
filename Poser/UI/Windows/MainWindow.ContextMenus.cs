@@ -51,9 +51,9 @@ public partial class MainWindow
             return;
         }
         var actor = resolved.Value!;
-        // A companion rides its owner's slot and cannot be copied on its
-        // own (Brio ActorLifetimeCapability.CanClone).
-        bool companion = ResolveActorDescriptor(actorId) is { IsCompanion: true };
+        var descriptor = ResolveActorDescriptor(actorId);
+        bool attached = descriptor?.OwnerActor is not null;
+        var attachment = _companions.ActionsFor(actorId);
 
         var items = new List<ContextMenuItem>
         {
@@ -65,54 +65,23 @@ public partial class MainWindow
             new(!_animation.AnyPlaying(actorId) ? "Play" : "Pause",
                 !_animation.AnyPlaying(actorId)
                     ? TablerIcon.PlayerPlay
-                    : TablerIcon.PlayerPause),
+                    : TablerIcon.PlayerPause,
+                disabled: !_animation.IsSupported(actorId)),
             new("Rename", TablerIcon.Edit),
-            new("Duplicate", TablerIcon.Copy,
-                disabled: companion,
-                submenuItems: companion ? null : DuplicateSubmenu(actor.HasSkeleton)),
-            new("Save to library", TablerIcon.Library,
-                disabled: !actor.HasSkeleton),
-            new("Expand", TablerIcon.SquarePlus),
-            new("Collapse", TablerIcon.SquareMinus),
-            new("All", TablerIcon.Copy,
-                submenuItems:
-                [
-                    new ContextMenuItem("Expand all", TablerIcon.Copy),
-                    new ContextMenuItem("Collapse all", TablerIcon.Copy),
-                ]),
-            ContextMenuItem.Separator,
-            // The companion slot exists for riding a mount or carrying an
-            // ornament — standalone creatures come from the spawn browser —
-            // so its verbs live here, out of every pane, as ONE submenu.
-            new("Companion", TablerIcon.Paw,
-                disabled: !_spawnService.HasCompanionSlot(actor),
-                help: _spawnService.HasCompanionSlot(actor)
-                    ? "Attach or detach a minion, mount or ornament"
-                    : "Only actors spawned with a companion slot can attach one",
-                submenuItems: _spawnService.HasCompanionSlot(actor)
-                    ?
-                    [
-                        new ContextMenuItem("Attach", TablerIcon.UserPlus),
-                        new ContextMenuItem("Detach", TablerIcon.UserMinus,
-                            disabled:
-                                _spawnService.GetCompanionInfo(actor) is null),
-                    ]
-                    : null),
-        };
-        var companionActions = new List<Action?>
-        {
-            () =>
-            {
-                _companionCatalog.EnsureLoaded();
-                _companions.OpenAttachPicker(actorId);
-            },
-            () => _sessions.Actors.SetCompanion(actor, null),
         };
         var actions = new List<Action?>
         {
             () => _actorManager.SetGPoseTarget(actor),
             () => _cameraPane.CenterOnActor(actorId),
-            () => _sessions.Actors.SetVisibility(actor, !_spawnService.IsVisible(actor)),
+            () =>
+            {
+                var changed = _sessions.Actors.SetVisibility(
+                    actor, !_spawnService.IsVisible(actor));
+                if (!changed.Success)
+                    _notices.Refused(
+                        "Visibility",
+                        changed.Detail ?? "The change was refused.");
+            },
             () =>
             {
                 if (_animation.AnyPlaying(actorId))
@@ -130,17 +99,82 @@ public partial class MainWindow
                 clear: () => Config.ConfigurationService.Instance.SetNickname(
                     actorId.LogicalId, null),
                 clearHelp: "Remove the nickname and show the real name"),
-            null, // Duplicate — child clicks are read separately.
-            () => OpenEntityRename(
+        };
+
+        // Attached bodies own pose/transform/presentation state, but their
+        // lifetime remains their owner's slot. They therefore have neither
+        // clone/save nor direct destroy verbs.
+        if (!attached)
+        {
+            bool standaloneCreature = descriptor is { IsCompanion: true };
+            items.Add(new ContextMenuItem("Duplicate", TablerIcon.Copy,
+                disabled: standaloneCreature,
+                submenuItems: standaloneCreature
+                    ? null
+                    : DuplicateSubmenu(actor.HasSkeleton)));
+            actions.Add(null); // Duplicate — child clicks are read separately.
+            items.Add(new ContextMenuItem("Save to library", TablerIcon.Library,
+                disabled: !actor.HasSkeleton));
+            actions.Add(() => OpenEntityRename(
                 "Save actor to library",
                 ActorNames.Display(actorId, actor.Name),
-                name => SaveOwnedActorEntry(actorId, name)),
-            () => SetTreeCollapsed("actor:" + actorId, false, subtree: false),
-            () => SetTreeCollapsed("actor:" + actorId, true, subtree: false),
-            null, // All — child clicks are read separately.
-            null, // separator
-            null, // Companion — child clicks are read separately.
-        };
+                name => SaveOwnedActorEntry(actorId, name)));
+        }
+
+        items.Add(new ContextMenuItem("Expand", TablerIcon.SquarePlus));
+        actions.Add(() => SetTreeCollapsed("actor:" + actorId, false, subtree: false));
+        items.Add(new ContextMenuItem("Collapse", TablerIcon.SquareMinus));
+        actions.Add(() => SetTreeCollapsed("actor:" + actorId, true, subtree: false));
+        items.Add(new ContextMenuItem("All", TablerIcon.Copy,
+            submenuItems:
+            [
+                new ContextMenuItem("Expand all", TablerIcon.Copy),
+                new ContextMenuItem("Collapse all", TablerIcon.Copy),
+            ]));
+        actions.Add(null);
+
+        List<Action?>? companionActions = null;
+        if (attachment is { } attachmentState)
+        {
+            items.Add(ContextMenuItem.Separator);
+            actions.Add(null);
+            if (attachmentState.IsAttachedChild)
+            {
+                items.Add(new ContextMenuItem("Attachment", TablerIcon.Paw,
+                    help: "Change or detach this body through its owner",
+                    submenuItems:
+                    [
+                        new ContextMenuItem("Change", TablerIcon.UserPlus,
+                            disruptive: true),
+                        new ContextMenuItem("Detach", TablerIcon.UserMinus,
+                            disruptive: true),
+                    ]));
+                companionActions =
+                [
+                    () => _companions.OpenAttachPicker(actorId),
+                    () => _companions.Detach(actorId),
+                ];
+            }
+            else
+            {
+                string verb = attachmentState.Occupied ? "Change" : "Attach";
+                var rows = new List<ContextMenuItem>
+                {
+                    new(verb, TablerIcon.UserPlus, disruptive: true),
+                };
+                companionActions = [() => _companions.OpenAttachPicker(actorId)];
+                if (attachmentState.Occupied)
+                {
+                    rows.Add(new ContextMenuItem(
+                        "Detach", TablerIcon.UserMinus, disruptive: true));
+                    companionActions.Add(() => _companions.Detach(actorId));
+                }
+                items.Add(new ContextMenuItem("Companion", TablerIcon.Paw,
+                    help: "Attach, change or detach a minion, mount or ornament",
+                    submenuItems: rows.ToArray()));
+            }
+            actions.Add(null); // Attachment submenu.
+        }
 
         // Bone presets belong to this actor.
         items.Add(ContextMenuItem.Separator);
@@ -207,8 +241,9 @@ public partial class MainWindow
         // service would admit it right now — an actor it must refuse (a
         // companion child, a stale wrapper) gets no row rather than a row
         // that refuses.
-        if (_spawnService.IsSpawnedActor(actor)
-            || _spawnService.RemovalRefusal(actor) is null)
+        if (!attached && (
+                _spawnService.IsSpawnedActor(actor)
+                || _spawnService.RemovalRefusal(actor) is null))
         {
             items.Add(ContextMenuItem.Separator);
             items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true));
@@ -254,7 +289,7 @@ public partial class MainWindow
             var submenu = items[subParent].Label switch
             {
                 "Bone presets" => _bonePresetActions,
-                "Companion" => companionActions,
+                "Companion" or "Attachment" => companionActions,
                 "Pose" => poseActions,
                 "Duplicate" => new List<Action?>
                 {

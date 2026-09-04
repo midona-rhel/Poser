@@ -112,14 +112,6 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     bool SetCompanion(IActor owner, CompanionAttachment? container);
 
-    /// <summary>Starts the same transition and reports when the exact typed
-    /// attach/detach state completes or the bounded lifetime-safe wait fails.
-    /// Used by higher-level controls that temporarily release related state.</summary>
-    bool SetCompanion(
-        IActor owner,
-        CompanionAttachment? container,
-        Action<bool> completion);
-
     /// <summary>Detach the actor's companion/mount/ornament.</summary>
     void DestroyCompanion(IActor owner);
 

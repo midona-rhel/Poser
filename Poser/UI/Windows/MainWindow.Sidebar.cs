@@ -934,6 +934,9 @@ public partial class MainWindow
         if (filtering && !actorMatches && !hasMatchingBone && !hasMatchingAux
             && (shownCompanions == null || shownCompanions.Count == 0))
             return;
+        bool companionsFollow = shownCompanions is { Count: > 0 };
+        bool categoriesFollow = skeleton != null && (!filtering || hasMatchingBone);
+        bool auxFollows = auxSkeletons.Count > 0 && (!filtering || hasMatchingAux);
 
         // Actor roots first appear collapsed; lineage keys survive
         // refreshes, so a scene refresh cannot reset existing disclosure.
@@ -950,10 +953,10 @@ public partial class MainWindow
             Icon = SidebarActorIcon(actor),
             Depth = depth,
             ForceIcon = depth > 0,
-            // The disclosure affordance is permanent; an unresolved
-            // skeleton only disables it until the snapshot exposes bones.
+            // An unresolved skeleton disables disclosure only when no
+            // attached body or auxiliary slot still needs this parent row.
             HasChildren = true,
-            ExpanderDisabled = skeleton == null,
+            ExpanderDisabled = skeleton == null && !companionsFollow && !auxFollows,
             Expanded = expanded,
             IsLastChild = isLast,
             TreeLines = lines,
@@ -972,9 +975,6 @@ public partial class MainWindow
         if (!expanded)
             return;
 
-        bool companionsFollow = shownCompanions is { Count: > 0 };
-        bool categoriesFollow = skeleton != null && (!filtering || hasMatchingBone);
-        bool auxFollows = auxSkeletons.Count > 0 && (!filtering || hasMatchingAux);
         var childLines = Descend(lines, isLast);
 
         // A fixed-position gaze anchor is an actor child and is shown only

@@ -293,6 +293,8 @@ public partial class MainWindow
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Actor, Actor: { } actor })
                 return;
+            if (!_animation.IsSupported(actor))
+                return;
             if (_animation.AnyPlaying(actor))
                 _animation.Pause(actor);
             else

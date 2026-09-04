@@ -21,7 +21,7 @@ Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached
 content and inspector geometry in place. Collapse leaves the title bar.
 
-Pages default to a readable content-width cap. Appearance opts into the
+Pages default to a readable content-width cap. Actor opts into the
 shared responsive policy: it fills the host's content box after the leading
 inset, retains the host's trailing scrollbar gutter, and wraps cell groups
 when each label/control track would become too narrow. Paired rows stack at

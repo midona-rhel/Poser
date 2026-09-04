@@ -45,7 +45,7 @@ owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
 before the captured state is restored, including the by-name path after a
 clone is gone; failure of either part keeps the operation owned.
 
-The Appearance tab has three views under one pill. Actor is what the
+The Actor tab has three views under one pill. General is what the
 actor is in the scene: model, opacity, tints, wet surface, collection,
 design, body profile, character file. Appearance is how it looks, through
 Glamourer's state: race, clan and gender (each redraws, so each is a
@@ -90,7 +90,10 @@ delay and never permanently blacklist a valid option.
 
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer
-is outbound navigation only. The Appearance tab is actor-scoped.
+is outbound navigation only. The Actor tab is actor-scoped. An attached
+nonhuman body has only General: visibility, opacity, character tint, wetness,
+reset, and owner-routed Change/Detach. It never exposes model-id, customize,
+equipment, external appearance, or character-file editors.
 
 ## The look goes back
 

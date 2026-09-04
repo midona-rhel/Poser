@@ -13,6 +13,11 @@ captured immediately before its first successful write. Full Body and Upper
 Body provide scrub and independent Loop switches; other layers do not claim a
 stable Havok control mapping.
 
+An attached character-backed body uses the same exact-generation animation
+backend through a deliberately reduced surface: Base choose/apply/reset,
+whole-actor speed and play/pause, and the verified Base scrub. Stance, weapon,
+position lock, expressions, looping, and advanced layers are not offered.
+
 Full Body loop uses the verified forced Base field. A non-Base write clears that
 global force, performs the exact slot write, then rearms Base. Upper Body loop
 replays its last successfully applied Upper timeline. Turning Loop off stops
