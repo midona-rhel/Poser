@@ -15,6 +15,8 @@ public readonly record struct GestureResult(
 {
     public static GestureResult Ok(TransformGestureId? id = null) =>
         new(true, null, id);
+    public bool IsPending { get; init; }
+    public static GestureResult Pending(string detail) => new(false, detail) { IsPending = true };
     public static GestureResult Fail(string detail) =>
         new(false, detail);
 

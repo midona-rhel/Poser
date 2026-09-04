@@ -1,7 +1,8 @@
 # Runtime appearance
 
 Poser owns opacity, whole-model tint for Character, MainHand, and OffHand, and
-the granular wet-surface override. Opacity is
+the granular wet-surface override, and explicit custom skin, hair, highlight,
+left-eye, right-eye, mouth, and feature colours. Opacity is
 separate from visibility; zero opacity does not invoke the visibility action.
 Glamourer and other external systems own equipment, customization, dyes,
 materials, and saved designs.
@@ -30,11 +31,12 @@ foreign-held, or unavailable. A refused unkeyed read is probed read-only
 with Poser's key; only another key refusal identifies a foreign hold.
 The API does not identify the owning plugin, so the UI never guesses its
 name. One top-of-pane status disables dependent appearance actions while
-keeping Open in Glamourer and native presentation controls available.
+keeping Open in Glamourer and the independent opacity, tint, and wetness controls available.
 Selected-actor access refreshes at most once per second; actor changes
 invalidate it. Commands independently check fresh access, and unkeyed
 native writes arbitrate acquisition races. No probe unlocks or claims a
-state. Poser's keyed MCDF recovery remains separate; failed restores keep
+state. Custom-colour commands and native enforcement independently require fresh
+editable access for the exact actor generation. Poser's keyed MCDF recovery remains separate; failed restores keep
 their baseline and pending cleanup evidence until recovery succeeds.
 
 MCDF import temporarily owns extracted resources and integration state until
@@ -92,7 +94,28 @@ is outbound navigation only. The Appearance tab is actor-scoped.
 
 ## The look goes back
 
-The first wardrobe or customize write on an actor takes its look: the
+Custom colours are nullable intent, separate from observed shader readings.
+Opening their picker claims nothing; an edit enables that channel. Like Brio's
+explicit shader override, it remains enforced over palette edits until Reset.
+RGB uses the shared standard picker; mouth also exposes linear alpha. No
+material, specular, muscle, HDR, or exposure controls are part of this contract.
+
+A channel Reset reveals the current underlying palette/provider state by
+redrawing with only that channel suspended. A matching Penumbra redraw event
+and a later readable Human parameter buffer must both arrive within five seconds.
+Only then do ownership and history commit together, under the normal gesture
+transition guard. Pending resets block other custom-colour edits on that actor;
+failure retains intent and history for retry. Reset, departure, disposal, changed
+history (including folded edits), or a foreign hold invalidates completion.
+Other custom channels stay owned; unrelated shader lanes are never overwritten.
+The existing whole-presentation Reset records all nullable intent and original
+captures. Its inverse retains recovery evidence and stays in history if any
+field refuses restoration. Dead-generation value steps follow the existing
+no-op journal policy and never redirect to a replacement actor.
+Provider-managed colours can be reapplied on redraw. Untracked third-party raw
+shader writes cannot universally survive a redraw and are not reconstructed.
+
+The first wardrobe, customize, or custom-colour write on an actor takes its look: the
 Glamourer state as it stands is captured once. Revert, the actor leaving
 the scene, and GPose ending put that state back, by the exact object
 while it exists and by the character's name once it has left GPose. This

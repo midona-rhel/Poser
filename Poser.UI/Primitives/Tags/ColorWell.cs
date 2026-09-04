@@ -52,7 +52,9 @@ public static partial class Crystarium
         bool rgbOnly = false,
         bool disabled = false,
         string? help = null,
-        bool hdr = false)
+        bool hdr = false,
+        Action? onBegin = null,
+        Action? onCommit = null)
     {
         var theme = ActiveTheme;
         float side = ControlSizing.Height(
@@ -66,10 +68,13 @@ public static partial class Crystarium
         PaintColorWellBox(hit, color, disabled);
 
         if (hit.Clicked && !disabled)
+        {
+            onBegin?.Invoke();
             OpenPopover(ColorWellPopupId(id));
+        }
 
         bool changed = DrawColorWellPopup(
-            id, wellMin, wellMax, color, rgbOnly, onChange, hdr);
+            id, wellMin, wellMax, color, rgbOnly, onChange, hdr, disabled, onBegin, onCommit);
         if (!string.IsNullOrEmpty(help) && HoverHelp.Gate(
                 hit, disabled, wellMin, wellMax))
             HoverHelp.Explain(id, wellMin, wellMax, help!);
@@ -125,11 +130,13 @@ public static partial class Crystarium
         Vector4 color,
         bool rgbOnly,
         Action<Vector4> onChange,
-        bool hdr = false)
+        bool hdr = false, bool disabled = false,
+        Action? onBegin = null, Action? onCommit = null)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         bool changed = false;
+        bool ended = false;
         var popupColor = color;
         FloatingSurface.Popup(
             ColorWellPopupId(id),
@@ -156,12 +163,17 @@ public static partial class Crystarium
                     flags |= ImGuiColorEditFlags.Hdr
                         | ImGuiColorEditFlags.Float;
                 float keepAlpha = popupColor.W;
+                ImGui.BeginDisabled(disabled);
                 changed = ImGui.ColorPicker4(id + "_pk", ref popupColor, flags);
+                if (ImGui.IsItemActivated()) onBegin?.Invoke();
+                ended = ImGui.IsItemDeactivatedAfterEdit();
+                ImGui.EndDisabled();
                 if (rgbOnly)
                     popupColor.W = keepAlpha;
             });
         if (changed)
             onChange(popupColor);
+        if (ended) onCommit?.Invoke();
         return changed;
     }
 

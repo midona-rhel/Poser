@@ -218,6 +218,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.DisruptiveSteps>();
         services.AddSingleton<Game.Journal.WardrobeSession>();
         services.AddSingleton<Game.Journal.CustomizeSession>();
+        services.AddSingleton<Application.Presentation.IAppearanceColorControl, Game.Journal.AppearanceColorSession>();
         services.AddSingleton<Game.Wardrobe.CustomizeCatalog>();
         services.AddSingleton<ICustomizeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.CustomizeCatalog>());
         services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();

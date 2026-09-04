@@ -32,6 +32,8 @@ public sealed record PresentationOverrides
     /// <summary>The enabled wetness override; null while the game owns
     /// its own wetness.</summary>
     public WetnessState? Wetness { get; init; }
+    public IReadOnlyDictionary<AppearanceColorChannel, Vector4> Colors { get; init; } = new Dictionary<AppearanceColorChannel, Vector4>();
+    public IReadOnlyDictionary<AppearanceColorChannel, Vector4> ColorCaptures { get; init; } = new Dictionary<AppearanceColorChannel, Vector4>();
 
     // ── Captures ──────────────────────────────────────────────────────
     // Each is taken ONCE, before the first Poser edit of that field, and
@@ -50,7 +52,7 @@ public sealed record PresentationOverrides
 
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
-        OpacityCapture != null || TintCaptures.Count > 0 || WetnessCapture != null;
+        OpacityCapture != null || TintCaptures.Count > 0 || WetnessCapture != null || ColorCaptures.Count > 0;
 }
 
 /// <summary>One frame's live native read. Weapon tints are null when the

@@ -60,6 +60,7 @@ public sealed partial class AppearancePane
     }
 
     private readonly ActorPresentationSession _presentation;
+    private readonly IAppearanceColorControl _colors;
     private readonly ActorModelIdSession _model;
     private readonly ModelCatalog _modelCatalog;
     private readonly IModelCatalogLoader _modelLoader;
@@ -164,10 +165,12 @@ public sealed partial class AppearancePane
         Game.Journal.WardrobeSession wardrobeSession,
         global::Poser.UI.Controls.EntityNameModal names,
         ICustomizeCatalog customize,
-        Game.Journal.CustomizeSession customizeSession)
+        Game.Journal.CustomizeSession customizeSession,
+        IAppearanceColorControl colors)
     {
         _customize = customize;
         _customizeSession = customizeSession;
+        _colors = colors;
         _wardrobe = wardrobe;
         _props = props;
         _wardrobeSession = wardrobeSession;
@@ -283,7 +286,7 @@ public sealed partial class AppearancePane
                         }, divider: false);
                     switch (_view)
                     {
-                        case 1: DrawCustomizeView(page, actor); break;
+                        case 1: DrawCustomizeView(page, actor); DrawCustomColours(page, actor); break;
                         case 2: DrawEquipmentView(page, actor); break;
                         default: DrawActorView(page, actor); break;
                     }

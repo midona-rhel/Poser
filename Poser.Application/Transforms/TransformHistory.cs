@@ -51,6 +51,7 @@ public sealed class TransformHistory
     private readonly Func<int> _capacity;
     private readonly List<HistoryEntry> _undo = new();
     private readonly List<HistoryEntry> _redo = new();
+    internal ulong MutationRevision { get; private set; }
 
     public event Action? PatchAppended;
 
@@ -76,6 +77,7 @@ public sealed class TransformHistory
 
     public void Append(HistoryEntry patch)
     {
+        MutationRevision++;
         int capacity = _capacity();
         if (capacity < 1)
         {
@@ -123,6 +125,7 @@ public sealed class TransformHistory
             throw new InvalidOperationException(
                 "Undo history changed before commit.");
         patch = _undo[^1];
+        MutationRevision++;
         _undo.RemoveAt(_undo.Count - 1);
         _redo.Add(patch);
     }
@@ -136,6 +139,7 @@ public sealed class TransformHistory
             throw new InvalidOperationException(
                 "Redo history changed before commit.");
         patch = _redo[^1];
+        MutationRevision++;
         _redo.RemoveAt(_redo.Count - 1);
         _undo.Add(patch);
     }
@@ -230,6 +234,7 @@ public sealed class TransformHistory
     /// journal's answer to a restore that outlived its place.</summary>
     public void Drop(HistoryEntry entry)
     {
+        MutationRevision++;
         _undo.Remove(entry);
         _redo.Remove(entry);
     }
@@ -251,6 +256,7 @@ public sealed class TransformHistory
 
     public void Clear()
     {
+        MutationRevision++;
         _undo.Clear();
         _redo.Clear();
         RaiseCleared();

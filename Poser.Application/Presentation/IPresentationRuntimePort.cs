@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.Domain.Integration;
 
 namespace Poser.Application.Presentation;
 
@@ -27,6 +28,16 @@ public readonly record struct PresentationPortResult(bool Success, string? Detai
 /// </summary>
 public interface IPresentationRuntimePort
 {
+    IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor)
+        => IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Fail("Shader colours are unavailable.");
+    PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
+        => PresentationPortResult.Fail("Shader colours are unavailable.");
+    void BeginClearColor(ActorId actor, AppearanceColorChannel channel,
+        Func<Action, PresentationPortResult> commit, Action<PresentationPortResult> completed)
+        => completed(PresentationPortResult.Fail("Shader colours are unavailable."));
+    void SuspendColors(ActorId actor) { }
+    PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
+        => PresentationPortResult.Fail("Shader colours are unavailable.");
     /// <summary>True when the actor resolves to a character that can
     /// carry presentation state at all.</summary>
     bool IsSupported(ActorId actor);

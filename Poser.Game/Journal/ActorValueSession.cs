@@ -100,20 +100,10 @@ public sealed class ActorValueSession
         var result = _presentation.ResetActor(actor);
         if (!result.Success)
             return result;
-        _journal.Record("Reset appearance", before, (PresentationOverrides?)null, next =>
+        _journal.RecordResult("Reset appearance", before, (PresentationOverrides?)null, next =>
         {
-            _presentation.ResetActor(actor);
-            if (next is null)
-                return;
-            if (next.Opacity is { } opacity)
-                _presentation.SetOpacity(actor, opacity);
-            foreach (var (model, tint) in next.Tints)
-                _presentation.SetTint(actor, model, tint);
-            if (next.Wetness is { } wetness)
-            {
-                _presentation.SetWetnessEnabled(actor, true);
-                _presentation.SetWetness(actor, wetness);
-            }
+            var restored = _presentation.RestoreOverrides(actor, next);
+            return new ValueWriteResult(restored.Success, restored.Detail);
         }, () => Alive(actor));
         return result;
     }
