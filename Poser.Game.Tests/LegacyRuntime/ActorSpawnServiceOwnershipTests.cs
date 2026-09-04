@@ -46,6 +46,84 @@ public sealed class ActorSpawnServiceOwnershipTests
         // A reused slot no longer identifies the original actor.
         Assert.False(service.IsVisible(actor));
     }
+
+    [Fact]
+    public void Companion_readiness_skips_first_update_then_enables_exact_requested_child()
+    {
+        var actor = Actor(0x840);
+        var native = new FakeNative(new(840, actor.Address, 840))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var requested = new CompanionAttachment(CompanionKind.Mount, 42);
+
+        Assert.True(service.SetCompanion(actor, requested));
+        Assert.Equal(requested, native.Companion);
+
+        framework.RaiseUpdate();
+
+        Assert.Equal(0, native.CompanionReadinessChecks);
+        Assert.False(native.CompanionDrawEnabled);
+
+        framework.RaiseUpdate();
+
+        Assert.Equal(1, native.CompanionReadinessChecks);
+        Assert.True(native.CompanionDrawEnabled);
+    }
+
+    [Theory]
+    [InlineData(CompanionKind.Companion, 42)]
+    [InlineData(CompanionKind.Mount, 43)]
+    public void Companion_readiness_refuses_mismatched_kind_or_id(
+        CompanionKind actualKind,
+        int actualId)
+    {
+        var actor = Actor(0x841);
+        var native = new FakeNative(new(841, actor.Address, 841))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var requested = new CompanionAttachment(CompanionKind.Mount, 42);
+
+        Assert.True(service.SetCompanion(actor, requested));
+        native.Companion = new CompanionAttachment(actualKind, (ushort)actualId);
+
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+
+        Assert.Equal(1, native.CompanionReadinessChecks);
+        Assert.False(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Companion_readiness_poll_cancels_when_owner_lifetime_changes()
+    {
+        var actor = Actor(0x842);
+        var native = new FakeNative(new(842, actor.Address, 842))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+
+        Assert.True(service.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Ornament, 44)));
+        native.ExternallyDestroyCurrent();
+
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+
+        Assert.Equal(0, native.CompanionReadinessChecks);
+        Assert.False(native.CompanionDrawEnabled);
+    }
+
     private static SpawnOwnershipLedger NewBoundLedger(
         out SpawnOwnershipRecord record,
         out IActor actor)
@@ -306,6 +384,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool HasSlot { get; set; } = true;
         public CompanionAttachment? Companion { get; set; }
         public bool CompanionReady { get; set; }
+        public int CompanionReadinessChecks { get; private set; }
         public bool CompanionDrawEnabled { get; private set; }
         public int ModelId { get; set; }
         public bool ReadyToDraw { get; set; } = true;
@@ -424,8 +503,11 @@ public sealed class ActorSpawnServiceOwnershipTests
             return true;
         }
 
-        public bool IsCompanionReady(SpawnNativeDescriptor descriptor, CompanionAttachment want) =>
-            Gate(descriptor) && Companion == want && CompanionReady;
+        public bool IsCompanionReady(SpawnNativeDescriptor descriptor, CompanionAttachment want)
+        {
+            CompanionReadinessChecks++;
+            return Gate(descriptor) && Companion == want && CompanionReady;
+        }
 
         /// <summary>The companion's own body address. The fake has no object
         /// table behind it, so a filled slot answers with a fixed non-zero

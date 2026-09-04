@@ -1986,7 +1986,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             () => _native.IsCompanionReady(descriptor, want),
             () => _native.EnableCompanionDraw(descriptor),
             timeoutMs: 1000,
-            what: $"companion {want.Kind} {want.Id}");
+            what: $"companion {want.Kind} {want.Id}",
+            skipFrames: 1);
 
         return true;
     }

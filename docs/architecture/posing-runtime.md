@@ -63,7 +63,9 @@ recheck that record on the framework thread. An unresolved or uncertain delete
 stays pending and is retried only while the same occupant is proven. A record
 without a usable slot is never probed. These records last only for the session.
 The create/copy/model-before-draw/GPose order is an intentional Brio-compatible
-choice.
+choice. Companion replacement follows Brio's `ActorSpawnService.CreateCompanion`:
+detach by current kind, attach the requested kind/id, skip one framework update,
+then enable draw only after that exact child is ready.
 
 Overworld discovery is read-only and separate from the GPose scan. It exposes
 ids, rechecks the full observation before use, and can only be used to create a
