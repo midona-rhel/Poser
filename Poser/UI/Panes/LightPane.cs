@@ -739,7 +739,7 @@ public sealed class LightPane
         {
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
-                help: "Move to the camera's spot");
+                help: "Move one yalm ahead of the camera");
             actions.Button("Clone",
                 () =>
                 {
@@ -805,7 +805,7 @@ public sealed class LightPane
 
     /// <summary>Uses the same camera-relative placement as a new light,
     /// recorded as one absolute transform command.</summary>
-    private void MoveToCamera(LightId lightId)
+    public void MoveToCamera(LightId lightId)
     {
         var forward = _camera.GetLookDirection();
         if (forward == Vector3.Zero)

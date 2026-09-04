@@ -19,6 +19,7 @@ New lights and **Move to camera** share a one-yalm camera-forward placement,
 with local +Z aligned to the look ray. Brio and Ktisis place lights exactly
 at the eye; Poser deliberately retains a nonzero offset so its world gizmo
 pivot can be projected. Move preserves scale and records one undo step.
+The light inspector and light context menu invoke the same move command.
 Clones and imported lights retain their supplied transforms rather than using
 this camera placement.
 

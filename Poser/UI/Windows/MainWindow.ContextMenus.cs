@@ -762,6 +762,7 @@ public partial class MainWindow
             new(light.IsOn ? "Switch off" : "Switch on",
                 light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
+            new("Move to camera", TablerIcon.Camera),
             new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
@@ -772,6 +773,7 @@ public partial class MainWindow
             () => _sessions.Lights.SetIsOn(light, !light.IsOn),
             () => OpenEntityRename(
                 "Rename light", light.Name, next => light.Name = next),
+            () => _lightPane.MoveToCamera(lightId),
             () => _lifecycle.CloneLight(light),
             () => _lightPane.OpenSave(light),
             // The library save asks for the entry's NAME first — the same
