@@ -1,17 +1,18 @@
 using System;
 using System.Collections.Generic;
+using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Domain.Companions;
+using Poser.Game.Companions;
 using Poser.Services;
 
 namespace Poser.Game;
 
 /// <summary>
 /// Builds the spawn catalog from the Companion / Mount / Ornament sheets.
-/// The admission rules are Brio's (Resources/GameDataProvider): a row needs a
-/// non-zero id, a real model, and a name. A row failing any of them cannot be
-/// attached, so it never reaches the UI.
+/// Minions and mounts need a non-zero id, model, and name. Ornaments share
+/// the attachment catalog's action-string names and model-only admission.
 ///
 /// <para>The build is LAZY and runs once. Singular names arrive lowercase from
 /// the sheets ("wind-up cursor"), so the first character is raised and the rest
@@ -21,12 +22,14 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
 {
     private readonly IDataManager _data;
     private readonly IPluginLog _log;
+    private readonly Func<uint, string> _ornamentName;
     private IReadOnlyList<SpawnCatalogEntry>? _entries;
 
-    public SpawnCatalogService(IDataManager data, IPluginLog log)
+    public SpawnCatalogService(IDataManager data, IPluginLog log, ISeStringEvaluator seStringEvaluator)
     {
         _data = data;
         _log = log;
+        _ornamentName = id => seStringEvaluator.EvaluateActStr(ActionKind.Ornament, id);
     }
 
     public IReadOnlyList<SpawnCatalogEntry> Entries => _entries ??= Build();
@@ -63,14 +66,10 @@ public sealed class SpawnCatalogService : ISpawnCatalogService
             var ornaments = _data.GetExcelSheet<Ornament>();
             if (ornaments != null)
                 foreach (var row in ornaments)
-                    if (row.RowId != 0 && row.Model != 0)
-                        Add(
-                            entries,
-                            CompanionKind.Ornament,
-                            row.RowId,
-                            row.Singular.ExtractText(),
-                            row.Icon,
-                            row.Model);
+                    if (OrnamentCatalogRows.Create(row.RowId, row.Model, row.Icon, _ornamentName) is { } entry)
+                        entries.Add(new SpawnCatalogEntry(
+                            entry.Kind, entry.Id, entry.Name, entry.Name.ToLowerInvariant(),
+                            entry.Icon, (int)entry.ModelId));
         }
         catch (Exception ex)
         {

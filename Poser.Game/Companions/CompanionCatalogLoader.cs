@@ -3,6 +3,7 @@ using Poser.Services;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
+using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Companions;
@@ -12,13 +13,12 @@ namespace Poser.Game.Companions;
 
 /// <summary>
 /// Builds the companion catalog from game data, once per session, off the
-/// framework thread. Reads three sheets, exactly as Brio filters them:
+/// framework thread. Reads three sheets:
 /// Companion (minions, keyed by Model), Mount (keyed by ModelChara) and
 /// Ornament (keyed by a plain Model value, not a row reference).
 ///
-/// The admission rules are the filter: an entry only exists if it has a
-/// name and a non-zero model, which is Brio's own spawnability test.
-/// Nothing that reaches the UI can therefore fail after selection.
+/// Minions and mounts require a name and non-zero model. Ornaments use
+/// action-string names, with an ID fallback for unnamed modelled rows.
 ///
 /// Sheet names are the Singular column and arrive lowercase, so they are
 /// title-cased here rather than in the UI — the catalog is the one place
@@ -29,14 +29,17 @@ public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
     private readonly IDataManager _data;
     private readonly CompanionCatalog _catalog;
     private readonly IPluginLog _log;
+    private readonly Func<uint, string> _ornamentName;
     private bool _started;
 
     public CompanionCatalogLoader(
-        IDataManager data, CompanionCatalog catalog, IPluginLog log)
+        IDataManager data, CompanionCatalog catalog, IPluginLog log,
+        ISeStringEvaluator seStringEvaluator)
     {
         _data = data;
         _catalog = catalog;
         _log = log;
+        _ornamentName = id => seStringEvaluator.EvaluateActStr(ActionKind.Ornament, id);
     }
 
     /// <summary>Starts the one-time build. Safe to call repeatedly.</summary>
@@ -111,10 +114,8 @@ public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
         var kindEntries = new List<CompanionEntry>(sheet.Count);
         foreach (var row in sheet)
         {
-            if (!TryIdentify(row.RowId, row.Singular.ExtractText(), row.Model, out var id, out var name))
-                continue;
-            kindEntries.Add(new CompanionEntry(
-                CompanionKind.Ornament, id, name, row.Icon, row.Model));
+            if (OrnamentCatalogRows.Create(row.RowId, row.Model, row.Icon, _ornamentName) is { } entry)
+                kindEntries.Add(entry);
         }
         Append(entries, kindEntries);
     }
