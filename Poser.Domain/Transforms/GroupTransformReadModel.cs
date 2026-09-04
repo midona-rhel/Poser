@@ -28,11 +28,24 @@ public readonly record struct GroupTransformFrame(Vector3 Origin, Quaternion Rot
             || !Matrix4x4.Decompose(world, out _, out var rotation, out _)
             || !TransformMath.IsValidRotation(rotation) || !TransformMath.IsFinite(origin))
             return false;
-        frame = new(origin, TransformMath.NormalizeRotation(rotation));
+        rotation = TransformMath.NormalizeRotation(rotation);
+        var forward = Vector3.Transform(Vector3.UnitZ, rotation);
+        // At a vertical look direction, projected forward has no reliable
+        // heading. Use projected camera right there (deterministic even with
+        // roll); never amplify tiny horizontal noise into an arbitrary yaw.
+        float yaw;
+        if (forward.X * forward.X + forward.Z * forward.Z > 1e-6f)
+            yaw = MathF.Atan2(forward.X, forward.Z);
+        else
+        {
+            var right = Vector3.Transform(Vector3.UnitX, rotation);
+            yaw = MathF.Atan2(-right.Z, right.X);
+        }
+        frame = new(origin, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw));
         return true;
     }
 
-    // Authored angles live in the creation camera's axes. World deltas are
+    // Authored angles live in the retained creation frame. World deltas are
     // conjugated, not just multiplied, so a scene yaw preserves X/Z edits.
     public Quaternion ToWorldDelta(Quaternion local) => TransformMath.NormalizeRotation(
         Rotation * local * Quaternion.Inverse(Rotation));

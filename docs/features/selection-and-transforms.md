@@ -33,7 +33,13 @@ only after validating every live member against the expected snapshot; an
 external or unrepresentable edit disables the surface instead of producing a
 plausible geometric fit. The record is keyed by effective membership, never
 selection order, binding generation, or the primary member. Position is the
-world centroid; authored rotation is relative to the captured camera axes.
+world centroid; authored rotation is relative to the retained creation frame.
+New frames (including legacy imports without a saved frame) capture only the
+camera's ground-plane heading: world Y stays up, with no camera pitch or roll.
+Near a vertical view, projected camera right supplies a stable heading.
+Origin/centroid is unchanged. Explicit saved
+frames and authored rotations are preserved, not flattened or migrated; later
+user-authored X/Z rotations can deliberately tilt the group.
 World rotation deltas are conjugated through that frame. The group's world
 orientation is `creationFrame.Rotation * authoredRotation`,
 never a member's rotation. Local overlay handles use that orientation; World

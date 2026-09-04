@@ -11,6 +11,31 @@ namespace Poser.Application.Tests.Transforms;
 
 public sealed class GroupTransformStateTests
 {
+    [Fact]
+    public void New_and_absent_frame_captures_are_y_up_but_explicit_frames_are_preserved()
+    {
+        using var f = new Fixture(cameraRotation: Quaternion.CreateFromYawPitchRoll(.7f, -.5f, .8f));
+        var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
+        Assert.True(MathF.Abs(Quaternion.Dot(yaw, f.Snapshot.Baseline.Frame.Rotation)) > .99999f);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
+        var group = steps.Create("Group", f.Selected)!;
+        var fresh = f.State.NamedSnapshot(group.Id)!;
+        Assert.True(MathF.Abs(Quaternion.Dot(yaw, fresh.Baseline.Frame.Rotation)) > .99999f);
+        Assert.Equal(GroupTransformBaseline.Centroid(f.Live.Values), fresh.Baseline.Frame.Origin);
+        f.Coordinator.Import(group, null, present: false);
+        var imported = f.State.NamedSnapshot(group.Id)!;
+        Assert.True(MathF.Abs(Quaternion.Dot(yaw, imported.Baseline.Frame.Rotation)) > .99999f);
+        var explicitTilt = Quaternion.CreateFromYawPitchRoll(.2f, .4f, -.6f);
+        f.Coordinator.Import(group, null, present: false, legacyFrame: explicitTilt);
+        var legacy = f.State.NamedSnapshot(group.Id)!;
+        Assert.True(MathF.Abs(Quaternion.Dot(explicitTilt, legacy.Baseline.Frame.Rotation)) > .99999f);
+        var saved = new GroupTransformSnapshot(legacy.Baseline, legacy.Expected,
+            legacy.Controls with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, .5f) });
+        f.Coordinator.Import(group, saved, present: true);
+        Assert.Same(saved, f.State.NamedSnapshot(group.Id));
+        Assert.Equal(0, f.Writes);
+    }
+
     [Theory]
     [InlineData(GroupScaleMode.SpacingOnly, false)]
     [InlineData(GroupScaleMode.SpacingOnly, true)]
@@ -777,8 +802,10 @@ public sealed class GroupTransformStateTests
         public Action? AfterApply;
         public GroupTransformSnapshot Snapshot => State.Snapshot(null, Targets)!;
         private ulong _revision;
-        public Fixture(int count = 2, bool noncollinear = false)
+        private readonly bool _viewCapture;
+        public Fixture(int count = 2, bool noncollinear = false, Quaternion? cameraRotation = null)
         {
+            if (cameraRotation is { } camera) { Camera = camera; _viewCapture = true; }
             Scene = new(Selection);
             Targets = Enumerable.Range(0, count).Select(_ => TransformTargetId.ForActor(ActorId.New())).ToArray();
             for (int i = 0; i < count; i++) Live[Targets[i]] = Pose(new(i * 2, 0, 0));
@@ -841,7 +868,15 @@ public sealed class GroupTransformStateTests
             target != Unreadable && Live.TryGetValue(target, out var pose) ? pose : null;
         public string? Refusal(TransformTargetId target) => target == Refused ? "Attached light" : null;
         public bool TryFrame(Vector3 origin, out GroupTransformFrame frame)
-        { FrameReads++; frame = new(origin, Camera); return true; }
+        {
+            FrameReads++;
+            if (_viewCapture)
+            {
+                Matrix4x4.Invert(Matrix4x4.CreateFromQuaternion(Camera), out var view);
+                return GroupTransformFrame.TryFromView(view, origin, out frame);
+            }
+            frame = new(origin, Camera); return true;
+        }
         public TransformTargetId? CurrentTarget(TransformTargetId target) =>
             target == Stale ? null : Live.Keys.Cast<TransformTargetId?>().FirstOrDefault(current =>
                 current!.Value.Kind == target.Kind
