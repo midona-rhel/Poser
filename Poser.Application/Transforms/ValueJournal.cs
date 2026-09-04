@@ -1,5 +1,10 @@
 namespace Poser.Application.Transforms;
 
+public readonly record struct ValueWriteResult(bool Success, string? Detail = null)
+{
+    public static ValueWriteResult Ok() => new(true);
+}
+
 /// <summary>
 /// Value changes as journal steps. A set reads the old value, writes the
 /// new one and appends one step whose undo writes the old value back.
@@ -127,6 +132,69 @@ public sealed class ValueJournal
             AfterValue = after,
         });
         _open = null;
+    }
+
+    /// <summary>Like Set, but a refused write never appends or changes the
+    /// open step. Refused inverses stay available for retry with their detail.</summary>
+    public ValueWriteResult TrySet<T>(object key, string description, Func<T> read,
+        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
+    {
+        var before = read();
+        if (EqualityComparer<T>.Default.Equals(before, value))
+            return ValueWriteResult.Ok();
+        var result = WriteResult(write, value);
+        if (!result.Success || _suspended > 0)
+            return result;
+        if (_open is { } open && open.Key.Equals(key)
+            && ReferenceEquals(_history.PeekUndo(), open.Entry))
+        {
+            open.SetAfter(value!);
+            Folded?.Invoke(open.Entry, value);
+            return result;
+        }
+        var box = new Box<T> { Value = value };
+        var entry = ResultStep(description, before, value, () => box.Value, write, alive);
+        _history.Append(entry);
+        _open = new OpenStep(key, entry, next => box.Value = (T)next);
+        return result;
+    }
+
+    /// <summary>Records an already successful transaction whose inverses can refuse.</summary>
+    public void RecordResult<T>(string description, T before, T after,
+        Func<T, ValueWriteResult> write, Func<bool>? alive = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
+            return;
+        _history.Append(ResultStep(description, before, after, () => after, write, alive));
+        _open = null;
+    }
+
+    private static JournalStep ResultStep<T>(string description, T before, T after,
+        Func<T> latest, Func<T, ValueWriteResult> write, Func<bool>? alive)
+    {
+        string? failure = null;
+        bool PutResult(T value)
+        {
+            failure = null;
+            if (alive is not null && !alive())
+                return true;
+            var result = WriteResult(write, value);
+            failure = result.Detail;
+            return result.Success;
+        }
+        return new JournalStep(description, () => PutResult(before), () => PutResult(latest()))
+        {
+            BeforeValue = before,
+            AfterValue = after,
+            RetainOnFailure = true,
+            FailureDetail = () => failure,
+        };
+    }
+
+    private static ValueWriteResult WriteResult<T>(Func<T, ValueWriteResult> write, T value)
+    {
+        try { return write(value); }
+        catch (Exception ex) { return new(false, ex.Message); }
     }
 
     /// <summary>Closes the open step: the next set on its key starts a new

@@ -1004,23 +1004,11 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 var failure = GlamourerReadFailure<CustomizeState>(actor, ec);
                 return new(false, failure.Detail, failure.AppearanceRefusal);
             }
-            if (state["Customize"] is not Newtonsoft.Json.Linq.JObject customize)
-                return IntegrationPortResult.Fail("The state carries no customization.");
-            foreach (var (key, value) in values)
-            {
-                if (customize[key.ToString()] is not Newtonsoft.Json.Linq.JObject entry)
-                    continue;
-                entry["Value"] = key == CustomizeKey.Wetness
-                    ? new Newtonsoft.Json.Linq.JValue(value != 0)
-                    : new Newtonsoft.Json.Linq.JValue(value);
-            }
-            // Every customize key applies, so the look lands whole and the
-            // changed value is not the only one Glamourer reads.
-            foreach (var property in customize.Properties())
-                if (property.Value is Newtonsoft.Json.Linq.JObject entry && entry["Apply"] is not null)
-                    entry["Apply"] = true;
+            var request = CustomizeRequest.Build(state, values);
+            if (!request.Success || request.Value is null)
+                return IntegrationPortResult.Fail(request.Detail ?? "The customization request is invalid.");
             // A string crosses as base64 to Glamourer; a JObject is read as JSON.
-            int rc = _applyState.InvokeFunc(state, index, 0u, ApplyOnce | ApplyCustomization);
+            int rc = _applyState.InvokeFunc(request.Value, index, 0u, ApplyOnce | ApplyCustomization);
             return GlamourerResult(rc, "setting the look", actor);
         });
 

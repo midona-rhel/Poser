@@ -563,7 +563,11 @@ public sealed partial class AppearancePane
     private void DrainCustomizePickers()
     {
         if (_palette.Draw() is { } index && _paletteActor is { } actor)
+        {
+            _customizeSession.Seal();
             Set(actor, _paletteKey, index, $"Set {ColorName(_paletteKey)}");
+            _customizeSession.Seal();
+        }
         foreach (var (key, picker) in _tilePickers)
         {
             if (picker.Draw() is not { } id || _customizeActor is not { } owner)

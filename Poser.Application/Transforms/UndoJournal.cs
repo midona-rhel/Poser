@@ -98,7 +98,8 @@ public sealed class UndoJournal
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
     {
-        if (result.Success || entry is not JournalStep step || step.HasDeferredGroupCapture?.Invoke() == true)
+        if (result.Success || entry is not JournalStep step || step.RetainOnFailure
+            || step.HasDeferredGroupCapture?.Invoke() == true)
         {
             _refused = null;
             return result;

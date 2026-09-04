@@ -6,11 +6,45 @@ using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Game.Journal;
+using Poser.Application.Transforms;
 
 namespace Poser.Game.Tests;
 
 public sealed class GlamourerAccessTests
 {
+    [Fact]
+    public void Customize_write_refusals_keep_typed_detail_and_do_not_record()
+    {
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, WriteRaceProxy>();
+        var integration = new ActorIntegrationSession(port, null!, new SessionSource());
+        var history = new TransformHistory();
+        var customize = new CustomizeSession(new ValueJournal(history), integration, null!);
+        var actor = ActorId.New();
+        var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");
+        var many = customize.SetMany(actor, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 9 }, "skin");
+        foreach (var result in new[] { single, many })
+        {
+            Assert.False(result.Success);
+            Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);
+            Assert.Equal(GlamourerAccess.ForeignHeld.Detail, result.Detail);
+        }
+        Assert.False(history.CanUndo);
+    }
+
+    public class WriteRaceProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
+        {
+            nameof(IIntegrationRuntimePort.ProbeGlamourerAccess) => GlamourerAccess.Editable,
+            nameof(IIntegrationRuntimePort.CaptureGlamourerState) => IntegrationValue<string>.Ok("baseline"),
+            nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Actor"),
+            nameof(IIntegrationRuntimePort.GetCustomizeState) => IntegrationValue<CustomizeState>.Ok(
+                new CustomizeState(new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 7 }, 0)),
+            nameof(IIntegrationRuntimePort.SetCustomize) => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
+            _ => throw new NotSupportedException(method.Name),
+        };
+    }
+
     [Fact]
     public void Journal_read_races_keep_typed_refusal_without_recording_or_mutating()
     {

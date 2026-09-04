@@ -51,8 +51,13 @@ disruptive step), height and body sliders, the face, hair, tail and face
 paint off the character-making sheet's own tiles, the named options, the
 facial features as icon toggles, and the colours off the palettes the
 game's own UI shows (the human colour file). A single value is a step
-that folds while a slider drags; the whole customization is applied at
-once so Glamourer reads every value. Equipment is what it wears, through
+that folds while a slider drags; separate palette picks are separate steps.
+Customization requests retain the full value set for Glamourer's structural
+validation, but apply only requested fields and required body structure.
+Snapshot shader parameters and material edits never accompany a palette edit;
+pre-existing external overrides are not cleared. Refused writes do not append
+or fold history, and refused inverses retain their step and failure detail for
+retry. Equipment is what it wears, through
 Glamourer's IPC only: a design to apply, save or revert; the outfit verbs; a card per
 slot with the item, its two dyes and the ids behind it; the facewear; the
 hat, visor and weapon switches; and, closed, the raw model ids. An item

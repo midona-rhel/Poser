@@ -517,7 +517,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 step.Undo,
                 $"Could not undo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry));
+                () => History.CommitUndo(entry), step.FailureDetail);
         var patch = (TransformPatch)entry;
         return RestorePatch(patch, true, () => History.CommitUndo(patch));
     }
@@ -527,7 +527,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     /// action reports success. A refused action remains available to retry.
     /// </summary>
     private static GestureResult RunLifecycle(
-        Func<bool> act, string failure, Action commit)
+        Func<bool> act, string failure, Action commit, Func<string?>? failureDetail = null)
     {
         bool landed;
         try
@@ -539,7 +539,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return GestureResult.Fail($"{failure} {exception.Message}");
         }
         if (!landed)
-            return GestureResult.Fail(failure);
+            return GestureResult.Fail(failureDetail?.Invoke() ?? failure);
         commit();
         return GestureResult.Ok();
     }
@@ -565,7 +565,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 step.Redo,
                 $"Could not redo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry));
+                () => History.CommitRedo(entry), step.FailureDetail);
         var patch = (TransformPatch)entry;
         return RestorePatch(patch, false, () => History.CommitRedo(patch));
     }

@@ -61,6 +61,10 @@ public sealed record JournalStep(
     /// repeated temporary refusal must not discard its preserved authored state.</summary>
     public Func<bool>? HasDeferredGroupCapture { get; init; }
 
+    /// <summary>Result-aware value edits retain refused inverses for retry.</summary>
+    public bool RetainOnFailure { get; init; }
+    public Func<string?>? FailureDetail { get; init; }
+
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }
