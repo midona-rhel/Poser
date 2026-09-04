@@ -18,9 +18,9 @@ namespace Poser.UI;
 /// tiles (face, hair, tail or ears, face paint) in one row, each with a
 /// plus and minus that step only through valid values; the named options
 /// three per row as plus and minus wells; the features as one row of
-/// small tiles. Colours three per row, the switches under them. Every
-/// value is a journal step; a slider folds while it drags. Without
-/// Glamourer everything disables in place and says why.
+/// small tiles. Colours wrap as compact palette groups, with the switches
+/// under them. Every value is a journal step; a slider folds while it
+/// drags. Without Glamourer everything disables in place and says why.
 /// </summary>
 public sealed partial class AppearancePane
 {
@@ -108,25 +108,28 @@ public sealed partial class AppearancePane
         {
             bool highlights = (state?.Value(CustomizeKey.Highlights) ?? 0) != 0;
             bool lipstick = (state?.Value(CustomizeKey.Lipstick) ?? 0) != 0;
-            form.Cells(cells =>
+            var entries = new (string Label, CustomizeKey Key, uint[]? Palette, bool Live, string? Why)[]
             {
-                cells.Cell("Skin", cell => ColorCell(cell, actor, state, CustomizeKey.SkinColor, menu?.SkinColors, live, why));
-                cells.Cell("Hair", cell => ColorCell(cell, actor, state, CustomizeKey.HairColor, menu?.HairColors, live, why));
-                cells.Cell("Highlight", cell => ColorCell(cell, actor, state, CustomizeKey.HighlightsColor,
-                    _customize.Palettes.Highlights, live && highlights, live && !highlights ? "Highlights are off" : why));
-            }, help: "Each opens the game's own palette");
-            form.Cells(cells =>
-            {
-                cells.Cell("Right eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why));
-                cells.Cell("Left eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why));
-                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
-                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
-            }, help: "Each eye has its own colour");
-            form.Cells(cells =>
-            {
-                cells.Cell("Tattoo", cell => ColorCell(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why));
-                cells.Cell("Paint", cell => ColorCell(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why));
-            }, help: "The facial features' and the face paint's colour");
+                ("Skin", CustomizeKey.SkinColor, menu?.SkinColors, live, why),
+                ("Hair", CustomizeKey.HairColor, menu?.HairColors, live, why),
+                ("Highlight", CustomizeKey.HighlightsColor, _customize.Palettes.Highlights,
+                    live && highlights, live && !highlights ? "Highlights are off" : why),
+                ("Right eye", CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why),
+                ("Left eye", CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why),
+                ("Lips", CustomizeKey.LipColor, _customize.Palettes.Lips,
+                    live && lipstick, live && !lipstick ? "Lipstick is off" : why),
+                ("Tattoo", CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why),
+                ("Paint", CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
+            };
+            var theme = Crystarium.ActiveTheme;
+            float paletteWidth = theme.Controls.WorkspaceHeight * 2f + theme.Page.ActionGap;
+            ResponsiveColourGroups(form, "appearance-palette-colour", entries.Length,
+                index => entries[index].Label, paletteWidth, (index, origin, _) =>
+                {
+                    var entry = entries[index];
+                    DrawColorTile(origin, paletteWidth, actor, state,
+                        entry.Key, entry.Palette, entry.Live, entry.Why);
+                });
             form.Checkboxes("Options",
                 new Crystarium.CheckItem("Highlights", highlights,
                     on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),
@@ -406,8 +409,8 @@ public sealed partial class AppearancePane
 
     /// <summary>A colour off its palette: the tile shows the colour and
     /// opens the grid under itself.</summary>
-    private void ColorCell(
-        in Crystarium.FormPairCell cell, ActorId actor, CustomizeState? state,
+    private void DrawColorTile(
+        Vector2 origin, float width, ActorId actor, CustomizeState? state,
         CustomizeKey key, uint[]? palette, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
@@ -415,16 +418,11 @@ public sealed partial class AppearancePane
         int current = state?.Value(key) ?? 0;
         Vector4? color = colors is not null && current >= 0 && current < colors.Count ? colors[current] : null;
         bool enabled = live && colors is not null;
-        ImGui.SetCursorScreenPos(cell.Center(theme.Controls.WorkspaceHeight));
+        ImGui.SetCursorScreenPos(origin);
         bool opened = Crystarium.ColorTile(
-            $"appearance-color-{key}",
-            color,
-            cell.Width / cell.Scale,
-            theme.Controls.WorkspaceHeight,
-            null,
-            label: color is null ? "—" : null,
-            help: enabled ? "Choose a colour" : why,
-            disabled: !enabled);
+            $"appearance-color-{key}", color, width, theme.Controls.WorkspaceHeight,
+            null, label: color is null ? "—" : null,
+            help: enabled ? "Choose a colour" : why, disabled: !enabled);
         if (opened && colors is not null)
         {
             _paletteKey = key;
