@@ -43,7 +43,7 @@ public sealed class CustomizeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");
+            return new(false, state.Detail ?? "The look could not be read.", state.AppearanceRefusal);
         int before = state.Value.Value(key);
         if (before == value)
             return IntegrationResult.Ok();
@@ -66,7 +66,7 @@ public sealed class CustomizeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The look could not be read.");
+            return new(false, state.Detail ?? "The look could not be read.", state.AppearanceRefusal);
         var before = new Dictionary<CustomizeKey, int>();
         foreach (var key in values.Keys)
             before[key] = state.Value.Value(key);

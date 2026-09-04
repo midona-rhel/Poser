@@ -30,10 +30,9 @@ namespace Poser.Game.Integration;
 /// </summary>
 public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort
 {
-    /// <summary>Poser's Glamourer lock key ("POSR"). Passing it on every
-    /// state call succeeds on unlocked and Poser-locked states and fails
-    /// with InvalidKey on states locked by other plugins — exactly the
-    /// refusal the contract wants.</summary>
+    /// <summary>Poser's MCDF recovery key ("POSR"). Ordinary editing uses
+    /// zero, so it cannot bypass our own MCDF hold. A keyed read may
+    /// distinguish our hold from a foreign one without unlocking either.</summary>
     private const uint LockKey = 0x504F5352;
 
     private const ulong ApplyOnce = 0x1;
@@ -666,8 +665,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationValue<string>.Fail(detail!);
             var (ec, state) = _getStateBase64.InvokeFunc(index, 0u);
             if (ec == GlamourerEcInvalidKey)
-                return IntegrationValue<string>.Fail(
-                    "This actor's Glamourer state is locked by another plugin.");
+                return GlamourerReadFailure<string>(actor, ec);
             if (ec != GlamourerEcSuccess || state == null)
                 return IntegrationValue<string>.Fail(
                     $"Glamourer failed reading the actor state (code {ec}).");
@@ -684,7 +682,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // Customization — applied once, no persistent lock.
             int ec = _applyDesign.InvokeFunc(
                 design, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
-            return GlamourerResult(ec, "applying the design");
+            return GlamourerResult(ec, "applying the design", actor);
         });
 
     public IntegrationPortResult HoldGlamourerState(ActorId actor, string state) =>
@@ -704,6 +702,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     public IntegrationPortResult RestoreGlamourerState(ActorId actor, string state) =>
         Guarded(Glamourer, "Restore state", () =>
         {
+            var access = ProbeGlamourerAccess(actor);
+            if (access.Kind is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.Unavailable)
+                return IntegrationPortResult.Refused(access);
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
@@ -871,7 +872,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // A byte[] crosses Dalamud IPC as a base64 string and cannot become the
             // provider's IReadOnlyList<byte>; a List<byte> crosses as a JSON array.
             int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new List<byte> { dye1, dye2 }, 0u, ApplyOnce);
-            return GlamourerResult(ec, "setting the item");
+            return GlamourerResult(ec, "setting the item", actor);
         });
 
     public IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId) =>
@@ -882,7 +883,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationPortResult.Fail(detail!);
             const byte glasses = 1;
             int ec = _setBonusItem.InvokeFunc(index, glasses, bonusItemId, 0u, ApplyOnce);
-            return GlamourerResult(ec, "setting the facewear");
+            return GlamourerResult(ec, "setting the facewear", actor);
         });
 
     public IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) =>
@@ -892,8 +893,47 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
             int ec = _setMetaState.InvokeFunc(index, (ulong)which, on, 0u, ApplyOnce);
-            return GlamourerResult(ec, "setting the switch");
+            return GlamourerResult(ec, "setting the switch", actor);
         });
+
+    public GlamourerAccess ProbeGlamourerAccess(ActorId actor)
+    {
+        if (!Glamourer.Available)
+            return new(GlamourerAccessKind.Unavailable, Glamourer.Detail);
+        try
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return new(GlamourerAccessKind.Unavailable, detail);
+            var (code, state) = _getState.InvokeFunc(index, 0u);
+            if (code == GlamourerEcInvalidKey)
+            {
+                // Read only: a successful keyed retry proves our key is accepted,
+                // not permission for ordinary edits to bypass an MCDF hold.
+                var (keyedCode, keyedState) = _getState.InvokeFunc(index, LockKey);
+                return ClassifyAccess(code, state is not null, keyedCode, keyedState is not null);
+            }
+            return ClassifyAccess(code, state is not null, null, false);
+        }
+        catch (Exception ex)
+        {
+            return new(GlamourerAccessKind.Unavailable, $"Read appearance access: {ex.Message}");
+        }
+    }
+
+    internal static GlamourerAccess ClassifyAccess(int code, bool hasState, int? keyedCode, bool hasKeyedState)
+    {
+        if (code is GlamourerEcSuccess or GlamourerEcNothingDone && hasState)
+            return GlamourerAccess.Editable;
+        if (code == GlamourerEcInvalidKey)
+        {
+            if (keyedCode == GlamourerEcInvalidKey)
+                return GlamourerAccess.ForeignHeld;
+            if (keyedCode is GlamourerEcSuccess or GlamourerEcNothingDone && hasKeyedState)
+                return GlamourerAccess.PoserHeld;
+        }
+        return new(GlamourerAccessKind.Unavailable, "Glamourer's appearance access could not be read.");
+    }
 
     public IntegrationValue<string> GetGlamourerStateJson(ActorId actor) =>
         Guarded<string>(Glamourer, "Read state", () =>
@@ -903,7 +943,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationValue<string>.Fail(detail!);
             var (ec, state) = _getState.InvokeFunc(index, 0u);
             if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
-                return IntegrationValue<string>.Fail($"Glamourer failed reading the state (code {ec}).");
+                return GlamourerReadFailure<string>(actor, ec);
             return IntegrationValue<string>.Ok(state.ToString(Newtonsoft.Json.Formatting.None));
         });
 
@@ -915,7 +955,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationValue<WardrobeState>.Fail(detail!);
             var (ec, state) = _getState.InvokeFunc(index, 0u);
             if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
-                return IntegrationValue<WardrobeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+                return GlamourerReadFailure<WardrobeState>(actor, ec);
             return IntegrationValue<WardrobeState>.Ok(ParseWardrobe(state));
         });
 
@@ -927,7 +967,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationValue<CustomizeState>.Fail(detail!);
             var (ec, state) = _getState.InvokeFunc(index, 0u);
             if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
-                return IntegrationValue<CustomizeState>.Fail($"Glamourer failed reading the state (code {ec}).");
+                return GlamourerReadFailure<CustomizeState>(actor, ec);
             return IntegrationValue<CustomizeState>.Ok(ParseCustomize(state));
         });
 
@@ -960,7 +1000,10 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationPortResult.Fail(detail!);
             var (ec, state) = _getState.InvokeFunc(index, 0u);
             if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
-                return IntegrationPortResult.Fail($"Glamourer failed reading the state (code {ec}).");
+            {
+                var failure = GlamourerReadFailure<CustomizeState>(actor, ec);
+                return new(false, failure.Detail, failure.AppearanceRefusal);
+            }
             if (state["Customize"] is not Newtonsoft.Json.Linq.JObject customize)
                 return IntegrationPortResult.Fail("The state carries no customization.");
             foreach (var (key, value) in values)
@@ -978,7 +1021,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     entry["Apply"] = true;
             // A string crosses as base64 to Glamourer; a JObject is read as JSON.
             int rc = _applyState.InvokeFunc(state, index, 0u, ApplyOnce | ApplyCustomization);
-            return GlamourerResult(rc, "setting the look");
+            return GlamourerResult(rc, "setting the look", actor);
         });
 
     private static readonly (EquipSlot Slot, string Key)[] WardrobeSlotKeys =
@@ -1034,7 +1077,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             }
             // A string crosses as base64 to Glamourer; a JObject is read as JSON.
             int ec = _applyState.InvokeFunc(parsed, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
-            return GlamourerResult(ec, "applying the state");
+            return GlamourerResult(ec, "applying the state", actor);
         });
 
     public IntegrationPortResult RevertGlamourerState(ActorId actor) =>
@@ -1044,7 +1087,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
             int ec = _revertState.InvokeFunc(index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
-            return GlamourerResult(ec, "reverting the state");
+            return GlamourerResult(ec, "reverting the state", actor);
         });
 
     public IntegrationValue<Guid> AddDesign(string stateJson, string name) =>
@@ -1091,11 +1134,30 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             ? IntegrationPortResult.Ok()
             : IntegrationPortResult.Fail($"Penumbra failed {what} (code {ec}).");
 
+    private IntegrationValue<T> GlamourerReadFailure<T>(ActorId actor, int code)
+    {
+        if (code != GlamourerEcInvalidKey)
+            return IntegrationValue<T>.Fail($"Glamourer failed reading the state (code {code}).");
+        var access = ProbeGlamourerAccess(actor);
+        return access.CanEdit
+            ? IntegrationValue<T>.Fail("Glamourer appearance access changed during the read; try again.")
+            : IntegrationValue<T>.Refused(access);
+    }
+
+    private IntegrationPortResult GlamourerResult(int code, string what, ActorId actor)
+    {
+        if (code != GlamourerEcInvalidKey)
+            return GlamourerResult(code, what);
+        var access = ProbeGlamourerAccess(actor);
+        return access.CanEdit
+            ? IntegrationPortResult.Fail("Glamourer appearance access changed during the command; try again.")
+            : IntegrationPortResult.Refused(access);
+    }
+
     private static IntegrationPortResult GlamourerResult(int ec, string what) => ec switch
     {
         GlamourerEcSuccess or GlamourerEcNothingDone => IntegrationPortResult.Ok(),
-        GlamourerEcInvalidKey => IntegrationPortResult.Fail(
-            "This actor's Glamourer state is locked by another plugin."),
+        GlamourerEcInvalidKey => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
         _ => IntegrationPortResult.Fail($"Glamourer failed {what} (code {ec})."),
     };
 }

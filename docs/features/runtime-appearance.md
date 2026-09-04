@@ -25,6 +25,18 @@ or a temporary saved Customize+ profile. Incoming state is captured once per
 component. Reset and teardown restore it. Foreign locks and unreadable
 temporary profiles are refused before changes.
 
+Glamourer access is actor-generation scoped: editable, Poser-held,
+foreign-held, or unavailable. A refused unkeyed read is probed read-only
+with Poser's key; only another key refusal identifies a foreign hold.
+The API does not identify the owning plugin, so the UI never guesses its
+name. One top-of-pane status disables dependent appearance actions while
+keeping Open in Glamourer and native presentation controls available.
+Selected-actor access refreshes at most once per second; actor changes
+invalidate it. Commands independently check fresh access, and unkeyed
+native writes arbitrate acquisition races. No probe unlocks or claims a
+state. Poser's keyed MCDF recovery remains separate; failed restores keep
+their baseline and pending cleanup evidence until recovery succeeds.
+
 MCDF import temporarily owns extracted resources and integration state until
 the collection is gone and redraw allows cleanup. A failed barrier remains
 owned evidence for Reset MCDF. Glamourer locks created by MCDF are released

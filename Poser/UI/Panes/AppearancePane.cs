@@ -39,6 +39,26 @@ public sealed partial class AppearancePane
     private readonly ICustomizeCatalog _customize;
     private readonly Game.Journal.CustomizeSession _customizeSession;
     private int _view;
+    private ActorId? _accessActor;
+    private DateTime _accessAt = DateTime.MinValue;
+    private GlamourerAccess _appearanceAccess = GlamourerAccess.Editable;
+
+    private void RefreshAppearanceAccess(ActorId actor)
+    {
+        var now = DateTime.UtcNow;
+        if (_accessActor == actor && now - _accessAt < TimeSpan.FromSeconds(1))
+            return;
+        var previous = _appearanceAccess;
+        bool changedActor = _accessActor != actor;
+        _accessActor = actor;
+        _accessAt = now;
+        _appearanceAccess = _integration.AppearanceAccess(actor);
+        if (changedActor || previous != _appearanceAccess)
+        {
+            InvalidateWardrobe();
+            _customizeAt = DateTime.MinValue;
+        }
+    }
 
     private readonly ActorPresentationSession _presentation;
     private readonly ActorModelIdSession _model;
@@ -249,9 +269,19 @@ public sealed partial class AppearancePane
                 {
                     if (_scene.Selection.PrimaryActor is not { } actor)
                     {
+                        _accessActor = null;
                         page.EmptyState();
                         return;
                     }
+                    RefreshAppearanceAccess(actor);
+                    if (!_appearanceAccess.CanEdit)
+                        page.Section("Appearance access", true, _ => { }, form =>
+                        {
+                            form.Status(_appearanceAccess.Detail ?? "Glamourer appearance access is unavailable.");
+                            form.Actions("Glamourer", actions => actions.Button("Open in Glamourer",
+                                () => ReportExternal(_integration.OpenGlamourer(actor), "Open in Glamourer"),
+                                disabled: !_integration.Glamourer.Available));
+                        }, divider: false);
                     switch (_view)
                     {
                         case 1: DrawCustomizeView(page, actor); break;
@@ -799,12 +829,12 @@ public sealed partial class AppearancePane
             () => OpenPicker(actor, "Design", _integration.ListDesigns),
             () => ReportExternal(_disruptive.Run(actor, "Reset design",
                 () => _integration.ResetDesign(actor)), "Reset Design"),
-            available: glamourer.Available && !mcdfOwned,
+            available: glamourer.Available && !mcdfOwned && _appearanceAccess.CanEdit,
             owned: external.DesignOwned,
             disruptive: true,
             help: "Apply a saved Glamourer design to this actor only. "
                 + "Reset puts back the look it had before Poser changed it.",
-            disabledHelp: !glamourer.Available
+            disabledHelp: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : !glamourer.Available
                 ? glamourer.Detail
                 : mcdfOwned
                     ? mcdfReason
@@ -833,11 +863,11 @@ public sealed partial class AppearancePane
         form.Actions("Look", actions =>
         {
             actions.Button("Save design", () => SaveDesign(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Save this look as a design" : glamourer.Detail);
+                disabled: !glamourer.Available || !_appearanceAccess.CanEdit,
+                help: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : glamourer.Available ? "Save this look as a design" : glamourer.Detail);
             actions.Button("Revert", () => RevertLook(actor),
-                disabled: !glamourer.Available,
-                help: glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
+                disabled: !glamourer.Available || !_appearanceAccess.CanEdit,
+                help: !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : glamourer.Available ? "Back to the game's own look" : glamourer.Detail,
                 variant: ButtonVariant.Disruptive);
         });
     }
@@ -1051,7 +1081,10 @@ public sealed partial class AppearancePane
     /// <summary>Reports an integration result and invalidates its readout.</summary>
     private void ReportExternal(IntegrationResult result, string what)
     {
-        if (!result.Success)
+        bool appearanceHeld = result.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld;
+        if (appearanceHeld)
+            _accessAt = DateTime.MinValue;
+        if (!result.Success && !appearanceHeld)
             _notices.Failed($"{what}: {result.Detail}");
         _readoutAt = DateTime.MinValue;
     }

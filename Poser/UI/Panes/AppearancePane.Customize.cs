@@ -54,8 +54,8 @@ public sealed partial class AppearancePane
     private void DrawCustomizeView(Crystarium.PageScope page, ActorId actor)
     {
         var glamourer = _integration.Glamourer;
-        bool ready = glamourer.Available;
-        string? blocked = ready ? null : glamourer.Detail;
+        bool ready = glamourer.Available && _appearanceAccess.CanEdit;
+        string? blocked = !_appearanceAccess.CanEdit ? _appearanceAccess.Detail : ready ? null : glamourer.Detail;
         var state = ready ? ReadCustomize(actor) : null;
         byte clan = (byte)(state?.Value(CustomizeKey.Clan) ?? 0);
         byte gender = (byte)(state?.Value(CustomizeKey.Gender) ?? 0);
@@ -65,7 +65,7 @@ public sealed partial class AppearancePane
 
         page.Section("Body", _openBody, next => _openBody = next, form =>
         {
-            if (why is not null)
+            if (why is not null && _appearanceAccess.CanEdit)
                 form.Status(why);
             BodyRow(form, actor, state, live, why);
             form.PairRows();

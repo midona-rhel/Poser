@@ -41,7 +41,7 @@ public sealed class WardrobeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
+            return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
         var before = state.Value.Slot(slot);
         var after = new WardrobeSlot(itemId, dye1, dye2);
         var result = _integration.SetItem(actor, slot, itemId, dye1, dye2);
@@ -62,7 +62,7 @@ public sealed class WardrobeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
+            return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
         var worn = state.Value.Slot(slot);
         return SetItem(actor, slot, worn.ItemId,
             which == 0 ? dye : worn.Dye1,
@@ -78,7 +78,7 @@ public sealed class WardrobeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
+            return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
         ulong before = state.Value.Facewear;
         var result = _integration.SetFacewear(actor, bonusItemId);
         if (!result.Success)
@@ -96,7 +96,7 @@ public sealed class WardrobeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
+            return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
         bool before = which switch
         {
             MetaSwitch.HatVisible => state.Value.HatVisible,
@@ -131,7 +131,7 @@ public sealed class WardrobeSession
             return owned;
         var state = Read(actor);
         if (!state.Success || state.Value is null)
-            return IntegrationResult.Fail(state.Detail ?? "The wardrobe could not be read.");
+            return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
         var before = new Dictionary<EquipSlot, WardrobeSlot>(state.Value.Slots);
         var after = new Dictionary<EquipSlot, WardrobeSlot>(before);
         IntegrationResult outcome = IntegrationResult.Ok();
