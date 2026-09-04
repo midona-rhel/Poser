@@ -106,7 +106,7 @@ public partial class MainWindow
                 _companionCatalog.EnsureLoaded();
                 _companions.OpenAttachPicker(actorId);
             },
-            () => _spawnService.DestroyCompanion(actor),
+            () => _sessions.Actors.SetCompanion(actor, null),
         };
         var actions = new List<Action?>
         {

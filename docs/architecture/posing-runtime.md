@@ -63,10 +63,12 @@ recheck that record on the framework thread. An unresolved or uncertain delete
 stays pending and is retried only while the same occupant is proven. A record
 without a usable slot is never probed. These records last only for the session.
 The create/copy/model-before-draw/GPose order is an intentional Brio-compatible
-choice. Companion replacement combines Brio's `ActorSpawnService.CreateCompanion`
-order with its `ModelTransformService` placement ownership: capture and arm the
-owner's effective transform before the native change, reassert it while the exact
-ready/empty state settles, and only then enable the requested child.
+choice. Companion replacement follows Brio's `ActorSpawnService.CreateCompanion`
+order and one-frame readiness delay, while `ModelTransformService`-style transform
+ownership remains independent: an attachment change never creates an override.
+When Poser owns a whole-actor pause, the actor-value session releases only that
+hold until the exact typed attach or detach state arrives, then restores it on
+success or failure; existing per-slot holds remain owned throughout.
 
 Overworld discovery is read-only and separate from the GPose scan. It exposes
 ids, rechecks the full observation before use, and can only be used to create a

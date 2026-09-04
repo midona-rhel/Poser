@@ -172,7 +172,7 @@ public sealed class PresentationResetHistoryTests
         {
             Session = new(Port);
             var values = new ValueJournal(History);
-            Values = new(values, Session, null!, null!, Bindings);
+            Values = new(values, Session, null!, null!, Bindings, null!);
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
             Journal = new(History, runner, new Keys(), new Lazy<IPoseSnapshotPort>(() => throw new Exception()), _ => true, _ => { });

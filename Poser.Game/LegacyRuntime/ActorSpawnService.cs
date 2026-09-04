@@ -496,10 +496,10 @@ internal interface IActorSpawnNativeAdapter
         SpawnNativeDescriptor descriptor,
         out CompanionAttachment? attachment);
 
-    /// <summary>The attached child object's address; zero when the slot is
-    /// empty or the descriptor no longer revalidates. It is the companion's
-    /// own BODY — the attachment ids alone name a sheet row, not a posable
-    /// object.</summary>
+    /// <summary>The generic child object's address; zero when no child storage
+    /// exists or the descriptor no longer revalidates. Typed attachment state
+    /// can already be empty while this storage remains alive, so transition
+    /// completion must use <see cref="TryReadCompanion"/> instead.</summary>
     nint ReadCompanionAddress(SpawnNativeDescriptor descriptor);
 
     bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id);
@@ -933,16 +933,10 @@ internal static class SpawnOwnershipCleanup
 public unsafe class ActorSpawnService : IActorSpawnService
 {
     private const int CreateRecoveryTimeoutMs = 5000;
-    private const int CompanionTransitionTimeoutMs = 1000;
-    // Ready/empty can become observable before a mount/ornament transition
-    // finishes resetting its owner. Keep the exact state stable for a short
-    // interval while the pre-transition placement override is reasserted.
-    private const int CompanionSettleMs = 100;
 
     private readonly IGPoseService _gPoseService;
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
-    private readonly IPosingService? _posing;
     private readonly IPluginLog? _log;
     private readonly IFramework? _framework;
     private readonly Func<nint> _localPlayerAddress;
@@ -983,8 +977,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IFramework framework,
         ISigScanner sigScanner,
         IGameInteropProvider hooking,
-        ISpawnCollectionPort collections,
-        IPosingService posing)
+        ISpawnCollectionPort collections)
         : this(
             gPoseService,
             actorManager,
@@ -998,8 +991,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             null,
             collections,
             ownsAdapter: true,
-            objectAddressAt: objectTable.GetObjectAddress,
-            posing: posing)
+            objectAddressAt: objectTable.GetObjectAddress)
     {
     }
 
@@ -1016,12 +1008,10 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Func<long>? clock = null,
         ISpawnCollectionPort? collections = null,
         bool ownsAdapter = false,
-        Func<int, nint>? objectAddressAt = null,
-        IPosingService? posing = null)
+        Func<int, nint>? objectAddressAt = null)
     {
         _framework = framework;
         _collections = collections;
-        _posing = posing;
         _gPoseService = gPoseService;
         _actorManager = actorManager;
         _eventBus = eventBus;
@@ -1962,132 +1952,119 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
-    public bool SetCompanion(IActor owner, CompanionAttachment? container)
+    public bool SetCompanion(IActor owner, CompanionAttachment? container) =>
+        SetCompanionCore(owner, container, null);
+
+    /// <summary>
+    /// Session orchestration uses completion to keep a temporary animation
+    /// release alive until the game's typed companion transition finishes.
+    /// The public spawn boundary retains Brio's fire-and-poll behavior.
+    /// </summary>
+    public bool SetCompanion(
+        IActor owner,
+        CompanionAttachment? container,
+        Action<bool> completion) =>
+        SetCompanionCore(owner, container, completion);
+
+    private bool SetCompanionCore(
+        IActor owner,
+        CompanionAttachment? container,
+        Action<bool>? completion)
     {
         if (!OnOwnerThread)
+        {
+            NotifyCompanionCompletion(completion, false);
             return false;
+        }
         if (!TryResolveActorForOperation(owner, out var descriptor, out var ownership))
+        {
+            NotifyCompanionCompletion(completion, false);
             return false;
+        }
 
         if (!_native.HasCompanionSlot(descriptor))
         {
             _log?.Warning($"ActorSpawnService: actor has no companion slot (spawned without reservation?)");
+            NotifyCompanionCompletion(completion, false);
             return false;
         }
 
         // An unreadable slot is not an empty one: only a slot we could read
         // may be emptied and refilled.
         if (!_native.TryReadCompanion(descriptor, out var existing))
-            return false;
-
-        if (existing is null && container is null)
-            return true;
-
-        if (_posing is null)
         {
-            _log?.Warning(
-                "ActorSpawnService: companion change skipped - owner placement cannot be preserved");
+            NotifyCompanionCompletion(completion, false);
             return false;
         }
-        var placement = _posing.GetEffectiveTransform(owner);
-        if (!TryReassertOwnerPlacement(owner, placement))
-            return false;
 
-        if (existing is { } attached)
+        if (existing is { } attached
+            && !_native.WriteCompanion(descriptor, attached.Kind, 0))
         {
-            if (!_native.WriteCompanion(descriptor, attached.Kind, 0)
-                || !TryReassertOwnerPlacement(owner, placement))
-                return false;
+            NotifyCompanionCompletion(completion, false);
+            return false;
         }
         if (container is not { } want)
         {
-            PollForCompanionTransition(
+            if (completion is null)
+                return true;
+            PollUntil(
                 ownership,
                 descriptor,
-                owner,
-                placement,
                 () => _native.TryReadCompanion(descriptor, out var current)
                     && current is null,
-                onSettled: null,
-                what: "companion detach");
+                () => { },
+                timeoutMs: 1000,
+                what: "companion detach",
+                skipFrames: 1,
+                completion: completion);
             return true;
         }
 
-        if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id)
-            || !TryReassertOwnerPlacement(owner, placement))
+        if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id))
+        {
+            NotifyCompanionCompletion(completion, false);
             return false;
+        }
 
-        PollForCompanionTransition(
+        PollUntil(
             ownership,
             descriptor,
-            owner,
-            placement,
             () => _native.IsCompanionReady(descriptor, want),
             () => _native.EnableCompanionDraw(descriptor),
-            what: $"companion {want.Kind} {want.Id}");
+            timeoutMs: 1000,
+            what: $"companion {want.Kind} {want.Id}",
+            skipFrames: 1,
+            completion: completion);
 
         return true;
     }
 
-    private void PollForCompanionTransition(
-        SpawnOwnershipRecord? ownership,
-        SpawnNativeDescriptor descriptor,
-        IActor owner,
-        Transform placement,
-        Func<bool> exactState,
-        Action? onSettled,
-        string what)
+    private void NotifyCompanionCompletion(Action<bool>? completion, bool success)
     {
-        long? stableSince = null;
-        PollUntil(
-            ownership,
-            descriptor,
-            () =>
-            {
-                if (_posing!.GetTransformOverride(owner) is not { } armed
-                    || armed != placement)
-                {
-                    stableSince = null;
-                    return false;
-                }
-                if (!exactState())
-                {
-                    stableSince = null;
-                    return false;
-                }
-
-                var now = _clock();
-                stableSince ??= now;
-                return now - stableSince.Value >= CompanionSettleMs;
-            },
-            () =>
-            {
-                if (TryReassertOwnerPlacement(owner, placement))
-                    onSettled?.Invoke();
-            },
-            CompanionTransitionTimeoutMs,
-            what,
-            skipFrames: 1,
-            onTick: () => _posing!.SetTransformOverride(owner, placement));
-    }
-
-    private bool TryReassertOwnerPlacement(
-        IActor owner,
-        Transform placement)
-    {
-        _posing!.SetTransformOverride(owner, placement);
-        if (_posing.GetTransformOverride(owner) is { } armed
-            && armed == placement)
-            return true;
-
-        _log?.Warning(
-            "ActorSpawnService: companion transition could not preserve owner placement");
-        return false;
+        if (completion is null)
+            return;
+        try
+        {
+            completion(success);
+        }
+        catch (Exception ex)
+        {
+            _log?.Error(
+                $"ActorSpawnService: companion completion failed: {ex.Message}");
+        }
     }
 
     public void DestroyCompanion(IActor owner)
     {
-        _ = SetCompanion(owner, null);
+        if (!OnOwnerThread)
+            return;
+        if (!TryResolveActorForOperation(owner, out var descriptor, out _))
+            return;
+
+        if (!_native.TryReadCompanion(descriptor, out var info)
+            || info is not { } attached)
+            return;
+        _native.WriteCompanion(descriptor, attached.Kind, 0);
     }
 
     public CompanionAttachment? GetCompanionInfo(IActor owner)
@@ -2168,9 +2145,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// frames after a native mutation can answer a readiness question with the
     /// state that preceded it, so a condition that must not be believed too
     /// early skips them outright rather than trusting the first answer.
-    /// <paramref name="onTick"/> runs only after the exact lifetime check and
-    /// before both the skip and condition, so guarded state can be enforced
-    /// even during skipped frames.
     /// </summary>
     private void PollUntil(
         SpawnOwnershipRecord? ownership,
@@ -2180,30 +2154,42 @@ public unsafe class ActorSpawnService : IActorSpawnService
         int timeoutMs,
         string what,
         int skipFrames = 0,
-        Action? onTick = null)
+        Action<bool>? completion = null)
     {
         if (_framework is null)
+        {
+            NotifyCompanionCompletion(completion, false);
             return;
+        }
         if (!_native.IsLifetimeAuthoritative)
         {
             _log?.Warning(
                 $"ActorSpawnService: delayed {what} skipped - no authoritative lifetime");
+            NotifyCompanionCompletion(completion, false);
             return;
         }
 
         var token = ownership?.Token;
         var deadline = _clock() + timeoutMs;
         var remainingSkips = skipFrames;
+        bool finished = false;
+        void Finish(bool success)
+        {
+            if (finished)
+                return;
+            finished = true;
+            _framework.Update -= Tick;
+            NotifyCompanionCompletion(completion, success);
+        }
         void Tick(IFramework fw)
         {
             try
             {
                 if (!IsCallbackCurrent(token, lifetime))
                 {
-                    _framework.Update -= Tick;
+                    Finish(false);
                     return;
                 }
-                onTick?.Invoke();
                 if (remainingSkips > 0)
                 {
                     // Still inside the window where the condition would answer
@@ -2215,22 +2201,22 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 {
                     if (!IsCallbackCurrent(token, lifetime))
                     {
-                        _framework.Update -= Tick;
+                        Finish(false);
                         return;
                     }
                     onSatisfied();
-                    _framework.Update -= Tick;
+                    Finish(true);
                 }
                 else if (_clock() > deadline)
                 {
                     _log?.Warning($"ActorSpawnService: timed out waiting for {what}");
-                    _framework.Update -= Tick;
+                    Finish(false);
                 }
             }
             catch (Exception ex)
             {
                 _log?.Error($"ActorSpawnService: poll for {what} failed: {ex.Message}");
-                _framework.Update -= Tick;
+                Finish(false);
             }
         }
         _framework.Update += Tick;

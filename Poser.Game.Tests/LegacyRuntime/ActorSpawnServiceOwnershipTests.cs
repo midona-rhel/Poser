@@ -2,12 +2,17 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Dalamud.Plugin.Services;
+using Poser.Application.Animation;
+using Poser.Application.Transforms;
 using Poser.Entities;
 using Poser.Core;
+using Poser.Domain.Animation;
 using Poser.Domain.Companions;
+using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game;
 using Poser.Game.Integration;
+using Poser.Game.Journal;
 using Poser.Services;
 
 namespace Poser.Game.Tests.LegacyRuntime;
@@ -49,62 +54,73 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
-    public void Companion_readiness_preserves_captured_placement_until_exact_child_settles()
+    public void Companion_readiness_skips_first_update_then_enables_exact_requested_child()
     {
-        long now = 0;
         var actor = Actor(0x840);
-        var before = new Transform(
-            new Vector3(10, 20, 30),
-            Quaternion.CreateFromYawPitchRoll(0.3f, 0.2f, 0.1f),
-            new Vector3(1.2f));
-        var shifted = new Transform(new Vector3(500), Quaternion.Identity, Vector3.One);
-        var posing = new FakePosingService(before);
         var native = new FakeNative(new(840, actor.Address, 840))
         {
-            Companion = new CompanionAttachment(CompanionKind.Ornament, 8),
             CompanionReady = true,
-            OnCompanionWrite = (_, _) => posing.NativeTransform = shifted,
         };
         var framework = new FakeFramework();
         using var service = NewService(
-            native,
-            new FakeActorManager(actor),
-            framework: framework,
-            clock: () => now,
-            posing: posing);
+            native, new FakeActorManager(actor), framework: framework);
         var requested = new CompanionAttachment(CompanionKind.Mount, 42);
 
         Assert.True(service.SetCompanion(actor, requested));
         Assert.Equal(requested, native.Companion);
-        Assert.Equal(before, posing.NativeTransform);
-        Assert.Equal(1, posing.GetEffectiveCalls);
-        Assert.All(posing.Applied, transform => Assert.Equal(before, transform));
-
-        // A later native transition must be corrected from the original
-        // capture, never re-read and adopted as a new baseline.
-        posing.NativeTransform = shifted;
 
         framework.RaiseUpdate();
 
         Assert.Equal(0, native.CompanionReadinessChecks);
         Assert.False(native.CompanionDrawEnabled);
-        Assert.Equal(before, posing.NativeTransform);
 
         framework.RaiseUpdate();
 
         Assert.Equal(1, native.CompanionReadinessChecks);
-        Assert.False(native.CompanionDrawEnabled);
-
-        now = 99;
-        framework.RaiseUpdate();
-        Assert.False(native.CompanionDrawEnabled);
-
-        now = 100;
-        framework.RaiseUpdate();
-
         Assert.True(native.CompanionDrawEnabled);
-        Assert.All(posing.Applied, transform => Assert.Equal(before, transform));
-        Assert.Equal(1, posing.GetEffectiveCalls);
+    }
+
+    [Fact]
+    public void Companion_change_does_not_create_transform_ownership()
+    {
+        var actor = Actor(0x844);
+        var shifted = new Transform(new Vector3(500), Quaternion.Identity, Vector3.One);
+        var transforms = new FakeTransformOwnership(Transform.Identity);
+        var native = new FakeNative(new(844, actor.Address, 844))
+        {
+            OnCompanionWrite = (_, _) => transforms.GameSetPosition(shifted),
+        };
+        using var service = NewService(native, new FakeActorManager(actor));
+
+        Assert.True(service.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
+
+        Assert.Null(transforms.Override);
+        Assert.Equal(shifted, transforms.NativeTransform);
+    }
+
+    [Fact]
+    public void Companion_change_leaves_existing_transform_ownership_unchanged()
+    {
+        var actor = Actor(0x845);
+        var owned = new Transform(
+            new Vector3(10, 20, 30),
+            Quaternion.CreateFromYawPitchRoll(0.3f, 0.2f, 0.1f),
+            new Vector3(1.2f));
+        var shifted = new Transform(new Vector3(500), Quaternion.Identity, Vector3.One);
+        var transforms = new FakeTransformOwnership(owned, owned);
+        var native = new FakeNative(new(845, actor.Address, 845))
+        {
+            Companion = new CompanionAttachment(CompanionKind.Ornament, 8),
+            OnCompanionWrite = (_, _) => transforms.GameSetPosition(shifted),
+        };
+        using var service = NewService(native, new FakeActorManager(actor));
+
+        Assert.True(service.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
+
+        Assert.Equal(owned, transforms.Override);
+        Assert.Equal(owned, transforms.NativeTransform);
     }
 
     [Theory]
@@ -141,46 +157,34 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
-    public void Companion_detach_reasserts_captured_placement_while_empty_state_settles()
+    public void Companion_detach_accepts_empty_typed_state_with_stale_generic_child()
     {
-        long now = 0;
         var actor = Actor(0x843);
-        var before = new Transform(
-            new Vector3(-10, 4, 8),
-            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
-            new Vector3(0.9f));
-        var shifted = new Transform(new Vector3(-400), Quaternion.Identity, Vector3.One);
-        var posing = new FakePosingService(before);
-        var native = new FakeNative(new(843, actor.Address, 843))
+        var descriptor = new SpawnNativeDescriptor(843, actor.Address, 843);
+        var native = new FakeNative(descriptor)
         {
             Companion = new CompanionAttachment(CompanionKind.Mount, 9),
-            OnCompanionWrite = (_, _) => posing.NativeTransform = shifted,
+            GenericCompanionChildPresent = true,
         };
         var framework = new FakeFramework();
+        var log = new RecordingLog();
         using var service = NewService(
             native,
             new FakeActorManager(actor),
             framework: framework,
-            clock: () => now,
-            posing: posing);
+            clock: () => 5000,
+            log: log.Proxy());
 
-        Assert.True(service.SetCompanion(actor, null));
+        service.DestroyCompanion(actor);
+
         Assert.Null(native.Companion);
-        Assert.Equal(before, posing.NativeTransform);
-
-        posing.NativeTransform = shifted;
+        Assert.NotEqual(nint.Zero, native.ReadCompanionAddress(descriptor));
 
         framework.RaiseUpdate();
 
-        Assert.Equal(before, posing.NativeTransform);
-
-        framework.RaiseUpdate();
-        now = 100;
-        framework.RaiseUpdate();
-
-        Assert.Equal(before, posing.NativeTransform);
-        Assert.All(posing.Applied, transform => Assert.Equal(before, transform));
-        Assert.Equal(1, posing.GetEffectiveCalls);
+        Assert.DoesNotContain(
+            log.Warnings,
+            warning => warning.Contains("timed out waiting for companion detach"));
     }
 
     [Fact]
@@ -203,6 +207,176 @@ public sealed class ActorSpawnServiceOwnershipTests
         framework.RaiseUpdate();
 
         Assert.Equal(0, native.CompanionReadinessChecks);
+        Assert.False(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Paused_companion_attach_releases_only_overall_hold_until_exact_ready()
+    {
+        var actor = Actor(0x846);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(846, actor.Address, 846))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+        Assert.True(animation.PauseSlot(actorId, AnimationSlot.Base).Success);
+        Assert.True(animation.Pause(actorId).Success);
+
+        Assert.True(values.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
+
+        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
+        Assert.Equal(new float?[] { 0f, null }, port.OverallWrites);
+        Assert.Equal("Set companion", Assert.Single(port.HistoryEntries).Description);
+
+        framework.RaiseUpdate();
+
+        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
+
+        framework.RaiseUpdate();
+
+        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
+        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
+        Assert.Equal(2, port.SlotWrites.Count);
+        Assert.True(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Slot_paused_companion_attach_never_releases_or_creates_overall_hold()
+    {
+        var actor = Actor(0x847);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(847, actor.Address, 847))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+        Assert.True(animation.PauseSlot(actorId, AnimationSlot.Base).Success);
+
+        Assert.True(values.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Ornament, 44)));
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+
+        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(0f, animation.OverridesFor(actorId).SlotSpeeds[AnimationSlot.Base]);
+        Assert.Empty(port.OverallWrites);
+        Assert.Single(port.SlotWrites);
+        Assert.True(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Unpaused_companion_attach_remains_unpaused()
+    {
+        var actor = Actor(0x84B);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(851, actor.Address, 851))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+
+        Assert.True(values.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Companion, 45)));
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+
+        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Empty(port.OverallWrites);
+        Assert.True(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Paused_companion_detach_restores_hold_after_exact_typed_empty_state()
+    {
+        var actor = Actor(0x848);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(848, actor.Address, 848))
+        {
+            Companion = new CompanionAttachment(CompanionKind.Mount, 9),
+            GenericCompanionChildPresent = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+        Assert.True(animation.Pause(actorId).Success);
+
+        Assert.True(values.SetCompanion(actor, null));
+
+        Assert.Null(animation.OverridesFor(actorId).OverallSpeed);
+        Assert.NotEqual(
+            nint.Zero,
+            native.ReadCompanionAddress(new(848, actor.Address, 848)));
+
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+
+        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
+    }
+
+    [Fact]
+    public void Paused_companion_attach_timeout_restores_hold()
+    {
+        long now = 0;
+        var actor = Actor(0x849);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(849, actor.Address, 849));
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native,
+            new FakeActorManager(actor),
+            framework: framework,
+            clock: () => now);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+        Assert.True(animation.Pause(actorId).Success);
+
+        Assert.True(values.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Mount, 42)));
+        framework.RaiseUpdate();
+        now = 1001;
+        framework.RaiseUpdate();
+
+        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
+        Assert.False(native.CompanionDrawEnabled);
+    }
+
+    [Fact]
+    public void Paused_companion_attach_lifetime_cancellation_restores_hold()
+    {
+        var actor = Actor(0x84A);
+        var actorId = new ActorId(Guid.NewGuid(), 1);
+        var native = new FakeNative(new(850, actor.Address, 850))
+        {
+            CompanionReady = true,
+        };
+        var framework = new FakeFramework();
+        using var service = NewService(
+            native, new FakeActorManager(actor), framework: framework);
+        var (values, animation, port) = NewValues(service, actor, actorId);
+        Assert.True(animation.Pause(actorId).Success);
+
+        Assert.True(values.SetCompanion(
+            actor, new CompanionAttachment(CompanionKind.Ornament, 44)));
+        native.ExternallyDestroyCurrent();
+        framework.RaiseUpdate();
+
+        Assert.Equal(0f, animation.OverridesFor(actorId).OverallSpeed);
+        Assert.Equal(new float?[] { 0f, null, 0f }, port.OverallWrites);
         Assert.False(native.CompanionDrawEnabled);
     }
 
@@ -229,8 +403,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         Func<long>? clock = null,
         Func<nint, EntityId?>? expectedIdentity = null,
         IPluginLog? log = null,
-        FakeCollections? collections = null,
-        IPosingService? posing = null) =>
+        FakeCollections? collections = null) =>
         new(
             new FakeGPoseService(),
             manager ?? new FakeActorManager(),
@@ -242,8 +415,37 @@ public sealed class ActorSpawnServiceOwnershipTests
             mutate ?? ((_, _, _, _) => { }),
             expectedIdentity ?? (address => new EntityId($"test-{address}")),
             clock,
-            collections,
-            posing: posing ?? new FakePosingService(Transform.Identity));
+            collections);
+
+    private static (ActorValueSession Values, AnimationSession Animation, AnimationPortProxy Port)
+        NewValues(ActorSpawnService service, IActor actor, ActorId actorId)
+    {
+        var animationPort = DispatchProxy.Create<IAnimationRuntimePort, AnimationPortProxy>();
+        var port = (AnimationPortProxy)(object)animationPort;
+        port.Reading = ActorAnimationReading.Empty with
+        {
+            Slots =
+            [
+                new(AnimationSlot.Base, 3, 1f),
+                new(AnimationSlot.UpperBody, 4, 1f),
+            ],
+        };
+        var animation = new AnimationSession(animationPort);
+        var bindings = DispatchProxy.Create<IEntityBindings, CompanionBindingProxy>();
+        var binding = (CompanionBindingProxy)(object)bindings;
+        binding.Actor = actor;
+        binding.ActorId = actorId;
+        var history = new TransformHistory();
+        history.Appended += port.HistoryEntries.Add;
+        var values = new ActorValueSession(
+            new ValueJournal(history),
+            null!,
+            null!,
+            service,
+            bindings,
+            animation);
+        return (values, animation, port);
+    }
 
     private static void ThrowNativeDelete() =>
         throw new InvalidOperationException("native delete");
@@ -470,6 +672,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool CompanionReady { get; set; }
         public int CompanionReadinessChecks { get; private set; }
         public bool CompanionDrawEnabled { get; private set; }
+        public bool GenericCompanionChildPresent { get; set; }
         public Action<CompanionKind, short>? OnCompanionWrite { get; set; }
         public int ModelId { get; set; }
         public bool ReadyToDraw { get; set; } = true;
@@ -595,11 +798,13 @@ public sealed class ActorSpawnServiceOwnershipTests
             return Gate(descriptor) && Companion == want && CompanionReady;
         }
 
-        /// <summary>The companion's own body address. The fake has no object
-        /// table behind it, so a filled slot answers with a fixed non-zero
-        /// handle and an empty one with zero.</summary>
+        /// <summary>The generic child storage address, which can outlive the
+        /// typed attachment state just like the production ChildObject.</summary>
         public nint ReadCompanionAddress(SpawnNativeDescriptor descriptor) =>
-            Gate(descriptor) && Companion is not null ? 0x5000 : nint.Zero;
+            Gate(descriptor)
+                && (GenericCompanionChildPresent || Companion is not null)
+                    ? 0x5000
+                    : nint.Zero;
 
         public bool EnableCompanionDraw(SpawnNativeDescriptor descriptor)
         {
@@ -622,34 +827,74 @@ public sealed class ActorSpawnServiceOwnershipTests
         }
     }
 
-    private sealed class FakePosingService(Transform initial) : IPosingService
+    /// <summary>Models the independent transform-ownership boundary around a
+    /// native companion write: game compensation is accepted without an
+    /// override and rejected when an existing override owns the transform.</summary>
+    private sealed class FakeTransformOwnership(
+        Transform initial,
+        Transform? existingOverride = null)
     {
         public Transform NativeTransform { get; set; } = initial;
-        public Transform? Override { get; private set; }
-        public List<Transform> Applied { get; } = new();
-        public int GetEffectiveCalls { get; private set; }
+        public Transform? Override { get; } = existingOverride;
 
-        public Transform? GetTransformOverride(IActor actor) => Override;
+        public void GameSetPosition(Transform requested) =>
+            NativeTransform = Override ?? requested;
+    }
 
-        public void SetTransformOverride(IActor actor, Transform transform)
+    public class CompanionBindingProxy : DispatchProxy
+    {
+        public IActor Actor = null!;
+        public ActorId ActorId;
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
+            targetMethod?.Name switch
+            {
+                "GetActorId" => ActorId,
+                "Resolve" when args?[0] is ActorId id && id == ActorId =>
+                    new BindingResult<IActor>(BindingStatus.Success, Actor),
+                _ => throw new InvalidOperationException(
+                    "Unexpected binding call: " + targetMethod?.Name),
+            };
+    }
+
+    public class AnimationPortProxy : DispatchProxy
+    {
+        public ActorAnimationReading Reading = ActorAnimationReading.Empty;
+        public List<float?> OverallWrites { get; } = new();
+        public List<(AnimationSlot Slot, float Speed)> SlotWrites { get; } = new();
+        public List<HistoryEntry> HistoryEntries { get; } = new();
+        public bool LoopsSuspended { get; set; }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            Override = transform;
-            NativeTransform = transform;
-            Applied.Add(transform);
+            switch (targetMethod?.Name)
+            {
+                case "Read":
+                    return Reading;
+                case "SetOverallSpeed":
+                    OverallWrites.Add((float)args![1]!);
+                    return AnimationPortResult.Ok();
+                case "ClearOverallSpeed":
+                    OverallWrites.Add(null);
+                    return AnimationPortResult.Ok();
+                case "SetSlotSpeed":
+                    SlotWrites.Add(((AnimationSlot)args![1]!, (float)args[2]!));
+                    return AnimationPortResult.Ok();
+                case "get_LoopsSuspended":
+                    return LoopsSuspended;
+                case "set_LoopsSuspended":
+                    LoopsSuspended = (bool)args![0]!;
+                    return null;
+                case "get_SupportsForceLoop":
+                case "get_SupportsStance":
+                case "get_IsPhysicsFrozen":
+                case "IsSupported":
+                    return true;
+                default:
+                    throw new InvalidOperationException(
+                        "Unexpected animation call: " + targetMethod?.Name);
+            }
         }
-
-        public Transform GetOriginalTransform(IActor actor) => NativeTransform;
-
-        public Transform GetEffectiveTransform(IActor actor)
-        {
-            GetEffectiveCalls++;
-            return Override ?? NativeTransform;
-        }
-
-        public void ClearTransformOverride(IActor actor) => Override = null;
-        public void ClearAllOverrides() => Override = null;
-        public bool HasTransformOverride(IActor actor) => Override is not null;
-        public void Dispose() { }
     }
 
     private sealed class FakeActorManager : IActorManager
