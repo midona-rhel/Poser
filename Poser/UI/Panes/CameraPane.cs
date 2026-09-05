@@ -723,13 +723,13 @@ public sealed class CameraPane
                     RequestDestroyAll?.Invoke();
                 else
                     _names.Open(
-                    "Save camera to library", camera.Name,
-                    name =>
-                    {
-                        if (_bindings.GetCameraId(camera) is { } entryId)
-                            _scenePane.SaveCameraEntry(
-                                entryId.LogicalId, name);
-                    });
+                        "Save camera to library", camera.Name,
+                        name =>
+                        {
+                            if (_bindings.GetCameraId(camera) is { } entryId)
+                                _scenePane.SaveCameraEntry(
+                                    entryId.LogicalId, name);
+                        });
             });
         form.Actions("Camera file", actions =>
             actions.Button("Load", OpenLoad,

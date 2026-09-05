@@ -699,13 +699,13 @@ public sealed class LightPane
                     RequestDestroyAll?.Invoke();
                 else
                     _names.Open(
-                    "Save light to library", light.Name,
-                    name =>
-                    {
-                        if (_bindings.GetLightId(light) is { } entryId)
-                            _scenePane.SaveLightEntry(
-                                entryId.LogicalId, name);
-                    });
+                        "Save light to library", light.Name,
+                        name =>
+                        {
+                            if (_bindings.GetLightId(light) is { } entryId)
+                                _scenePane.SaveLightEntry(
+                                    entryId.LogicalId, name);
+                        });
             });
         form.Actions("Light file", actions =>
             actions.Button("Load", OpenLoad,
