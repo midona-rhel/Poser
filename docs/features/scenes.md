@@ -144,6 +144,15 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+## Light controls and outlines
+
+Area-light Skew X/Y tilt the throw around the local X/Y axes; they do not
+rotate the emitter. Native fields and saved values retain their existing
+degree/radian boundary. The outline uses the same X-pitch/Y-yaw convention
+as Ktisis; this corrects presentation without swapping stored values.
+Spotlight outlines keep a fixed perceived slant length so the full 0–180°
+cone range stays bounded. This does not clamp the authored angle or light range.
+
 ## Weather ownership
 
 Picking a weather requests that ID and enables hold, including None (0). The territory/all-weathers

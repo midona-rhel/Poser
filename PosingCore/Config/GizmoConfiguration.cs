@@ -34,6 +34,9 @@ public class GizmoConfiguration
     /// </summary>
     public float GizmoScale { get; set; } = 1.0f;
 
+    /// <summary>Persistent overlay-only visibility for named groups and entity multi-selections.</summary>
+    public bool ShowGroupHandles { get; set; } = true;
+
     // ── snapping (Ktisis Gizmo.Manipulate / OverlayWindow.HandleShiftRaycast)
 
     /// <summary>Ktisis' <c>AllowHoldSnap</c>: hold Ctrl and the gesture's TOTAL

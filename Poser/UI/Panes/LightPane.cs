@@ -407,19 +407,19 @@ public sealed class LightPane
                 form.Cells(cells =>
                 {
                     cells.Cell(
-                        "Angle X",
+                        "Skew X",
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
                             value => _values.SetAreaAngle(
                                 light, light.AreaAngle with { X = value }), onBegin: _values.Seal),
-                        help: "Skew horizontally, degrees");
+                        help: "Tilt the throw around local X (vertical), in degrees; the emitter itself does not rotate");
                     cells.Cell(
-                        "Angle Y",
+                        "Skew Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
                             value => _values.SetAreaAngle(
                                 light, light.AreaAngle with { Y = value }), onBegin: _values.Seal),
-                        help: "Skew vertically, degrees");
+                        help: "Tilt the throw around local Y (horizontal), in degrees; the emitter itself does not rotate");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
                     value => _values.SetFalloffAngle(light, value),

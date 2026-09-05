@@ -701,6 +701,15 @@ public class GizmoOverlayWindow : Window
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
         bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
+        if (!isBone && !GizmoConfig.ShowGroupHandles && gesture == null
+            && (isGroup || _groups.ActiveSelection(_selection.Selected) != null))
+        {
+            // Hide before drawing or hit testing. An existing drag finishes normally;
+            // showing handles while a button is held must not begin a new drag.
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+                _beginSuppressed = true;
+            return;
+        }
         if (gesture is { } presented)
         {
             currentTransform = presented.Current;

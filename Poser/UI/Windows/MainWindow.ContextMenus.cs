@@ -1139,6 +1139,8 @@ public partial class MainWindow
             ContextMenuItem.Separator,
             new ContextMenuItem(group.Hidden ? "Show" : "Hide",
                 group.Hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem(ShowGroupHandles ? "Hide group handles" : "Show group handles",
+                ShowGroupHandles ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem(group.Paused ? "Play" : "Pause",
                 group.Paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause),
             new ContextMenuItem(group.Night ? "Day" : "Night",
@@ -1168,6 +1170,7 @@ public partial class MainWindow
             () => _groupSteps.SetLocked(groupId, !group.Locked),
             null, // separator
             () => SetGroupHidden(group, !group.Hidden),
+            () => SetGroupHandlesVisible(!ShowGroupHandles),
             () => SetGroupPaused(group, !group.Paused),
             () => SetGroupNight(group, !group.Night),
             null, // separator
@@ -1272,11 +1275,14 @@ public partial class MainWindow
                 submenuItems: anyActor ? DuplicateSubmenu(posable: true) : null),
             new(anyVisible ? "Hide" : "Show",
                 anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new(ShowGroupHandles ? "Hide group handles" : "Show group handles",
+                ShowGroupHandles ? TablerIcon.EyeOff : TablerIcon.Eye),
         };
         var actions = new List<Action?>
         {
             anyActor ? null : () => DuplicateSelection(withPose: false),
             () => SetSelectionVisible(!anyVisible),
+            () => SetGroupHandlesVisible(!ShowGroupHandles),
         };
         if (anyAnimated)
         {

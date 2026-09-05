@@ -55,6 +55,13 @@ modifiers, and commits one undo step; unclaimed wheel input scrolls the surface.
 
 ## Group transform read model
 
+Group handles have one saved overlay-visibility preference shared by named
+groups and anonymous entity multi-selections. The Group/Selection pane and
+their context menus edit that same preference. Hiding removes drawing and hit
+testing, not the objects, selection, inspector controls or history. An active
+drag finishes normally before hiding; showing handles again reads the current
+centroid and orientation. Individual actor/bone handles retain their own rules.
+
 An entity multi-selection, including an exact named-group selection, has one
 group transform surface. A group owns a frozen creation-camera frame, a complete
 initial member snapshot, the exact expected member transforms from its last
