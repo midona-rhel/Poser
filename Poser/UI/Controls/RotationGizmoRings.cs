@@ -580,10 +580,10 @@ public static class GizmoPointerOwnership
         _ownedUntilFrame = ImGui.GetFrameCount() + 1;
 
     public static bool Owned =>
-        !Suppressed && ImGui.GetFrameCount() <= _ownedUntilFrame;
+        ManipulationDrag.Held || (!Suppressed && ImGui.GetFrameCount() <= _ownedUntilFrame);
 
-    /// <summary>Brio's rule, asked for by the overlay each frame a dot is
-    /// hovered or its popup is open: the gizmo takes no pointer.</summary>
+    /// <summary>Scene markers and their popup suppress idle gizmo hits.
+    /// An already-held drag retains ownership through its release frame.</summary>
     private static int _suppressedFrame = -1;
     public static void Suppress() =>
         _suppressedFrame = ImGui.GetFrameCount();

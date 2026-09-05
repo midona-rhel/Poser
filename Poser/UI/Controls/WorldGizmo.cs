@@ -42,8 +42,6 @@ public sealed class WorldGizmoProjection
     public Vector3 ViewDirection;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
-    /// <summary>Normalized clip-w gradient used for axis-facing signs.</summary>
-    public Vector3 ViewForward;
 
     /// <summary>Builds one projection, or null when it is unusable.</summary>
     public static WorldGizmoProjection? Create(
@@ -80,18 +78,10 @@ public sealed class WorldGizmoProjection
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
 
-        // Read the clip-w gradient used by Project.
-        var wGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
-        result.ViewForward = wGradient.LengthSquared() > 1e-12f
-            ? Vector3.Normalize(wGradient)
-            : Vector3.Zero;
-
-        // Measure world scale from a projected perpendicular unit offset.
-        var reference = MathF.Abs(Vector3.Dot(result.ViewDirection, Vector3.UnitY)) > 0.99f
-            ? Vector3.UnitX
-            : Vector3.UnitY;
-        var lateral = Vector3.Normalize(
-            Vector3.Cross(result.ViewDirection, reference));
+        // Measure along camera-right: both points have the same view depth,
+        // so pixels per world unit does not change across the viewport.
+        // Perpendicular to the eye-to-pivot ray is NOT the image plane off-centre.
+        var lateral = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitX, invView));
         if (!result.Project(pivotWorld + lateral, out var offsetScreen))
             return null;
         float pixelsPerWorldUnit = Vector2.Distance(offsetScreen, center);
@@ -294,7 +284,7 @@ public static class WorldGizmo
                 tool == TransformTool.Move || (universal && universalCenterTranslates);
             for (int a = 0; a < 3; a++)
                 layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(translateFrame, a), projection.ViewForward);
+                    FrameAxis(translateFrame, a), projection.ViewDirection);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedTranslateAxis(a);
@@ -331,7 +321,7 @@ public static class WorldGizmo
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
             for (int a = 0; a < 3; a++)
                 layout.ScaleSign[a] = heldScaleSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(scaleFrame, a), projection.ViewForward);
+                    FrameAxis(scaleFrame, a), projection.ViewDirection);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedScaleAxis(a);
@@ -360,9 +350,10 @@ public static class WorldGizmo
     /// <summary>Inside this dot-product band, edge-on axes keep sign +1.</summary>
     private const float AxisFlipEpsilon = 1e-6f;
 
-    /// <summary>Returns the camera-facing sign for a linear axis.</summary>
-    public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewForward) =>
-        Vector3.Dot(axisWorld, viewForward) > AxisFlipEpsilon ? -1f : 1f;
+    /// <summary>Face the camera's side of the pivot plane, not its look
+    /// direction. Turning the camera in place must not flip the arrows.</summary>
+    public static float AxisFlipSign(Vector3 axisWorld, Vector3 cameraToPivot) =>
+        Vector3.Dot(axisWorld, cameraToPivot) > AxisFlipEpsilon ? -1f : 1f;
 
     public static Vector3 FrameAxis(Quaternion frame, int axis) =>
         Vector3.Normalize(Vector3.Transform(

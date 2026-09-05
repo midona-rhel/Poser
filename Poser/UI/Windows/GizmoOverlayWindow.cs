@@ -503,6 +503,7 @@ public class GizmoOverlayWindow : Window
             PrevHit = hit,
             Accum = Vector3.Zero,
         };
+        ManipulationDrag.Hold();
     }
 
     /// <summary>Updates a gaze drag from its frozen plane.</summary>
@@ -1225,6 +1226,7 @@ public class GizmoOverlayWindow : Window
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
+        ManipulationDrag.Hold();
 
         _dragProjection = projection;
         _dragInvModel = invModel;
