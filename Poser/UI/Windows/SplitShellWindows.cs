@@ -350,7 +350,7 @@ public sealed class ToolbarPartWindow : Window
                 var items = new[]
                 {
                     new ContextMenuItem(_compact ? "Expand toolbar" : "Compact toolbar",
-                        _compact ? TablerIcon.ChevronRight : TablerIcon.ChevronLeft),
+                        _compact ? TablerIcon.ArrowRight : TablerIcon.ArrowLeft),
                 };
                 Crystarium.FloatingMenu.Open(menuId, mouse, items,
                     Crystarium.FloatingMenu.MeasureWidth(items));
