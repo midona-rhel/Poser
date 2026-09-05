@@ -38,12 +38,15 @@ public sealed class WorldGizmoProjection
     public Vector2 Center;
     /// <summary>World length corresponding to the requested handle size.</summary>
     public float WorldScale;
+    /// <summary>Requested handle size in screen pixels.</summary>
+    public float ScreenScale;
     /// <summary>Unit direction from camera to pivot.</summary>
     public Vector3 ViewDirection;
+    /// <summary>Image-plane depth direction for the fixed-size rotation ball.</summary>
+    public Vector3 RingViewDirection;
+    private float _pivotClipW;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
-    /// <summary>Normalized clip-w gradient used for axis-facing signs.</summary>
-    public Vector3 ViewForward;
 
     /// <summary>Builds one projection, or null when it is unusable.</summary>
     public static WorldGizmoProjection? Create(
@@ -70,6 +73,7 @@ public sealed class WorldGizmoProjection
             DisplayCenter = displaySize / 2f,
             Pivot = pivotWorld,
             ViewRotation = viewRotation,
+            ScreenScale = sizePixels,
         };
         if (!result.Project(pivotWorld, out var center))
             return null;
@@ -79,19 +83,16 @@ public sealed class WorldGizmoProjection
         if (toPivot.LengthSquared() < 1e-8f)
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
+        var depthGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
+        result.RingViewDirection = depthGradient.LengthSquared() > 1e-12f
+            ? Vector3.Normalize(depthGradient)
+            : result.ViewDirection;
+        result._pivotClipW = Vector3.Dot(depthGradient, pivotWorld) + viewProj.M44;
 
-        // Read the clip-w gradient used by Project.
-        var wGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
-        result.ViewForward = wGradient.LengthSquared() > 1e-12f
-            ? Vector3.Normalize(wGradient)
-            : Vector3.Zero;
-
-        // Measure world scale from a projected perpendicular unit offset.
-        var reference = MathF.Abs(Vector3.Dot(result.ViewDirection, Vector3.UnitY)) > 0.99f
-            ? Vector3.UnitX
-            : Vector3.UnitY;
-        var lateral = Vector3.Normalize(
-            Vector3.Cross(result.ViewDirection, reference));
+        // Measure along camera-right: both points have the same view depth,
+        // so pixels per world unit does not change across the viewport.
+        // Perpendicular to the eye-to-pivot ray is NOT the image plane off-centre.
+        var lateral = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitX, invView));
         if (!result.Project(pivotWorld + lateral, out var offsetScreen))
             return null;
         float pixelsPerWorldUnit = Vector2.Distance(offsetScreen, center);
@@ -112,6 +113,16 @@ public sealed class WorldGizmoProjection
             DisplayCenter.X + DisplayCenter.X * x / w,
             DisplayCenter.Y - DisplayCenter.Y * y / w);
         return w > 0.001f;
+    }
+
+    /// <summary>Projects a rotation-ball offset at the pivot's fixed depth.
+    /// The pivot is perspective-placed, but the control itself cannot warp.</summary>
+    public Vector2 ProjectRingOffset(Vector3 worldOffset)
+    {
+        var clip = Vector4.Transform(new Vector4(worldOffset, 0f), ViewProj);
+        // Do not divide each sample by its own depth: that stretches the ball
+        // off-centre and can send its near side across the camera plane.
+        return Center + new Vector2(DisplayCenter.X * clip.X, -DisplayCenter.Y * clip.Y) / _pivotClipW;
     }
 
     /// <summary>The world-space mouse ray direction for a screen point.</summary>
@@ -160,40 +171,37 @@ public static class WorldGizmo
         {
             Frame = frame,
             Center = projection.Center,
-            // Roll uses the camera view axis; other rings use perspective axes.
+            // Roll keeps the shared camera-axis convention.
             ViewRotation = projection.ViewRotation,
             RollAxisWorld = RotationGizmoRings.CameraViewAxis(
                 projection.ViewRotation),
         };
         rings.Points = new Vector2[3][];
-        rings.Front = new bool[3][];
-        float maxRadius = 0f;
+        rings.Depth = new float[3][];
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RotationGizmoRings.RingPoints];
-            rings.Front[a] = new bool[RotationGizmoRings.RingPoints];
+            rings.Depth[a] = new float[RotationGizmoRings.RingPoints];
+            rings.FrontCutoff[a] = RotationGizmoRings.GrowingArcCutoff(
+                RotationGizmoRings.AxisWorld(rings, a), projection.RingViewDirection);
             for (int i = 0; i < RotationGizmoRings.RingPoints; i++)
             {
-                var world = projection.Pivot + Vector3.Transform(
-                    RotationGizmoRings.LocalRingPoint(a, i), frame) * ringWorldRadius;
-                if (!projection.Project(world, out var screen))
-                    return rings; // behind camera — invalid, draw nothing
-                rings.Points[a][i] = screen;
-                // Front segments are nearer than the pivot plane.
-                rings.Front[a][i] = Vector3.Dot(
-                    world - projection.Pivot, projection.ViewDirection) < 0f;
-                maxRadius = MathF.Max(
-                    maxRadius, Vector2.Distance(screen, projection.Center));
+                var direction = Vector3.Transform(RotationGizmoRings.LocalRingPoint(a, i), frame);
+                rings.Points[a][i] = projection.ProjectRingOffset(direction * ringWorldRadius);
+                // Unit-ring depth keeps the arc cut independent of gizmo size.
+                rings.Depth[a][i] = Vector3.Dot(direction, projection.RingViewDirection);
             }
         }
-        rings.ScreenRadius = maxRadius;
-        rings.RollRadius = maxRadius + 8f * scale;
+        // All rings use the requested size, not a sampled bounding circle.
+        // Roll's draw, pick and sweep share this screen-space radius.
+        rings.ScreenRadius = projection.ScreenScale * (ringWorldRadius / projection.WorldScale);
+        rings.RollRadius = rings.ScreenRadius + 8f * scale;
         rings.Valid = true;
         return rings;
     }
 
     /// <summary>Returns the projected positive rotation tangent.</summary>
-    public static Vector2 PositiveTangentPerspective(
+    public static Vector2 PositiveRingTangent(
         WorldGizmoProjection projection,
         ProjectedRings rings,
         RingHit hit,
@@ -204,16 +212,15 @@ public static class WorldGizmo
         if (hit.Axis == RotationGizmoRings.RollAxis)
             return RotationGizmoRings.RollTangent(rings, mouse, hit.Tangent);
 
-        var grabWorld = projection.Pivot + Vector3.Transform(
+        var grabOffset = Vector3.Transform(
             RotationGizmoRings.LocalRingPoint(hit.Axis, hit.SegmentIndex),
             rings.Frame) * ringWorldRadius;
         var axisWorld = RotationGizmoRings.AxisWorld(rings, hit.Axis);
-        var rotated = projection.Pivot + Vector3.Transform(
-            grabWorld - projection.Pivot,
+        var rotated = Vector3.Transform(
+            grabOffset,
             Quaternion.CreateFromAxisAngle(axisWorld, 0.05f));
-        if (!projection.Project(grabWorld, out var a) ||
-            !projection.Project(rotated, out var b))
-            return hit.Tangent;
+        var a = projection.ProjectRingOffset(grabOffset);
+        var b = projection.ProjectRingOffset(rotated);
         var tangent = b - a;
         return tangent.LengthSquared() < 1e-8f
             ? hit.Tangent
@@ -293,7 +300,7 @@ public static class WorldGizmo
                 tool == TransformTool.Move || (universal && universalCenterTranslates);
             for (int a = 0; a < 3; a++)
                 layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(translateFrame, a), projection.ViewForward);
+                    FrameAxis(translateFrame, a), projection.ViewDirection);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedTranslateAxis(a);
@@ -330,7 +337,7 @@ public static class WorldGizmo
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
             for (int a = 0; a < 3; a++)
                 layout.ScaleSign[a] = heldScaleSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(scaleFrame, a), projection.ViewForward);
+                    FrameAxis(scaleFrame, a), projection.ViewDirection);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedScaleAxis(a);
@@ -359,9 +366,10 @@ public static class WorldGizmo
     /// <summary>Inside this dot-product band, edge-on axes keep sign +1.</summary>
     private const float AxisFlipEpsilon = 1e-6f;
 
-    /// <summary>Returns the camera-facing sign for a linear axis.</summary>
-    public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewForward) =>
-        Vector3.Dot(axisWorld, viewForward) > AxisFlipEpsilon ? -1f : 1f;
+    /// <summary>Face the camera's side of the pivot plane, not its look
+    /// direction. Turning the camera in place must not flip the arrows.</summary>
+    public static float AxisFlipSign(Vector3 axisWorld, Vector3 cameraToPivot) =>
+        Vector3.Dot(axisWorld, cameraToPivot) > AxisFlipEpsilon ? -1f : 1f;
 
     public static Vector3 FrameAxis(Quaternion frame, int axis) =>
         Vector3.Normalize(Vector3.Transform(
@@ -396,7 +404,8 @@ public static class WorldGizmo
         startPosition + Vector3.TransformNormal(
             hit - pivotWorld, inverseModel);
 
-    /// <summary>Resolves one hovered handle using fixed priority tiers.</summary>
+    /// <summary>Resolves drawn handle shapes plus a small pixel tolerance,
+    /// not broad circular hitboxes that cover neighbouring scene markers.</summary>
     public static WorldHandleHit? HitTest(Layout layout, Vector2 mouse, float tolerance)
     {
         if (layout.TranslateActive)
@@ -406,27 +415,28 @@ public static class WorldGizmo
                         new WorldHandle(WorldHandleKind.TranslatePlane, a), 0f, null);
 
         if (layout.TranslateCenterActive &&
-            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            Vector2.Distance(mouse, layout.Projection.Center) <= 7f * layout.UiScale + tolerance)
             return new WorldHandleHit(
                 new WorldHandle(WorldHandleKind.TranslateCenter, 0), 0f, null);
 
         if (layout.UniformActive &&
-            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            Vector2.Distance(mouse, layout.Projection.Center) <= 7f * layout.UiScale + tolerance)
             return new WorldHandleHit(
                 new WorldHandle(WorldHandleKind.ScaleUniform, 0), 0f, null);
 
         if (layout.ScaleActive)
         {
             int best = -1;
-            float bestDistance = tolerance + 4f * layout.UiScale;
+            float bestDistance = tolerance;
             for (int a = 0; a < 3; a++)
             {
                 if (!layout.ScaleVisible[a])
                     continue;
-                float distance = Vector2.Distance(mouse, layout.ScaleKnob[a]);
+                var offset = Vector2.Abs(mouse - layout.ScaleKnob[a]);
+                float distance = MathF.Max(0f, MathF.Max(offset.X, offset.Y) - 5f * layout.UiScale);
                 if (layout.ScaleShafts)
-                    distance = MathF.Min(distance, DistanceToSegment(
-                        mouse, layout.ScaleShaftStart[a], layout.ScaleKnob[a]));
+                    distance = MathF.Min(distance, MathF.Max(0f, DistanceToSegment(
+                        mouse, layout.ScaleShaftStart[a], layout.ScaleKnob[a]) - 1.5f * layout.UiScale));
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -446,11 +456,10 @@ public static class WorldGizmo
             {
                 if (!layout.ShaftVisible[a])
                     continue;
-                float distance = DistanceToSegment(
-                    mouse, layout.ShaftStart[a], layout.ShaftEnd[a]);
-                // The arrowhead extends the grab band past the shaft tip.
-                distance = MathF.Min(distance, MathF.Max(0f,
-                    Vector2.Distance(mouse, layout.ShaftEnd[a]) - 10f * layout.UiScale));
+                float distance = MathF.Max(0f, DistanceToSegment(
+                    mouse, layout.ShaftStart[a], layout.ShaftEnd[a]) - 1.5f * layout.UiScale);
+                ArrowHead(layout, a, out var tip, out var left, out var right);
+                distance = MathF.Min(distance, DistanceToTriangle(mouse, tip, left, right));
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -463,7 +472,7 @@ public static class WorldGizmo
         }
 
         if (layout.Rings is { } rings &&
-            RotationGizmoRings.HitTest(rings, mouse, tolerance) is { } ringHit)
+            RotationGizmoRings.HitTest(rings, mouse, tolerance + 1.75f * layout.UiScale) is { } ringHit)
             return new WorldHandleHit(
                 ringHit.Axis == RotationGizmoRings.RollAxis
                     ? new WorldHandle(WorldHandleKind.Roll, 0)
@@ -533,15 +542,8 @@ public static class WorldGizmo
                     ColorEx.ApplyAlpha(color with { W = hot ? 1f : 0.85f }));
                 dl.AddLine(layout.ShaftStart[a], layout.ShaftEnd[a],
                     stroke, (hot ? 4.5f : 3f) * uiScale);
-                var direction = Vector2.Normalize(
-                    layout.ShaftEnd[a] - layout.ShaftStart[a]);
-                var perpendicular = new Vector2(-direction.Y, direction.X);
-                var tip = layout.ShaftEnd[a] + direction * 12f * uiScale;
-                dl.AddTriangleFilled(
-                    tip,
-                    layout.ShaftEnd[a] + perpendicular * 5f * uiScale,
-                    layout.ShaftEnd[a] - perpendicular * 5f * uiScale,
-                    stroke);
+                ArrowHead(layout, a, out var tip, out var left, out var right);
+                dl.AddTriangleFilled(tip, left, right, stroke);
             }
         }
 
@@ -599,6 +601,26 @@ public static class WorldGizmo
         { Kind: WorldHandleKind.Roll } => RotationGizmoRings.RollAxis,
         _ => -1,
     };
+
+    private static void ArrowHead(Layout layout, int axis, out Vector2 tip, out Vector2 left, out Vector2 right)
+    {
+        var direction = Vector2.Normalize(layout.ShaftEnd[axis] - layout.ShaftStart[axis]);
+        var perpendicular = new Vector2(-direction.Y, direction.X);
+        tip = layout.ShaftEnd[axis] + direction * 12f * layout.UiScale;
+        left = layout.ShaftEnd[axis] + perpendicular * 5f * layout.UiScale;
+        right = layout.ShaftEnd[axis] - perpendicular * 5f * layout.UiScale;
+    }
+
+    private static float DistanceToTriangle(Vector2 point, Vector2 a, Vector2 b, Vector2 c)
+    {
+        static float Side(Vector2 p, Vector2 from, Vector2 to) =>
+            (to.X - from.X) * (p.Y - from.Y) - (to.Y - from.Y) * (p.X - from.X);
+        float ab = Side(point, a, b), bc = Side(point, b, c), ca = Side(point, c, a);
+        if (!(ab < 0f || bc < 0f || ca < 0f) || !(ab > 0f || bc > 0f || ca > 0f))
+            return 0f;
+        return MathF.Min(DistanceToSegment(point, a, b),
+            MathF.Min(DistanceToSegment(point, b, c), DistanceToSegment(point, c, a)));
+    }
 
     private static bool PointInQuad(Vector2 point, Vector2[] quad)
     {

@@ -507,7 +507,9 @@ public class SkeletonOverlayWindow : Window, IDisposable
             || ImGui.IsWindowHovered(
                 ImGuiHoveredFlags.AnyWindow |
                 ImGuiHoveredFlags.AllowWhenBlockedByPopup |
-                ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
+                ImGuiHoveredFlags.AllowWhenBlockedByActiveItem)
+            || Controls.GizmoPointerOwnership.Owned
+            || Controls.ManipulationDrag.ShellHeld;
 
         // Ahead of the Alt gate: the listing's cadence and the select that
         // finishes an adoption are bookkeeping, and holding Alt is a request
@@ -1119,10 +1121,6 @@ public class SkeletonOverlayWindow : Window, IDisposable
         // the highlight index survives a changing cluster (Ktisis).
         UpdateHoveredBones(bones);
         bool hasWorldBone = AnyHovered(bones);
-        // Bones ALWAYS beat the gizmo (Midona's rule, Brio's behaviour):
-        // a hovered dot or an open popup takes the pointer off the gizmo.
-        if (hasWorldBone || _popupOpen)
-            Controls.GizmoPointerOwnership.Suppress();
         // THE WHEEL. Ktisis: the notch moves the highlight and nothing
         // else (SelectableGui.DrawSelectList). Brio: over a cluster the
         // notch opens the popup on the frozen cluster and selects its

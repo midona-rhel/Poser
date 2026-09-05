@@ -12,8 +12,30 @@ keep pointer ownership through release, so ending a drag cannot pick a bone.
 
 Frame wells edit model-space values. World and Local gizmo spaces keep their
 different axis meanings. Self rotates in place; Parent orbits around the
-frozen parent position. The world overlay is perspective-correct and draws
-nothing for an unprojectable pivot. Inspector rotation stays in place.
+frozen parent position. The world overlay places its pivot in perspective and
+draws nothing for an unprojectable pivot. Inspector rotation stays in place.
+
+World-gizmo size calibration uses the camera image plane, keeping its reference
+pixel span stable across the viewport. Rotation rings are an oriented ball at
+fixed pivot depth: they tilt with the axes but do not perspective-warp with
+screen position. Ring drawing, picking, positive tangents and drag sweeps use
+that same projection; linear handles and world translation retain perspective.
+The white roll circle uses the requested pixel radius, never the furthest
+projected axis-ring sample; drawing, picking and drag sweep share that radius.
+Linear handles face the camera's position relative to the pivot, not its look
+direction; their signs remain frozen during a drag.
+Drawn gizmo handles, with a two-pixel scaled margin, resolve before padded scene
+marker hitboxes. Arrowheads use their triangle, not an enlarged circle. Outside
+the drawn handles, markers remain selectable; a previous frame's hover cannot
+block them. Once a drag begins it retains the pointer through release, so
+crossing a marker cannot select it or start another action.
+
+Rotation arcs grow continuously from half circles at 20 degrees off face-on
+to full circles at 5 degrees, staying full closer in, on both gizmos.
+Drawing and picking share the same clipped arc
+endpoints; the inspector's remaining rear arc stays faint and non-interactive.
+Each projection uses its own viewing direction. Roll and gesture axes do not
+change as the arc grows.
 
 New lights and **Move to camera** share a one-yalm camera-forward placement,
 with local +Z aligned to the look ray. Brio and Ktisis place lights exactly

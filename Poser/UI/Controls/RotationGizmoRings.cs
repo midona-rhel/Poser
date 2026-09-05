@@ -6,10 +6,10 @@ using Poser.Services;
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// One projected ring set: screen points, front/rear flags, and the frame
+/// One projected ring set: screen points, depth cuts, and the frame
 /// they came from. This is a RESULT container, filled by two different
 /// projections — the inspector's direction-only basis (<see cref="
-/// RotationGizmoRings.Project"/>) and the world overlay's perspective path
+/// RotationGizmoRings.Project"/>) and the world overlay's anchored matrix path
 /// (<see cref="WorldGizmo.ProjectRings"/>). Consumers that only read
 /// screen geometry — drawing, segment hit-testing — work on either; the
 /// projections themselves are deliberately not interchangeable.
@@ -19,7 +19,8 @@ public sealed class ProjectedRings
     public bool Valid;
     public Vector2 Center;
     public Vector2[][] Points = Array.Empty<Vector2[]>();
-    public bool[][] Front = Array.Empty<bool[]>();
+    public float[][] Depth = Array.Empty<float[]>();
+    public float[] FrontCutoff = new float[3];
     public float ScreenRadius;
     public float RollRadius;
     public Quaternion Frame = Quaternion.Identity;
@@ -34,7 +35,7 @@ public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent,
 /// both surfaces share: frame basis, segment hit testing, ring drawing,
 /// the camera view axis and roll tangent conventions, and the Ctrl/Shift
 /// sensitivity policy. The world overlay projects its own ring points
-/// through real view/projection matrices (<see cref="WorldGizmo"/>) and
+/// through real view/projection matrices at fixed pivot depth (<see cref="WorldGizmo"/>) and
 /// only borrows what is genuinely common. Both surfaces dispatch results
 /// through the existing clean TransformGestureService lifecycle — this
 /// class owns no gesture state.
@@ -43,6 +44,28 @@ public static class RotationGizmoRings
 {
     public const int RingPoints = 96;
     public const int RollAxis = 3;
+
+    public const float ArcGrowthAngleDegrees = 20f;
+    public const float FullArcAngleDegrees = 5f;
+
+    /// <summary>Depth cut on a unit ring, expanding its front arc as the
+    /// ring normal approaches either direction of the viewing axis.</summary>
+    public static float GrowingArcCutoff(Vector3 normal, Vector3 viewDirection)
+    {
+        float sinTilt = Vector3.Cross(normal, viewDirection).Length();
+        float tiltDegrees = MathF.Atan2(sinTilt, MathF.Abs(Vector3.Dot(normal, viewDirection)))
+            * 180f / MathF.PI;
+        if (tiltDegrees <= FullArcAngleDegrees)
+            return 1f; // The complete unit ring is inside the cut throughout this band.
+        float growth = Math.Clamp(
+            (ArcGrowthAngleDegrees - tiltDegrees) / (ArcGrowthAngleDegrees - FullArcAngleDegrees),
+            0f, 1f);
+        growth = growth * growth * (3f - 2f * growth);
+        // Ring depth is sinusoidal with amplitude sin(tilt). Moving this cut
+        // from 0 to that amplitude grows the arc from half to whole; easing
+        // the angular growth makes both ends settle without a mode switch.
+        return sinTilt * MathF.Sin(growth * MathF.PI / 2f);
+    }
 
     // Ring topology never depends on the camera, target, or gesture. Keep
     // the unit directions once; Project and WorldGizmo.ProjectRings still
@@ -93,7 +116,7 @@ public static class RotationGizmoRings
     /// rotation, then its camera-space X/Y maps straight to the requested
     /// pixel radius. No translation, perspective, FOV, pivot depth, or
     /// actor scale participates — the rings keep one stable shape and size
-    /// anywhere on screen. Front segments face the camera (Z &lt; 0).
+    /// anywhere on screen. The front depth cut grows toward face-on.
     /// </summary>
     public static ProjectedRings Project(
         ICameraService camera,
@@ -125,12 +148,13 @@ public static class RotationGizmoRings
         rings.RollRadius = radiusPixels + 8f;
         rings.RollAxisWorld = CameraViewAxis(viewRotation);
         rings.Points = new Vector2[3][];
-        rings.Front = new bool[3][];
+        rings.Depth = new float[3][];
 
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RingPoints];
-            rings.Front[a] = new bool[RingPoints];
+            rings.Depth[a] = new float[RingPoints];
+            rings.FrontCutoff[a] = GrowingArcCutoff(AxisWorld(rings, a), rings.RollAxisWorld);
             for (int i = 0; i < RingPoints; i++)
             {
                 var cam = ToCamera(
@@ -138,7 +162,7 @@ public static class RotationGizmoRings
                     viewRotation);
                 rings.Points[a][i] =
                     center + new Vector2(cam.X, cam.Y) * radiusPixels;
-                rings.Front[a][i] = cam.Z < 0f;
+                rings.Depth[a][i] = cam.Z;
             }
         }
         return rings;
@@ -268,17 +292,16 @@ public static class RotationGizmoRings
                 continue;
             for (int i = 1; i < RingPoints; i++)
             {
-                if (!rings.Front[a][i])
+                if (!TryGetArcSegment(rings, a, i, front: true, out var start, out var end))
                     continue;
                 float dist = DistanceToSegment(
-                    mouse, rings.Points[a][i - 1], rings.Points[a][i]);
+                    mouse, start, end);
                 if (dist < best)
                 {
                     best = dist;
                     axis = a;
                     segment = i;
-                    tangent = Vector2.Normalize(
-                        rings.Points[a][i] - rings.Points[a][i - 1]);
+                    tangent = Vector2.Normalize(end - start);
                 }
             }
         }
@@ -362,14 +385,39 @@ public static class RotationGizmoRings
                     ColorEx.ApplyAlpha(axisColor with { W = alpha }));
                 for (int i = 1; i < RingPoints; i++)
                 {
-                    if (rings.Front[a][i] != frontPass)
+                    if (!TryGetArcSegment(rings, a, i, frontPass, out var start, out var end))
                         continue;
                     dl.AddLine(
-                        rings.Points[a][i - 1], rings.Points[a][i],
+                        start, end,
                         color, thickness);
                 }
             }
         }
+    }
+
+    // Clip the projected polyline at the depth cut rather than switching
+    // whole samples on/off. Drawing and picking share the growing endpoints.
+    private static bool TryGetArcSegment(
+        ProjectedRings rings, int axis, int index, bool front,
+        out Vector2 start, out Vector2 end)
+    {
+        start = rings.Points[axis][index - 1];
+        end = rings.Points[axis][index];
+        float from = rings.Depth[axis][index - 1] - rings.FrontCutoff[axis];
+        float to = rings.Depth[axis][index] - rings.FrontCutoff[axis];
+        bool includeStart = (from <= 0f) == front;
+        bool includeEnd = (to <= 0f) == front;
+        if (!includeStart && !includeEnd)
+            return false;
+        if (includeStart != includeEnd)
+        {
+            var boundary = Vector2.Lerp(start, end, from / (from - to));
+            if (includeStart)
+                end = boundary;
+            else
+                start = boundary;
+        }
+        return Vector2.DistanceSquared(start, end) > 1e-8f;
     }
 
     /// <summary>
@@ -377,7 +425,7 @@ public static class RotationGizmoRings
     /// axis at the grab point, derived by epsilon-rotating the grab
     /// DIRECTION and re-projecting through the inspector's own
     /// direction-only basis, so drag direction matches the applied
-    /// rotation on every ring. The world overlay has its own perspective
+    /// rotation on every ring. The world overlay has its own anchored-matrix
     /// equivalent; only the roll branch below is common to both.
     /// </summary>
     public static Vector2 PositiveTangent(
@@ -525,20 +573,12 @@ public static class ManipulationDrag
 
 public static class GizmoPointerOwnership
 {
-    private static int _ownedUntilFrame = -1;
+    private static int _hoverFrame = -1;
 
     /// <summary>Call every frame the pointer engages a custom gizmo.</summary>
     public static void Hold() =>
-        _ownedUntilFrame = ImGui.GetFrameCount() + 1;
+        _hoverFrame = ImGui.GetFrameCount();
 
     public static bool Owned =>
-        !Suppressed && ImGui.GetFrameCount() <= _ownedUntilFrame;
-
-    /// <summary>Brio's rule, asked for by the overlay each frame a dot is
-    /// hovered or its popup is open: the gizmo takes no pointer.</summary>
-    private static int _suppressedFrame = -1;
-    public static void Suppress() =>
-        _suppressedFrame = ImGui.GetFrameCount();
-    public static bool Suppressed =>
-        ImGui.GetFrameCount() == _suppressedFrame;
+        ManipulationDrag.Held || ImGui.GetFrameCount() == _hoverFrame;
 }

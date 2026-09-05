@@ -57,11 +57,12 @@ public sealed class UiWindowSet : IDisposable
         _worldAdoption = worldAdoption;
         _configService = configService;
         _services = services;
-        SkeletonOverlay = skeletonOverlay;
-        System.AddWindow(SkeletonOverlay);
-
+        // Tight, drawn gizmo handles resolve before the markers' padded hitboxes.
         GizmoOverlay = gizmoOverlay;
         System.AddWindow(GizmoOverlay);
+
+        SkeletonOverlay = skeletonOverlay;
+        System.AddWindow(SkeletonOverlay);
 
         Main = main;
         System.AddWindow(Main);
