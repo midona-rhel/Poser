@@ -9,7 +9,7 @@ namespace Poser.UI.Controls;
 /// One projected ring set: screen points, depth cuts, and the frame
 /// they came from. This is a RESULT container, filled by two different
 /// projections — the inspector's direction-only basis (<see cref="
-/// RotationGizmoRings.Project"/>) and the world overlay's perspective path
+/// RotationGizmoRings.Project"/>) and the world overlay's anchored matrix path
 /// (<see cref="WorldGizmo.ProjectRings"/>). Consumers that only read
 /// screen geometry — drawing, segment hit-testing — work on either; the
 /// projections themselves are deliberately not interchangeable.
@@ -35,7 +35,7 @@ public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent,
 /// both surfaces share: frame basis, segment hit testing, ring drawing,
 /// the camera view axis and roll tangent conventions, and the Ctrl/Shift
 /// sensitivity policy. The world overlay projects its own ring points
-/// through real view/projection matrices (<see cref="WorldGizmo"/>) and
+/// through real view/projection matrices at fixed pivot depth (<see cref="WorldGizmo"/>) and
 /// only borrows what is genuinely common. Both surfaces dispatch results
 /// through the existing clean TransformGestureService lifecycle — this
 /// class owns no gesture state.
@@ -425,7 +425,7 @@ public static class RotationGizmoRings
     /// axis at the grab point, derived by epsilon-rotating the grab
     /// DIRECTION and re-projecting through the inspector's own
     /// direction-only basis, so drag direction matches the applied
-    /// rotation on every ring. The world overlay has its own perspective
+    /// rotation on every ring. The world overlay has its own anchored-matrix
     /// equivalent; only the roll branch below is common to both.
     /// </summary>
     public static Vector2 PositiveTangent(

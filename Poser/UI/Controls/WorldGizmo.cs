@@ -38,8 +38,13 @@ public sealed class WorldGizmoProjection
     public Vector2 Center;
     /// <summary>World length corresponding to the requested handle size.</summary>
     public float WorldScale;
+    /// <summary>Requested handle size in screen pixels.</summary>
+    public float ScreenScale;
     /// <summary>Unit direction from camera to pivot.</summary>
     public Vector3 ViewDirection;
+    /// <summary>Image-plane depth direction for the fixed-size rotation ball.</summary>
+    public Vector3 RingViewDirection;
+    private float _pivotClipW;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
 
@@ -68,6 +73,7 @@ public sealed class WorldGizmoProjection
             DisplayCenter = displaySize / 2f,
             Pivot = pivotWorld,
             ViewRotation = viewRotation,
+            ScreenScale = sizePixels,
         };
         if (!result.Project(pivotWorld, out var center))
             return null;
@@ -77,6 +83,11 @@ public sealed class WorldGizmoProjection
         if (toPivot.LengthSquared() < 1e-8f)
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
+        var depthGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
+        result.RingViewDirection = depthGradient.LengthSquared() > 1e-12f
+            ? Vector3.Normalize(depthGradient)
+            : result.ViewDirection;
+        result._pivotClipW = Vector3.Dot(depthGradient, pivotWorld) + viewProj.M44;
 
         // Measure along camera-right: both points have the same view depth,
         // so pixels per world unit does not change across the viewport.
@@ -102,6 +113,16 @@ public sealed class WorldGizmoProjection
             DisplayCenter.X + DisplayCenter.X * x / w,
             DisplayCenter.Y - DisplayCenter.Y * y / w);
         return w > 0.001f;
+    }
+
+    /// <summary>Projects a rotation-ball offset at the pivot's fixed depth.
+    /// The pivot is perspective-placed, but the control itself cannot warp.</summary>
+    public Vector2 ProjectRingOffset(Vector3 worldOffset)
+    {
+        var clip = Vector4.Transform(new Vector4(worldOffset, 0f), ViewProj);
+        // Do not divide each sample by its own depth: that stretches the ball
+        // off-centre and can send its near side across the camera plane.
+        return Center + new Vector2(DisplayCenter.X * clip.X, -DisplayCenter.Y * clip.Y) / _pivotClipW;
     }
 
     /// <summary>The world-space mouse ray direction for a screen point.</summary>
@@ -150,41 +171,37 @@ public static class WorldGizmo
         {
             Frame = frame,
             Center = projection.Center,
-            // Roll uses the camera view axis; other rings use perspective axes.
+            // Roll keeps the shared camera-axis convention.
             ViewRotation = projection.ViewRotation,
             RollAxisWorld = RotationGizmoRings.CameraViewAxis(
                 projection.ViewRotation),
         };
         rings.Points = new Vector2[3][];
         rings.Depth = new float[3][];
-        float maxRadius = 0f;
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RotationGizmoRings.RingPoints];
             rings.Depth[a] = new float[RotationGizmoRings.RingPoints];
             rings.FrontCutoff[a] = RotationGizmoRings.GrowingArcCutoff(
-                RotationGizmoRings.AxisWorld(rings, a), projection.ViewDirection);
+                RotationGizmoRings.AxisWorld(rings, a), projection.RingViewDirection);
             for (int i = 0; i < RotationGizmoRings.RingPoints; i++)
             {
                 var direction = Vector3.Transform(RotationGizmoRings.LocalRingPoint(a, i), frame);
-                var world = projection.Pivot + direction * ringWorldRadius;
-                if (!projection.Project(world, out var screen))
-                    return rings; // behind camera — invalid, draw nothing
-                rings.Points[a][i] = screen;
+                rings.Points[a][i] = projection.ProjectRingOffset(direction * ringWorldRadius);
                 // Unit-ring depth keeps the arc cut independent of gizmo size.
-                rings.Depth[a][i] = Vector3.Dot(direction, projection.ViewDirection);
-                maxRadius = MathF.Max(
-                    maxRadius, Vector2.Distance(screen, projection.Center));
+                rings.Depth[a][i] = Vector3.Dot(direction, projection.RingViewDirection);
             }
         }
-        rings.ScreenRadius = maxRadius;
-        rings.RollRadius = maxRadius + 8f * scale;
+        // All rings use the requested size, not a sampled bounding circle.
+        // Roll's draw, pick and sweep share this screen-space radius.
+        rings.ScreenRadius = projection.ScreenScale * (ringWorldRadius / projection.WorldScale);
+        rings.RollRadius = rings.ScreenRadius + 8f * scale;
         rings.Valid = true;
         return rings;
     }
 
     /// <summary>Returns the projected positive rotation tangent.</summary>
-    public static Vector2 PositiveTangentPerspective(
+    public static Vector2 PositiveRingTangent(
         WorldGizmoProjection projection,
         ProjectedRings rings,
         RingHit hit,
@@ -195,16 +212,15 @@ public static class WorldGizmo
         if (hit.Axis == RotationGizmoRings.RollAxis)
             return RotationGizmoRings.RollTangent(rings, mouse, hit.Tangent);
 
-        var grabWorld = projection.Pivot + Vector3.Transform(
+        var grabOffset = Vector3.Transform(
             RotationGizmoRings.LocalRingPoint(hit.Axis, hit.SegmentIndex),
             rings.Frame) * ringWorldRadius;
         var axisWorld = RotationGizmoRings.AxisWorld(rings, hit.Axis);
-        var rotated = projection.Pivot + Vector3.Transform(
-            grabWorld - projection.Pivot,
+        var rotated = Vector3.Transform(
+            grabOffset,
             Quaternion.CreateFromAxisAngle(axisWorld, 0.05f));
-        if (!projection.Project(grabWorld, out var a) ||
-            !projection.Project(rotated, out var b))
-            return hit.Tangent;
+        var a = projection.ProjectRingOffset(grabOffset);
+        var b = projection.ProjectRingOffset(rotated);
         var tangent = b - a;
         return tangent.LengthSquared() < 1e-8f
             ? hit.Tangent

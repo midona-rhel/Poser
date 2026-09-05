@@ -926,9 +926,9 @@ public class GizmoOverlayWindow : Window
         {
             case WorldHandleKind.RotateRing:
             {
-                if (layout is not { RingWorldRadius: > 1e-6f } ||
-                    !projection.Project(projection.Pivot, out var hub))
+                if (layout is not { RingWorldRadius: > 1e-6f })
                     return;
+                var hub = projection.Center;
                 // The pie caps at one full turn; the readout keeps counting.
                 float sweep = Math.Clamp(_ringAngle, -MathF.Tau, MathF.Tau);
                 if (MathF.Abs(sweep) < 1e-4f)
@@ -939,12 +939,11 @@ public class GizmoOverlayWindow : Window
                 for (int i = 0; i <= segments; i++)
                 {
                     float t = sweep * i / segments;
-                    var world = projection.Pivot + Vector3.Transform(
+                    var offset = Vector3.Transform(
                         _ringGrabRadial,
                         Quaternion.CreateFromAxisAngle(_dragAxisWorld, t)) *
                         layout.RingWorldRadius;
-                    if (projection.Project(world, out var screen))
-                        arc.Add(screen);
+                    arc.Add(projection.ProjectRingOffset(offset));
                 }
                 FillPie(hub, arc);
                 return;
@@ -1122,7 +1121,7 @@ public class GizmoOverlayWindow : Window
                     kind == WorldHandleKind.Roll
                         ? RotationGizmoRings.RollAxis
                         : axisIndex);
-                ringTangent = WorldGizmo.PositiveTangentPerspective(
+                ringTangent = WorldGizmo.PositiveRingTangent(
                     projection, rings, ringHit, mouse, layout.RingWorldRadius);
                 // Save ring sweep anchors.
                 if (kind == WorldHandleKind.RotateRing)

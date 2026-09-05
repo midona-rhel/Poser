@@ -12,11 +12,16 @@ keep pointer ownership through release, so ending a drag cannot pick a bone.
 
 Frame wells edit model-space values. World and Local gizmo spaces keep their
 different axis meanings. Self rotates in place; Parent orbits around the
-frozen parent position. The world overlay is perspective-correct and draws
-nothing for an unprojectable pivot. Inspector rotation stays in place.
+frozen parent position. The world overlay places its pivot in perspective and
+draws nothing for an unprojectable pivot. Inspector rotation stays in place.
 
 World-gizmo size calibration uses the camera image plane, keeping its reference
-pixel span stable across the viewport. Axis foreshortening remains perspective.
+pixel span stable across the viewport. Rotation rings are an oriented ball at
+fixed pivot depth: they tilt with the axes but do not perspective-warp with
+screen position. Ring drawing, picking, positive tangents and drag sweeps use
+that same projection; linear handles and world translation retain perspective.
+The white roll circle uses the requested pixel radius, never the furthest
+projected axis-ring sample; drawing, picking and drag sweep share that radius.
 Linear handles face the camera's position relative to the pivot, not its look
 direction; their signs remain frozen during a drag.
 Scene markers take priority over idle gizmo handles. Once a drag begins it

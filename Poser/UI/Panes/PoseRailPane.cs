@@ -530,7 +530,7 @@ public class PoseRailPane
         // The inspector's own direction-only projection, straight at the
         // fixed widget centre — no perspective and no recentring, so the
         // widget's shape and size never depend on where the actor stands
-        // on screen. The world overlay deliberately does the opposite.
+        // on screen. The world ball instead anchors to the projected pivot.
         var rings = RotationGizmoRings.Project(
             _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)
