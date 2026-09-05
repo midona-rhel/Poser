@@ -508,7 +508,7 @@ public class SkeletonOverlayWindow : Window, IDisposable
                 ImGuiHoveredFlags.AnyWindow |
                 ImGuiHoveredFlags.AllowWhenBlockedByPopup |
                 ImGuiHoveredFlags.AllowWhenBlockedByActiveItem)
-            || Controls.ManipulationDrag.Held
+            || Controls.GizmoPointerOwnership.Owned
             || Controls.ManipulationDrag.ShellHeld;
 
         // Ahead of the Alt gate: the listing's cadence and the select that
@@ -1121,11 +1121,6 @@ public class SkeletonOverlayWindow : Window, IDisposable
         // the highlight index survives a changing cluster (Ktisis).
         UpdateHoveredBones(bones);
         bool hasWorldBone = AnyHovered(bones);
-        // Scene markers beat idle gizmo handles, including last frame's
-        // hover claim. Active drags already block marker picking above.
-        if (hasWorldBone || hasHoveredActor || hasHoveredLight
-            || hasHoveredGroup || hasHoveredAdopt || _popupOpen)
-            Controls.GizmoPointerOwnership.Suppress();
         // THE WHEEL. Ktisis: the notch moves the highlight and nothing
         // else (SelectableGui.DrawSelectList). Brio: over a cluster the
         // notch opens the popup on the frozen cluster and selects its

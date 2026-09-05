@@ -404,7 +404,8 @@ public static class WorldGizmo
         startPosition + Vector3.TransformNormal(
             hit - pivotWorld, inverseModel);
 
-    /// <summary>Resolves one hovered handle using fixed priority tiers.</summary>
+    /// <summary>Resolves drawn handle shapes plus a small pixel tolerance,
+    /// not broad circular hitboxes that cover neighbouring scene markers.</summary>
     public static WorldHandleHit? HitTest(Layout layout, Vector2 mouse, float tolerance)
     {
         if (layout.TranslateActive)
@@ -414,27 +415,28 @@ public static class WorldGizmo
                         new WorldHandle(WorldHandleKind.TranslatePlane, a), 0f, null);
 
         if (layout.TranslateCenterActive &&
-            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            Vector2.Distance(mouse, layout.Projection.Center) <= 7f * layout.UiScale + tolerance)
             return new WorldHandleHit(
                 new WorldHandle(WorldHandleKind.TranslateCenter, 0), 0f, null);
 
         if (layout.UniformActive &&
-            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            Vector2.Distance(mouse, layout.Projection.Center) <= 7f * layout.UiScale + tolerance)
             return new WorldHandleHit(
                 new WorldHandle(WorldHandleKind.ScaleUniform, 0), 0f, null);
 
         if (layout.ScaleActive)
         {
             int best = -1;
-            float bestDistance = tolerance + 4f * layout.UiScale;
+            float bestDistance = tolerance;
             for (int a = 0; a < 3; a++)
             {
                 if (!layout.ScaleVisible[a])
                     continue;
-                float distance = Vector2.Distance(mouse, layout.ScaleKnob[a]);
+                var offset = Vector2.Abs(mouse - layout.ScaleKnob[a]);
+                float distance = MathF.Max(0f, MathF.Max(offset.X, offset.Y) - 5f * layout.UiScale);
                 if (layout.ScaleShafts)
-                    distance = MathF.Min(distance, DistanceToSegment(
-                        mouse, layout.ScaleShaftStart[a], layout.ScaleKnob[a]));
+                    distance = MathF.Min(distance, MathF.Max(0f, DistanceToSegment(
+                        mouse, layout.ScaleShaftStart[a], layout.ScaleKnob[a]) - 1.5f * layout.UiScale));
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -454,11 +456,10 @@ public static class WorldGizmo
             {
                 if (!layout.ShaftVisible[a])
                     continue;
-                float distance = DistanceToSegment(
-                    mouse, layout.ShaftStart[a], layout.ShaftEnd[a]);
-                // The arrowhead extends the grab band past the shaft tip.
-                distance = MathF.Min(distance, MathF.Max(0f,
-                    Vector2.Distance(mouse, layout.ShaftEnd[a]) - 10f * layout.UiScale));
+                float distance = MathF.Max(0f, DistanceToSegment(
+                    mouse, layout.ShaftStart[a], layout.ShaftEnd[a]) - 1.5f * layout.UiScale);
+                ArrowHead(layout, a, out var tip, out var left, out var right);
+                distance = MathF.Min(distance, DistanceToTriangle(mouse, tip, left, right));
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -471,7 +472,7 @@ public static class WorldGizmo
         }
 
         if (layout.Rings is { } rings &&
-            RotationGizmoRings.HitTest(rings, mouse, tolerance) is { } ringHit)
+            RotationGizmoRings.HitTest(rings, mouse, tolerance + 1.75f * layout.UiScale) is { } ringHit)
             return new WorldHandleHit(
                 ringHit.Axis == RotationGizmoRings.RollAxis
                     ? new WorldHandle(WorldHandleKind.Roll, 0)
@@ -541,15 +542,8 @@ public static class WorldGizmo
                     ColorEx.ApplyAlpha(color with { W = hot ? 1f : 0.85f }));
                 dl.AddLine(layout.ShaftStart[a], layout.ShaftEnd[a],
                     stroke, (hot ? 4.5f : 3f) * uiScale);
-                var direction = Vector2.Normalize(
-                    layout.ShaftEnd[a] - layout.ShaftStart[a]);
-                var perpendicular = new Vector2(-direction.Y, direction.X);
-                var tip = layout.ShaftEnd[a] + direction * 12f * uiScale;
-                dl.AddTriangleFilled(
-                    tip,
-                    layout.ShaftEnd[a] + perpendicular * 5f * uiScale,
-                    layout.ShaftEnd[a] - perpendicular * 5f * uiScale,
-                    stroke);
+                ArrowHead(layout, a, out var tip, out var left, out var right);
+                dl.AddTriangleFilled(tip, left, right, stroke);
             }
         }
 
@@ -607,6 +601,26 @@ public static class WorldGizmo
         { Kind: WorldHandleKind.Roll } => RotationGizmoRings.RollAxis,
         _ => -1,
     };
+
+    private static void ArrowHead(Layout layout, int axis, out Vector2 tip, out Vector2 left, out Vector2 right)
+    {
+        var direction = Vector2.Normalize(layout.ShaftEnd[axis] - layout.ShaftStart[axis]);
+        var perpendicular = new Vector2(-direction.Y, direction.X);
+        tip = layout.ShaftEnd[axis] + direction * 12f * layout.UiScale;
+        left = layout.ShaftEnd[axis] + perpendicular * 5f * layout.UiScale;
+        right = layout.ShaftEnd[axis] - perpendicular * 5f * layout.UiScale;
+    }
+
+    private static float DistanceToTriangle(Vector2 point, Vector2 a, Vector2 b, Vector2 c)
+    {
+        static float Side(Vector2 p, Vector2 from, Vector2 to) =>
+            (to.X - from.X) * (p.Y - from.Y) - (to.Y - from.Y) * (p.X - from.X);
+        float ab = Side(point, a, b), bc = Side(point, b, c), ca = Side(point, c, a);
+        if (!(ab < 0f || bc < 0f || ca < 0f) || !(ab > 0f || bc > 0f || ca > 0f))
+            return 0f;
+        return MathF.Min(DistanceToSegment(point, a, b),
+            MathF.Min(DistanceToSegment(point, b, c), DistanceToSegment(point, c, a)));
+    }
 
     private static bool PointInQuad(Vector2 point, Vector2[] quad)
     {

@@ -24,9 +24,11 @@ The white roll circle uses the requested pixel radius, never the furthest
 projected axis-ring sample; drawing, picking and drag sweep share that radius.
 Linear handles face the camera's position relative to the pivot, not its look
 direction; their signs remain frozen during a drag.
-Scene markers take priority over idle gizmo handles. Once a drag begins it
-retains the pointer through release; crossing a marker cannot select it or
-start another action. Marker picking resolves before idle gizmo hover.
+Drawn gizmo handles, with a two-pixel scaled margin, resolve before padded scene
+marker hitboxes. Arrowheads use their triangle, not an enlarged circle. Outside
+the drawn handles, markers remain selectable; a previous frame's hover cannot
+block them. Once a drag begins it retains the pointer through release, so
+crossing a marker cannot select it or start another action.
 
 Rotation arcs grow continuously from half circles at 20 degrees off face-on
 to full circles at 5 degrees, staying full closer in, on both gizmos.

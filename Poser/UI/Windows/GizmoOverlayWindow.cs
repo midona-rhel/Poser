@@ -330,9 +330,8 @@ public class GizmoOverlayWindow : Window
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
         // Interface occlusion suppresses hover and Begin, not active drags.
-        if (_gazeGesture == null && layout != null && !occluded
-            && !GizmoPointerOwnership.Suppressed)
-            hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
+        if (_gazeGesture == null && layout != null && !occluded)
+            hover = WorldGizmo.HitTest(layout, mouse, 2f * uiScale);
 
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the gaze identity marker below stays.
@@ -818,9 +817,8 @@ public class GizmoOverlayWindow : Window
         // Occlusion suppresses new grabs only; the configured hold-modifier
         // died with its setting — Alt is the ONE suspend and hides the
         // gizmo outright.
-        if (gesture == null && layout != null && !occluded
-            && !GizmoPointerOwnership.Suppressed)
-            hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
+        if (gesture == null && layout != null && !occluded)
+            hover = WorldGizmo.HitTest(layout, mouse, 2f * uiScale);
 
         // Occlusion suppresses hover/ownership but not handle drawing.
         // With the option on, the gizmo's chrome rides the shell's fade

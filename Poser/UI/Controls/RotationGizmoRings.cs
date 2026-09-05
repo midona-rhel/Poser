@@ -573,20 +573,12 @@ public static class ManipulationDrag
 
 public static class GizmoPointerOwnership
 {
-    private static int _ownedUntilFrame = -1;
+    private static int _hoverFrame = -1;
 
     /// <summary>Call every frame the pointer engages a custom gizmo.</summary>
     public static void Hold() =>
-        _ownedUntilFrame = ImGui.GetFrameCount() + 1;
+        _hoverFrame = ImGui.GetFrameCount();
 
     public static bool Owned =>
-        ManipulationDrag.Held || (!Suppressed && ImGui.GetFrameCount() <= _ownedUntilFrame);
-
-    /// <summary>Scene markers and their popup suppress idle gizmo hits.
-    /// An already-held drag retains ownership through its release frame.</summary>
-    private static int _suppressedFrame = -1;
-    public static void Suppress() =>
-        _suppressedFrame = ImGui.GetFrameCount();
-    public static bool Suppressed =>
-        ImGui.GetFrameCount() == _suppressedFrame;
+        ManipulationDrag.Held || ImGui.GetFrameCount() == _hoverFrame;
 }
