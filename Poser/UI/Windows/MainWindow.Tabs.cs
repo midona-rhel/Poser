@@ -470,8 +470,6 @@ public partial class MainWindow
                 if (matched is { } named)
                     form.TextInput("Name", named.Name,
                         value => _groupSteps.Rename(named.Id, value));
-                form.Switch("Group handles", ShowGroupHandles, SetGroupHandlesVisible,
-                    help: "Show world transform handles for all groups and multi-selections. Objects and inspector editing are unaffected.");
                 for (int i = 0; i < 5; i++)
                     if (_multiCounts[i] > 0)
                         form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
@@ -501,15 +499,6 @@ public partial class MainWindow
                 });
             }, divider: false);
         });
-    }
-
-    private static bool ShowGroupHandles =>
-        Config.ConfigurationService.Instance.Config.Gizmo.ShowGroupHandles;
-
-    private static void SetGroupHandlesVisible(bool visible)
-    {
-        Config.ConfigurationService.Instance.Config.Gizmo.ShowGroupHandles = visible;
-        Config.ConfigurationService.Instance.Save();
     }
 
     /// <summary>One undoable translate: the whole selection moves so its

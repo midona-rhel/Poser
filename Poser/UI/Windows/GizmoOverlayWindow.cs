@@ -243,6 +243,16 @@ public class GizmoOverlayWindow : Window
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
 
+        // Handle visibility also owns the selected gizmo, including bone/root
+        // selection. Keep an existing drag alive through release; never pick an
+        // invisible handle or reveal one midway through a held click.
+        if (_gesture == null && _gazeGesture == null && !SelectionHandlesShown())
+        {
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+                _beginSuppressed = true;
+            return;
+        }
+
         // Alt hides idle gizmos and suppresses new grabs; active drags continue.
         if (ImGui.GetIO().KeyAlt && _gesture == null && _gazeGesture == null)
         {
@@ -270,6 +280,29 @@ public class GizmoOverlayWindow : Window
 
         if (targetType != GizmoTargetType.None)
             DrawWorldGizmo(targetType, PointerOverInterface());
+    }
+
+    private bool SelectionHandlesShown()
+    {
+        // A named group owns its handle independently of its members' choices.
+        if (_groups.ActiveSelection(_selection.Selected) is { } group)
+            return _presentation.IsHandleShown(group.Id);
+
+        // An anonymous selection has one shared gizmo: don't expose hidden
+        // targets through it or silently change which targets it transforms.
+        foreach (var id in _selection.Selected)
+        {
+            if (id.Kind == SceneEntityKind.Camera)
+                continue;
+            var owner = id.Bone is { } bone
+                ? SelectionId.ForActor(bone.Skeleton.Actor)
+                : id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } actor
+                    ? SelectionId.ForActor(actor)
+                    : id;
+            if (!_presentation.IsHandleShown(owner))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>Returns the active gaze point and its current state.</summary>
@@ -701,15 +734,6 @@ public class GizmoOverlayWindow : Window
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
         bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
-        if (!isBone && !GizmoConfig.ShowGroupHandles && gesture == null
-            && (isGroup || _groups.ActiveSelection(_selection.Selected) != null))
-        {
-            // Hide before drawing or hit testing. An existing drag finishes normally;
-            // showing handles while a button is held must not begin a new drag.
-            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
-                _beginSuppressed = true;
-            return;
-        }
         if (gesture is { } presented)
         {
             currentTransform = presented.Current;

@@ -592,6 +592,9 @@ public class SkeletonOverlayWindow : Window, IDisposable
         groupDots.Clear();
         foreach (var group in _groups.All)
         {
+            // Filter before drawing and picking, just like individual entity handles.
+            if (!_presentation.IsHandleShown(group.Id))
+                continue;
             // A nested group's dot hides behind its parent like any
             // member does, unless it is engaged itself.
             if (group.ParentId is { } parentId
