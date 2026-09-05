@@ -20,6 +20,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PropsPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly StainCatalog _stains;
@@ -181,18 +182,24 @@ public sealed class PropsPane
             });
         if (_status.Length > 0)
             form.Status(_status, warning: true);
-        form.Actions("Library", actions =>
-            actions.Button(
-                "Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", ["Save to library", "Destroy all objects…"], -1, "More",
+                choice =>
+                {
+                    if (choice == 1)
+                    {
+                        RequestDestroyAll?.Invoke();
+                        return;
+                    }
+                    _names.Open(
                     "Save prop to library", prop.Name,
                     name =>
                     {
                         if (_bindings.GetPropId(prop) is { } entryId)
                             _scenePane.SavePropEntry(
                                 entryId.LogicalId, name);
-                    }),
-                help: "Save a spawnable copy of this prop"));
+                    });
+                },
+                help: "Save a spawnable copy of this prop", icon: TablerIcon.Dots);
         form.Actions("Lifetime", actions =>
         {
             // Destroy is THE destruction verb — Delete and Remove were
@@ -206,39 +213,10 @@ public sealed class PropsPane
                 },
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
-            actions.Button(
-                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
-                () =>
-                {
-                    if (!_destroyAllArmed)
-                    {
-                        _destroyAllArmed = true;
-                        return;
-                    }
-                    _destroyAllArmed = false;
-                    _pending = () =>
-                    {
-                        _lifecycle.DestroyAllProps();
-                        _scene.Selection.Clear();
-                    };
-                },
-                variant: ButtonVariant.Danger,
-                help: "Destroy every spawned object");
         });
-        if (_destroyAllArmed)
-        {
-            int count = 0;
-            foreach (var _ in _scene.Snapshot.Props)
-                count++;
-            form.Status(
-                $"{count} object{(count == 1 ? string.Empty : "s")} will go.",
-                warning: true);
-        }
     }
 
     // ── state ────────────────────────────────────────────────────────────
-
-    private bool _destroyAllArmed;
 
     private IPropHandle? SelectedProp()
     {

@@ -13,9 +13,7 @@ namespace Poser.Game.Environment;
 
 internal delegate void UpdateEorzeaTimeDelegate(nint a1, nint a2);
 
-// The manager argument is untouched — the detour exists only to stop the
-// original from running — so it stays an opaque pointer.
-internal delegate void UpdateTerritoryWeatherDelegate(nint weatherManager);
+internal unsafe delegate nint UpdateEnvironmentDelegate(CSEnvManager* manager, float a2, float a3);
 
 internal unsafe delegate nint EnvStateCopyDelegate(EnvStateNative* dest, EnvStateNative* src);
 
@@ -34,12 +32,17 @@ internal unsafe interface IEnvStateCopyHook : IEnvHook
     nint Original(EnvStateNative* dest, EnvStateNative* src);
 }
 
+internal unsafe interface IEnvWeatherHook : IEnvHook
+{
+    nint Original(CSEnvManager* manager, float a2, float a3);
+}
+
 internal unsafe interface IEnvironmentNativeFactory
 {
     IEnvHook CreateTimeHook(
         ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour);
-    IEnvHook CreateWeatherHook(
-        ISigScanner scanner, IGameInteropProvider hooking, UpdateTerritoryWeatherDelegate detour);
+    IEnvWeatherHook CreateWeatherHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour);
     IEnvStateCopyHook CreateEnvStateCopyHook(
         ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
     IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
@@ -54,10 +57,10 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
             scanner.ScanText("48 89 5C 24 ?? 57 48 83 EC ?? 48 8B F9 48 8B DA 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C"),
             detour));
 
-    public IEnvHook CreateWeatherHook(
-        ISigScanner scanner, IGameInteropProvider hooking, UpdateTerritoryWeatherDelegate detour) =>
-        new DalamudEnvHook<UpdateTerritoryWeatherDelegate>(hooking.HookFromAddress(
-            scanner.ScanText("48 89 5C 24 ?? 55 56 57 48 83 EC ?? 48 8B F9 48 8D 0D"),
+    public IEnvWeatherHook CreateWeatherHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour) =>
+        new DalamudEnvWeatherHook(hooking.HookFromAddress(
+            scanner.ScanText("40 53 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 48 8B D9 0F 29 74 24 ??"),
             detour));
 
     // Brio scans the copy routine directly; Ktisis scans a call site to the
@@ -90,6 +93,13 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
         public nint Original(EnvStateNative* dest, EnvStateNative* src) =>
             Hook.Original(dest, src);
     }
+
+    private sealed class DalamudEnvWeatherHook(Hook<UpdateEnvironmentDelegate> hook)
+        : DalamudEnvHook<UpdateEnvironmentDelegate>(hook), IEnvWeatherHook
+    {
+        public nint Original(CSEnvManager* manager, float a2, float a3) =>
+            Hook.Original(manager, a2, a3);
+    }
 }
 
 /// <summary>
@@ -101,8 +111,8 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 ///  · Time freeze — the Eorzean time update is hooked to a no-op. The clock
 ///    value itself is written directly; nothing is restored on release,
 ///    because the game reclaims the clock on its next update.
-///  · Weather hold — the territory weather update is hooked to a no-op, so the
-///    weather byte written into EnvManager stays put.
+///  · Weather hold — the authored byte is supplied before each native
+///    environment update, independently of the territory's usual weather list.
 ///  · Section hold — the env-state copy is hooked; the destination is
 ///    snapshotted BEFORE the original runs and the held sections are stamped
 ///    back after (Ktisis' EnvModule mechanism, Brio's signature and hook
@@ -142,7 +152,14 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
     private readonly IEnvHook? _timeHook;
-    private readonly IEnvHook? _weatherHook;
+    private readonly IEnvWeatherHook? _weatherHook;
+    private byte? _heldWeather;
+#if DEBUG
+    public uint? WeatherRequested { get; private set; }
+    public byte WeatherBeforeUpdate { get; private set; }
+    public byte WeatherAfterUpdate { get; private set; }
+    public int WeatherUpdateCount { get; private set; }
+#endif
     private readonly IEnvStateCopyHook? _envStateHook;
     private readonly bool _envStateHookEnabled;
 
@@ -191,7 +208,7 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             "time freeze");
 
         _weatherHook = TryCreate(
-            () => nativeFactory.CreateWeatherHook(sigScanner, hooking, UpdateTerritoryWeatherDetour),
+            () => nativeFactory.CreateWeatherHook(sigScanner, hooking, UpdateEnvironmentDetour),
             "weather hold");
 
         _envStateHook = TryCreate(
@@ -217,6 +234,9 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             }
         }
 
+        var none = new WeatherInfo(0, "None", 0);
+        _allWeathers.Add(none);
+        _weatherById.Add(0, none);
         try
         {
             _weatherSheet = data.GetExcelSheet<WeatherRow>();
@@ -323,9 +343,17 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             if (_weatherHook == null || value == IsWeatherOverrideEnabled)
                 return;
             if (value)
+            {
+                // A plain Hold captures the next native update's current ID;
+                // SetWeather supplies its explicit choice immediately below.
+                _heldWeather = null;
                 _weatherHook.Enable();
+            }
             else
+            {
                 _weatherHook.Disable();
+                _heldWeather = null;
+            }
         }
     }
 
@@ -355,12 +383,22 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
 
     public void SetWeather(uint id, float transitionTime = DefaultTransitionTime)
     {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(id, byte.MaxValue);
         var manager = CSEnvManager.Instance();
-        if (manager == null)
+        SetWeather(manager, id, transitionTime);
+    }
+
+    internal void SetWeather(CSEnvManager* manager, uint id, float transitionTime)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(id, byte.MaxValue);
+        if (manager == null || !IsWeatherOverrideAvailable)
             return;
-        // The hold goes on first: the game's weather update runs between here
-        // and the next frame and would otherwise revert the pick.
         IsWeatherOverrideEnabled = true;
+        _heldWeather = (byte)id;
+#if DEBUG
+        WeatherRequested = id;
+        WeatherUpdateCount = 0;
+#endif
         manager->ActiveWeather = (byte)id;
         manager->TransitionTime = transitionTime;
     }
@@ -392,6 +430,10 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             return;
         foreach (var row in _weatherSheet)
         {
+            // ActiveWeather is a byte, not an arbitrary Excel row ID. Zero is
+            // the explicit None entry even when the sheet leaves it unnamed.
+            if (row.RowId == 0 || row.RowId > byte.MaxValue)
+                continue;
             var name = row.Name.ExtractText();
             if (string.IsNullOrEmpty(name))
                 continue;
@@ -430,9 +472,30 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
         _territoryWeathers.Sort((a, b) => a.Id.CompareTo(b.Id));
     }
 
-    private void UpdateTerritoryWeatherDetour(nint weatherManager)
+    private nint UpdateEnvironmentDetour(CSEnvManager* manager, float a2, float a3)
     {
-        // The original is deliberately not called: that is the hold.
+#if DEBUG
+        if (manager != null)
+            WeatherBeforeUpdate = manager->ActiveWeather;
+#endif
+        // Ktisis Scene/Modules/EnvModule supplies weather before EnvManager's
+        // update. Suppressing territory weather lookup alone leaves a one-shot
+        // value vulnerable to later writes. Do not reset TransitionTime here:
+        // blending must advance normally, and native readback stays observable.
+        if (manager != null && IsWeatherOverrideEnabled)
+        {
+            _heldWeather ??= manager->ActiveWeather;
+            manager->ActiveWeather = _heldWeather.Value;
+        }
+        var result = _weatherHook!.Original(manager, a2, a3);
+#if DEBUG
+        if (manager != null)
+        {
+            WeatherAfterUpdate = manager->ActiveWeather;
+            WeatherUpdateCount++;
+        }
+#endif
+        return result;
     }
 
     // ── Environment sections ──────────────────────────────────────────

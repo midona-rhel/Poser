@@ -26,6 +26,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class CameraPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private const float Rad2Deg = 180f / MathF.PI;
     private const float Deg2Rad = MathF.PI / 180f;
 
@@ -45,7 +46,6 @@ public sealed class CameraPane
     private readonly UserNotices _notices;
 
     /// <summary>Whether destroy-all confirmation is armed.</summary>
-    private bool _destroyAllArmed;
 
     private bool _openGeneral = true;
     private bool _openCamera = true;
@@ -712,23 +712,28 @@ public sealed class CameraPane
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
+        form.ActionDropdown("More", _cameras.Cameras.Any(candidate => !candidate.IsDefault)
+                ? ["Save to file…", "Save to library", "Destroy all cameras…"]
+                : ["Save to file…", "Save to library"], -1, "More",
+            choice =>
+            {
+                if (choice == 0)
+                    OpenSave(camera);
+                else if (choice == 2)
+                    RequestDestroyAll?.Invoke();
+                else
+                    _names.Open(
+                        "Save camera to library", camera.Name,
+                        name =>
+                        {
+                            if (_bindings.GetCameraId(camera) is { } entryId)
+                                _scenePane.SaveCameraEntry(
+                                    entryId.LogicalId, name);
+                        });
+            }, icon: TablerIcon.Dots);
         form.Actions("Camera file", actions =>
-        {
-            actions.Button("Save", () => OpenSave(camera),
-                help: "Save this camera to a file");
-            actions.Button("Save to library",
-                () => _names.Open(
-                    "Save camera to library", camera.Name,
-                    name =>
-                    {
-                        if (_bindings.GetCameraId(camera) is { } entryId)
-                            _scenePane.SaveCameraEntry(
-                                entryId.LogicalId, name);
-                    }),
-                help: "Save into the library");
             actions.Button("Load", OpenLoad,
-                help: "Add a camera from a file to the scene");
-        });
+                help: "Add a camera from a file to the scene"));
     }
 
     private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -758,52 +763,6 @@ public sealed class CameraPane
                     variant: ButtonVariant.Danger);
         });
 
-        // The first press arms confirmation; the second performs the sweep.
-        int spare = SpareCameraCount();
-        form.Actions("All cameras", actions =>
-        {
-            actions.Button(
-                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
-                () => DestroyAllCameras(spare),
-                disabled: spare == 0,
-                help: "Remove every camera except the main one",
-                variant: ButtonVariant.Danger);
-        });
-        if (_destroyAllArmed)
-            form.Status(
-                $"{spare} camera{(spare == 1 ? string.Empty : "s")} will be ",
-                warning: true);
-    }
-
-    /// <summary>How many cameras a destroy-all would take. The default camera
-    /// is the GPose session's own and cannot be destroyed, so it is never
-    /// counted.</summary>
-    private int SpareCameraCount()
-    {
-        int spare = 0;
-        foreach (var candidate in _cameras.Cameras)
-            if (!candidate.IsDefault)
-                spare++;
-        return spare;
-    }
-
-    private void DestroyAllCameras(int spare)
-    {
-        if (!_destroyAllArmed)
-        {
-            _destroyAllArmed = spare > 0;
-            return;
-        }
-        _destroyAllArmed = false;
-        // Snapshotted first: the destroy mutates the service's own list, and
-        // each one goes through the lifecycle seam so the whole sweep is as
-        // undoable as a single Destroy is.
-        var doomed = new List<IVirtualCamera>();
-        foreach (var candidate in _cameras.Cameras)
-            if (!candidate.IsDefault)
-                doomed.Add(candidate);
-        foreach (var candidate in doomed)
-            _lifecycle.DestroyCamera(candidate);
     }
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)

@@ -31,6 +31,7 @@ public sealed class DebugBridge : IDisposable
     public const int Port = 47999;
 
     private readonly IFramework _framework;
+    private readonly IEnvironmentService _environment;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
     private readonly Game.Animation.AnimationRuntimePort _port;
@@ -55,6 +56,7 @@ public sealed class DebugBridge : IDisposable
     private readonly CancellationTokenSource _stop = new();
 
     public DebugBridge(
+        IEnvironmentService environment,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,
@@ -77,6 +79,7 @@ public sealed class DebugBridge : IDisposable
         global::Poser.UI.SkeletonOverlayWindow overlay,
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation)
     {
+        _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
         _viewport = viewport;
@@ -251,6 +254,25 @@ public sealed class DebugBridge : IDisposable
     {
         switch (path)
         {
+            case "/environment":
+                if (query.TryGetValue("weather", out var weatherText)
+                    && byte.TryParse(weatherText, out var weather))
+                    _environment.SetWeather(weather, _environment.TransitionTime);
+                if (query.TryGetValue("hold", out var hold))
+                    _environment.IsWeatherOverrideEnabled = hold == "1";
+                var nativeEnvironment = (Game.Environment.EnvironmentService)_environment;
+                return Json(new
+                {
+                    current = _environment.CurrentWeatherId,
+                    held = _environment.IsWeatherOverrideEnabled,
+                    available = _environment.IsWeatherOverrideAvailable,
+                    nativeEnvironment.WeatherRequested,
+                    nativeEnvironment.WeatherBeforeUpdate,
+                    nativeEnvironment.WeatherAfterUpdate,
+                    nativeEnvironment.WeatherUpdateCount,
+                    territory = _environment.TerritoryWeathers,
+                    all = _environment.AllWeathers,
+                });
             case "/actors":
                 return Json(ListActors());
             case "/profile":

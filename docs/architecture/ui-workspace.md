@@ -16,6 +16,14 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Entity save-to-file, save-to-library, and category-wide destruction live under
+More in the inspector or entity context menu, only where supported. More uses
+the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
+destruction (lights, cameras, objects, and overlays) opens a modal with the target count
+and what is released or protected; only its explicit confirmation runs the
+captured operation. Cancel, Escape, and closing the modal do nothing. Single
+entity actions and automatic session teardown retain their existing routes.
+
 The shell owns the content origin, inset, scrollbar gutter, and content mode.
 Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached

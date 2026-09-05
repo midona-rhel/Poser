@@ -269,6 +269,7 @@ public partial class MainWindow
             });
         }
 
+        var moreActions = MoveMoreActions(items, actions);
         if (_ctxOpenRequested)
         {
             _ctxOpenRequested = false;
@@ -289,6 +290,7 @@ public partial class MainWindow
             var submenu = items[subParent].Label switch
             {
                 "Bone presets" => _bonePresetActions,
+                "More" => moreActions,
                 "Companion" or "Attachment" => companionActions,
                 "Pose" => poseActions,
                 "Duplicate" => new List<Action?>
@@ -619,6 +621,9 @@ public partial class MainWindow
             new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy all overlays…", TablerIcon.Trash, danger: true,
+                disabled: _scene.Snapshot.Overlays.Count == 0),
         };
         var actions = new Action?[]
         {
@@ -636,7 +641,10 @@ public partial class MainWindow
                 _lifecycle.DestroyOverlay(node);
                 _selection.Clear();
             },
+            null,
+            ConfirmDestroyAllOverlays,
         };
+        var moreActions = MoveMoreActions(ref items, ref actions);
         if (_overlayNodeCtxOpenRequested)
         {
             _overlayNodeCtxOpenRequested = false;
@@ -646,6 +654,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
+        DrawMoreAction(items, moreActions);
     }
 
     private void DrawOverlayContextMenu()
@@ -803,6 +812,13 @@ public partial class MainWindow
             });
         }
 
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy all lights…", TablerIcon.Trash,
+            danger: true, disabled: _lightingService.Lights.Count == 0));
+        actions.Add(ConfirmDestroyAllLights);
+
+        var moreActions = MoveMoreActions(items, actions);
         if (_lightCtxOpenRequested)
         {
             _lightCtxOpenRequested = false;
@@ -812,6 +828,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##light-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+        DrawMoreAction(items, moreActions);
     }
 
     /// <summary>
@@ -846,6 +863,9 @@ public partial class MainWindow
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
+            ContextMenuItem.Separator,
+            new("Destroy all objects…", TablerIcon.Trash, danger: true,
+                disabled: _scene.Snapshot.Props.Count == 0),
         };
         var actions = new Action?[]
         {
@@ -867,8 +887,11 @@ public partial class MainWindow
                 _lifecycle.DestroyProp(prop);
                 _selection.Clear();
             },
+            null,
+            ConfirmDestroyAllProps,
         };
 
+        var moreActions = MoveMoreActions(ref items, ref actions);
         if (_propCtxOpenRequested)
         {
             _propCtxOpenRequested = false;
@@ -878,6 +901,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##prop-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
+        DrawMoreAction(items, moreActions);
     }
 
     /// <summary>Right-click camera menu for live, framing, file, and lifetime
@@ -965,6 +989,13 @@ public partial class MainWindow
             });
         }
 
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy all cameras…", TablerIcon.Trash,
+            danger: true, disabled: !_cameraService.Cameras.Any(c => !c.IsDefault)));
+        actions.Add(ConfirmDestroyAllCameras);
+
+        var moreActions = MoveMoreActions(items, actions);
         if (_cameraCtxOpenRequested)
         {
             _cameraCtxOpenRequested = false;
@@ -974,6 +1005,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+        DrawMoreAction(items, moreActions);
     }
 
     // ── world-object / group / selection context menus ──────────────────
@@ -1040,6 +1072,7 @@ public partial class MainWindow
                 _selection.Clear();
             },
         };
+        var moreActions = MoveMoreActions(ref items, ref actions);
         if (_worldObjectCtxOpenRequested)
         {
             _worldObjectCtxOpenRequested = false;
@@ -1049,6 +1082,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##world-object-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
+        DrawMoreAction(items, moreActions);
     }
 
     /// <summary>Right-click group-head menu: the structure verbs. The
@@ -1109,6 +1143,7 @@ public partial class MainWindow
             // emptied group dissolves through the scene prune.
             () => DestroyEntities(group.Members.ToArray()),
         };
+        var moreActions = MoveMoreActions(ref items, ref actions);
         if (_groupCtxOpenRequested)
         {
             _groupCtxOpenRequested = false;
@@ -1123,6 +1158,10 @@ public partial class MainWindow
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
             && items[subParent].Label == "Duplicate")
             DuplicateGroup(group, withPose: subClicked == 1);
+        else if (subClicked >= 0 && subClicked < moreActions.Count
+            && subParent >= 0 && subParent < items.Length
+            && items[subParent].Label == "More")
+            moreActions[subClicked]?.Invoke();
     }
 
     /// <summary>Right-click on any row of a multi-entity selection: one
@@ -1236,6 +1275,7 @@ public partial class MainWindow
         items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
             danger: true));
         actions.Add(DestroySelection);
+        var moreActions = MoveMoreActions(items, actions);
         if (_selectionCtxOpenRequested)
         {
             _selectionCtxOpenRequested = false;
@@ -1250,5 +1290,9 @@ public partial class MainWindow
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
             && items[subParent].Label == "Duplicate")
             DuplicateSelection(withPose: subClicked == 1);
+        else if (subClicked >= 0 && subClicked < moreActions.Count
+            && subParent >= 0 && subParent < items.Count
+            && items[subParent].Label == "More")
+            moreActions[subClicked]?.Invoke();
     }
 }

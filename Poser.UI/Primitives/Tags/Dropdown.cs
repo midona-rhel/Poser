@@ -30,14 +30,17 @@ public static partial class Crystarium
 
     public static bool ActionDropdown(
         string id, string[] items, int selected, string previewText, Action<int> onChange,
-        ControlStyle style = default, bool disabled = false, string? help = null) =>
-        DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true);
+        ControlStyle style = default, bool disabled = false, string? help = null,
+        TablerIcon? icon = null) =>
+        DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true,
+            triggerIcon: icon is { } glyph ? Tabler.NameFor(glyph) : ChevronIcon);
 
     /// <summary>Draws the shared dropdown trigger and glass popup.</summary>
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
-        string? previewText, bool reselectFires, bool disruptive = false)
+        string? previewText, bool reselectFires, bool disruptive = false,
+        string triggerIcon = ChevronIcon)
     {
         if (items.Length == 0) return false;
         string popupId = Ids.Join(id, "_popup");
@@ -114,7 +117,7 @@ public static partial class Crystarium
         IconIn(
             iconMin,
             iconMin + new Vector2(iconSpan),
-            ChevronIcon,
+            triggerIcon,
             opacity: chevronOpacity);
 
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));

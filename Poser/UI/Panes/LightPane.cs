@@ -36,6 +36,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class LightPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly ILightingService _lighting;
@@ -58,7 +59,6 @@ public sealed class LightPane
     /// <summary>The destroy-all's first press. Held on the pane rather than on
     /// a light: it is a statement about the scene, so which light happens to
     /// be selected does not change what it means.</summary>
-    private bool _destroyAllArmed;
 
     private bool _openGeneral = true;
     private bool _openLight = true;
@@ -690,23 +690,26 @@ public sealed class LightPane
     /// bound it.</summary>
     private void FileRows(Crystarium.FormScope form, ILight light)
     {
+        form.ActionDropdown("More", ["Save to file…", "Save to library", "Destroy all lights…"], -1, "More",
+            choice =>
+            {
+                if (choice == 0)
+                    OpenSave(light);
+                else if (choice == 2)
+                    RequestDestroyAll?.Invoke();
+                else
+                    _names.Open(
+                        "Save light to library", light.Name,
+                        name =>
+                        {
+                            if (_bindings.GetLightId(light) is { } entryId)
+                                _scenePane.SaveLightEntry(
+                                    entryId.LogicalId, name);
+                        });
+            }, icon: TablerIcon.Dots);
         form.Actions("Light file", actions =>
-        {
-            actions.Button("Save", () => OpenSave(light),
-                help: "Save this light to a file");
-            actions.Button("Save to library",
-                () => _names.Open(
-                    "Save light to library", light.Name,
-                    name =>
-                    {
-                        if (_bindings.GetLightId(light) is { } entryId)
-                            _scenePane.SaveLightEntry(
-                                entryId.LogicalId, name);
-                    }),
-                help: "Save into the library");
             actions.Button("Load", OpenLoad,
-                help: "Add a light from a file to the scene");
-        });
+                help: "Add a light from a file to the scene"));
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
@@ -768,39 +771,6 @@ public sealed class LightPane
                     help: "Hand it back to the game");
         });
 
-        // Brio's "Destroy All… → Lights → Confirm", armed rather than held:
-        // the first press states what is about to go, the second does it.
-        int count = _lighting.Lights.Count;
-        form.Actions("All lights", actions =>
-        {
-            actions.Button(
-                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
-                () => DestroyAllLights(count),
-                disabled: count == 0,
-                help: "Destroy spawned, hand back captured",
-                variant: ButtonVariant.Danger);
-        });
-        if (_destroyAllArmed)
-            form.Status(
-                $"{count} light{(count == 1 ? string.Empty : "s")} will go. ",
-                warning: true);
-    }
-
-    private void DestroyAllLights(int count)
-    {
-        if (!_destroyAllArmed)
-        {
-            _destroyAllArmed = count > 0;
-            return;
-        }
-        _destroyAllArmed = false;
-        // Snapshotted first — the sweep mutates the service's own list — and
-        // each one goes through the LIFECYCLE seam rather than the service's
-        // DestroyAllLights, which is a teardown path with no undo behind it.
-        // The seam is also what keeps a captured light a release.
-        var doomed = new List<ILight>(_lighting.Lights);
-        foreach (var light in doomed)
-            _lifecycle.DestroyLight(light);
     }
 
     /// <summary>Uses the same camera-relative placement as a new light,

@@ -585,16 +585,20 @@ public partial class MainWindow : Window
         _spawnService = spawnService;
         _propService = propService;
         _propsPane = propsPane;
+        _propsPane.RequestDestroyAll = ConfirmDestroyAllProps;
         _worldObjectsPane = worldObjectsPane;
         _overlayService = overlayService;
         _overlayPane = overlayPane;
+        _overlayPane.RequestDestroyAll = ConfirmDestroyAllOverlays;
         _companions = companions;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
         _appearancePane = appearancePane;
         _lightPane = lightPane;
+        _lightPane.RequestDestroyAll = ConfirmDestroyAllLights;
         _lightingService = lightingService;
         _cameraPane = cameraPane;
+        _cameraPane.RequestDestroyAll = ConfirmDestroyAllCameras;
         _cameraPane.GetNativeTarget = _actorManager.GetGPoseTarget;
         // Camera tracking consumes this window's already-built actor/category
         // hierarchy; the shared row model keeps disclosure and identities in
@@ -946,6 +950,7 @@ public partial class MainWindow : Window
         DrawGroupContextMenu();
         DrawSelectionContextMenu();
         DrawEntityRenameModal();
+        DrawBulkDestroyModal();
         DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives subsequent selection changes.

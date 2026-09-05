@@ -32,6 +32,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class OverlayPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly StatusIconCatalog _statusIcons;
@@ -54,7 +55,6 @@ public sealed class OverlayPane
     /// <summary>Whether remove-all confirmation is armed — the camera
     /// pane's destroy-all idiom: a whole-set destroyer takes two presses.
     /// </summary>
-    private bool _removeAllArmed;
     private bool _openContent = true;
     private bool _openActions = true;
 
@@ -452,18 +452,24 @@ public sealed class OverlayPane
     private void LifetimeRows(
         Crystarium.FormScope form, IOverlayNode node)
     {
-        form.Actions("Library", actions =>
-            actions.Button(
-                "Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", ["Save to library", "Destroy all overlays…"], -1, "More",
+                choice =>
+                {
+                    if (choice == 1)
+                    {
+                        RequestDestroyAll?.Invoke();
+                        return;
+                    }
+                    _names.Open(
                     "Save overlay to library", node.Name,
                     name =>
                     {
                         if (_bindings.GetOverlayId(node) is { } entryId)
                             _scenePane.SaveOverlayEntry(
                                 entryId.LogicalId, name);
-                    }),
-                help: "Save this overlay as a library entry"));
+                    });
+                },
+                help: "Save this overlay as a library entry", icon: TablerIcon.Dots);
         form.Actions("Overlay", actions =>
         {
             actions.Button(
@@ -479,21 +485,6 @@ public sealed class OverlayPane
                 },
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
-            actions.Button(
-                _removeAllArmed ? "Confirm remove all" : "Remove all",
-                () => _pending = () =>
-                {
-                    if (!_removeAllArmed)
-                    {
-                        _removeAllArmed = true;
-                        return;
-                    }
-                    _removeAllArmed = false;
-                    _lifecycle.DestroyAllOverlays();
-                    _scene.Selection.Clear();
-                },
-                variant: ButtonVariant.Danger,
-                help: "Take every overlay off the screen");
         });
         form.Status(
             _status.Length > 0
