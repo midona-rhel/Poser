@@ -45,8 +45,7 @@ content and inspector geometry in place. Collapse leaves the title bar.
 
 The separate toolbar has its own session-only compact state. Double-click
 the Poser/GPose brand/status region to show only that content and shrink the
-toolbar horizontally; repeat to restore its content-sized width. The same
-toggle is available by right-clicking that region. Single-click
+toolbar horizontally; repeat to restore its content-sized width. Single-click
 and drag still move the toolbar. Hidden actions are not drawn or interactive.
 Main-window collapse, detached panes and their geometry are unaffected.
 

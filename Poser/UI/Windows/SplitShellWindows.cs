@@ -344,19 +344,6 @@ public sealed class ToolbarPartWindow : Window
                 && mouse.Y >= min.Y && mouse.Y < max.Y;
             if (overBrand && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 _compact = !_compact;
-            const string menuId = "##toolbar-compact-menu";
-            if (overBrand && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-            {
-                var items = new[]
-                {
-                    new ContextMenuItem(_compact ? "Expand toolbar" : "Compact toolbar",
-                        _compact ? TablerIcon.ArrowRight : TablerIcon.ArrowLeft),
-                };
-                Crystarium.FloatingMenu.Open(menuId, mouse, items,
-                    Crystarium.FloatingMenu.MeasureWidth(items));
-            }
-            if (Crystarium.FloatingMenu.Draw(menuId) == 0)
-                _compact = !_compact;
         }
         finally
         {
