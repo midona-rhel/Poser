@@ -36,6 +36,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class LightPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly ILightingService _lighting;
@@ -689,23 +690,26 @@ public sealed class LightPane
     /// bound it.</summary>
     private void FileRows(Crystarium.FormScope form, ILight light)
     {
-        form.Actions("Light file", actions =>
-        {
-            actions.Button("Save", () => OpenSave(light),
-                help: "Save this light to a file");
-            actions.Button("Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", ["Save to file…", "Save to library", "Destroy all lights…"], -1, "More",
+            choice =>
+            {
+                if (choice == 0)
+                    OpenSave(light);
+                else if (choice == 2)
+                    RequestDestroyAll?.Invoke();
+                else
+                    _names.Open(
                     "Save light to library", light.Name,
                     name =>
                     {
                         if (_bindings.GetLightId(light) is { } entryId)
                             _scenePane.SaveLightEntry(
                                 entryId.LogicalId, name);
-                    }),
-                help: "Save into the library");
+                    });
+            });
+        form.Actions("Light file", actions =>
             actions.Button("Load", OpenLoad,
-                help: "Add a light from a file to the scene");
-        });
+                help: "Add a light from a file to the scene"));
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.

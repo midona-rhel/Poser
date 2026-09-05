@@ -32,6 +32,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class OverlayPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly StatusIconCatalog _statusIcons;
@@ -451,18 +452,24 @@ public sealed class OverlayPane
     private void LifetimeRows(
         Crystarium.FormScope form, IOverlayNode node)
     {
-        form.Actions("Library", actions =>
-            actions.Button(
-                "Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", ["Save to library", "Destroy all overlays…"], -1, "More",
+                choice =>
+                {
+                    if (choice == 1)
+                    {
+                        RequestDestroyAll?.Invoke();
+                        return;
+                    }
+                    _names.Open(
                     "Save overlay to library", node.Name,
                     name =>
                     {
                         if (_bindings.GetOverlayId(node) is { } entryId)
                             _scenePane.SaveOverlayEntry(
                                 entryId.LogicalId, name);
-                    }),
-                help: "Save this overlay as a library entry"));
+                    });
+                },
+                help: "Save this overlay as a library entry");
         form.Actions("Overlay", actions =>
         {
             actions.Button(

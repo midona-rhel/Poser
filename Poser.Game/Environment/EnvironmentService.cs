@@ -154,6 +154,12 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
     private readonly IEnvHook? _timeHook;
     private readonly IEnvWeatherHook? _weatherHook;
     private byte? _heldWeather;
+#if DEBUG
+    public uint? WeatherRequested { get; private set; }
+    public byte WeatherBeforeUpdate { get; private set; }
+    public byte WeatherAfterUpdate { get; private set; }
+    public int WeatherUpdateCount { get; private set; }
+#endif
     private readonly IEnvStateCopyHook? _envStateHook;
     private readonly bool _envStateHookEnabled;
 
@@ -389,6 +395,10 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             return;
         IsWeatherOverrideEnabled = true;
         _heldWeather = (byte)id;
+#if DEBUG
+        WeatherRequested = id;
+        WeatherUpdateCount = 0;
+#endif
         manager->ActiveWeather = (byte)id;
         manager->TransitionTime = transitionTime;
     }
@@ -464,6 +474,10 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
 
     private nint UpdateEnvironmentDetour(CSEnvManager* manager, float a2, float a3)
     {
+#if DEBUG
+        if (manager != null)
+            WeatherBeforeUpdate = manager->ActiveWeather;
+#endif
         // Ktisis Scene/Modules/EnvModule supplies weather before EnvManager's
         // update. Suppressing territory weather lookup alone leaves a one-shot
         // value vulnerable to later writes. Do not reset TransitionTime here:
@@ -473,7 +487,15 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
             _heldWeather ??= manager->ActiveWeather;
             manager->ActiveWeather = _heldWeather.Value;
         }
-        return _weatherHook!.Original(manager, a2, a3);
+        var result = _weatherHook!.Original(manager, a2, a3);
+#if DEBUG
+        if (manager != null)
+        {
+            WeatherAfterUpdate = manager->ActiveWeather;
+            WeatherUpdateCount++;
+        }
+#endif
+        return result;
     }
 
     // ── Environment sections ──────────────────────────────────────────

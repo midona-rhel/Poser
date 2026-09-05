@@ -374,10 +374,8 @@ public sealed class WorldObjectsPane
                     help: "Brighten or dim the effect",
                     onBegin: _values.Seal));
         }
-        form.Actions("Library", actions =>
-            actions.Button(
-                "Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", ["Save to library"], -1, "More",
+                _ => _names.Open(
                     "Save object to library", worldObject.Name,
                     name =>
                     {
@@ -386,7 +384,7 @@ public sealed class WorldObjectsPane
                             _scenePane.SaveWorldObjectEntry(
                                 entryId.LogicalId, name);
                     }),
-                help: "Save a spawnable copy of this object"));
+                help: "Save a spawnable copy of this object");
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
         {
             if (worldObject.Spawned)

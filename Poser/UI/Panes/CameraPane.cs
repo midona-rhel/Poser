@@ -26,6 +26,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class CameraPane
 {
+    public Action? RequestDestroyAll { get; set; }
     private const float Rad2Deg = 180f / MathF.PI;
     private const float Deg2Rad = MathF.PI / 180f;
 
@@ -711,23 +712,28 @@ public sealed class CameraPane
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
-        form.Actions("Camera file", actions =>
-        {
-            actions.Button("Save", () => OpenSave(camera),
-                help: "Save this camera to a file");
-            actions.Button("Save to library",
-                () => _names.Open(
+        form.ActionDropdown("More", _cameras.Cameras.Any(candidate => !candidate.IsDefault)
+                ? ["Save to file…", "Save to library", "Destroy all cameras…"]
+                : ["Save to file…", "Save to library"], -1, "More",
+            choice =>
+            {
+                if (choice == 0)
+                    OpenSave(camera);
+                else if (choice == 2)
+                    RequestDestroyAll?.Invoke();
+                else
+                    _names.Open(
                     "Save camera to library", camera.Name,
                     name =>
                     {
                         if (_bindings.GetCameraId(camera) is { } entryId)
                             _scenePane.SaveCameraEntry(
                                 entryId.LogicalId, name);
-                    }),
-                help: "Save into the library");
+                    });
+            });
+        form.Actions("Camera file", actions =>
             actions.Button("Load", OpenLoad,
-                help: "Add a camera from a file to the scene");
-        });
+                help: "Add a camera from a file to the scene"));
     }
 
     private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)

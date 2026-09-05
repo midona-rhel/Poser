@@ -16,8 +16,9 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
-Category-wide destruction (lights, cameras, objects, and overlays) is entered
-only from that category's entity context menu. A modal states the target count
+Entity save-to-file, save-to-library, and category-wide destruction live under
+More in the inspector or entity context menu, only where supported. Category-wide
+destruction (lights, cameras, objects, and overlays) opens a modal with the target count
 and what is released or protected; only its explicit confirmation runs the
 captured operation. Cancel, Escape, and closing the modal do nothing. Single
 entity actions and automatic session teardown retain their existing routes.
