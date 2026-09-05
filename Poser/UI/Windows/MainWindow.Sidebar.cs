@@ -942,8 +942,7 @@ public partial class MainWindow
         // refreshes, so a scene refresh cannot reset existing disclosure.
         // Only explicit disclosure clicks expand — external bone selection
         // (map, matrix, overlay, gizmo) never changes tree disclosure.
-        if (_knownActorNodes.Add(actorKey))
-            _collapsedNodes.Add(actorKey);
+        SeedTreeNode(actorKey, _knownActorNodes);
         bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
         var actorSelectionId = SelectionId.ForActor(actor.Id);
         var actorRow = new ShellSidebarRow
@@ -1081,8 +1080,7 @@ public partial class MainWindow
                 var skeletonKey = actorKey + "/skeleton";
                 // The skeleton starts folded like the actor above it;
                 // only a disclosure click, or the tree verbs, open it.
-                if (_knownCategoryNodes.Add(skeletonKey))
-                    _collapsedNodes.Add(skeletonKey);
+                SeedTreeNode(skeletonKey, _knownCategoryNodes);
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
@@ -1109,6 +1107,7 @@ public partial class MainWindow
                         ? SelectionId.ForBone(rootBone.Id)
                         : null,
                     ExpandKey = skeletonKey,
+                    SkeletonContext = skeleton!.Id,
                     OverlayMemoryKey = skeletonKey,
                     OverlayBones = allBoneIds,
                 });
@@ -1219,8 +1218,7 @@ public partial class MainWindow
             var (aux, visible, matching, groupMatches) = shown[a];
             string slotLabel = SlotLabel(aux.Id.Slot);
             var slotKey = actorKey + "/slot:" + aux.Id.Slot;
-            if (_knownCategoryNodes.Add(slotKey))
-                _collapsedNodes.Add(slotKey);
+            SeedTreeNode(slotKey, _knownCategoryNodes);
             bool slotExpanded = filtering || !_collapsedNodes.Contains(slotKey);
             bool groupLast = a == shown.Count - 1;
             section.Rows.Add(new ShellSidebarRow
@@ -1233,6 +1231,7 @@ public partial class MainWindow
                 IsLastChild = groupLast,
                 TreeLines = lines,
                 ExpandKey = slotKey,
+                SkeletonContext = aux.Id,
                 OverlayMemoryKey = slotKey,
                 OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
@@ -1270,13 +1269,13 @@ public partial class MainWindow
                 }
             }
 
-            void Emit(BoneDescriptor bone, int boneDepth, bool isLast, bool[] boneLines)
+            void Emit(BoneDescriptor bone, int boneDepth, bool isLast, bool[] boneLines, string parentKey)
             {
                 bool hasKids = children.ContainsKey(bone.Id);
-                var boneKey = slotKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
+                var boneKey = parentKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
                 // Every disclosure seeds collapsed, hierarchy nodes included.
-                if (hasKids && _knownCategoryNodes.Add(boneKey))
-                    _collapsedNodes.Add(boneKey);
+                if (hasKids)
+                    SeedTreeNode(boneKey, _knownCategoryNodes);
                 bool boneExpanded = !_collapsedNodes.Contains(boneKey);
                 section.Rows.Add(BoneRow(
                     bone, boneDepth, isLast, boneLines,
@@ -1286,11 +1285,11 @@ public partial class MainWindow
                 var kids = children[bone.Id];
                 var kidLines = Descend(boneLines, isLast);
                 for (int k = 0; k < kids.Count; k++)
-                    Emit(kids[k], boneDepth + 1, k == kids.Count - 1, kidLines);
+                    Emit(kids[k], boneDepth + 1, k == kids.Count - 1, kidLines, boneKey);
             }
 
             for (int r = 0; r < roots.Count; r++)
-                Emit(roots[r], depth + 1, r == roots.Count - 1, slotLines);
+                Emit(roots[r], depth + 1, r == roots.Count - 1, slotLines, slotKey);
         }
     }
 

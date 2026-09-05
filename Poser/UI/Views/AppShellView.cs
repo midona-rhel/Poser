@@ -61,6 +61,8 @@ public sealed class ShellSidebarRow
     public bool ExpanderDisabled;
     /// <summary>Chevron key for this row.</summary>
     public string? ExpandKey;
+    /// <summary>A whole skeleton/weapon-slot menu, independent of left-click selection.</summary>
+    public Domain.Identity.SkeletonId? SkeletonContext;
     /// <summary>Key for this row's hidden bones.</summary>
     public string? OverlayMemoryKey;
     public bool Expanded;

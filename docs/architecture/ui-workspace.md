@@ -24,6 +24,20 @@ and what is released or protected; only its explicit confirmation runs the
 captured operation. Cancel, Escape, and closing the modal do nothing. Single
 entity actions and automatic session teardown retain their existing routes.
 
+Context menus use the clicked target; only right-clicking a member of an
+existing multi-selection offers selection-wide commands. Opening another
+target replaces the old menu. Removal drops that target from selection, not
+unrelated entities. Library list rebuilds dismiss index-based menus.
+Equivalent commands share labels and current capability gates; a changed
+menu shape dismisses stale rows rather than dispatching their old indices.
+
+Tree disclosure belongs to the clicked branch, including descendants that
+have not been drawn yet. Search temporarily reveals matches and disables
+disclosure commands. Skeleton/weapon-slot menus identify their own bones;
+whole-actor presets and pose commands are explicitly labelled Actor, while
+Skeleton settings opens the shared settings page. Shared sections reuse the
+existing commands, not a second settings or pose state.
+
 The shell owns the content origin, inset, scrollbar gutter, and content mode.
 Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached

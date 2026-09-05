@@ -242,8 +242,7 @@ public partial class MainWindow
         underIvcs = underIvcs
             || category.Label.Contains("IVCS", StringComparison.Ordinal);
         var catKey = parentKey + "/kcat:" + category.Id;
-        if (_knownCategoryNodes.Add(catKey))
-            _collapsedNodes.Add(catKey);
+        SeedTreeNode(catKey, _knownCategoryNodes);
         bool expanded = filtering || !_collapsedNodes.Contains(catKey);
         var overlayBones = new List<BoneId>();
         CollectCategoryBones(category, overlayBones);

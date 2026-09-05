@@ -236,10 +236,20 @@ public partial class MainWindow
                 _ctxActorId = ctxActor;
                 _ctxOpenRequested = true;
             }
+            else if (row.SkeletonContext is { } ctxSkeleton)
+            {
+                _ctxBranchSkeleton = ctxSkeleton;
+                _ctxBranchLabel = row.Label;
+                _ctxBranchExpandKey = row.ExpandKey;
+                _ctxOverlayBones = row.OverlayBones;
+                _ctxOverlayMemoryKey = row.OverlayMemoryKey;
+                _overlayCtxOpenRequested = true;
+            }
             else if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone, Bone: { } ctxBone })
             {
                 _ctxBoneId = ctxBone;
                 _ctxBoneOverlayBones = row.OverlayBones;
+                _ctxBoneExpandKey = row.HasChildren ? row.ExpandKey : null;
                 _boneCtxOpenRequested = true;
             }
             else if (row.Tag is SelectionId
@@ -273,6 +283,9 @@ public partial class MainWindow
             }
             else if (row.OverlayBones != null)
             {
+                _ctxBranchSkeleton = null;
+                _ctxBranchLabel = row.Label;
+                _ctxBranchExpandKey = row.ExpandKey;
                 _ctxOverlayBones = row.OverlayBones;
                 _ctxOverlayMemoryKey = row.OverlayMemoryKey;
                 _overlayCtxOpenRequested = true;

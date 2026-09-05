@@ -159,8 +159,10 @@ public sealed class PoseFileInspectorSection
 
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
-    public void RequestImportMenu(bool withPresets, Vector2? anchor = null)
+    public void RequestImportMenu(bool withPresets, Vector2? anchor = null,
+        Domain.Identity.ActorId? target = null)
     {
+        _menuActor = target;
         _importMenuWithPresets = withPresets;
         _menuAnchor = anchor ?? ImGui.GetMousePos();
         _importMenuRequested = true;
@@ -173,6 +175,7 @@ public sealed class PoseFileInspectorSection
     /// while the options are worked.</summary>
     public void RequestLibraryOptionsMenu(Vector2 seat)
     {
+        _menuActor = null;
         _libraryMenuSeat = seat;
         _libraryMenuRequested = true;
     }
@@ -200,6 +203,15 @@ public sealed class PoseFileInspectorSection
 
     private ISkeleton? SelectedSkeleton(out Domain.Identity.ActorId? actorId)
     {
+        // Context-menu actions belong to the clicked actor, not the inspector
+        // selection. Only menu dispatch uses this target; ordinary pane actions
+        // continue to follow selection, and dialogs capture their own target.
+        if (_drawingMenu && _menuActor is { } clickedActor)
+        {
+            actorId = clickedActor;
+            return _resolveActor?.Invoke(clickedActor) is { HasSkeleton: true } clicked
+                ? clicked.Skeleton : null;
+        }
         foreach (var id in _selection.Selected)
         {
             var candidate = id switch
@@ -262,8 +274,12 @@ public sealed class PoseFileInspectorSection
     private Vector2 _menuAnchor;
     private bool _exportMenuRequested;
 
-    public void RequestExportMenu()
+    private Domain.Identity.ActorId? _menuActor;
+    private bool _drawingMenu;
+
+    public void RequestExportMenu(Domain.Identity.ActorId? target = null)
     {
+        _menuActor = target;
         _menuAnchor = ImGui.GetMousePos();
         _exportMenuRequested = true;
     }
@@ -297,6 +313,13 @@ public sealed class PoseFileInspectorSection
     }
 
     private void DrawMenus()
+    {
+        _drawingMenu = true;
+        try { DrawMenusCore(); }
+        finally { _drawingMenu = false; }
+    }
+
+    private void DrawMenusCore()
     {
         if (_importMenuRequested)
         {

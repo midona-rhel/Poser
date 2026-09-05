@@ -986,6 +986,9 @@ public sealed partial class PoseLibraryPane
         }
 
         var tiles = _vm.Tiles;
+        // Menu actions use tile indices; a refreshed/sorted list is a new target set.
+        Crystarium.FloatingMenu.Dismiss(TileMenuId);
+        Crystarium.FloatingMenu.Dismiss("##library-apply-target");
         tiles.Clear();
         _tileTags.Clear();
         _tileAuthors.Clear();
