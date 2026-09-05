@@ -301,7 +301,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
         var clone = new VirtualCamera(this, original.Kind, isDefault: false)
         {
-            Name = NextName(original.Kind),
+            Name = EntityNames.Next(original.Name, _cameras.Select(x => x.Name)),
             PositionOffset = original.PositionOffset,
             TargetOffset = original.TargetOffset,
             TargetActorName = original.TargetActorName,
@@ -544,20 +544,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// <summary>The spawned camera's default name. Bare number, no "#": every
     /// other numbered entity in the scene (lights, props) is named
     /// "{stem} {n}", and one family wearing a hash read as a different sort of
-    /// thing (user 2026-08-14). Nothing parses the number back out and scene
-    /// documents store the display name verbatim, so older saves keep their
-    /// hashed names and load unchanged.</summary>
+    /// thing (user 2026-08-14). Restored scene documents keep their authored
+    /// names; fresh creation and duplication use the shared series rule.</summary>
     private string NextName(CameraKind kind)
     {
         string stem = kind == CameraKind.Free ? "Free camera" : "Camera";
-        for (int i = 1; i <= 100; i++)
-        {
-            string name = $"{stem} {i}";
-            if (!_cameras.Exists(camera =>
-                    string.Equals(camera.Name, name, StringComparison.Ordinal)))
-                return name;
-        }
-        return stem;
+        return EntityNames.Next(stem, _cameras.Select(x => x.Name));
     }
 
     private void Publish() =>

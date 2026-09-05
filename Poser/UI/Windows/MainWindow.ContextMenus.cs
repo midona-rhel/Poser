@@ -1304,7 +1304,7 @@ public partial class MainWindow
             items.Add(new ContextMenuItem("Group…", TablerIcon.Folder));
             actions.Add(() => OpenEntityRename(
                 "Name the group",
-                $"Group {_groups.All.Count + 1}",
+                global::Poser.Domain.Scene.EntityNames.Next("Group", _groups.All.Select(x => x.Name)),
                 name => _groupSteps.Create(name, _selection.Selected)));
         }
         items.Add(new ContextMenuItem("Deselect", TablerIcon.X));

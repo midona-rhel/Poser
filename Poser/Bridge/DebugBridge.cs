@@ -802,7 +802,7 @@ public sealed class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/clone":
             {
-                var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor));
+                var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor), source: actor);
                 return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
             }
             case "/dupepose":
@@ -822,7 +822,7 @@ public sealed class DebugBridge : IDisposable
                 }
                 var copy = posed
                     ? _lifecycle.SpawnActorWithPose($"Duplicate actor '{actor.Name}' with pose", Wearing, actor)
-                    : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing);
+                    : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing, source: actor);
                 var copyId = copy != null ? _bindings.GetActorId(copy) : null;
                 if (posed && copyId is { } pid)
                 {

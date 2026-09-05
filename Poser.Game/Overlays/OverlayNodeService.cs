@@ -335,12 +335,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 
     private string NextName(OverlayNodeKind kind)
     {
-        int ordinal = 1;
-        foreach (var node in _nodes)
-            if (node.Kind == kind)
-                ordinal++;
-        return KindName(kind) + " "
-            + ordinal.ToString(CultureInfo.InvariantCulture);
+        return Poser.Domain.Scene.EntityNames.Next(KindName(kind), _nodes.Select(x => x.Name));
     }
 
     private static string KindName(OverlayNodeKind kind) => kind switch

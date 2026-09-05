@@ -114,6 +114,10 @@ internal readonly record struct ActorState(
 /// </summary>
 internal interface IActorLifecycle
 {
+    string GetName(object actor);
+    void SetName(object actor, string name);
+    void NameCreated(object actor, string seed);
+
     bool IsSpawned(object actor);
 
     bool Destroy(object actor);
@@ -196,7 +200,10 @@ internal readonly record struct WorldObjectState(
     string Path,
     bool Spawned,
     Transform Placement,
-    bool Visible);
+    bool Visible)
+{
+    public string? Name { get; init; }
+}
 
 /// <summary>
 /// The adopted-world-object half of <see cref="SceneLifecycleHistory"/>. It is
@@ -271,12 +278,14 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
         var handle = (AdoptedWorldObject)worldObject;
         return new WorldObjectState(
             handle.Address, handle.Path, handle.Spawned,
-            handle.Transform, handle.Visible);
+            handle.Transform, handle.Visible) { Name = handle.Name };
     }
 
     public void Apply(object worldObject, WorldObjectState state)
     {
         var handle = (AdoptedWorldObject)worldObject;
+        if (state.Name is { } name)
+            handle.Name = name;
         handle.Transform = state.Placement;
         handle.Visible = state.Visible;
     }
@@ -387,14 +396,15 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        IActorManager actorManager)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings, bonePosing),
+                gaze, integration, bindings, bonePosing, actorManager),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
@@ -693,6 +703,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     /// </summary>
     private sealed class ActorSlot
     {
+        public string? Name;
         public IActor? Live;
         public Func<IActor?> Respawn = static () => null;
         public bool HasRespawn;
@@ -702,11 +713,14 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     /// <summary>Records one actor spawn. <paramref name="spawn"/> must be
     /// re-runnable: it is the redo.</summary>
-    public IActor? SpawnActor(string description, Func<IActor?> spawn)
+    public IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null)
     {
+        var seed = name ?? (source == null ? "Actor" : _actors.GetName(source));
         var actor = spawn();
         if (actor == null)
             return null;
+        if (_actors.IsSpawned(actor))
+            _actors.NameCreated(actor, seed);
         var slot = SlotFor(actor);
         slot.Respawn = spawn;
         slot.HasRespawn = true;
@@ -752,6 +766,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
+        var name = _actors.GetName(source);
         var state = _actors.Read(source);
         IActor? Posed()
         {
@@ -763,6 +778,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var actor = Posed();
         if (actor == null)
             return null;
+        if (_actors.IsSpawned(actor))
+            _actors.NameCreated(actor, name);
         var slot = SlotFor(actor);
         slot.Respawn = Posed;
         slot.HasRespawn = true;
@@ -825,6 +842,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             // user left it, in the pose they gave it — the same rule the
             // light and the prop follow.
             slot.Document = _actors.Read(actor);
+            slot.Name = _actors.GetName(actor);
             slot.HasDocument = true;
             if (!_actors.Destroy(actor))
                 return false;
@@ -847,6 +865,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             return false;
         slot.Live = actor;
         _actorSlots[actor] = slot;
+        if (slot.Name is { } name)
+            _actors.SetName(actor, name);
         // The body is back; the placement and the pose land on it over the
         // next few ticks, because the skeleton they need is built with a draw
         // object the spawn deliberately defers. The entry has landed either
@@ -888,18 +908,17 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     /// <summary>
     /// A prop's clone is its model triple spawned again, standing where the
-    /// source stands and showing what the source shows. The NAME is the one
-    /// thing it does not take: a spawn names itself, exactly as a cloned
-    /// light takes a freshly generated name rather than the source's
-    /// (LightingService.SpawnInternal).
+    /// source stands and showing what the source shows, with the next name
+    /// in the source's series.
     /// </summary>
     public object? CloneProp(object source)
     {
         var state = _props.Read(source);
+        var name = EntityNames.Next(state.Name, _props.Props.Select(x => _props.Read(x).Name));
         var prop = _props.Spawn(state.Model);
         if (prop == null)
             return null;
-        _props.Apply(prop, state with { Name = _props.Read(prop).Name });
+        _props.Apply(prop, state with { Name = name });
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
             $"Clone object '{state.Name}'",
@@ -1011,6 +1030,16 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         public object? Live;
         public OverlayNodeState Document = new();
         public bool HasDocument;
+    }
+
+    public object? CloneOverlay(object source)
+    {
+        var state = _overlayNodes.Read(source);
+        return SpawnOverlay(state with
+        {
+            Name = EntityNames.Next(state.Name, _overlayNodes.Overlays.Select(x => _overlayNodes.Read(x).Name)),
+            Position = state.Position + new System.Numerics.Vector2(24f),
+        });
     }
 
     public object? SpawnOverlay(OverlayNodeKind kind) =>
@@ -1159,8 +1188,29 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         return worldObject;
     }
 
-    /// <summary>Spawns one object from a model path, journalled like an
-    /// adoption: undoing it takes the copy out of the scene again.</summary>
+    /// <summary>Copies a world asset's authored properties with the next display name.</summary>
+    public IWorldObject? CloneWorldObject(IWorldObject source)
+    {
+        var name = EntityNames.Next(source.Name,
+            _worldObjects.WorldObjects.OfType<IWorldObject>().Select(x => x.Name));
+        if (SpawnWorldObject(source.Path, source.Transform, source.Visible) is not IWorldObject copy)
+            return null;
+        copy.Name = name;
+        copy.Opacity = source.Opacity;
+        copy.Tint = source.Tint;
+        if (source.IsVfx)
+        {
+            copy.LoopVfx = source.LoopVfx;
+            copy.VfxSpeed = source.VfxSpeed;
+            copy.VfxIntensity = source.VfxIntensity;
+            copy.VfxPaused = source.VfxPaused;
+        }
+        else
+            copy.NightState = source.NightState;
+        return copy;
+    }
+
+    /// <summary>Spawns one object from a model path; undo removes the created object.</summary>
     public object? SpawnWorldObject(string path, Transform placement, bool visible)
     {
         var worldObject = _worldObjects.Spawn(path, placement, visible);

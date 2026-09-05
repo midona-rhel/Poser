@@ -18,20 +18,30 @@
 - A **Debug build auto-deploys the plugin to the live game**. Never run Debug
   merely to check compilation, tests, or fault injection. Use Release for
   non-deployment validation. Run Debug only as the announced deployment action
-  for the exact reviewed head when the user is ready to test in game.
-- The organizer does not author or repair production code. Luna worktree tasks
-  author every repository implementation and every accepted review fix. The
-  organizer writes specifications, controls scope and ownership, reviews exact
-  diffs, runs the authoritative Release build/test gates, triages findings, and
-  manages deployment and acceptance. Implementation tasks need not run broad
-  builds or tests unless the specification delegates a narrow diagnostic.
-- Only one Luna implementation task edits a shared subsystem at a time. Luna
-  review tasks remain independent and read-only, and send their final report
-  directly to the organizer task. Build, test, or review failures go back to the
-  implementation task; the organizer does not patch them.
-- Every ongoing update and final handoff starts with a short, concrete TL;DR.
+  for the exact reviewed head before handing the issue to the user for testing.
+  Follow [the deployment and acceptance contract](docs/process/testing.md):
+  the user is the in-game reviewer, no video verification is required, and
+  a worktree-local build is not deployment to the canonical live output.
+- Work directly in the current task by default: implement, review, validate,
+  and handle user feedback here. Do not spawn subtasks or delegate unless the
+  user explicitly asks. Track work as GitHub issues, not PBIs.
+- If the user requests delegation, prefer Sol (`gpt-5.6-sol`) unless they
+  choose another model. Delegate bounded work; keep scope, review, deployment,
+  acceptance, and repository finalization in the main task. Only one writer
+  edits a shared subsystem at a time.
+- Write concise, natural updates; do not require a TL;DR prefix or rigid template.
+  Historical plans are reference material, not current agent instructions.
   When user testing is required, include an exact actionable test card with
   starting state, actions, expected result, and what evidence to report.
-- Every Luna task must explicitly send its complete ongoing blocker or final
-  report to the organizer task with the task-messaging tool before ending.
-  A final answer left only in the child task is insufficient.
+- Explicitly requested delegated tasks must send their blocker or final report
+  back to the main task before ending; include the exact head, patch, checks,
+  and outstanding work.
+- Announce **deployed — ready for user testing** only after verified deployment,
+  with the user's actionable test card. An undeployed build is never test-ready.
+- `main` is the development and integration branch. Cut `release/<version>`
+  from an accepted `main` commit; build, test, package, tag, and publish the
+  exact release-branch head. Merge release-only fixes and metadata back to
+  `main`; never rebuild a cut release from a later `main` commit.
+- Name work branches and worktrees by purpose: `feature/`, `bug/`, `ui/`,
+  `docs/`, `test/`, `perf/`, `release/`, or `chore/` as appropriate. Never
+  use a `codex/` branch prefix or a generic Codex work name.

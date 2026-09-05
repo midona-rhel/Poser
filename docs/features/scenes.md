@@ -1,5 +1,21 @@
 ﻿# Scenes
 
+## Created entity names
+
+Created actors, cameras, lights, props, overlays, world objects and groups
+share a numbered-name policy. Each entity family looks at its current names:
+keep the source stem and advance beyond its highest existing numeric suffix.
+`Key 1` and `Key 3` therefore produce `Key 4`, even when copying `Key 1`;
+deleting a middle entry does not fill that gap. There is no global counter:
+`Camera 1` and `Actor 1` can coexist. Case-only differences share a series.
+An unnumbered source counts as the first entry; its copy starts at 2.
+Borrowing does not rename the borrowed entity. A spawned copy is a new entity
+and uses the shared rule. Actor numbering changes the display nickname, not
+the native game name used by Penumbra. Loading and history restoration retain
+authored names instead of allocating a new number.
+
+## Scene files
+
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store

@@ -18,6 +18,23 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     public void Dispose() => Marshal.FreeHGlobal(_nativeBlock);
+    [Fact]
+    public void Copies_advance_the_clicked_name_series_without_filling_deleted_gaps()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var one = setup.Service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
+        one.Name = "Key 1";
+        var two = setup.Service.CloneCamera(one)!;
+        Assert.Equal("Key 2", two.Name);
+        var three = setup.Service.CloneCamera(two)!;
+        Assert.Equal("Key 3", three.Name);
+        setup.Service.DestroyCamera(two);
+        Assert.Equal("Key 4", setup.Service.CloneCamera(one)!.Name);
+        Assert.Equal("Main Camera", setup.Service.Cameras.Single(x => x.IsDefault).Name);
+    }
+
 [Fact]
     public void Ready_native_entry_creates_the_default_live_camera()
     {

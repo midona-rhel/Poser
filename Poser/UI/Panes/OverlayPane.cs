@@ -535,16 +535,7 @@ public sealed class OverlayPane
     /// verb too — one duplication rule, wherever it is asked.</summary>
     public IOverlayNode? Duplicate(IOverlayNode node)
     {
-        // The copy is offset so it does not land exactly under the original,
-        // where it would look like nothing happened; the NAME is dropped so
-        // the service mints the next one of its kind rather than two rows
-        // wearing one name.
-        var document = node.State with
-        {
-            Name = string.Empty,
-            Position = node.Position + new Vector2(DuplicateOffset),
-        };
-        if (_lifecycle.SpawnOverlay(document) is IOverlayNode copy)
+        if (_lifecycle.CloneOverlay(node) is IOverlayNode copy)
         {
             _pendingSelect.Arm(copy);
             _status = string.Empty;
@@ -554,10 +545,6 @@ public sealed class OverlayPane
             + "would not take it.";
         return null;
     }
-
-    /// <summary>How far a duplicate lands from its original, in the node's own
-    /// screen pixels.</summary>
-    private const float DuplicateOffset = 24f;
 
     private static Vector2 Centred(IOverlayNode node)
     {

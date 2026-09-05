@@ -490,7 +490,7 @@ public partial class MainWindow
                         actions.Button("Group…",
                             () => OpenEntityRename(
                                 "Name the group",
-                                $"Group {_groups.All.Count + 1}",
+                                global::Poser.Domain.Scene.EntityNames.Next("Group", _groups.All.Select(x => x.Name)),
                                 name => _groupSteps.Create(
                                     name, _selection.Selected)));
                     }

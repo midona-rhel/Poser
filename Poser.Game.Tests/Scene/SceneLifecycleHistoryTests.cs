@@ -22,6 +22,59 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
+    [Fact]
+    public void Overlay_copies_advance_names_in_a_batch_and_redo_preserves_name_and_offset()
+    {
+        var world = new World();
+        var one = world.Lifecycle.SpawnOverlay(new OverlayNodeState { Name = "Key 1" })!;
+        var two = world.Lifecycle.CloneOverlay(one)!;
+        var three = world.Lifecycle.CloneOverlay(two)!;
+        Assert.Equal("Key 3", world.Overlays.Read(three).Name);
+        world.Lifecycle.DestroyOverlay(two);
+        var four = world.Lifecycle.CloneOverlay(one)!;
+        Assert.Equal("Key 4", world.Overlays.Read(four).Name);
+        var state = world.Overlays.Read(four);
+        Assert.Equal(world.Overlays.Read(one).Position + new Vector2(24f), state.Position);
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+        Assert.Contains(world.Overlays.Live, x => world.Overlays.Read(x) == state);
+    }
+
+    [Fact]
+    public void Duplicate_actor_advances_source_series_and_redo_keeps_the_authored_name()
+    {
+        var world = new World();
+        var one = world.Lifecycle.SpawnActor("Add", () => world.Actors.Spawn("Native"))!;
+        Assert.Equal("Actor 1", one.Name);
+        var two = world.Lifecycle.SpawnActor("Copy", () => world.Actors.Spawn("Native"), source: one)!;
+        var three = world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Native"), two)!;
+        Assert.Equal("Actor 3", three.Name);
+        world.Lifecycle.DespawnActor(two);
+        var four = world.Lifecycle.SpawnActor("Copy original", () => world.Actors.Spawn("Native"), source: one)!;
+        Assert.Equal("Actor 4", four.Name);
+        four.Name = "Lead 7";
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+        Assert.Contains(world.Actors.Live, x => x.Name == "Lead 7");
+    }
+
+    [Fact]
+    public void Duplicate_prop_advances_past_a_deleted_middle_name_and_restores_the_copy_name()
+    {
+        var world = new World();
+        var one = world.Lifecycle.SpawnProp(Apple)!;
+        world.Props.Apply(one, world.Props.Read(one) with { Name = "Key 1" });
+        var two = world.Lifecycle.CloneProp(one)!;
+        Assert.Equal("Key 2", world.Props.Read(two).Name);
+        var three = world.Lifecycle.CloneProp(two)!;
+        Assert.Equal("Key 3", world.Props.Read(three).Name);
+        world.Lifecycle.DestroyProp(two);
+        var four = world.Lifecycle.CloneProp(one)!;
+        Assert.Equal("Key 4", world.Props.Read(four).Name);
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+        Assert.Contains(world.Props.Live, x => world.Props.Read(x).Name == "Key 4");
+    }
 
     [Fact]
     public void Add_remove_undo_redo_preserves_latest_state_and_the_entity_slot()
@@ -588,6 +641,11 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeActors : IActorLifecycle
     {
+        public string GetName(object actor) => ((IActor)actor).Name;
+        public void SetName(object actor, string name) => ((IActor)actor).Name = name;
+        public void NameCreated(object actor, string seed) => SetName(actor,
+            EntityNames.Next(seed, _actors.Where(x => !ReferenceEquals(x, actor)).Select(x => x.Name)));
+
         private readonly List<IActor> _actors = new();
 
         /// <summary>What each live actor currently IS, so a removal's capture

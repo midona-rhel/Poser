@@ -426,7 +426,9 @@ public sealed unsafe class LightingService : ILightingService
                     Vector3.One);
 
             var light = SpawnNative(
-                kind, transform, LightOwnership.Spawned, GenerateName(kind));
+                kind, transform, LightOwnership.Spawned, source == null
+                    ? GenerateName(kind)
+                    : Poser.Domain.Scene.EntityNames.Next(source.Name, _lights.Select(x => x.Name)));
             if (light == null)
                 return null;
 
@@ -559,16 +561,7 @@ public sealed unsafe class LightingService : ILightingService
             _ => "Light",
         };
 
-        var sameKind = 0;
-        foreach (var light in _lights)
-        {
-            if (light.Kind == kind)
-                sameKind++;
-        }
-        // Every light carries its number, the first one included: an unnumbered
-        // "Spot Light" beside "Spot Light 2" reads as a different sort of thing
-        // rather than as the first of a series.
-        return $"{baseName} {sameKind + 1}";
+        return Poser.Domain.Scene.EntityNames.Next(baseName, _lights.Select(x => x.Name));
     }
 
     private string UniqueName(string baseName)
