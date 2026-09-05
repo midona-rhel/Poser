@@ -15,8 +15,9 @@ different axis meanings. Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay is perspective-correct and draws
 nothing for an unprojectable pivot. Inspector rotation stays in place.
 
-Rotation arcs grow continuously from half to full circles within 20 degrees
-of face-on, on both gizmos. Drawing and picking share the same clipped arc
+Rotation arcs grow continuously from half circles at 20 degrees off face-on
+to full circles at 5 degrees, staying full closer in, on both gizmos.
+Drawing and picking share the same clipped arc
 endpoints; the inspector's remaining rear arc stays faint and non-interactive.
 Each projection uses its own viewing direction. Roll and gesture axes do not
 change as the arc grows.

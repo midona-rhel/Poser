@@ -46,16 +46,20 @@ public static class RotationGizmoRings
     public const int RollAxis = 3;
 
     public const float ArcGrowthAngleDegrees = 20f;
+    public const float FullArcAngleDegrees = 5f;
 
     /// <summary>Depth cut on a unit ring, expanding its front arc as the
     /// ring normal approaches either direction of the viewing axis.</summary>
     public static float GrowingArcCutoff(Vector3 normal, Vector3 viewDirection)
     {
         float sinTilt = Vector3.Cross(normal, viewDirection).Length();
-        if (sinTilt < 1e-6f)
-            return 1f; // Face-on: every unit-ring point is on the pivot plane.
-        float tilt = MathF.Atan2(sinTilt, MathF.Abs(Vector3.Dot(normal, viewDirection)));
-        float growth = Math.Clamp(1f - tilt / (ArcGrowthAngleDegrees * MathF.PI / 180f), 0f, 1f);
+        float tiltDegrees = MathF.Atan2(sinTilt, MathF.Abs(Vector3.Dot(normal, viewDirection)))
+            * 180f / MathF.PI;
+        if (tiltDegrees <= FullArcAngleDegrees)
+            return 1f; // The complete unit ring is inside the cut throughout this band.
+        float growth = Math.Clamp(
+            (ArcGrowthAngleDegrees - tiltDegrees) / (ArcGrowthAngleDegrees - FullArcAngleDegrees),
+            0f, 1f);
         growth = growth * growth * (3f - 2f * growth);
         // Ring depth is sinusoidal with amplitude sin(tilt). Moving this cut
         // from 0 to that amplitude grows the arc from half to whole; easing
