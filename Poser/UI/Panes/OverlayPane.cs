@@ -54,7 +54,6 @@ public sealed class OverlayPane
     /// <summary>Whether remove-all confirmation is armed — the camera
     /// pane's destroy-all idiom: a whole-set destroyer takes two presses.
     /// </summary>
-    private bool _removeAllArmed;
     private bool _openContent = true;
     private bool _openActions = true;
 
@@ -479,21 +478,6 @@ public sealed class OverlayPane
                 },
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
-            actions.Button(
-                _removeAllArmed ? "Confirm remove all" : "Remove all",
-                () => _pending = () =>
-                {
-                    if (!_removeAllArmed)
-                    {
-                        _removeAllArmed = true;
-                        return;
-                    }
-                    _removeAllArmed = false;
-                    _lifecycle.DestroyAllOverlays();
-                    _scene.Selection.Clear();
-                },
-                variant: ButtonVariant.Danger,
-                help: "Take every overlay off the screen");
         });
         form.Status(
             _status.Length > 0

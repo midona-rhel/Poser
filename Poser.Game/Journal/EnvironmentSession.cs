@@ -40,9 +40,9 @@ public sealed class EnvironmentSession
     public void SetWeather(uint id, float transitionTime = 0.5f)
     {
         var before = _environment.CurrentWeatherId;
+        _environment.SetWeather(id, transitionTime);
         if (before == id)
             return;
-        _environment.SetWeather(id, transitionTime);
         _journal.Record("Set weather", before, id, next => _environment.SetWeather(next, transitionTime));
     }
 

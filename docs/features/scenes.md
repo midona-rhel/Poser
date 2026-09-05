@@ -128,6 +128,15 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+## Weather ownership
+
+Picking a weather holds that ID, including None (0). The territory/all-weathers
+switch filters choices only; it does not validate or change the current ID.
+Holding follows Ktisis's pre-environment-update write, not a repeated transition
+restart. Release returns control to the game; territory change and logout
+release holds, while GPose exit follows Restore on exit. Weather-specific visual
+assets remain dependent on what the game can load in the current location.
+
 ## Portable appearance
 
 `Modded appearance` makes a save PORTABLE: the scene carries each actor's

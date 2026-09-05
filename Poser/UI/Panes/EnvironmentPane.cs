@@ -464,9 +464,11 @@ public sealed class EnvironmentPane
         {
             cells.Cell(
                 "Weather",
-                cell => cell.Button("##env-weather", name, OpenWeatherPicker),
-                help: "Choose the weather this territory runs. Picking one "
-                    + "holds it, or the game's next update takes it back.");
+                cell => cell.Button("##env-weather", name, OpenWeatherPicker,
+                    disabled: !available),
+                help: available
+                    ? "Choose and hold a weather. All weathers includes choices outside this territory's usual list."
+                    : WeatherUnavailable);
             // "Show all weathers" overran the label column; the section it
             // stands in already says what is being shown.
             cells.Cell(
@@ -536,6 +538,12 @@ public sealed class EnvironmentPane
             ? _environment.AllWeathers
             : _environment.TerritoryWeathers;
         _weatherVisible.Clear();
+        // None is a real selectable ID, not a missing selection. It is also
+        // available in territory mode, where zero slots mean no further IDs.
+        if (!_showAllWeathers && _environment.GetWeatherInfo(0) is { } none
+            && (query.Length == 0 || none.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || "0".Contains(query, StringComparison.Ordinal)))
+            _weatherVisible.Add(Option(none));
         for (int i = 0; i < source.Count; i++)
         {
             var weather = source[i];

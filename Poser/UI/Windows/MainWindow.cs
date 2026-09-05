@@ -946,6 +946,7 @@ public partial class MainWindow : Window
         DrawGroupContextMenu();
         DrawSelectionContextMenu();
         DrawEntityRenameModal();
+        DrawBulkDestroyModal();
         DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives subsequent selection changes.

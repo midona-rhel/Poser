@@ -619,6 +619,9 @@ public partial class MainWindow
             new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy all overlays…", TablerIcon.Trash, danger: true,
+                disabled: _scene.Snapshot.Overlays.Count == 0),
         };
         var actions = new Action?[]
         {
@@ -636,6 +639,8 @@ public partial class MainWindow
                 _lifecycle.DestroyOverlay(node);
                 _selection.Clear();
             },
+            null,
+            ConfirmDestroyAllOverlays,
         };
         if (_overlayNodeCtxOpenRequested)
         {
@@ -803,6 +808,12 @@ public partial class MainWindow
             });
         }
 
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy all lights…", TablerIcon.Trash,
+            danger: true, disabled: _lightingService.Lights.Count == 0));
+        actions.Add(ConfirmDestroyAllLights);
+
         if (_lightCtxOpenRequested)
         {
             _lightCtxOpenRequested = false;
@@ -846,6 +857,9 @@ public partial class MainWindow
             new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
+            ContextMenuItem.Separator,
+            new("Destroy all objects…", TablerIcon.Trash, danger: true,
+                disabled: _scene.Snapshot.Props.Count == 0),
         };
         var actions = new Action?[]
         {
@@ -867,6 +881,8 @@ public partial class MainWindow
                 _lifecycle.DestroyProp(prop);
                 _selection.Clear();
             },
+            null,
+            ConfirmDestroyAllProps,
         };
 
         if (_propCtxOpenRequested)
@@ -964,6 +980,12 @@ public partial class MainWindow
                 _selection.Clear();
             });
         }
+
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy all cameras…", TablerIcon.Trash,
+            danger: true, disabled: !_cameraService.Cameras.Any(c => !c.IsDefault)));
+        actions.Add(ConfirmDestroyAllCameras);
 
         if (_cameraCtxOpenRequested)
         {

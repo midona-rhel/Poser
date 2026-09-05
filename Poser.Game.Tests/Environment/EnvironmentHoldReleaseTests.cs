@@ -4,11 +4,65 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Game.Environment;
 using Poser.Services;
+using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 
 namespace Poser.Game.Tests.Environment;
 
 public sealed class EnvironmentHoldReleaseTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(42)]
+    [InlineData(255)]
+    public unsafe void Held_weather_is_supplied_to_each_native_update_without_restarting_transition(byte weather)
+    {
+        var factory = new TestFactory();
+        using var service = Create(factory, ClientStateProxy.Create(out _));
+        CSEnvManager manager = default;
+        service.SetWeather(&manager, weather, 2f);
+        for (int i = 0; i < 3; i++)
+        {
+            manager.ActiveWeather = 7; // A later game write, not the authored value.
+            manager.TransitionTime = 1f;
+            Assert.Equal((nint)123, factory.WeatherDetour!(&manager, 3f, 4f));
+            Assert.Equal(weather, factory.WeatherHook.ObservedWeather);
+            Assert.Equal(1f, manager.TransitionTime);
+        }
+
+        service.IsWeatherOverrideEnabled = false;
+        manager.ActiveWeather = 8;
+        factory.WeatherDetour!(&manager, 0f, 0f);
+        Assert.Equal((byte)8, factory.WeatherHook.ObservedWeather);
+        service.IsWeatherOverrideEnabled = true;
+        factory.WeatherDetour!(&manager, 0f, 0f);
+        manager.ActiveWeather = 9;
+        factory.WeatherDetour!(&manager, 0f, 0f);
+        Assert.Equal((byte)8, factory.WeatherHook.ObservedWeather);
+    }
+
+    [Fact]
+    public void Weather_zero_is_named_even_without_a_weather_sheet_and_out_of_range_ids_are_rejected()
+    {
+        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _));
+        Assert.Equal(new WeatherInfo(0, "None", 0), service.GetWeatherInfo(0));
+        Assert.Contains(new WeatherInfo(0, "None", 0), service.AllWeathers);
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.SetWeather(256));
+        Assert.False(service.IsWeatherOverrideEnabled);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void GPose_exit_respects_weather_restore_setting(bool restore)
+    {
+        var bus = new TestEventBus();
+        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _), bus: bus);
+        service.ResetWeatherOnGPoseExit = restore;
+        service.IsWeatherOverrideEnabled = true;
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Equal(!restore, service.IsWeatherOverrideEnabled);
+    }
+
 [Fact]
     public void Territory_and_logout_release_all_successful_holds()
     {
@@ -199,7 +253,7 @@ private static EnvironmentService Create(
         }
     }
 
-    private sealed class TestEnvHook : IEnvHook
+    private class TestEnvHook : IEnvHook
     {
         public bool EnableFailure { get; set; }
         public bool DisableFailure { get; set; }
@@ -227,6 +281,16 @@ private static EnvironmentService Create(
         public void Dispose() => DisposeCount++;
     }
 
+    private sealed unsafe class TestWeatherHook : TestEnvHook, IEnvWeatherHook
+    {
+        public byte ObservedWeather { get; private set; }
+        public nint Original(CSEnvManager* manager, float a2, float a3)
+        {
+            ObservedWeather = manager->ActiveWeather;
+            return 123;
+        }
+    }
+
     private sealed unsafe class TestEnvCopyHook : IEnvStateCopyHook
     {
         private readonly TestEnvHook _inner = new();
@@ -246,7 +310,8 @@ private static EnvironmentService Create(
     private sealed class TestFactory : IEnvironmentNativeFactory
     {
         public TestEnvHook TimeHook { get; } = new();
-        public TestEnvHook WeatherHook { get; } = new();
+        public TestWeatherHook WeatherHook { get; } = new();
+        public UpdateEnvironmentDelegate? WeatherDetour { get; private set; }
         public TestEnvCopyHook EnvCopyHook { get; } = new();
         public bool ThrowOnTime { get; init; }
         public bool ThrowOnWeather { get; init; }
@@ -257,9 +322,12 @@ private static EnvironmentService Create(
             ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour) =>
             ThrowOnTime ? throw new InvalidOperationException("time sig") : TimeHook;
 
-        public IEnvHook CreateWeatherHook(
-            ISigScanner scanner, IGameInteropProvider hooking, UpdateTerritoryWeatherDelegate detour) =>
-            ThrowOnWeather ? throw new InvalidOperationException("weather sig") : WeatherHook;
+        public IEnvWeatherHook CreateWeatherHook(
+            ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour)
+        {
+            WeatherDetour = detour;
+            return ThrowOnWeather ? throw new InvalidOperationException("weather sig") : WeatherHook;
+        }
 
         public IEnvStateCopyHook CreateEnvStateCopyHook(
             ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>

@@ -45,7 +45,6 @@ public sealed class CameraPane
     private readonly UserNotices _notices;
 
     /// <summary>Whether destroy-all confirmation is armed.</summary>
-    private bool _destroyAllArmed;
 
     private bool _openGeneral = true;
     private bool _openCamera = true;
@@ -758,52 +757,6 @@ public sealed class CameraPane
                     variant: ButtonVariant.Danger);
         });
 
-        // The first press arms confirmation; the second performs the sweep.
-        int spare = SpareCameraCount();
-        form.Actions("All cameras", actions =>
-        {
-            actions.Button(
-                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
-                () => DestroyAllCameras(spare),
-                disabled: spare == 0,
-                help: "Remove every camera except the main one",
-                variant: ButtonVariant.Danger);
-        });
-        if (_destroyAllArmed)
-            form.Status(
-                $"{spare} camera{(spare == 1 ? string.Empty : "s")} will be ",
-                warning: true);
-    }
-
-    /// <summary>How many cameras a destroy-all would take. The default camera
-    /// is the GPose session's own and cannot be destroyed, so it is never
-    /// counted.</summary>
-    private int SpareCameraCount()
-    {
-        int spare = 0;
-        foreach (var candidate in _cameras.Cameras)
-            if (!candidate.IsDefault)
-                spare++;
-        return spare;
-    }
-
-    private void DestroyAllCameras(int spare)
-    {
-        if (!_destroyAllArmed)
-        {
-            _destroyAllArmed = spare > 0;
-            return;
-        }
-        _destroyAllArmed = false;
-        // Snapshotted first: the destroy mutates the service's own list, and
-        // each one goes through the lifecycle seam so the whole sweep is as
-        // undoable as a single Destroy is.
-        var doomed = new List<IVirtualCamera>();
-        foreach (var candidate in _cameras.Cameras)
-            if (!candidate.IsDefault)
-                doomed.Add(candidate);
-        foreach (var candidate in doomed)
-            _lifecycle.DestroyCamera(candidate);
     }
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)

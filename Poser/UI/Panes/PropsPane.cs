@@ -206,39 +206,10 @@ public sealed class PropsPane
                 },
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
-            actions.Button(
-                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
-                () =>
-                {
-                    if (!_destroyAllArmed)
-                    {
-                        _destroyAllArmed = true;
-                        return;
-                    }
-                    _destroyAllArmed = false;
-                    _pending = () =>
-                    {
-                        _lifecycle.DestroyAllProps();
-                        _scene.Selection.Clear();
-                    };
-                },
-                variant: ButtonVariant.Danger,
-                help: "Destroy every spawned object");
         });
-        if (_destroyAllArmed)
-        {
-            int count = 0;
-            foreach (var _ in _scene.Snapshot.Props)
-                count++;
-            form.Status(
-                $"{count} object{(count == 1 ? string.Empty : "s")} will go.",
-                warning: true);
-        }
     }
 
     // ── state ────────────────────────────────────────────────────────────
-
-    private bool _destroyAllArmed;
 
     private IPropHandle? SelectedProp()
     {
