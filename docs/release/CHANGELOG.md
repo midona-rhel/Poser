@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.6-beta — scene fixes and consistent controls
+
+- Correct VFX borrowing/release lifecycle while preserving the accepted movement behavior.
+- Fix library source initialization and diagnostics, with source management in Settings.
+- Add stable group position, rotation and scale controls, including saved group orientation.
+- Improve appearance layout, complete indexed palettes, later hairstyle previews and custom colours.
+- Add attached-actor selection and controls, reorganize Actor sections, and correct ornament names.
+- Correct gizmo screen sizing, rotation-ring projection and handle-versus-bone picking; ring visibility transitions gradually.
+- Spawn lights closer to the camera.
+- Put supported saves and category-wide destruction under the three-dot More menu; require confirmation for Destroy all.
+- Add branch/weapon-slot/group Tree controls, explicit actor-wide presets and pose commands, and correct clicked-target routing.
+- Preserve unrelated selections on entity removal and dismiss stale library menus after list changes.
+- Expose None/0 weather explicitly. Some off-list weather still resolves to None, an accepted native limitation.
+
+Known minor issues: area-light skew axis labels (#182), wide spotlight overlay
+geometry (#183), and duplicate-light naming (#184). These are not fixed here.
+The mount-state report (#170) remains deferred pending reproduction.
+The context-menu candidate passed source review, compilation and 439 tests;
+the user authorized release before reporting the complete visual test card.
+
 ## 0.9.5-beta — spawned creatures get their collection; a drag is one step
 
 **Spawned creatures get their collection.** A creature spawned from the

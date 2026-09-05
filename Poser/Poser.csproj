@@ -14,13 +14,15 @@
 		     "beta" reads in the punchline and the changelog, never in the
 		     version string. Keep this in lockstep with Poser.json's
 		     AssemblyVersion. -->
-		<Version>0.9.5.0</Version>
+		<Version>0.9.6.0</Version>
 	</PropertyGroup>
 
 
   <ItemGroup>
     <Content Include="Data\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Data\Integration\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Data\Licenses\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\THIRD-PARTY-LICENSES.md" Link="THIRD-PARTY-LICENSES.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 	<!-- Branch identity is captured by the build, never discovered by the
 	     plugin at runtime. CI may provide any of the conventional branch

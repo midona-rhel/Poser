@@ -64,35 +64,22 @@ Verified against `Poser/bin` output and the `packages.lock.json` graph.
 
 | Package | Version | License | Direct/transitive | Evidence |
 |---|---|---|---|---|
-| KamiToolKit | 1.1.17 | **MIT** | Direct (`Poser.Game.csproj`) | Package `.nuspec` declares no license, but its `<repository url>` is `https://github.com/MidoriKami/KamiToolKit`; that repo's `LICENSE` reads "MIT License / Copyright (c) 2024 MidoriKami". Fetched from `raw.githubusercontent.com/MidoriKami/KamiToolKit/master/LICENSE`. |
-| SixLabors.ImageSharp | 3.1.12 | **Apache-2.0** (granted under the Six Labors Split License) | Transitive, via KamiToolKit | See the split-license determination below. |
+| KamiToolKit | 2.2.27 | **MIT** | Direct (`Poser.Game.csproj`) | Package `.nuspec` declares no license, but its `<repository url>` is `https://github.com/MidoriKami/KamiToolKit`; that repo's `LICENSE` reads "MIT License / Copyright (c) 2024 MidoriKami". Fetched from `raw.githubusercontent.com/MidoriKami/KamiToolKit/master/LICENSE`. |
 | K4os.Compression.LZ4.Legacy | 1.3.8 | **MIT** | Direct (`Poser.Game.csproj`) | The `.nuspec` carries only a `licenseUrl` pointing at `github.com/MiloszKrajewski/K4os.Compression.LZ4/blob/master/LICENSE`; that file reads "MIT License / Copyright (c) 2017 Milosz Krajewski". Fetched. |
 | K4os.Compression.LZ4 | 1.3.8 | **MIT** | Transitive, via `.Legacy` | Same repository and LICENSE file. |
 | Microsoft.Extensions.DependencyInjection | 10.0.10 | **MIT** | Direct (`Poser.csproj`) | `.nuspec` in the NuGet cache: `<license type="expression">MIT</license>`. |
 | Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.10 | **MIT** | Transitive | `.nuspec`: `<license type="expression">MIT</license>`. |
 
-All six are GPL-3.0-compatible. MIT is permissive; Apache-2.0 is one-way
-compatible with GPLv3 (not GPLv2), and Poser is v3.
+Stagehand.Definitions 0.4.10 (UniversalConquistador) is also redistributed, under
+AGPL-3.0-or-later, as declared in its NuGet metadata. Its corresponding source is
+https://github.com/universalconquistador/Stagehand/tree/f0769049294e1e314b9316089bd9c0db15049c47.
+The bundled AGPL text is from that commit. GPLv3 section 13 permits combining
+GPLv3 and AGPLv3 code; the AGPL network-interaction provisions apply to the
+combination. Poser source remains GPL-3.0-only; the Stagehand library retains
+its own license. MIT notices remain applicable to the other shipped packages.
 
-### SixLabors.ImageSharp — split-license determination
-
-ImageSharp 3.x ships under the **Six Labors Split License, Version 1.0**, which
-grants either Apache-2.0 or a paid commercial license depending on how the
-consumer qualifies. The license file bundled with ImageSharp 3.1.12 grants
-Apache-2.0 when, among other criteria:
-
-- "You are consuming the Work in for use in software licensed under an Open Source or Source Available license."
-- "You are consuming the Work as a Transitive Package Dependency."
-
-**Verdict: Apache-2.0. Not ambiguous.** Poser qualifies on *both* clauses
-independently — it is GPL-3.0-only open-source software, and ImageSharp reaches
-it only as a transitive dependency of KamiToolKit (`Poser/packages.lock.json`
-lists it as `"type": "Transitive"` under KamiToolKit's dependency group; no Poser
-csproj references it). No commercial license is required and none is implied.
-
-The split license adds: "Once granted, You must reference the granted license
-only in all documentation." That is why this file names Apache-2.0 and not
-"Six Labors Split License" as ImageSharp's license for this use.
+ImageSharp is no longer in the resolved runtime graph or the release archive.
+The older split-license determination is superseded by this package inventory.
 
 ---
 
@@ -159,14 +146,16 @@ SOFTWARE.
 
 ### Required staged notices
 
-The final staged release must place these files beside the verified archive and
-record each SHA-256 in the release manifest:
+The release archive carries these notices; the release manifest records each
+file hash. The generated SBOM and archive checksum are separate release assets:
 
 | Staged file | Required source and coverage |
 |---|---|
 | `THIRD-PARTY-LICENSES.md` | This attribution file, including the MIT notices above. |
-| `LICENSE-APACHE-2.0.txt` | The complete Apache License 2.0 text from the authoritative Apache source; identifies SixLabors.ImageSharp 3.1.12. |
-| `THIRD-PARTY-NOTICES.txt` | One byte-identical copy from Microsoft.Extensions.DependencyInjection 10.0.10 or Microsoft.Extensions.DependencyInjection.Abstractions 10.0.10; the manifest names both package IDs and versions. |
+| `Data/Licenses/Stagehand-AGPL-3.0.txt` | AGPLv3 text from the exact Stagehand source commit above. |
+| `Data/Licenses/Geist-OFL.txt` | Complete SIL OFL notice supplied with the Geist fonts. |
+| `Data/Licenses/KamiToolKit-MIT.txt` | MIT notice from package 2.2.27 repository commit `1a7682a106d0a71340c7aa11de76fae9a41041e5`. |
+| `Data/Licenses/THIRD-PARTY-NOTICES.txt` | One byte-identical copy from Microsoft.Extensions.DependencyInjection 10.0.10 or Microsoft.Extensions.DependencyInjection.Abstractions 10.0.10; the manifest names both package IDs and versions. |
 
 These staged files, their hashes, the online vulnerability audit, the SBOM,
 the canonical tree/history scan, and the final ZIP scan are release-time gates.
