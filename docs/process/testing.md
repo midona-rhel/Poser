@@ -17,18 +17,30 @@
   (exit 0 success, 1 failure, 2 running, 3 invalid). Artifacts per run are
   `live-tests/<UTC>/run.json`, `events.jsonl`, `report.json`, `summary.md`,
   and `snapshots/`.
-- Visual UI acceptance is manual and in-game. Compare the real current plugin
-  with the real rewritten plugin using a small screenshot/video/action card;
-  synthetic component catalogs and standalone capture labs are not product
-  evidence.
+- Visual and behavioral acceptance belongs to the user in the running game.
+  Give a short starting-state/actions/expected-result card and ask for observed
+  pass/fail and reproduction details. No video verification or recording is
+  required; screenshots are optional diagnostic evidence, not an acceptance gate.
+  Synthetic component catalogs and capture labs are not product evidence.
 - Never contract-test UI visual, layout, rendering, presentation, or wiring
   contracts; validate UI with Release compilation plus explicit live visual
   test cards.
 - Non-deployment validation uses Release only:
   `dotnet build Poser.slnx -c Release --no-restore --nologo` and
   `dotnet test Poser.slnx -c Release --no-restore --nologo`.
-  A Debug build auto-deploys the plugin to the live game; run it only once as
-  the announced deployment action for the exact reviewed head after readiness
-  is confirmed. Never use Debug as an ordinary compile or test substitute.
+  Never use Debug as an ordinary compile or test substitute.
+- Before handing each issue to the user for in-game testing, the organizer
+  announces deployment, builds Debug from the exact reviewed head that passed
+  Release gates, and deploys its matching runtime output to
+  `C:\Users\Midona\OneDrive\Dokument\GitHub\Poser\Poser\bin\Debug`.
+  The entry DLL is `Poser.dll` there; include its matching dependency assemblies,
+  manifest, and runtime content. A build left in another worktree is not deployed.
+  Verify destination hashes against the source build and report the head and
+  deployment result. Only one candidate may own this output at a time.
+- Deployment triggers automatic reload. Confirm successful loading from the
+  logs; do not ask the user to reload manually unless automatic reload failed.
+  The user tests that deployed candidate and gives the acceptance verdict.
+  Passing builds/tests or agent inspection do not replace that verdict; do not
+  mark the issue accepted or merge it before the user's confirmation.
 - Visual and native behavior still requires the applicable in-game acceptance
   card; compilation is not runtime proof.

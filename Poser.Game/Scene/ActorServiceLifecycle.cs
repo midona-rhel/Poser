@@ -66,6 +66,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         _integration;
     private readonly Bindings.StableBindingRegistry _bindings;
     private readonly IBonePosingService _bonePosing;
+    private readonly IActorManager _actorManager;
 
     // Physics-driven bones (hair, clothing, the body-mod physics bones):
     // the game simulates them, so a captured pose must leave them alone —
@@ -86,8 +87,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        IActorManager actorManager)
     {
+        _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;
         _posing = posing;
@@ -99,6 +102,40 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         _gaze = gaze;
         _integration = integration;
         _bindings = bindings;
+    }
+
+    public string GetName(object actor)
+    {
+        var target = (IActor)actor;
+        return _bindings.GetActorId(target) is { } id
+            ? Config.ConfigurationService.Instance.GetDisplayName(id.LogicalId, target.Name)
+            : Config.ConfigurationService.StripObjectIndex(target.Name);
+    }
+
+    public void SetName(object actor, string name) =>
+        WhenNameBound((IActor)actor, id =>
+            Config.ConfigurationService.Instance.SetNickname(id.LogicalId, name));
+
+    public void NameCreated(object actor, string seed)
+    {
+        // Display nicknames only: changing the native name breaks Penumbra identity.
+        WhenNameBound((IActor)actor, id =>
+            Config.ConfigurationService.Instance.SetNickname(id.LogicalId,
+                Poser.Domain.Scene.EntityNames.Next(seed,
+                    _actorManager.Actors.Where(x => !ReferenceEquals(x, actor)).Select(GetName))));
+    }
+
+    private void WhenNameBound(IActor actor, Action<Poser.Domain.Identity.ActorId> apply, int attempts = ReadyAttempts)
+    {
+        if (actor.Address == nint.Zero)
+            return;
+        if (_bindings.GetActorId(actor) is { } id)
+            apply(id);
+        else if (attempts > 0)
+            // Naming needs a scene identity, not a drawn or posable skeleton.
+            _framework.RunOnTick(() => WhenNameBound(actor, apply, attempts - 1), delayTicks: 1);
+        else
+            _log.Warning($"SceneLifecycleHistory: '{actor.Name}' never bound, so its display name was not applied.");
     }
 
     public bool IsSpawned(object actor) => _spawns.IsSpawnedActor((IActor)actor);

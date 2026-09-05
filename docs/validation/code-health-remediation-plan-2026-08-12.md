@@ -1,10 +1,13 @@
 
 # Poser master greenfield migration and feature plan
 
-Date: 2026-08-12. Revision input: 2026-08-13. Status: Review (planning
-candidate; this plan status remains Review). This is the single dated,
-non-normative execution plan for the code-health and feature audits. Durable
-contracts remain in the normative homes indexed by [docs/README.md](../README.md).
+Historical technical proposal dated 2026-08-12, revised 2026-08-13.
+This is not an implementation mandate or agent instruction source. Proposals,
+recovery machinery and acceptance gates below require current issue scope;
+they must not be applied automatically. Current workflow lives in
+[process](../process/external-implementation-review-loop.md) and
+[testing](../process/testing.md); technical contracts live in
+[docs/README.md](../README.md).
 
 This candidate changes only this plan. The sole UI-lab/tombstone candidate is
 the complete chain `727ccb7 -> cb86af7 ->
@@ -20,7 +23,7 @@ chain owns
 dispositions/tombstones. This plan records the accepted candidate and
 execution contract; it does not edit those paths or create a second owner.
 
-## TL;DR
+## Summary
 
 Migrate one useful vertical feature at a time through the existing compiler
 real layers. Keep cohesive concrete owners and the native algorithms that
@@ -230,83 +233,6 @@ remain concrete. A shared type is justified only when it owns a cross-cutting
 invariant and has a fakeable contract: outcome, receipt, atomic writer,
 storage port, or lifecycle phase.
 
-## Program operating contract
-
-### Ownership and review
-
-Each candidate below is a separate Luna implementation tranche with one sole
-writer for the listed mutable owner and an exact allowed-path set. No two
-implementation chats edit a shared owner concurrently. The organizer writes
-specifications, controls scope, runs authoritative Release gates, records
-finding disposition, and accepts or rejects the head. The organizer does not
-author or repair production code.
-
-Before implementation, the organizer records the immutable accepted base SHA,
-branch/worktree, Luna owner, one behavior contract, allowed paths, exclusions,
-preserved invariants, rollback seam, and gate. The implementation chat adds
-characterization/ordinary tests first, then the smallest behavior or move that
-the contract permits. Structural extraction starts immediately after that
-local contract is green; it is not postponed to a wholesale final rewrite.
-
-Every candidate ends in Review, not Accepted, until the organizer records
-the exact head and evidence. An independent reviewer inspects the exact
-BASE..CANDIDATE range read-only. Accepted findings return to the same Luna
-writer as new commits; the affected reviewer rechecks the fix range, then an
-independent reviewer rechecks the complete original-base-to-new-head range.
-The organizer records accepted, rejected-with-rationale, or deferred findings.
-Build/test failures return to the implementation chat; the organizer never
-patches the candidate.
-
-Every Luna task begins ongoing and final handoffs with a short TL;DR and sends
-its complete blocker or final report directly to the organizer task through
-task messaging before ending. A child-task final answer alone is insufficient.
-
-### Release, Debug, and live gates
-
-The organizer owns these non-deployment gates at each applicable candidate:
-
-~~~powershell
-dotnet build Poser.slnx -c Release --no-restore --nologo
-dotnet test Poser.slnx -c Release --no-restore --nologo
-~~~
-
-Release fixtures/fakes are mandatory for corrupt data, rollback failure,
-invalid opcodes/layouts, unavailable native capabilities, late callbacks, and
-external-plugin absence. A Debug build auto-deploys to the live game and is
-never used for ordinary compilation, tests, fault injection, or review. It is
-required only after the exact reviewed head passes its Release gates and the
-organizer announces the deployment. Live evidence uses the smallest applicable
-scenario, persisted run.json, and the external reader; AcceptanceQualified is
-required only where the acceptance card explicitly calls for it. Not
-exercised is evidence of scope, never a pass.
-
-The retained in-game scenario IDs are selection.actor-bone-clear,
-transform.actor-components, transform.actor-undo-redo, posing.bone-components,
-posing.animation-interference, posing.reset-region, posing.copy-paste-pose, and
-posing.ik-bake. Use the narrowest applicable scenario for a slice; reserve
-/poser test full for the accepted baseline, GPose-exit or harness changes,
-final program acceptance, or a failed/ambiguous focused gate. The IK-bake ID is
-on the safety hold above and cannot pass this program. Validate persisted
-results with tools/Test-PoserLiveRun.ps1; chat text or file existence is not a
-verdict.
-
-Tranche state is Planned -> Spec ready -> Implementing -> Review -> Rework ->
-Automated pass -> Acceptance pending -> Accepted. Exceptional states are
-Blocked, Reverted, Superseded, and Parked, each with an owner and reason.
-Complete means Accepted, not compiled, deployed, or apparently working.
-Native/lifecycle/async/exit/spawn/MCDF/patch/ownership work uses Luna Max;
-docs, pure tests, mechanical moves, and small UI changes may use the smaller
-Luna efforts. The organizer records the state and effort in every handoff.
-
-### Shared evidence shape
-
-Each slice's evidence must include: exact base/head and changed paths; local
-characterization/ordinary test results; organizer Release commands/results and
-warnings; independent review ranges and finding dispositions; rollback-seam
-exercise; live card or Debug: N/A reason; artifact identity; and the next
-accepted owner. The exact cards below are the minimum, not permission to widen
-scope.
-
 ## Slice 0 — record the accepted T1.1 foundation
 
 **Owner / writer:** organizer records status only; no implementation writer.
@@ -337,8 +263,7 @@ fact that this program begins at T1.1 rather than redoing it.
 
 ### Prerequisite 1A — normative reconciliation before Slice 1 implementation
 
-**State owner / sole writer:** one existing-normative-home documentation Luna
-writer, before the Slice 1 implementation writer starts. The exact
+**State owner / sole writer:** one existing-normative-home documentation owner, before the Slice 1 implementation writer starts. The exact
 UI-lab/tombstone chain named at the top remains the sole owner of
 `docs/process/testing.md`, `docs/architecture/ui-workspace.md`, and its
 PBI-011/014/015/015A/016 dispositions/tombstones; this prerequisite links to
@@ -390,7 +315,7 @@ this plan names it.
 
 ## Slice 1 — contract repair, dependency freeze, and pure Domain corrections
 
-**State owner / sole Luna writer:** one contract-and-Domain Luna writer. A
+**State owner / implementation owner:** one contract-and-Domain implementation owner. A
 separate UI-surface writer may later own product-surface migrations, but the
 exact UI-lab/tombstone chain named above is the only owner of the lab,
 UI/testing, and listed PBI cleanup.
@@ -458,7 +383,7 @@ actual-in-game-only policy are already recorded at integrated head `cdf306e`.
 
 ## Slice 2 — Application mutation, outcome, and recovery kernel
 
-**State owner / sole Luna writer:** one Application mutation writer owning
+**State owner / implementation owner:** one Application mutation writer owning
 MutationCoordinator and its concrete callers.
 
 **Allowed:** Poser.Application/Transforms/**, the cohesive mutation portions
@@ -504,7 +429,7 @@ ownership.
 
 ## Slice 3 — one SessionLifecycleCoordinator, startup rollback, and capability health
 
-**State owner / sole Luna writer:** one lifecycle/native-startup Luna writer;
+**State owner / implementation owner:** one lifecycle/native-startup implementation owner;
 startup and lifecycle changes are sequential candidates under this owner, never
 parallel edits to the same activation path.
 
@@ -554,7 +479,7 @@ acceptance.
 
 ## Slice 4 — operation epochs and receipt values
 
-**State owner / sole Luna writer:** one Application operation-contract writer.
+**State owner / implementation owner:** one Application operation-contract writer.
 
 **Allowed:** immutable OperationReceipt/epoch value types and the small
 active-operation state in MutationCoordinator/SessionLifecycleCoordinator;
@@ -595,7 +520,7 @@ semantics.
 
 ### Diagnostic-only IK qualification tranche (4D; before any production rewrite)
 
-**State owner / sole Luna writer:** organizer-owned diagnostic Luna writer;
+**State owner / implementation owner:** organizer-owned diagnostic implementation owner;
 this is instrumentation and evidence collection, not a production behavior
 owner. It must run before any later slice is allowed to rewrite Bake IK.
 
@@ -659,7 +584,7 @@ and no semantic production change.
 
 ## Slice 5 — exact bindings, spawn handles, and relationships
 
-**State owner / sole Luna writer:** one identity/spawn Luna writer, with
+**State owner / implementation owner:** one identity/spawn implementation owner, with
 sequential non-overlapping candidates for binding, spawn, companion, and
 relationship ownership.
 
@@ -704,7 +629,7 @@ focused live artifact. No pose or persistence files are changed in this slice.
 
 ## Slice 6 — pose transaction and materialization strangler
 
-**State owner / sole Luna writer:** one pose-domain/runtime writer, with one
+**State owner / implementation owner:** one pose-domain/runtime writer, with one
 vertical user action per candidate. Do not assign a broad “rewrite PosingCore”
 task.
 
@@ -747,7 +672,7 @@ rewrite was bundled.
 
 ## Slice 7 — portable pose, Persistence, autosave, library, and recovery
 
-**State owner / sole Luna writer:** one Persistence/storage Luna writer, with
+**State owner / implementation owner:** one Persistence/storage implementation owner, with
 sequential codec, atomic-store, autosave, library, and recovery candidates.
 
 **Allowed:** new Poser.Persistence/** only after the host-free dependency
@@ -795,8 +720,7 @@ explicit list of retained/parked/rejected formats.
 
 ## Slice 8 — async materialization and integration/MCDF transactions
 
-**State owner / sole Luna writer:** one async-materialization/integration Luna
-writer. MCDF resource policy and pose-import materialization are sequential
+**State owner / implementation owner:** one async-materialization/integration implementation owner. MCDF resource policy and pose-import materialization are sequential
 non-overlapping candidates because they share redraw/cleanup timing but not
 their owners.
 
@@ -849,7 +773,7 @@ finding dispositions, and a recheck of the complete original-base range.
 
 ## Slice 9 — animation, presentation, camera, light, and environment
 
-**State owner / sole Luna writer:** one animation/presentation/scene-object
+**State owner / implementation owner:** one animation/presentation/scene-object
 writer, split into sequential animation, presentation, and camera/light/
 environment candidates.
 
@@ -895,7 +819,7 @@ whole-shot work.
 
 ## Slice 10 — actual UI surfaces, per-surface state, and read models
 
-**State owner / sole Luna writer:** the UI-surface Luna writer, after the
+**State owner / implementation owner:** the UI-surface implementation owner, after the
 normative prerequisite is accepted. This writer owns product-surface migration
 only; the exact UI-lab/tombstone chain named at the top remains the sole owner
 of the lab, UI/testing, and listed PBI cleanup.
@@ -946,7 +870,7 @@ the accepted/integrated UI-lab/tombstone-chain head recorded by the organizer.
 
 ## Slice 11 — whole-shot and remaining product verticals
 
-**State owner / sole Luna writer:** one Luna writer per listed feature owner;
+**State owner / implementation owner:** one implementation owner per listed feature owner;
 the organizer sequences them after the safety and UI foundations. No broad
 “finish the product” task is valid.
 
@@ -995,7 +919,7 @@ has a feature.
 
 ## Slice 12 — proof-driven PosingCore/facade/EventBus deletion and final enforcement
 
-**State owner / sole Luna writer:** one final-assembly/deletion Luna writer,
+**State owner / implementation owner:** one final-assembly/deletion implementation owner,
 after all prior owners are accepted. Deletion is split into sequential
 facade, notification, and project-graph candidates.
 
@@ -1161,24 +1085,4 @@ following against exact reviewed heads:
   where the program acceptance contract calls for it. The IK-bake hold is
   separately adjudicated; no unresolved diagnosis is hidden in this result.
 
-New discoveries become a linked PBI or an explicit Parked decision. They never
-silently expand a slice.
-
-## Organizer handoff template
-
-~~~text
-TL;DR: <state>; <next action or blocker>.
-Slice / Luna role: <id> / <effort>
-Status: <Review | Rework | Automated pass | Acceptance pending | Accepted>
-Base..candidate: <exact range>
-Changed: <commits and paths>
-Owner/state: <one mutable owner>
-Characterization/tests first: <commands/results>
-Release gates: <exact commands/results/warnings>
-Deployment: <N/A with reason, or Debug auto-deployed exact SHA after notice>
-Live card: <prerequisite, exact actions, expected, cleanup, evidence>
-Rollback seam: <adapter/feature flag/accepted head>
-Review: <independent ranges and finding dispositions>
-Evidence: <artifact paths, readouts, accepted head>
-Next owner/action: <one concrete step>
-~~~
+New discoveries are tracked as GitHub issues, not additions to this historical plan.

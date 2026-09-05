@@ -1057,7 +1057,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
-            UniqueName(DisplayName(path)),
+            Poser.Domain.Scene.EntityNames.Next(DisplayName(path), _adopted.Select(x => x.Name)),
             path,
             address,
             identity,

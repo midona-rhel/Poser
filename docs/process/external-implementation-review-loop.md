@@ -1,139 +1,37 @@
-# External implementation and review loop
+# Issue implementation and review
 
-## Purpose
+Work directly in the current task by default. The same task owns research,
+implementation, diff review, validation, deployment, and feedback. Track work
+as GitHub issues, not PBIs. Subtasks are opt-in at the user's request.
 
-This process lets an external implementation agent deliver one Product Backlog
-Item while Codex reviews the result and the user remains the authority for
-in-game UI and behavior. It prevents implementation, review, and unrelated
-working-tree changes from becoming indistinguishable.
+## Scope and ownership
 
-The loop is sequential. Claude and Codex do not edit the same checkout at the
-same time.
+Start from the issue's evidence, reproduction, and acceptance criteria.
+Record the base commit and use a purpose-named branch. Inspect the working
+tree before editing and preserve unrelated changes; do not require a clean
+checkout by discarding or hiding them. Stage only issue-owned changes.
 
-## Roles
+Consult Brio for native behavior and Ktisis for posing interaction. Review
+the actual patch for identity, runtime ordering, product scope, and existing
+UI conventions. Keep durable contracts in their existing documentation home.
 
-| Role | Responsibility |
-|---|---|
-| User | Chooses the PBI, supplies in-game observations, and accepts the UI. |
-| Claude | Implements only the PBI on its feature branch and reports the exact commit range. |
-| Codex | Reviews the PBI diff against its recorded base, checks architecture and reference behavior, and reports actionable findings. |
+## Validation and acceptance
 
-Codex does not claim visual correctness. The user inspects the running plugin.
+Follow the [testing and deployment contract](testing.md): Release is the
+non-deployment gate; Debug deploys to the live game. Explicit user restrictions
+on builds or deployment override the normal workflow. Do not claim runtime
+correctness from source review or compilation alone.
 
-## Entry gate
+After verified deployment, provide the exact starting state, actions, and
+expected result. Reload is automatic; the user reviews the running game.
+No video verification is required. Fix reported problems in the current task.
+Merge and close the issue only after acceptance; record deliberately deferred
+work without claiming it was fixed.
 
-Implementation starts from a clean baseline identified by an immutable annotated
-Git tag. The PBI records:
+## Optional delegation
 
-```text
-Base ref: pbi-<id>-base
-Feature branch: feature/pbi-<id>-<short-name>
-```
-
-The implementer resolves and reports the full commit with:
-
-```powershell
-$baseRef = '<exact Base ref value from the PBI control table>'
-git rev-parse --verify "$baseRef^{commit}"
-```
-
-The tag avoids the impossible requirement for a versioned PBI to contain the
-hash of the commit that contains that same PBI. The tag must never be moved
-after implementation starts.
-
-The current Poser reset must be reviewed and committed before the first
-external implementation begins. Do not use a stash as the long-lived baseline:
-stashes hide ownership and make later review fragile.
-
-Claude must stop before editing if:
-
-- `BASE_REF` is blank, missing, or does not resolve to a commit;
-- `git status --short` is non-empty before the feature branch is created;
-- the checked-out branch or merge base does not match the PBI;
-- another agent is actively editing the same checkout.
-
-## Branch and commit rules
-
-1. Create the feature branch from the exact recorded base tag.
-2. Never use `git reset --hard`, `git clean`, or checkout-based file
-   restoration.
-3. Never use `git add -A`. Stage explicit PBI-owned paths.
-4. Preserve unrelated changes. If an owned file already changed unexpectedly,
-   stop and report the overlap.
-5. Prefer reviewable commits that each leave the project compiling:
-   documentation/contract, application state, runtime adapter, UI wiring, then
-   cleanup.
-6. Do not amend or rebase commits after review starts. Address findings with
-   new commits so each review round has an exact range.
-7. Do not merge the branch until user acceptance.
-
-## Implementation handoff
-
-Claude reports:
-
-```text
-PBI:
-Base commit:
-Head commit:
-Commits:
-Changed paths:
-Behavior implemented:
-Architecture/docs added or changed:
-Production build:
-In-game checks still required:
-Known deviations or open questions:
-```
-
-The handoff must distinguish completed behavior from behavior inferred only
-from compilation. It must not claim that the UI looks correct.
-
-## Review round
-
-Codex reviews `BASE_REF..HEAD` and checks:
-
-1. every acceptance criterion and explicit exclusion in the PBI;
-2. Brio native-ordering requirements and Ktisis interaction requirements;
-3. dependency direction and stable-identity boundaries;
-4. use of the retained Poser/Picto UI primitives;
-5. gesture atomicity, rollback, undo/redo, and invalidation behavior;
-6. dead compatibility paths and duplicated state;
-7. documentation accuracy;
-8. production compilation.
-
-Findings are reported by severity with an exact file and tight line range.
-Questions are not disguised as defects. If the PBI itself is ambiguous, Codex
-updates the PBI decision before Claude changes code.
-
-## Fix round
-
-Claude addresses accepted findings in new commits and reports the new range:
-
-```text
-PREVIOUS_REVIEW_HEAD..NEW_HEAD
-```
-
-Codex first reviews that range, then rechecks the complete
-`BASE_REF..NEW_HEAD` diff for integration regressions. This repeats until
-there are no blocking findings.
-
-## In-game acceptance
-
-The user reloads the plugin and follows the PBI checklist. UI feedback is
-reported as observed behavior, expected behavior, active selection, and the
-interaction that produced it. A screenshot is optional evidence supplied by
-the user; it is never an automated acceptance oracle.
-
-Native behavior uses the existing `/poser test` commands only when the PBI
-requires them. Claude and Codex do not introduce npm, browser, screenshot,
-pixel-diff, standalone UI, or generic unit-test harnesses.
-
-## Completion
-
-After user acceptance:
-
-1. Claude adds a final fix commit if required.
-2. Codex performs the final full-range review.
-3. The PBI records the accepted head commit and any deliberately deferred work.
-4. The branch is merged using the repository owner's preferred strategy.
-5. The PBI becomes historical evidence; unfinished work becomes a new PBI
-   instead of silently expanding the completed one.
+Only when the user requests it, give a task a bounded specification and an
+exact base. Prefer Sol unless the user chooses otherwise. It authors its
+patch and reports checks and blockers back; the main task retains review,
+deployment, acceptance, and finalization. Never assign concurrent writers
+to the same subsystem.

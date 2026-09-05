@@ -172,8 +172,6 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
     private readonly IPluginLog _log;
     private readonly List<PropHandle> _props = new();
 
-    /// <summary>Names never repeat within a session: a destroyed "Prop 2" does
-    /// not hand its name back to the next spawn.</summary>
     private int _nextId;
 
     public PropSpawnService(IObjectTable objectTable, IEventBus events, IPluginLog log)
@@ -313,9 +311,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             var handle = new PropHandle(
                 this,
                 id,
-                model.Name == "Object"
-                    ? "Object " + id.ToString(CultureInfo.InvariantCulture)
-                    : model.Name,
+                Poser.Domain.Scene.EntityNames.Next(model.Name, _props.Select(x => x.Name)),
                 (nint)weapon,
                 model);
             _props.Add(handle);

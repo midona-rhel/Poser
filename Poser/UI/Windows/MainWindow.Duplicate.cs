@@ -94,22 +94,7 @@ public partial class MainWindow
             _notices.Failed($"'{source.Name}' has no model to copy.");
             return null;
         }
-        if (_lifecycle.SpawnWorldObject(source.Path, source.Transform, source.Visible)
-            is not IWorldObject copy)
-            return null;
-        copy.Name = source.Name;
-        copy.Opacity = source.Opacity;
-        copy.Tint = source.Tint;
-        if (source.IsVfx)
-        {
-            copy.LoopVfx = source.LoopVfx;
-            copy.VfxSpeed = source.VfxSpeed;
-            copy.VfxIntensity = source.VfxIntensity;
-            copy.VfxPaused = source.VfxPaused;
-        }
-        else
-            copy.NightState = source.NightState;
-        return copy;
+        return _lifecycle.CloneWorldObject(source);
     }
 
     // ── duplicating groups ───────────────────────────────────────────────
@@ -134,7 +119,7 @@ public partial class MainWindow
     private const int GroupCopyPatience = 120;
 
     /// <summary>Copies the group and everything beneath it into a new
-    /// group of the same name, seated right after the original at the
+    /// group with the next name in its series, seated right after the original at the
     /// same level, gates and all.</summary>
     private void DuplicateGroup(global::Poser.Application.Scene.SceneGroup group, bool withPose)
     {
@@ -215,7 +200,8 @@ public partial class MainWindow
                 children.Add(made);
         if (ids.Count + children.Count == 0)
             return null;
-        var group = _groupSteps.Create(copy.Name, ids, allowThin: true);
+        var group = _groupSteps.Create(
+            EntityNames.Next(copy.Name, _groups.All.Select(x => x.Name)), ids, allowThin: true);
         if (group == null)
             return null;
         foreach (var child in children)
@@ -269,7 +255,7 @@ public partial class MainWindow
         if (!withPose || !actor.HasSkeleton)
             return _lifecycle.SpawnActor(
                 $"Duplicate actor '{ActorNames.Clean(actor.Name)}'",
-                () => CloneWearingCollection(actor));
+                () => CloneWearingCollection(actor), source: actor);
         return DuplicateActorWithPose(actor);
     }
 
