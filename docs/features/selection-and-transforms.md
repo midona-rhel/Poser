@@ -15,6 +15,12 @@ different axis meanings. Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay is perspective-correct and draws
 nothing for an unprojectable pivot. Inspector rotation stays in place.
 
+Rotation arcs grow continuously from half to full circles within 20 degrees
+of face-on, on both gizmos. Drawing and picking share the same clipped arc
+endpoints; the inspector's remaining rear arc stays faint and non-interactive.
+Each projection uses its own viewing direction. Roll and gesture axes do not
+change as the arc grows.
+
 New lights and **Move to camera** share a one-yalm camera-forward placement,
 with local +Z aligned to the look ray. Brio and Ktisis place lights exactly
 at the eye; Poser deliberately retains a nonzero offset so its world gizmo

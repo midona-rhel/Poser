@@ -166,22 +166,23 @@ public static class WorldGizmo
                 projection.ViewRotation),
         };
         rings.Points = new Vector2[3][];
-        rings.Front = new bool[3][];
+        rings.Depth = new float[3][];
         float maxRadius = 0f;
         for (int a = 0; a < 3; a++)
         {
             rings.Points[a] = new Vector2[RotationGizmoRings.RingPoints];
-            rings.Front[a] = new bool[RotationGizmoRings.RingPoints];
+            rings.Depth[a] = new float[RotationGizmoRings.RingPoints];
+            rings.FrontCutoff[a] = RotationGizmoRings.GrowingArcCutoff(
+                RotationGizmoRings.AxisWorld(rings, a), projection.ViewDirection);
             for (int i = 0; i < RotationGizmoRings.RingPoints; i++)
             {
-                var world = projection.Pivot + Vector3.Transform(
-                    RotationGizmoRings.LocalRingPoint(a, i), frame) * ringWorldRadius;
+                var direction = Vector3.Transform(RotationGizmoRings.LocalRingPoint(a, i), frame);
+                var world = projection.Pivot + direction * ringWorldRadius;
                 if (!projection.Project(world, out var screen))
                     return rings; // behind camera — invalid, draw nothing
                 rings.Points[a][i] = screen;
-                // Front segments are nearer than the pivot plane.
-                rings.Front[a][i] = Vector3.Dot(
-                    world - projection.Pivot, projection.ViewDirection) < 0f;
+                // Unit-ring depth keeps the arc cut independent of gizmo size.
+                rings.Depth[a][i] = Vector3.Dot(direction, projection.ViewDirection);
                 maxRadius = MathF.Max(
                     maxRadius, Vector2.Distance(screen, projection.Center));
             }
