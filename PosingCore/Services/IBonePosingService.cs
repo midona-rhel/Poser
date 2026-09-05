@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Core;
 using Poser.Entities;
+using Poser.Domain.Identity;
 
 namespace Poser.Services;
 
@@ -114,6 +115,9 @@ public interface IBonePosingService : IDisposable
 
     /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
     IBone? GetIkBoneTarget(IBone endpoint);
+
+    string? SetIkEntityTarget(IBone endpoint, SelectionId target);
+    SelectionId? GetIkEntityTarget(IBone endpoint);
 
     /// <summary>Disables and clears every chain configuration of the
     /// skeleton (Reset All).</summary>

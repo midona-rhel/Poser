@@ -43,6 +43,20 @@ Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached
 content and inspector geometry in place. Collapse leaves the title bar.
 
+The separate toolbar has its own session-only compact state. Double-click
+the Poser/GPose brand/status region to show only that content and shrink the
+toolbar horizontally; repeat to restore its content-sized width. The same
+toggle is available by right-clicking that region. Single-click
+and drag still move the toolbar. Hidden actions are not drawn or interactive.
+Main-window collapse, detached panes and their geometry are unaffected.
+
+Shared file dialogs keep a fixed search row above the file-list column. The
+search glyph aligns with the row glyphs, independently of input padding.
+Search filters cached current-directory names case-insensitively, including
+folders, after extension filtering; it never walks subfolders or rescans per
+keystroke. Navigation and reopening clear the query. A filtered-out selection
+clears its preview and confirmation state; a separately typed save name stays.
+
 Pages default to a readable content-width cap. Actor opts into the
 shared responsive policy: it fills the host's content box after the leading
 inset, retains the host's trailing scrollbar gutter, and wraps cell groups

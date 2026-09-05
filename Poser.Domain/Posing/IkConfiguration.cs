@@ -31,6 +31,9 @@ public enum IkTargetMode
     /// the offset the tip had from it when the bone was picked. A drag
     /// changes the offset.</summary>
     Bone,
+    /// <summary>Follows a scene object's spatial point and rotation, retaining
+    /// the endpoint's authored offset without requiring a skeleton.</summary>
+    Entity,
 }
 
 /// <summary>
@@ -78,7 +81,7 @@ public sealed record IkChainConfig(
         if (!float.IsFinite(SwivelDegrees)
             || SwivelDegrees is < -MaxSwivelDegrees or > MaxSwivelDegrees)
             return $"Swivel must be within ±{MaxSwivelDegrees}°.";
-        if (TargetMode is not (IkTargetMode.Actor or IkTargetMode.World or IkTargetMode.Bone))
+        if (TargetMode is not (IkTargetMode.Actor or IkTargetMode.World or IkTargetMode.Bone or IkTargetMode.Entity))
             return "IK target mode is unsupported.";
         if (CcdDepth is < MinDepth or > MaxDepth)
             return $"Depth must be {MinDepth}..{MaxDepth}.";

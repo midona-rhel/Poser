@@ -45,3 +45,12 @@ chain, waits for the pose to settle, and writes affected bones as one
 raw-baseline history entry. Disabling keeps tuning and clears only fixed
 capture. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset All
 disables and clears every chain.
+
+Scene entity targets follow props, scenery/world objects, lights and VFX through
+their exact stable scene IDs; they do not need a skeleton. Attachment captures
+the tip's current world-space position offset and relative rotation, matching
+Bone mode. Moving the tip edits that offset; target scale is not inherited.
+Keep rotation controls orientation following. Missing targets remain recorded
+and unavailable, never rebound to a replacement; choose another target or
+Detach to hold the current world point. Inspector targeting uses the existing
+IK configuration control, while the runtime resolves the live transform.

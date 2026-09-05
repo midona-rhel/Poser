@@ -146,7 +146,10 @@ public class PoseInspectorPane
     private static readonly string[] NoOtherActors = ["No other actors"];
     private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD", "FABRIK", "Rope"];
     private static readonly string[] CcdSolverItems = ["CCD", "FABRIK", "Rope"];
-    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone"];
+    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone", "Scene entity"];
+    private sealed record IkEntityChoice(SelectionId Id, string Name, string Kind);
+    private readonly Crystarium.SearchPicker<IkEntityChoice> _ikEntityPicker = new("ik-entity-target");
+    private IReadOnlyList<IkEntityChoice> _ikEntityChoices = Array.Empty<IkEntityChoice>();
 
     /// <summary>Bone-mode target picking: the actor whose bones the list
     /// shows, the picker, and the choices the host builds (its categorised
@@ -2138,6 +2141,55 @@ public class PoseInspectorPane
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
+    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint)
+    {
+        var current = _ikPort.EntityTarget(endpoint);
+        var scene = _scene.Snapshot;
+        string? currentName = current switch
+        {
+            { Prop: { } id } => scene.Props.FirstOrDefault(x => x.Id == id)?.Name,
+            { Light: { } id } => scene.Lights.FirstOrDefault(x => x.Id == id)?.Name,
+            { WorldObject: { } id } => scene.WorldObjects.FirstOrDefault(x => x.Id == id)?.Name,
+            _ => null,
+        };
+        form.Actions("Entity", actions =>
+        {
+            actions.Button(currentName ?? (current == null ? "Choose a scene entity" : "Target unavailable"),
+                () =>
+                {
+                    var choices = new List<IkEntityChoice>();
+                    choices.AddRange(scene.Props.Select(x => new IkEntityChoice(
+                        SelectionId.ForProp(x.Id), x.Name, "Object")));
+                    choices.AddRange(scene.Lights.Select(x => new IkEntityChoice(
+                        SelectionId.ForLight(x.Id), x.Name, "Light")));
+                    choices.AddRange(scene.WorldObjects.Select(x => new IkEntityChoice(
+                        SelectionId.ForWorldObject(x.Id), x.Name, "World object / VFX")));
+                    _ikEntityChoices = choices;
+                    var options = new PickerOptions<IkEntityChoice>
+                    {
+                        Query = query => _ikEntityChoices.Where(x =>
+                            x.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || x.Kind.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                        Badge = x => x.Kind,
+                    };
+                    _ikEntityPicker.Open("ik-scene-target", _ikEntityChoices,
+                        x => x.Name, x => x.Id.ToString(), options: in options);
+                }, help: "Follow an object, scenery, light or VFX while keeping the current offset");
+            actions.Button("Detach", () =>
+            {
+                if (_ikPort.Get(endpoint) is { } config
+                    && _ikPort.Set(endpoint, config with { TargetMode = IkTargetMode.World })
+                        is { Success: false } failed)
+                    _notices.Failed($"IK target: {failed.Detail}");
+            }, disabled: current == null, help: "Hold the endpoint at its current world position");
+        });
+        if (current != null && currentName == null)
+            form.Status("Target unavailable — choose another entity or detach.", warning: true);
+        if (_ikEntityPicker.Draw() is { } chosen
+            && _ikPort.SetEntityTarget(endpoint, chosen.Item.Id) is { Success: false } refusal)
+            _notices.Failed($"IK target: {refusal.Detail}");
+    }
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -2239,6 +2291,7 @@ public class PoseInspectorPane
         {
             Domain.Posing.IkTargetMode.World => 1,
             Domain.Posing.IkTargetMode.Bone => 2,
+            Domain.Posing.IkTargetMode.Entity => 3,
             _ => 0,
         };
         form.Dropdown(
@@ -2251,12 +2304,15 @@ public class PoseInspectorPane
                 {
                     1 => Domain.Posing.IkTargetMode.World,
                     2 => Domain.Posing.IkTargetMode.Bone,
+                    3 => Domain.Posing.IkTargetMode.Entity,
                     _ => Domain.Posing.IkTargetMode.Actor,
                 },
             }),
-            help: "Actor moves the target with the actor, World holds it where it is, Bone follows another bone");
+            help: "Actor follows the actor; World holds a point; Bone or Scene entity follows the chosen target");
         if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
             DrawIkBoneTarget(form, boneId, ikTarget);
+        else if (config.TargetMode == Domain.Posing.IkTargetMode.Entity)
+            DrawIkEntityTarget(form, ikTarget);
         form.Switch(
             "Keep rotation",
             config.HoldRotation,

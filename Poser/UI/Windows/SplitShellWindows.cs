@@ -258,6 +258,7 @@ public sealed class ToolbarPartWindow : Window
 {
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
+    private bool _compact;
 
     public event Action? OnReattach;
 
@@ -295,7 +296,7 @@ public sealed class ToolbarPartWindow : Window
         // own window, so it carries no reattach square.
         _ = side;
         Size = new Vector2(
-            AppShellView.MeasureToolbar(_main.ShellVm) / s
+            AppShellView.MeasureToolbar(_main.ShellVm, _compact) / s
                 + inset * 2f,
             AppShellView.CollapsedBarHeight);
         SizeCondition = ImGuiCond.Always;
@@ -332,8 +333,30 @@ public sealed class ToolbarPartWindow : Window
                 dl, min, max, theme.Radii.Window);
             float inset = theme.Floating.HeaderInset * s;
             AppShellView.DrawToolbarContent(
-                _main.ShellVm, new Vector2(min.X + inset, min.Y), size.Y);
-
+                _main.ShellVm, new Vector2(min.X + inset, min.Y), size.Y, _compact);
+            // The brand/status region stays a window drag surface on single
+            // press. Only a double-click changes width; no hidden buttons draw.
+            var mouse = ImGui.GetMousePos();
+            float brandRight = min.X + inset
+                + AppShellView.MeasureToolbar(_main.ShellVm, compact: true);
+            bool overBrand = ImGui.IsWindowHovered()
+                && mouse.X >= min.X && mouse.X < brandRight
+                && mouse.Y >= min.Y && mouse.Y < max.Y;
+            if (overBrand && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                _compact = !_compact;
+            const string menuId = "##toolbar-compact-menu";
+            if (overBrand && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            {
+                var items = new[]
+                {
+                    new ContextMenuItem(_compact ? "Expand toolbar" : "Compact toolbar",
+                        _compact ? TablerIcon.ChevronRight : TablerIcon.ChevronLeft),
+                };
+                Crystarium.FloatingMenu.Open(menuId, mouse, items,
+                    Crystarium.FloatingMenu.MeasureWidth(items));
+            }
+            if (Crystarium.FloatingMenu.Draw(menuId) == 0)
+                _compact = !_compact;
         }
         finally
         {

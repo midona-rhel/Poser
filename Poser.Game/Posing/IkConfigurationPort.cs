@@ -178,4 +178,34 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             ? IkChainConfig.DefaultsForChain(current.Enabled)
             : IkChainConfig.DefaultsFor(definition.IsArm, current.Enabled));
     }
+
+    public IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity)
+    {
+        var before = EntityTarget(target);
+        var result = WriteEntityTarget(target, entity);
+        if (result.Success && before is { } previous && previous != entity)
+            _journal.Record("Set IK scene target", previous, entity,
+                next => WriteEntityTarget(target, next),
+                () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+        return result;
+    }
+
+    private IkPortResult WriteEntityTarget(TransformTargetId target, SelectionId entity)
+    {
+        if (_gestures.ActiveGesture != null)
+            return IkPortResult.Fail("Finish the active transform before changing the IK target.");
+        if (target.Bone is not { } endpointId)
+            return IkPortResult.Fail("IK configuration requires a bone target.");
+        var endpoint = _bindings.Resolve(endpointId);
+        if (!endpoint.Success)
+            return IkPortResult.Fail(endpoint.Detail ?? "The IK endpoint is unavailable.");
+        var error = _bonePosing.SetIkEntityTarget(endpoint.Value!, entity);
+        return error == null ? IkPortResult.Ok() : IkPortResult.Fail(error);
+    }
+
+    public SelectionId? EntityTarget(TransformTargetId target) =>
+        target.Bone is { } endpointId
+        && _bindings.Resolve(endpointId) is { Success: true, Value: { } endpoint }
+            ? _bonePosing.GetIkEntityTarget(endpoint)
+            : null;
 }

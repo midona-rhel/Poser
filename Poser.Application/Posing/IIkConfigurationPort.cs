@@ -62,4 +62,8 @@ public interface IIkConfigurationPort
 
     /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
     global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target);
+
+    /// <summary>Follow a stable non-skeletal scene target, keeping the tip's offset.</summary>
+    IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity);
+    SelectionId? EntityTarget(TransformTargetId target);
 }

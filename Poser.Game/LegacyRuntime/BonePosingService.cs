@@ -134,6 +134,7 @@ public unsafe class BonePosingService : IBonePosingService
         /// drag moves the target by exactly what was dragged.</summary>
         public HeldTarget? HeldCapture;
         public IBone? TargetBone;
+        public SelectionId? TargetEntity;
     }
 
     /// <summary>What a held chain captured: World mode's world point and
@@ -1136,7 +1137,6 @@ public unsafe class BonePosingService : IBonePosingService
         var key = ChainKey(bone);
         _ikChains.TryGetValue(key, out var previous);
         var state = previous ?? new IkChainState { Config = config };
-        state.Config = config.Normalized();
         state.Chain = chain;
 
         // Fixed-target lifecycle: capture on entering Fixed or enabling a
@@ -1146,10 +1146,12 @@ public unsafe class BonePosingService : IBonePosingService
             || previous.Config.TargetMode != mode
             || !previous.Config.Enabled
             || state.HeldCapture == null;
+        state.Config = config.Normalized();
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
             state.HeldCapture = null;
             state.TargetBone = null;
+            state.TargetEntity = null;
         }
         else if (!config.Enabled)
         {
@@ -1160,6 +1162,7 @@ public unsafe class BonePosingService : IBonePosingService
         else if (mode == Poser.Domain.Posing.IkTargetMode.World && fresh)
         {
             state.TargetBone = null;
+            state.TargetEntity = null;
             state.HeldCapture = CaptureWorld(bone);
         }
         else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
@@ -1168,6 +1171,11 @@ public unsafe class BonePosingService : IBonePosingService
                 state.HeldCapture = null;
             else if (fresh)
                 state.HeldCapture = CaptureBoneOffset(bone, targetBone);
+        }
+        else if (mode == IkTargetMode.Entity && fresh)
+        {
+            state.HeldCapture = state.TargetEntity is { } entity
+                ? CaptureEntityOffset(bone, entity) : null;
         }
 
         _ikChains[key] = state;
@@ -1199,6 +1207,7 @@ public unsafe class BonePosingService : IBonePosingService
                 return "This bone cannot use IK.";
         }
         state.TargetBone = target;
+        state.TargetEntity = null;
         state.Config = state.Config with
         {
             TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
@@ -1213,6 +1222,68 @@ public unsafe class BonePosingService : IBonePosingService
         _ikChains.TryGetValue(ChainKey(endpoint), out var state)
             ? state.TargetBone
             : null;
+
+    public string? SetIkEntityTarget(IBone endpoint, SelectionId target)
+    {
+        if (ResolveIkEntityTransform(_bindings, target) == null)
+            return "That scene target is unavailable or has no world transform.";
+        var config = GetIkConfiguration(endpoint);
+        if (config == null)
+            return "This bone cannot use IK.";
+        var capture = CaptureEntityOffset(endpoint, target);
+        if (capture == null)
+            return "The IK endpoint or scene target is not drawn.";
+        if (!_ikChains.TryGetValue(ChainKey(endpoint), out var state))
+        {
+            var error = SetIkConfiguration(endpoint, config);
+            if (error != null)
+                return error;
+            state = _ikChains[ChainKey(endpoint)];
+        }
+        state.TargetBone = null;
+        state.TargetEntity = target;
+        state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
+        state.HeldCapture = state.Config.Enabled ? capture : null;
+        return null;
+    }
+
+    public SelectionId? GetIkEntityTarget(IBone endpoint) =>
+        _ikChains.TryGetValue(ChainKey(endpoint), out var state) ? state.TargetEntity : null;
+
+    internal static Transform? ResolveIkEntityTransform(IEntityBindings bindings, SelectionId target)
+    {
+        Transform? transform = target switch
+        {
+            { Prop: { } prop } => bindings.Resolve(prop) is { Success: true, Value: { } live }
+                ? live.Transform : null,
+            { WorldObject: { } world } => bindings.Resolve(world) is { Success: true, Value: { } live }
+                ? live.Transform : null,
+            { Light: { } light } => bindings.Resolve(light) is { Success: true, Value: { } live }
+                ? live.Transform : null,
+            _ => null,
+        };
+        // Resolve the exact stable generation each time; never retain a native handle.
+        return transform is { } value
+            && Domain.Transforms.TransformMath.IsFinite(value.Position)
+            && Domain.Transforms.TransformMath.IsFinite(value.Rotation)
+            && value.Rotation.LengthSquared() > 1e-6f
+                ? value : null;
+    }
+
+    private HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target)
+    {
+        RefreshCache(endpoint);
+        if (BoneWorld.Of(endpoint) is not { } tip
+            || ResolveIkEntityTransform(_bindings, target) is not { } anchor)
+            return null;
+        var authored = GetModification(endpoint);
+        // As in Bone mode, position is a world-space offset; only the held
+        // orientation follows the anchor's rotation, with no scale inheritance.
+        return new HeldTarget(tip.Position - anchor.Position,
+            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
+            authored?.Position ?? Vector3.Zero,
+            authored?.Rotation ?? Quaternion.Identity);
+    }
 
     /// <summary>World mode's capture: the tip's world position and
     /// rotation now, with the authored deltas they were taken under.</summary>
@@ -1250,7 +1321,7 @@ public unsafe class BonePosingService : IBonePosingService
     /// world transform with the captured offsets (Bone), brought into model
     /// space through the skeleton's matrix, then moved and turned by what
     /// was authored since capture. Null when it cannot be resolved.</summary>
-    private static (Vector3 Position, Quaternion Rotation)? ResolveHeld(
+    private (Vector3 Position, Quaternion Rotation)? ResolveHeld(
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation)
     {
         if (ik.HeldCapture is not { } capture)
@@ -1273,6 +1344,13 @@ public unsafe class BonePosingService : IBonePosingService
                     return null;
                 worldPosition = anchor.Position + capture.Target;
                 worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
+                break;
+            case IkTargetMode.Entity:
+                if (ik.TargetEntity is not { } entity
+                    || ResolveIkEntityTransform(_bindings, entity) is not { } entityTransform)
+                    return null;
+                worldPosition = entityTransform.Position + capture.Target;
+                worldRotation = Quaternion.Normalize(entityTransform.Rotation * capture.Rotation);
                 break;
             default:
                 return null;
