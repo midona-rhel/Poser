@@ -320,13 +320,18 @@ public partial class MainWindow
         // The manip-handle toggle every entity row leads with: purely a
         // presentation mask over the world overlay, read live like the
         // overlay eyes.
-        _vm.IsHandleShown = row =>
-            row.Tag is not SelectionId handleId
-            || _overlayPresentation.IsHandleShown(handleId);
+        _vm.IsHandleShown = row => row.Tag switch
+        {
+            SelectionId handleId => _overlayPresentation.IsHandleShown(handleId),
+            GroupRowTag group => _overlayPresentation.IsHandleShown(group.Id),
+            _ => true,
+        };
         _vm.OnHandleToggle = row =>
         {
             if (row.Tag is SelectionId handleId)
                 _overlayPresentation.ToggleHandle(handleId);
+            else if (row.Tag is GroupRowTag group)
+                _overlayPresentation.ToggleHandle(group.Id);
         };
         // The effect row's pause seat: the same freeze the properties
         // page states, reachable without selecting first.

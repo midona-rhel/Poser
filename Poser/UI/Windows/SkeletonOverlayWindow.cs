@@ -592,6 +592,9 @@ public class SkeletonOverlayWindow : Window, IDisposable
         groupDots.Clear();
         foreach (var group in _groups.All)
         {
+            // Filter before drawing and picking, just like individual entity handles.
+            if (!_presentation.IsHandleShown(group.Id))
+                continue;
             // A nested group's dot hides behind its parent like any
             // member does, unless it is engaged itself.
             if (group.ParentId is { } parentId
@@ -2426,8 +2429,7 @@ public class SkeletonOverlayWindow : Window, IDisposable
                         ImGui.ColorConvertFloat4ToU32(stroke), 24, thickness);
                 break;
             case LightKind.Spot:
-                // Real cone ANGLE at a fixed perceived length: the width of the
-                // throw belongs to the mark, the distance it carries does not.
+                // Fixed slant length keeps the outline compact even at a 180-degree opening.
                 DrawWorldCone(
                     drawList, viewportPos, position, localX, localY, localZ,
                     0.5f * float.DegreesToRadians(live.SpotAngle),
@@ -2439,10 +2441,12 @@ public class SkeletonOverlayWindow : Window, IDisposable
                 // composes AreaAngle into the facing before drawing, and a
                 // skewed panel whose arrow ignored the skew would lie.
                 var area = live.AreaAngle;
+                // Native X is pitch about local X; native Y is yaw about local Y.
+                // Ktisis's Euler overlay uses this order; CreateFromYawPitchRoll takes Y first.
                 var skewed = Quaternion.Normalize(
                     rotation * Quaternion.CreateFromYawPitchRoll(
-                        float.DegreesToRadians(area.X),
                         float.DegreesToRadians(area.Y),
+                        float.DegreesToRadians(area.X),
                         0f));
                 var throwZ = Vector3.Transform(Vector3.UnitZ, skewed);
                 // An arrow with a crossbar for the panel it leaves. The bar is
@@ -2518,17 +2522,21 @@ public class SkeletonOverlayWindow : Window, IDisposable
         drawList.PathClear();
     }
 
-    /// <summary>An open wire cone: the rim circle at <paramref name="height"/>
+    /// <summary>An open wire cone with fixed <paramref name="length"/> along its sides
     /// and four spokes back to the apex. Four spokes, because two would
     /// collapse to a single stroke from the angles a free camera takes.</summary>
     private void DrawWorldCone(
         ImDrawListPtr drawList, Vector2 viewportPos, Vector3 apex,
         Vector3 localX, Vector3 localY, Vector3 localZ, float angleRadians,
-        float height, float thickness, Vector4 color)
+        float length, float thickness, Vector4 color)
     {
         const int spokes = 4;
+        // Fixed axial height * tan(angle) diverges at a 180-degree opening.
+        // Sine/cosine preserve the angle while bounding every rim point by length.
+        float halfAngle = Math.Clamp(angleRadians, 0f, MathF.PI * 0.5f);
+        float height = length * MathF.Max(0f, MathF.Cos(halfAngle));
         var rimCenter = apex + localZ * height;
-        float radius = height * MathF.Tan(angleRadians);
+        float radius = length * MathF.Sin(halfAngle);
         DrawWorldCircle(
             drawList, viewportPos, rimCenter, localX, localY, radius,
             thickness, color);

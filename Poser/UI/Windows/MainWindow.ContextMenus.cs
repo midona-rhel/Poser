@@ -1139,6 +1139,9 @@ public partial class MainWindow
             ContextMenuItem.Separator,
             new ContextMenuItem(group.Hidden ? "Show" : "Hide",
                 group.Hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem(_overlayPresentation.IsHandleShown(groupId) ? "Hide handle" : "Show handle",
+                _overlayPresentation.IsHandleShown(groupId) ? TablerIcon.EyeOff : TablerIcon.Eye,
+                keepOpen: true, help: "Only the overlay handle; does not hide the group or its members"),
             new ContextMenuItem(group.Paused ? "Play" : "Pause",
                 group.Paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause),
             new ContextMenuItem(group.Night ? "Day" : "Night",
@@ -1168,6 +1171,7 @@ public partial class MainWindow
             () => _groupSteps.SetLocked(groupId, !group.Locked),
             null, // separator
             () => SetGroupHidden(group, !group.Hidden),
+            () => _overlayPresentation.ToggleHandle(groupId),
             () => SetGroupPaused(group, !group.Paused),
             () => SetGroupNight(group, !group.Night),
             null, // separator
@@ -1278,6 +1282,14 @@ public partial class MainWindow
             anyActor ? null : () => DuplicateSelection(withPose: false),
             () => SetSelectionVisible(!anyVisible),
         };
+        if (matched is { } selectedGroup)
+        {
+            bool handleShown = _overlayPresentation.IsHandleShown(selectedGroup.Id);
+            items.Add(new ContextMenuItem(handleShown ? "Hide handle" : "Show handle",
+                handleShown ? TablerIcon.EyeOff : TablerIcon.Eye, keepOpen: true,
+                help: "Only the overlay handle; does not hide the group or its members"));
+            actions.Add(() => _overlayPresentation.ToggleHandle(selectedGroup.Id));
+        }
         if (anyAnimated)
         {
             items.Add(new ContextMenuItem(anyRunning ? "Pause" : "Play",

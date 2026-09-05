@@ -253,7 +253,7 @@ public sealed class ShellSidebar
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
                         : row.LightActions ? (row.PauseAction || row.NightAction ? 3 : 2)
-                        : row.GroupActions ? 3
+                        : row.GroupActions ? 4
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -886,11 +886,21 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows keep live view and edit lock beside each other.
-            // A locked group's one seat: the lock itself.
+            // Groups lead with the same per-item world handle toggle.
             if (row.GroupActions)
             {
+                bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.ArrowsMove,
+                        selected: false,
+                        style: square,
+                        help: handleShown ? "Hide handle" : "Show handle",
+                        id: "##handle",
+                        dimmed: !handleShown))
+                    _vm.OnHandleToggle?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.GroupLocked
                             ? TablerIcon.Lock
@@ -904,7 +914,7 @@ public sealed class ShellSidebar
 
                 // The group's gates: closed hides or pauses everything
                 // beneath; open gives each member its own flag back.
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.GroupHidden ? TablerIcon.EyeOff : TablerIcon.Eye,
                         selected: false,
@@ -914,7 +924,7 @@ public sealed class ShellSidebar
                         dimmed: row.GroupHidden))
                     _vm.OnGroupVisibility?.Invoke(row);
 
-                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.GroupPaused ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
                         selected: false,

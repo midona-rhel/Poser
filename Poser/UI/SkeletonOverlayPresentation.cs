@@ -169,12 +169,19 @@ public sealed class SkeletonOverlayPresentation
     private readonly HashSet<System.Guid> _hiddenHandles = new();
 
     public bool IsHandleShown(SelectionId id) =>
-        HandleKey(id) is not { } key || !_hiddenHandles.Contains(key);
+        HandleKey(id) is not { } key || IsHandleShown(key);
+
+    public bool IsHandleShown(System.Guid key) => !_hiddenHandles.Contains(key);
 
     public void ToggleHandle(SelectionId id)
     {
         if (HandleKey(id) is not { } key)
             return;
+        ToggleHandle(key);
+    }
+
+    public void ToggleHandle(System.Guid key)
+    {
         if (!_hiddenHandles.Add(key))
             _hiddenHandles.Remove(key);
     }
