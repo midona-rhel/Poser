@@ -32,6 +32,10 @@ public sealed class DebugBridge : IDisposable
 
     private readonly IFramework _framework;
     private readonly IEnvironmentService _environment;
+    private readonly IGameInteropProvider _weatherInterop;
+    private readonly ISigScanner _weatherScanner;
+    private delegate void BrioWeatherUpdate(nint manager);
+    private Dalamud.Hooking.Hook<BrioWeatherUpdate>? _brioWeatherHook;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
     private readonly Game.Animation.AnimationRuntimePort _port;
@@ -57,6 +61,8 @@ public sealed class DebugBridge : IDisposable
 
     public DebugBridge(
         IEnvironmentService environment,
+        IGameInteropProvider weatherInterop,
+        ISigScanner weatherScanner,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,
@@ -80,6 +86,8 @@ public sealed class DebugBridge : IDisposable
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation)
     {
         _environment = environment;
+        _weatherInterop = weatherInterop;
+        _weatherScanner = weatherScanner;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
         _viewport = viewport;
@@ -123,6 +131,7 @@ public sealed class DebugBridge : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
+        _brioWeatherHook?.Dispose();
         try { _listener.Stop(); } catch { }
         try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
         try { _stop.Dispose(); } catch { }
@@ -260,12 +269,28 @@ public sealed class DebugBridge : IDisposable
                     _environment.SetWeather(weather, _environment.TransitionTime);
                 if (query.TryGetValue("hold", out var hold))
                     _environment.IsWeatherOverrideEnabled = hold == "1";
+                if (query.TryGetValue("brio", out var brio))
+                {
+                    _environment.IsWeatherOverrideEnabled = false;
+                    if (brio == "1")
+                    {
+                        // User-authorized comparison: Brio's exact territory
+                        // updater suppression, with Poser's competing hold off.
+                        _brioWeatherHook ??= _weatherInterop.HookFromAddress<BrioWeatherUpdate>(
+                            _weatherScanner.ScanText("48 89 5C 24 ?? 55 56 57 48 83 EC ?? 48 8B F9 48 8D 0D"),
+                            _ => { });
+                        _brioWeatherHook.Enable();
+                    }
+                    else
+                        _brioWeatherHook?.Disable();
+                }
                 var nativeEnvironment = (Game.Environment.EnvironmentService)_environment;
                 return Json(new
                 {
                     current = _environment.CurrentWeatherId,
                     held = _environment.IsWeatherOverrideEnabled,
                     available = _environment.IsWeatherOverrideAvailable,
+                    brioHeld = _brioWeatherHook?.IsEnabled == true,
                     nativeEnvironment.WeatherRequested,
                     nativeEnvironment.WeatherBeforeUpdate,
                     nativeEnvironment.WeatherAfterUpdate,

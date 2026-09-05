@@ -469,7 +469,7 @@ public sealed class OverlayPane
                                 entryId.LogicalId, name);
                     });
                 },
-                help: "Save this overlay as a library entry");
+                help: "Save this overlay as a library entry", icon: TablerIcon.Dots);
         form.Actions("Overlay", actions =>
         {
             actions.Button(

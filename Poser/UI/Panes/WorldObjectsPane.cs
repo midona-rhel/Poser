@@ -384,7 +384,7 @@ public sealed class WorldObjectsPane
                             _scenePane.SaveWorldObjectEntry(
                                 entryId.LogicalId, name);
                     }),
-                help: "Save a spawnable copy of this object");
+                help: "Save a spawnable copy of this object", icon: TablerIcon.Dots);
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
         {
             if (worldObject.Spawned)

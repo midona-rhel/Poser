@@ -706,7 +706,7 @@ public sealed class LightPane
                                 _scenePane.SaveLightEntry(
                                     entryId.LogicalId, name);
                         });
-            });
+            }, icon: TablerIcon.Dots);
         form.Actions("Light file", actions =>
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene"));

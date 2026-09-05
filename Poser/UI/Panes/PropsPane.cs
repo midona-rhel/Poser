@@ -199,7 +199,7 @@ public sealed class PropsPane
                                 entryId.LogicalId, name);
                     });
                 },
-                help: "Save a spawnable copy of this prop");
+                help: "Save a spawnable copy of this prop", icon: TablerIcon.Dots);
         form.Actions("Lifetime", actions =>
         {
             // Destroy is THE destruction verb — Delete and Remove were

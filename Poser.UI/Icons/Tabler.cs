@@ -129,6 +129,7 @@ public enum TablerIcon
     WindowMaximize,
     WindowMinimize,
     BrowserX,
+    Dots,
 }
 
 /// <summary>
@@ -338,6 +339,7 @@ public static class Tabler
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",
         TablerIcon.Menu2           => "menu-2",
+        TablerIcon.Dots            => "dots",
         TablerIcon.GazePoint       => "gaze-point",
         TablerIcon.CameraSnap      => "camera-snap",
         TablerIcon.Head            => "head",

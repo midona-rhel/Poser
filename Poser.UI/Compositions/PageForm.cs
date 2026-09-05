@@ -936,7 +936,8 @@ public static partial class Crystarium
             Action<int> onChange,
             string? help = null,
             bool disabled = false,
-            ControlStyle style = default)
+            ControlStyle style = default,
+            TablerIcon? icon = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label, help);
@@ -958,7 +959,8 @@ public static partial class Crystarium
                 onChange,
                 controlStyle,
                 disabled,
-                help);
+                help,
+                icon);
             _page.EndRow(row, id, help);
         }
 

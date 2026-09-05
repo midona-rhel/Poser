@@ -730,7 +730,7 @@ public sealed class CameraPane
                                 _scenePane.SaveCameraEntry(
                                     entryId.LogicalId, name);
                         });
-            });
+            }, icon: TablerIcon.Dots);
         form.Actions("Camera file", actions =>
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene"));

@@ -29,6 +29,20 @@ public partial class MainWindow
         }
         if (more.Count == 0)
             return callbacks;
+        var lifetime = new List<ContextMenuItem>();
+        var lifetimeActions = new List<Action?>();
+        for (int i = 0; i < items.Count;)
+        {
+            if (items[i].Label is "Destroy" or "Delete" or "Remove" or "Release")
+            {
+                lifetime.Add(items[i]);
+                lifetimeActions.Add(actions[i]);
+                items.RemoveAt(i);
+                actions.RemoveAt(i);
+            }
+            else
+                i++;
+        }
         for (int i = items.Count - 1; i >= 0; i--)
             if (items[i].IsSeparator && (i == 0 || i == items.Count - 1 || items[i - 1].IsSeparator))
             {
@@ -37,8 +51,15 @@ public partial class MainWindow
             }
         items.Add(ContextMenuItem.Separator);
         actions.Add(null);
-        items.Add(new ContextMenuItem("More", TablerIcon.ChevronDown, submenuItems: more.ToArray()));
+        items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray()));
         actions.Add(null);
+        if (lifetime.Count > 0)
+        {
+            items.Add(ContextMenuItem.Separator);
+            actions.Add(null);
+            items.AddRange(lifetime);
+            actions.AddRange(lifetimeActions);
+        }
         return callbacks;
     }
 

@@ -1019,7 +1019,7 @@ public sealed class EnvironmentPane
                 _ => _names.Open(
                     "Save environment to library", "Environment",
                     SaveToLibrary),
-                help: "Save the environment into the library");
+                help: "Save the environment into the library", icon: TablerIcon.Dots);
     }
 
     /// <summary>The naming prompt precedes this (ruled 2026-08-31); the
