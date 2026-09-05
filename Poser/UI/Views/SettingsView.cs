@@ -226,6 +226,7 @@ public enum ConfigResetScope
 public static partial class SettingsView
 {
     public const int LibraryPage = 7;
+    public const int SkeletonPage = 2;
     public static float DesignWidth =>
         Crystarium.ActiveTheme.Settings.Width;
 

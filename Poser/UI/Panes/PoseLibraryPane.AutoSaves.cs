@@ -254,6 +254,8 @@ public sealed partial class PoseLibraryPane
             _rangeEnd = -1;
             _vm.SelectedFolder = 0;
             _vm.Folders.Clear();
+            Crystarium.FloatingMenu.Dismiss(TileMenuId);
+            Crystarium.FloatingMenu.Dismiss("##library-apply-target");
             _vm.Tiles.Clear();
             _tileTags.Clear();
             _tileAuthors.Clear();

@@ -471,6 +471,7 @@ public partial class MainWindow : Window
     // overlay window flag.
 
     public event Action? OnSettingsRequested;
+    public event Action? OnSkeletonSettingsRequested;
     public event Action? OnLibrarySettingsRequested;
 
     /// <summary>Raised by every creation affordance — the titlebar plus, the

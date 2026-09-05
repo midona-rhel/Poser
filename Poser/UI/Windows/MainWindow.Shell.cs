@@ -37,6 +37,7 @@ public partial class MainWindow
                 _shellMenuItems,
                 Crystarium.FloatingMenu.MeasureWidth(_shellMenuItems));
         }
+        Crystarium.FloatingMenu.Refresh("##shell-burger-menu", _shellMenuItems);
         int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
         if (clicked >= 0 && clicked < _shellMenuItems.Length)
             InvokeShellCommand((ShellCommand)clicked);

@@ -25,6 +25,7 @@ public class SettingsWindow : Window
     private readonly IPoseLibraryService _library;
     private readonly UserNotices _notices;
     private bool _openLibrary;
+    private bool _openSkeleton;
 
     public SettingsWindow(
         IAutoSaveService autoSave,
@@ -83,6 +84,28 @@ public class SettingsWindow : Window
             _vm.Search = string.Empty;
             _vm.ResetPageScroll = true;
             _openLibrary = false;
+        }
+        if (_openSkeleton)
+        {
+            _vm.Category = SettingsView.SkeletonPage;
+            _vm.Search = string.Empty;
+            _vm.ResetPageScroll = true;
+            _openSkeleton = false;
+        }
+    }
+
+    public void OpenSkeleton()
+    {
+        if (IsOpen)
+        {
+            _vm.Category = SettingsView.SkeletonPage;
+            _vm.Search = string.Empty;
+            _vm.ResetPageScroll = true;
+        }
+        else
+        {
+            _openSkeleton = true;
+            IsOpen = true;
         }
     }
 

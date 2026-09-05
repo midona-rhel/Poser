@@ -1,11 +1,30 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
 public partial class MainWindow
 {
+    private void AddHandleAction(List<ContextMenuItem> items, List<Action?> actions, SelectionId target)
+    {
+        bool shown = _overlayPresentation.IsHandleShown(target);
+        items.Insert(0, new ContextMenuItem(shown ? "Hide handle" : "Show handle",
+            shown ? TablerIcon.EyeOff : TablerIcon.Eye, keepOpen: true,
+            help: "Only the overlay handle; does not hide the entity"));
+        actions.Insert(0, () => _overlayPresentation.ToggleHandle(target));
+    }
+
+    private void AddHandleAction(ref ContextMenuItem[] items, ref Action?[] actions, SelectionId target)
+    {
+        var rows = items.ToList();
+        var callbacks = actions.ToList();
+        AddHandleAction(rows, callbacks, target);
+        items = rows.ToArray();
+        actions = callbacks.ToArray();
+    }
+
     // Preserve the entity's existing capability gates and callbacks while
     // giving its secondary actions the same home across every context menu.
     private static List<Action?> MoveMoreActions(List<ContextMenuItem> items, List<Action?> actions)

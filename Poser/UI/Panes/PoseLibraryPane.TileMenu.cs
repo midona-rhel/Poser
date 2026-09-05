@@ -42,8 +42,10 @@ public sealed partial class PoseLibraryPane
             if (_vm.MenuTile >= 0 && _vm.MenuTile < _vm.Tiles.Count)
             {
                 BuildTileMenu(_vm.MenuTile);
+                Crystarium.FloatingMenu.Dismiss(TileMenuId);
                 Crystarium.FloatingMenu.Open(
-                    TileMenuId, ImGui.GetMousePos(), _menuItems.ToArray());
+                    TileMenuId, ImGui.GetMousePos(), _menuItems.ToArray(),
+                    Crystarium.FloatingMenu.MeasureWidth(_menuItems.ToArray()));
             }
         }
 

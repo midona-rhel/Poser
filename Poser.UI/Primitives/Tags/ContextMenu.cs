@@ -184,8 +184,15 @@ public static partial class Crystarium
         /// menu, ignores it.</summary>
         public static void Refresh(string id, ContextMenuItem[] items)
         {
-            if (_phase == Phase.Hidden || _id != id || items.Length != _items?.Length)
+            if (_phase == Phase.Hidden || _id != id)
                 return;
+            // Dispatch indices must describe the rows on screen. A changed
+            // capability/menu shape closes instead of keeping stale rows.
+            if (items.Length != _items.Length)
+            {
+                DismissAll();
+                return;
+            }
             _items = items;
             if (_submenuParent >= 0 && _submenuParent < items.Length)
                 _submenuItems = items[_submenuParent].SubmenuItems;

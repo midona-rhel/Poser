@@ -41,6 +41,7 @@ public partial class MainWindow
     /// the duration of one frame and is dropped when resolution fails.</summary>
     private void DrawActorContextMenu()
     {
+        if (!_ctxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##actor-ctx")) return;
         if (_ctxActorId is not { } actorId)
             return;
         var resolved = _bindings.Resolve(actorId);
@@ -121,16 +122,8 @@ public partial class MainWindow
                 name => SaveOwnedActorEntry(actorId, name)));
         }
 
-        items.Add(new ContextMenuItem("Expand", TablerIcon.SquarePlus));
-        actions.Add(() => SetTreeCollapsed("actor:" + actorId, false, subtree: false));
-        items.Add(new ContextMenuItem("Collapse", TablerIcon.SquareMinus));
-        actions.Add(() => SetTreeCollapsed("actor:" + actorId, true, subtree: false));
-        items.Add(new ContextMenuItem("All", TablerIcon.Copy,
-            submenuItems:
-            [
-                new ContextMenuItem("Expand all", TablerIcon.Copy),
-                new ContextMenuItem("Collapse all", TablerIcon.Copy),
-            ]));
+        items.Add(new ContextMenuItem("Tree", TablerIcon.Folder,
+            submenuItems: BuildTreeSubmenu("actor:" + actorId, out var treeActions)));
         actions.Add(null);
 
         List<Action?>? companionActions = null;
@@ -190,50 +183,11 @@ public partial class MainWindow
 
         items.Add(ContextMenuItem.Separator);
         actions.Add(null); // separator
-        bool hasStash = _cleanPose.HasStash;
-        items.Add(new ContextMenuItem(
-            "Pose", TablerIcon.Walk,
+        items.Add(new ContextMenuItem("Pose", TablerIcon.Walk,
             disabled: !actor.HasSkeleton,
-            help: actor.HasSkeleton
-                ? "Import, export or stash this actor's pose"
-                : "Needs a loaded skeleton",
-            submenuItems: actor.HasSkeleton
-                ? hasStash
-                    ?
-                    [
-                        new ContextMenuItem("Import", TablerIcon.Download),
-                        new ContextMenuItem(
-                            "Import from file", TablerIcon.FileText),
-                        new ContextMenuItem("Export", TablerIcon.Upload),
-                        new ContextMenuItem("Stash", TablerIcon.Stack2),
-                        new ContextMenuItem(
-                            "Apply stashed", TablerIcon.ArrowBackUp),
-                    ]
-                    :
-                    // No stash, no row: a menu never holds an empty seat.
-                    [
-                        new ContextMenuItem("Import", TablerIcon.Download),
-                        new ContextMenuItem(
-                            "Import from file", TablerIcon.FileText),
-                        new ContextMenuItem("Export", TablerIcon.Upload),
-                        new ContextMenuItem("Stash", TablerIcon.Stack2),
-                    ]
-                : null));
-        actions.Add(null); // Pose — child clicks are read separately.
-        var poseActions = new List<Action?>
-        {
-            () => _poseFileSection.RequestImportMenu(withPresets: true),
-            () =>
-            {
-                if (actor.HasSkeleton)
-                    _poseFileSection.OpenImportFromFile(actor.Skeleton);
-            },
-            () => _poseFileSection.RequestExportMenu(),
-            () => _cleanPose.Stash(
-                actor,
-                ActorNames.Display(actorId, actor.Name)),
-            () => _cleanPose.ApplyStash(actor),
-        };
+            help: "The clicked actor's pose, including its equipment slots",
+            submenuItems: BuildActorPoseSubmenu(actorId, out var poseActions)));
+        actions.Add(null);
 
         // ONE verb for every actor, Brio's: Destroy
         // (Brio ActorLifetimeWidget.cs:82 — the same word whoever spawned
@@ -269,11 +223,12 @@ public partial class MainWindow
             });
         }
 
+        AddHandleAction(items, actions, SelectionId.ForActor(actorId));
         var moreActions = MoveMoreActions(items, actions);
         if (_ctxOpenRequested)
         {
             _ctxOpenRequested = false;
-            Crystarium.FloatingMenu.Open("##actor-ctx", ImGui.GetMousePos(), items.ToArray());
+            OpenContextMenu("##actor-ctx", items.ToArray());
         }
         // The preset rows show live checks: the menu takes this frame's
         // rows so a toggle shows at once while the menu stays open.
@@ -281,8 +236,7 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
-        // Three submenus share the menu; the click routes by its parent
-        // row's label.
+        // Route each submenu click through its parent row.
         int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count)
@@ -298,11 +252,7 @@ public partial class MainWindow
                     () => Duplicate(actor),
                     () => DuplicateWithPose(actor),
                 },
-                "All" => new List<Action?>
-                {
-                    () => SetTreeCollapsed("actor:" + actorId, false, subtree: true),
-                    () => SetTreeCollapsed("actor:" + actorId, true, subtree: true),
-                },
+                "Tree" => treeActions,
                 _ => null,
             };
             if (submenu != null && subClicked < submenu.Count)
@@ -435,6 +385,7 @@ public partial class MainWindow
     /// </summary>
     private void DrawBoneContextMenu()
     {
+        if (!_boneCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##bone-ctx")) return;
         if (_ctxBoneId is not { } boneId)
             return;
 
@@ -463,7 +414,7 @@ public partial class MainWindow
         var items = new[]
         {
             new ContextMenuItem("Select parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null),
-            new ContextMenuItem("Select children", TablerIcon.SelectChildren, disabled: !hasChildren),
+            new ContextMenuItem("Select bone and descendants", TablerIcon.SelectChildren, disabled: !hasChildren),
             new ContextMenuItem("Select mirrored bone", TablerIcon.SelectMirror, disabled: mirror == null),
             new ContextMenuItem(
                 overlayVisible
@@ -474,14 +425,29 @@ public partial class MainWindow
                     : TablerIcon.Eye),
             ContextMenuItem.Separator,
             new ContextMenuItem("Flip bone", TablerIcon.Rotate),
-            new ContextMenuItem("Reset bone", TablerIcon.Refresh, danger: true),
+            new ContextMenuItem("Reset bone", TablerIcon.Refresh, disruptive: true),
         };
+
+        var tree = BuildTreeSubmenu(_ctxBoneExpandKey, out var treeActions);
+        var pose = BuildActorPoseSubmenu(owner!.Id, out var poseActions);
+        items = items.Concat(new[]
+        {
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Tree", TablerIcon.Folder, submenuItems: tree),
+            new ContextMenuItem("Actor bone presets", TablerIcon.Eye,
+                help: "Overlay visibility for the whole owning actor",
+                submenuItems: BuildBonePresetSubmenu(owner.Id)),
+            new ContextMenuItem("Actor pose", TablerIcon.Walk,
+                help: "Import, export and stash the whole owning actor, not just this bone",
+                submenuItems: pose),
+        }).ToArray();
 
         if (_boneCtxOpenRequested)
         {
             _boneCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open("##bone-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##bone-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##bone-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##bone-ctx");
         switch (clicked)
         {
@@ -527,6 +493,18 @@ public partial class MainWindow
                     descriptor.DisplayName);
                 break;
         }
+        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parentRow);
+        if (sub >= 0 && parentRow >= 0 && parentRow < items.Length)
+        {
+            var actions = items[parentRow].Label switch
+            {
+                "Tree" => treeActions,
+                "Actor bone presets" => _bonePresetActions,
+                "Actor pose" => poseActions,
+                _ => null,
+            };
+            if (actions != null && sub < actions.Count) actions[sub]?.Invoke();
+        }
     }
 
     private ReferenceImageInstance? _ctxReferenceImage;
@@ -542,6 +520,7 @@ public partial class MainWindow
     /// </summary>
     private void DrawReferenceImageContextMenu()
     {
+        if (!_referenceCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##reference-ctx")) return;
         if (_ctxReferenceImage is not { } image)
             return;
         // A picture closed from its own bar while the menu is up leaves the
@@ -560,14 +539,14 @@ public partial class MainWindow
                 hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
             new ContextMenuItem("Rename", TablerIcon.Edit),
             new ContextMenuItem("Duplicate", TablerIcon.Copy),
-            new ContextMenuItem("Remove", TablerIcon.Trash),
+            new ContextMenuItem("Remove", TablerIcon.Trash, danger: true),
         };
         if (_referenceCtxOpenRequested)
         {
             _referenceCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##reference-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##reference-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##reference-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##reference-ctx");
         if (clicked < 0)
             return;
@@ -603,6 +582,7 @@ public partial class MainWindow
     /// rule answers everywhere.</summary>
     private void DrawOverlayNodeContextMenu()
     {
+        if (!_overlayNodeCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-node-ctx")) return;
         if (_ctxOverlayNodeId is not { } overlayId)
             return;
         var resolved = _bindings.Resolve(overlayId);
@@ -639,18 +619,19 @@ public partial class MainWindow
             () =>
             {
                 _lifecycle.DestroyOverlay(node);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForOverlay(overlayId));
             },
             null,
             ConfirmDestroyAllOverlays,
         };
+        AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_overlayNodeCtxOpenRequested)
         {
             _overlayNodeCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##overlay-node-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##overlay-node-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##overlay-node-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
@@ -659,73 +640,87 @@ public partial class MainWindow
 
     private void DrawOverlayContextMenu()
     {
-        if (_ctxOverlayBones is not { } bones)
-            return;
-        var owner = _scene.Snapshot.Actors.FirstOrDefault(actor =>
-            actor.Skeletons.Any(skeleton =>
-                skeleton.Bones.Any(candidate =>
-                    bones.Contains(candidate.Id))));
-        if (owner == null)
+        if (!_overlayCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-ctx")) return;
+        if (_ctxOverlayBones is not { Count: > 0 } captured) return;
+        var ownerId = _ctxBranchSkeleton?.Actor ?? captured[0].Skeleton.Actor;
+        var owner = _scene.Snapshot.FindActor(ownerId.LogicalId);
+        var slot = _ctxBranchSkeleton is { } skeletonId ? owner?.GetSkeleton(skeletonId.Slot) : null;
+        if (owner == null || (_ctxBranchSkeleton != null && slot == null))
         {
             _ctxOverlayBones = null;
-            _ctxOverlayMemoryKey = null;
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
+        var bones = slot != null ? slot.Bones.Select(b => b.Id).ToArray() : captured;
+        var ownerBones = owner.Skeletons.SelectMany(s => s.Bones).Select(b => b.Id).ToArray();
         var state = _overlayPresentation.Resolve(bones);
+        string scope = _ctxBranchLabel;
         var items = new[]
         {
-            new ContextMenuItem(
-                state switch
-                {
-                    OverlayVisibility.None => "Show category in overlay",
-                    _ => "Hide the currently shown bones",
-                },
-                state == OverlayVisibility.None
-                    ? TablerIcon.Eye
-                    : TablerIcon.EyeOff),
-            new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
-            new ContextMenuItem("Show all of this actor", TablerIcon.Eye),
-            new ContextMenuItem("Hide all of this actor", TablerIcon.EyeOff),
+            new ContextMenuItem("Select bones in " + scope, TablerIcon.SelectChildren),
+            new ContextMenuItem(state == OverlayVisibility.None ? "Show in overlay" : "Hide from overlay",
+                state == OverlayVisibility.None ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem("Show only " + scope, TablerIcon.Crosshair,
+                help: "Isolate this branch within the owning actor"),
+            new ContextMenuItem("Show all actor bones", TablerIcon.Eye),
+            new ContextMenuItem("Hide all actor bones", TablerIcon.EyeOff),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Tree", TablerIcon.Folder,
+                submenuItems: BuildTreeSubmenu(_ctxBranchExpandKey, out var treeActions)),
+            new ContextMenuItem("Actor bone presets", TablerIcon.Eye,
+                help: "Overlay visibility for the whole owning actor",
+                submenuItems: BuildBonePresetSubmenu(owner.Id)),
+            new ContextMenuItem("Actor pose", TablerIcon.Walk,
+                help: "Import, export and stash the whole owning actor, including equipment",
+                submenuItems: BuildActorPoseSubmenu(owner.Id, out var poseActions)),
+            new ContextMenuItem("Reset bones in " + scope, TablerIcon.Refresh, disruptive: true,
+                help: "Reset only this branch's bones; undo restores the pose"),
         };
         if (_overlayCtxOpenRequested)
         {
             _overlayCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##overlay-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##overlay-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##overlay-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##overlay-ctx");
-        if (clicked < 0)
-            return;
-        // Isolate/show-all operate on the owning actor's bones only, so other
-        // actors' overlay masks are untouched.
-        var ownerBones = owner.Skeletons
-            .SelectMany(skeleton => skeleton.Bones)
-            .Select(candidate => candidate.Id)
-            .ToArray();
         switch (clicked)
         {
             case 0:
-                if (_ctxOverlayMemoryKey is { } memoryKey)
-                    _overlayPresentation.ToggleVisibleWithMemory(
-                        memoryKey, bones);
-                else
-                    _overlayPresentation.SetVisible(
-                        bones, state == OverlayVisibility.None);
+                _selection.Clear();
+                foreach (var bone in bones) _selection.Add(SelectionId.ForBone(bone));
                 break;
             case 1:
+                if (_ctxOverlayMemoryKey is { } memoryKey)
+                    _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
+                else
+                    _overlayPresentation.SetVisible(bones, state == OverlayVisibility.None);
+                break;
+            case 2:
                 _overlayPresentation.SetVisible(ownerBones, false);
                 _overlayPresentation.SetVisible(bones, true);
                 break;
-            case 2:
+            case 3:
                 _overlayPresentation.SetVisible(ownerBones, true);
                 break;
-            case 3:
+            case 4:
                 _overlayPresentation.SetVisible(ownerBones, false);
                 break;
+            case 9:
+                _cleanPose.ResetBones(bones.Select(TransformTargetId.ForBone).ToArray(), "Reset " + scope);
+                break;
         }
-        _ctxOverlayBones = null;
-        _ctxOverlayMemoryKey = null;
+        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
+        if (sub >= 0 && parent >= 0 && parent < items.Length)
+        {
+            var actions = items[parent].Label switch
+            {
+                "Tree" => treeActions,
+                "Actor bone presets" => _bonePresetActions,
+                "Actor pose" => poseActions,
+                _ => null,
+            };
+            if (actions != null && sub < actions.Count) actions[sub]?.Invoke();
+        }
     }
 
     // ── light / camera / prop context menus ─────────────────────────────
@@ -756,6 +751,7 @@ public partial class MainWindow
     /// </summary>
     private void DrawLightContextMenu()
     {
+        if (!_lightCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##light-ctx")) return;
         if (_ctxLightId is not { } lightId)
             return;
         var resolved = _bindings.Resolve(lightId);
@@ -799,7 +795,7 @@ public partial class MainWindow
             actions.Add(() =>
             {
                 _lifecycle.DestroyLight(light);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForLight(lightId));
             });
         }
         else
@@ -808,7 +804,7 @@ public partial class MainWindow
             actions.Add(() =>
             {
                 _lightingService.ReleaseLight(light);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForLight(lightId));
             });
         }
 
@@ -818,13 +814,14 @@ public partial class MainWindow
             danger: true, disabled: _lightingService.Lights.Count == 0));
         actions.Add(ConfirmDestroyAllLights);
 
+        AddHandleAction(items, actions, SelectionId.ForLight(lightId));
         var moreActions = MoveMoreActions(items, actions);
         if (_lightCtxOpenRequested)
         {
             _lightCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##light-ctx", ImGui.GetMousePos(), items.ToArray());
+            OpenContextMenu("##light-ctx", items.ToArray());
         }
+        Crystarium.FloatingMenu.Refresh("##light-ctx", items.ToArray());
         int clicked = Crystarium.FloatingMenu.Draw("##light-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
@@ -844,6 +841,7 @@ public partial class MainWindow
     /// </summary>
     private void DrawPropContextMenu()
     {
+        if (!_propCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##prop-ctx")) return;
         if (_ctxPropId is not { } propId)
             return;
         var resolved = _bindings.Resolve(propId);
@@ -885,19 +883,20 @@ public partial class MainWindow
             () =>
             {
                 _lifecycle.DestroyProp(prop);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForProp(propId));
             },
             null,
             ConfirmDestroyAllProps,
         };
 
+        AddHandleAction(ref items, ref actions, SelectionId.ForProp(propId));
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_propCtxOpenRequested)
         {
             _propCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##prop-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##prop-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##prop-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##prop-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
@@ -909,6 +908,7 @@ public partial class MainWindow
     /// </summary>
     private void DrawCameraContextMenu()
     {
+        if (!_cameraCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##camera-ctx")) return;
         if (_ctxCameraId is not { } cameraId)
             return;
         var resolved = _bindings.Resolve(cameraId);
@@ -985,7 +985,7 @@ public partial class MainWindow
             actions.Add(() =>
             {
                 _lifecycle.DestroyCamera(camera);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForCamera(cameraId));
             });
         }
 
@@ -995,13 +995,14 @@ public partial class MainWindow
             danger: true, disabled: !_cameraService.Cameras.Any(c => !c.IsDefault)));
         actions.Add(ConfirmDestroyAllCameras);
 
+        AddHandleAction(items, actions, SelectionId.ForCamera(cameraId));
         var moreActions = MoveMoreActions(items, actions);
         if (_cameraCtxOpenRequested)
         {
             _cameraCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##camera-ctx", ImGui.GetMousePos(), items.ToArray());
+            OpenContextMenu("##camera-ctx", items.ToArray());
         }
+        Crystarium.FloatingMenu.Refresh("##camera-ctx", items.ToArray());
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
@@ -1025,6 +1026,7 @@ public partial class MainWindow
     /// map owns the thing and gets it back where it stood.</summary>
     private void DrawWorldObjectContextMenu()
     {
+        if (!_worldObjectCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##world-object-ctx")) return;
         if (_ctxWorldObjectId is not { } worldObjectId)
             return;
         var resolved = _bindings.Resolve(worldObjectId);
@@ -1069,16 +1071,39 @@ public partial class MainWindow
             () =>
             {
                 _lifecycle.ReleaseWorldObject(worldObject);
-                _selection.Clear();
+                _selection.Remove(SelectionId.ForWorldObject(worldObjectId));
             },
         };
+        var stateItems = new List<ContextMenuItem>();
+        var stateActions = new List<Action?>();
+        if (worldObject.IsVfx)
+        {
+            stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",
+                worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
+            stateActions.Add(() => _sessions.WorldObjects.SetVfxPaused(worldObject, !worldObject.VfxPaused));
+        }
+        else
+        {
+            stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
+                worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
+            stateActions.Add(() => _sessions.WorldObjects.SetNightState(worldObject, !worldObject.NightState));
+            if (!worldObject.Spawned)
+            {
+                stateItems.Add(new(worldObject.AnimationPaused ? "Play" : "Pause",
+                    worldObject.AnimationPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
+                stateActions.Add(() => _sessions.WorldObjects.SetAnimationPaused(worldObject, !worldObject.AnimationPaused));
+            }
+        }
+        items = stateItems.Concat(items).ToArray();
+        actions = stateActions.Concat(actions).ToArray();
+        AddHandleAction(ref items, ref actions, SelectionId.ForWorldObject(worldObjectId));
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_worldObjectCtxOpenRequested)
         {
             _worldObjectCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##world-object-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##world-object-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##world-object-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##world-object-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
@@ -1090,6 +1115,7 @@ public partial class MainWindow
     /// member selection, whose own menu then answers.</summary>
     private void DrawGroupContextMenu()
     {
+        if (!_groupCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##group-ctx")) return;
         if (_ctxGroupId is not { } groupId)
             return;
         if (_groups.Find(groupId) is not { } group)
@@ -1099,6 +1125,7 @@ public partial class MainWindow
             return;
         }
         bool locked = group.Locked;
+        bool filtering = !string.IsNullOrEmpty(_sidebarFilter);
         // The gates read as the group's own state: closed shows the verb
         // that opens it. A closed gate anywhere above still wins.
         var items = new[]
@@ -1118,6 +1145,13 @@ public partial class MainWindow
                 group.Night ? TablerIcon.Sun : TablerIcon.Moon),
             ContextMenuItem.Separator,
             new ContextMenuItem("Ungroup", TablerIcon.X),
+            new ContextMenuItem("Tree", TablerIcon.Folder, submenuItems:
+            [
+                new("Expand", TablerIcon.SquarePlus, disabled: filtering),
+                new("Collapse", TablerIcon.SquareMinus, disabled: filtering),
+                new("Expand all", TablerIcon.SquarePlus, disabled: filtering),
+                new("Collapse all", TablerIcon.SquareMinus, disabled: filtering),
+            ]),
             ContextMenuItem.Separator,
             new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
         };
@@ -1138,6 +1172,7 @@ public partial class MainWindow
             () => SetGroupNight(group, !group.Night),
             null, // separator
             () => DissolveGroup(groupId),
+            null, // Tree submenu.
             null, // separator
             // The members go through each kind's own lifetime seam; the
             // emptied group dissolves through the scene prune.
@@ -1147,9 +1182,9 @@ public partial class MainWindow
         if (_groupCtxOpenRequested)
         {
             _groupCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##group-ctx", ImGui.GetMousePos(), items);
+            OpenContextMenu("##group-ctx", items);
         }
+        Crystarium.FloatingMenu.Refresh("##group-ctx", items);
         int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
@@ -1158,6 +1193,9 @@ public partial class MainWindow
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
             && items[subParent].Label == "Duplicate")
             DuplicateGroup(group, withPose: subClicked == 1);
+        else if (subClicked is >= 0 and < 4 && subParent >= 0 && subParent < items.Length
+            && items[subParent].Label == "Tree")
+            SetGroupTreeCollapsed(groupId, collapsed: subClicked % 2 == 1, subtree: subClicked >= 2);
         else if (subClicked >= 0 && subClicked < moreActions.Count
             && subParent >= 0 && subParent < items.Length
             && items[subParent].Label == "More")
@@ -1171,6 +1209,7 @@ public partial class MainWindow
     /// answers disable in place.</summary>
     private void DrawSelectionContextMenu()
     {
+        if (!_selectionCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##selection-ctx")) return;
         int entities = global::Poser.Application.Selection.EntitySelection
             .CountEntities(_selection.Selected);
         if (entities < 2)
@@ -1279,9 +1318,9 @@ public partial class MainWindow
         if (_selectionCtxOpenRequested)
         {
             _selectionCtxOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##selection-ctx", ImGui.GetMousePos(), items.ToArray());
+            OpenContextMenu("##selection-ctx", items.ToArray());
         }
+        Crystarium.FloatingMenu.Refresh("##selection-ctx", items.ToArray());
         int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
