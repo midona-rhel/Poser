@@ -15,6 +15,14 @@ different axis meanings. Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay is perspective-correct and draws
 nothing for an unprojectable pivot. Inspector rotation stays in place.
 
+New lights and **Move to camera** share a one-yalm camera-forward placement,
+with local +Z aligned to the look ray. Brio and Ktisis place lights exactly
+at the eye; Poser deliberately retains a nonzero offset so its world gizmo
+pivot can be projected. Move preserves scale and records one undo step.
+The light inspector and light context menu invoke the same move command.
+Clones and imported lights retain their supplied transforms rather than using
+this camera placement.
+
 The overlay visibility mask is the only writer for bone visibility. A selected
 anchor stays visible when the mask hides other bones. Presets are sets of
 canonical names whose applied state comes from that mask.

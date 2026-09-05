@@ -739,7 +739,7 @@ public sealed class LightPane
         {
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
-                help: "Move to the camera's spot");
+                help: "Move one yalm ahead of the camera");
             actions.Button("Clone",
                 () =>
                 {
@@ -803,10 +803,9 @@ public sealed class LightPane
             _lifecycle.DestroyLight(light);
     }
 
-    /// <summary>Brio's "move to camera": the light takes the camera's world
-    /// position and look direction, written as one absolute command so it
-    /// joins undo history like any other transform.</summary>
-    private void MoveToCamera(LightId lightId)
+    /// <summary>Uses the same camera-relative placement as a new light,
+    /// recorded as one absolute transform command.</summary>
+    public void MoveToCamera(LightId lightId)
     {
         var forward = _camera.GetLookDirection();
         if (forward == Vector3.Zero)
@@ -820,14 +819,11 @@ public sealed class LightPane
                 is { } current
                 ? current.Scale
                 : Vector3.One;
-        // Land ahead of the eye, never AT it: a pivot on the camera
-        // degenerates the gizmo projection and WorldToScreen, so the light
-        // would arrive handleless and ungrabbable. The rotation aligns the
-        // beam axis (+Z) onto the look ray, matching what the overlay draws.
+        var placement = LightPlacement.FromCamera(_camera.GetCameraPosition(), forward, scale);
         if (!Domain.Transforms.PoseTransform.TryCreate(
-                _camera.GetCameraPosition() + forward * 3f,
-                PoseMath.AlignZTo(forward),
-                scale,
+                placement.Position,
+                placement.Rotation,
+                placement.Scale,
                 out var target,
                 out var invalid))
         {

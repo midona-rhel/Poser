@@ -416,20 +416,13 @@ public sealed unsafe class LightingService : ILightingService
     {
         try
         {
-            // Spawn ahead of the eye, never AT it: a pivot coincident with
-            // the camera degenerates both the world gizmo projection and
-            // WorldToScreen, leaving the new light handleless and ungrabbable.
-            // Forward comes from the centre-screen unprojection ray and the
-            // rotation aligns the beam axis (+Z) onto it, so the offset and
-            // the throw direction agree by construction.
             var forward = _camera.GetLookDirection();
             if (forward == Vector3.Zero)
                 forward = Vector3.Transform(-Vector3.UnitZ, CameraRotation());
             var transform = source != null
                 ? source.Transform
-                : new PoserTransform(
-                    _camera.GetCameraPosition() + forward * 3f,
-                    PoseMath.AlignZTo(forward),
+                : LightPlacement.FromCamera(
+                    _camera.GetCameraPosition(), forward,
                     Vector3.One);
 
             var light = SpawnNative(
