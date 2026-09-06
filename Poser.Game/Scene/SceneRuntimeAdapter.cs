@@ -216,10 +216,15 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 // Only an owned actor's appearance is packaged: one Poser
                 // spawned, or the player's own character. Anyone else's is
                 // posed, never taken.
-                if (_bindings.Resolve(id) is not { Success: true, Value: { } live }
-                    || !(_spawns.IsSpawnedActor(live)
+                // SealAppearance runs on the save worker. Ownership reads
+                // the live object table, so resolve and check in one game-
+                // thread dispatch; only the resulting value leaves it.
+                var owned = await _framework.RunOnFrameworkThread(() =>
+                    _bindings.Resolve(id) is { Success: true, Value: { } live }
+                    && (_spawns.IsSpawnedActor(live)
                         || _actors.IsLocalPlayer(live)
-                        || _actors.IsAdopted(live)))
+                        || _actors.IsAdopted(live)));
+                if (!owned)
                 {
                     notes.Add(
                         $"Actor '{actor.Name}' is not yours, so its appearance " +
