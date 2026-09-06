@@ -80,9 +80,32 @@ public sealed class ActorIntegrationSession : IDisposable
         var owned = OverridesFor(actor);
         var look = GetStateJson(actor);
         var collection = ReadCollection(actor);
+        var body = CaptureBodyProfile(actor);
         return new(look.Success ? look.Value : null,
             collection.Success ? collection.Value : null,
-            owned.BodyProfileJson, owned.BodyProfileName, owned.Mcdf?.SourcePath);
+            body.Success ? body.Value : null, owned.BodyProfileName, owned.Mcdf?.SourcePath);
+    }
+
+    public IntegrationValue<string?> CaptureBodyProfile(ActorId actor)
+    {
+        var owned = OverridesFor(actor);
+        if (owned.Mcdf?.AppliedProfileJson is { } mcdfProfile)
+            return IntegrationValue<string?>.Ok(mcdfProfile);
+        if (owned.BodyProfileJson is { } retained)
+            return IntegrationValue<string?>.Ok(retained);
+        if (!_port.CustomizePlus.Available)
+            return IntegrationValue<string?>.Ok(null);
+        var probe = _port.ProbeBodyProfile(actor);
+        if (!probe.Success || probe.Value is not { } state)
+            return IntegrationValue<string?>.Fail(probe.Detail ?? "The Customize+ profile could not be read.");
+        if (state.ActiveProfile is not { } active)
+            return IntegrationValue<string?>.Ok(null);
+        if (!state.ActiveIsSaved)
+            return IntegrationValue<string?>.Fail("The source has an unreadable temporary Customize+ profile from another plugin.");
+        var profile = _port.GetBodyProfileJson(active);
+        return profile.Success && profile.Value is { } json
+            ? IntegrationValue<string?>.Ok(json)
+            : IntegrationValue<string?>.Fail(profile.Detail ?? "The Customize+ profile could not be read.");
     }
 
     /// <summary>MCDF packages restore through BeginImport first; ordinary looks replay these captured values.</summary>

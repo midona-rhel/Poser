@@ -125,6 +125,8 @@ internal interface IActorLifecycle
 
     ActorState ReadPoseForCopy(object actor) => Read(actor) with { Runtime = null };
 
+    void CopyBodyProfile(IActor source, IActor target) { }
+
     IActor? Recreate(ActorState state) => null;
 
     /// <summary>Runs <paramref name="act"/> once the actor's body is
@@ -778,6 +780,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = SlotFor(actor);
         slot.Respawn = spawn;
         slot.HasRespawn = true;
+        if (source is not null)
+            _actors.CopyBodyProfile(source, actor);
         _history.Append(new SceneLifecyclePatch(
             description,
             () => RemoveActor(slot),

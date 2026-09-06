@@ -30,6 +30,24 @@ internal sealed partial class ActorServiceLifecycle
     private readonly ActorPresentationSession _presentation;
     private readonly Integration.ISpawnCollectionPort _collections;
 
+    public void CopyBodyProfile(IActor source, IActor target)
+    {
+        if (_bindings.GetActorId(source) is not { } sourceId) return;
+        var captured = _integration.CaptureBodyProfile(sourceId);
+        if (!captured.Success)
+        {
+            Note($"'{target.Name}': {captured.Detail}");
+            return;
+        }
+        if (captured.Value is not { } profile) return;
+        WhenPosable(target, ready =>
+        {
+            if (_bindings.GetActorId((IActor)ready) is not { } targetId) return;
+            var result = _integration.ApplyBodyProfileJson(targetId, profile, "Copied profile");
+            if (!result.Success) Note($"'{target.Name}': {result.Detail}");
+        });
+    }
+
     public IActor? Recreate(ActorState state) => state.Runtime?.SpawnedKind is { } kind
         ? _spawns.SpawnCatalogActor(new(kind, 0, "", "", 0, state.Runtime.ModelId))
         : _spawns.SpawnNewActor(reserveCompanionSlot: true);

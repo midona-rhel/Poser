@@ -731,8 +731,20 @@ public sealed class SceneLifecycleHistoryTests
         public OverlayNodeState State { get; set; } = new();
     }
 
+    [Fact]
+    public void Plain_copy_inherits_body_profile_but_posed_copy_does_not_apply_it_twice()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        var plain = world.Lifecycle.SpawnActor("Copy", () => world.Actors.Spawn("Copy"), source)!;
+        world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Posed"), source);
+        Assert.Equal((source, plain), Assert.Single(world.Actors.BodyProfileCopies));
+    }
+
     private sealed class FakeActors : IActorLifecycle
     {
+        public List<(IActor Source, IActor Target)> BodyProfileCopies { get; } = new();
+        public void CopyBodyProfile(IActor source, IActor target) => BodyProfileCopies.Add((source, target));
         public string GetName(object actor) => ((IActor)actor).Name;
         public void SetName(object actor, string name) => ((IActor)actor).Name = name;
         public void NameCreated(object actor, string seed) => SetName(actor,
