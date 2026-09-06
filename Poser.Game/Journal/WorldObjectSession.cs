@@ -31,16 +31,16 @@ public sealed class WorldObjectSession
         _journal.Set((o, "Night"), "Set object night state", () => o.NightState, v => o.NightState = v, value, () => o.IsValid);
 
     public void SetAnimationPaused(IWorldObject o, bool value) =>
-        _journal.Set((o, "AnimationPaused"), value ? "Pause object" : "Resume object", () => o.AnimationPaused, v => o.AnimationPaused = v, value, () => o.IsValid);
+        o.AnimationPaused = value;
 
     public void SetLoopVfx(IWorldObject o, bool value) =>
         _journal.Set((o, "LoopVfx"), "Set effect loop", () => o.LoopVfx, v => o.LoopVfx = v, value, () => o.IsValid);
 
     public void SetVfxSpeed(IWorldObject o, float value) =>
-        _journal.Set((o, "VfxSpeed"), "Set effect speed", () => o.VfxSpeed, v => o.VfxSpeed = v, value, () => o.IsValid);
+        o.VfxSpeed = value;
 
     public void SetVfxPaused(IWorldObject o, bool value) =>
-        _journal.Set((o, "VfxPaused"), value ? "Pause effect" : "Resume effect", () => o.VfxPaused, v => o.VfxPaused = v, value, () => o.IsValid);
+        o.VfxPaused = value;
 
     public void SetVfxIntensity(IWorldObject o, float value) =>
         _journal.Set((o, "VfxIntensity"), "Set effect intensity", () => o.VfxIntensity, v => o.VfxIntensity = v, value, () => o.IsValid);

@@ -43,7 +43,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private bool _disposeRestoreAbandoned;
 
     private SceneSnapshot? _lastSignature;
-    private bool _refreshing;
+    private readonly CoalescedRefresh _refreshQueue = new();
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
     private DateTime _nextRetryUtc = DateTime.MinValue;
@@ -105,6 +105,7 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     public void Dispose()
     {
+        _refreshQueue.Stop();
         // Unhooking the pump stops any pending missing-skeleton retries.
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
@@ -184,28 +185,7 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void RefreshGuarded()
     {
-        // The registry refresh itself creates missing skeletons, and
-        // SkeletonService publishes SkeletonChangedEvent synchronously while
-        // doing so — suppress the nested re-entry it would trigger.
-        if (_refreshing)
-        {
-            // Breadcrumb, because this is a place a real change can be LOST: a
-            // skeleton replaced after its actor was already enumerated into the
-            // candidate publishes its event in here, gets suppressed, and
-            // nothing re-triggers. If bone bindings are stale, look for this
-            // line without a "published" line after it.
-            _log?.Debug("Scene bindings: refresh re-entry suppressed");
-            return;
-        }
-        _refreshing = true;
-        try
-        {
-            RefreshCore();
-        }
-        finally
-        {
-            _refreshing = false;
-        }
+        _refreshQueue.Request(RefreshCore);
     }
 
     private void RefreshCore()
@@ -313,6 +293,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
+        _refreshQueue.Drain(RefreshCore);
         var now = DateTime.UtcNow;
 
         // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
@@ -395,6 +376,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     {
         if (!evt.IsGPosing)
         {
+            _refreshQueue.Cancel();
             if (_gestures.ActiveGesture is { } gesture)
                 _gestures.Cancel(gesture);
             _history.Clear();

@@ -20,7 +20,7 @@ New explanatory or advisory text placed in a UI layout requires explicit user
 approval before implementation. Do not add free-standing notices as a substitute
 for correct behavior; propose the message and placement first.
 
-Numeric controls use the shared primitive commit event to finish their edits;
+Numeric, text and colour controls use the shared value-edit and commit events;
 the [journal contract](../features/selection-and-transforms.md#the-journal)
 defines when those edits enter history.
 

@@ -49,11 +49,11 @@ public static partial class Crystarium
         {
             if (value != fallback)
             {
-                onChange(fallback);
+                ChangeValue(id, () => onChange(fallback));
                 value = fallback;
                 changed = true;
             }
-            Commit(onCommit);
+            Commit(id, onCommit);
         }
         else if (hit.DoubleClicked)
         {
@@ -69,14 +69,14 @@ public static partial class Crystarium
             {
                 float next = value + delta * perPixel
                     * DragModifierMultiplier(ImGui.GetIO());
-                onChange(next);
+                ChangeValue(id, () => onChange(next));
                 value = next;
                 changed = true;
             }
         }
 
         if (hit.DragEnded)
-            Commit(onCommit);
+            Commit(id, onCommit);
 
         // NO wheel stepping: the wheel belongs to the page scroll, and a
         // well that stepped on a notch hijacked it (the Brio behaviour was
@@ -209,8 +209,8 @@ public static partial class Crystarium
 
         if (enter || editedOnDeactivate)
         {
-            onChange(_axisEditValue);
-            Commit(onCommit);
+            ChangeValue(id, () => onChange(_axisEditValue));
+            Commit(id, onCommit);
             CancelAxisEdit();
             return _axisEditValue != value;
         }

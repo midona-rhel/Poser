@@ -5,6 +5,7 @@ using System.Text.Json;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Application.Diagnostics;
 using Poser.Files;
 using Poser.Services;
 
@@ -12,6 +13,36 @@ namespace Poser.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {
+    [Fact]
+    public void Native_scene_document_can_be_redacted_without_losing_entities_or_relationships()
+    {
+        using var fixture = new SceneFixture();
+        var original = ValidScene();
+        original.Description = @"Source C:\Users\PrivateOwner\PrivateScenes\example.xivs";
+        var written = SceneFileStore.Default.Write(original, fixture.Path);
+        Assert.True(written.Succeeded, written.Failure?.Detail);
+
+        using var archive = System.IO.Compression.ZipFile.OpenRead(fixture.Path);
+        var document = Assert.Single(archive.Entries);
+        Assert.Equal(SceneFileStore.DocumentEntry, document.FullName);
+        using var reader = new StreamReader(document.Open());
+        var redactor = new DiagnosticRedactor();
+        redactor.RegisterIdentity("Lead", "Actor 1");
+        string json = redactor.ScrubJson(reader.ReadToEnd());
+        var scene = JsonSerializer.Deserialize<SceneFile>(json, SceneJsonOptionsAccessor.Options)!;
+
+        Assert.DoesNotContain("PrivateOwner", json);
+        Assert.DoesNotContain("PrivateScenes", json);
+        Assert.Equal("Actor 1", Assert.Single(scene.Actors).Name);
+        Assert.Single(scene.Props);
+        Assert.Single(scene.Lights);
+        Assert.Single(scene.Cameras);
+        Assert.Equal(scene.Actors[0].Key, scene.Lights[0].Attachment!.ActorKey);
+        Assert.Equal(scene.Actors[0].Key, scene.Cameras[0].TargetActorKey);
+        Assert.Equal("Actor 1", scene.Cameras[0].TargetActorName);
+        Assert.NotNull(scene.Actors[0].Pose);
+    }
+
     [Fact]
     public void A_complete_scene_round_trips_with_its_entity_relationships()
     {

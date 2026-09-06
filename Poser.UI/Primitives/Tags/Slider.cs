@@ -140,13 +140,13 @@ public static partial class Crystarium
             next = Math.Clamp(next, minimum, maximum);
             if (next != value)
             {
-                onChange(next);
+                ChangeValue(id, () => onChange(next));
                 value = next;
                 changed = true;
             }
         }
         if (hit.DragEnded)
-            Commit(onCommit);
+            Commit(id, onCommit);
 
         DrawSliderWell(
             pos, size, value, minimum, maximum, scale, logCurvature,
@@ -297,9 +297,9 @@ public static partial class Crystarium
             SliderPositionOf(value, min, max, scale, logCurvature),
             marks, min, max, disabled, scale, logCurvature);
 
-        if (changed) onChange(value);
-        if (hit.DragEnded)
-            Commit(onCommit);
+        if (changed) ChangeValue(id, () => onChange(value));
+        if (hit.DragEnded || altResetHit)
+            Commit(id, onCommit);
         if (!string.IsNullOrEmpty(help) && hit.Hovered)
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
 

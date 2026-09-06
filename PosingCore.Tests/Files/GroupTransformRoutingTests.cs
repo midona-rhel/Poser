@@ -64,7 +64,7 @@ public sealed class GroupTransformRoutingTests
         using var gestures = new TransformGestureService(scene, runtime, history,
             groupTransforms: state, groupSource: source, groupCoordinator: coordinator);
         var facade = new CleanTransformFacade(scene, gestures,
-            new TransformCommandService(scene, runtime, history, gestures), null!, coordinator);
+            new TransformCommandService(scene, runtime, history, gestures), null!, coordinator, new ValueJournal(history));
         selection.Add(SelectionId.ForActor(actor));
         selection.Add(SelectionId.ForWorldObject(world));
         selection.Add(SelectionId.ForActor(other));
