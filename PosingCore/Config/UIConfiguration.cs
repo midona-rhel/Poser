@@ -31,6 +31,7 @@ public class UIConfiguration
     public static float ClampFillOpacity(float value) =>
         float.IsFinite(value) ? Math.Clamp(value, MinimumFillOpacity, 1f) : 1f;
     public bool DetachedShell { get; set; }
+    public bool HideHandlesByDefault { get; set; }
 
     public System.Collections.Generic.Dictionary<string, bool> SectionDisclosure { get; set; } = new();
     public System.Collections.Generic.Dictionary<string, WindowPlacement> DetachedPlacements { get; set; } = new();

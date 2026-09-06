@@ -292,8 +292,6 @@ public class GizmoOverlayWindow : Window
         // targets through it or silently change which targets it transforms.
         foreach (var id in _selection.Selected)
         {
-            if (id.Kind == SceneEntityKind.Camera)
-                continue;
             var owner = id.Bone is { } bone
                 ? SelectionId.ForActor(bone.Skeleton.Actor)
                 : id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } actor

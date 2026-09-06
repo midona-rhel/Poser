@@ -102,6 +102,7 @@ public sealed class SettingsViewModel
     public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
+    public bool HideHandlesByDefault;
     public bool TreeGuides = true;
     public bool SwapRotationXY;
     public bool ShowInGPose = true;
@@ -1182,6 +1183,11 @@ public static partial class SettingsView
         }, divider: false);
         page.Section("Visibility", form =>
         {
+            form.Switch(
+                "Hide handles by default",
+                vm.HideHandlesByDefault,
+                next => vm.HideHandlesByDefault = next,
+                "Hide world handles and their gizmos unless you explicitly show them. Inspector controls and bone visibility are unchanged.");
             form.Switch(
                 "Show while the game UI is hidden",
                 vm.ShowInGPose,

@@ -21,6 +21,8 @@ configuration under stable page/section keys, independent of actors, entity ids,
 and attached/detached hosts. Reopening a window or restarting does not reset them.
 Settings categories have separate keys even when section titles match. Search
 temporarily reveals matching content without changing saved disclosure.
+Inspector rail headers use this same contract, including IK, Gaze, Expression,
+Pose, Tracking and Placement, whether attached or detached.
 
 New explanatory or advisory text placed in a UI layout requires explicit user
 approval before implementation. Do not add free-standing notices as a substitute
@@ -33,6 +35,12 @@ defines when those edits enter history.
 Keep IK gizmo visible is enabled by default and exempts an enabled IK endpoint
 from the manipulation fade. It does not override explicitly hidden entity handles
 or Alt suspension. Other gizmos retain the ordinary hide-while-manipulating rule.
+
+UI → Visibility → Hide handles by default starts off and persists across restarts.
+Untouched world handles and their gizmos follow this default; explicit per-entity
+or group Show/Hide choices take precedence for the session. Selection does not
+reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
+are independent and remain usable.
 
 Entity save-to-file, save-to-library, and category-wide destruction live under
 More in the inspector or entity context menu, only where supported. More uses
