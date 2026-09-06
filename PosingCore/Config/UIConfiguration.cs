@@ -77,6 +77,8 @@ public class UIConfiguration
     /// the shell — the drag's own sweep and readout never do.</summary>
     public bool HideGizmoWhileManipulating { get; set; }
 
+    public bool KeepIkGizmoVisibleWhileManipulating { get; set; } = true;
+
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by

@@ -857,10 +857,15 @@ public class GizmoOverlayWindow : Window
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the drag's sweep and readout, drawn below,
         // never hide.
+        bool keepIkVisible = ManipulationDrag.Held && isBone && primaryBone is { } ikBoneId
+            && Config.ConfigurationService.Instance.Config.UI.KeepIkGizmoVisibleWhileManipulating
+            && _bindings.Resolve(ikBoneId) is { Success: true, Value: { } ikBone }
+            && _bonePosingService.GetIkConfiguration(ikBone) is { Enabled: true };
+        bool hideGizmo = ManipulationHide.HideGizmo && !keepIkVisible;
         if (layout != null && !io.KeyAlt
-            && !(ManipulationHide.HideGizmo && ManipulationHide.Hidden))
+            && !(hideGizmo && ManipulationHide.Hidden))
         {
-            using var manipulationFade = ManipulationHide.HideGizmo
+            using var manipulationFade = hideGizmo
                 ? ManipulationHide.FadeScope()
                 : default;
             WorldGizmo.Draw(

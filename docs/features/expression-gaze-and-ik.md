@@ -35,6 +35,11 @@ IK calls the game's Havok solvers during pose application. Only translation
 deltas start a solve. The solve itself is not stored, so undo and export remain
 ordinary pose deltas. Configuration belongs to one skeleton instance.
 
+Imported pose transforms do not edit IK targets (Brio likewise marks imported
+stacks IK-disabled). Held chains solve against the combined explicit handle
+edits, not each imported stack. Reset first clears the pose while retaining a
+held handle's offset in the same stack snapshot used by undo/redo.
+
 A bone is eligible when it has a non-hidden parent. Two Joint uses its
 slot-local chain; other eligible endpoints use CCD. Chain settings cannot
 change during a gesture.

@@ -221,18 +221,7 @@ public class PoseInspectorPane
         _gazeService = gazeService;
         _gazeValues = gazeValues;
         _editorState = editorState;
-        _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
-    }
-
-    private bool AnyIkArmedOnSelection()
-    {
-        if (OwnerBone() is not { } owner)
-            return false;
-        foreach (var chain in ActorIkChains(owner))
-            if (_ikPort.Get(chain)?.Enabled == true)
-                return true;
-        return false;
     }
 
     private BoneId? OwnerBone()
@@ -2154,7 +2143,7 @@ public class PoseInspectorPane
         };
         form.Actions("Entity", actions =>
         {
-            actions.Button(currentName ?? (current == null ? "Choose a scene entity" : "Target unavailable"),
+            actions.Button(currentName ?? (current == null ? "Choose" : "Target unavailable"),
                 () =>
                 {
                     var choices = new List<IkEntityChoice>();

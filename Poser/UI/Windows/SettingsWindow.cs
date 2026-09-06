@@ -276,6 +276,7 @@ public class SettingsWindow : Window
             HideWhileManipulating = c.UI.HideWhileManipulating,
             HideWhileMovingCamera = c.UI.HideWhileMovingCamera,
             HideGizmoWhileManipulating = c.UI.HideGizmoWhileManipulating,
+            KeepIkGizmoVisibleWhileManipulating = c.UI.KeepIkGizmoVisibleWhileManipulating,
             ShowInCutscene = c.UI.ShowInCutscene,
             ShowWhenGameUiHidden = c.UI.ShowWhenGameUiHidden,
             SwapRotationXY = c.UI.SwapRotationXY,
@@ -533,6 +534,7 @@ public class SettingsWindow : Window
         c.UI.HideWhileManipulating = _vm.HideWhileManipulating;
         c.UI.HideWhileMovingCamera = _vm.HideWhileMovingCamera;
         c.UI.HideGizmoWhileManipulating = _vm.HideGizmoWhileManipulating;
+        c.UI.KeepIkGizmoVisibleWhileManipulating = _vm.KeepIkGizmoVisibleWhileManipulating;
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
         c.UI.SwapRotationXY = _vm.SwapRotationXY;

@@ -18,6 +18,12 @@ restore every changed value. If restore cannot finish, it keeps recovery
 information and does not add the import to undo history. A successful import is
 one undo step. Copy, stash, and in-memory apply follow the same rule.
 
+Pose previews rebase onto a snapshot of the destination's authored pose before
+applying the selected file and options. Enabled IK constraints are copied into
+the preview actor's own skeleton; targets are sampled in source model space
+and held in preview model space. Preview orbit/pan moves that isolated frame,
+not the live scene. No preview constraint retains a live entity or bone target.
+
 ## Storage and library
 
 Poser validates a pose or scene before writing it. It writes a temporary file

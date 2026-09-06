@@ -16,6 +16,14 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+New explanatory or advisory text placed in a UI layout requires explicit user
+approval before implementation. Do not add free-standing notices as a substitute
+for correct behavior; propose the message and placement first.
+
+Keep IK gizmo visible is enabled by default and exempts an enabled IK endpoint
+from the manipulation fade. It does not override explicitly hidden entity handles
+or Alt suspension. Other gizmos retain the ordinary hide-while-manipulating rule.
+
 Entity save-to-file, save-to-library, and category-wide destruction live under
 More in the inspector or entity context menu, only where supported. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide

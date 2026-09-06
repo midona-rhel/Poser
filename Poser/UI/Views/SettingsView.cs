@@ -110,6 +110,7 @@ public sealed class SettingsViewModel
     public bool HideWhileManipulating;
     public bool HideWhileMovingCamera;
     public bool HideGizmoWhileManipulating;
+    public bool KeepIkGizmoVisibleWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public LibrarySettingsDraft Library = new(new LibraryConfiguration());
     public LibraryConfiguration SavedLibrary = new();
@@ -1046,6 +1047,11 @@ public static partial class SettingsView
                 next => vm.HideGizmoWhileManipulating = next,
                 "The gizmo fades with the windows; the drag and its readout stay",
                 disabled: !hideWindows);
+            form.Switch(
+                "Keep IK gizmo visible",
+                vm.KeepIkGizmoVisibleWhileManipulating,
+                next => vm.KeepIkGizmoVisibleWhileManipulating = next,
+                "Keep the gizmo visible while modifying a bone with IK enabled");
             form.Switch(
                 "Hide the bones",
                 vm.HideSkeletonWhileDragging,

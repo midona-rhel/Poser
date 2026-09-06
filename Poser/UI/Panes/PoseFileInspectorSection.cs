@@ -530,8 +530,7 @@ public sealed class PoseFileInspectorSection
     }
 
     private int ImportStatusRows() =>
-        (_faceWarning is null ? 0 : 1)
-        + (IsAnyIkArmed?.Invoke() == true ? 1 : 0);
+        _faceWarning is null ? 0 : 1;
 
     private void DrawImportOptionsBand(
         Vector2 origin, Vector2 size, string? highlighted)
@@ -585,7 +584,6 @@ public sealed class PoseFileInspectorSection
     private string? _faceWarning;
     private string? _faceWarningPath;
 
-    public Func<bool>? IsAnyIkArmed;
 
     private void SyncFaceWarning(string? highlighted)
     {
@@ -1094,10 +1092,6 @@ public sealed class PoseFileInspectorSection
                                 + "component"));
                 if (_faceWarning is { } faceWarning)
                     form.Status(faceWarning);
-                if (IsAnyIkArmed?.Invoke() == true)
-                    form.Status(
-                        "Live IK is on. It will keep solving after the "
-                        + "import and override the limbs the pose places.");
             },
             divider: false,
             dense: true,
@@ -1315,10 +1309,6 @@ public sealed class PoseFileInspectorSection
                 {
                     if (_faceWarning is { } faceWarning)
                         form.Status(faceWarning);
-                    if (IsAnyIkArmed?.Invoke() == true)
-                        form.Status(
-                            "Live IK is on. It will keep solving after the "
-                            + "import and override the limbs the pose places.");
                 }
             },
             divider: divider,

@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -56,6 +57,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
     private readonly CleanPoseFacade _poses;
+    private readonly BonePosingService _posing;
     private readonly IGPoseService _gpose;
     private readonly IPluginLog _log;
 
@@ -142,6 +144,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
         IActorManager actors,
         StableBindingRegistry bindings,
         CleanPoseFacade poses,
+        BonePosingService posing,
         IGPoseService gpose,
         IPluginLog log)
     {
@@ -150,6 +153,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
         _actors = actors;
         _bindings = bindings;
         _poses = poses;
+        _posing = posing;
         _gpose = gpose;
         _log = log;
     }
@@ -757,6 +761,13 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
             return;
         }
         _skeletonWaitTicks = 0;
+
+        // Rebase without stale constraints, then snapshot the source IK for
+        // the file stage. The copied targets are preview-model values only.
+        EntityId? sourceId;
+        lock (_gate) sourceId = _requestedSourceId;
+        var ikSource = _actors.Actors.FirstOrDefault(candidate => candidate.Id == sourceId);
+        _posing.CopyPreviewIk(_appliedStage == 0 && second != null ? null : ikSource, actor);
 
         var result = request.Pose is { } pose
             ? _poses.ImportPose(actor, pose, request.Options, "Preview pose")

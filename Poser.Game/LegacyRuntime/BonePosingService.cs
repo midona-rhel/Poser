@@ -135,6 +135,7 @@ public unsafe class BonePosingService : IBonePosingService
         public HeldTarget? HeldCapture;
         public IBone? TargetBone;
         public SelectionId? TargetEntity;
+        public bool PreviewModelSpace;
     }
 
     /// <summary>What a held chain captured: World mode's world point and
@@ -601,14 +602,14 @@ public unsafe class BonePosingService : IBonePosingService
                     // Apply ALL stacks for this bone (like Brio lines 108-112)
                     foreach (var stack in bonePoseInfo.Stacks)
                     {
-                        ApplyBoneTransform(pose, boneIdx, stack, bone, chainState);
+                        ApplyBoneTransform(pose, boneIdx, stack, bone, fixedHold ? null : chainState);
                     }
                 }
-                else if (fixedHold)
+                if (fixedHold)
                 {
                     // An armed Fixed chain with no authored stack still holds
                     // its captured target against the running animation.
-                    ApplyFixedHold(pose, boneIdx, bone, chainState!);
+                    ApplyFixedHold(pose, boneIdx, bone, chainState!, bonePoseInfo.IkModification());
                 }
 
                 // Brio captures both caches immediately after applying each bone.
@@ -641,7 +642,9 @@ public unsafe class BonePosingService : IBonePosingService
                         ExecuteTransitiveActions(actions, bone, bonePoseInfo);
                         for (var i = snapshotCount; i < bonePoseInfo.Stacks.Count; i++)
                             ApplyBoneTransform(
-                                pose, boneIdx, bonePoseInfo.Stacks[i], bone, chainState);
+                                pose, boneIdx, bonePoseInfo.Stacks[i], bone, fixedHold ? null : chainState);
+                        if (fixedHold && bonePoseInfo.Stacks.Count != snapshotCount)
+                            ApplyFixedHold(pose, boneIdx, bone, chainState!, bonePoseInfo.IkModification());
                     }
                 }
             }
@@ -809,9 +812,9 @@ public unsafe class BonePosingService : IBonePosingService
 
     /// <summary>Solves the chain toward a Fixed capture when no authored
     /// stack exists: target = captured target + (0 − captured translation).</summary>
-    private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik)
+    private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik, Transform authored)
     {
-        if (ResolveHeld(ik, bone, Vector3.Zero, Quaternion.Identity) is not { } held)
+        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation) is not { } held)
             return;
         var target = held.Position;
         var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -861,7 +864,7 @@ public unsafe class BonePosingService : IBonePosingService
             ? Vector3.Transform(info.Transform.Position, headRotation)
             : info.Transform.Position;
         var tempPos = beforePos + positionDelta;
-        bool armed = ik is { Config.Enabled: true };
+        bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
         bool fixedMode = armed &&
             ik!.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Actor &&
             ik.HeldCapture != null;
@@ -1276,7 +1279,7 @@ public unsafe class BonePosingService : IBonePosingService
         if (BoneWorld.Of(endpoint) is not { } tip
             || ResolveIkEntityTransform(_bindings, target) is not { } anchor)
             return null;
-        var authored = GetModification(endpoint);
+        var authored = GetIkModification(endpoint);
         // As in Bone mode, position is a world-space offset; only the held
         // orientation follows the anchor's rotation, with no scale inheritance.
         return new HeldTarget(tip.Position - anchor.Position,
@@ -1292,7 +1295,7 @@ public unsafe class BonePosingService : IBonePosingService
         RefreshCache(endpoint);
         if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip)
             return null;
-        var authored = GetModification(endpoint);
+        var authored = GetIkModification(endpoint);
         return new HeldTarget(
             tip.Position, tip.Rotation,
             authored?.Position ?? Vector3.Zero,
@@ -1308,7 +1311,7 @@ public unsafe class BonePosingService : IBonePosingService
         if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip
             || global::Poser.Entities.BoneWorld.Of(target) is not { } anchor)
             return null;
-        var authored = GetModification(endpoint);
+        var authored = GetIkModification(endpoint);
         return new HeldTarget(
             tip.Position - anchor.Position,
             Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
@@ -1326,6 +1329,10 @@ public unsafe class BonePosingService : IBonePosingService
     {
         if (ik.HeldCapture is not { } capture)
             return null;
+        if (ik.PreviewModelSpace)
+            return (capture.Target + authoredPosition - capture.Translation,
+                Quaternion.Normalize(capture.Rotation
+                    * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
         Vector3 worldPosition;
         Quaternion worldRotation;
         switch (ik.Config.TargetMode)
@@ -1381,6 +1388,62 @@ public unsafe class BonePosingService : IBonePosingService
     {
         if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
             skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
+    }
+
+    private Transform? GetIkModification(IBone bone) =>
+        _poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var pose)
+            ? pose.GetPoseInfo(bone.BoneName, bone.PartialId).IkModification()
+            : null;
+
+    /// <summary>Snapshot enabled constraints into the preview's own model frame.
+    /// No native bones or live scene targets are retained by the copied state.</summary>
+    public void CopyPreviewIk(IActor? source, IActor preview)
+    {
+        if (preview.ActorKind != ActorKind.Preview || source?.ActorKind == ActorKind.Preview)
+            return;
+        foreach (var slot in Enum.GetValues<PoseSlot>())
+        {
+            if (_skeletonService.GetSkeleton(preview, slot) is not Skeleton destination)
+                continue;
+            ClearIkConfigurations(destination);
+            if (source == null || _skeletonService.GetSkeleton(source, slot) is not Skeleton origin)
+                continue;
+            foreach (var summary in GetIkChains(origin))
+            {
+                if (!summary.Config.Enabled
+                    || destination.GetBoneByName(summary.Endpoint.BoneName, summary.Endpoint.PartialId) is not { } tip)
+                    continue;
+                RefreshCache(summary.Endpoint);
+                var original = _ikChains[ChainKey(summary.Endpoint)];
+                var authored = GetIkModification(summary.Endpoint) ?? Transform.Zero;
+                var target = ResolveHeld(original, summary.Endpoint, authored.Position, authored.Rotation)
+                    ?? (summary.Endpoint.LastTransform.Position, summary.Endpoint.LastTransform.Rotation);
+                // Copy value stacks for the chain as well: an authored-only
+                // pose export carries the tip delta but not the solved joints.
+                // Reusing those exported joints would double-apply the solve.
+                foreach (var name in summary.Bones.Distinct())
+                {
+                    if (origin.GetBoneByName(name, summary.Endpoint.PartialId) is not { } from
+                        || destination.GetBoneByName(name, summary.Endpoint.PartialId) is not { } to)
+                        continue;
+                    GetPoseInfo(destination).GetPoseInfo(to.BoneName, to.PartialId)
+                        .ReplaceStacks(GetPoseInfo(origin).GetPoseInfo(from.BoneName, from.PartialId).Stacks);
+                }
+                // A frozen model-space target rotates/pans with CharaView, not
+                // with the live light/bone it was sampled from.
+                bool held = summary.Config.TargetMode != IkTargetMode.Actor;
+                if (SetIkConfiguration(tip, summary.Config with
+                    { TargetMode = held ? IkTargetMode.World : IkTargetMode.Actor }) != null)
+                    continue;
+                if (!held)
+                    continue;
+                var copied = _ikChains[ChainKey(tip)];
+                copied.PreviewModelSpace = true;
+                var baseline = GetIkModification(tip) ?? Transform.Zero;
+                copied.HeldCapture = new HeldTarget(target.Item1, target.Item2,
+                    baseline.Position, baseline.Rotation);
+            }
+        }
     }
 
     public bool IsIkTwoJointAvailable(IBone bone)

@@ -23,12 +23,15 @@ public enum TransformFrame
 /// <summary>
 /// Stores transform information for a bone pose modification.
 /// Simple delta-based system - all transforms are additive.
+/// IkTransform null uses the ordinary edit delta; imports use an identity IK
+/// delta, and import resets can retain an IK-only offset with no pose delta.
 /// </summary>
 public record struct BonePoseTransformInfo(
     TransformComponents PropagateComponents,
     Transform Transform,
     string? Layer = null,
-    TransformFrame Frame = TransformFrame.BoneLocal);
+    TransformFrame Frame = TransformFrame.BoneLocal,
+    Transform? IkTransform = null);
 
 /// <summary>
 /// Tracks pose modifications for a single bone.
@@ -46,12 +49,6 @@ public class BonePoseInfo
     /// </summary>
     public TransformComponents DefaultPropagation { get; set; } = TransformComponents.Position | TransformComponents.Rotation;
 
-    /// <summary>
-    /// Per-bone IK setting. When enabled, the per-frame application solves the
-    /// chain toward (current + position delta) instead of writing the offset
-    /// directly (Brio-style live IK: deltas stay undoable, the chain is never
-    /// stored). Deviation from Brio: per-bone, not captured per stack snapshot.
-    /// </summary>
     /// <summary>
     /// All transform stacks applied to this bone.
     /// </summary>
@@ -88,7 +85,8 @@ public class BonePoseInfo
         Transform original,
         TransformComponents? propagation = null,
         TransformComponents applyTo = TransformComponents.All,
-        bool forceNewStack = false)
+        bool forceNewStack = false,
+        bool drivesIk = true)
     {
         var prop = propagation ?? DefaultPropagation;
 
@@ -97,7 +95,7 @@ public class BonePoseInfo
         var delta = FilterDelta(CalculateDiff(newTransform, original), applyTo);
 
         // Find or create stack entry with matching propagation
-        var transformIndex = GetTransformIndex(prop, layer: null, forceNewStack);
+        var transformIndex = GetTransformIndex(prop, layer: null, forceNewStack || !drivesIk);
 
         // Get existing transform at this index
         var existing = _stacks[transformIndex].Transform;
@@ -109,7 +107,8 @@ public class BonePoseInfo
         if (!IsFinite(finalTransform))
             return null;
 
-        _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform);
+        _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform,
+            IkTransform: drivesIk ? null : Transform.Zero);
         return finalTransform;
     }
 
@@ -174,7 +173,8 @@ public class BonePoseInfo
                 return _stacks.Count - 1;
             }
             var lastEntry = _stacks[^1];
-            if (lastEntry.Layer == null && lastEntry.PropagateComponents == components)
+            if (lastEntry.Layer == null && lastEntry.PropagateComponents == components
+                && lastEntry.IkTransform == null)
                 return _stacks.Count - 1;
         }
         else
@@ -312,6 +312,27 @@ public class BonePoseInfo
 
         restored.AddRange(currentNamed.Values);
         return ReplaceStacks(restored);
+    }
+
+    // Imported transforms place the pose, not the IK handle. An import reset
+    // keeps the handle's authored offset as a zero-pose stack, so ordinary
+    // stack snapshots also restore it on undo without a second history store.
+    public void ResetForImport(bool preserveIkOffset)
+    {
+        var offset = IkModification();
+        RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+        if (preserveIkOffset)
+            _stacks.Add(new BonePoseTransformInfo(TransformComponents.All,
+                Transform.Zero, IkTransform: offset));
+    }
+
+    public Transform IkModification()
+    {
+        var result = Transform.Zero;
+        foreach (var stack in _stacks)
+            if (stack.Layer == null)
+                result = CombineTransforms(result, stack.IkTransform ?? stack.Transform);
+        return result;
     }
 
     private static Transform CalculateDiff(Transform newTransform, Transform original)

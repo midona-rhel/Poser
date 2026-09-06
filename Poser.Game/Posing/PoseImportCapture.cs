@@ -614,7 +614,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                 import.MutationStarted = true;
                 _posing.GetPoseInfo(bone.Skeleton)
                     .GetPoseInfo(bone.BoneName, bone.PartialId)
-                    .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+                    .ResetForImport(_posing.GetIkConfiguration(bone) is
+                        { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
             }
 
             if (model is { } modelEdit &&
@@ -744,7 +745,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                     desired, basis,
                     TransformComponents.All,
                     entry.Components,
-                    forceNewStack: true) == null)
+                    forceNewStack: true, drivesIk: false) == null)
             {
                 // One degenerate bone (a zero-scaled prop helper such as
                 // nf_handprop_k_l on an actor without a prop) is not the
@@ -1125,7 +1126,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             import.MutationStarted = true;
             _posing.GetPoseInfo(bone.Skeleton)
                 .GetPoseInfo(bone.BoneName, bone.PartialId)
-                .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+                .ResetForImport(_posing.GetIkConfiguration(bone) is
+                    { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
         }
 
         import.Slots = flattenSlots;
