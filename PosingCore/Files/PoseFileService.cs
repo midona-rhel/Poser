@@ -663,11 +663,10 @@ public class PoseFileService : IPoseFileService
         // basis is the apply pass's own just-refreshed bone.LastRawTransform
         // (Brio PoseImporter.cs:35) — a basis read here, outside the pass,
         // would predate the parents' deltas the same pass propagates. For
-        // partial-0 bones the two spaces coincide; for non-zero partials the
-        // file data is post-reparent while the pass basis is pre-reparent,
-        // and PoseImportCapture's reconcile stage is what converges the face
-        // after that wrong-space first diff (Brio PosingCapability.cs:
-        // 316-317, :370-401). Excluded components are masked on the DELTA
+        // partial-0 bones the two spaces coincide. Partial descendants are
+        // converted by the posing runtime from post-reparent file space to
+        // the current pre-reparent apply frame before taking the diff.
+        // Excluded components are masked on the DELTA
         // (Brio PoseInfo.cs:108), so the bone's live values stay put without
         // being re-asserted.
         // A file bone with an all-zero rotation (older captures kept the

@@ -27,6 +27,8 @@ namespace Poser.Game;
 /// </summary>
 public unsafe class BonePosingService : IBonePosingService
 {
+    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Root),
+        Poser.Game.Posing.PartialPoseFrame> _partialFrames = new();
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
     private readonly IGPoseService _gPoseService;
@@ -434,6 +436,8 @@ public unsafe class BonePosingService : IBonePosingService
     /// inherits configuration or fixed targets).</summary>
     private void PurgeSkeletonState(SkeletonKey key)
     {
+        foreach (var frame in _partialFrames.Keys.Where(x => x.Skeleton == key).ToArray())
+            _partialFrames.Remove(frame);
         _poseInfos.Remove(key);
         _skeletonsToUpdate.Remove(key);
         _skeletonsToUpdateCache.Remove(key);
@@ -457,6 +461,7 @@ public unsafe class BonePosingService : IBonePosingService
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
+            _partialFrames.Clear();
             _ikChains.Clear();
             _ikImports.Clear();
         }
@@ -567,6 +572,28 @@ public unsafe class BonePosingService : IBonePosingService
 
             var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             var boneCount = pose->Skeleton->Bones.Length;
+            // Capture the attachment map before this partial's edits run.
+            // Its parent partial has already been posed in this pass.
+            for (int rootIndex = 0; rootIndex < boneCount; rootIndex++)
+            {
+                var root = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, rootIndex);
+                if (root is not { IsPartialRoot: true, IsSkeletonRoot: false, ParentBone: { } parent })
+                    continue;
+                var frameKey = (slotKey, partialIdx, rootIndex);
+                _partialFrames.Remove(frameKey);
+                var rootSpace = pose->AccessBoneModelSpace(rootIndex, hkaPose.PropagateOrNot.DontPropagate);
+                var parentPose = gameSkeleton->PartialSkeletons[parent.PartialId].GetHavokPose(0);
+                var parentSpace = parentPose == null ? null : parentPose->AccessBoneModelSpace(
+                    parent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+                if (rootSpace == null || parentSpace == null)
+                    continue;
+                var attached = ReadTransform(parentSpace);
+                if (root.PartialRootScale is { } scale)
+                    attached.Scale = scale;
+                var frame = new Poser.Game.Posing.PartialPoseFrame(ReadTransform(rootSpace), attached);
+                if (frame.IsInvertible)
+                    _partialFrames[frameKey] = frame;
+            }
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
                 var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
@@ -999,6 +1026,17 @@ public unsafe class BonePosingService : IBonePosingService
 
     private bool _propagatingLinks;
 
+    public Transform ToApplySpace(IBone bone, Transform visible)
+    {
+        var root = bone;
+        while (!root.IsPartialRoot && root.ParentBone is { } parent && parent.PartialId == bone.PartialId)
+            root = parent;
+        if (!root.IsPartialRoot || root.IsSkeletonRoot)
+            return visible;
+        return _partialFrames.TryGetValue((SkeletonKey.Of(bone.Skeleton), bone.PartialId, root.BoneIndex), out var frame)
+            ? frame.ToApply(visible) : visible;
+    }
+
     public void ApplyTransform(IBone bone, Transform newTransform, Transform originalTransform)
     {
         if (bone is VirtualBone)
@@ -1007,7 +1045,7 @@ public unsafe class BonePosingService : IBonePosingService
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        bonePoseInfo.Apply(newTransform, originalTransform);
+        bonePoseInfo.Apply(ToApplySpace(bone, newTransform), ToApplySpace(bone, originalTransform));
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest
         // of the link set. Re-entrancy guard stops link chains from ping-ponging.
@@ -1783,7 +1821,7 @@ public unsafe class BonePosingService : IBonePosingService
         // LastRawTransform is the posed value (anim ⊕ existing stacks), so the
         // diff is only valid on top of those stacks — they must survive, like
         // Brio's PosingCapability.FlipBone which accumulates and never clears.
-        bonePoseInfo.Apply(newTransform, bone.LastRawTransform);
+        bonePoseInfo.Apply(ToApplySpace(bone, newTransform), ToApplySpace(bone, bone.LastRawTransform));
 
     }
 

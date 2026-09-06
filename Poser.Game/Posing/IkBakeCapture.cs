@@ -63,6 +63,8 @@ namespace Poser.Game.Posing;
 /// after the clear, after the solver is gone, and after every parent already
 /// written in this same pass has moved this bone. Computing it from outside the
 /// pass, on any tick, cannot see that state.
+/// Partial descendants additionally convert the exported visible target to
+/// the pre-reparent apply frame. The stored layers keep their existing frame.
 /// </summary>
 public sealed class IkBakeCapture : IDisposable, IIkBake
 {
@@ -359,7 +361,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             if (!slot.Collection.TryGetValue(bone.BoneName, out var fileBone))
                 return;
 
-            Transform desired = fileBone;
+            var desired = _posing.ToApplySpace(bone, fileBone);
             var basis = bone.LastRawTransform;
             if (IsApproximatelyIdentity(BonePoseInfo.Diff(desired, basis)))
                 return;

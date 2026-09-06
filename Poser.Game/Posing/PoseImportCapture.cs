@@ -699,7 +699,10 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                     (bone.PartialId, bone.BoneName), out var entry))
                 return;
 
-            var desired = entry.File;
+            // HeadRestore holds an in-pass raw basis, not a visible file
+            // target. Every other stage carries post-reparent absolutes.
+            var desired = import.Stage == ImportStage.HeadRestore
+                ? entry.File : _posing.ToApplySpace(bone, entry.File);
             var basis = bone.LastRawTransform;
 
             // Expression imports: re-express this head instance's restore
