@@ -36,7 +36,7 @@ public interface ILightingService : IDisposable
     bool IsSpawnedLight(ILight light);
 
     /// <summary>Releases a captured light: delists a GPose light, restores
-    /// and un-suppresses a world light's original. No-op for spawned.</summary>
+    /// the captured settings on the original world light. No-op for spawned.</summary>
     void ReleaseLight(ILight light);
 
     /// <summary>The embedded gobo library (88 housing-window textures).</summary>
@@ -49,13 +49,6 @@ public interface ILightingService : IDisposable
 
     void ClearGobo(ILight light);
 
-    /// <summary>Overworld lights available for copy-and-suppress capture,
-    /// nearest first. GPose only; empty when the ctor hook is unavailable.</summary>
-    IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates();
-
-    /// <summary>Captures an overworld light: spawns an owned copy of it and
-    /// suppresses the original until release. Framework thread only.</summary>
-    ILight? CaptureWorldLight(WorldLightCandidate candidate);
 }
 
 /// <summary>One entry of the embedded gobo library.</summary>
@@ -68,4 +61,5 @@ public sealed record GoboEntry(string Path, string Name);
 public readonly record struct WorldLightCandidate(
     nint Handle,
     float DistanceFromPlayer,
-    System.Numerics.Vector3 Position = default);
+    System.Numerics.Vector3 Position = default,
+    long Generation = 0);

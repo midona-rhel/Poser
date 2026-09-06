@@ -13,18 +13,21 @@ namespace Poser.Game.Lighting;
 internal sealed unsafe class Light : ILight
 {
     private GameLight* _native;
+    private readonly System.Func<bool>? _isCurrent;
 
     public Light(
         GameLight* native,
         string name,
-        LightOwnership ownership = LightOwnership.Spawned)
+        LightOwnership ownership = LightOwnership.Spawned,
+        System.Func<bool>? isCurrent = null)
     {
         _native = native;
         Name = name;
         Ownership = ownership;
+        _isCurrent = isCurrent;
     }
 
-    internal GameLight* NativePtr => _native;
+    internal GameLight* NativePtr => IsValid ? _native : null;
 
     public LightOwnership Ownership { get; }
 
@@ -32,9 +35,9 @@ internal sealed unsafe class Light : ILight
 
     public IBone? AttachedBone { get; set; }
 
-    /// <summary>The suppressed overworld original this light was copied from;
-    /// zero for every other ownership.</summary>
-    internal nint WorldOriginal { get; set; }
+    internal nint WorldAddress { get; init; }
+    internal long WorldGeneration { get; init; }
+    internal BorrowedLightState? WorldState { get; set; }
 
     /// <summary>GPose camera-light slot; -1 when not a GPose light.</summary>
     internal int GPoseSlot { get; set; } = -1;
@@ -44,9 +47,9 @@ internal sealed unsafe class Light : ILight
     /// texture handle.</summary>
     internal void SetGoboPath(string? path) => GoboPath = path;
 
-    public bool IsValid => _native != null;
+    public bool IsValid => _native != null && (_isCurrent?.Invoke() ?? true);
 
-    private bool HasRender => _native != null && _native->LightRenderObject != null;
+    private bool HasRender => IsValid && _native->LightRenderObject != null;
 
     public string Name { get; set; }
 
@@ -64,10 +67,16 @@ internal sealed unsafe class Light : ILight
 
     public bool IsOn
     {
-        get => IsValid && _native->VisibilityFlags != 0;
+        get => Ownership == LightOwnership.World
+            ? HasRender && _native->LightRenderObject->Intensity > 0f
+            : IsValid && _native->VisibilityFlags != 0;
         set
         {
-            if (IsValid)
+            // Brio IGameLight.ToggleLight: world lights toggle emission,
+            // while GPose/spawned lights use the game's visibility byte.
+            if (Ownership == LightOwnership.World && HasRender)
+                _native->LightRenderObject->Intensity = value ? 1f : 0f;
+            else if (IsValid)
                 _native->VisibilityFlags = (byte)(value ? 79 : 0);
         }
     }

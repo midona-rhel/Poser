@@ -220,6 +220,12 @@ public sealed partial class PoseLibraryPane
             return;
         }
         string path = _vm.Tiles[index].ThumbKey;
+        if (Path.GetExtension(path).Equals(".chara", StringComparison.OrdinalIgnoreCase))
+        {
+            var applied = _chara.Apply(id, path);
+            if (!applied.Success) _notices.Failed("Import", applied.Detail ?? "The character appearance could not be applied.");
+            return;
+        }
         var begun = _disruptive.Run(id, "Import character file",
             () => _integration.BeginImport(id, path),
             () => _integration.ResetMcdf(id), asset: path);

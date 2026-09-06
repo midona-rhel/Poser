@@ -74,6 +74,7 @@ public partial class MainWindow : Window
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly WorldActions _worldActions;
 
     private readonly UserNotices _notices;
 
@@ -530,6 +531,7 @@ public partial class MainWindow : Window
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         ISceneLifecycleHistory lifecycle,
+        WorldActions worldActions,
         global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
@@ -635,6 +637,7 @@ public partial class MainWindow : Window
         _gazeService = gazeService;
         _integration = integration;
         _lifecycle = lifecycle;
+        _worldActions = worldActions;
         _notices = notices;
         _log = log;
         _groups = groups;

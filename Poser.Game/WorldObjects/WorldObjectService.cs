@@ -924,6 +924,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// that releases while reading must work off a snapshot.</summary>
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
 
+    internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
+        _port.TryReadIncarnation(address, out identity);
+
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>
         !_disposed && IsHandleCurrent(handle) && _port.IsBgReady(handle.Address);
