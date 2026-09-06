@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
@@ -203,6 +204,14 @@ internal readonly record struct WorldObjectState(
     bool Visible)
 {
     public string? Name { get; init; }
+    public float Opacity { get; init; } = 1f;
+    public Vector3? Tint { get; init; }
+    public bool NightState { get; init; }
+    public bool AnimationPaused { get; init; }
+    public bool LoopVfx { get; init; } = true;
+    public float VfxSpeed { get; init; } = 1f;
+    public float VfxIntensity { get; init; } = 1f;
+    public bool VfxPaused { get; init; }
 }
 
 /// <summary>
@@ -278,7 +287,18 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
         var handle = (AdoptedWorldObject)worldObject;
         return new WorldObjectState(
             handle.Address, handle.Path, handle.Spawned,
-            handle.Transform, handle.Visible) { Name = handle.Name };
+            handle.Transform, handle.Visible)
+        {
+            Name = handle.Name,
+            Opacity = handle.Opacity,
+            Tint = handle.Tint,
+            NightState = handle.NightState,
+            AnimationPaused = handle.AnimationPaused,
+            LoopVfx = handle.LoopVfx,
+            VfxSpeed = handle.VfxSpeed,
+            VfxIntensity = handle.VfxIntensity,
+            VfxPaused = handle.VfxPaused,
+        };
     }
 
     public void Apply(object worldObject, WorldObjectState state)
@@ -287,6 +307,20 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
         if (state.Name is { } name)
             handle.Name = name;
         handle.Transform = state.Placement;
+        handle.Opacity = state.Opacity;
+        handle.Tint = state.Tint;
+        if (handle.IsVfx)
+        {
+            handle.LoopVfx = state.LoopVfx;
+            handle.VfxSpeed = state.VfxSpeed;
+            handle.VfxIntensity = state.VfxIntensity;
+            handle.VfxPaused = state.VfxPaused;
+        }
+        else
+        {
+            handle.NightState = state.NightState;
+            handle.AnimationPaused = state.AnimationPaused;
+        }
         handle.Visible = state.Visible;
     }
 }

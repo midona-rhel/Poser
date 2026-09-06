@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Services;
 
@@ -82,6 +83,45 @@ public sealed class WorldObjectRestoreTests
         Assert.True(world.Port.VisibleOf(address));
         if (action == 0)
             Assert.Equal(initial, world.Service.Adopt(address)!.Opacity);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Lifecycle_reclaim_restores_authored_properties_then_release_restores_original(bool isVfx)
+    {
+        var world = new World();
+        var address = world.Port.Add(isVfx ? "vfx/fire.avfx" : "bg/tree.mdl", Placed, isVfx: isVfx);
+        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
+        var claim = world.Service.Adopt(address)!;
+        claim.Name = "Edited object";
+        claim.Transform = Moved;
+        claim.Opacity = .342f;
+        claim.Tint = new Vector3(.2f, .4f, .6f);
+        claim.Visible = false;
+        if (isVfx)
+        {
+            claim.LoopVfx = false;
+            claim.VfxSpeed = .5f;
+            claim.VfxIntensity = 2f;
+            claim.VfxPaused = true;
+        }
+        else
+        {
+            claim.NightState = true;
+            claim.AnimationPaused = true;
+        }
+        var authored = lifecycle.Read(claim);
+
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            lifecycle.Release(claim);
+            Assert.Equal(Placed, world.Port.PlacementOf(address));
+            claim = (AdoptedWorldObject)lifecycle.Adopt(address)!;
+            if (!isVfx) Assert.Equal(1f, claim.Opacity);
+            lifecycle.Apply(claim, authored);
+            Assert.Equal(authored, lifecycle.Read(claim));
+        }
     }
 
     // Identity re-adoption is GONE by ruling (2026-09-01): a document
