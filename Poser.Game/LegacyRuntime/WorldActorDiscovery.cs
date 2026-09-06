@@ -456,6 +456,18 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
         return actor.Address == stored.Address && release(actor);
     }
 
+    internal bool CanRestoreObservation(WorldActorObservation stored, IActor actor)
+    {
+        if (!OnOwnerThread || !_gPose.IsGPosing || !_actorManager.IsAdopted(actor))
+            return false;
+        try
+        {
+            return _adapter.Revalidate(stored) is { } fresh
+                && fresh.Identity == stored.Identity && fresh.Kind == stored.Kind;
+        }
+        catch { return false; }
+    }
+
     private List<WorldActorObservation> Collect()
     {
         var auxiliary = new HashSet<nint>();

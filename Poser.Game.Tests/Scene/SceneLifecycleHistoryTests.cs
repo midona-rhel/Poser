@@ -701,8 +701,11 @@ public sealed class SceneLifecycleHistoryTests
 
         public ActorState Read(object actor) => _states[(IActor)actor];
 
-        public void Restore(object actor, ActorState state) =>
-            _states[(IActor)actor] = state;
+        public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null)
+        {
+            if (stillCurrent?.Invoke() != false)
+                _states[(IActor)actor] = state;
+        }
 
         public void Note(string detail) => Notes.Add(detail);
     }

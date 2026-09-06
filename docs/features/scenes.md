@@ -21,6 +21,10 @@ the Game control owner, even while the held actor is absent from discovery.
 Redo revalidates that observation, not a remembered native address. A missing
 actor, reused address or changed kind refuses acquisition; undo of an already
 gone actor does not release its replacement.
+Release captures the authored pose, placement, visibility, name and presentation
+settings, then restores captured presentation baselines while the actor is still
+bound. Undo reclaims that same actor and restores the saved scene state without
+new history entries. Deferred pose restoration stops if the claim is released.
 
 ## Scene files
 

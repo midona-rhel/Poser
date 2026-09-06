@@ -7,11 +7,117 @@ using Poser.Game;
 using Poser.Services;
 using Poser.Application.Transforms;
 using Poser.Game.Journal;
+using Poser.Game.Scene;
+using Poser.Application.Presentation;
+using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
+using Poser.Files;
+using System.Numerics;
 
 namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class WorldActorDiscoveryTests
 {
+    [Fact]
+    public void Release_returns_native_tint_and_undo_restores_saved_pose_placement_and_tint()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var actor = new ActorBase(ActorManager.ActorIdentity.For(observed.GameObjectId, observed.ObjectIndex),
+            "Edited NPC", observed.Address);
+        var manager = new FakeActorManager { Actors = [actor], Adopted = true };
+        var id = new ActorId(Guid.NewGuid(), 1);
+        var incomingTint = new Vector4(0.8f, 0.7f, 0.6f, 1f);
+        var authoredTint = new Vector4(1f, 0.2f, 0.3f, 1f);
+        var port = new TintPort { Tint = incomingTint };
+        var presentation = new ActorPresentationSession(port);
+        Assert.True(presentation.SetTint(id, PresentationModel.Character, authoredTint).Success);
+        var pose = new PoseFile();
+        pose.Bones["j_te_l"] = new PoseFile.BoneData
+        {
+            Position = new Vector3(1, 2, 3),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
+            Scale = Vector3.One,
+        };
+        var authored = new ActorState(new Transform(new Vector3(10, 20, 30), Quaternion.Identity, new Vector3(2)), true, pose);
+        var released = new ActorState(Transform.Identity, true, null);
+        var state = new StatePort { Current = authored };
+        var seam = new CloneSeam
+        {
+            Result = actor,
+            OnInvoke = () => { manager.Adopted = true; id = id with { Generation = id.Generation + 1 }; },
+        };
+        var history = new TransformHistory();
+        int appends = 0;
+        history.Appended += _ => appends++;
+        var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
+            _ =>
+            {
+                Assert.Equal(incomingTint, port.Tint); // Reset happens before the binding disappears.
+                manager.Adopted = false;
+                state.Current = released;
+                return true;
+            }, state, presentation, _ => manager.Adopted ? id : null);
+
+        Assert.True(session.Release(actor));
+        Assert.False(presentation.OverridesFor(id).HasAny);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        state.Pump();
+        Assert.Equal(authored, state.Current);
+        Assert.Equal(pose.Bones["j_te_l"].Rotation, state.Current.Pose!.Bones["j_te_l"].Rotation);
+        Assert.Equal(authoredTint, port.Tint);
+        Assert.Equal(incomingTint, presentation.OverridesFor(id).TintCaptures[PresentationModel.Character]);
+        Assert.True(step.Redo());
+        Assert.Equal(released, state.Current);
+        Assert.Equal(incomingTint, port.Tint);
+
+        Assert.True(step.Undo());
+        Assert.True(step.Redo()); // Release again before the queued restore runs.
+        state.Pump();
+        Assert.Equal(released, state.Current);
+        Assert.Equal(incomingTint, port.Tint);
+        Assert.True(step.Undo());
+        state.Pump();
+        Assert.Equal(authored, state.Current); // Never recapture the temporary unposed state.
+        Assert.Equal(authoredTint, port.Tint);
+        Assert.Equal(1, appends);
+    }
+
+    private sealed class StatePort : IActorLifecycle
+    {
+        public ActorState Current;
+        private readonly Queue<Action> _pending = new();
+        public void Pump() { while (_pending.TryDequeue(out var action)) action(); }
+        public ActorState Read(object actor) => Current;
+        public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null) =>
+            _pending.Enqueue(() => { if (stillCurrent?.Invoke() != false) Current = state; });
+        public void WhenPosable(object actor, Action<object> act) => _pending.Enqueue(() => act(actor));
+        public string GetName(object actor) => ((IActor)actor).Name;
+        public void SetName(object actor, string name) => ((IActor)actor).Name = name;
+        public void NameCreated(object actor, string seed) => throw new NotSupportedException();
+        public bool IsSpawned(object actor) => false;
+        public bool Destroy(object actor) => throw new NotSupportedException();
+        public void Note(string detail) => throw new InvalidOperationException(detail);
+    }
+
+    private sealed class TintPort : IPresentationRuntimePort
+    {
+        public Vector4 Tint;
+        public bool IsSupported(ActorId actor) => true;
+        public PresentationReading? Read(ActorId actor) => new(1, Tint, null, null, default);
+        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value)
+        { Tint = value; return PresentationPortResult.Ok(); }
+        public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value)
+        { Tint = value; return PresentationPortResult.Ok(); }
+        public PresentationPortResult SetOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
+        public PresentationPortResult RestoreOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
+        public PresentationPortResult SetWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
+        public PresentationPortResult ClearWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
+        public void ClearOwned(ActorId actor) { }
+    }
+
     [Fact]
     public void Release_history_reacquires_exact_actor_and_never_adopts_a_reused_address()
     {
@@ -219,12 +325,14 @@ public sealed class WorldActorDiscoveryTests
         public IActor? Result { get; set; } =
             new ActorBase(new EntityId("world-clone"), "Clone", (nint)0xC10);
         public bool Throw { get; set; }
+        public Action? OnInvoke { get; set; }
 
         public IActor? Invoke(nint address)
         {
             Calls.Add(address);
             if (Throw)
                 throw new InvalidOperationException("clone");
+            OnInvoke?.Invoke();
             return Result;
         }
     }
