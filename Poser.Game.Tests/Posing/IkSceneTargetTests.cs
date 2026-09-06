@@ -9,6 +9,26 @@ namespace Poser.Game.Tests.Posing;
 
 public sealed class IkSceneTargetTests
 {
+    [Fact]
+    public void Held_handle_translation_is_not_written_into_the_limb_before_solving()
+    {
+        var transform = new Transform
+        {
+            Position = new Vector3(2, 3, 4),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f),
+            Scale = new Vector3(0.1f),
+        };
+        var edit = new Poser.Core.BonePoseTransformInfo(Poser.Domain.Posing.TransformComponents.All, transform);
+        var held = BonePosingService.HeldPoseStack(edit, true);
+        Assert.Equal(Vector3.Zero, held.Transform.Position);
+        Assert.Equal(transform.Rotation, held.Transform.Rotation);
+        Assert.Equal(transform.Scale, held.Transform.Scale);
+        Assert.Equal(edit, BonePosingService.HeldPoseStack(edit, false));
+        var imported = edit with { IkTransform = Transform.Zero };
+        Assert.Equal(imported, BonePosingService.HeldPoseStack(imported, true));
+        Assert.Equal(transform.Position, edit.Transform.Position);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

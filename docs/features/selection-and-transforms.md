@@ -132,6 +132,11 @@ Every change made through the UI is one step with an inverse. Undo runs
 the inverse; redo runs the step again. Drags are one step on release;
 typed fields are one step on commit. Selection is never a step.
 
+Sliders and draggable numeric wells update the value live, then commit one
+before/after entry on release or edited focus loss. Returning to the original
+value adds nothing. IK numeric controls use the shared deferred value-journal
+path; switches and other discrete actions commit once.
+
 Each step remembers the state of every actor it touched: the exact actor
 and skeleton generations, the timeline and loop choices, and the
 disruption epoch that a redraw, a character file or an appearance apply

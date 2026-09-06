@@ -150,6 +150,13 @@ public unsafe class BonePosingService : IBonePosingService
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
         _ikChains = new();
+    private readonly HashSet<string> _ikImports = new();
+
+    public void SetIkImportSuppressed(string actorKey, bool suppressed)
+    {
+        if (suppressed) _ikImports.Add(actorKey);
+        else _ikImports.Remove(actorKey);
+    }
 
     // Native-boundary observations used by the live acceptance harness.
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), BoneEvaluationObservation>
@@ -451,6 +458,7 @@ public unsafe class BonePosingService : IBonePosingService
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
             _ikChains.Clear();
+            _ikImports.Clear();
         }
     }
 
@@ -571,6 +579,10 @@ public unsafe class BonePosingService : IBonePosingService
                 var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
                 _ikChains.TryGetValue(
                     (slotKey, partialIdx, boneIdx), out var chainState);
+                // Import deltas must be measured against the ordinary pose,
+                // before IK moves parents underneath the remaining file bones.
+                if (_ikImports.Contains(slotKey.Actor))
+                    chainState = null;
                 bool fixedHold = chainState is
                 {
                     Config.Enabled: true,
@@ -602,7 +614,8 @@ public unsafe class BonePosingService : IBonePosingService
                     // Apply ALL stacks for this bone (like Brio lines 108-112)
                     foreach (var stack in bonePoseInfo.Stacks)
                     {
-                        ApplyBoneTransform(pose, boneIdx, stack, bone, fixedHold ? null : chainState);
+                        ApplyBoneTransform(pose, boneIdx,
+                            HeldPoseStack(stack, fixedHold), bone, fixedHold ? null : chainState);
                     }
                 }
                 if (fixedHold)
@@ -642,7 +655,8 @@ public unsafe class BonePosingService : IBonePosingService
                         ExecuteTransitiveActions(actions, bone, bonePoseInfo);
                         for (var i = snapshotCount; i < bonePoseInfo.Stacks.Count; i++)
                             ApplyBoneTransform(
-                                pose, boneIdx, bonePoseInfo.Stacks[i], bone, fixedHold ? null : chainState);
+                                pose, boneIdx, HeldPoseStack(bonePoseInfo.Stacks[i], fixedHold),
+                                bone, fixedHold ? null : chainState);
                         if (fixedHold && bonePoseInfo.Stacks.Count != snapshotCount)
                             ApplyFixedHold(pose, boneIdx, bone, chainState!, bonePoseInfo.IkModification());
                     }
@@ -810,8 +824,15 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    /// <summary>Solves the chain toward a Fixed capture when no authored
-    /// stack exists: target = captured target + (0 − captured translation).</summary>
+    // A handle edit supplies the solver target, not a direct translation of
+    // the tip beforehand. Directly moving it first changes the limb lengths
+    // and can leave Two Joint solving an already-displaced endpoint.
+    internal static BonePoseTransformInfo HeldPoseStack(BonePoseTransformInfo stack, bool held) =>
+        held && stack.IkTransform == null && stack.Layer == null
+            ? stack with { Transform = stack.Transform with { Position = Vector3.Zero } }
+            : stack;
+
+    /// <summary>Solve the held target after applying the pose-only stack values.</summary>
     private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik, Transform authored)
     {
         if (ResolveHeld(ik, bone, authored.Position, authored.Rotation) is not { } held)
@@ -826,7 +847,7 @@ public unsafe class BonePosingService : IBonePosingService
             target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
         {
-            var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+            var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
             modelSpace->Translation = *(hkVector4f*)(&target);
         }
         if (holdRotation)

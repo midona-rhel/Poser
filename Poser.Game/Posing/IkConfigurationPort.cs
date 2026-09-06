@@ -41,6 +41,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     /// the inverse. Only a landed set is journaled.</summary>
     public IkPortResult Set(TransformTargetId target, IkChainConfig config)
     {
+        _journal.Seal();
         var before = Get(target);
         var result = Write(target, config);
         if (!result.Success || before is null || before == config)
@@ -188,6 +189,21 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
                 next => WriteEntityTarget(target, next),
                 () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
+    }
+
+    public IkPortResult Adjust(TransformTargetId target, IkChainConfig config)
+    {
+        if (Get(target) is not { } initial)
+            return IkPortResult.Fail("IK configuration requires a live bone target.");
+        var result = _journal.Adjust(("IK", target), "Set IK",
+            () => Get(target) ?? initial,
+            next =>
+            {
+                var written = Write(target, next);
+                return new ValueWriteResult(written.Success, written.Detail);
+            }, config,
+            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+        return new IkPortResult(result.Success, result.Detail);
     }
 
     private IkPortResult WriteEntityTarget(TransformTargetId target, SelectionId entity)

@@ -2192,6 +2192,12 @@ public class PoseInspectorPane
                 config = _ikPort.Get(ikTarget);
         }
 
+        void Adjust(Domain.Posing.IkChainConfig next)
+        {
+            if (_ikPort.Adjust(ikTarget, next).Success)
+                config = _ikPort.Get(ikTarget);
+        }
+
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
         bool canBake = armed && _ikBake.CanBake(ikTarget);
@@ -2273,7 +2279,7 @@ public class PoseInspectorPane
             config.SwivelDegrees,
             -Domain.Posing.IkChainConfig.MaxSwivelDegrees,
             Domain.Posing.IkChainConfig.MaxSwivelDegrees,
-            next => Apply(config with { SwivelDegrees = next }),
+            next => Adjust(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
         int modeIndex = config.TargetMode switch
@@ -2332,21 +2338,21 @@ public class PoseInspectorPane
                 config.FirstJointGain,
                 0f,
                 1f,
-                next => Apply(config with { FirstJointGain = next }),
+                next => Adjust(config with { FirstJointGain = next }),
                 help: helps[0]);
             form.Slider(
                 labels[1],
                 config.SecondJointGain,
                 0f,
                 1f,
-                next => Apply(config with { SecondJointGain = next }),
+                next => Adjust(config with { SecondJointGain = next }),
                 help: helps[1]);
             form.Slider(
                 labels[2],
                 config.EndJointGain,
                 0f,
                 1f,
-                next => Apply(config with { EndJointGain = next }),
+                next => Adjust(config with { EndJointGain = next }),
                 help: helps[2]);
             form.Slider(
                 "Hinge min",
@@ -2354,7 +2360,7 @@ public class PoseInspectorPane
                 0f,
                 180f,
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         HingeMinDegrees = next,
                         HingeMaxDegrees = MathF.Max(
@@ -2368,7 +2374,7 @@ public class PoseInspectorPane
                 0f,
                 180f,
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         HingeMaxDegrees = next,
                         HingeMinDegrees = MathF.Min(
@@ -2390,7 +2396,7 @@ public class PoseInspectorPane
                 Domain.Posing.IkChainConfig.MinDepth,
                 Domain.Posing.IkChainConfig.MaxDepthFor(config.Solver),
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         CcdDepth = (int)MathF.Round(next),
                     }),
@@ -2403,7 +2409,7 @@ public class PoseInspectorPane
                     1f,
                     60f,
                     next =>
-                        Apply(config with
+                        Adjust(config with
                         {
                             CcdIterations = (int)MathF.Round(next),
                         }),
@@ -2415,7 +2421,7 @@ public class PoseInspectorPane
                     config.CcdGain,
                     0f,
                     1f,
-                    next => Apply(config with { CcdGain = next }),
+                    next => Adjust(config with { CcdGain = next }),
                     help: "How far each pass moves the chain toward the target");
         }
     }

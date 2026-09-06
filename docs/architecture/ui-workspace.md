@@ -20,6 +20,10 @@ New explanatory or advisory text placed in a UI layout requires explicit user
 approval before implementation. Do not add free-standing notices as a substitute
 for correct behavior; propose the message and placement first.
 
+Numeric controls use the shared primitive commit event to finish their edits;
+the [journal contract](../features/selection-and-transforms.md#the-journal)
+defines when those edits enter history.
+
 Keep IK gizmo visible is enabled by default and exempts an enabled IK endpoint
 from the manipulation fade. It does not override explicitly hidden entity handles
 or Alt suspension. Other gizmos retain the ordinary hide-while-manipulating rule.

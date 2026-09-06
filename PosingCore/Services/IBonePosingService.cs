@@ -44,6 +44,7 @@ public readonly record struct IkConfiguredChain(
 /// </summary>
 public interface IBonePosingService : IDisposable
 {
+    void SetIkImportSuppressed(string actorKey, bool suppressed);
     /// <summary>
     /// Get the pose info for a skeleton.
     /// </summary>

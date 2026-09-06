@@ -39,6 +39,10 @@ Imported pose transforms do not edit IK targets (Brio likewise marks imported
 stacks IK-disabled). Held chains solve against the combined explicit handle
 edits, not each imported stack. Reset first clears the pose while retaining a
 held handle's offset in the same stack snapshot used by undo/redo.
+The importer suspends solving for its actor while it measures and applies the
+file, then resumes the existing constraints. Descendants are imported against
+the unconstrained parent pose, so they remain relative when IK resumes.
+Held handle translations are solver targets, never direct pre-solve tip writes.
 
 A bone is eligible when it has a non-hidden parent. Two Joint uses its
 slot-local chain; other eligible endpoints use CCD. Chain settings cannot

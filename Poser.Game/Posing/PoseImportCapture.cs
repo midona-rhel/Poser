@@ -609,6 +609,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             // Pending ownership was established by Reserve before this first
             // mutation. Every setup step shares the same exception-safe
             // transaction and therefore the same terminal receipt.
+            _posing.SetIkImportSuppressed(import.ActorKey, true);
             foreach (var (bone, _) in resetBones)
             {
                 import.MutationStarted = true;
@@ -1698,6 +1699,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
 
     private void Invalidate(Import import)
     {
+        _posing.SetIkImportSuppressed(import.ActorKey, false);
         // This interlocked token is the native callback's only liveness read.
         // Set it before session/binding/provider teardown can begin.
         import.Invalidation.Invalidate();

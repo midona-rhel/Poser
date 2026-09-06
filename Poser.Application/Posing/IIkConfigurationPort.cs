@@ -50,6 +50,7 @@ public interface IIkConfigurationPort
     /// <summary>Validates and stores the configuration. Entering Fixed mode
     /// or enabling a Fixed chain captures the current effective target.</summary>
     IkPortResult Set(TransformTargetId target, IkChainConfig config);
+    IkPortResult Adjust(TransformTargetId target, IkChainConfig config);
 
     /// <summary>Restores the chain's defaults while preserving its current
     /// Enabled state.</summary>
