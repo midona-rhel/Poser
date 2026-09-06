@@ -124,6 +124,8 @@ caught, the Poser and Dalamud versions, the loaded plugins, the
 settings and Poser's own lines from the Dalamud log. The scene is an
 option, off by default, and the dialog says what it means: scene data
 only, no modified files, no mods.
+The attachment is the redacted JSON document from a native `.xivs` scene,
+not a Stagehand export; actor data and entity relationships remain intact.
 
 The recorder replaces known character names
 with "Actor 1", "Actor 2" and so on as it writes, in order of first

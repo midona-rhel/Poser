@@ -9,6 +9,7 @@ using Newtonsoft.Json;
 using Poser.Application.Diagnostics;
 using Poser.Application.Scene;
 using Poser.Config;
+using Poser.Files;
 using Poser.Services;
 
 namespace Poser.Diagnostics;
@@ -88,7 +89,8 @@ public sealed class IssueReportService
                 done(zip);
                 return;
             }
-            string scenePath = Path.Combine(Folder, $"scene-{stamp}.json");
+            // .json selects the lossy Stagehand exporter, not a native scene.
+            string scenePath = Path.Combine(Folder, $"scene-{stamp}{SceneFile.Extension}");
             var begun = _scenes.BeginSave(scenePath, "Issue report scene");
             if (!begun.Success)
             {
@@ -131,7 +133,14 @@ public sealed class IssueReportService
                 return;
             }
             RefreshRedaction();
-            string scene = _redactor.ScrubJson(File.ReadAllText(scenePath));
+            string scene;
+            using (var container = ZipFile.OpenRead(scenePath))
+            {
+                var document = container.GetEntry(SceneFileStore.DocumentEntry)
+                    ?? throw new InvalidDataException("The saved scene has no scene document.");
+                using var reader = new StreamReader(document.Open());
+                scene = _redactor.ScrubJson(reader.ReadToEnd());
+            }
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Update))
             {
                 var entry = archive.CreateEntry("scene.json", CompressionLevel.Optimal);
