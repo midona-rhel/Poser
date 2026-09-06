@@ -89,6 +89,15 @@ folders, after extension filtering; it never walks subfolders or rescans per
 keystroke. Navigation and reopening clear the query. A filtered-out selection
 clears its preview and confirmation state; a separately typed save name stays.
 
+Spawn browsing keeps predefined actions first, library entries second, then
+the existing catalog order. With an active search, each source group orders
+categories as actors, lights, cameras, props, scenery, furniture, VFX, overlays.
+Action order stays fixed within its category; other matches rank name prefixes
+then alphabetically within each category. Sorting changes visible row indices,
+not the backing activation identities. Furniture has its own import actions;
+world-entry library filters distinguish scenery, furniture and VFX despite
+their shared file extension.
+
 Pages default to a readable content-width cap. Actor opts into the
 shared responsive policy: it fills the host's content box after the leading
 inset, retains the host's trailing scrollbar gutter, and wraps cell groups

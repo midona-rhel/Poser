@@ -26,11 +26,13 @@ namespace Poser.UI;
 /// <summary>Kind filters, the query, ordering and the status line.</summary>
 public sealed partial class PoseLibraryPane
 {
+    private WorldAssetKind? _worldKindFilter;
     public bool KindFilterContains(PoseLibraryEntryKind kind) =>
         _kindFilter.Contains(kind);
 
     public void ToggleKindFilter(PoseLibraryEntryKind kind)
     {
+        _worldKindFilter = null;
         if (!_kindFilter.Add(kind))
             _kindFilter.Remove(kind);
         RebuildAfterFilterChange();
@@ -40,6 +42,7 @@ public sealed partial class PoseLibraryPane
     /// tab shows nothing until a kind comes back.</summary>
     public void SetKindFilterNone()
     {
+        _worldKindFilter = null;
         if (_kindFilter.Count == 0)
             return;
         _kindFilter.Clear();
@@ -50,6 +53,7 @@ public sealed partial class PoseLibraryPane
     /// the neutral state, so there is no separate reset.</summary>
     public void SetKindFilterAll()
     {
+        _worldKindFilter = null;
         foreach (var kind in Enum.GetValues<PoseLibraryEntryKind>())
             _kindFilter.Add(kind);
         RebuildAfterFilterChange();
@@ -57,8 +61,9 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>The portal's from-library rows: exactly one kind shown,
     /// or none for the whole tab.</summary>
-    public void SetOnlyKindFilter(PoseLibraryEntryKind? kind)
+    public void SetOnlyKindFilter(PoseLibraryEntryKind? kind, WorldAssetKind? worldKind = null)
     {
+        _worldKindFilter = worldKind;
         _kindFilter.Clear();
         if (kind is { } stated)
             _kindFilter.Add(stated);
@@ -80,9 +85,10 @@ public sealed partial class PoseLibraryPane
     /// <summary>Whether the kind passes the Objects tab's toggle filter.
     /// Every other tab is one kind and ignores it.</summary>
     private bool KindAdmitted(
-        PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
+        PoseLibraryEntry entry, PoseLibraryEntryKind primary) =>
         primary != PoseLibraryEntryKind.Actor
-        || _kindFilter.Contains(entryKind);
+        || (_kindFilter.Contains(entry.Kind)
+            && (_worldKindFilter is null || entry.WorldKind == _worldKindFilter));
 
     private void SyncQuery()
     {

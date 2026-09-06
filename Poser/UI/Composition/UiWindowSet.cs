@@ -82,11 +82,11 @@ public sealed class UiWindowSet : IDisposable
         System.AddWindow(InspectorPart);
         LibraryPart = new LibraryWindow(main);
         System.AddWindow(LibraryPart);
-        spawnBrowser.OnLibraryRequested = kind =>
+        spawnBrowser.OnLibraryRequested = (kind, worldKind) =>
         {
             Main.LibraryPane.SelectType(
                 (int)PoseLibraryPane.LibraryType.Objects);
-            Main.LibraryPane.SetOnlyKindFilter(kind);
+            Main.LibraryPane.SetOnlyKindFilter(kind, worldKind);
             LibraryPart.IsOpen = true;
             LibraryPart.BringToFront();
         };

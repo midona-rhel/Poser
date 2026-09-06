@@ -42,8 +42,11 @@ internal static class FurnitureCatalog
             if (string.IsNullOrWhiteSpace(name)) return;
             string path = PathFor(model, indoors);
             string category = categories.GetValueOrDefault(value.RowId, "Uncategorised");
-            entries.TryAdd(path, new WorldAsset(name, path, name,
-                $"Furniture · {(indoors ? "Indoor" : "Outdoor")} · {category}", value.Icon));
+            string context = $"Furniture · {(indoors ? "Indoor" : "Outdoor")}";
+            if (category is not ("Indoor furnishings" or "Outdoor furnishings" or "Uncategorised")
+                && !string.IsNullOrWhiteSpace(category))
+                context += $" · {category}";
+            entries.TryAdd(path, new WorldAsset(name, path, name, context, value.Icon));
         }
     }
 }

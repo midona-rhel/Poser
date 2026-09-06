@@ -16,6 +16,43 @@ namespace Poser.Tests.Library;
 
 public sealed class PoseLibraryServiceTests
 {
+    [Theory]
+    [InlineData("bg/tree.mdl", Poser.Services.WorldAssetKind.Scenery)]
+    [InlineData("bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.SGB", Poser.Services.WorldAssetKind.Furniture)]
+    [InlineData("vfx/fire.AVFX", Poser.Services.WorldAssetKind.Effect)]
+    public void Shared_world_entry_files_publish_their_asset_category(string asset, Poser.Services.WorldAssetKind expected)
+    {
+        using var fixture = new LibraryFixture();
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = [new SceneWorldObject { Key = Guid.NewGuid(), Name = "Saved", Path = asset, Spawned = true }];
+        Assert.True(SceneFileStore.Default.Write(scene, Path.Combine(fixture.Root, "Saved.xivw")).Succeeded);
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        var entry = Assert.Single(service.Snapshot.Entries);
+        Assert.Equal(PoseLibraryEntryKind.WorldObject, entry.Kind);
+        Assert.Equal(expected, entry.WorldKind);
+    }
+
+    [Fact]
+    public void World_entry_category_is_refreshed_when_the_same_library_file_changes()
+    {
+        using var fixture = new LibraryFixture();
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = [new SceneWorldObject { Key = Guid.NewGuid(), Name = "Saved", Path = "bg/tree.mdl", Spawned = true }];
+        var path = Path.Combine(fixture.Root, "Saved.xivw");
+        Assert.True(SceneFileStore.Default.Write(scene, path).Succeeded);
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        Assert.Equal(Poser.Services.WorldAssetKind.Scenery, Assert.Single(service.Snapshot.Entries).WorldKind);
+        scene.WorldObjects[0].Path = "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb";
+        Assert.True(SceneFileStore.Default.Write(scene, path).Succeeded);
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        Assert.Equal(Poser.Services.WorldAssetKind.Furniture, Assert.Single(service.Snapshot.Entries).WorldKind);
+    }
+
     [Fact]
     public void Chara_files_are_listed_from_nested_sources_without_pose_parsing()
     {

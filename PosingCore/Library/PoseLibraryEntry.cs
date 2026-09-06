@@ -126,6 +126,7 @@ public sealed class PoseLibrarySourceSnapshot
 public sealed class PoseLibraryEntry
 {
     public required PoseLibraryEntryKind Kind { get; init; }
+    public Services.WorldAssetKind WorldKind { get; init; }
 
     /// <summary>Absolute path of the file.</summary>
     public required string FilePath { get; init; }

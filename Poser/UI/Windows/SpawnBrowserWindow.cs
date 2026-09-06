@@ -66,15 +66,17 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowCameraFree = 27;
     private const int RowCameraFromLibrary = 28;
     private const int RowCameraFromFile = 29;
+    private const int RowFurnitureFromLibrary = 30;
+    private const int RowFurnitureFromFile = 31;
     // The catalog starts after the LAST fixed row: a row added above
     // shifted every catalog activation one entry off ("crystal" spawned
     // the disco lights, 2026-09-02).
-    private const int ActionRows = RowCameraFromFile + 1;
+    private const int ActionRows = RowFurnitureFromFile + 1;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
     /// the stated kind (null = everything) — the from-library rows' one
     /// act, wired by the window set.</summary>
-    public Action<global::Poser.Library.PoseLibraryEntryKind?>?
+    public Action<global::Poser.Library.PoseLibraryEntryKind?, WorldAssetKind?>?
         OnLibraryRequested;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
@@ -489,6 +491,8 @@ public sealed class SpawnBrowserWindow : Window
         rows.Clear();
         _rowTabs.Clear();
         _vm.Visible.Clear();
+        _filteredQuery = string.Empty;
+        _filteredTab = -1;
         rows.Add(ActionRow(
             "##spawn-new-actor", "Actor", TablerIcon.User));
         rows.Add(ActionRow(
@@ -605,6 +609,8 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-camera-file", "Camera from file",
             TablerIcon.CameraFromFile,
             noCameras));
+        rows.Add(ActionRow("##spawn-furniture-library", "Furniture from library", TablerIcon.Couch));
+        rows.Add(ActionRow("##spawn-furniture-file", "Furniture from file", TablerIcon.Couch));
 
         // Tab per action row, by the fixed row order above. The prop entry
         // is its own tab (a prop catalog arrives later); everything the
@@ -623,7 +629,8 @@ public sealed class SpawnBrowserWindow : Window
                 <= RowVfxFromFile => SpawnBrowserTab.Effects,
                 <= RowOverlayFromFile => SpawnBrowserTab.Overlays,
                 <= RowLightFromFile => SpawnBrowserTab.Lights,
-                _ => SpawnBrowserTab.Cameras,
+                <= RowCameraFromFile => SpawnBrowserTab.Cameras,
+                _ => SpawnBrowserTab.Furniture,
             });
 
         var entries = _catalog.Entries;
@@ -677,7 +684,12 @@ public sealed class SpawnBrowserWindow : Window
                 global::Poser.Library.PoseLibraryEntryKind.Group =>
                     (TablerIcon.Folder, SpawnBrowserTab.Actors),
                 global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
-                    (TablerIcon.Plant, SpawnBrowserTab.SceneObjects),
+                    entry.WorldKind switch
+                    {
+                        WorldAssetKind.Furniture => (TablerIcon.Couch, SpawnBrowserTab.Furniture),
+                        WorldAssetKind.Effect => (TablerIcon.Fire, SpawnBrowserTab.Effects),
+                        _ => (TablerIcon.Plant, SpawnBrowserTab.SceneObjects),
+                    },
                 global::Poser.Library.PoseLibraryEntryKind.Prop =>
                     (TablerIcon.Moneybag, SpawnBrowserTab.Props),
                 global::Poser.Library.PoseLibraryEntryKind.Light =>
@@ -697,7 +709,7 @@ public sealed class SpawnBrowserWindow : Window
                 entry.NameLower,
                 placed.glyph,
                 0u,
-                "Saved",
+                "Library",
                 false));
             _rowTabs.Add(placed.tab);
         }
@@ -886,10 +898,44 @@ public sealed class SpawnBrowserWindow : Window
     private readonly List<int> _prefixMatches = new();
     private readonly List<int> _containsMatches = new();
 
-    /// <summary>The visible list, refilled in place. A keystroke runs THIS
-    /// and nothing else. A live query RANKS: names the query begins lead,
-    /// alphabetical within each rank, so Crystal surfaces the closest
-    /// match instead of merely filtering (ruled 2026-09-01).</summary>
+    // Presentation sorts row indices, never the backing rows: activation
+    // retains the original catalog identity when search rearranges results.
+    private int SourceRank(int row)
+    {
+        if (row < ActionRows) return 0;
+        int savedStart = ActionRows + _actorEntryCount + _propEntryCount;
+        return row >= savedStart && row < savedStart + _savedObjects.Count ? 1 : 2;
+    }
+
+    private static int CategoryRank(SpawnBrowserTab tab) => tab switch
+    {
+        SpawnBrowserTab.Actors => 0,
+        SpawnBrowserTab.Lights => 1,
+        SpawnBrowserTab.Cameras => 2,
+        SpawnBrowserTab.Props => 3,
+        SpawnBrowserTab.SceneObjects => 4,
+        SpawnBrowserTab.Furniture => 5,
+        SpawnBrowserTab.Effects => 6,
+        _ => 7,
+    };
+
+    private int CompareSearchRows(int left, int right)
+    {
+        int source = SourceRank(left).CompareTo(SourceRank(right));
+        if (source != 0) return source;
+        int category = CategoryRank(_rowTabs[left]).CompareTo(CategoryRank(_rowTabs[right]));
+        if (category != 0) return category;
+        if (SourceRank(left) == 0) return left.CompareTo(right);
+        var rows = _vm.Rows;
+        int prefix = rows[right].LabelLower.StartsWith(_queryLower, StringComparison.Ordinal)
+            .CompareTo(rows[left].LabelLower.StartsWith(_queryLower, StringComparison.Ordinal));
+        if (prefix != 0) return prefix;
+        int name = StringComparer.OrdinalIgnoreCase.Compare(rows[left].Label, rows[right].Label);
+        return name != 0 ? name : left.CompareTo(right);
+    }
+
+    /// <summary>Actions, library, then catalogs. Search orders categories
+    /// within each source, then prefix/name matches within the category.</summary>
     private void Refilter()
     {
         _refilter = false;
@@ -901,9 +947,10 @@ public sealed class SpawnBrowserWindow : Window
         if (_queryLower.Length == 0)
         {
             visible.Clear();
-            for (int i = 0; i < rows.Count; i++)
-                if (tab == SpawnBrowserTab.All || _rowTabs[i] == tab)
-                    visible.Add(i);
+            for (int source = 0; source < 3; source++)
+                for (int i = 0; i < rows.Count; i++)
+                    if (SourceRank(i) == source && (tab == SpawnBrowserTab.All || _rowTabs[i] == tab))
+                        visible.Add(i);
             _filteredQuery = string.Empty;
             _filteredTab = (int)tab;
             return;
@@ -930,14 +977,10 @@ public sealed class SpawnBrowserWindow : Window
                 RankRow(rows, i);
             }
         }
-        Comparison<int> alphabetical = (left, right) => string.Compare(
-            rows[left].LabelLower, rows[right].LabelLower,
-            StringComparison.Ordinal);
-        _prefixMatches.Sort(alphabetical);
-        _containsMatches.Sort(alphabetical);
         visible.Clear();
         visible.AddRange(_prefixMatches);
         visible.AddRange(_containsMatches);
+        visible.Sort(CompareSearchRows);
         _filteredQuery = _queryLower;
         _filteredTab = (int)tab;
     }
@@ -1047,6 +1090,7 @@ public sealed class SpawnBrowserWindow : Window
             case RowOverlayFromLibrary:
             case RowLightFromLibrary:
             case RowCameraFromLibrary:
+            case RowFurnitureFromLibrary:
                 OnLibraryRequested?.Invoke(index switch
                 {
                     RowActorFromLibrary =>
@@ -1059,9 +1103,15 @@ public sealed class SpawnBrowserWindow : Window
                         global::Poser.Library.PoseLibraryEntryKind.Camera,
                     RowOverlayFromLibrary =>
                         global::Poser.Library.PoseLibraryEntryKind.Overlay,
-                    // Objects and effects share the WorldObject kind.
+                    // These share a file format, but not a UI category.
                     _ => global::Poser.Library
                         .PoseLibraryEntryKind.WorldObject,
+                }, index switch
+                {
+                    RowFurnitureFromLibrary => WorldAssetKind.Furniture,
+                    RowVfxFromLibrary => WorldAssetKind.Effect,
+                    RowObjectFromLibrary => WorldAssetKind.Scenery,
+                    _ => null,
                 });
                 return;
             case RowActorFromFile:
@@ -1069,6 +1119,7 @@ public sealed class SpawnBrowserWindow : Window
             case RowObjectFromFile:
             case RowVfxFromFile:
             case RowOverlayFromFile:
+            case RowFurnitureFromFile:
                 // ONE dialog serves every entry kind; the pane owns and
                 // pumps it, so it outlives this window closing.
                 _scenePane.OpenEntryLoad();

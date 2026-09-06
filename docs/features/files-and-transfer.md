@@ -63,6 +63,10 @@ snapshot. Healthy sources publish their fresh entries. Source order and
 index-based folder keys remain stable even when roots overlap. A cancelled or
 stale pass does not publish.
 
+World-entry (`.xivw`) documents are read during that background pass solely to
+classify their saved asset as scenery, furniture or VFX. Other file metadata
+remains lazy; the scan does not extract appearance packages or thumbnails.
+
 Publication is limited to 64 configured source records, 32,768 files and 4,096
 folders overall. Excess source records have an explicit skipped count; a source
 that cannot fit is reported as failed without consuming the remaining capacity.

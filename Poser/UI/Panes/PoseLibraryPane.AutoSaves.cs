@@ -532,7 +532,7 @@ public sealed partial class PoseLibraryPane
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
     {
         var matching = entries.Where(entry =>
-            InTab(entry.Kind, kind) && KindAdmitted(entry.Kind, kind));
+            InTab(entry.Kind, kind) && KindAdmitted(entry, kind));
         return kind == PoseLibraryEntryKind.Scene
             ? matching
                 .OrderByDescending(entry => SceneDay(entry).Date)
