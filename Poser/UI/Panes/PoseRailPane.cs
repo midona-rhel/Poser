@@ -22,6 +22,7 @@ public class PoseRailPane
 {
     private readonly PoseInspectorPane _inspector;
     private readonly ICameraService _camera;
+    private readonly Game.Journal.OverlaySession _overlayValues;
 
     /// <summary>The group verbs, which stand only while more than one entity
     /// is selected and take no height otherwise.</summary>
@@ -67,11 +68,13 @@ public class PoseRailPane
     public PoseRailPane(
         PoseInspectorPane inspector,
         ICameraService camera,
-        SelectionSection selection)
+        SelectionSection selection,
+        Game.Journal.OverlaySession overlayValues)
     {
         _inspector = inspector;
         _camera = camera;
         _selection = selection;
+        _overlayValues = overlayValues;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -462,7 +465,8 @@ public class PoseRailPane
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
-                node.Position += step;
+                Crystarium.ChangeValue("##rail-overlay-pad",
+                    () => _overlayValues.SetPosition(node, node.Position + step));
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;
@@ -477,6 +481,8 @@ public class PoseRailPane
                 shown *= discRadius / length;
             knob = center + shown;
         }
+
+        if (ImGui.IsItemDeactivated()) Crystarium.Commit("##rail-overlay-pad");
 
         // The pad: a faint travel boundary and the knob.
         dl.AddCircle(center, discRadius,

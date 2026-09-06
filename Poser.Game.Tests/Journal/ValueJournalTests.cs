@@ -29,9 +29,13 @@ public sealed class ValueJournalTests
         var journal = new ValueJournal(history);
         var target = new Target();
 
+        journal.BeginEdit("opacity");
         Set(journal, target, 0.8f);
         Set(journal, target, 0.5f);
         Set(journal, target, 0.2f);
+        journal.EndEdit();
+        Assert.False(history.CanUndo);
+        journal.Seal();
 
         Assert.Equal(0.2f, target.Opacity);
         Assert.True(Undo(history));

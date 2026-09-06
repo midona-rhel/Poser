@@ -125,12 +125,16 @@ settings and Poser's own lines from the Dalamud log. The scene is an
 option, off by default, and the dialog says what it means: scene data
 only, no modified files, no mods.
 
-Names never enter the file. The recorder replaces character names
+The recorder replaces known character names
 with "Actor 1", "Actor 2" and so on as it writes, in order of first
-sight and stable for the session; the user's profile path and user
-name become a tilde. The scene file is scrubbed the same way before it
-is packed.
+sight and stable for the session. Before packing, both JSON members pass
+through the same decoded-string redaction policy, including settings,
+dictionary keys, actions, log lines and exception fallbacks. Absolute drive
+and UNC paths become tokens retaining only their file extension; known
+configured private path segments, hosts/shares and the user name are removed
+from diagnostic text too. Relative game asset paths remain useful for diagnosis.
+Reports remain local and should be reviewed before the user shares them.
 
 The recorder is a reader of the journal, not a second journal: every
-appended entry becomes a record, a folded value step updates its
-record, and the recorder can never fail an append.
+committed entry becomes one record with final before/after values, and the
+recorder can never fail an append.

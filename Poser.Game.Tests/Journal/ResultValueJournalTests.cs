@@ -36,18 +36,19 @@ public sealed class ResultValueJournalTests
     }
 
     [Fact]
-    public void Failed_fold_keeps_last_success_and_successful_fold_keeps_original_before()
+    public void Failed_live_write_keeps_last_success_and_original_before_until_commit()
     {
         var history = new TransformHistory();
         var journal = new ValueJournal(history);
         var target = new Target();
-        int folds = 0;
-        journal.Folded += (_, _) => folds++;
+        journal.BeginEdit("colour");
         Assert.True(Set(journal, target, 7).Success);
         Assert.True(Set(journal, target, 8).Success);
         target.Reject = true;
         Assert.False(Set(journal, target, 9).Success);
-        Assert.Equal(1, folds);
+        journal.EndEdit();
+        Assert.False(history.CanUndo);
+        journal.Seal();
         target.Reject = false;
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo());

@@ -273,7 +273,7 @@ public sealed class OverlayPane
                     next => _values.SetPosition(node, new Vector2(next, position.Y)),
                     perPixel: 1f,
                     format: "0",
-                    onCommit: _values.Seal));
+                    onCommit: null));
             cells.Cell(
                 "Y",
                 cell => cell.Number(
@@ -282,7 +282,7 @@ public sealed class OverlayPane
                     next => _values.SetPosition(node, new Vector2(position.X, next)),
                     perPixel: 1f,
                     format: "0",
-                    onCommit: _values.Seal));
+                    onCommit: null));
         },
         help: "Where the overlay sits, in screen pixels from the top-left");
     }

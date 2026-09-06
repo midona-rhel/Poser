@@ -14,6 +14,12 @@ staleness check. `SelectionSession` owns ordered stable-id selection. Selection
 scopes preserve compatibility groups and anchors. Filters, disclosure, hover,
 and picker lifetime stay in the UI.
 
+Native discovery runs on the framework thread. Notifications during refresh
+coalesce into one immediate follow-up; notifications during that pass remain
+pending for the next tick, never recursive. Unchanged structure and auxiliary
+bindings publish nothing. GPose exit cancels old pending work before requesting
+the exit scene; disposal stops queued refresh callbacks altogether.
+
 One drag or typed transform edit is one gesture. It captures each baseline
 once, then applies total deltas from those values. If a write fails, the
 gesture attempts to restore every captured baseline. If restore cannot finish,

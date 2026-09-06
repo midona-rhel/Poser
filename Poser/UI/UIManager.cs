@@ -78,7 +78,10 @@ public sealed class UIManager : IUIManager
         // A released drag or an accepted typed value seals the journal's
         // open step, so every control's edit is one step, press to release.
         _values = values;
-        Crystarium.ValueCommitted += _values.Seal;
+        Crystarium.ValueCommitted += _values.CommitEdit;
+        Crystarium.ValueEditBegan += _values.BeginEdit;
+        Crystarium.ValueEditEnded += _values.EndEdit;
+        Crystarium.ValueEditingIdle += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested += OpenSkeletonSettings;
@@ -160,6 +163,7 @@ public sealed class UIManager : IUIManager
         }
         finally
         {
+            Crystarium.EndValueFrame();
             FrameProfiler.EndFrame();
         }
         // Hide-while-manipulating (#77): the windows fade down while a
@@ -219,11 +223,13 @@ public sealed class UIManager : IUIManager
         {
             ["Undo"] = () =>
             {
+                _values.Seal();
                 if (_cleanTransforms.CanUndo)
                     _cleanTransforms.Undo();
             },
             ["Redo"] = () =>
             {
+                _values.Seal();
                 if (_cleanTransforms.CanRedo)
                     _cleanTransforms.Redo();
             },
@@ -526,7 +532,10 @@ public sealed class UIManager : IUIManager
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _keyEvents.KeyEvent -= OnKeyEvent;
-        Crystarium.ValueCommitted -= _values.Seal;
+        Crystarium.ValueCommitted -= _values.CommitEdit;
+        Crystarium.ValueEditBegan -= _values.BeginEdit;
+        Crystarium.ValueEditEnded -= _values.EndEdit;
+        Crystarium.ValueEditingIdle -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested -= OpenSkeletonSettings;

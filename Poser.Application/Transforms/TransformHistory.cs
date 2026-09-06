@@ -53,6 +53,7 @@ public sealed class TransformHistory
     private readonly List<HistoryEntry> _redo = new();
 
     public event Action? PatchAppended;
+    internal event Action? BeforeAppend;
 
     public TransformHistory()
         : this(FixedDefault)
@@ -76,6 +77,7 @@ public sealed class TransformHistory
 
     public void Append(HistoryEntry patch)
     {
+        BeforeAppend?.Invoke();
         int capacity = _capacity();
         if (capacity < 1)
         {

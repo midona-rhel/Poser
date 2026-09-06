@@ -33,6 +33,7 @@ public sealed class IssueReportService
     private readonly ISceneWorkflow _scenes;
     private readonly IPluginLog _log;
     private readonly Dictionary<Guid, string> _tokens = new();
+    private readonly DiagnosticRedactor _redactor = new();
     private string? _pendingScene;
     private string? _pendingZip;
     private Action<string>? _pendingDone;
@@ -53,6 +54,9 @@ public sealed class IssueReportService
         _scene = scene;
         _scenes = scenes;
         _log = log;
+        _redactor.RegisterIdentity(Environment.UserName, "[user]");
+        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
         _recorder.ActorToken = TokenFor;
         _recorder.Scrub = Scrub;
         notices.Posted += _recorder.Notice;
@@ -126,7 +130,8 @@ public sealed class IssueReportService
                 done(zip);
                 return;
             }
-            string scene = Scrub(File.ReadAllText(scenePath));
+            RefreshRedaction();
+            string scene = _redactor.ScrubJson(File.ReadAllText(scenePath));
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Update))
             {
                 var entry = archive.CreateEntry("scene.json", CompressionLevel.Optimal);
@@ -145,6 +150,7 @@ public sealed class IssueReportService
 
     private string BuildReport()
     {
+        RefreshRedaction();
         var plugins = new List<object>();
         foreach (var installed in _plugin.InstalledPlugins)
             if (installed.IsLoaded)
@@ -158,14 +164,14 @@ public sealed class IssueReportService
             Plugins = plugins,
             Actors = _scene.Snapshot.Actors.Count,
             Actions = _recorder.Snapshot(),
-            Settings = JsonConvert.DeserializeObject(Scrub(JsonConvert.SerializeObject(_config.Config))),
+            Settings = _config.Config,
             Log = LogTail(),
         };
-        return JsonConvert.SerializeObject(report, Formatting.Indented, new JsonSerializerSettings
+        return _redactor.ScrubJson(JsonConvert.SerializeObject(report, Formatting.Indented, new JsonSerializerSettings
         {
             NullValueHandling = NullValueHandling.Ignore,
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-        });
+        }));
     }
 
     /// <summary>The plugin's own lines from the Dalamud log, newest last.</summary>
@@ -206,28 +212,21 @@ public sealed class IssueReportService
         return token;
     }
 
-    /// <summary>Every known actor name becomes its token; the user's
-    /// profile path and name become a tilde.</summary>
+    private void RefreshRedaction()
+    {
+        RememberActors();
+        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config));
+    }
+
+    private void RememberActors()
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+            _redactor.RegisterIdentity(actor.Name, TokenFor(actor.Id.LogicalId));
+    }
+
     private string Scrub(string text)
     {
-        if (string.IsNullOrEmpty(text))
-            return text;
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            if (string.IsNullOrWhiteSpace(actor.Name))
-                continue;
-            string token = TokenFor(actor.Id.LogicalId);
-            text = text.Replace(actor.Name, token, StringComparison.OrdinalIgnoreCase);
-        }
-        string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrEmpty(profile))
-        {
-            text = text.Replace(profile, "~", StringComparison.OrdinalIgnoreCase);
-            text = text.Replace(profile.Replace('\\', '/'), "~", StringComparison.OrdinalIgnoreCase);
-        }
-        string user = Environment.UserName;
-        if (!string.IsNullOrEmpty(user) && user.Length > 2)
-            text = text.Replace(user, "~", StringComparison.OrdinalIgnoreCase);
-        return text;
+        RememberActors();
+        return _redactor.ScrubText(text);
     }
 }

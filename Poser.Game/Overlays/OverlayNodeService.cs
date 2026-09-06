@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Services;
 
@@ -191,17 +192,19 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     private readonly IOverlayNodePort _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
+    private readonly ValueJournal _journal;
     private readonly List<OverlayNodeHandle> _nodes = new();
 
     private int _nextId;
     private bool _disposed;
 
     public OverlayNodeService(
-        IOverlayNodePort port, IEventBus events, IPluginLog log)
+        IOverlayNodePort port, IEventBus events, IPluginLog log, ValueJournal journal)
     {
         _port = port;
         _events = events;
         _log = log;
+        _journal = journal;
         _port.Moved = OnNodeMoved;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
     }
@@ -215,7 +218,11 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         {
             if (!ReferenceEquals(_nodes[i].Node, node))
                 continue;
-            _nodes[i].AdoptDraggedPosition(position);
+            var handle = _nodes[i];
+            var before = handle.Position;
+            handle.AdoptDraggedPosition(position);
+            _journal.Record("Move overlay", before, handle.Position,
+                next => handle.Position = next, () => handle.IsValid);
             return;
         }
     }

@@ -243,6 +243,8 @@ public static partial class Crystarium
             search
                 ? ImGuiInputTextFlags.AutoSelectAll
                 : ImGuiInputTextFlags.None);
+        bool committed = ImGui.IsItemDeactivatedAfterEdit()
+            || (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter));
         if (caretClipped)
             draw.PopClipRect();
 
@@ -349,7 +351,8 @@ public static partial class Crystarium
         if (fontPushed)
             font!.Pop();
 
-        if (changed) onChange(next);
+        if (changed) ChangeValue(id, () => onChange(next));
+        if (committed) Commit(id, null);
         if (!string.IsNullOrEmpty(help) && hovered)
             HoverHelp.Explain(id, boxMin, boxMax, help!);
         return changed;

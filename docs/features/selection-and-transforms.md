@@ -134,8 +134,12 @@ typed fields are one step on commit. Selection is never a step.
 
 Sliders and draggable numeric wells update the value live, then commit one
 before/after entry on release or edited focus loss. Returning to the original
-value adds nothing. IK numeric controls use the shared deferred value-journal
-path; switches and other discrete actions commit once.
+value adds nothing. Shared sliders, numeric wells, text and colour controls
+stage value-journal writes under the control's identity; linked writes commit
+as one entry. Closing a control also commits its edit once interaction ends.
+Gaze drags use the same deferred journal; switches and other discrete actions
+append immediately and never merge separate clicks. Transport is excluded
+for actors and world effects alike.
 
 Each step remembers the state of every actor it touched: the exact actor
 and skeleton generations, the timeline and loop choices, and the

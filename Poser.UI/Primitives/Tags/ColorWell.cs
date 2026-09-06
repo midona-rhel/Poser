@@ -172,8 +172,8 @@ public static partial class Crystarium
                     popupColor.W = keepAlpha;
             });
         if (changed)
-            onChange(popupColor);
-        if (ended) onCommit?.Invoke();
+            ChangeValue(id, () => onChange(popupColor));
+        if (ended) Commit(id, onCommit);
         return changed;
     }
 

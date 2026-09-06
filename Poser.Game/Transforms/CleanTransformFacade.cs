@@ -17,19 +17,22 @@ public sealed class CleanTransformFacade : ITransformFacade
     private readonly GroupTransformCoordinator _groups;
 
     private readonly UndoJournal _journal;
+    private readonly ValueJournal _values;
 
     public CleanTransformFacade(
         SceneSession scene,
         TransformGestureService gestures,
         TransformCommandService commands,
         UndoJournal journal,
-        GroupTransformCoordinator groups)
+        GroupTransformCoordinator groups,
+        ValueJournal values)
     {
         _scene = scene;
         _gestures = gestures;
         _commands = commands;
         _journal = journal;
         _groups = groups;
+        _values = values;
     }
 
     public TransformGestureId? ActiveGesture =>
@@ -106,8 +109,8 @@ public sealed class CleanTransformFacade : ITransformFacade
     public GestureResult Cancel(TransformGestureId id) =>
         _gestures.Cancel(id);
 
-    public GestureResult Undo() => _journal.Undo();
-    public GestureResult Redo() => _journal.Redo();
+    public GestureResult Undo() { _values.Seal(); return _journal.Undo(); }
+    public GestureResult Redo() { _values.Seal(); return _journal.Redo(); }
 
     /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
     public GestureResult SetAbsolute(

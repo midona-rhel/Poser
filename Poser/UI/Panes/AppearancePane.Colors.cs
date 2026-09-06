@@ -45,7 +45,7 @@ public sealed partial class AppearancePane
                         help: owned.HasValue
                             ? "Custom colour active. Reset restores the captured incoming colour."
                             : "No custom colour. Edit to enable an override.",
-                        onBegin: _colors.Seal, onCommit: _colors.Seal);
+                        onBegin: _colors.Seal);
                     if (owned.HasValue)
                         ImGui.GetWindowDrawList().AddRect(origin - new Vector2(scale),
                             origin + new Vector2(side + scale),

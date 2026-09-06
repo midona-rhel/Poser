@@ -106,15 +106,15 @@ public sealed class GazeSession
             return GazeResult.Ok();
         });
 
-    /// <summary>A point drag: consecutive positions fold into one step until
+    /// <summary>A point drag: positions stage one before/after pair until
     /// <see cref="Seal"/>.</summary>
     public void SetGazePosition(IActor actor, Vector3 position) =>
-        _journal.Set((actor, "GazePosition"), "Move gaze point",
+        _journal.Adjust((actor, "GazePosition"), "Move gaze point",
             () => _gaze.GetGazeState(actor).Position,
-            x => _gaze.SetGazePosition(actor, x), position, () => Alive(actor));
+            x => { _gaze.SetGazePosition(actor, x); return ValueWriteResult.Ok(); }, position, () => Alive(actor));
 
     public void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position) =>
-        _journal.Set((actor, part), "Move gaze point",
+        _journal.Adjust((actor, part), "Move gaze point",
             () => part switch
             {
                 GazeTargetType.Eyes => _gaze.GetGazeState(actor).EyesPosition,
@@ -122,5 +122,5 @@ public sealed class GazeSession
                 GazeTargetType.Body => _gaze.GetGazeState(actor).BodyPosition,
                 _ => _gaze.GetGazeState(actor).Position,
             },
-            x => _gaze.SetPartPosition(actor, part, x), position, () => Alive(actor));
+            x => { _gaze.SetPartPosition(actor, part, x); return ValueWriteResult.Ok(); }, position, () => Alive(actor));
 }

@@ -33,7 +33,7 @@ public sealed record ActionTarget(
 /// <summary>
 /// The last five hundred actions, as they happen — saved, never applied.
 /// The journal is the source: every appended entry becomes a record with
-/// its values, a folded value step updates its record's after, and the
+/// its committed before/after values, and the
 /// UI adds the notices it posts and the exceptions it catches. Names are
 /// replaced at write time by tokens the UI supplies, so nothing in the
 /// buffer identifies a character.
@@ -43,9 +43,7 @@ public sealed class ActionRecorder : IDisposable
     public const int Capacity = 500;
 
     private readonly TransformHistory _history;
-    private readonly ValueJournal _values;
     private readonly ActionRecord?[] _ring = new ActionRecord?[Capacity];
-    private readonly Dictionary<HistoryEntry, int> _slotOf = new(ReferenceEqualityComparer.Instance);
     private int _next;
     private int _count;
     private readonly object _gate = new();
@@ -58,18 +56,15 @@ public sealed class ActionRecorder : IDisposable
     /// a tilde. Set by the UI.</summary>
     public Func<string, string> Scrub { get; set; } = text => text;
 
-    public ActionRecorder(TransformHistory history, ValueJournal values)
+    public ActionRecorder(TransformHistory history)
     {
         _history = history;
-        _values = values;
         _history.Appended += OnAppended;
-        _values.Folded += OnFolded;
     }
 
     public void Dispose()
     {
         _history.Appended -= OnAppended;
-        _values.Folded -= OnFolded;
     }
 
     /// <summary>A notice the user saw: its kind (done, refused, failed,
@@ -114,36 +109,14 @@ public sealed class ActionRecorder : IDisposable
                 DateTime.UtcNow, "Lifecycle", Scrub(lifecycle.Description), null, null, null, null, null),
             _ => new ActionRecord(DateTime.UtcNow, "Step", Scrub(entry.Description), null, null, null, null, null),
         };
-        Add(record, entry);
+        Add(record);
     }
 
-    private void OnFolded(HistoryEntry entry, object? after)
+    private void Add(ActionRecord record)
     {
         lock (_gate)
         {
-            if (!_slotOf.TryGetValue(entry, out int slot) || _ring[slot] is not { } record)
-                return;
-            _ring[slot] = record with { After = after, At = DateTime.UtcNow };
-        }
-    }
-
-    private void Add(ActionRecord record, HistoryEntry? entry = null)
-    {
-        lock (_gate)
-        {
-            if (_ring[_next] is not null && _count == Capacity)
-            {
-                // The slot being reused belonged to an older entry.
-                foreach (var pair in _slotOf)
-                    if (pair.Value == _next)
-                    {
-                        _slotOf.Remove(pair.Key);
-                        break;
-                    }
-            }
             _ring[_next] = record;
-            if (entry is not null)
-                _slotOf[entry] = _next;
             _next = (_next + 1) % Capacity;
             if (_count < Capacity)
                 _count++;
