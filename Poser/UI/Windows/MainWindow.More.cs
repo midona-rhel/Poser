@@ -29,6 +29,11 @@ public partial class MainWindow
     // giving its secondary actions the same home across every context menu.
     private static List<Action?> MoveMoreActions(List<ContextMenuItem> items, List<Action?> actions)
     {
+        if (items.Count(item => item.Label.StartsWith("Save to file", StringComparison.Ordinal)
+                || item.Label == "Save to library"
+                || item.Label.StartsWith("Destroy all", StringComparison.Ordinal)) < 2
+            && !items.Any(item => item.Label.StartsWith("Destroy all", StringComparison.Ordinal)))
+            return [];
         var more = new List<ContextMenuItem>();
         var callbacks = new List<Action?>();
         for (int i = 0; i < items.Count;)

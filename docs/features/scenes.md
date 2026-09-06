@@ -283,6 +283,12 @@ borrow candidates. Graphics edits wait for layout readiness; a fresh load that
 times out after 15 seconds is removed. Release/GPose exit tears down the owning
 layout, never individual children. Raw BG debug/night controls do not apply.
 
+Furniture has its own Couch spawn category and Furniture inspector. It shares
+the equipment dye picker (one native furniture stain channel). Embedded lights
+have individual on/off controls in the inspector and context menu. Their states
+survive duplication, lifecycle history, and scene/library saving, addressed by
+child paths within the same furniture asset rather than native pointers.
+
 ## A scene is a picture, not a performance
 
 Scenes record no animation: no timeline id, no playback position, no speed, no

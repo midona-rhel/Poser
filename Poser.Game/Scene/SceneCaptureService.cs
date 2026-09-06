@@ -598,6 +598,7 @@ public sealed class SceneCaptureService
                 Opacity = worldObject.Opacity,
                 Tint = worldObject.Tint,
                 Stain = worldObject.Stain,
+                FurnitureLights = System.Linq.Enumerable.ToArray(worldObject.FurnitureLights),
                 VfxLoop = worldObject.LoopVfx,
                 VfxSpeed = worldObject.VfxSpeed,
                 VfxIntensity = worldObject.VfxIntensity,

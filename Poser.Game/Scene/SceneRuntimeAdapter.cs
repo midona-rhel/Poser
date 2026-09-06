@@ -1123,6 +1123,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             if (data.Tint is { } tint)
                 handle.Tint = tint;
             handle.Stain = data.Stain;
+            handle.FurnitureLights = data.FurnitureLights;
             handle.LoopVfx = data.VfxLoop;
             if (Math.Abs(data.VfxSpeed - 1f) > 0.001f)
                 handle.VfxSpeed = data.VfxSpeed;

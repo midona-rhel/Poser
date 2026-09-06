@@ -77,6 +77,8 @@ public interface IWorldObjectPort
 {
     void Pump() { }
     bool WriteFurnitureColor(nint address, byte stain, Vector3? tint) => true;
+    IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => [];
+    void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) { }
 
     /// <summary>Whether the world's scene graph can be reached at all right
     /// now. False makes <see cref="Enumerate"/> answer empty rather than walk

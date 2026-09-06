@@ -82,7 +82,9 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
     private IReadOnlyList<WorldAsset>? _effects;
 
     /// <summary>Every spawnable BG model path in the game data.</summary>
-    public IReadOnlyList<WorldAsset> Models => _models ??= _furniture.Concat(Load(ModelsResource)).ToArray();
+    public IReadOnlyList<WorldAsset> Models => _models ??= Load(ModelsResource);
+
+    public IReadOnlyList<WorldAsset> Furniture => _furniture;
 
     /// <summary>Every world effect (.avfx) path in the game data.</summary>
     public IReadOnlyList<WorldAsset> Effects =>

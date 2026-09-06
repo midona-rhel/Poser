@@ -25,6 +25,8 @@ public enum SpawnBrowserTab
     /// natives with different powers, and the tabs say so.</summary>
     SceneObjects,
 
+    Furniture,
+
     /// <summary>Every world effect in the game data, inline — the VFX
     /// catalog IS the tab (user 2026-08-31): no opener row, just 8k
     /// searchable flame rows.</summary>
@@ -202,6 +204,7 @@ public static class SpawnBrowserView
         "Cameras",
         "Props",
         "Objects",
+        "Furniture",
         "Effects",
         "Overlays",
     ];
@@ -216,6 +219,7 @@ public static class SpawnBrowserView
         TablerIcon.Camera,
         TablerIcon.Moneybag,
         TablerIcon.Plant,
+        TablerIcon.Couch,
         TablerIcon.Fire,
         TablerIcon.Message,
     ];

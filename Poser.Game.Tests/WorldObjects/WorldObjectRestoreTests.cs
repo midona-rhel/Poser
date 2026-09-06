@@ -23,6 +23,30 @@ namespace Poser.Game.Tests.WorldObjects;
 public sealed class WorldObjectRestoreTests
 {
     [Fact]
+    public void Furniture_light_switch_preserves_peers_and_restores_through_history_and_respawn()
+    {
+        var world = new World();
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
+        FurnitureLightState[] initial = [new("/0", true), new("/1/0", false)];
+        furniture.FurnitureLights = initial;
+        var history = new Poser.Application.Transforms.TransformHistory();
+        var session = new Poser.Game.Journal.WorldObjectSession(new Poser.Application.Transforms.ValueJournal(history));
+        session.SetFurnitureLight(furniture, "/0", false);
+        Assert.All(furniture.FurnitureLights, light => Assert.False(light.Enabled));
+        var step = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(initial, furniture.FurnitureLights);
+        Assert.True(step.Redo());
+        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
+        var state = lifecycle.Read(furniture);
+        lifecycle.Release(furniture);
+        var restored = (AdoptedWorldObject)lifecycle.Spawn(state.Path, state.Placement, state.Visible)!;
+        lifecycle.Apply(restored, state);
+        Assert.Equal(state.FurnitureLights, restored.FurnitureLights);
+        Assert.All(restored.FurnitureLights, light => Assert.False(light.Enabled));
+    }
+
+    [Fact]
     public void Choosing_furniture_dye_clears_custom_tint_as_one_undoable_edit()
     {
         var world = new World();
@@ -825,6 +849,11 @@ private sealed class World
         public bool FailBgTint { get; set; }
         public System.Numerics.Vector3? LastBgTint { get; private set; }
         public byte LastFurnitureStain { get; private set; }
+        private readonly Dictionary<nint, FurnitureLightState[]> _furnitureLights = new();
+        public IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) =>
+            _furnitureLights.TryGetValue(address, out var lights) ? lights : [];
+        public void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) =>
+            _furnitureLights[address] = System.Linq.Enumerable.ToArray(lights);
         public float OpacityOf(nint address) => _nodes[address].Opacity;
         public bool WriteFurnitureColor(nint address, byte stain, Vector3? tint)
         {

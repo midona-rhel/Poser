@@ -6,6 +6,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Node;
 using System.Numerics;
 using System.Text;
+using Poser.Services;
 using Transform = Poser.Transform;
 using LayoutTransform = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Transform;
 
@@ -32,6 +33,10 @@ internal sealed unsafe class FurnitureLayoutDriver
         public byte Stain;
         public Vector3? Tint;
         public bool Dirty = true;
+        public readonly Dictionary<string, nint> LightNodes = new();
+        public readonly Dictionary<string, bool> LightSettings = new();
+        public FurnitureLightState[] Lights = [];
+        public bool LightsDiscovered;
     }
 
     internal FurnitureLayoutDriver(ISigScanner scanner, IDataManager data, IPluginLog log)
@@ -123,6 +128,45 @@ internal sealed unsafe class FurnitureLayoutDriver
     internal bool Visible(nint address) => _owned[address].Visible;
     internal float Opacity(nint address) => _owned[address].Opacity;
 
+    internal IReadOnlyList<FurnitureLightState> ReadLights(nint address) =>
+        _owned.TryGetValue(address, out var state) ? state.Lights : [];
+
+    internal void SetLights(nint address, IReadOnlyList<FurnitureLightState> lights)
+    {
+        if (!_owned.TryGetValue(address, out var state)) return;
+        foreach (var light in lights) state.LightSettings[light.Key] = light.Enabled;
+        state.Lights = lights.ToArray();
+        state.Dirty = true;
+        Apply(address);
+    }
+
+    private static void DiscoverLights(ChildNodeContainer* children, string parent, State state)
+    {
+        int index = 0;
+        foreach (var child in children->Instances)
+        {
+            // Child-vector paths belong to the SGB, not the allocation; they
+            // survive duplicate/scene respawns, including nested shared groups.
+            string key = parent + "/" + (index++).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (child.Value == null || child.Value->Instance == null) continue;
+            var instance = child.Value->Instance;
+            if (instance->Id.Type == InstanceType.Light)
+            {
+                state.LightNodes[key] = (nint)instance;
+                state.LightSettings.TryAdd(key, instance->IsActive);
+            }
+            else if (instance->Id.Type == InstanceType.SharedGroup)
+                DiscoverLights(&((SharedGroupLayoutInstance*)instance)->Instances, key, state);
+        }
+    }
+
+    private static void ApplyLights(State state)
+    {
+        foreach (var (key, node) in state.LightNodes)
+            ((ILayoutInstance*)node)->SetActive(state.Visible && state.LightSettings[key]);
+        state.Lights = state.LightNodes.Keys.Select(key => new FurnitureLightState(key, state.LightSettings[key])).ToArray();
+    }
+
     internal void Write(nint address, Transform transform)
     {
         _owned[address].Transform = transform;
@@ -135,7 +179,8 @@ internal sealed unsafe class FurnitureLayoutDriver
     internal void SetVisible(nint address, bool value)
     {
         _owned[address].Visible = value;
-        ((SharedGroupLayoutInstance*)address)->SetActive(value);
+        // Capture each child's authored light state before changing the whole
+        // layout's visibility; hiding a fresh spawn must not become its baseline.
         _owned[address].Dirty = true;
         Apply(address);
     }
@@ -168,6 +213,11 @@ internal sealed unsafe class FurnitureLayoutDriver
         if (!Ready(address)) return false;
         var state = _owned[address];
         var layout = (SharedGroupLayoutInstance*)address;
+        if (!state.LightsDiscovered)
+        {
+            DiscoverLights(&layout->Instances, string.Empty, state);
+            state.LightsDiscovered = true;
+        }
         layout->Instances.ApplyTransforms();
         layout->SetActive(state.Visible);
         ByteColor color;
@@ -187,6 +237,7 @@ internal sealed unsafe class FurnitureLayoutDriver
             }
         }
         ApplyChildren(&layout->Instances, 1f - state.Opacity, useColor ? &color : null);
+        ApplyLights(state);
         state.Dirty = false;
         return true;
     }

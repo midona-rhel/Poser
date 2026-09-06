@@ -104,6 +104,12 @@ public sealed class AdoptedWorldObject : IWorldObject
     }
     internal bool _isVfx;
 
+    public IReadOnlyList<FurnitureLightState> FurnitureLights
+    {
+        get => _owner.ReadFurnitureLights(this);
+        set => _owner.WriteFurnitureLights(this, value);
+    }
+
     internal VfxPlaybackState VfxPlayback { get; set; } =
         VfxPlaybackState.Playing;
 
@@ -603,8 +609,12 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (!freshIdentity.IsVfx)
         {
             if (!_port.IsBgReady(freshIdentity.Address)) return;
-            if (pending.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase)
-                && !_port.WriteFurnitureColor(freshIdentity.Address, handle.Stain, handle.Tint)) return;
+            if (pending.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_port.WriteFurnitureColor(freshIdentity.Address, handle.Stain, handle.Tint)) return;
+                if (pending.Path == handle.Path)
+                    _port.WriteFurnitureLights(freshIdentity.Address, handle.FurnitureLights);
+            }
             // Undyeable models have no stain buffer and must not wait for one.
             if (handle.Tint is not null && _port.CanDyeBg(freshIdentity.Address) != false
                 && !_port.WriteBgTint(freshIdentity.Address, handle.Tint)) return;
@@ -1190,6 +1200,15 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             _loadingFurniture[handle] = DateTime.UtcNow.AddSeconds(15);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
+    }
+
+    internal IReadOnlyList<FurnitureLightState> ReadFurnitureLights(AdoptedWorldObject handle) =>
+        !_disposed && handle.IsFurniture && IsHandleCurrent(handle) ? _port.ReadFurnitureLights(handle.Address) : [];
+
+    internal void WriteFurnitureLights(AdoptedWorldObject handle, IReadOnlyList<FurnitureLightState> lights)
+    {
+        if (!_disposed && handle.IsFurniture && IsHandleCurrent(handle))
+            _port.WriteFurnitureLights(handle.Address, lights);
     }
 
     internal void PumpFurnitureLoads(DateTime now)

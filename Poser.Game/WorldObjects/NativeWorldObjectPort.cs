@@ -197,6 +197,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void Pump() => _furniture.Pump();
 
+    public IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => _furniture.ReadLights(address);
+    public void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) =>
+        _furniture.SetLights(address, lights);
+
     public bool WriteFurnitureColor(nint address, byte stain, System.Numerics.Vector3? tint) =>
         !_furniture.Contains(address) || _furniture.SetColor(address, stain, tint);
 

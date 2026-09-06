@@ -43,7 +43,8 @@ reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
 are independent and remain usable.
 
 Entity save-to-file, save-to-library, and category-wide destruction live under
-More in the inspector or entity context menu, only where supported. More uses
+More in the inspector or entity context menu, only where supported. A lone
+save action stays a direct button/menu item instead of a one-item More menu. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
 destruction (lights, cameras, objects, and overlays) opens a modal with the target count
 and what is released or protected; only its explicit confirmation runs the

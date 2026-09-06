@@ -245,7 +245,17 @@ public sealed class SpawnBrowserWindow : Window
                     modelAssets[i].IconId,
                     modelAssets[i].Context,
                     false);
-            return (effectRows, modelRows);
+            var furnitureAssets = _assets.Furniture;
+            var furnitureRows = new SpawnBrowserRow[furnitureAssets.Count];
+            for (int i = 0; i < furnitureAssets.Count; i++)
+            {
+                var asset = furnitureAssets[i];
+                furnitureRows[i] = new SpawnBrowserRow(
+                    "##spawn-furniture-" + i.ToString(CultureInfo.InvariantCulture),
+                    asset.Label, (asset.Label + " " + asset.Context + " " + asset.Path).ToLowerInvariant(),
+                    TablerIcon.Couch, asset.IconId, asset.Context, false);
+            }
+            return (effectRows, modelRows, furnitureRows);
         });
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -706,6 +716,9 @@ public sealed class SpawnBrowserWindow : Window
             rows.AddRange(minted.Models);
             for (int i = 0; i < minted.Models.Length; i++)
                 _rowTabs.Add(SpawnBrowserTab.SceneObjects);
+            rows.AddRange(minted.Furniture);
+            for (int i = 0; i < minted.Furniture.Length; i++)
+                _rowTabs.Add(SpawnBrowserTab.Furniture);
         }
 
         // Named NPCs close the Actors seats: every event NPC the model
@@ -754,7 +767,7 @@ public sealed class SpawnBrowserWindow : Window
     /// (2026-08-31), and every library save re-paid it; a rebuild now
     /// just copies these arrays in.</summary>
     private System.Threading.Tasks.Task<(
-        SpawnBrowserRow[] Effects, SpawnBrowserRow[] Models)>?
+        SpawnBrowserRow[] Effects, SpawnBrowserRow[] Models, SpawnBrowserRow[] Furniture)>?
         _catalogRowsTask;
     private bool _catalogRowsSeated;
 
@@ -1187,8 +1200,15 @@ public sealed class SpawnBrowserWindow : Window
                     SpawnWorldAsset(_assets.Models[worldIndex].Path);
                     return;
                 }
+                int furnitureIndex = worldIndex - seatedModels;
+                int seatedFurniture = _catalogRowsSeated ? _assets.Furniture.Count : 0;
+                if (furnitureIndex >= 0 && furnitureIndex < seatedFurniture)
+                {
+                    SpawnWorldAsset(_assets.Furniture[furnitureIndex].Path);
+                    return;
+                }
                 // The named NPCs close the whole list.
-                int npcIndex = worldIndex - seatedModels;
+                int npcIndex = furnitureIndex - seatedFurniture;
                 if (npcIndex >= 0 && npcIndex < _npcEntries.Count)
                 {
                     var npc = _npcEntries[npcIndex];

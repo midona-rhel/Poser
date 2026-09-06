@@ -30,8 +30,8 @@ public sealed class WorldObjectsPane
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly IWorldAssetCatalog _assets;
-    private readonly Game.StainCatalog _stains;
-    private readonly Crystarium.SearchPicker<Game.StainEntry> _stainPicker = new("furniture-stain");
+    private readonly IWardrobeCatalog _wardrobe;
+    private readonly Controls.DyePicker _stainPicker = new("furniture-stain");
     private IWorldObject? _stainTarget;
 
     /// <summary>The whole-game asset browser, for re-modelling the
@@ -63,7 +63,7 @@ public sealed class WorldObjectsPane
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
-        Game.StainCatalog stains,
+        IWardrobeCatalog wardrobe,
         Game.Journal.WorldObjectSession values)
     {
         _values = values;
@@ -73,7 +73,7 @@ public sealed class WorldObjectsPane
         _worldActions = worldActions;
         _scenePane = scenePane;
         _assets = assets;
-        _stains = stains;
+        _wardrobe = wardrobe;
     }
 
     private readonly ScenePane _scenePane;
@@ -103,7 +103,7 @@ public sealed class WorldObjectsPane
             // Transform lives on the inspector rail, exactly as a prop's does;
             // this pane owns only what the rail cannot say.
             page.Section(
-                "World object",
+                worldObject.IsFurniture ? "Furniture" : "World object",
                 _openObject,
                 next => _openObject = next,
                 form => ObjectRows(form, worldObject),
@@ -151,7 +151,8 @@ public sealed class WorldObjectsPane
 
     private void OpenAssetPicker()
     {
-        if (_assetChoices == null)
+        bool furniture = SelectedWorldObject()?.IsFurniture == true;
+        if (!furniture && _assetChoices == null)
         {
             _assetChoices = new List<WorldAsset>(
                 _assets.Models.Count + _assets.Effects.Count);
@@ -160,11 +161,11 @@ public sealed class WorldObjectsPane
         }
         _assetPicker.Open(
             "world-object-model",
-            _assetChoices,
+            furniture ? _assets.Furniture : _assetChoices!,
             static asset => asset.Label,
             static asset => asset.Path,
             SelectedWorldObject()?.Path ?? string.Empty,
-            loadError: _assetChoices.Count == 0
+            loadError: (furniture ? _assets.Furniture.Count : _assetChoices!.Count) == 0
                 ? "The path catalog could not be read."
                 : null,
             options: new PickerOptions<WorldAsset>
@@ -257,7 +258,7 @@ public sealed class WorldObjectsPane
             "Name",
             worldObject.Name,
             next => _values.SetName(worldObject, next),
-            placeholder: "Object",
+            placeholder: worldObject.IsFurniture ? "Furniture" : "Object",
             help: "What the sidebar calls this object");
         // A SPAWNED object's model is editable — an explicit-apply field,
         // because a path applies whole or not at all: Respawn recreates
@@ -323,17 +324,26 @@ public sealed class WorldObjectsPane
         {
             form.Pair(
                 "Dye",
-                cell => cell.Picker("##furniture-stain", _stains.NameOf(worldObject.Stain), () =>
+                cell => Controls.DyePicker.Cell(cell, "##furniture-stain", _wardrobe, worldObject.Stain, () =>
                 {
                     _stainTarget = worldObject;
-                    _stainPicker.Open("furniture-stain", _stains.Entries,
-                        static stain => stain.Name,
-                        static stain => stain.Id.ToString(CultureInfo.InvariantCulture),
-                        worldObject.Stain.ToString(CultureInfo.InvariantCulture));
+                    _stainPicker.Open("Dye", _wardrobe, worldObject.Stain);
+                }, () =>
+                {
+                    _values.Seal();
+                    _values.SetStain(worldObject, 0);
+                    _values.Seal();
                 }),
                 "Tint",
                 cell => cell.ColorWell("##furniture-tint", new Vector4(tint, 1f),
                     value => _values.SetTint(worldObject, new Vector3(value.X, value.Y, value.Z))));
+            var lights = worldObject.FurnitureLights;
+            for (int i = 0; i < lights.Count; i++)
+            {
+                var light = lights[i];
+                form.Switch($"Light {i + 1}", light.Enabled,
+                    enabled => _values.SetFurnitureLight(worldObject, light.Key, enabled));
+            }
         }
         else if (worldObject.IsVfx)
         {
@@ -413,9 +423,9 @@ public sealed class WorldObjectsPane
                     help: "Brighten or dim the effect",
                     onBegin: _values.Seal));
         }
-        form.ActionDropdown("More", ["Save to library"], -1, "More",
-                _ => _names.Open(
-                    "Save object to library", worldObject.Name,
+        form.Actions(string.Empty, actions => actions.Button("Save to library",
+                () => _names.Open(
+                    worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
                     name =>
                     {
                         if (_bindings.GetWorldObjectId(worldObject)
@@ -423,7 +433,7 @@ public sealed class WorldObjectsPane
                             _scenePane.SaveWorldObjectEntry(
                                 entryId.LogicalId, name);
                     }),
-                help: "Save a spawnable copy of this object", icon: TablerIcon.Dots);
+                help: "Save a spawnable copy of this entity"));
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
         {
             if (worldObject.Spawned)
@@ -447,15 +457,6 @@ public sealed class WorldObjectsPane
                         _scene.Selection.Clear();
                     },
                     help: "Give this object back to the map, where it stood");
-            actions.Button(
-                "Release all",
-                () => _pending = () =>
-                {
-                    _ = _worldActions.ReleaseSceneObjects();
-                    _scene.Selection.Clear();
-                },
-                help: "Give every borrowed object back and destroy every "
-                    + "spawned one");
         });
     }
 

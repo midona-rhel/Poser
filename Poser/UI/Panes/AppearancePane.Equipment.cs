@@ -56,7 +56,7 @@ public sealed partial class AppearancePane
     private string? _wardrobeDetail;
 
     private readonly Crystarium.SearchPicker<WardrobeItem> _itemPicker = new("appearance-item");
-    private readonly Crystarium.SearchPicker<DyeEntry> _dyePicker = new("appearance-dye");
+    private readonly Controls.DyePicker _dyePicker = new("appearance-dye");
     private readonly Crystarium.SearchPicker<FacewearEntry> _facewearPicker = new("appearance-facewear");
     private readonly Crystarium.SearchPicker<PropRow> _propPicker = new("appearance-prop");
     private ActorId? _wardrobePickerActor;
@@ -67,17 +67,12 @@ public sealed partial class AppearancePane
     private EquipSlot _itemMemoSlot;
     private IReadOnlyList<WardrobeItem> _itemMemo = Array.Empty<WardrobeItem>();
     private List<PropRow>? _propRows;
-    private List<DyeEntry>? _dyeRows;
     private List<FacewearEntry>? _facewearRows;
-    private static readonly DyeEntry NoDye = new(0, "None", 0);
     private static readonly FacewearEntry NoFacewear = new(0, "None", 0);
 
     private static readonly Func<WardrobeItem, string> WardrobeItemName = static item => item.Name;
     private static readonly Func<WardrobeItem, string> WardrobeItemKey =
         static item => item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-    private static readonly Func<DyeEntry, string> DyeName = static dye => dye.Name;
-    private static readonly Func<DyeEntry, string> DyeKey =
-        static dye => dye.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
     private static readonly Func<FacewearEntry, string> FacewearName = static entry => entry.Name;
     private static readonly Func<FacewearEntry, string> FacewearKey =
         static entry => entry.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -595,19 +590,7 @@ public sealed partial class AppearancePane
         _pickerDye = which;
         var worn = ReadWardrobe(actor)?.Slot(slot);
         byte current = worn is { } w ? (which == 0 ? w.Dye1 : w.Dye2) : (byte)0;
-        if (_dyeRows is null)
-        {
-            _dyeRows = new List<DyeEntry> { NoDye };
-            _dyeRows.AddRange(_wardrobe.Dyes);
-        }
-        _dyePicker.Open(
-            which == 0 ? "Dye 1" : "Dye 2",
-            _dyeRows,
-            DyeName,
-            DyeKey,
-            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            null,
-            new PickerOptions<DyeEntry> { RowFill = _dyeRowFill });
+        _dyePicker.Open(which == 0 ? "Dye 1" : "Dye 2", _wardrobe, current);
     }
 
     private void OpenFacewearPicker(ActorId actor)

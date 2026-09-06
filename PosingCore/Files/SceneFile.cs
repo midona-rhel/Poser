@@ -574,6 +574,7 @@ public class SceneWorldObject
 
     /// <summary>Furniture stain; zero uses the furnishing's default. Tint, when present, takes precedence.</summary>
     public byte Stain { get; set; }
+    public FurnitureLightState[] FurnitureLights { get; set; } = [];
 
     /// <summary>A spawned effect's playback speed.</summary>
     public float VfxSpeed { get; set; } = 1f;

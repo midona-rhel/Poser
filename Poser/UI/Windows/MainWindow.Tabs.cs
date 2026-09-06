@@ -41,6 +41,7 @@ public partial class MainWindow
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.Bone
                 or SceneEntityKind.GazeTarget } => "Actor",
+            { Kind: SceneEntityKind.WorldObject } when IsFurniture(primary) => "Furniture",
             { Kind: SceneEntityKind.Prop or SceneEntityKind.WorldObject }
                 => "Object",
             { Kind: SceneEntityKind.Camera } => "Camera",
@@ -49,6 +50,10 @@ public partial class MainWindow
             _ => "",
         };
     }
+
+    private bool IsFurniture(SelectionId? selection) =>
+        selection is { WorldObject: { } id }
+        && _bindings.Resolve(id) is { Success: true, Value.IsFurniture: true };
 
     /// <summary>The environment strip's label as the pane's page.
     /// Positional against <see cref="_environmentTabs"/>.</summary>
@@ -225,7 +230,7 @@ public partial class MainWindow
             { Kind: SceneEntityKind.Prop } => (_propTabs, "prop"),
             { Kind: SceneEntityKind.Overlay } => (_overlayTabs, "overlay"),
             { Kind: SceneEntityKind.WorldObject } =>
-                (_worldObjectTabs, "world-object"),
+                IsFurniture(primary) ? (_furnitureTabs, "furniture") : (_worldObjectTabs, "world-object"),
             // Creatures share the actor strip: their skeleton poses, their
             // battle-chara body animates, and the Actor pane hides the
             // humanoid-only sections itself.
@@ -426,7 +431,7 @@ public partial class MainWindow
         // page missing from this list, so the shell was insetting it a second
         // time on top of the Page's own.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Actor" or "Object" or "Light"
+            tab is "Animation" or "Actor" or "Object" or "Furniture" or "Light"
                 or "Environment" or "Scene" or "Selection"
                 or "Lighting" or "Sky" or "Atmosphere" or "World"
                 or "Camera"
@@ -633,7 +638,7 @@ public partial class MainWindow
         // Both kinds of object name the same tab, because they share one
         // word for them. Which pane it opens is the selection's answer, never
         // the label's — the same rule "Light" already lives under.
-        if (_activeTab == "Object")
+        if (_activeTab is "Object" or "Furniture")
         {
             if (_selection.Primary is { Kind: SceneEntityKind.WorldObject })
                 _worldObjectsPane.Draw(origin, size);
