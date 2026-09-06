@@ -209,8 +209,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         lock (_handledLock)
         {
             if (!_incarnations.TryGetValue(address, out var prior)
-                || prior.Resource != resource)
+                || (prior.Resource != nint.Zero && prior.Resource != resource))
                 prior = (resource, ++_nextGeneration);
+            // Attaching the first model resource is streaming, not allocation.
+            prior.Resource = resource;
             _incarnations[address] = prior;
             incarnation = new WorldObjectIncarnation(
                 address, prior.Generation, resource, isVfx);
@@ -878,20 +880,30 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         ((DrawObject*)node)->OutlineFlags = outline;
     }
 
-    public nint Spawn(string path, in Transform placement)
+    public nint Spawn(string path, in Transform placement) => Spawn(path, placement, out _);
+
+    public nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
     {
+        identity = default;
         if (string.IsNullOrWhiteSpace(path))
             return nint.Zero;
         try
         {
             if (IsVfxPath(path))
-                return SpawnVfx(path, placement);
+                return SpawnVfx(path, placement, out identity);
             // The second argument is an unused debug string (Brio's own
             // note); empty is what the game expects.
             var bg = BgObject.Create(path, string.Empty);
             if (bg == null)
                 return nint.Zero;
             var address = (nint)bg;
+            lock (_handledLock)
+            {
+                var generation = ++_nextGeneration;
+                var resource = (nint)bg->ModelResourceHandle;
+                _incarnations[address] = (resource, generation);
+                identity = new(address, generation, resource);
+            }
             // LoadAnimationData is deliberately NOT called: it kicked off
             // the model's async .sklb/.pap loads on a raw spawn and the
             // game's deferred task crashed seconds later — the completion
@@ -995,8 +1007,9 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// clear the auto-play-gate flag, prime one update, place, then play.
     /// The path is marked HANDLED first so the resource hook unbinds its
     /// timeline items when the avfx streams in.</summary>
-    private nint SpawnVfx(string path, in Transform placement)
+    private nint SpawnVfx(string path, in Transform placement, out WorldObjectIncarnation identity)
     {
+        identity = default;
         if (!_vfxReady)
             return nint.Zero;
         string claimedPath = path.Trim();
@@ -1005,7 +1018,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         VfxAllocationLease lease = default;
         bool leased = false;
         bool committed = false;
-        WorldObjectIncarnation identity = default;
         bool cleaned = false;
         try
         {

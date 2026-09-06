@@ -28,7 +28,12 @@ public readonly record struct WorldObjectIncarnation(
     nint Address,
     long Generation,
     nint ResourceIdentity,
-    bool IsVfx = false);
+    bool IsVfx = false)
+{
+    public bool SameAllocation(WorldObjectIncarnation other) =>
+        Address == other.Address && Generation == other.Generation && IsVfx == other.IsVfx
+        && (!IsVfx || ResourceIdentity == other.ResourceIdentity);
+}
 
 public enum VfxPlaybackState
 {
@@ -160,6 +165,15 @@ public interface IWorldObjectPort
     /// object is Poser's own: destroyed through <see cref="Destroy"/>,
     /// never restored.</summary>
     nint Spawn(string path, in Transform placement);
+
+    /// <summary>Captures ownership at allocation, before a later graph read can
+    /// fail. A nonzero identity remains cleanup authority even on failed spawn.</summary>
+    nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
+    {
+        var address = Spawn(path, placement);
+        TryReadIncarnation(address, out identity);
+        return address;
+    }
 
     /// <summary>Sets a spawned VFX's playback speed. A no-op on anything
     /// that is not a live VFX.</summary>

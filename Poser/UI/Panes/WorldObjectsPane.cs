@@ -3,6 +3,7 @@ using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
@@ -50,6 +51,8 @@ public sealed class WorldObjectsPane
     private IWorldObject? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
+    private Task<WorldObjectRespawnResult>? _respawn;
+    private IWorldObject? _respawnTarget;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
@@ -76,6 +79,17 @@ public sealed class WorldObjectsPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        if (_respawn is { IsCompleted: true } completed)
+        {
+            var result = completed.GetAwaiter().GetResult();
+            if (ReferenceEquals(SelectedWorldObject(), _respawnTarget))
+            {
+                _status = result.Detail ?? string.Empty;
+                if (result.Succeeded) _pathDraftFor = null;
+            }
+            _respawn = null;
+            _respawnTarget = null;
+        }
         Crystarium.Page("world-object", origin, size, page =>
         {
             if (SelectedWorldObject() is not { } worldObject)
@@ -108,18 +122,20 @@ public sealed class WorldObjectsPane
         if (_assetPicker.Draw() is { } picked
             && SelectedWorldObject() is { } target)
         {
-            if (target.Respawn(picked.Item.Path, out var refusal))
-            {
-                _pathDraftFor = null;
-                _status = string.Empty;
-            }
-            else
-                _status = refusal ?? "The path could not be spawned.";
+            BeginRespawn(target, picked.Item.Path);
         }
 
         var pending = _pending;
         _pending = null;
         pending?.Invoke();
+    }
+
+    private void BeginRespawn(IWorldObject target, string path)
+    {
+        if (_respawn is { IsCompleted: false }) return;
+        _status = string.Empty;
+        _respawnTarget = target;
+        _respawn = target.Respawn(path);
     }
 
     private void OpenAssetPicker()
@@ -253,21 +269,16 @@ public sealed class WorldObjectsPane
                 actions.Button(
                     "Browse",
                     () => OpenAssetPicker(),
+                    disabled: _respawn is { IsCompleted: false },
                     help: "Search every model and effect in the game");
                 actions.Button(
                     "Respawn",
                     () =>
                     {
                         var stated = _pathDraft;
-                        _pending = () =>
-                        {
-                            if (!worldObject.Respawn(stated, out var refusal))
-                                _status = refusal ?? "The path could not be "
-                                    + "spawned.";
-                            else
-                                _status = string.Empty;
-                        };
+                        _pending = () => BeginRespawn(worldObject, stated);
                     },
+                    disabled: _respawn is { IsCompleted: false },
                     help: "Recreate this object from the stated path");
             });
             if (_status.Length > 0)

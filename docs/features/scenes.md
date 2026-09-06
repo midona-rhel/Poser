@@ -167,13 +167,16 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
-Respawning a world object keeps its old native and stable handle until the
-replacement accepts its immediately writable settings (visibility, opacity
-and VFX playback/colour). Refusal cleans the replacement, or retains its
-exact incarnation for cleanup retry; neither case publishes a successful
-replacement. Deferred BG staining and night-state writes still follow model
-streaming readiness. Cleanup must not destroy a different incarnation that
-later occupies a retained address.
+Respawning a world object keeps its old native and stable handle while the
+replacement loads hidden. Completion includes model readiness and applicable
+settings (placement, visibility, opacity, stain/night state or VFX playback/colour).
+The latest authored settings are applied before old-body teardown. Undyeable
+models do not wait for a stain buffer; raw spawned scenery does not load animation
+data. No readiness or property replay remains owed after successful replacement.
+After 15 seconds without readiness, a refusal, release, GPose exit or unload,
+the replacement is cancelled. Failed cleanup retains exact-incarnation authority
+for retry; a reused address never authorizes destruction of a replacement.
+An initial BG model-resource attachment belongs to the same allocation generation.
 
 ## Light controls and outlines
 
