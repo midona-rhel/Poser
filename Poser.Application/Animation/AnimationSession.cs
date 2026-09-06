@@ -46,6 +46,48 @@ public sealed class AnimationSession
 
     public ActorAnimationReading? Read(ActorId actor) => _port.Read(actor);
 
+    /// <summary>Lifecycle restoration uses values from removal, not this generation's reset captures.</summary>
+    public AnimationResult RestoreHistory(ActorId actor, ActorAnimationReading reading, AnimationOverrides authored)
+    {
+        var failures = new List<string>();
+        void Check(AnimationResult result)
+        {
+            if (!result.Success) failures.Add(result.Detail ?? "Animation restore failed.");
+        }
+        Check(SetStance(actor, reading.Stance, reading.Pose));
+        if (reading.BaseTimeline != 0) Check(PlayBase(actor, reading.BaseTimeline));
+        foreach (var (slot, timeline) in authored.AppliedSlots)
+        {
+            Check(ChooseSlot(actor, slot, timeline));
+            Check(PlaySelectedSlot(actor, slot, null, playFromStart: true));
+        }
+        Check(SetLips(actor, reading.LipsOverride));
+        if (authored.HeldExpression is { } expression) Check(HoldExpression(actor, expression));
+        foreach (var (slot, timeline) in authored.SelectedSlots)
+            Check(ChooseSlot(actor, slot, timeline));
+        foreach (var slot in authored.LoopWantedSlots)
+            Check(SetSlotLoop(actor, slot, authored.LoopedSlots.GetValueOrDefault(slot), true));
+        foreach (var slot in reading.Slots) Check(SetSlotSpeed(actor, slot.Slot, slot.Speed));
+        Check(SetWeaponDrawn(actor, reading.WeaponDrawn));
+        Check(SetPositionLock(actor, authored.PositionLock));
+        Check(SetSpeed(actor, reading.OverallSpeed));
+        return failures.Count == 0 ? AnimationResult.Ok() : AnimationResult.Fail(string.Join("; ", failures));
+    }
+
+    /// <summary>Called after replay has produced the replacement controls; never reuse the old skeleton token.</summary>
+    public AnimationResult RestoreHistoryTimes(ActorId actor, ActorAnimationReading reading)
+    {
+        var controls = _port.EnumerateControls(actor, out var token);
+        foreach (var saved in reading.Controls)
+        {
+            var current = controls.FirstOrDefault(x => x.Id == saved.Id);
+            if (current is null) continue;
+            var result = _port.SetControlTime(actor, current.Id, Math.Clamp(saved.Time, 0, current.Duration), token);
+            if (!result.Success) return AnimationResult.Fail(result.Detail ?? "Animation frame restore failed.");
+        }
+        return AnimationResult.Ok();
+    }
+
     /// <summary>
     /// True while a multi-phase operation owns the actor's animation — a
     /// facial bake between its capture and apply phases. Every command

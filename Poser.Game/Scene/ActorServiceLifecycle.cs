@@ -27,7 +27,7 @@ namespace Poser.Game.Scene;
 /// if the user pressed undo twice. <see cref="PoseImportOptions.SuppressHistory"/>
 /// is set for that one reason and no other.</para>
 /// </summary>
-internal sealed class ActorServiceLifecycle : IActorLifecycle
+internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 {
     /// <summary>Ticks the restored body is given to become posable before the
     /// pose is given up on. Generous on purpose: a spawn's deferred draw plus
@@ -88,8 +88,12 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
-        IActorManager actorManager)
+        IActorManager actorManager,
+        Poser.Application.Presentation.ActorPresentationSession presentation,
+        Poser.Application.Animation.AnimationSession animation)
     {
+        _presentation = presentation;
+        _animation = animation;
         _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;
@@ -191,6 +195,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
             _spawns.IsVisible(target),
             pose)
         {
+            Runtime = CaptureRuntime(target),
             PartialRootScales = rootScales,
             PhysicsDeltas = CapturePhysicsDeltas(target),
         };
@@ -401,7 +406,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         // now: a restored-hidden actor must never flash into view first.
         var target = (IActor)actor;
         _spawns.SetVisibility(target, state.Visible);
-        Schedule(target, state, ReadyAttempts, stillCurrent);
+        if (state.Runtime is not null)
+            PrepareRuntime(target, state, 3600, stillCurrent);
+        else
+            Schedule(target, state, ReadyAttempts, stillCurrent);
     }
 
     public void Note(string detail) => _log.Warning(detail);
@@ -497,7 +505,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
 
         if (state.Pose is not { } pose)
+        {
+            RestoreRuntime(actor, state.Runtime, stillCurrent);
             return;
+        }
         // Root scales one tick BEFORE the import: the import measures each
         // child against its root as the last posing pass left it, and a
         // root owned in the same tick compounded the face bones (1.077
@@ -505,7 +516,12 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         if (state.PartialRootScales is { } rootScales && DebugRootScales)
             ApplyPartialRootScales(actor, rootScales);
         var restored = _poses.ImportPose(
-            actor, pose, RestoreOptions, $"Restore pose for {actor.Name}");
+            actor, pose, RestoreOptions, $"Restore pose for {actor.Name}",
+            onReceipt: receipt =>
+            {
+                if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
+                    RestoreRuntime(actor, state.Runtime, stillCurrent);
+            });
         if (!restored.Success)
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");

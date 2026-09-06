@@ -23,6 +23,96 @@ namespace Poser.Game.Tests.Scene;
 public sealed class SceneLifecycleHistoryTests
 {
     [Fact]
+    public void Actor_removal_restores_latest_runtime_snapshot_without_replaying_the_clone_source()
+    {
+        var world = new World();
+        int originalSpawns = 0;
+        var actor = world.Lifecycle.SpawnActor("Clone", () =>
+        {
+            originalSpawns++;
+            return world.Actors.Spawn("Source appearance");
+        })!;
+        var runtime = new ActorRuntimeState(null, 0,
+            new Poser.Application.Integration.ActorAppearanceSnapshot("authored appearance", null, null, null, null),
+            PresentationOverrides.None, null, Poser.Domain.Animation.AnimationOverrides.None,
+            null, null, new GazeState(), null, false, false, false, []);
+        var authored = new ActorState(MapStood, false, null) { Runtime = runtime };
+        world.Actors.Edit(actor, authored);
+        world.Lifecycle.DespawnActor(actor);
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.True(world.Undo());
+            var restored = Assert.Single(world.Actors.Live);
+            Assert.Equal(authored, world.Actors.StateOf(restored));
+            Assert.True(world.Redo());
+            Assert.Empty(world.Actors.Live);
+        }
+        Assert.Equal(1, originalSpawns);
+    }
+
+    [Fact]
+    public void Camera_removal_restores_origin_lock_tracking_and_optics()
+    {
+        var world = new World();
+        world.Cameras.SpawnPosition = new(9, 8, 7);
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        camera.Position = Vector3.Zero;
+        camera.IsLocked = true;
+        camera.IsTracking = true;
+        camera.TrackingMode = CameraTrackingMode.Pan;
+        camera.TargetOffset = new(1, 2, 3);
+        camera.IsTargetLocked = true;
+        camera.FoV = 0.45f;
+        camera.Orthographic = true;
+        camera.OrthographicZoom = 7;
+        world.Lifecycle.DestroyCamera(camera);
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.Cameras.Live);
+        Assert.Equal(Vector3.Zero, restored.Position);
+        Assert.True(restored.IsLocked);
+        Assert.True(restored.IsTracking);
+        Assert.True(restored.IsTargetLocked);
+        Assert.Equal(CameraTrackingMode.Pan, restored.TrackingMode);
+        Assert.Equal(new Vector3(1, 2, 3), restored.TargetOffset);
+        Assert.Equal(0.45f, restored.FoV);
+        Assert.True(restored.Orthographic);
+        Assert.Equal(7, restored.OrthographicZoom);
+    }
+
+    [Fact]
+    public void Light_removal_restores_attachment_and_emission_settings()
+    {
+        var world = new World();
+        var bone = DispatchProxy.Create<IBone, BoneProxy>();
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+        light.AttachedBone = bone;
+        light.Intensity = 4;
+        light.Color = new(.2f, .3f, .4f);
+        light.SpotAngle = .7f;
+        light.CastsCharacterShadow = true;
+        world.Lifecycle.DestroyLight(light);
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.Lighting.Lights);
+        Assert.Same(bone, restored.AttachedBone);
+        Assert.Equal(4, restored.Intensity);
+        Assert.Equal(new Vector3(.2f, .3f, .4f), restored.Color);
+        Assert.Equal(.7f, restored.SpotAngle);
+        Assert.True(restored.CastsCharacterShadow);
+    }
+
+    private class BoneProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method?.Name == "get_Skeleton" ? DispatchProxy.Create<ISkeleton, SkeletonProxy>() : null;
+    }
+
+    private class SkeletonProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method?.Name == "get_IsValid" ? true : null;
+    }
+
+    [Fact]
     public void Overlay_copies_advance_names_in_a_batch_and_redo_preserves_name_and_offset()
     {
         var world = new World();
@@ -360,6 +450,7 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeCameras : IVirtualCameraService
     {
+        public Vector3 SpawnPosition { get; set; }
         public bool SuppressFlightKeys { get; set; }
         public bool FlightActive => false;
         private readonly List<IVirtualCamera> _cameras = new();
@@ -375,7 +466,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public IVirtualCamera? CreateCamera(CameraKind kind)
         {
-            var camera = new FakeCamera(kind);
+            var camera = new FakeCamera(kind) { Position = SpawnPosition };
             _cameras.Add(camera);
             return camera;
         }
@@ -439,6 +530,7 @@ public sealed class SceneLifecycleHistoryTests
         public string TargetActorName { get; set; } = string.Empty;
         public IActor? TargetActor { get; set; }
         public ActorId? TargetActorId { get; set; }
+        public bool IsTargetLocked { get; set; }
         public Vector3 WorldPosition => Vector3.Zero;
         public bool DisableCollision { get; set; }
         public bool DelimitCamera { get; set; }
@@ -700,6 +792,8 @@ public sealed class SceneLifecycleHistoryTests
         public void WhenPosable(object actor, Action<object> act) => act(actor);
 
         public ActorState Read(object actor) => _states[(IActor)actor];
+
+        public IActor? Recreate(ActorState state) => Spawn("Fresh body");
 
         public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null)
         {

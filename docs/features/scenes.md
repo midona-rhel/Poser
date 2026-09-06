@@ -11,6 +11,21 @@ Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
 
+## Lifecycle history
+
+Removal captures the entity as last edited, not its original spawn arguments.
+Actor restoration creates a fresh body, applies captured appearance/equipment,
+collection and Poser body-profile values, then waits for its skeleton and bone
+bindings before applying placement, pose, presentation, gaze and IK. Companion
+state follows the owner's pose. In-session history also restores animation
+selection, playback speeds, loops and scrub position; scene files remain a
+picture, as described below. A repeated removal captures the latest edits again.
+
+Camera removal includes tracking, target and lock settings; light removal
+includes its bone attachment as well as emission, shadow and texture values.
+External targets that no longer exist are not replaced by unrelated entities.
+MCDF history reuses its package reference; it is not a portable appearance export.
+
 ## Created entity names
 
 Created actors, cameras, lights, props, overlays, world objects and groups
@@ -32,8 +47,8 @@ the Game control owner, even while the held actor is absent from discovery.
 Redo revalidates that observation, not a remembered native address. A missing
 actor, reused address or changed kind refuses acquisition; undo of an already
 gone actor does not release its replacement.
-Release captures the authored pose, placement, visibility, name and presentation
-settings, then restores captured presentation baselines while the actor is still
+Release captures the actor's lifecycle state and name, then restores captured
+presentation baselines while the actor is still
 bound. Undo reclaims that same actor and restores the saved scene state without
 new history entries. Deferred pose restoration stops if the claim is released.
 

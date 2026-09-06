@@ -10,6 +10,26 @@ namespace Poser.Application.Tests.Integration;
 public sealed class GlamourerAccessTests
 {
     [Fact]
+    public void History_restores_captured_appearance_and_collection_after_source_changes()
+    {
+        var (session, port) = Create();
+        var actor = ActorId.New();
+        const string authored = "{\"Customize\":{\"Hair\":17},\"Equipment\":{\"Head\":{\"ItemId\":42,\"Stain\":3}}}";
+        port.StateResult = IntegrationValue<string>.Ok(authored);
+        var saved = session.CaptureHistory(actor);
+        port.StateResult = IntegrationValue<string>.Ok("{}");
+        var replacement = ActorId.New();
+        Assert.True(session.RestoreHistory(replacement, saved).Success);
+        Assert.Equal(authored, port.AppliedState);
+        Assert.Equal(replacement, port.AppliedActor);
+        Assert.Contains(nameof(IIntegrationRuntimePort.SetIndividualCollection), port.Calls);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.RevertGlamourerState), port.Calls);
+        Assert.True(session.OverridesFor(replacement).DesignOwned);
+        Assert.True(session.ResetDesign(replacement).Success);
+        Assert.Contains(nameof(IIntegrationRuntimePort.RestoreGlamourerState), port.Calls);
+    }
+
+    [Fact]
     public void Foreign_hold_refuses_ordinary_commands_and_reads_without_mutation_or_unlock()
     {
         var (session, port) = Create();
@@ -174,6 +194,8 @@ public sealed class GlamourerAccessTests
         public IntegrationValue<string> StateResult = IntegrationValue<string>.Ok("{}");
         public IntegrationPortResult WriteResult = IntegrationPortResult.Ok();
         public Action? AfterStateRead;
+        public string? AppliedState;
+        public ActorId? AppliedActor;
         public List<string> Calls { get; } = new();
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
@@ -192,6 +214,13 @@ public sealed class GlamourerAccessTests
             {
                 AfterStateRead?.Invoke();
                 return StateResult;
+            }
+            if (name == nameof(IIntegrationRuntimePort.GetCollectionAssignment))
+                return IntegrationValue<CollectionAssignment>.Ok(new(Guid.Empty, "Empty", true));
+            if (name == nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson))
+            {
+                AppliedActor = (ActorId)args![0]!;
+                AppliedState = (string)args[1]!;
             }
             if (name == nameof(IIntegrationRuntimePort.AddDesign))
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());

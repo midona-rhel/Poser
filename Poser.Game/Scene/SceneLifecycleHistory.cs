@@ -84,15 +84,13 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     }
 }
 
-/// <summary>What an actor entry has to put back BEYOND the spawn that made
-/// it: where the user had stood it, whether they had it in sight, and the pose
-/// they had authored on it. Captured at the MOMENT OF REMOVAL, exactly as a
-/// light's document and a prop's state are.</summary>
+/// <summary>The actor's authored values at removal, independent of its original spawn source.</summary>
 internal readonly record struct ActorState(
     Transform Placement,
     bool Visible,
     PoseFile? Pose)
 {
+    public ActorRuntimeState? Runtime { get; init; }
     /// <summary>Partial-root scales by "partial:bone", the head scaling a
     /// pose file cannot carry (its bones are keyed by name and the roots
     /// share the body's). Applied after the pose lands.</summary>
@@ -124,6 +122,8 @@ internal interface IActorLifecycle
     bool Destroy(object actor);
 
     ActorState Read(object actor);
+
+    IActor? Recreate(ActorState state) => null;
 
     /// <summary>Runs <paramref name="act"/> once the actor's body is
     /// posable — the same wait a restore gets — or reports that it never
@@ -432,14 +432,16 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
-        IActorManager actorManager)
+        IActorManager actorManager,
+        Poser.Application.Presentation.ActorPresentationSession presentation,
+        Poser.Application.Animation.AnimationSession animation)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings, bonePosing, actorManager),
+                gaze, integration, bindings, bonePosing, actorManager, presentation, animation),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
@@ -490,6 +492,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         public ILight? Live;
         public LightFile Document = new();
+        public IBone? AttachedBone;
 
         /// <summary>False until a removal has actually read the light. A
         /// restore without one would spawn a default-valued impostor wearing
@@ -564,6 +567,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             // Captured HERE, not at spawn: what redo must restore is the
             // light as the user last had it.
             slot.Document = LightFileService.CreateLightFile(light);
+            slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
             _lighting.DestroyLight(light);
         }
@@ -583,6 +587,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             return false;
         LightFileService.Apply(slot.Document, light);
         ApplyGobo(slot.Document.Gobo, light);
+        if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
+            light.AttachedBone = bone;
         slot.Live = light;
         _lightSlots[light] = slot;
         return true;
@@ -618,6 +624,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         public IVirtualCamera? Live;
         public CameraFile Document = new();
+        public bool Locked, WasLive, TargetLocked, Tracking;
+        public IActor? Target;
+        public Poser.Domain.Identity.ActorId? TargetId;
+        public string TargetName = "";
+        public Vector3 TargetOffset;
+        public CameraTrackingMode TrackingMode;
+        public IBone[] TrackedBones = [];
         public bool HasDocument;
     }
 
@@ -689,6 +702,16 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (camera.IsValid)
         {
             slot.Document = CameraFileService.CreateCameraFile(camera);
+            slot.Locked = camera.IsLocked;
+            slot.WasLive = camera.IsLive;
+            slot.Target = camera.TargetActor;
+            slot.TargetId = camera.TargetActorId;
+            slot.TargetName = camera.TargetActorName;
+            slot.TargetOffset = camera.TargetOffset;
+            slot.TargetLocked = camera.IsTargetLocked;
+            slot.Tracking = camera.IsTracking;
+            slot.TrackingMode = camera.TrackingMode;
+            slot.TrackedBones = camera.TrackedBones.ToArray();
             slot.HasDocument = true;
             _cameras.DestroyCamera(camera);
         }
@@ -707,6 +730,18 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (camera == null)
             return false;
         CameraFileService.Apply(slot.Document, camera);
+        // A saved file treats zero as unspecified; history owns the exact world origin too.
+        camera.Position = slot.Document.Position;
+        if (slot.Target is { } target && slot.TargetId is { } targetId)
+            _cameras.SetTargetActor(camera, target, targetId, slot.TargetName);
+        camera.TargetOffset = slot.TargetOffset;
+        camera.IsTargetLocked = slot.TargetLocked;
+        foreach (var bone in slot.TrackedBones)
+            if (bone.Skeleton.IsValid) camera.TrackedBones.Add(bone);
+        camera.TrackingMode = slot.TrackingMode;
+        camera.IsTracking = slot.Tracking;
+        camera.IsLocked = slot.Locked;
+        if (slot.WasLive) _cameras.SetLive(camera);
         slot.Live = camera;
         _cameraSlots[camera] = slot;
         return true;
@@ -715,26 +750,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     // ── actors ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The live actor, the call that made it, and what the user had made of
-    /// it when it left.
-    ///
-    /// <para>An actor's APPEARANCE is still not a document this seam can
-    /// capture — restoring one is the scene pipeline's asynchronous redraw,
-    /// not a synchronous receipt — so an actor is always brought back by
-    /// re-running the very call that produced it. That call is now worth far
-    /// more than it was: a clone carries the source's Penumbra collection
-    /// (<c>ISpawnCollectionPort</c>), so re-running it reproduces the modded
-    /// appearance and not a bare body. <see cref="Document"/> then puts back
-    /// everything the spawn does not decide — placement, visibility, and the
-    /// pose the user authored — captured at the MOMENT OF REMOVAL, exactly as
-    /// a light's and a prop's are.</para>
-    ///
-    /// <para>So a DESPAWN takes an entry now, where it did not before, but
-    /// only for an actor whose spawn this seam RECORDED. Without
-    /// <see cref="HasRespawn"/> there is no call to run again and no
-    /// appearance to reproduce, and an entry restoring a blank stand-in would
-    /// still be a worse answer than admitting there is none: those despawns
-    /// are refused by name through <see cref="IActorLifecycle.Note"/>.</para>
+    /// Retains the latest removal snapshot. Production recreates a fresh body
+    /// from that state; the initial factory is only the fallback without a runtime snapshot.
     /// </summary>
     private sealed class ActorSlot
     {
@@ -794,7 +811,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             lifecycle.DebugPhysicsDeltas = physicsDeltas;
             lifecycle.DebugRootScales = rootScales;
         }
-        var state = _actors.Read(from);
+        var state = _actors.Read(from) with { Runtime = null };
         _actors.Restore(to, state);
     }
 
@@ -802,7 +819,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
-        var state = _actors.Read(source);
+        var state = _actors.Read(source) with { Runtime = null };
         IActor? Posed()
         {
             var copy = spawn();
@@ -893,9 +910,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             return true;
         if (!slot.HasRespawn)
             return false;
-        // A clone's source may itself be gone by now; the service answers
-        // null and the entry stays redoable rather than half-applied.
-        var actor = slot.Respawn();
+        // A removal snapshot is independent of the original clone source.
+        var actor = slot.HasDocument && slot.Document.Runtime is not null
+            ? _actors.Recreate(slot.Document)
+            : slot.Respawn();
         if (actor == null)
             return false;
         slot.Live = actor;
@@ -908,7 +926,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         // way: the actor IS restored, and a pose that cannot follow says so
         // rather than leaving the step un-consumed and unrepeatable.
         if (slot.HasDocument)
-            _actors.Restore(actor, slot.Document);
+            _actors.Restore(actor, slot.Document, () => ReferenceEquals(slot.Live, actor));
         return true;
     }
 
