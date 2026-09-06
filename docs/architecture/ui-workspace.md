@@ -91,7 +91,7 @@ clears its preview and confirmation state; a separately typed save name stays.
 
 Spawn browsing keeps predefined actions first, library entries second, then
 the existing catalog order. With an active search, each source group orders
-categories as actors, lights, cameras, props, scenery, furniture, VFX, overlays.
+categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.
 Action order stays fixed within its category; other matches rank name prefixes
 then alphabetically within each category. Sorting changes visible row indices,
 not the backing activation identities. Furniture has its own import actions;

@@ -912,9 +912,9 @@ public sealed class SpawnBrowserWindow : Window
         SpawnBrowserTab.Actors => 0,
         SpawnBrowserTab.Lights => 1,
         SpawnBrowserTab.Cameras => 2,
-        SpawnBrowserTab.Props => 3,
-        SpawnBrowserTab.SceneObjects => 4,
-        SpawnBrowserTab.Furniture => 5,
+        SpawnBrowserTab.Furniture => 3,
+        SpawnBrowserTab.Props => 4,
+        SpawnBrowserTab.SceneObjects => 5,
         SpawnBrowserTab.Effects => 6,
         _ => 7,
     };
