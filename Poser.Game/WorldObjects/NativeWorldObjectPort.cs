@@ -606,6 +606,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool? ReadBgNightState(nint address)
     {
+        if (_furniture.Contains(address)) return _furniture.NightState(address);
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return null;
@@ -614,11 +615,18 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void WriteBgNightState(nint address, bool night)
     {
+        if (_furniture.Contains(address)) { _furniture.SetNightState(address, night); return; }
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return;
-        *((byte*)node + BgNightStateOffset) = night ? byte.MaxValue : (byte)0;
-        var bg = (BgObject*)node;
+        WriteModelNightState((BgObject*)node, night);
+    }
+
+    internal static void WriteModelNightState(BgObject* bg, bool night)
+    {
+        // The byte belongs to a BG graphics object, including a furniture
+        // child model. It is never a field of its owning SGL or a light node.
+        *((byte*)bg + BgNightStateOffset) = night ? byte.MaxValue : (byte)0;
         if (RenderReady(bg))
         {
             bg->UpdateCulling();

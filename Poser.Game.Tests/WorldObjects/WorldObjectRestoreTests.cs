@@ -84,6 +84,7 @@ public sealed class WorldObjectRestoreTests
         Assert.True(furniture.IsFurniture);
         furniture.Transform = Moved;
         furniture.Stain = 42;
+        furniture.NightState = true;
         furniture.Tint = new Vector3(.1f, .2f, .3f);
         furniture.Visible = false;
         furniture.Opacity = .4f;
@@ -96,6 +97,8 @@ public sealed class WorldObjectRestoreTests
             lifecycle.Apply(furniture, state);
             Assert.Equal(state with { Address = furniture.Address }, lifecycle.Read(furniture));
             Assert.Equal((byte)42, world.Port.LastFurnitureStain);
+            Assert.True(furniture.NightState);
+            Assert.True(world.Port.LastNightState);
             Assert.Equal(state.Tint, world.Port.LastBgTint);
         }
     }

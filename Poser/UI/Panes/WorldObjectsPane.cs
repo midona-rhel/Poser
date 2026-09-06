@@ -338,6 +338,9 @@ public sealed class WorldObjectsPane
                 cell => cell.ColorWell("##furniture-tint", new Vector4(tint, 1f),
                     value => _values.SetTint(worldObject, new Vector3(value.X, value.Y, value.Z))));
             var lights = worldObject.FurnitureLights;
+            form.Switch("Night", worldObject.NightState,
+                next => _values.SetNightState(worldObject, next),
+                help: "Set the furniture's child models to their night state");
             for (int i = 0; i < lights.Count; i++)
             {
                 var light = lights[i];

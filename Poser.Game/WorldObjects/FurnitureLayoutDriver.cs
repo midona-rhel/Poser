@@ -29,6 +29,7 @@ internal sealed unsafe class FurnitureLayoutDriver
         public readonly WorldObjectIncarnation Identity = identity;
         public Transform Transform = transform;
         public bool Visible = true;
+        public bool Night;
         public float Opacity = 1f;
         public byte Stain;
         public Vector3? Tint;
@@ -127,6 +128,14 @@ internal sealed unsafe class FurnitureLayoutDriver
     internal Transform Read(nint address) => _owned[address].Transform;
     internal bool Visible(nint address) => _owned[address].Visible;
     internal float Opacity(nint address) => _owned[address].Opacity;
+    internal bool NightState(nint address) => _owned[address].Night;
+
+    internal void SetNightState(nint address, bool night)
+    {
+        _owned[address].Night = night;
+        _owned[address].Dirty = true;
+        Apply(address);
+    }
 
     internal IReadOnlyList<FurnitureLightState> ReadLights(nint address) =>
         _owned.TryGetValue(address, out var state) ? state.Lights : [];
@@ -236,13 +245,13 @@ internal sealed unsafe class FurnitureLayoutDriver
                 useColor = true;
             }
         }
-        ApplyChildren(&layout->Instances, 1f - state.Opacity, useColor ? &color : null);
+        ApplyChildren(&layout->Instances, 1f - state.Opacity, useColor ? &color : null, state.Night);
         ApplyLights(state);
         state.Dirty = false;
         return true;
     }
 
-    private static void ApplyChildren(ChildNodeContainer* children, float transparency, ByteColor* color)
+    private static void ApplyChildren(ChildNodeContainer* children, float transparency, ByteColor* color, bool night)
     {
         foreach (var child in children->Instances)
         {
@@ -252,9 +261,11 @@ internal sealed unsafe class FurnitureLayoutDriver
             var second = instance->GetGraphics2();
             ApplyTransparency(first, transparency);
             if (second != first) ApplyTransparency(second, transparency);
+            ApplyNightState(first, night);
+            if (second != first) ApplyNightState(second, night);
             if (color != null) instance->ApplyStain(color);
             if (instance->Id.Type == InstanceType.SharedGroup)
-                ApplyChildren(&((SharedGroupLayoutInstance*)instance)->Instances, transparency, color);
+                ApplyChildren(&((SharedGroupLayoutInstance*)instance)->Instances, transparency, color, night);
         }
     }
 
@@ -267,6 +278,12 @@ internal sealed unsafe class FurnitureLayoutDriver
         draw->SetTransparency(transparency);
         draw->UpdateMaterials();
         draw->UpdateCulling();
+    }
+
+    private static void ApplyNightState(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object* graphics, bool night)
+    {
+        if (graphics != null && graphics->GetObjectType() == ObjectType.BgObject)
+            NativeWorldObjectPort.WriteModelNightState((BgObject*)graphics, night);
     }
 
     internal void Destroy(nint address)

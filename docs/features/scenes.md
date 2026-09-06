@@ -281,7 +281,9 @@ The backend follows Brio's `SGLService`/`FurnitureObject`: one owned shared-grou
 layout contains the furnishing's entire child graph. Children are not independent
 borrow candidates. Graphics edits wait for layout readiness; a fresh load that
 times out after 15 seconds is removed. Release/GPose exit tears down the owning
-layout, never individual children. Raw BG debug/night controls do not apply.
+layout, never individual children. Raw BG debug controls do not apply. Furniture's
+Night toggle applies the scenery day/night byte only to its BG child models,
+not to the owning layout or its light nodes. Its visible effect is asset-dependent.
 
 Furniture has its own Couch spawn category and Furniture inspector. It shares
 the equipment dye picker (one native furniture stain channel). Embedded lights

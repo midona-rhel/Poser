@@ -1098,7 +1098,7 @@ public partial class MainWindow
                 worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
             stateActions.Add(() => _sessions.WorldObjects.SetVfxPaused(worldObject, !worldObject.VfxPaused));
         }
-        else if (!worldObject.IsFurniture)
+        else
         {
             stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
                 worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
