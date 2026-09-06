@@ -552,14 +552,15 @@ public static partial class Crystarium
                     Family = FontFamily.Mono,
                     Color = theme.FormLabel,
                 };
-                float width = MeasureText(badge!, badgeStyle).X;
+                // Secondary metadata must leave most of the row for its name.
+                float width = Math.Min(MeasureText(badge!, badgeStyle).X,
+                    Math.Max(0f, contentRight - x - gap) * 0.35f);
                 labelRight = contentRight - width - gap;
-                TextInBand(
+                LabelInBand(
                     new Vector2(contentRight - width, pillMin.Y),
                     new Vector2(width, pillSize.Y),
                     badge!,
                     badgeStyle,
-                    TextAlign.Start,
                     besideIcon: true);
             }
 

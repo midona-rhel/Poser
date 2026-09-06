@@ -77,7 +77,8 @@ public sealed partial class AppearancePane
     private readonly IInvisibleSkinService _invisibleSkin;
     private readonly Game.Journal.ActorValueSession _values;
     private readonly Game.Journal.DisruptiveSteps _disruptive;
-    private readonly Game.Journal.WorldActorSession _worldActors;
+    private readonly Game.Integration.CharaImport _chara;
+    private readonly WorldActions _worldActions;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -138,7 +139,7 @@ public sealed partial class AppearancePane
     private string _bodyBlockedDetail = string.Empty;
 
     private readonly Crystarium.FileDialog _mcdfImportBrowser =
-        new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
+        new("Import Character File", new[] { ".mcdf", ".chara" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     /// <summary>Folder used by character-file browsers.</summary>
@@ -162,15 +163,17 @@ public sealed partial class AppearancePane
         UserNotices notices,
         Game.Journal.ActorValueSession values,
         Game.Journal.DisruptiveSteps disruptive,
-        Game.Journal.WorldActorSession worldActors,
+        WorldActions worldActions,
         IWardrobeCatalog wardrobe,
         IPropCatalog props,
         Game.Journal.WardrobeSession wardrobeSession,
         global::Poser.UI.Controls.EntityNameModal names,
         ICustomizeCatalog customize,
         Game.Journal.CustomizeSession customizeSession,
-        IAppearanceColorControl colors)
+        IAppearanceColorControl colors,
+        Game.Integration.CharaImport chara)
     {
+        _chara = chara;
         _customize = customize;
         _customizeSession = customizeSession;
         _colors = colors;
@@ -198,7 +201,7 @@ public sealed partial class AppearancePane
         _facewearTexture = entry => ResolveIcon(entry.Icon);
         _values = values;
         _disruptive = disruptive;
-        _worldActors = worldActors;
+        _worldActions = worldActions;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -473,18 +476,7 @@ public sealed partial class AppearancePane
 
     private void ReleaseAdopted(ActorId id)
     {
-        var resolved = _bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { } live)
-        {
-            _notices.Failed("Release: the actor is no longer in the scene.");
-            return;
-        }
-        if (_worldActors.Release(live))
-        {
-            _notices.Done($"Released '{_scene.Snapshot.FindActor(id)?.Name ?? live.Name}'.");
-        }
-        else
-            _notices.Failed("Release: the actor could not be handed back.");
+        _ = _worldActions.Release(SelectionId.ForActor(id));
     }
 
     /// <summary>Edits the actor's model id and supports named model search.</summary>
@@ -1067,8 +1059,7 @@ public sealed partial class AppearancePane
                 {
                     actions.Button("Import",
                         () => OpenMcdfImport(actor),
-                        help: "Apply a Mare character file's mods, appearance, "
-                            + "and body scale to this actor only",
+                        help: "Apply an Anamnesis .chara appearance or a Mare .mcdf character file to this actor",
                         variant: ButtonVariant.Disruptive);
                     actions.Button("Export",
                         () => OpenMcdfExport(actor),
@@ -1094,7 +1085,7 @@ public sealed partial class AppearancePane
                             variant: ButtonVariant.Disruptive);
                     }
                 },
-                help: "Import a Mare character file (.mcdf) onto this actor, "
+                help: "Import an Anamnesis appearance (.chara) or Mare character file (.mcdf) onto this actor, "
                     + "or save this actor as one",
                 unavailable: !mcdfOwnedNow);
         }
@@ -1154,15 +1145,26 @@ public sealed partial class AppearancePane
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
+            Newtonsoft.Json.Linq.JObject? chara = null;
+            if (System.IO.Path.GetExtension(chosen).Equals(".chara", StringComparison.OrdinalIgnoreCase))
+            {
+                var read = Game.Integration.CharaImport.Read(chosen);
+                if (!read.Success || read.Value is null)
+                {
+                    _notices.Failed($"Import character appearance: {read.Detail}");
+                    return;
+                }
+                chara = read.Value;
+            }
             var body = spawn();
             if (body == null)
                 return;
-            _pendingMcdfDress = (body, chosen);
+            _pendingMcdfDress = (body, chosen, chara);
         });
     }
 
     /// <summary>The spawn whose body still owes its character file.</summary>
-    private (global::Poser.Entities.IActor Body, string Path)?
+    private (global::Poser.Entities.IActor Body, string Path, Newtonsoft.Json.Linq.JObject? Chara)?
         _pendingMcdfDress;
 
     /// <summary>Second half of <see cref="OpenMcdfSpawn"/>, pumped with the
@@ -1172,7 +1174,17 @@ public sealed partial class AppearancePane
         if (_pendingMcdfDress is not { } dress
             || _bindings.GetActorId(dress.Body) is not { } bound)
             return;
+        // Unlike MCDF's asynchronous redraw pipeline, a direct .chara apply
+        // needs the freshly spawned character body to have finished loading.
+        if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase)
+            && !dress.Body.HasSkeleton)
+            return;
         _pendingMcdfDress = null;
+        if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase))
+        {
+            ReportExternal(_chara.Apply(bound, dress.Chara!), "Import character appearance");
+            return;
+        }
         var begun = _disruptive.Run(bound, "Import character file",
             () => _integration.BeginImport(bound, dress.Path),
             () => _integration.ResetMcdf(bound), asset: dress.Path);
@@ -1188,6 +1200,11 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             if (_mcdfActor is not { } frozen)
                 return;
+            if (System.IO.Path.GetExtension(chosen).Equals(".chara", StringComparison.OrdinalIgnoreCase))
+            {
+                ReportExternal(_chara.Apply(frozen, chosen), "Import character appearance");
+                return;
+            }
             var begun = _disruptive.Run(frozen, "Import character file",
                 () => _integration.BeginImport(frozen, chosen),
                 () => _integration.ResetMcdf(frozen), asset: chosen);

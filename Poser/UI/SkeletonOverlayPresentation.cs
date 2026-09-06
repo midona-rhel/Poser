@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Config;
 
 namespace Poser.UI;
 
@@ -21,6 +22,11 @@ public enum OverlayVisibility
 
 public sealed class SkeletonOverlayPresentation
 {
+    private readonly ConfigurationService _configuration;
+
+    public SkeletonOverlayPresentation(ConfigurationService configuration) =>
+        _configuration = configuration;
+
     private readonly HashSet<BoneId> _shown = new();
     private readonly Dictionary<string, HashSet<BoneId>> _hiddenSubsets =
         new(StringComparer.Ordinal);
@@ -163,15 +169,16 @@ public sealed class SkeletonOverlayPresentation
 
     // ── world manip handles ──────────────────────────────────────────────
 
-    /// <summary>Entities whose world handle is switched OFF — handles default
-    /// to shown, so the set holds the exceptions. Keyed by lineage so a
-    /// generation bump (rebind) keeps the choice.</summary>
-    private readonly HashSet<System.Guid> _hiddenHandles = new();
+    /// <summary>Explicit choices override the UI default. Keyed by lineage so
+    /// a generation bump (rebind) keeps the user's choice.</summary>
+    private readonly Dictionary<System.Guid, bool> _handleChoices = new();
 
     public bool IsHandleShown(SelectionId id) =>
         HandleKey(id) is not { } key || IsHandleShown(key);
 
-    public bool IsHandleShown(System.Guid key) => !_hiddenHandles.Contains(key);
+    public bool IsHandleShown(System.Guid key) =>
+        _handleChoices.TryGetValue(key, out var shown)
+            ? shown : !_configuration.Config.UI.HideHandlesByDefault;
 
     public void ToggleHandle(SelectionId id)
     {
@@ -182,8 +189,7 @@ public sealed class SkeletonOverlayPresentation
 
     public void ToggleHandle(System.Guid key)
     {
-        if (!_hiddenHandles.Add(key))
-            _hiddenHandles.Remove(key);
+        _handleChoices[key] = !IsHandleShown(key);
     }
 
     /// <summary>The lineage a handle choice sticks to; null for kinds that

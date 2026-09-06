@@ -35,7 +35,7 @@ public sealed class WorldActorSession
         _actorId = actorId;
     }
 
-    public WorldActorImportResult Adopt(WorldActorCandidateId id, out IActor? actor)
+    internal WorldActorImportResult Adopt(WorldActorCandidateId id, out IActor? actor)
     {
         actor = null;
         if (!_discovery.TryRetainCandidate(id, out var observation))
@@ -51,7 +51,7 @@ public sealed class WorldActorSession
         return result;
     }
 
-    public bool Release(IActor actor)
+    internal bool Release(IActor actor)
     {
         if (!_discovery.TryObserveAdopted(actor, out var observation))
             return false;

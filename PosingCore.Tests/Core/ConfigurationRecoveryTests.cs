@@ -42,6 +42,21 @@ public sealed class ConfigurationRecoveryTests : IDisposable
         Assert.Empty(Directory.GetFiles(_directory, "Poser.json.bak-*"));
     }
 
+    [Fact]
+    public void Quiet_save_persists_without_reconfiguring_subscribers()
+    {
+        var plugin = CreatePlugin(() => new PoserConfiguration(), false);
+        var service = new ConfigurationService(plugin);
+        plugin.ClearReceivedCalls();
+        int notifications = 0;
+        service.OnConfigurationChanged += () => notifications++;
+        service.Save(notify: false);
+        plugin.Received(1).SavePluginConfig(service.Config);
+        Assert.Equal(0, notifications);
+        service.Save();
+        Assert.Equal(1, notifications);
+    }
+
     private IDalamudPluginInterface CreatePlugin(Func<object?> read, bool writeFile)
     {
         Directory.CreateDirectory(_directory);

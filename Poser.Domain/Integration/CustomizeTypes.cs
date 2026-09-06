@@ -46,6 +46,19 @@ public enum CustomizeKey
     Wetness,
 }
 
+public static class CustomizeEncoding
+{
+    // Glamourer's split fields retain their native bit, not a boolean 1.
+    public static int FlagValue(CustomizeKey key) => key switch
+    {
+        >= CustomizeKey.FacialFeature1 and <= CustomizeKey.LegacyTattoo
+            => 1 << (key - CustomizeKey.FacialFeature1),
+        CustomizeKey.Highlights or CustomizeKey.SmallIris or CustomizeKey.Lipstick
+            or CustomizeKey.FacePaintReversed => 0x80,
+        _ => throw new System.ArgumentOutOfRangeException(nameof(key)),
+    };
+}
+
 /// <summary>An actor's customization as Glamourer reports it.</summary>
 public sealed record CustomizeState(IReadOnlyDictionary<CustomizeKey, int> Values, int ModelId)
 {

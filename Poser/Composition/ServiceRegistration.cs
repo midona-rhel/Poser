@@ -223,6 +223,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<Game.Journal.DisruptiveSteps>();
         services.AddSingleton<Game.Journal.WardrobeSession>();
+        services.AddSingleton<Game.Integration.CharaImport>();
         services.AddSingleton<Game.Journal.CustomizeSession>();
         services.AddSingleton<Application.Presentation.IAppearanceColorControl, Game.Journal.AppearanceColorSession>();
         services.AddSingleton<Game.Wardrobe.CustomizeCatalog>();
@@ -254,7 +255,6 @@ internal static class ServiceRegistration
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
         services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
-        services.AddSingleton<IWorldActorDiscovery>(sp => sp.GetRequiredService<WorldActorDiscovery>());
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
         services.AddSingleton<IWorldAssetCatalog>(sp => sp.GetRequiredService<Game.WorldObjects.WorldAssetCatalog>());
         services.AddSingleton<IFacialPoseCapture>(sp => sp.GetRequiredService<Game.Animation.FacialPoseCapture>());
@@ -395,7 +395,8 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
-        services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
+        services.AddSingleton<Game.Lighting.LightingService>();
+        services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
         services.AddSingleton<global::PosingCore.Services.IKeyEvents>(
@@ -417,8 +418,6 @@ internal static class ServiceRegistration
             sp => sp.GetRequiredService<ActorSpawnService>());
         services.AddSingleton<WorldActorDiscovery>();
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
-        services.AddSingleton<Application.Actors.IWorldActorReadPort>(
-            sp => sp.GetRequiredService<WorldActorDiscovery>());
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;
     }
@@ -566,6 +565,9 @@ internal static class ServiceRegistration
                 configuration.Save);
         });
         services.AddSingleton<WorldAdoptionSource>();
+        services.AddSingleton<WorldActions>();
+        services.AddSingleton<Game.World.WorldService>();
+        services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
         // Owns every reference picture's texture, so the container's own
         // dispose is what releases them at plugin teardown.

@@ -128,7 +128,7 @@ public sealed partial class PoseLibraryPane
                         metadata.Succeeded ? metadata.Tags : [],
                         null, status, detail));
                 }
-                else if (kind != PoseLibraryEntryKind.Mcdf)
+                else if (kind is not (PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara))
                 {
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     var (status, detail) = PoseLibraryFileActions.Classify(metadata);

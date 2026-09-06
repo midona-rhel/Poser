@@ -505,6 +505,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             switch (KindOf(file))
             {
                 case PoseLibraryEntryKind.Mcdf:
+                case PoseLibraryEntryKind.Chara:
                     node.McdfCount++;
                     break;
                 case PoseLibraryEntryKind.Scene:
@@ -636,6 +637,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         return extension.Equals(PoseExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".chara", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(ActorExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase)
@@ -650,6 +652,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
     public static PoseLibraryEntryKind KindOf(string path)
     {
         var extension = Path.GetExtension(path);
+        if (extension.Equals(".chara", StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Chara;
         if (extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Mcdf;
         if (extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase))

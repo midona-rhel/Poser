@@ -104,7 +104,7 @@ public sealed class SceneCaptureService
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingService _rendering;
-    private readonly WorldObjects.WorldObjectService _worldObjects;
+    private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
 
     public SceneCaptureService(
@@ -128,7 +128,7 @@ public sealed class SceneCaptureService
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingService rendering,
-        WorldObjects.WorldObjectService worldObjects,
+        World.WorldService worldObjects,
         PlacementAnchorSource anchors)
     {
         _anchors = anchors;

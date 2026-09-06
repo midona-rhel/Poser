@@ -3,6 +3,7 @@ using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
@@ -39,10 +40,7 @@ public sealed class WorldObjectsPane
     /// apart by their glyphs — minted on first browse.</summary>
     private List<WorldAsset>? _assetChoices;
 
-    /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
-    /// that files one in the same history the transforms use — the seam whose
-    /// undo re-adopts the same address.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly WorldActions _worldActions;
 
     private bool _openObject = true;
 
@@ -50,13 +48,15 @@ public sealed class WorldObjectsPane
     private IWorldObject? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
+    private Task<WorldObjectRespawnResult>? _respawn;
+    private IWorldObject? _respawnTarget;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     public WorldObjectsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        ISceneLifecycleHistory lifecycle,
+        WorldActions worldActions,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
@@ -66,7 +66,7 @@ public sealed class WorldObjectsPane
         _names = names;
         _scene = scene;
         _bindings = bindings;
-        _lifecycle = lifecycle;
+        _worldActions = worldActions;
         _scenePane = scenePane;
         _assets = assets;
     }
@@ -76,6 +76,17 @@ public sealed class WorldObjectsPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        if (_respawn is { IsCompleted: true } completed)
+        {
+            var result = completed.GetAwaiter().GetResult();
+            if (ReferenceEquals(SelectedWorldObject(), _respawnTarget))
+            {
+                _status = result.Detail ?? string.Empty;
+                if (result.Succeeded) _pathDraftFor = null;
+            }
+            _respawn = null;
+            _respawnTarget = null;
+        }
         Crystarium.Page("world-object", origin, size, page =>
         {
             if (SelectedWorldObject() is not { } worldObject)
@@ -108,18 +119,20 @@ public sealed class WorldObjectsPane
         if (_assetPicker.Draw() is { } picked
             && SelectedWorldObject() is { } target)
         {
-            if (target.Respawn(picked.Item.Path, out var refusal))
-            {
-                _pathDraftFor = null;
-                _status = string.Empty;
-            }
-            else
-                _status = refusal ?? "The path could not be spawned.";
+            BeginRespawn(target, picked.Item.Path);
         }
 
         var pending = _pending;
         _pending = null;
         pending?.Invoke();
+    }
+
+    private void BeginRespawn(IWorldObject target, string path)
+    {
+        if (_respawn is { IsCompleted: false }) return;
+        _status = string.Empty;
+        _respawnTarget = target;
+        _respawn = target.Respawn(path);
     }
 
     private void OpenAssetPicker()
@@ -142,6 +155,7 @@ public sealed class WorldObjectsPane
                 : null,
             options: new PickerOptions<WorldAsset>
             {
+                Width = 520f,
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire
@@ -253,21 +267,16 @@ public sealed class WorldObjectsPane
                 actions.Button(
                     "Browse",
                     () => OpenAssetPicker(),
+                    disabled: _respawn is { IsCompleted: false },
                     help: "Search every model and effect in the game");
                 actions.Button(
                     "Respawn",
                     () =>
                     {
                         var stated = _pathDraft;
-                        _pending = () =>
-                        {
-                            if (!worldObject.Respawn(stated, out var refusal))
-                                _status = refusal ?? "The path could not be "
-                                    + "spawned.";
-                            else
-                                _status = string.Empty;
-                        };
+                        _pending = () => BeginRespawn(worldObject, stated);
                     },
+                    disabled: _respawn is { IsCompleted: false },
                     help: "Recreate this object from the stated path");
             });
             if (_status.Length > 0)
@@ -392,7 +401,8 @@ public sealed class WorldObjectsPane
                     "Destroy",
                     () => _pending = () =>
                     {
-                        _lifecycle.ReleaseWorldObject(worldObject);
+                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
+                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
                         _scene.Selection.Clear();
                     },
                     variant: ButtonVariant.Danger,
@@ -402,7 +412,8 @@ public sealed class WorldObjectsPane
                     "Release",
                     () => _pending = () =>
                     {
-                        _lifecycle.ReleaseWorldObject(worldObject);
+                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
+                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
                         _scene.Selection.Clear();
                     },
                     help: "Give this object back to the map, where it stood");
@@ -410,7 +421,7 @@ public sealed class WorldObjectsPane
                 "Release all",
                 () => _pending = () =>
                 {
-                    _lifecycle.ReleaseAllWorldObjects();
+                    _ = _worldActions.ReleaseSceneObjects();
                     _scene.Selection.Clear();
                 },
                 help: "Give every borrowed object back and destroy every "

@@ -127,7 +127,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         Poser.Services.IWorldRenderingService rendering,
         Poser.Services.IActorManager actors,
         Dalamud.Plugin.Services.IObjectTable objects,
-        WorldObjects.WorldObjectService worldObjects,
+        World.WorldService worldObjects,
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
@@ -2158,5 +2158,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
         _cancellation?.Dispose();
         _disposal.Dispose();
+        (_runtime as IDisposable)?.Dispose();
     }
 }

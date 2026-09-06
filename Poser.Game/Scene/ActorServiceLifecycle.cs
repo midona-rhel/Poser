@@ -27,7 +27,7 @@ namespace Poser.Game.Scene;
 /// if the user pressed undo twice. <see cref="PoseImportOptions.SuppressHistory"/>
 /// is set for that one reason and no other.</para>
 /// </summary>
-internal sealed class ActorServiceLifecycle : IActorLifecycle
+internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 {
     /// <summary>Ticks the restored body is given to become posable before the
     /// pose is given up on. Generous on purpose: a spawn's deferred draw plus
@@ -88,8 +88,12 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
-        IActorManager actorManager)
+        IActorManager actorManager,
+        Poser.Application.Presentation.ActorPresentationSession presentation,
+        Integration.ISpawnCollectionPort collections)
     {
+        _collections = collections;
+        _presentation = presentation;
         _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;
@@ -182,6 +186,15 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     }
 
     public ActorState Read(object actor)
+    {
+        var target = (IActor)actor;
+        return new ActorState(_posing.GetEffectiveTransform(target), _spawns.IsVisible(target), null)
+        {
+            Runtime = CaptureRuntime(target),
+        };
+    }
+
+    public ActorState ReadPoseForCopy(object actor)
     {
         var target = (IActor)actor;
         var pose = CapturePose(target);
@@ -401,7 +414,12 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         // now: a restored-hidden actor must never flash into view first.
         var target = (IActor)actor;
         _spawns.SetVisibility(target, state.Visible);
-        Schedule(target, state, ReadyAttempts, stillCurrent);
+        if (state.Runtime is not null)
+            // Spawn assigns its default collection on tick one. History must follow
+            // that assignment, including when a reused slot still has cached bones.
+            _framework.RunOnTick(() => PrepareRuntime(target, state, 3600, stillCurrent), delayTicks: 2);
+        else
+            Schedule(target, state, ReadyAttempts, stillCurrent);
     }
 
     public void Note(string detail) => _log.Warning(detail);
@@ -484,7 +502,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         // nothing to restore onto and nothing to report.
         if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
             return;
-        if (state.Pose is not null &&
+        if ((state.Pose is not null || state.Runtime is not null) &&
             (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy))
         {
             Schedule(actor, state, attempts - 1, stillCurrent);
@@ -496,16 +514,31 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
 
-        if (state.Pose is not { } pose)
+        if (state.Runtime is { } runtime)
+        {
+            runtime.Pose.Restore(_skeletons.GetSkeletons(actor), _bonePosing);
+            RestoreRuntime(actor, runtime, stillCurrent);
             return;
+        }
+        if (state.Pose is not { } pose)
+        {
+            RestoreRuntime(actor, state.Runtime, stillCurrent);
+            return;
+        }
         // Root scales one tick BEFORE the import: the import measures each
         // child against its root as the last posing pass left it, and a
         // root owned in the same tick compounded the face bones (1.077
         // twice, 01:2x). Own the roots, let a pass run, then import.
         if (state.PartialRootScales is { } rootScales && DebugRootScales)
             ApplyPartialRootScales(actor, rootScales);
+        var options = RestoreOptions;
         var restored = _poses.ImportPose(
-            actor, pose, RestoreOptions, $"Restore pose for {actor.Name}");
+            actor, pose, options, $"Restore pose for {actor.Name}",
+            onReceipt: receipt =>
+            {
+                if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
+                    RestoreRuntime(actor, state.Runtime, stillCurrent);
+            });
         if (!restored.Success)
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");

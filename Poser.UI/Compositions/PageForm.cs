@@ -9,6 +9,10 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
+    // The host supplies persisted UI preferences, independent of ImGui's
+    // window/actor ID stack. The renderer remains usable without a config host.
+    public static Func<string, bool>? ReadSectionOpen { get; set; }
+    public static Action<string, bool>? WriteSectionOpen { get; set; }
     /// <summary>Logical section-rule thickness.</summary>
     private const float SectionRuleThickness = 1f;
 
@@ -174,6 +178,7 @@ public static partial class Crystarium
         /// <summary>Prefixed to every section title drawn — a search result
         /// names the page its section came from.</summary>
         public string? SectionPrefix { get; set; }
+        public string? DisclosureScope { get; set; }
         private string _section = string.Empty;
 
         /// <summary>Paint hooks: every row and every section header the
@@ -291,6 +296,12 @@ public static partial class Crystarium
                 return;
             }
 
+            string disclosureKey = Ids.Join(DisclosureScope ?? _id, "/", title);
+            bool searching = SectionFilter != null || RowFilter != null;
+            bool remembered = ReadSectionOpen != null && WriteSectionOpen != null;
+            if (searching) open = true;
+            else if (remembered) open = ReadSectionOpen!(disclosureKey);
+
             // Dense sections omit header padding.
             if (!_dense)
                 _y += page.SectionPaddingTop;
@@ -299,7 +310,7 @@ public static partial class Crystarium
             float headerHeight = page.SectionHeaderHeight * _scale;
             var hit = default(InteractionResult);
             uint headerIdentity = 0;
-            if (onOpenChanged != null)
+            if (!searching && (onOpenChanged != null || remembered))
             {
                 string headerId = Ids.Join(_id, "-section-", title);
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));
@@ -307,7 +318,11 @@ public static partial class Crystarium
                     new(_width, headerHeight), disabled: false);
                 headerIdentity = ImGui.GetID(headerId);
                 if (hit.Clicked)
-                    onOpenChanged(!open);
+                {
+                    open = !open;
+                    if (remembered) WriteSectionOpen!(disclosureKey, open);
+                    onOpenChanged?.Invoke(open);
+                }
             }
 
             PaintSectionHeader(

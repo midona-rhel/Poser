@@ -24,8 +24,9 @@ namespace Poser.Game.Scene;
 /// services, and the scene codec/store. It owns no transaction state; every
 /// method is one materialization step.
 /// </summary>
-internal sealed class SceneRuntimeAdapter : ISceneRuntime
+internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
+    private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
     private readonly ISessionGenerationSource _sessions;
     private readonly SceneCaptureService _capture;
@@ -46,7 +47,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly IWorldRenderingService _rendering;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
-    private readonly WorldObjects.WorldObjectService _worldObjects;
+    private readonly World.WorldService _worldObjects;
     private readonly Poser.Services.IPlaceService _place;
 
     /// <summary>Finds an appearance package by its bytes. Held as the
@@ -84,7 +85,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IWorldRenderingService rendering,
         IActorManager actors,
         IObjectTable objects,
-        WorldObjects.WorldObjectService worldObjects,
+        World.WorldService worldObjects,
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
@@ -115,6 +116,15 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         _lighting = lighting;
         _cameras = cameras;
         _environment = environment;
+        _framework.Update += SweepHistoryAppearance;
+    }
+
+    private void SweepHistoryAppearance(IFramework _) => _historyAppearanceFiles.Sweep(ActiveSession);
+
+    public void Dispose()
+    {
+        _framework.Update -= SweepHistoryAppearance;
+        _historyAppearanceFiles.Dispose();
     }
 
     public SessionGeneration? ActiveSession => _sessions.ActiveSessionGeneration;
@@ -686,8 +696,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// one owned temporary file the import runs from — the transaction takes a
     /// path, and inventing a second import route for embedded bytes would mean
     /// a second set of phases, a second rollback and a second ownership
-    /// ledger. The staged file is deleted once the import reaches its terminal
-    /// receipt, whichever way it ended. Its checksum is NOT consulted: the
+    /// ledger. Successful imports retain that file for history until the session
+    /// ends; failed imports delete it immediately. Its checksum is NOT consulted: the
     /// bytes in the document ARE the package, so there is nothing to identify
     /// them against.</para>
     ///
@@ -710,6 +720,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             return SceneMcdfOutcome.Silent;
 
         string? staged = null;
+        var historySession = ActiveSession;
         try
         {
             // File work first, off the framework thread: a missing package is a
@@ -803,6 +814,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                     terminal.OperationId == operationId &&
                     terminal.State != OperationReceiptState.Pending)
                 {
+                    if (terminal.State == OperationReceiptState.Applied && staged is not null &&
+                        historySession is { } session && ActiveSession == session &&
+                        _historyAppearanceFiles.Retain(staged, session))
+                        staged = null;
                     return terminal.State == OperationReceiptState.Applied
                         ? SceneMcdfOutcome.Ok(changed)
                         : SceneMcdfOutcome.Refused(

@@ -7,7 +7,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
-using Poser.Application.Actors;
 using Poser.Application.Animation;
 using Poser.Application.Selection;
 using Poser.Config;
@@ -86,10 +85,6 @@ public sealed class SpawnBrowserWindow : Window
     private const string SpawnFailedNote =
         "The spawn failed — GPose may be full or unavailable.";
 
-    private const string NoWorldLightsNote =
-        "No overworld light is close enough to capture — capture works in "
-        + "GPose, near a light the world itself places.";
-
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly IActorSpawnService _spawnService;
@@ -114,20 +109,6 @@ public sealed class SpawnBrowserWindow : Window
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
-
-    /// <summary>The capture surface. Candidates are a snapshot of the moment
-    /// the window opened — a handle is only valid until the light list next
-    /// changes — so the list is refreshed on open, not per frame.</summary>
-    private readonly Crystarium.SearchPicker<WorldLightChoice> _worldPicker =
-        new("spawn-world-light");
-
-    private readonly List<WorldLightChoice> _worldLights = new();
-
-    /// <summary>One capturable overworld light, as a row. The picker takes
-    /// reference types, and the candidate is a struct; the label and the ImGui
-    /// key are minted here rather than per frame.</summary>
-    private sealed record WorldLightChoice(
-        WorldLightCandidate Candidate, string Label, string Key);
 
     private bool _built;
     private string _query = string.Empty;
@@ -316,10 +297,6 @@ public sealed class SpawnBrowserWindow : Window
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
-        // NO world-light refresh here: that is a native world-graph walk
-        // on the draw thread, and it froze every open (2026-08-31). The
-        // World light row refreshes on demand — its own activation already
-        // calls RefreshWorldLights.
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
@@ -422,7 +399,7 @@ public sealed class SpawnBrowserWindow : Window
                 _vm.HighlightRow = -1;
             }
         }
-        else if (_hadFocus && !_pinned && !_worldPicker.IsOpen)
+        else if (_hadFocus && !_pinned && !_assetPicker.IsOpen)
         {
             IsOpen = false;
             return;
@@ -467,8 +444,6 @@ public sealed class SpawnBrowserWindow : Window
 
         // Pumped after the list: the surface a row opened has to outlive that
         // row's own draw call.
-        if (_worldPicker.Draw() is { } chosen)
-            CaptureWorldLight(chosen.Item);
         if (_assetPicker.Draw() is { } asset)
             SpawnWorldAsset(asset.Item.Path);
     }
@@ -484,20 +459,6 @@ public sealed class SpawnBrowserWindow : Window
             at = at with { Position = position };
         if (_worldObjects.Spawn(path, at, true, out var refusal) is null)
             _notices.Failed(refusal ?? SpawnFailedNote);
-    }
-
-    /// <summary>Capture spawns an owned copy and suppresses the original. The
-    /// scene has not rescanned yet, so the copy is selected on the next refresh
-    /// through the same reconcile a spawned light uses.</summary>
-    private void CaptureWorldLight(WorldLightChoice choice)
-    {
-        var captured = _lightingService.CaptureWorldLight(choice.Candidate);
-        if (captured == null)
-        {
-            _notices.Failed("The world light could not be captured.");
-            return;
-        }
-        _pendingSelectSpawnedLight = captured;
     }
 
     // ── the list ─────────────────────────────────────────────────────────
@@ -530,14 +491,14 @@ public sealed class SpawnBrowserWindow : Window
             TablerIcon.Stack2,
             help: "A frozen copy in the same pose and place"));
         rows.Add(ActionRow(
-            "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserPlus,
+            "##spawn-actor-mcdf", "Actor from character file", TablerIcon.UserPlus,
             help: "Spawn a fresh actor and dress it from a character file"));
         rows.Add(ActionRow(
             "##spawn-actor-library", "Actor from library",
             TablerIcon.UserFromFile,
             help: "Browse the library's saved actors"));
         rows.Add(ActionRow(
-            "##spawn-actor-file", "Actor from file", TablerIcon.UserFromFile,
+            "##spawn-actor-file", "Actor from saved entity", TablerIcon.UserFromFile,
             help: "Load a saved actor entry"));
         rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Moneybag));
         rows.Add(ActionRow(
@@ -880,30 +841,6 @@ public sealed class SpawnBrowserWindow : Window
         new(id, label, label.ToLowerInvariant(), glyph, 0u, null, disabled,
             help);
 
-    /// <summary>Re-reads the capturable overworld lights and re-states the row
-    /// they feed. A candidate's handle dies with the next light-list change, so
-    /// nothing here is kept across an open.</summary>
-    private void RefreshWorldLights()
-    {
-        _worldLights.Clear();
-        if (_lightingService.IsAvailable)
-        {
-            var candidates = _lightingService.GetWorldLightCandidates();
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                var candidate = candidates[i];
-                _worldLights.Add(new WorldLightChoice(
-                    candidate,
-                    string.Format(
-                        CultureInfo.CurrentCulture,
-                        "World light — {0:0.0}m",
-                        candidate.DistanceFromPlayer),
-                    i.ToString(CultureInfo.InvariantCulture)));
-            }
-        }
-
-    }
-
     private static string? Badge(CompanionKind kind) => kind switch
     {
         CompanionKind.Companion => KindBadges[0],
@@ -1129,7 +1066,7 @@ public sealed class SpawnBrowserWindow : Window
                 _appearance.OpenMcdfSpawn(() =>
                 {
                     var body = _lifecycle.SpawnActor(
-                        "Add actor from MCDF",
+                        "Add actor from file",
                         () => _spawnService.SpawnNewActor(
                             reserveCompanionSlot: false));
                     if (body == null)

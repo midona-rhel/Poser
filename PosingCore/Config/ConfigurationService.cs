@@ -152,10 +152,12 @@ public class ConfigurationService : IDisposable
         Save();
     }
 
-    public void Save()
+    public void Save() => Save(notify: true);
+
+    public void Save(bool notify)
     {
         _pluginInterface.SavePluginConfig(Config);
-        OnConfigurationChanged?.Invoke();
+        if (notify) OnConfigurationChanged?.Invoke();
     }
 
     public void ApplyChange(bool save = true)

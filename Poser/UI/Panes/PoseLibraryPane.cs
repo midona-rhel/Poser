@@ -172,6 +172,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly SelectionSession _selection;
     private readonly Game.Journal.DisruptiveSteps _disruptive;
+    private readonly Game.Integration.CharaImport _chara;
 
     private readonly IEntityBindings _bindings;
 
@@ -457,8 +458,10 @@ public sealed partial class PoseLibraryPane
         IEnvironmentService environment,
         ISceneLifecycleHistory lifecycle,
         UserNotices notices,
-        Game.Journal.DisruptiveSteps disruptive)
+        Game.Journal.DisruptiveSteps disruptive,
+        Game.Integration.CharaImport chara)
     {
+        _chara = chara;
         _disruptive = disruptive;
         _lifecycle = lifecycle;
         _config = config;
@@ -1033,7 +1036,7 @@ public sealed partial class PoseLibraryPane
                 Favorite = favorites.Contains(entry.FilePath),
                 Fallback = entry.Kind switch
                 {
-                    PoseLibraryEntryKind.Mcdf => TablerIcon.UserCircle,
+                    PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara => TablerIcon.UserCircle,
                     PoseLibraryEntryKind.Scene => TablerIcon.Movie,
                     PoseLibraryEntryKind.Actor => TablerIcon.User,
                     PoseLibraryEntryKind.Light => TablerIcon.Bulb,

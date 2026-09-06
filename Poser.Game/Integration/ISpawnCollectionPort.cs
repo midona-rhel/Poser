@@ -2,6 +2,8 @@ using Poser.Domain.Integration;
 
 namespace Poser.Game.Integration;
 
+public sealed record SpawnCollectionSnapshot(IReadOnlyDictionary<string, string> Paths, string Manipulations);
+
 /// <summary>
 /// The Penumbra half of "a clone looks 1:1": the source's effective
 /// collection follows the appearance copy onto the clone.
@@ -25,6 +27,11 @@ namespace Poser.Game.Integration;
 /// </summary>
 public interface ISpawnCollectionPort
 {
+    IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(nint actor) =>
+        IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
+    IntegrationPortResult RestoreInheritedCollection(nint actor, SpawnCollectionSnapshot snapshot) =>
+        IntegrationPortResult.Fail("Collection history is unavailable.");
+
     /// <summary>Assigns the source's EFFECTIVE collection — an individual
     /// assignment when it has one, otherwise whatever Penumbra actually
     /// resolves for it — to the clone as an individual assignment.</summary>

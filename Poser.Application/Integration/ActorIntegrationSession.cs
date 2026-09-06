@@ -75,6 +75,62 @@ public sealed class ActorIntegrationSession : IDisposable
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) =>
         _port.GetCollectionAssignment(actor);
 
+    public ActorAppearanceSnapshot CaptureHistory(ActorId actor)
+    {
+        var owned = OverridesFor(actor);
+        var look = GetStateJson(actor);
+        var collection = ReadCollection(actor);
+        var body = CaptureBodyProfile(actor);
+        return new(look.Success ? look.Value : null,
+            collection.Success ? collection.Value : null,
+            body.Success ? body.Value : null, owned.BodyProfileName, owned.Mcdf?.SourcePath);
+    }
+
+    public IntegrationValue<string?> CaptureBodyProfile(ActorId actor)
+    {
+        var owned = OverridesFor(actor);
+        if (owned.Mcdf?.AppliedProfileJson is { } mcdfProfile)
+            return IntegrationValue<string?>.Ok(mcdfProfile);
+        if (owned.BodyProfileJson is { } retained)
+            return IntegrationValue<string?>.Ok(retained);
+        if (!_port.CustomizePlus.Available)
+            return IntegrationValue<string?>.Ok(null);
+        var probe = _port.ProbeBodyProfile(actor);
+        if (!probe.Success || probe.Value is not { } state)
+            return IntegrationValue<string?>.Fail(probe.Detail ?? "The Customize+ profile could not be read.");
+        if (state.ActiveProfile is not { } active)
+            return IntegrationValue<string?>.Ok(null);
+        if (!state.ActiveIsSaved)
+            return IntegrationValue<string?>.Fail("The source has an unreadable temporary Customize+ profile from another plugin.");
+        var profile = _port.GetBodyProfileJson(active);
+        return profile.Success && profile.Value is { } json
+            ? IntegrationValue<string?>.Ok(json)
+            : IntegrationValue<string?>.Fail(profile.Detail ?? "The Customize+ profile could not be read.");
+    }
+
+    /// <summary>MCDF packages restore through BeginImport first; ordinary looks replay these captured values.</summary>
+    public IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot)
+    {
+        if (snapshot.McdfPath is not null)
+            return BeginImport(actor, snapshot.McdfPath);
+        var failures = new List<string>();
+        void Check(IntegrationResult result)
+        {
+            if (!result.Success) failures.Add(result.Detail ?? "Appearance restore failed.");
+        }
+        if (snapshot.Collection is { } collection)
+            Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName));
+        if (snapshot.BodyProfileJson is { } profile)
+            Check(ApplyBodyProfileJson(actor, profile, snapshot.BodyProfileName ?? "Restored profile"));
+        if (snapshot.StateJson is { } json)
+        {
+            var ownership = OwnLook(actor);
+            Check(ownership);
+            if (ownership.Success) Check(ApplyStateJson(actor, json));
+        }
+        return failures.Count == 0 ? IntegrationResult.Ok() : IntegrationResult.Fail(string.Join("; ", failures));
+    }
+
     public IntegrationResult OpenGlamourer(ActorId actor)
     {
         var result = _port.OpenGlamourer(actor);
@@ -329,6 +385,16 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationResult SetBodyProfile(ActorId actor, Guid profile, string name)
     {
+        if (McdfGate(actor) is { } gate) return gate;
+        var json = _port.GetBodyProfileJson(profile);
+        return json.Success && json.Value is { } value
+            ? ApplyBodyProfileJson(actor, value, name)
+            : IntegrationResult.Fail(json.Detail ?? "The profile could not be read.");
+    }
+
+    /// <summary>Replays the captured profile contents, not a mutable saved-profile selection.</summary>
+    public IntegrationResult ApplyBodyProfileJson(ActorId actor, string profileJson, string name)
+    {
         if (McdfGate(actor) is { } gate)
             return gate;
         var current = OverridesFor(actor);
@@ -347,10 +413,6 @@ public sealed class ActorIntegrationSession : IDisposable
                 SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
                 BodyProfileCaptured = true,
             };
-
-        var json = _port.GetBodyProfileJson(profile);
-        if (!json.Success || json.Value is not { } profileJson)
-            return IntegrationResult.Fail(json.Detail ?? "The profile could not be read.");
 
         var applied = _port.ApplyTemporaryBodyProfile(actor, profileJson);
         if (!applied.Success || applied.Value == default)

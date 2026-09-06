@@ -44,6 +44,7 @@ public sealed class LightPane
     /// <summary>Adding and removing a light goes through the lifecycle seam,
     /// so both land in the shell's undo history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly WorldActions _worldActions;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
     private readonly IPlacementAnchorSource _anchors;
@@ -125,6 +126,7 @@ public sealed class LightPane
         IEntityBindings bindings,
         ILightingService lighting,
         ISceneLifecycleHistory lifecycle,
+        WorldActions worldActions,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
         IPlacementAnchorSource anchors,
@@ -145,6 +147,7 @@ public sealed class LightPane
         _scenePane = scenePane;
         _lighting = lighting;
         _lifecycle = lifecycle;
+        _worldActions = worldActions;
         _lightFiles = lightFiles;
         _placement = placement;
         _anchors = anchors;
@@ -766,7 +769,8 @@ public sealed class LightPane
                 actions.Button("Release",
                     () =>
                     {
-                        _lighting.ReleaseLight(light);
+                        if (_bindings.GetLightId(light) is { } borrowedId)
+                            _ = _worldActions.Release(SelectionId.ForLight(borrowedId));
                     },
                     help: "Hand it back to the game");
         });

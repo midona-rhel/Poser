@@ -1,7 +1,10 @@
 using System.Numerics;
+using System.Threading.Tasks;
 using Poser.Domain.Presentation;
 
 namespace Poser.Services;
+
+public readonly record struct WorldObjectRespawnResult(bool Succeeded, string? Detail = null);
 
 /// <summary>A world object the scene holds: a spawned or adopted map object or effect with its placement, look and animation state.</summary>
 public interface IWorldObject
@@ -24,7 +27,7 @@ public interface IWorldObject
     ulong? DebugObjectFlags { get; set; }
     byte? DebugByte(int offset);
     void SetDebugByte(int offset, byte value);
-    bool Respawn(string path, out string? detail);
+    Task<WorldObjectRespawnResult> Respawn(string path);
     Transform InitialPlacement { get; }
     byte InitialFlags { get; }
     bool InitialVisible { get; }

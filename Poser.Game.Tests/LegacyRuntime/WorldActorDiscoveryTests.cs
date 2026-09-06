@@ -1,6 +1,5 @@
 using Poser.Domain.Actors;
 using Dalamud.Plugin.Services;
-using Poser.Application.Actors;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Game;

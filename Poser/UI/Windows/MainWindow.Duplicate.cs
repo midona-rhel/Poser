@@ -281,9 +281,9 @@ public partial class MainWindow
 
     /// <summary>The seed copy plus what the built body needs again: the
     /// drawn look and the equipment visibility flags once posable. The
-    /// Penumbra collection is the spawn service's own inherit. Customize+ is
-    /// never applied: the posed duplicate carries the shape in its bone
-    /// scales and translations, the plain one idles as the game draws it.</summary>
+    /// Penumbra collection is the spawn service's own inherit. Plain-copy
+    /// lifecycle also copies Customize+; posed copies carry its shape in
+    /// the captured bone scales and translations.</summary>
     private IActor? CloneWearingCollection(IActor source)
     {
         var clone = _spawnService.CloneActor(source);

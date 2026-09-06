@@ -20,8 +20,8 @@ namespace Poser.Game.Lighting;
 /// <summary>
 /// Spawns and owns plugin-created scene lights through the game's own light
 /// factory, and adopts the two kinds of light the plugin does not own: the
-/// GPose camera lights (delisted, never destroyed) and copies of overworld
-/// lights (the original is suppressed for as long as the copy lives).
+/// GPose camera lights (delisted, never destroyed) and original overworld
+/// lights (their captured settings are restored on release, as in Brio).
 /// GPose-scoped: leaving GPose destroys every spawned light and releases
 /// every adopted one.
 /// </summary>
@@ -93,6 +93,8 @@ public sealed unsafe class LightingService : ILightingService
     /// destroyed, minus this plugin's own. Written from the ctor/dtor detours
     /// as well as the framework thread, hence the gate.</summary>
     private readonly HashSet<nint> _worldLights = new();
+    private readonly Dictionary<nint, long> _worldLightGenerations = new();
+    private long _nextWorldLightGeneration;
     private readonly object _worldGate = new();
 
     /// <summary>Whether the world's existing lights have been walked for this
@@ -333,45 +335,36 @@ public sealed unsafe class LightingService : ILightingService
         light.Invalidate();
     }
 
-    /// <summary>Hands a borrowed native back: a world copy restores and drops
-    /// its original then destroys the copy the plugin owns, a GPose light is
-    /// only delisted.</summary>
+    /// <summary>Restore the original world light and drop its wrapper; never
+    /// destroy a borrowed native. GPose lights are only delisted.</summary>
     private void ReleaseInternal(Light light)
     {
-        if (light.Ownership == LightOwnership.World)
-        {
-            RestoreWorldOriginal(light);
-            DestroyNative(light);
-            return;
-        }
-
-        light.Invalidate();
-    }
-
-    private void RestoreWorldOriginal(Light light)
-    {
-        var handle = light.WorldOriginal;
-        light.WorldOriginal = nint.Zero;
-        if (handle == nint.Zero)
-            return;
-
-        bool alive;
-        lock (_worldGate)
-            alive = _worldLights.Contains(handle);
-        if (!alive)
-            return;
-
         try
         {
-            var native = (GameLight*)handle;
-            if (native != null)
-                native->IsVisible = true;
+            var native = light.NativePtr;
+            if (light.WorldState is { } state && native != null && state.Restore(native))
+            {
+                native->UpdateRender();
+                native->Update();
+            }
         }
         catch (Exception ex)
         {
-            _log.Error(
-                $"LightingService: failed to restore a suppressed world light: {ex.Message}");
+            _log.Error($"LightingService: failed to restore a borrowed world light: {ex.Message}");
         }
+        finally
+        {
+            light.WorldState?.Dispose();
+            light.WorldState = null;
+            light.Invalidate();
+        }
+    }
+
+    private bool IsCurrentWorldLight(nint handle, long generation)
+    {
+        lock (_worldGate)
+            return _worldLights.Contains(handle)
+                && _worldLightGenerations.GetValueOrDefault(handle) == generation;
     }
 
     /// <summary>The native calls run inline on the caller's thread, so every
@@ -797,7 +790,10 @@ public sealed unsafe class LightingService : ILightingService
                 return result;
 
             lock (_worldGate)
+            {
                 _worldLights.Add((nint)light);
+                _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
+            }
 
             // The destructor has no signature of its own; its address comes
             // out of the first constructed light's virtual table, and the hook
@@ -839,10 +835,14 @@ public sealed unsafe class LightingService : ILightingService
         {
             var handle = (nint)light;
             var known = false;
+            long generation;
             lock (_worldGate)
+            {
+                generation = _worldLightGenerations.GetValueOrDefault(handle);
                 known = _worldLights.Remove(handle);
+            }
             if (known && !_disposed)
-                _framework.RunOnTick(() => OnNativeLightDied(handle));
+                _framework.RunOnTick(() => OnNativeLightDied(handle, generation));
         }
         catch (Exception ex)
         {
@@ -853,7 +853,7 @@ public sealed unsafe class LightingService : ILightingService
 
     /// <summary>A native the plugin borrowed has gone away: drop anything
     /// bound to it without touching the freed memory.</summary>
-    private void OnNativeLightDied(nint handle)
+    private void OnNativeLightDied(nint handle, long generation)
     {
         if (_disposed)
             return;
@@ -862,13 +862,14 @@ public sealed unsafe class LightingService : ILightingService
         foreach (var light in _lights.ToArray())
         {
             if (light.Ownership == LightOwnership.World &&
-                light.WorldOriginal == handle)
+                light.WorldAddress == handle && light.WorldGeneration == generation)
             {
-                // The original is already gone — clear it first so the release
-                // never writes through the dead pointer.
-                light.WorldOriginal = nint.Zero;
+                // The wrapper's generation guard stopped reads immediately
+                // at destruction. Only our retained texture reference remains.
+                light.WorldState?.Dispose();
+                light.WorldState = null;
                 _lights.Remove(light);
-                DestroyNative(light);
+                light.Invalidate();
                 changed = true;
                 continue;
             }
@@ -931,7 +932,10 @@ public sealed unsafe class LightingService : ILightingService
             foreach (var handle in found)
             {
                 if (handle != nint.Zero && _worldLights.Add(handle))
+                {
+                    _worldLightGenerations[handle] = ++_nextWorldLightGeneration;
                     added++;
+                }
             }
         }
 
@@ -977,9 +981,17 @@ public sealed unsafe class LightingService : ILightingService
             var native = (GameLight*)handle;
             if (native == null || native->LightRenderObject == null)
                 continue;
+            // A hot reload can discover existing lights before any constructor
+            // runs. Direct borrowing needs destruction tracking in that case too.
+            if (_lightDtorHook == null && native->VirtualTable != null)
+                HookDestructor((nint)native->VirtualTable->Destructor);
+            if (_lightDtorHook == null)
+                return Array.Empty<WorldLightCandidate>();
             Vector3 position = native->Transform.Position;
+            long generation;
+            lock (_worldGate) generation = _worldLightGenerations.GetValueOrDefault(handle);
             candidates.Add(new WorldLightCandidate(
-                handle, Vector3.Distance(position, origin), position));
+                handle, Vector3.Distance(position, origin), position, generation));
         }
 
         candidates.Sort(static (left, right) =>
@@ -987,14 +999,12 @@ public sealed unsafe class LightingService : ILightingService
         return candidates;
     }
 
-    public ILight? CaptureWorldLight(WorldLightCandidate candidate)
+    internal ILight? CaptureWorldLight(WorldLightCandidate candidate)
     {
-        if (!CanSpawn())
+        if (!CanSpawn() || _lightDtorHook == null)
             return null;
 
-        bool known;
-        lock (_worldGate)
-            known = _worldLights.Contains(candidate.Handle);
+        bool known = IsCurrentWorldLight(candidate.Handle, candidate.Generation);
         if (!known)
         {
             _log.Warning("LightingService: that world light no longer exists");
@@ -1010,46 +1020,21 @@ public sealed unsafe class LightingService : ILightingService
         if (original == null || original->LightRenderObject == null)
             return null;
 
+        BorrowedLightState? state = null;
+        Light? light = null;
         try
         {
-            var source = original->LightRenderObject;
-            var kind = Light.ToKind(source->EmissionType);
-            var transform = new PoserTransform(
-                original->Transform.Position,
-                original->Transform.Rotation,
-                original->Transform.Scale);
-
-            var light = SpawnNative(
-                kind, transform, LightOwnership.World, UniqueName("World Light"));
-            if (light == null)
-                return null;
-
-            var target = light.NativePtr->LightRenderObject;
-            if (target != null)
+            // Brio AddWorldLight: wrap the original and snapshot values.
+            // Acquisition does not allocate a native light or alter the world.
+            var name = UniqueName("World Light");
+            state = new BorrowedLightState(original);
+            light = new Light(original, name, LightOwnership.World,
+                () => IsCurrentWorldLight(candidate.Handle, candidate.Generation))
             {
-                target->LightFlags = source->LightFlags;
-                target->EmissionType = source->EmissionType;
-                target->ColorIntensity = source->ColorIntensity;
-                target->ShadowPlaneNear = source->ShadowPlaneNear;
-                target->ShadowPlaneFar = source->ShadowPlaneFar;
-                target->FalloffType = source->FalloffType;
-                target->AreaAngle = source->AreaAngle;
-                target->Falloff = source->Falloff;
-                target->LightAngle = source->LightAngle;
-                target->FalloffAngle = source->FalloffAngle;
-                target->Range = source->Range;
-                target->CharacterShadowRange = source->CharacterShadowRange;
-            }
-
-            light.WorldOriginal = candidate.Handle;
+                WorldAddress = candidate.Handle, WorldGeneration = candidate.Generation, WorldState = state,
+            };
             AdoptGobo(light, original);
-
-            // Copy-and-suppress: the original stays alive but is held
-            // invisible for as long as the copy exists, so the scene keeps
-            // exactly one of the two lights lit.
-            original->IsVisible = false;
-
-            light.NativePtr->Update();
+            _lights.Add(light);
 
             _log.Debug(
                 $"LightingService: captured world light {candidate.Handle:X} as '{light.Name}'");
@@ -1058,6 +1043,12 @@ public sealed unsafe class LightingService : ILightingService
         }
         catch (Exception ex)
         {
+            if (light != null)
+            {
+                _lights.Remove(light);
+                light.Invalidate();
+            }
+            state?.Dispose();
             _log.Error($"LightingService: failed to capture a world light: {ex}");
             return null;
         }
@@ -1082,7 +1073,7 @@ public sealed unsafe class LightingService : ILightingService
 
         if (string.IsNullOrEmpty(path) || !SupportsGobo(light.Kind))
             return;
-        ApplyGoboPath(light, path);
+        light.SetGoboPath(path);
     }
 
     private bool IsCaptured(nint handle)
@@ -1090,7 +1081,7 @@ public sealed unsafe class LightingService : ILightingService
         foreach (var light in _lights)
         {
             if (light.Ownership == LightOwnership.World &&
-                light.WorldOriginal == handle)
+                light.WorldAddress == handle && light.IsValid)
                 return true;
         }
         return false;
@@ -1165,8 +1156,6 @@ public sealed unsafe class LightingService : ILightingService
             if (light.GoboPath != null && !SupportsGobo(light.Kind))
                 ClearGoboNative(light);
 
-            SuppressWorldOriginal(light);
-
             if (!light.IsOn)
                 continue;
 
@@ -1177,23 +1166,6 @@ public sealed unsafe class LightingService : ILightingService
 
         if (detached)
             _events.Publish(new LightListChangedEvent(Lights));
-    }
-
-    private void SuppressWorldOriginal(Light light)
-    {
-        if (light.Ownership != LightOwnership.World ||
-            light.WorldOriginal == nint.Zero)
-            return;
-
-        bool alive;
-        lock (_worldGate)
-            alive = _worldLights.Contains(light.WorldOriginal);
-        if (!alive)
-            return;
-
-        var original = (GameLight*)light.WorldOriginal;
-        if (original != null)
-            original->IsVisible = false;
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)

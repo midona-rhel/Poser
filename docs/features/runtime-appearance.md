@@ -26,6 +26,13 @@ or a temporary saved Customize+ profile. Incoming state is captured once per
 component. Reset and teardown restore it. Foreign locks and unreadable
 temporary profiles are refused before changes.
 
+Copying without pose retains the source's active Customize+ profile contents as
+an owned temporary profile on the copy, independent of animation and pose.
+Saved source profiles are read through the same active-ID/JSON API Brio uses;
+Poser-owned temporary profiles use their retained JSON. The source is not changed.
+Posed copies already carry the body shape in their captured transforms and do not
+apply the profile again. Lifecycle history retains the copied profile contents.
+
 Glamourer access is actor-generation scoped: editable, Poser-held,
 foreign-held, or unavailable. A refused unkeyed read is probed read-only
 with Poser's key; only another key refusal identifies a foreign hold.

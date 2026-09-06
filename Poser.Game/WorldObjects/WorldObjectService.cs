@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Services;
@@ -29,7 +30,8 @@ public sealed class AdoptedWorldObject : IWorldObject
         byte initialFlags,
         bool initialVisible,
         bool spawned = false,
-        bool isVfx = false)
+        bool isVfx = false,
+        float initialOpacity = 1f)
     {
         _owner = owner;
         Id = id;
@@ -40,6 +42,7 @@ public sealed class AdoptedWorldObject : IWorldObject
         InitialPlacement = initialPlacement;
         InitialFlags = initialFlags;
         InitialVisible = initialVisible;
+        InitialOpacity = _opacity = initialOpacity;
         Spawned = spawned;
         _isVfx = isVfx;
         _placement = initialPlacement;
@@ -158,6 +161,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     }
 
     private float _opacity = 1f;
+    public float InitialOpacity { get; }
 
     /// <summary>The colour, when the user tinted it: a VFX's colour
     /// multiplier, a BG object's stain dye. Null leaves the file's own
@@ -309,8 +313,8 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
-    public bool Respawn(string path, out string? detail) =>
-        _owner.Respawn(this, path, out detail);
+    public Task<WorldObjectRespawnResult> Respawn(string path) =>
+        _owner.Respawn(this, path);
 
     /// <summary>Placement captured when the object was adopted and restored on
     /// release.</summary>
@@ -400,6 +404,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private readonly VfxLifecycleOwner _vfx;
     private readonly List<AdoptedWorldObject> _adopted = new();
     private readonly List<WorldObjectIncarnation> _pendingTeardowns = new();
+    private readonly Dictionary<AdoptedWorldObject, PendingRespawn> _respawns = new();
+
+    private sealed record PendingRespawn(
+        WorldObjectIncarnation Fresh, string Path, DateTime Deadline,
+        TaskCompletionSource<WorldObjectRespawnResult> Completion);
 
     private int _nextId;
     private bool _disposed;
@@ -436,6 +445,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (_disposed)
             return;
         RetryPendingTeardowns();
+        PumpRespawns(DateTime.UtcNow);
         if (_teardownOnly)
         {
             ReleaseAll();
@@ -494,89 +504,128 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         }
     }
 
-    /// <summary>Recreates one SPAWNED object from the stated path, keeping
-    /// the handle: same id, same name, same placement, same bindings — a
-    /// new native incarnation under them. The loop refresh and the model
-    /// field's apply are both this. The old native object is destroyed
-    /// only after the new spawn took.</summary>
-    internal bool Respawn(
-        AdoptedWorldObject handle, string path, out string? detail)
+    /// <summary>Replaces a spawned object's native body without changing its
+    /// scene identity. Completion includes renderer readiness and property replay.</summary>
+    internal Task<WorldObjectRespawnResult> Respawn(
+        AdoptedWorldObject handle, string path)
     {
-        detail = null;
+        static Task<WorldObjectRespawnResult> Refused(string detail) =>
+            Task.FromResult(new WorldObjectRespawnResult(false, detail));
         if (_disposed || _teardownOnly || !handle.Spawned
             || !_adopted.Contains(handle))
-        {
-            detail = "Only a spawned object can respawn.";
-            return false;
-        }
+            return Refused("Only a spawned object can respawn.");
+        if (_respawns.ContainsKey(handle))
+            return Refused("This object already has a replacement loading.");
         if (string.IsNullOrWhiteSpace(path))
-        {
-            detail = "The path names nothing.";
-            return false;
-        }
+            return Refused("The path names nothing.");
         path = path.Trim();
         var placement = handle.Transform;
-        bool visible = handle.Visible;
-        var fresh = _port.Spawn(path, placement);
+        var fresh = _port.Spawn(path, placement, out var allocated);
         if (fresh == nint.Zero)
         {
-            detail = $"'{DisplayName(path)}' could not be spawned — the "
-                + "game did not take it.";
-            return false;
+            if (allocated.Address != nint.Zero) TryCleanupRespawnFresh(allocated);
+            return Refused($"'{DisplayName(path)}' could not be spawned — the game did not take it.");
         }
         if (!_port.TryReadIncarnation(fresh, out var freshIdentity)
+            || !allocated.SameAllocation(freshIdentity)
             || (NativeWorldObjectPort.IsVfxPath(path.Trim())
                 && (!freshIdentity.IsVfx
                     || freshIdentity.ResourceIdentity == nint.Zero)))
         {
-            bool cleaned = TryCleanupUnidentifiedFresh(path, fresh);
-            detail = cleaned
+            bool cleaned = allocated.Address != nint.Zero
+                ? TryCleanupRespawnFresh(allocated)
+                : TryCleanupUnidentifiedFresh(path, fresh);
+            return Refused(cleaned
                 ? "The new native incarnation could not be identified."
-                : "Respawn cleanup remains outstanding.";
-            return false;
+                : "Respawn cleanup remains outstanding.");
         }
-        if (!IsHandleCurrent(handle))
+        var pending = new PendingRespawn(freshIdentity, path,
+            DateTime.UtcNow.AddSeconds(15),
+            new(TaskCreationOptions.RunContinuationsAsynchronously));
+        _respawns.Add(handle, pending);
+        try
         {
-            // The replacement is not committed while old teardown is
-            // uncertain. This preserves the old claim and avoids reporting a
-            // successful respawn with an unowned native leak.
-            bool cleaned = TryCleanupRespawnFresh(freshIdentity);
-            detail = cleaned
-                ? "The old native incarnation could not be torn down."
-                : "Respawn cleanup remains outstanding.";
-            return false;
+            // A streaming replacement is not a second scene object. Keep it
+            // hidden until the renderer and its authored settings are ready.
+            _port.WriteVisible(fresh, false);
+            AdvanceRespawn(handle, pending, DateTime.UtcNow);
         }
-        bool oldDestroyed = handle.IsVfx
-            ? _port.TryDestroyVfx(handle.Identity)
-            : _port.TryDestroy(handle.Address);
+        catch (Exception ex)
+        {
+            FinishRespawn(handle, pending, false, $"The replacement failed: {ex.Message}");
+        }
+        return pending.Completion.Task;
+    }
+
+    internal void PumpRespawns(DateTime now)
+    {
+        foreach (var (handle, pending) in new Dictionary<AdoptedWorldObject, PendingRespawn>(_respawns))
+        {
+            try { AdvanceRespawn(handle, pending, now); }
+            catch (Exception ex)
+            {
+                FinishRespawn(handle, pending, false, $"The replacement failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void AdvanceRespawn(AdoptedWorldObject handle, PendingRespawn pending, DateTime now)
+    {
+        var freshIdentity = pending.Fresh;
+        if (!IsHandleCurrent(handle)
+            || !_port.TryReadIncarnation(handle.Address, out var oldIdentity)
+            || !oldIdentity.SameAllocation(handle.Identity)
+            || !_port.TryReadIncarnation(freshIdentity.Address, out var currentFresh)
+            || !currentFresh.SameAllocation(freshIdentity))
+        {
+            FinishRespawn(handle, pending, false, "A native incarnation changed while replacing the object.");
+            return;
+        }
+        if (now >= pending.Deadline)
+        {
+            FinishRespawn(handle, pending, false, "The replacement did not finish loading; the original was kept.");
+            return;
+        }
+        if (!freshIdentity.IsVfx)
+        {
+            if (!_port.IsBgReady(freshIdentity.Address)) return;
+            // Undyeable models have no stain buffer and must not wait for one.
+            if (handle.Tint is not null && _port.CanDyeBg(freshIdentity.Address) != false
+                && !_port.WriteBgTint(freshIdentity.Address, handle.Tint)) return;
+            _port.WriteBgNightState(freshIdentity.Address, handle.NightState);
+            // Raw spawned scenery deliberately has no animation data (see
+            // NativeWorldObjectPort.Spawn); there is no animation load to await.
+        }
+        bool visible = handle.Visible;
+        _port.Write(freshIdentity.Address, handle.Transform);
+        if (!PrepareRespawn(handle, freshIdentity, visible, out var detail))
+        {
+            FinishRespawn(handle, pending, false, detail);
+            return;
+        }
+        bool oldDestroyed = TryDestroyRespawnIncarnation(handle.Identity);
         if (!oldDestroyed)
         {
-            bool freshDestroyed = TryCleanupRespawnFresh(freshIdentity);
-            detail = freshDestroyed
-                ? "The old native incarnation could not be torn down."
-                : "Respawn cleanup remains outstanding.";
-            return false;
+            FinishRespawn(handle, pending, false, "The old native incarnation could not be torn down.");
+            return;
         }
-        handle.Address = fresh;
+        handle.Address = freshIdentity.Address;
         handle.Identity = freshIdentity;
-        handle.Path = path;
-        handle._isVfx = NativeWorldObjectPort.IsVfxPath(path);
+        handle.Path = pending.Path;
+        handle._isVfx = freshIdentity.IsVfx;
+        _pendingStains.Remove(handle);
+        handle.NightStatePending = false;
+        handle.AnimationPauseRetries = 0;
+        handle.AnimRef = null;
+        handle.LastWritten = null;
+        handle.HeldPauseTail = null;
         handle.VfxPlayback = handle.IsVfx
-            ? VfxPlaybackState.Playing
+            ? handle.VfxPaused ? VfxPlaybackState.Paused : VfxPlaybackState.Playing
             : VfxPlaybackState.Unavailable;
-        if (!visible)
-            handle.Visible = false;
         if (handle.IsVfx)
         {
-            if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f)
-                _port.SetVfxSpeed(fresh, handle.VfxSpeed);
-            if (handle.Tint is { } tint)
-                _port.WriteVfxTint(fresh, tint);
-            if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
-                _port.SetVfxIntensity(fresh, handle.VfxIntensity);
             if (handle.VfxPaused)
             {
-                _port.PauseVfx(fresh);
                 handle.NextVfxRefresh = DateTime.MaxValue;
             }
             else
@@ -584,21 +633,56 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
             }
         }
-        else
-        {
-            if (handle.Tint is not null)
-                // The fresh incarnation's model is still loading, so the
-                // dye rides the pending-stain retry.
-                WriteTint(handle);
-            // The fresh incarnation ships lit; restate the dressing.
-            handle.NightStatePending = true;
-            if (handle.AnimationPaused)
-                handle.AnimationPauseRetries = AnimationPauseRetryTicks;
-        }
-        if (handle.Opacity < 1f && visible)
-            _port.WriteOpacity(fresh, handle.Opacity);
+        FinishRespawn(handle, pending, true, null);
         _events.Publish(new WorldObjectListChangedEvent());
-        return true;
+    }
+
+    private void FinishRespawn(AdoptedWorldObject handle, PendingRespawn pending,
+        bool succeeded, string? detail)
+    {
+        // A post-commit subscriber failure must not roll back an already
+        // published native replacement or destroy the handle's new body.
+        if (!_respawns.TryGetValue(handle, out var active) || active != pending) return;
+        _respawns.Remove(handle);
+        if (!succeeded && !TryCleanupRespawnFresh(pending.Fresh))
+            detail += " Replacement cleanup remains outstanding.";
+        pending.Completion.TrySetResult(new(succeeded, detail));
+    }
+
+    private bool PrepareRespawn(AdoptedWorldObject handle,
+        WorldObjectIncarnation fresh, bool visible, out string? detail)
+    {
+        detail = null;
+        try
+        {
+            // Every native property write precedes old-object teardown.
+            _port.WriteVisible(fresh.Address, visible);
+            if (fresh.IsVfx)
+            {
+                if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f
+                    && !_port.TrySetVfxSpeed(fresh.Address, handle.VfxSpeed))
+                {
+                    detail = "The replacement could not take the playback speed.";
+                    return false;
+                }
+                if (handle.Tint is { } tint) _port.WriteVfxTint(fresh.Address, tint);
+                if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
+                    _port.SetVfxIntensity(fresh.Address, handle.VfxIntensity);
+                if (handle.VfxPaused && !_port.TryPauseVfx(fresh.Address))
+                {
+                    detail = "The replacement could not be paused.";
+                    return false;
+                }
+            }
+            if (handle.Opacity < 1f && visible)
+                _port.WriteOpacity(fresh.Address, handle.Opacity);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            detail = $"The replacement settings could not be applied: {ex.Message}";
+            return false;
+        }
     }
 
     internal bool TryWriteVfxSpeed(AdoptedWorldObject handle, float speed)
@@ -924,6 +1008,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// that releases while reading must work off a snapshot.</summary>
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
 
+    internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
+        _port.TryReadIncarnation(address, out identity);
+
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>
         !_disposed && IsHandleCurrent(handle) && _port.IsBgReady(handle.Address);
@@ -1117,6 +1204,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 $"WorldObjectService: refusing VFX {address:X}; its playback state is unavailable.");
             return null;
         }
+        float opacity = snapshot.Color.W;
+        if (!isVfx && !_port.TryReadOpacity(address, out opacity))
+            return null;
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
@@ -1127,7 +1217,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             placement,
             flags,
             visible,
-            isVfx: isVfx);
+            isVfx: isVfx,
+            initialOpacity: opacity);
         // The original's own dressing, put back on release; the handle
         // starts from the same value so the buttons read true.
         handle.InitialNightState = _port.ReadBgNightState(address);
@@ -1182,6 +1273,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             return false;
         if (!_adopted.Contains(handle))
             return false;
+        if (_respawns.TryGetValue(handle, out var pending))
+            FinishRespawn(handle, pending, false, "Replacement cancelled because the object was released.");
         if (!RestoreNative(handle))
             return false;
         _adopted.Remove(handle);
@@ -1193,6 +1286,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// body of the GPose-exit and unload edges.</summary>
     public void ReleaseAll()
     {
+        foreach (var (handle, pending) in new Dictionary<AdoptedWorldObject, PendingRespawn>(_respawns))
+            FinishRespawn(handle, pending, false, "Replacement cancelled because the scene was released.");
         RetryPendingTeardowns();
         if (_adopted.Count == 0)
             return;
@@ -1210,7 +1305,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private bool IsHandleCurrent(AdoptedWorldObject handle) =>
         handle.IsVfx
             ? _vfx.IsCurrent(handle.Identity)
-            : _port.IsAlive(handle.Address);
+            : _port.TryReadIncarnation(handle.Address, out var current)
+                && current.SameAllocation(handle.Identity);
 
     internal Transform ReadPlacement(AdoptedWorldObject handle, Transform fallback) =>
         IsHandleCurrent(handle)
@@ -1229,12 +1325,28 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     private bool TryCleanupRespawnFresh(WorldObjectIncarnation identity)
     {
-        bool cleaned = identity.IsVfx
-            ? _port.TryDestroyVfx(identity)
-            : _port.TryDestroy(identity.Address);
+        bool cleaned = TryDestroyRespawnIncarnation(identity);
         if (!cleaned && !_pendingTeardowns.Contains(identity))
             _pendingTeardowns.Add(identity);
         return cleaned;
+    }
+
+    private bool TryDestroyRespawnIncarnation(WorldObjectIncarnation identity)
+    {
+        try
+        {
+            if (identity.IsVfx) return _port.TryDestroyVfx(identity);
+            if (!_port.IsAlive(identity.Address)) return true;
+            if (!_port.TryReadIncarnation(identity.Address, out var current)) return false;
+            // A queued BG cleanup owns this incarnation, not a reusable slot.
+            if (!current.SameAllocation(identity)) return true;
+            return _port.TryDestroy(identity.Address);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"WorldObjectService: respawn teardown remains pending: {ex.Message}");
+            return false;
+        }
     }
 
     private bool TryCleanupUnidentifiedFresh(string path, nint address)
@@ -1253,9 +1365,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         for (int i = _pendingTeardowns.Count - 1; i >= 0; i--)
         {
             var identity = _pendingTeardowns[i];
-            bool cleaned = identity.IsVfx
-                ? _port.TryDestroyVfx(identity)
-                : _port.TryDestroy(identity.Address);
+            bool cleaned = TryDestroyRespawnIncarnation(identity);
             if (cleaned)
                 _pendingTeardowns.RemoveAt(i);
         }
@@ -1326,9 +1436,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 handle.MarkReleased(handle.InitialPlacement);
                 return true;
             }
-            if (handle.IsVfx
-                ? !_port.TryDestroyVfx(handle.Identity)
-                : !_port.TryDestroy(handle.Address))
+            if (!TryDestroyRespawnIncarnation(handle.Identity))
             {
                 _log.Warning(
                     $"WorldObjectService: destroying spawned {handle.Address:X} remains pending.");
@@ -1361,7 +1469,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             // already put back exactly; WriteVisible would quantize a
             // fractional alpha to 0 or 1. BG keeps the legacy flag write.
             if (handle.InitialVfxSnapshot is null)
+            {
+                _port.WriteOpacity(handle.Address, handle.InitialOpacity);
                 _port.WriteVisible(handle.Address, handle.InitialVisible);
+            }
             handle.MarkReleased(handle.InitialPlacement);
             return true;
         }

@@ -28,7 +28,12 @@ public readonly record struct WorldObjectIncarnation(
     nint Address,
     long Generation,
     nint ResourceIdentity,
-    bool IsVfx = false);
+    bool IsVfx = false)
+{
+    public bool SameAllocation(WorldObjectIncarnation other) =>
+        Address == other.Address && Generation == other.Generation && IsVfx == other.IsVfx
+        && (!IsVfx || ResourceIdentity == other.ResourceIdentity);
+}
 
 public enum VfxPlaybackState
 {
@@ -161,6 +166,15 @@ public interface IWorldObjectPort
     /// never restored.</summary>
     nint Spawn(string path, in Transform placement);
 
+    /// <summary>Captures ownership at allocation, before a later graph read can
+    /// fail. A nonzero identity remains cleanup authority even on failed spawn.</summary>
+    nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
+    {
+        var address = Spawn(path, placement);
+        TryReadIncarnation(address, out identity);
+        return address;
+    }
+
     /// <summary>Sets a spawned VFX's playback speed. A no-op on anything
     /// that is not a live VFX.</summary>
     void SetVfxSpeed(nint address, float speed);
@@ -291,6 +305,8 @@ public interface IWorldObjectPort
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);
+
+    bool TryReadOpacity(nint address, out float opacity);
 
     /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
     /// both. Never called with an adopted address — the map's own objects

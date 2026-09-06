@@ -11,6 +11,28 @@ Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
 
+## Lifecycle history
+
+Removal captures the entity as last edited, not its original spawn arguments.
+Actor restoration creates a fresh body, applies captured appearance/equipment,
+collection and Poser body-profile values, then waits for its skeleton and bone
+bindings before applying placement, pose, presentation, gaze and IK. Companion
+state follows the owner's pose. Lifecycle history restores authored bone-transform
+stacks directly, like Brio's pose history, rather than exporting and re-importing
+the evaluated animation frame. Untouched bones remain untouched. Animation is not
+recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
+The user handles animation after undo/redo. Scene files remain pictures, as described
+below. A repeated removal captures the latest edits again.
+
+Camera removal includes tracking, target and lock settings; light removal
+includes its bone attachment as well as emission, shadow and texture values.
+External targets that no longer exist are not replaced by unrelated entities.
+Duplicate collections retain their resolved resource paths and meta values;
+restoration creates a new owned collection rather than reusing its deleted ID.
+MCDF history reuses its package reference; it is not a portable appearance export.
+Embedded scene packages stay staged until the GPose session ends or the plugin
+unloads, so deleting an actor does not invalidate its history's appearance source.
+
 ## Created entity names
 
 Created actors, cameras, lights, props, overlays, world objects and groups
@@ -32,8 +54,8 @@ the Game control owner, even while the held actor is absent from discovery.
 Redo revalidates that observation, not a remembered native address. A missing
 actor, reused address or changed kind refuses acquisition; undo of an already
 gone actor does not release its replacement.
-Release captures the authored pose, placement, visibility, name and presentation
-settings, then restores captured presentation baselines while the actor is still
+Release captures the actor's lifecycle state and name, then restores captured
+presentation baselines while the actor is still
 bound. Undo reclaims that same actor and restores the saved scene state without
 new history entries. Deferred pose restoration stops if the claim is released.
 
@@ -167,6 +189,27 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+Respawning a world object keeps its old native and stable handle while the
+replacement loads hidden. Completion includes model readiness and applicable
+settings (placement, visibility, opacity, stain/night state or VFX playback/colour).
+The latest authored settings are applied before old-body teardown. Undyeable
+models do not wait for a stain buffer; raw spawned scenery does not load animation
+data. No readiness or property replay remains owed after successful replacement.
+After 15 seconds without readiness, a refusal, release, GPose exit or unload,
+the replacement is cancelled. Failed cleanup retains exact-incarnation authority
+for retry; a reused address never authorizes destruction of a replacement.
+An initial BG model-resource attachment belongs to the same allocation generation.
+
+## Borrowed world lights
+
+Borrowing wraps the original native light and captures its editable values;
+it neither spawns a substitute nor suppresses the original. Release and GPose
+exit restore those values on that same light, including its projected texture.
+If the native light disappears, its wrapper is dropped without restoring into
+a replacement at the same address. Spawned lights remain owned and destroyed
+by Poser. This follows Brio's `LightingService.AddWorldLight` /
+`RemoveWroldLight` borrowing model.
+
 ## Light controls and outlines
 
 Area-light Skew X/Y tilt the throw around the local X/Y axes; they do not
@@ -200,8 +243,8 @@ the save reports a partial result — a path, a temporary collection, or any
 other live handle is not a portable save.
 
 Restoring an embedded payload streams the container entry into one owned
-temporary file and imports it through the same MCDF transaction a hand-driven
-import uses. Its checksum is not consulted: the bytes in the container are the
+temporary file retained for the session and imports it through the same MCDF
+transaction a hand-driven import uses. Its checksum is not consulted: the bytes in the container are the
 package, so there is nothing to identify them against.
 
 ## Appearance identity

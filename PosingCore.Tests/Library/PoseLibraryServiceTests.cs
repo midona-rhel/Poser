@@ -17,6 +17,22 @@ namespace Poser.Tests.Library;
 public sealed class PoseLibraryServiceTests
 {
     [Fact]
+    public void Chara_files_are_listed_from_nested_sources_without_pose_parsing()
+    {
+        using var fixture = new LibraryFixture();
+        var folder = Directory.CreateDirectory(Path.Combine(fixture.Root, "Characters"));
+        var path = Path.Combine(folder.FullName, "Example.CHARA");
+        File.WriteAllText(path, """{"Race":"Hyur","Hair":191}""");
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        var entry = Assert.Single(service.Snapshot.Entries);
+        Assert.Equal(path, entry.FilePath);
+        Assert.Equal(PoseLibraryEntryKind.Chara, entry.Kind);
+        Assert.Equal("Example", entry.Name);
+    }
+
+    [Fact]
     public void Library_home_defaults_are_seeded_once_and_repointed_roots_stay_scanned()
     {
         var config = new LibraryConfiguration
