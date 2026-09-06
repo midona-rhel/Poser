@@ -40,10 +40,7 @@ public sealed class WorldObjectsPane
     /// apart by their glyphs — minted on first browse.</summary>
     private List<WorldAsset>? _assetChoices;
 
-    /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
-    /// that files one in the same history the transforms use — the seam whose
-    /// undo re-adopts the same address.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly WorldActions _worldActions;
 
     private bool _openObject = true;
 
@@ -59,7 +56,7 @@ public sealed class WorldObjectsPane
     public WorldObjectsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        ISceneLifecycleHistory lifecycle,
+        WorldActions worldActions,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
@@ -69,7 +66,7 @@ public sealed class WorldObjectsPane
         _names = names;
         _scene = scene;
         _bindings = bindings;
-        _lifecycle = lifecycle;
+        _worldActions = worldActions;
         _scenePane = scenePane;
         _assets = assets;
     }
@@ -403,7 +400,8 @@ public sealed class WorldObjectsPane
                     "Destroy",
                     () => _pending = () =>
                     {
-                        _lifecycle.ReleaseWorldObject(worldObject);
+                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
+                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
                         _scene.Selection.Clear();
                     },
                     variant: ButtonVariant.Danger,
@@ -413,7 +411,8 @@ public sealed class WorldObjectsPane
                     "Release",
                     () => _pending = () =>
                     {
-                        _lifecycle.ReleaseWorldObject(worldObject);
+                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
+                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
                         _scene.Selection.Clear();
                     },
                     help: "Give this object back to the map, where it stood");
@@ -421,7 +420,7 @@ public sealed class WorldObjectsPane
                 "Release all",
                 () => _pending = () =>
                 {
-                    _lifecycle.ReleaseAllWorldObjects();
+                    _ = _worldActions.ReleaseSceneObjects();
                     _scene.Selection.Clear();
                 },
                 help: "Give every borrowed object back and destroy every "

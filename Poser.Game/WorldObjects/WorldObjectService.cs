@@ -524,6 +524,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             return Refused($"'{DisplayName(path)}' could not be spawned — the game did not take it.");
         }
         if (!_port.TryReadIncarnation(fresh, out var freshIdentity)
+            || !allocated.SameAllocation(freshIdentity)
             || (NativeWorldObjectPort.IsVfxPath(path.Trim())
                 && (!freshIdentity.IsVfx
                     || freshIdentity.ResourceIdentity == nint.Zero)))
@@ -1003,6 +1004,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// <summary>The live claims. It is the service's own list, so a caller
     /// that releases while reading must work off a snapshot.</summary>
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
+
+    internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
+        _port.TryReadIncarnation(address, out identity);
 
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>

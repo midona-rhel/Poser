@@ -5,7 +5,6 @@ using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
-using Poser.Application.Actors;
 using Poser.Entities;
 using Poser.Services;
 
@@ -153,7 +152,7 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 /// Brio's AddFromWorld. Retained history observations are independent of the
 /// visible candidate list, which excludes bodies the scene already holds.
 /// </summary>
-public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscovery
+public sealed class WorldActorDiscovery
 {
     private readonly IWorldActorTableAdapter _adapter;
     private readonly IGPoseService _gPose;
@@ -270,7 +269,7 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
         return _candidates.ToArray();
     }
 
-    public WorldActorImportResult CloneCandidate(WorldActorCandidateId id) =>
+    internal WorldActorImportResult CloneCandidate(WorldActorCandidateId id) =>
         CloneCandidate(id, out _);
 
     /// <summary>
@@ -328,7 +327,7 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
     }
 
     /// <summary>Adopts the candidate and returns its wrapper for pending selection.</summary>
-    public WorldActorImportResult CloneCandidate(
+    internal WorldActorImportResult CloneCandidate(
         WorldActorCandidateId id, out IActor? spawned)
     {
         spawned = null;

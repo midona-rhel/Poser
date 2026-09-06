@@ -14,15 +14,11 @@ using Poser.Scene;
 
 namespace Poser.Services;
 
-/// <summary>World objects: the candidates, a spawn, the outline and the paused-animation hold.</summary>
+/// <summary>Spawned world objects and the render-phase animation pump. Borrowing is controlled by IWorldService.</summary>
 public interface IWorldObjectService
 {
     bool AnchorPumpedFromRender { get; set; }
     void HoldPausedAnimations();
     bool IsAvailable { get; }
-    IReadOnlyList<WorldObjectCandidate> GetCandidates();
-    IReadOnlyList<WorldObjectCandidate> GetEffectCandidates();
-    bool TryReadOutline(nint address, out byte outline);
-    void WriteOutline(nint address, byte outline);
     IWorldObject? Spawn( string path, Transform placement, bool visible, out string? detail);
 }

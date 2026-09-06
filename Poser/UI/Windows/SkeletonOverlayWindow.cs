@@ -1752,10 +1752,7 @@ public class SkeletonOverlayWindow : Window, IDisposable
     /// this is.</summary>
     private static bool SameCandidate(
         in WorldAdoptionCandidate left, in WorldAdoptionCandidate right) =>
-        left.Kind == right.Kind
-        && left.Actor.Equals(right.Actor)
-        && left.Light.Handle == right.Light.Handle
-        && left.WorldObject == right.WorldObject;
+        left.Id == right.Id;
 
     /// <summary>The hover list, per reference, in the standard's own
     /// surface. Ktisis: it rides 20 px right of the pointer whenever a dot

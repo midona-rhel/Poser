@@ -178,6 +178,16 @@ the replacement is cancelled. Failed cleanup retains exact-incarnation authority
 for retry; a reused address never authorizes destruction of a replacement.
 An initial BG model-resource attachment belongs to the same allocation generation.
 
+## Borrowed world lights
+
+Borrowing wraps the original native light and captures its editable values;
+it neither spawns a substitute nor suppresses the original. Release and GPose
+exit restore those values on that same light, including its projected texture.
+If the native light disappears, its wrapper is dropped without restoring into
+a replacement at the same address. Spawned lights remain owned and destroyed
+by Poser. This follows Brio's `LightingService.AddWorldLight` /
+`RemoveWroldLight` borrowing model.
+
 ## Light controls and outlines
 
 Area-light Skew X/Y tilt the throw around the local X/Y axes; they do not

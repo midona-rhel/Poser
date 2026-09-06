@@ -140,7 +140,7 @@ public sealed partial class PoseLibraryPane
             && _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
             ? _vm.Tiles[_vm.Selected].ThumbKey
             : null;
-        if (path == null)
+        if (path == null || Path.GetExtension(path).Equals(".chara", StringComparison.OrdinalIgnoreCase))
         {
             _characterFile = null;
             _files.SetCharacterFile(null, null);

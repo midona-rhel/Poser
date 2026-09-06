@@ -524,7 +524,9 @@ public sealed partial class PoseLibraryPane
                 or PoseLibraryEntryKind.Group
                 or PoseLibraryEntryKind.WorldObject
                 or PoseLibraryEntryKind.Prop
-            : entryKind == primary;
+            : primary == PoseLibraryEntryKind.Mcdf
+                ? entryKind is PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara
+                : entryKind == primary;
 
     private IEnumerable<PoseLibraryEntry> Ordered(
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)

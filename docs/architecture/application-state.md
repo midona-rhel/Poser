@@ -32,6 +32,20 @@ duplicate-name variants in order, and uses game indices only to find bones.
 Legacy matching and broadcast are explicit compatibility choices. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
+## World borrowing control
+
+`IWorldService` is the application-facing entry for discovery, highlighting,
+acquisition and release. It publishes immutable candidate values and returns
+stable scene identities; UI code only owns filters, projection and selection.
+The Game implementation owns refresh cadence, framework dispatch and native
+revalidation, routing actor and object history through their existing owners.
+Actors, lights and BG/VFX keep separate native implementations.
+Candidate IDs identify an observed native incarnation. Claim receipts target
+one resulting scene incarnation; releasing it ends those receipts, including
+when release starts from the entity rather than the receipt. Undo may recreate
+a scene incarnation, but an old receipt never redirects to that replacement.
+Native lifetime/restoration behavior is defined in [Scenes](../features/scenes.md).
+
 ## Results and recovery
 
 Application decides whether an operation succeeded, failed, rolled back, or

@@ -402,6 +402,19 @@ public sealed class WorldObjectRestoreTests
     }
 
     [Fact]
+    public async System.Threading.Tasks.Task Respawn_rejects_replacement_before_first_graph_observation()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        var original = spawned.Address;
+        world.Port.ReplaceFreshBeforeObservation = true;
+        Assert.False((await spawned.Respawn("bg/new.mdl")).Succeeded);
+        Assert.Equal(original, spawned.Address);
+        Assert.Equal(Moved, world.Port.PlacementOf(world.Port.LastSpawned));
+        Assert.Empty(world.Port.Destroyed);
+    }
+
+    [Fact]
     public async System.Threading.Tasks.Task Respawn_subscriber_failure_does_not_destroy_committed_body()
     {
         var world = new World();
@@ -656,6 +669,7 @@ private sealed class World
         public bool ThrowOnWrite { get; set; }
         public bool ThrowOnOpacity { get; set; }
         public bool FailSpawn { get; set; }
+        public bool ReplaceFreshBeforeObservation { get; set; }
         public bool BgReady { get; set; } = true;
         public bool BgDyeable { get; set; } = true;
         public bool FailBgTint { get; set; }
@@ -856,6 +870,8 @@ private sealed class World
             var address = Spawn(path, placement);
             identity = address == nint.Zero ? default : new(address, address.ToInt64(),
                 _nodes[address].ResourceIdentity, _nodes[address].IsVfx);
+            if (address != nint.Zero && ReplaceFreshBeforeObservation)
+                Replace(address, "bg/unrelated.mdl", Moved);
             return address;
         }
 

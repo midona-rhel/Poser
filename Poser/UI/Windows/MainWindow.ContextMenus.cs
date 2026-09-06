@@ -205,6 +205,11 @@ public partial class MainWindow
             actions.Add(() =>
             {
                 string name = ActorNames.Clean(actor.Name);
+                if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
+                {
+                    _ = _worldActions.Release(SelectionId.ForActor(actorId));
+                    return;
+                }
                 // Through the seam, exactly as Clone is: spawning an actor
                 // is a history step; destroying is undoable only when Poser
                 // spawned it and can respawn it.
@@ -803,7 +808,7 @@ public partial class MainWindow
             items.Add(new ContextMenuItem("Release", TablerIcon.X));
             actions.Add(() =>
             {
-                _lightingService.ReleaseLight(light);
+                _ = _worldActions.Release(SelectionId.ForLight(lightId));
                 _selection.Remove(SelectionId.ForLight(lightId));
             });
         }
@@ -1070,7 +1075,7 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                _lifecycle.ReleaseWorldObject(worldObject);
+                _ = _worldActions.Release(SelectionId.ForWorldObject(worldObjectId));
                 _selection.Remove(SelectionId.ForWorldObject(worldObjectId));
             },
         };

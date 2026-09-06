@@ -46,7 +46,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly IWorldRenderingService _rendering;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
-    private readonly WorldObjects.WorldObjectService _worldObjects;
+    private readonly World.WorldService _worldObjects;
     private readonly Poser.Services.IPlaceService _place;
 
     /// <summary>Finds an appearance package by its bytes. Held as the
@@ -84,7 +84,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IWorldRenderingService rendering,
         IActorManager actors,
         IObjectTable objects,
-        WorldObjects.WorldObjectService worldObjects,
+        World.WorldService worldObjects,
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,

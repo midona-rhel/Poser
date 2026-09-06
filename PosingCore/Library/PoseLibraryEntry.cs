@@ -50,6 +50,7 @@ public enum PoseLibraryEntryKind : byte
     /// spawnable copy. Read through the same codec as a scene.</summary>
     WorldObject,
     Prop,
+    Chara,
 }
 
 /// <summary>

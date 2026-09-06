@@ -1161,11 +1161,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     // ── adopted world objects ────────────────────────────────────────────
 
-    /// <summary>The live claim, plus the state that takes it again once the
-    /// live one is gone. A claim's whole identity is the ADDRESS it was taken
-    /// at, because the object behind it belongs to the map and outlives every
-    /// claim on it — so both directions are exactly statable and an adoption
-    /// takes an entry.</summary>
+    /// <summary>The live claim and authored state for undo/redo. The world
+    /// runtime retains and revalidates the native incarnation when reclaiming.</summary>
     private sealed class WorldObjectSlot
     {
         public object? Live;
@@ -1176,7 +1173,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     /// <summary>Takes one BG object into the scene, journalled. Undoing it
     /// RELEASES the claim, which puts the object back exactly where the map
     /// stood it — an adoption's inverse is never a destroy.</summary>
-    public object? AdoptWorldObject(nint address)
+    internal object? AdoptWorldObject(nint address)
     {
         var worldObject = _worldObjects.Adopt(address);
         if (worldObject == null)
@@ -1228,7 +1225,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     /// <summary>Gives one adopted object back to the map, journalled. Undoing
     /// it re-adopts the same address and puts back the placement the user had
     /// given it.</summary>
-    public void ReleaseWorldObject(object worldObject)
+    internal void ReleaseWorldObject(object worldObject)
     {
         var slot = WorldObjectSlotFor(worldObject);
         if (!ReleaseWorldObjectSlot(slot))
@@ -1241,7 +1238,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     /// <summary>Giving the whole list back is ONE act of the user's, so it is
     /// ONE entry over every slot it took — the prop list's own rule.</summary>
-    public void ReleaseAllWorldObjects()
+    internal void ReleaseAllWorldObjects()
     {
         var worldObjects = _worldObjects.WorldObjects;
         if (worldObjects.Count == 0)

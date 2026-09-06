@@ -202,9 +202,13 @@ public partial class MainWindow
                     if (_bindings.Resolve(actorId) is
                             { Success: true, Value: { } actor }
                         && (_spawnService.IsSpawnedActor(actor)
-                            || _spawnService.RemovalRefusal(actor) is null)
-                        && _lifecycle.DespawnActor(actor))
-                        _selection.RemoveActorLineage(actorId.LogicalId);
+                            || _spawnService.RemovalRefusal(actor) is null))
+                    {
+                        if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
+                            _ = _worldActions.Release(SelectionId.ForActor(actorId));
+                        else if (_lifecycle.DespawnActor(actor))
+                            _selection.RemoveActorLineage(actorId.LogicalId);
+                    }
                     break;
                 case { Kind: SceneEntityKind.Light, Light: { } lightId }:
                     if (_bindings.Resolve(lightId) is
@@ -213,7 +217,7 @@ public partial class MainWindow
                         if (light.Ownership == LightOwnership.Spawned)
                             _lifecycle.DestroyLight(light);
                         else
-                            _lightingService.ReleaseLight(light);
+                            _ = _worldActions.Release(SelectionId.ForLight(lightId));
                     }
                     break;
                 case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
@@ -236,7 +240,7 @@ public partial class MainWindow
                         WorldObject: { } borrowedId }:
                     if (_bindings.Resolve(borrowedId) is
                             { Success: true, Value: { IsValid: true } borrowed })
-                        _lifecycle.ReleaseWorldObject(borrowed);
+                        _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
                     break;
             }
         }
