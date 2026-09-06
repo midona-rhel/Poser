@@ -26,14 +26,24 @@ namespace Poser.UI;
 /// <summary>Kind filters, the query, ordering and the status line.</summary>
 public sealed partial class PoseLibraryPane
 {
-    private WorldAssetKind? _worldKindFilter;
-    public bool KindFilterContains(PoseLibraryEntryKind kind) =>
-        _kindFilter.Contains(kind);
+    private readonly HashSet<WorldAssetKind> _worldKindFilters =
+        new(Enum.GetValues<WorldAssetKind>());
+    public bool KindFilterContains(PoseLibraryEntryKind kind, WorldAssetKind? worldKind = null) =>
+        _kindFilter.Contains(kind)
+        && (worldKind is null || _worldKindFilters.Contains(worldKind.Value));
 
-    public void ToggleKindFilter(PoseLibraryEntryKind kind)
+    public void ToggleKindFilter(PoseLibraryEntryKind kind, WorldAssetKind? worldKind = null)
     {
-        _worldKindFilter = null;
-        if (!_kindFilter.Add(kind))
+        if (worldKind is { } subtype)
+        {
+            if (_kindFilter.Add(kind))
+                _worldKindFilters.Clear();
+            if (!_worldKindFilters.Add(subtype))
+                _worldKindFilters.Remove(subtype);
+            if (_worldKindFilters.Count == 0)
+                _kindFilter.Remove(kind);
+        }
+        else if (!_kindFilter.Add(kind))
             _kindFilter.Remove(kind);
         RebuildAfterFilterChange();
     }
@@ -42,7 +52,7 @@ public sealed partial class PoseLibraryPane
     /// tab shows nothing until a kind comes back.</summary>
     public void SetKindFilterNone()
     {
-        _worldKindFilter = null;
+        _worldKindFilters.Clear();
         if (_kindFilter.Count == 0)
             return;
         _kindFilter.Clear();
@@ -53,7 +63,7 @@ public sealed partial class PoseLibraryPane
     /// the neutral state, so there is no separate reset.</summary>
     public void SetKindFilterAll()
     {
-        _worldKindFilter = null;
+        _worldKindFilters.UnionWith(Enum.GetValues<WorldAssetKind>());
         foreach (var kind in Enum.GetValues<PoseLibraryEntryKind>())
             _kindFilter.Add(kind);
         RebuildAfterFilterChange();
@@ -63,7 +73,11 @@ public sealed partial class PoseLibraryPane
     /// or none for the whole tab.</summary>
     public void SetOnlyKindFilter(PoseLibraryEntryKind? kind, WorldAssetKind? worldKind = null)
     {
-        _worldKindFilter = worldKind;
+        _worldKindFilters.Clear();
+        if (worldKind is { } subtype)
+            _worldKindFilters.Add(subtype);
+        else
+            _worldKindFilters.UnionWith(Enum.GetValues<WorldAssetKind>());
         _kindFilter.Clear();
         if (kind is { } stated)
             _kindFilter.Add(stated);
@@ -88,7 +102,8 @@ public sealed partial class PoseLibraryPane
         PoseLibraryEntry entry, PoseLibraryEntryKind primary) =>
         primary != PoseLibraryEntryKind.Actor
         || (_kindFilter.Contains(entry.Kind)
-            && (_worldKindFilter is null || entry.WorldKind == _worldKindFilter));
+            && (entry.Kind != PoseLibraryEntryKind.WorldObject
+                || _worldKindFilters.Contains(entry.WorldKind)));
 
     private void SyncQuery()
     {
