@@ -6,4 +6,4 @@ namespace Poser.Services;
 /// line (expansion · subtype) the picker badges.
 /// </summary>
 public sealed record WorldAsset(
-    string Name, string Path, string Label, string Context);
+    string Name, string Path, string Label, string Context, uint IconId = 0);

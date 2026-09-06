@@ -572,6 +572,9 @@ public class SceneWorldObject
     /// <summary>Whether a spawned effect replays on its interval.</summary>
     public bool VfxLoop { get; set; } = true;
 
+    /// <summary>Furniture stain; zero uses the furnishing's default. Tint, when present, takes precedence.</summary>
+    public byte Stain { get; set; }
+
     /// <summary>A spawned effect's playback speed.</summary>
     public float VfxSpeed { get; set; } = 1f;
 

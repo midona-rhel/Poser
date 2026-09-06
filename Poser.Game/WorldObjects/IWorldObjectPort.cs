@@ -75,6 +75,9 @@ public readonly record struct VfxStateSnapshot(
 /// </summary>
 public interface IWorldObjectPort
 {
+    void Pump() { }
+    bool WriteFurnitureColor(nint address, byte stain, Vector3? tint) => true;
+
     /// <summary>Whether the world's scene graph can be reached at all right
     /// now. False makes <see cref="Enumerate"/> answer empty rather than walk
     /// a null root.</summary>

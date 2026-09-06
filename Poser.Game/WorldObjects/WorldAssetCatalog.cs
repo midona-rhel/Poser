@@ -30,12 +30,17 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
 
     private static string? _namesPath;
     private static Dictionary<string, string>? _overrides;
+    private static IReadOnlyDictionary<string, string> _furnitureNames = new Dictionary<string, string>();
+    private readonly IReadOnlyList<WorldAsset> _furniture;
 
     public WorldAssetCatalog(
-        Dalamud.Plugin.IDalamudPluginInterface pluginInterface)
+        Dalamud.Plugin.IDalamudPluginInterface pluginInterface,
+        Dalamud.Plugin.Services.IDataManager data)
     {
         _namesPath = System.IO.Path.Combine(
             pluginInterface.GetPluginConfigDirectory(), NamesFileName);
+        _furniture = FurnitureCatalog.Load(data);
+        _furnitureNames = _furniture.ToDictionary(x => x.Path, x => x.Label, StringComparer.OrdinalIgnoreCase);
     }
 
     private static Dictionary<string, string> Overrides
@@ -77,7 +82,7 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
     private IReadOnlyList<WorldAsset>? _effects;
 
     /// <summary>Every spawnable BG model path in the game data.</summary>
-    public IReadOnlyList<WorldAsset> Models => _models ??= Load(ModelsResource);
+    public IReadOnlyList<WorldAsset> Models => _models ??= _furniture.Concat(Load(ModelsResource)).ToArray();
 
     /// <summary>Every world effect (.avfx) path in the game data.</summary>
     public IReadOnlyList<WorldAsset> Effects =>
@@ -250,6 +255,8 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
     {
         if (Overrides.TryGetValue(path, out var custom))
             return custom;
+        if (_furnitureNames.TryGetValue(path, out var furniture))
+            return furniture;
         string stem = System.IO.Path.GetFileNameWithoutExtension(path);
         return string.IsNullOrWhiteSpace(stem)
             ? path

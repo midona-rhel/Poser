@@ -781,8 +781,8 @@ public sealed class DebugBridge : IDisposable
                     foreach (var handle in _worldObjects.Adopted)
                     {
                         var node = (byte*)handle.Address;
-                        string tail = node == null ? "" : Convert.ToHexString(new System.ReadOnlySpan<byte>(node + 0xC0, 0x20));
-                        rows.Add(new { handle.Name, handle.Spawned, handle.IsVfx, address = $"0x{handle.Address:X}", paused = handle.AnimationPaused, ready = _worldObjects.IsReadyProbe(handle), tail });
+                        string tail = node == null || handle.IsFurniture || handle.IsVfx ? "" : Convert.ToHexString(new System.ReadOnlySpan<byte>(node + 0xC0, 0x20));
+                        rows.Add(new { handle.Name, handle.Path, handle.Spawned, handle.IsVfx, handle.IsFurniture, handle.Stain, handle.Tint, handle.Opacity, handle.Visible, address = $"0x{handle.Address:X}", paused = handle.AnimationPaused, ready = _worldObjects.IsReadyProbe(handle), tail });
                     }
                 }
                 return Json(new { rows });

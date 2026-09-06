@@ -30,6 +30,9 @@ public sealed class WorldObjectsPane
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly IWorldAssetCatalog _assets;
+    private readonly Game.StainCatalog _stains;
+    private readonly Crystarium.SearchPicker<Game.StainEntry> _stainPicker = new("furniture-stain");
+    private IWorldObject? _stainTarget;
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
@@ -60,6 +63,7 @@ public sealed class WorldObjectsPane
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
+        Game.StainCatalog stains,
         Game.Journal.WorldObjectSession values)
     {
         _values = values;
@@ -69,6 +73,7 @@ public sealed class WorldObjectsPane
         _worldActions = worldActions;
         _scenePane = scenePane;
         _assets = assets;
+        _stains = stains;
     }
 
     private readonly ScenePane _scenePane;
@@ -106,7 +111,7 @@ public sealed class WorldObjectsPane
 
             // The instance's raw levers, for the pause hunt and whatever
             // the next hunt is: every bit writable live, nothing hidden.
-            if (!worldObject.IsVfx)
+            if (!worldObject.IsVfx && !worldObject.IsFurniture)
                 page.Section(
                     "Debug",
                     _openDebug,
@@ -120,6 +125,15 @@ public sealed class WorldObjectsPane
             && SelectedWorldObject() is { } target)
         {
             BeginRespawn(target, picked.Item.Path);
+        }
+
+        if (_stainPicker.Draw() is { } stain
+            && _stainTarget is { IsValid: true } furniture
+            && ReferenceEquals(SelectedWorldObject(), furniture))
+        {
+            _values.Seal();
+            _values.SetStain(furniture, stain.Item.Id);
+            _values.Seal();
         }
 
         var pending = _pending;
@@ -159,7 +173,7 @@ public sealed class WorldObjectsPane
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire
-                    : TablerIcon.Plant,
+                    : asset.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase) ? TablerIcon.Couch : TablerIcon.Plant,
                 Badge = static asset => asset.Context,
             });
     }
@@ -305,7 +319,23 @@ public sealed class WorldObjectsPane
                 help: "Fade the whole object",
                 onBegin: _values.Seal));
         var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
-        if (worldObject.IsVfx)
+        if (worldObject.IsFurniture)
+        {
+            form.Pair(
+                "Dye",
+                cell => cell.Picker("##furniture-stain", _stains.NameOf(worldObject.Stain), () =>
+                {
+                    _stainTarget = worldObject;
+                    _stainPicker.Open("furniture-stain", _stains.Entries,
+                        static stain => stain.Name,
+                        static stain => stain.Id.ToString(CultureInfo.InvariantCulture),
+                        worldObject.Stain.ToString(CultureInfo.InvariantCulture));
+                }),
+                "Tint",
+                cell => cell.ColorWell("##furniture-tint", new Vector4(tint, 1f),
+                    value => _values.SetTint(worldObject, new Vector3(value.X, value.Y, value.Z))));
+        }
+        else if (worldObject.IsVfx)
         {
             form.ColorWells("Tint", wells => wells.Well(
                 "Tint",

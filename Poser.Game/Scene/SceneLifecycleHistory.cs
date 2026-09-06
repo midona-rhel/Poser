@@ -210,6 +210,7 @@ internal readonly record struct WorldObjectState(
     public string? Name { get; init; }
     public float Opacity { get; init; } = 1f;
     public Vector3? Tint { get; init; }
+    public byte Stain { get; init; }
     public bool NightState { get; init; }
     public bool AnimationPaused { get; init; }
     public bool LoopVfx { get; init; } = true;
@@ -296,6 +297,7 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
             Name = handle.Name,
             Opacity = handle.Opacity,
             Tint = handle.Tint,
+            Stain = handle.Stain,
             NightState = handle.NightState,
             AnimationPaused = handle.AnimationPaused,
             LoopVfx = handle.LoopVfx,
@@ -313,6 +315,7 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
         handle.Transform = state.Placement;
         handle.Opacity = state.Opacity;
         handle.Tint = state.Tint;
+        handle.Stain = state.Stain;
         if (handle.IsVfx)
         {
             handle.LoopVfx = state.LoopVfx;
@@ -1254,6 +1257,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         copy.Name = name;
         copy.Opacity = source.Opacity;
         copy.Tint = source.Tint;
+        copy.Stain = source.Stain;
         if (source.IsVfx)
         {
             copy.LoopVfx = source.LoopVfx;

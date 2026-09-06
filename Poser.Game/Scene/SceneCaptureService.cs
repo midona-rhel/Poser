@@ -597,6 +597,7 @@ public sealed class SceneCaptureService
                 Name = worldObject.Name,
                 Opacity = worldObject.Opacity,
                 Tint = worldObject.Tint,
+                Stain = worldObject.Stain,
                 VfxLoop = worldObject.LoopVfx,
                 VfxSpeed = worldObject.VfxSpeed,
                 VfxIntensity = worldObject.VfxIntensity,

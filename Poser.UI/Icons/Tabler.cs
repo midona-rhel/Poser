@@ -131,6 +131,7 @@ public enum TablerIcon
     BrowserX,
     Dots,
     UserWithSlot,
+    Couch,
 }
 
 /// <summary>
@@ -264,6 +265,7 @@ public static class Tabler
         TablerIcon.Fire            => "flame",
         TablerIcon.Moneybag        => "moneybag",
         TablerIcon.Plant           => "plant-2",
+        TablerIcon.Couch           => "sofa",
         TablerIcon.LayersUnion     => "layers-union",
         TablerIcon.UserFromFile    => "user+file",
         TablerIcon.MoneybagFromFile => "moneybag+file",

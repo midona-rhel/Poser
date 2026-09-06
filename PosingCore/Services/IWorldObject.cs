@@ -15,6 +15,8 @@ public interface IWorldObject
     string Path { get; }
     nint Address { get; }
     bool IsVfx { get; }
+    bool IsFurniture => Path.EndsWith(".sgb", System.StringComparison.OrdinalIgnoreCase);
+    byte Stain { get => 0; set { } }
     bool LoopVfx { get; set; }
     float VfxSpeed { get; set; }
     float VfxIntensity { get; set; }

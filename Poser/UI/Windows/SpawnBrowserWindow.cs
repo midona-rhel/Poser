@@ -150,6 +150,7 @@ public sealed class SpawnBrowserWindow : Window
     private IActor? _pendingSelectSpawned;
 
     private ILight? _pendingSelectSpawnedLight;
+    private IWorldObject? _pendingSelectSpawnedWorldObject;
 
     public SpawnBrowserWindow(
         IActorSpawnService spawnService,
@@ -174,7 +175,6 @@ public sealed class SpawnBrowserWindow : Window
         global::Poser.Library.IPoseLibraryService library,
         ISceneWorkflow scenes,
         IPlacementAnchorSource anchors,
-        IWorldObjectService worldObjects,
         IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
@@ -208,7 +208,6 @@ public sealed class SpawnBrowserWindow : Window
         _library = library;
         _scenes = scenes;
         _anchors = anchors;
-        _worldObjects = worldObjects;
         _assets = assets;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
@@ -241,9 +240,9 @@ public sealed class SpawnBrowserWindow : Window
                     "##spawn-model-" + i.ToString(
                         CultureInfo.InvariantCulture),
                     modelAssets[i].Label,
-                    modelAssets[i].Label.ToLowerInvariant(),
-                    TablerIcon.Plant,
-                    0u,
+                    (modelAssets[i].Label + " " + modelAssets[i].Context + " " + modelAssets[i].Path).ToLowerInvariant(),
+                    modelAssets[i].Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase) ? TablerIcon.Couch : TablerIcon.Plant,
+                    modelAssets[i].IconId,
                     modelAssets[i].Context,
                     false);
             return (effectRows, modelRows);
@@ -457,8 +456,10 @@ public sealed class SpawnBrowserWindow : Window
                 _configuration.Config.DefaultSpawnPlacement,
                 out var position, out _, out _))
             at = at with { Position = position };
-        if (_worldObjects.Spawn(path, at, true, out var refusal) is null)
-            _notices.Failed(refusal ?? SpawnFailedNote);
+        if (_lifecycle.SpawnWorldObject(path, at, true) is IWorldObject spawned)
+            _pendingSelectSpawnedWorldObject = spawned;
+        else
+            _notices.Failed("The selected world asset could not be spawned.");
     }
 
     // ── the list ─────────────────────────────────────────────────────────
@@ -740,7 +741,6 @@ public sealed class SpawnBrowserWindow : Window
     private readonly global::Poser.Library.IPoseLibraryService _library;
     private readonly ISceneWorkflow _scenes;
     private readonly IPlacementAnchorSource _anchors;
-    private readonly IWorldObjectService _worldObjects;
     private readonly IWorldAssetCatalog _assets;
     private readonly global::Poser.Application.Appearance.ModelCatalog
         _modelCatalog;
@@ -1262,6 +1262,17 @@ public sealed class SpawnBrowserWindow : Window
     /// forget it.</summary>
     private void ReconcilePendingSpawn()
     {
+        if (_pendingSelectSpawnedWorldObject is { } worldObject)
+        {
+            if (!worldObject.IsValid)
+                _pendingSelectSpawnedWorldObject = null;
+            else if (_bindings.GetWorldObjectId(worldObject) is { } worldId)
+            {
+                _selection.Select(SelectionId.ForWorldObject(worldId));
+                _pendingSelectSpawnedWorldObject = null;
+            }
+        }
+
         if (_pendingSelectSpawnedLight is { } spawnedLight &&
             _bindings.GetLightId(spawnedLight) is { } lightId)
         {

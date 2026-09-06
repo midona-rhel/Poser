@@ -609,13 +609,14 @@ public partial class MainWindow
     {
         bool isVfx = worldObject.Path.EndsWith(
             ".avfx", StringComparison.OrdinalIgnoreCase);
+        bool isFurniture = worldObject.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase);
         return new ShellSidebarRow
         {
             Label = worldObject.Name,
             Draggable = true,
             Count = "",
             // World objects wear the plant row mark; a VFX burns instead.
-            Icon = isVfx ? TablerIcon.Fire : TablerIcon.Plant,
+            Icon = isVfx ? TablerIcon.Fire : isFurniture ? TablerIcon.Couch : TablerIcon.Plant,
             Depth = depth,
             ForceIcon = depth > 0,
             Tag = SelectionId.ForWorldObject(worldObject.Id),
@@ -626,7 +627,7 @@ public partial class MainWindow
             // properties page).
             PauseAction = isVfx,
             Paused = worldObject.VfxPaused,
-            NightAction = !isVfx,
+            NightAction = !isVfx && !isFurniture,
             Night = worldObject.Night,
         };
     }

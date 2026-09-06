@@ -269,6 +269,20 @@ byte length and last-write time it was read from, so a package replaced in
 place cannot serve its old digest. The cache is in memory for the session,
 because the library keeps no derived state on disk. There is no startup pass.
 
+## Furniture
+
+Furniture is a spawned world object addressed by its canonical housing `.sgb`
+path, with names/categories/icons from the indoor and outdoor housing sheets.
+It uses the same transform, visibility, duplicate, history, scene, and object-library
+controls as scenery. Stain zero means the furnishing's default; a custom tint
+takes precedence. Choosing a stain clears that tint in the same history edit.
+
+The backend follows Brio's `SGLService`/`FurnitureObject`: one owned shared-group
+layout contains the furnishing's entire child graph. Children are not independent
+borrow candidates. Graphics edits wait for layout readiness; a fresh load that
+times out after 15 seconds is removed. Release/GPose exit tears down the owning
+layout, never individual children. Raw BG debug/night controls do not apply.
+
 ## A scene is a picture, not a performance
 
 Scenes record no animation: no timeline id, no playback position, no speed, no
