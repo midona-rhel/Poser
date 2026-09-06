@@ -40,6 +40,12 @@ public sealed class AnimationOwnershipTests
         Assert.Equal(.25f, restored.SlotSpeeds[AnimationSlot.Base]);
         Assert.True(restored.PositionLock);
         Assert.Contains("PlayBase:42", port.Calls);
+        // Pose import temporarily freezes every layer before restoring the authored pose.
+        session.SetSlotSpeed(Actor, AnimationSlot.Base, 0);
+        session.SetSpeed(Actor, 0);
+        Assert.True(session.RestoreHistoryPlayback(Actor, reading).Success);
+        Assert.Equal(.25f, session.OverridesFor(Actor).SlotSpeeds[AnimationSlot.Base]);
+        Assert.Equal(.5f, session.OverridesFor(Actor).OverallSpeed);
     }
 
     [Fact]

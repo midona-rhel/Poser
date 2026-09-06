@@ -90,8 +90,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IBonePosingService bonePosing,
         IActorManager actorManager,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Animation.AnimationSession animation)
+        Poser.Application.Animation.AnimationSession animation,
+        Integration.ISpawnCollectionPort collections)
     {
+        _collections = collections;
         _presentation = presentation;
         _animation = animation;
         _actorManager = actorManager;

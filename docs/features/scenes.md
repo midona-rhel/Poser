@@ -24,6 +24,8 @@ picture, as described below. A repeated removal captures the latest edits again.
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.
 External targets that no longer exist are not replaced by unrelated entities.
+Duplicate collections retain their resolved resource paths and meta values;
+restoration creates a new owned collection rather than reusing its deleted ID.
 MCDF history reuses its package reference; it is not a portable appearance export.
 
 ## Created entity names

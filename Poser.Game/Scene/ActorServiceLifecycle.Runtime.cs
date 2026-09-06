@@ -21,6 +21,7 @@ internal sealed record ActorRuntimeState(
     IReadOnlyList<LifecycleIk> Ik)
 {
     public CompanionKind? SpawnedKind { get; init; }
+    public Integration.SpawnCollectionSnapshot? InheritedCollection { get; init; }
 }
 
 internal sealed record LifecycleIk(PoseSlot Slot, int Partial, string Bone,
@@ -30,6 +31,7 @@ internal sealed partial class ActorServiceLifecycle
 {
     private readonly ActorPresentationSession _presentation;
     private readonly AnimationSession _animation;
+    private readonly Integration.ISpawnCollectionPort _collections;
 
     public IActor? Recreate(ActorState state) => state.Runtime?.SpawnedKind is { } kind
         ? _spawns.SpawnCatalogActor(new(kind, 0, "", "", 0, state.Runtime.ModelId))
@@ -39,6 +41,10 @@ internal sealed partial class ActorServiceLifecycle
     {
         var id = _bindings.GetActorId(actor);
         var appearance = id is { } bound ? _integration.CaptureHistory(bound) : null;
+        var collection = _collections.CaptureInheritedCollection(actor.Address);
+        if (!collection.Success) Note($"'{actor.Name}': {collection.Detail}");
+        if (collection.Value is not null && appearance is not null)
+            appearance = appearance with { Collection = null };
         if (appearance?.StateJson is null && appearance?.McdfPath is null)
             Note($"'{actor.Name}': appearance could not be captured for lifecycle history.");
         var companion = actor.IsCompanion ? null : _spawns.GetCompanionInfo(actor);
@@ -65,7 +71,7 @@ internal sealed partial class ActorServiceLifecycle
             _gaze.IsPartLocked(actor, GazeTargetType.Eyes),
             _gaze.IsPartLocked(actor, GazeTargetType.Head),
             _gaze.IsPartLocked(actor, GazeTargetType.Body), chains)
-        { SpawnedKind = _spawns.GetSpawnedKind(actor) };
+        { SpawnedKind = _spawns.GetSpawnedKind(actor), InheritedCollection = collection.Value };
     }
 
     private void PrepareRuntime(IActor actor, ActorState state, int attempts,
@@ -86,6 +92,11 @@ internal sealed partial class ActorServiceLifecycle
         { Next(phase); return; }
         if (phase == 0)
         {
+            if (runtime.InheritedCollection is { } collection)
+            {
+                var result = _collections.RestoreInheritedCollection(actor.Address, collection);
+                if (!result.Success) Note($"'{actor.Name}': {result.Detail}");
+            }
             if (runtime.Appearance is { } appearance)
             {
                 var result = _integration.RestoreHistory(id, appearance);
@@ -123,7 +134,8 @@ internal sealed partial class ActorServiceLifecycle
             var time = _animation.RestoreHistoryTimes(id, animation);
             if (!time.Success) Note($"'{target.Name}': {time.Detail}");
             // Pose import freezes the body; lifecycle undo restores its captured playback afterwards.
-            _animation.SetSpeed(id, animation.OverallSpeed);
+            var playback = _animation.RestoreHistoryPlayback(id, animation);
+            if (!playback.Success) Note($"'{target.Name}': {playback.Detail}");
         }
         var gaze = state.Gaze;
         _gaze.SetGazeMode(target, gaze.Mode);

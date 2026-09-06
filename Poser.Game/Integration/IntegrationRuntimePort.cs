@@ -551,6 +551,25 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     // on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
     private readonly Dictionary<nint, Guid> _duplicateCollections = new();
 
+    public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(nint actor) =>
+        Guarded(Penumbra, "Capture inherited collection", () =>
+        {
+            if (AddressPair(actor, actor) is { } refusal)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
+            if (!_duplicateCollections.ContainsKey(actor))
+                return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
+            var index = IndexOf(actor);
+            var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)index });
+            if (trees.Length == 0 || trees[0] is not { } tree)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail("Penumbra reported no resources for the duplicate.");
+            var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (resolved, gamePaths) in tree)
+                foreach (var path in gamePaths)
+                    if (!string.Equals(path, resolved, StringComparison.OrdinalIgnoreCase)) paths[path] = resolved;
+            return IntegrationValue<SpawnCollectionSnapshot?>.Ok(new(paths,
+                _getMetaManipulations.InvokeFunc(index) ?? string.Empty));
+        });
+
     /// <summary>Gives the clone a Poser-owned temporary collection built from
     /// the source's LIVE resolution: every loaded resource that resolves off
     /// its game path, plus the source's meta manipulations. That is exactly
@@ -574,6 +593,16 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
                         redirects[gamePath] = resolved;
             string manipulations = _getMetaManipulations.InvokeFunc(sourceIndex) ?? string.Empty;
+            return RestoreInheritedCollection(cloneAddress, new(redirects, manipulations));
+        });
+
+    public IntegrationPortResult RestoreInheritedCollection(nint cloneAddress, SpawnCollectionSnapshot snapshot) =>
+        Guarded(Penumbra, "Restore inherited collection", () =>
+        {
+            if (AddressPair(cloneAddress, cloneAddress) is { } refusal) return refusal;
+            int cloneIndex = IndexOf(cloneAddress);
+            var redirects = new Dictionary<string, string>(snapshot.Paths, StringComparer.OrdinalIgnoreCase);
+            var manipulations = snapshot.Manipulations;
             var (createEc, collection) = _createTemporaryCollection.InvokeFunc(
                 "Poser", $"Poser duplicate {cloneIndex}");
             if (createEc != PenumbraEcSuccess)

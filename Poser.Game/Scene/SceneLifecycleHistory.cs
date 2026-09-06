@@ -434,14 +434,15 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IBonePosingService bonePosing,
         IActorManager actorManager,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Animation.AnimationSession animation)
+        Poser.Application.Animation.AnimationSession animation,
+        Integration.ISpawnCollectionPort collections)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings, bonePosing, actorManager, presentation, animation),
+                gaze, integration, bindings, bonePosing, actorManager, presentation, animation, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))

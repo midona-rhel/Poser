@@ -75,6 +75,17 @@ public sealed class AnimationSession
     }
 
     /// <summary>Called after replay has produced the replacement controls; never reuse the old skeleton token.</summary>
+    public AnimationResult RestoreHistoryPlayback(ActorId actor, ActorAnimationReading reading)
+    {
+        foreach (var slot in reading.Slots)
+        {
+            var result = SetSlotSpeed(actor, slot.Slot, slot.Speed);
+            if (!result.Success) return result;
+        }
+        return SetSpeed(actor, reading.OverallSpeed);
+    }
+
+    /// <summary>Rebinds saved clock values to this body's controls.</summary>
     public AnimationResult RestoreHistoryTimes(ActorId actor, ActorAnimationReading reading)
     {
         var controls = _port.EnumerateControls(actor, out var token);
