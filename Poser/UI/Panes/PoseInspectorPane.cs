@@ -146,7 +146,10 @@ public class PoseInspectorPane
     private static readonly string[] NoOtherActors = ["No other actors"];
     private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD", "FABRIK", "Rope"];
     private static readonly string[] CcdSolverItems = ["CCD", "FABRIK", "Rope"];
-    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone"];
+    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone", "Scene entity"];
+    private sealed record IkEntityChoice(SelectionId Id, string Name, string Kind);
+    private readonly Crystarium.SearchPicker<IkEntityChoice> _ikEntityPicker = new("ik-entity-target");
+    private IReadOnlyList<IkEntityChoice> _ikEntityChoices = Array.Empty<IkEntityChoice>();
 
     /// <summary>Bone-mode target picking: the actor whose bones the list
     /// shows, the picker, and the choices the host builds (its categorised
@@ -218,18 +221,7 @@ public class PoseInspectorPane
         _gazeService = gazeService;
         _gazeValues = gazeValues;
         _editorState = editorState;
-        _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
-    }
-
-    private bool AnyIkArmedOnSelection()
-    {
-        if (OwnerBone() is not { } owner)
-            return false;
-        foreach (var chain in ActorIkChains(owner))
-            if (_ikPort.Get(chain)?.Enabled == true)
-                return true;
-        return false;
     }
 
     private BoneId? OwnerBone()
@@ -2138,6 +2130,55 @@ public class PoseInspectorPane
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
+    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint)
+    {
+        var current = _ikPort.EntityTarget(endpoint);
+        var scene = _scene.Snapshot;
+        string? currentName = current switch
+        {
+            { Prop: { } id } => scene.Props.FirstOrDefault(x => x.Id == id)?.Name,
+            { Light: { } id } => scene.Lights.FirstOrDefault(x => x.Id == id)?.Name,
+            { WorldObject: { } id } => scene.WorldObjects.FirstOrDefault(x => x.Id == id)?.Name,
+            _ => null,
+        };
+        form.Actions("Entity", actions =>
+        {
+            actions.Button(currentName ?? (current == null ? "Choose" : "Target unavailable"),
+                () =>
+                {
+                    var choices = new List<IkEntityChoice>();
+                    choices.AddRange(scene.Props.Select(x => new IkEntityChoice(
+                        SelectionId.ForProp(x.Id), x.Name, "Object")));
+                    choices.AddRange(scene.Lights.Select(x => new IkEntityChoice(
+                        SelectionId.ForLight(x.Id), x.Name, "Light")));
+                    choices.AddRange(scene.WorldObjects.Select(x => new IkEntityChoice(
+                        SelectionId.ForWorldObject(x.Id), x.Name, "World object / VFX")));
+                    _ikEntityChoices = choices;
+                    var options = new PickerOptions<IkEntityChoice>
+                    {
+                        Query = query => _ikEntityChoices.Where(x =>
+                            x.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || x.Kind.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                        Badge = x => x.Kind,
+                    };
+                    _ikEntityPicker.Open("ik-scene-target", _ikEntityChoices,
+                        x => x.Name, x => x.Id.ToString(), options: in options);
+                }, help: "Follow an object, scenery, light or VFX while keeping the current offset");
+            actions.Button("Detach", () =>
+            {
+                if (_ikPort.Get(endpoint) is { } config
+                    && _ikPort.Set(endpoint, config with { TargetMode = IkTargetMode.World })
+                        is { Success: false } failed)
+                    _notices.Failed($"IK target: {failed.Detail}");
+            }, disabled: current == null, help: "Hold the endpoint at its current world position");
+        });
+        if (current != null && currentName == null)
+            form.Status("Target unavailable — choose another entity or detach.", warning: true);
+        if (_ikEntityPicker.Draw() is { } chosen
+            && _ikPort.SetEntityTarget(endpoint, chosen.Item.Id) is { Success: false } refusal)
+            _notices.Failed($"IK target: {refusal.Detail}");
+    }
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -2148,6 +2189,12 @@ public class PoseInspectorPane
         void Apply(Domain.Posing.IkChainConfig next)
         {
             if (_ikPort.Set(ikTarget, next).Success)
+                config = _ikPort.Get(ikTarget);
+        }
+
+        void Adjust(Domain.Posing.IkChainConfig next)
+        {
+            if (_ikPort.Adjust(ikTarget, next).Success)
                 config = _ikPort.Get(ikTarget);
         }
 
@@ -2232,13 +2279,14 @@ public class PoseInspectorPane
             config.SwivelDegrees,
             -Domain.Posing.IkChainConfig.MaxSwivelDegrees,
             Domain.Posing.IkChainConfig.MaxSwivelDegrees,
-            next => Apply(config with { SwivelDegrees = next }),
+            next => Adjust(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
         int modeIndex = config.TargetMode switch
         {
             Domain.Posing.IkTargetMode.World => 1,
             Domain.Posing.IkTargetMode.Bone => 2,
+            Domain.Posing.IkTargetMode.Entity => 3,
             _ => 0,
         };
         form.Dropdown(
@@ -2251,12 +2299,15 @@ public class PoseInspectorPane
                 {
                     1 => Domain.Posing.IkTargetMode.World,
                     2 => Domain.Posing.IkTargetMode.Bone,
+                    3 => Domain.Posing.IkTargetMode.Entity,
                     _ => Domain.Posing.IkTargetMode.Actor,
                 },
             }),
-            help: "Actor moves the target with the actor, World holds it where it is, Bone follows another bone");
+            help: "Actor follows the actor; World holds a point; Bone or Scene entity follows the chosen target");
         if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
             DrawIkBoneTarget(form, boneId, ikTarget);
+        else if (config.TargetMode == Domain.Posing.IkTargetMode.Entity)
+            DrawIkEntityTarget(form, ikTarget);
         form.Switch(
             "Keep rotation",
             config.HoldRotation,
@@ -2287,21 +2338,21 @@ public class PoseInspectorPane
                 config.FirstJointGain,
                 0f,
                 1f,
-                next => Apply(config with { FirstJointGain = next }),
+                next => Adjust(config with { FirstJointGain = next }),
                 help: helps[0]);
             form.Slider(
                 labels[1],
                 config.SecondJointGain,
                 0f,
                 1f,
-                next => Apply(config with { SecondJointGain = next }),
+                next => Adjust(config with { SecondJointGain = next }),
                 help: helps[1]);
             form.Slider(
                 labels[2],
                 config.EndJointGain,
                 0f,
                 1f,
-                next => Apply(config with { EndJointGain = next }),
+                next => Adjust(config with { EndJointGain = next }),
                 help: helps[2]);
             form.Slider(
                 "Hinge min",
@@ -2309,7 +2360,7 @@ public class PoseInspectorPane
                 0f,
                 180f,
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         HingeMinDegrees = next,
                         HingeMaxDegrees = MathF.Max(
@@ -2323,7 +2374,7 @@ public class PoseInspectorPane
                 0f,
                 180f,
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         HingeMaxDegrees = next,
                         HingeMinDegrees = MathF.Min(
@@ -2345,7 +2396,7 @@ public class PoseInspectorPane
                 Domain.Posing.IkChainConfig.MinDepth,
                 Domain.Posing.IkChainConfig.MaxDepthFor(config.Solver),
                 next =>
-                    Apply(config with
+                    Adjust(config with
                     {
                         CcdDepth = (int)MathF.Round(next),
                     }),
@@ -2358,7 +2409,7 @@ public class PoseInspectorPane
                     1f,
                     60f,
                     next =>
-                        Apply(config with
+                        Adjust(config with
                         {
                             CcdIterations = (int)MathF.Round(next),
                         }),
@@ -2370,7 +2421,7 @@ public class PoseInspectorPane
                     config.CcdGain,
                     0f,
                     1f,
-                    next => Apply(config with { CcdGain = next }),
+                    next => Adjust(config with { CcdGain = next }),
                     help: "How far each pass moves the chain toward the target");
         }
     }

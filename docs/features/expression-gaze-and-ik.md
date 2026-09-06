@@ -35,6 +35,15 @@ IK calls the game's Havok solvers during pose application. Only translation
 deltas start a solve. The solve itself is not stored, so undo and export remain
 ordinary pose deltas. Configuration belongs to one skeleton instance.
 
+Imported pose transforms do not edit IK targets (Brio likewise marks imported
+stacks IK-disabled). Held chains solve against the combined explicit handle
+edits, not each imported stack. Reset first clears the pose while retaining a
+held handle's offset in the same stack snapshot used by undo/redo.
+The importer suspends solving for its actor while it measures and applies the
+file, then resumes the existing constraints. Descendants are imported against
+the unconstrained parent pose, so they remain relative when IK resumes.
+Held handle translations are solver targets, never direct pre-solve tip writes.
+
 A bone is eligible when it has a non-hidden parent. Two Joint uses its
 slot-local chain; other eligible endpoints use CCD. Chain settings cannot
 change during a gesture.
@@ -45,3 +54,12 @@ chain, waits for the pose to settle, and writes affected bones as one
 raw-baseline history entry. Disabling keeps tuning and clears only fixed
 capture. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset All
 disables and clears every chain.
+
+Scene entity targets follow props, scenery/world objects, lights and VFX through
+their exact stable scene IDs; they do not need a skeleton. Attachment captures
+the tip's current world-space position offset and relative rotation, matching
+Bone mode. Moving the tip edits that offset; target scale is not inherited.
+Keep rotation controls orientation following. Missing targets remain recorded
+and unavailable, never rebound to a replacement; choose another target or
+Detach to hold the current world point. Inspector targeting uses the existing
+IK configuration control, while the runtime resolves the live transform.

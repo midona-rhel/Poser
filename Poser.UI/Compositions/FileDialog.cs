@@ -131,6 +131,10 @@ public static partial class Crystarium
         private readonly string _entriesId;
         private readonly string _entryRowPrefix;
         private readonly string _nameId;
+        private readonly string _searchId;
+        private string _search = string.Empty;
+        private string _nameFilter = string.Empty;
+        private bool _resetEntriesScroll;
 
         private readonly List<FileQuickEntry> _quick = new();
         private readonly List<FileListingEntry> _entries = new();
@@ -180,6 +184,7 @@ public static partial class Crystarium
             _entriesId = $"{_id}-entries";
             _entryRowPrefix = $"{_id}-entry-";
             _nameId = $"{_id}-name";
+            _searchId = $"{_id}-search";
         }
 
         /// <summary>
@@ -651,23 +656,41 @@ public static partial class Crystarium
             float inset = theme.Page.Inset;
             int picked = -1;
             bool second = false;
-            ImGui.SetCursorScreenPos(body.Min + new Vector2(inset * scale));
+            // Align glyph centres, not the search field's invisible padding.
+            float searchLeft = inset + EntryIconSlot * 0.5f
+                - theme.Controls.InputPaddingX - theme.Controls.SmallIconSize * 0.5f;
+            float searchHeight = theme.Controls.WorkspaceHeight;
+            ImGui.SetCursorScreenPos(body.Min + new Vector2(searchLeft, inset) * scale);
+            FilterPill(_searchId, _search, SetSearch, "Search",
+                ControlStyle.Workspace with
+                {
+                    Width = UiWidth.Fixed(MathF.Max(1f,
+                        body.Size.X / scale - searchLeft - theme.Scrollbar.GutterWidth)),
+                });
+            float listTop = inset + searchHeight + theme.Spacing.Four;
+            ImGui.SetCursorScreenPos(body.Min + new Vector2(inset, listTop) * scale);
             ScrollRegion(
                 _entriesId,
                 body.Size.X / scale - inset,
-                body.Size.Y / scale - inset * 2f,
+                MathF.Max(1f, body.Size.Y / scale - listTop - inset),
                 region =>
                 {
+                    if (_resetEntriesScroll)
+                    {
+                        ImGui.SetScrollY(0f);
+                        _resetEntriesScroll = false;
+                    }
                     if (_lastError is { } error)
                     {
                         Status(region, error, theme.Danger, scale);
                         return;
                     }
 
-                    if (_entries.Count == 0)
+                    if (!_entries.Exists(entry => MatchesSearch(entry.Name)))
                     {
                         Status(
-                            region, "This folder is empty.",
+                            region, _nameFilter.Length == 0
+                                ? "This folder is empty." : "No matching files or folders.",
                             FormHintColor, scale);
                         return;
                     }
@@ -677,6 +700,8 @@ public static partial class Crystarium
                     for (int i = 0; i < _entries.Count; i++)
                     {
                         FileListingEntry entry = _entries[i];
+                        if (!MatchesSearch(entry.Name))
+                            continue;
                         var hit = Row(
                             Ids.Join(_entryRowPrefix, entry.FullPath),
                             width,
@@ -1061,11 +1086,32 @@ public static partial class Crystarium
 
         private void NavigateTo(string path)
         {
+            _search = _nameFilter = string.Empty;
+            _resetEntriesScroll = true;
             _currentPath = path;
             _pathEdit = path;
             _selectedPath = null;
             _selectedIsDirectory = false;
             RefreshEntries();
+        }
+
+        private bool MatchesSearch(string name) =>
+            name.Contains(_nameFilter, StringComparison.OrdinalIgnoreCase);
+
+        private void SetSearch(string value)
+        {
+            _search = value;
+            _nameFilter = value.Trim();
+            _resetEntriesScroll = true;
+            if (_selectedPath is not { } selected || MatchesSearch(Path.GetFileName(selected)))
+                return;
+            if (_isSaveMode && string.Equals(_fileName, Path.GetFileName(selected),
+                    StringComparison.OrdinalIgnoreCase))
+                _fileName = string.Empty;
+            _selectedPath = null;
+            _selectedIsDirectory = false;
+            _preview = null;
+            _previewPath = null;
         }
 
         private void RefreshEntries()

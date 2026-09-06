@@ -609,12 +609,14 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             // Pending ownership was established by Reserve before this first
             // mutation. Every setup step shares the same exception-safe
             // transaction and therefore the same terminal receipt.
+            _posing.SetIkImportSuppressed(import.ActorKey, true);
             foreach (var (bone, _) in resetBones)
             {
                 import.MutationStarted = true;
                 _posing.GetPoseInfo(bone.Skeleton)
                     .GetPoseInfo(bone.BoneName, bone.PartialId)
-                    .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+                    .ResetForImport(_posing.GetIkConfiguration(bone) is
+                        { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
             }
 
             if (model is { } modelEdit &&
@@ -744,7 +746,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                     desired, basis,
                     TransformComponents.All,
                     entry.Components,
-                    forceNewStack: true) == null)
+                    forceNewStack: true, drivesIk: false) == null)
             {
                 // One degenerate bone (a zero-scaled prop helper such as
                 // nf_handprop_k_l on an actor without a prop) is not the
@@ -1125,7 +1127,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             import.MutationStarted = true;
             _posing.GetPoseInfo(bone.Skeleton)
                 .GetPoseInfo(bone.BoneName, bone.PartialId)
-                .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
+                .ResetForImport(_posing.GetIkConfiguration(bone) is
+                    { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
         }
 
         import.Slots = flattenSlots;
@@ -1696,6 +1699,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
 
     private void Invalidate(Import import)
     {
+        _posing.SetIkImportSuppressed(import.ActorKey, false);
         // This interlocked token is the native callback's only liveness read.
         // Set it before session/binding/provider teardown can begin.
         import.Invalidation.Invalidate();

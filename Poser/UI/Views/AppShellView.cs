@@ -1608,7 +1608,7 @@ public static class AppShellView
     /// the titlebar centre hosts when attached. The spawn plus stays with
     /// the scene window.</summary>
     public static void DrawToolbarContent(
-        AppShellViewModel vm, Vector2 origin, float height)
+        AppShellViewModel vm, Vector2 origin, float height, bool compact = false)
     {
         EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
@@ -1619,6 +1619,8 @@ public static class AppShellView
         float x = DrawBrandPill(
                 vm, origin.X, origin.Y, height, s, ImGui.GetWindowDrawList())
             + CenterInset * s;
+        if (compact)
+            return;
         float y = origin.Y + (height - side * s) * 0.5f;
         IconAt(
             new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
@@ -1674,9 +1676,11 @@ public static class AppShellView
 
     /// <summary>What <see cref="DrawToolbarContent"/> will span, screen px,
     /// so the hosting window sizes itself before drawing.</summary>
-    public static float MeasureToolbar(AppShellViewModel vm)
+    public static float MeasureToolbar(AppShellViewModel vm, bool compact = false)
     {
         float s = ImGuiHelpers.GlobalScale;
+        if (compact)
+            return MeasureBrandPill(vm, s);
         var theme = Crystarium.ActiveTheme;
         float gap = theme.Page.ActionGap * s;
         float side = theme.Controls.ShellIconAction;

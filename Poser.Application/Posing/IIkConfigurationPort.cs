@@ -50,6 +50,7 @@ public interface IIkConfigurationPort
     /// <summary>Validates and stores the configuration. Entering Fixed mode
     /// or enabling a Fixed chain captures the current effective target.</summary>
     IkPortResult Set(TransformTargetId target, IkChainConfig config);
+    IkPortResult Adjust(TransformTargetId target, IkChainConfig config);
 
     /// <summary>Restores the chain's defaults while preserving its current
     /// Enabled state.</summary>
@@ -62,4 +63,8 @@ public interface IIkConfigurationPort
 
     /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
     global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target);
+
+    /// <summary>Follow a stable non-skeletal scene target, keeping the tip's offset.</summary>
+    IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity);
+    SelectionId? EntityTarget(TransformTargetId target);
 }

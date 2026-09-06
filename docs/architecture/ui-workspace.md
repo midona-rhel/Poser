@@ -16,6 +16,18 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+New explanatory or advisory text placed in a UI layout requires explicit user
+approval before implementation. Do not add free-standing notices as a substitute
+for correct behavior; propose the message and placement first.
+
+Numeric controls use the shared primitive commit event to finish their edits;
+the [journal contract](../features/selection-and-transforms.md#the-journal)
+defines when those edits enter history.
+
+Keep IK gizmo visible is enabled by default and exempts an enabled IK endpoint
+from the manipulation fade. It does not override explicitly hidden entity handles
+or Alt suspension. Other gizmos retain the ordinary hide-while-manipulating rule.
+
 Entity save-to-file, save-to-library, and category-wide destruction live under
 More in the inspector or entity context menu, only where supported. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
@@ -42,6 +54,19 @@ The shell owns the content origin, inset, scrollbar gutter, and content mode.
 Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached
 content and inspector geometry in place. Collapse leaves the title bar.
+
+The separate toolbar has its own session-only compact state. Double-click
+the Poser/GPose brand/status region to show only that content and shrink the
+toolbar horizontally; repeat to restore its content-sized width. Single-click
+and drag still move the toolbar. Hidden actions are not drawn or interactive.
+Main-window collapse, detached panes and their geometry are unaffected.
+
+Shared file dialogs keep a fixed search row above the file-list column. The
+search glyph aligns with the row glyphs, independently of input padding.
+Search filters cached current-directory names case-insensitively, including
+folders, after extension filtering; it never walks subfolders or rescans per
+keystroke. Navigation and reopening clear the query. A filtered-out selection
+clears its preview and confirmation state; a separately typed save name stays.
 
 Pages default to a readable content-width cap. Actor opts into the
 shared responsive policy: it fills the host's content box after the leading

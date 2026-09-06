@@ -20,6 +20,7 @@ public sealed class ValueJournal
     private readonly TransformHistory _history;
     private readonly JournalContexts? _contexts;
     private OpenStep? _open;
+    private PendingEdit? _pending;
     private int _suspended;
 
     /// <summary>
@@ -50,7 +51,7 @@ public sealed class ValueJournal
     {
         _history = history;
         _contexts = contexts;
-        _history.Cleared += () => _open = null;
+        _history.Cleared += () => { _open = null; _pending = null; };
     }
 
     /// <summary>
@@ -76,6 +77,7 @@ public sealed class ValueJournal
         Func<bool>? alive = null,
         IEnumerable<Guid>? actors = null)
     {
+        CommitPending();
         var current = read();
         if (EqualityComparer<T>.Default.Equals(current, value))
             return;
@@ -121,6 +123,7 @@ public sealed class ValueJournal
         Action<T> write,
         Func<bool>? alive = null)
     {
+        CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
         _history.Append(new JournalStep(
@@ -139,6 +142,7 @@ public sealed class ValueJournal
     public ValueWriteResult TrySet<T>(object key, string description, Func<T> read,
         Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
     {
+        CommitPending();
         var before = read();
         if (EqualityComparer<T>.Default.Equals(before, value))
             return ValueWriteResult.Ok();
@@ -163,6 +167,7 @@ public sealed class ValueJournal
     public void RecordResult<T>(string description, T before, T after,
         Func<T, ValueWriteResult> write, Func<bool>? alive = null)
     {
+        CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
         _history.Append(ResultStep(description, before, after, () => after, write, alive));
@@ -199,7 +204,45 @@ public sealed class ValueJournal
 
     /// <summary>Closes the open step: the next set on its key starts a new
     /// one. Call it when a drag begins or a field commits.</summary>
-    public void Seal() => _open = null;
+    public void Seal()
+    {
+        CommitPending();
+        _open = null;
+    }
+
+    /// <summary>Live numeric edit. History changes only when the control
+    /// commits (release or typed focus loss), and a net no-op appends nothing.</summary>
+    public ValueWriteResult Adjust<T>(object key, string description, Func<T> read,
+        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
+    {
+        if (_pending is { } prior && !prior.Key.Equals(key))
+            Seal();
+        var before = read();
+        if (EqualityComparer<T>.Default.Equals(before, value))
+            return ValueWriteResult.Ok();
+        var result = WriteResult(write, value);
+        if (!result.Success || _suspended > 0)
+            return result;
+        if (_pending is { } pending)
+        {
+            pending.SetAfter(value!);
+            return result;
+        }
+        _open = null;
+        var box = new Box<T> { Value = value };
+        _pending = new PendingEdit(key, next => box.Value = (T)next,
+            () => RecordResult(description, before, box.Value, write, alive));
+        return result;
+    }
+
+    private void CommitPending()
+    {
+        var pending = _pending;
+        _pending = null;
+        pending?.Commit();
+    }
+
+    private sealed record PendingEdit(object Key, Action<object> SetAfter, Action Commit);
 
     private static bool Put<T>(Func<bool>? alive, Action<T> write, T value)
     {
