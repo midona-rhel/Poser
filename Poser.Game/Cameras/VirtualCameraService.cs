@@ -164,14 +164,22 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _events = events;
         _objectTable = objectTable;
 
+        using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
+            error => log.Error(error, "Camera activation cleanup failed"));
+
         Hook<T>? TryHook<T>(string name, string signature, T detour)
             where T : Delegate
         {
             try
             {
+                using var activating = new global::Poser.Application.Lifecycle.StartupCleanup(
+                    error => log.Error(error, "Camera hook cleanup failed"));
                 var hook = hooks.HookFromAddress<T>(
                     sigScanner.ScanText(signature), detour);
+                activating.OnFailure(hook.Dispose);
                 hook.Enable();
+                startup.OnFailure(hook.Dispose);
+                activating.Complete();
                 return hook;
             }
             catch (Exception ex)
@@ -208,8 +216,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 $"VirtualCameraService: matrix load unavailable, free cameras disabled: {ex.Message}");
         }
 
+        startup.OnFailure(() => _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged));
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        startup.OnFailure(() => _framework.Update -= OnFrameworkUpdate);
         _framework.Update += OnFrameworkUpdate;
+        startup.Complete();
     }
 
     /// <summary>Test ctor: no signature scans, no hooks; availability and the

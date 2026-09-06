@@ -41,6 +41,12 @@ failed, or needs recovery. Results from an old session or operation are ignored.
 
 ## Session lifecycle
 
+The host keeps failed-startup cleanup armed until activation finishes. The
+provider owns service disposal; host-owned fonts, command registration and
+global UI callbacks are unwound separately in reverse acquisition order.
+Cleanup failures are logged without replacing the original startup exception.
+Rollback never resolves additional services merely to dispose them.
+
 `SessionLifecycleCoordinator` gives each GPose session a unique token.
 Repeated entry keeps the current token. Normal exit clears it before the final
 autosave starts; the next entry gets a new token. Repeating exit is safe.

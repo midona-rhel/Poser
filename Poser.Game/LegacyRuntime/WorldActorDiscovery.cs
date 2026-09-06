@@ -148,14 +148,10 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 }
 
 /// <summary>
-/// Discovery and import of visible overworld actors (execution brief §6.1).
-/// Discovery is a read-only enumeration completely separate from the 201–439
-/// GPose admission scan: no overworld object is ever handed to a pose or
-/// mutation surface. The single crossing is <see cref="CloneCandidate"/>,
-/// which revalidates the source's exact identity and funnels its address into
-/// the accepted spawn ownership transaction; the clone then enters the scene
-/// at its own 201–439 index through the ordinary registry scan. The source is
-/// never adopted, mutated, or deleted.
+/// Read-only world discovery and identity-checked adoption. The legacy
+/// CloneCandidate name now adopts the existing body by reference, matching
+/// Brio's AddFromWorld. Retained history observations are independent of the
+/// visible candidate list, which excludes bodies the scene already holds.
 /// </summary>
 public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscovery
 {
@@ -331,12 +327,53 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
         }
     }
 
-    /// <summary>The typed import with the spawned wrapper handed out for the
-    /// caller's pending-select flow — the same handoff every other spawn row
-    /// uses. The wrapper is already bound inside the spawn transaction; the
-    /// scene admits it through the ordinary registry scan.</summary>
+    /// <summary>Adopts the candidate and returns its wrapper for pending selection.</summary>
     public WorldActorImportResult CloneCandidate(
         WorldActorCandidateId id, out IActor? spawned)
+    {
+        spawned = null;
+        if (!OnOwnerThread || !_gPose.IsGPosing)
+            return WorldActorImportResult.NotAvailable("World-actor acquisition requires GPose on the game's update thread.");
+        if (!_observations.TryGetValue(id, out var stored))
+            return WorldActorImportResult.Stale("That world actor is from an older listing.");
+        var result = AcquireObservation(stored, out spawned);
+        if (result.Status == WorldActorImportStatus.StaleCandidate)
+            Forget(id);
+        return result;
+    }
+
+    internal bool TryRetainCandidate(WorldActorCandidateId id, out WorldActorObservation observation)
+    {
+        observation = default;
+        return OnOwnerThread && _gPose.IsGPosing && _observations.TryGetValue(id, out observation);
+    }
+
+    internal bool TryObserveAdopted(IActor actor, out WorldActorObservation observation)
+    {
+        observation = default;
+        if (!OnOwnerThread || !_gPose.IsGPosing || !_actorManager.IsAdopted(actor))
+            return false;
+        try
+        {
+            foreach (var current in _adapter.EnumerateOverworld())
+            {
+                if (current.Address == actor.Address && current.Kind is not null
+                    && ActorManager.ActorIdentity.For(current.GameObjectId, current.ObjectIndex) == actor.Id)
+                {
+                    observation = current;
+                    return true;
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            _log?.Warning($"WorldActorDiscovery: release observation failed: {error.Message}");
+        }
+        return false;
+    }
+
+    internal WorldActorImportResult AcquireObservation(
+        WorldActorObservation stored, out IActor? spawned)
     {
         spawned = null;
         if (!OnOwnerThread)
@@ -344,12 +381,9 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
                 "World-actor import runs only on the game's update thread.");
         if (!_gPose.IsGPosing)
             return WorldActorImportResult.NotAvailable(
-                "Cloning a world actor works only inside GPose.");
-        if (!_observations.TryGetValue(id, out var stored))
-            return WorldActorImportResult.Stale(
-                "That world actor is from an older listing.");
+                "Adding a world actor works only inside GPose.");
 
-        // Revalidate the EXACT identity immediately before the spawn:
+        // Revalidate the EXACT identity immediately before adoption:
         // reference, address, index, and GameObjectId must all still agree,
         // and the eligibility that admitted the candidate must still hold.
         // Any drift — despawn, same-index replacement, hide, band entry — is
@@ -369,17 +403,16 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
             || fresh.Address != stored.Address
             || fresh.ObjectIndex != stored.ObjectIndex
             || fresh.GameObjectId != stored.GameObjectId
+            || fresh.Kind != stored.Kind
             || fresh.Kind is null
             || !fresh.IsDrawing
             || IsProtectedIndex(fresh.ObjectIndex))
         {
-            Forget(id);
             return WorldActorImportResult.Stale(
                 "That world actor is no longer there.");
         }
         if (!IsLendable(fresh))
         {
-            Forget(id);
             return WorldActorImportResult.NotAvailable(
                 "Another player's character cannot be added to the scene.");
         }
@@ -399,9 +432,28 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IWorldActorDiscov
                 "The actor could not be added to the scene.");
         // The handle's highlight goes with the handle.
         if (_highlightedAddress == fresh.Address)
-            SetHighlight(id, false);
+            SetHighlight(default, false);
         spawned = clone;
         return WorldActorImportResult.Ok();
+    }
+
+    internal bool ReleaseObservation(
+        WorldActorObservation stored, IActor actor, Func<IActor, bool> release)
+    {
+        if (!OnOwnerThread || !_gPose.IsGPosing)
+            return false;
+        // A disappeared/replaced body needs no release. Never pass its stale
+        // wrapper to a native mutator, even if the address has been reused.
+        WorldActorObservation? current;
+        try { current = _adapter.Revalidate(stored); }
+        catch (Exception error)
+        {
+            _log?.Warning($"WorldActorDiscovery: release revalidation failed: {error.Message}");
+            return false;
+        }
+        if (current is not { } fresh || fresh.Identity != stored.Identity || fresh.Kind != stored.Kind)
+            return true;
+        return actor.Address == stored.Address && release(actor);
     }
 
     private List<WorldActorObservation> Collect()

@@ -130,6 +130,7 @@ public enum TablerIcon
     WindowMinimize,
     BrowserX,
     Dots,
+    UserWithSlot,
 }
 
 /// <summary>
@@ -248,6 +249,7 @@ public static class Tabler
         TablerIcon.Folder          => "folder",
         TablerIcon.User            => "user",
         TablerIcon.UserPlus        => "user-plus",
+        TablerIcon.UserWithSlot    => "user-with-slot",
         TablerIcon.UserMinus       => "user-minus",
         TablerIcon.Crosshair       => "crosshair",
         TablerIcon.ArrowsMove      => "arrows-move",

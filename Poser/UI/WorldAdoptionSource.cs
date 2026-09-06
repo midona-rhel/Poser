@@ -6,7 +6,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Application.Animation;
 using Poser.Application.Selection;
-using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
@@ -21,9 +20,8 @@ public enum WorldAdoptionKind
     Light,
 
     /// <summary>A BG/layout object the map placed — the class Ktisis is alone
-    /// in offering, and the only one that is ADOPTED BY REFERENCE: the actor
-    /// class clones and the light class copies, while this one takes the map's
-    /// own object and gives it back on release.</summary>
+    /// in offering. Like world actors, it is borrowed by reference and given
+    /// back on release; the light class instead copies.</summary>
     WorldObject,
 
     /// <summary>A world effect the map plays — its own class (effects are
@@ -165,11 +163,9 @@ public sealed class WorldAdoptionSource
         ConfigurationService configuration,
         IPluginLog log,
         UserNotices notices,
-        TransformHistory history,
-        IActorSpawnService spawns)
+        Game.Journal.WorldActorSession worldActorSession)
     {
-        _history = history;
-        _spawns = spawns;
+        _worldActorSession = worldActorSession;
         _worldActors = worldActors;
         _lighting = lighting;
         _worldObjects = worldObjects;
@@ -423,28 +419,16 @@ public sealed class WorldAdoptionSource
         _nextRefreshMs = 0;
     }
 
-    private readonly TransformHistory _history;
-    private readonly IActorSpawnService _spawns;
+    private readonly Game.Journal.WorldActorSession _worldActorSession;
 
     private void AdoptActor(WorldActorCandidateId id)
     {
-        var result = _worldActors.CloneCandidate(id, out var clone);
+        var result = _worldActorSession.Adopt(id, out var clone);
         if (result.Success)
         {
-            // The clone is bound by the scene's own rescan, so the wrapper the
+            // The borrowed actor is bound by the scene's own rescan, so the wrapper the
             // typed import hands back is resolved on a later tick.
             _pendingSelectActor = clone;
-            if (clone is { } adopted)
-            {
-                // The undo hands the body back; the redo adopts it again
-                // from the listing, and refuses if the listing has moved on.
-                var address = adopted.Address;
-                _history.Append(new JournalStep(
-                    "Add actor from the world",
-                    () => _spawns.RemoveActorFromScene(adopted)
-                        || _spawns.AdoptFromWorld(address) is null,
-                    () => _spawns.AdoptFromWorld(address) is not null));
-            }
             return;
         }
         Refuse(

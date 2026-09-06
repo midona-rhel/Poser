@@ -175,6 +175,7 @@ internal static class SvgIconTextureCache
     private static readonly TablerIcon[] SidebarTreeIcons =
     [
         TablerIcon.User,
+        TablerIcon.UserWithSlot,
         TablerIcon.Diamond,
         TablerIcon.Square,
         TablerIcon.Camera,

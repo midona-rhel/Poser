@@ -5,11 +5,137 @@ using Poser.Core;
 using Poser.Entities;
 using Poser.Game;
 using Poser.Services;
+using Poser.Application.Transforms;
+using Poser.Game.Journal;
 
 namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class WorldActorDiscoveryTests
 {
+    [Fact]
+    public void Release_history_reacquires_exact_actor_and_never_adopts_a_reused_address()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var first = new ActorBase(ActorManager.ActorIdentity.For(observed.GameObjectId, observed.ObjectIndex),
+            "Borrowed", observed.Address);
+        var second = new ActorBase(first.Id, "Borrowed", observed.Address);
+        var seam = new CloneSeam { Result = second };
+        var manager = new FakeActorManager { Actors = [first], Adopted = true };
+        var history = new TransformHistory();
+        var released = new List<IActor>();
+        var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
+            actor => { released.Add(actor); return true; });
+        Assert.True(session.Release(first));
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.True(step.Redo());
+        Assert.Equal(new IActor[] { first, second }, released);
+        adapter.World[0] = observed with { GameObjectId = 77 };
+        Assert.False(step.Undo());
+        Assert.Single(seam.Calls);
+        Assert.False(session.Release(first)); // A stale scene wrapper cannot authorize a fresh release either.
+        Assert.Equal(2, released.Count);
+    }
+
+    [Theory]
+    [InlineData("gone")]
+    [InlineData("reused")]
+    [InlineData("kind")]
+    [InlineData("address")]
+    [InlineData("index")]
+    [InlineData("hidden")]
+    public void Adoption_redo_refuses_changed_observation_without_native_calls(string change)
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var seam = new CloneSeam { Result = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address) };
+        var discovery = NewDiscovery(adapter, seam);
+        var history = new TransformHistory();
+        int releases = 0;
+        var session = new WorldActorSession(discovery, history, _ => { releases++; return true; });
+        Assert.True(session.Adopt(Assert.Single(discovery.RefreshCandidates()).Id, out _).Success);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        adapter.OnRevalidate = _ => change switch
+        {
+            "gone" => null,
+            "reused" => observed with { GameObjectId = 77 },
+            "address" => observed with { Address = (nint)0x20 },
+            "index" => observed with { ObjectIndex = 6 },
+            "hidden" => observed with { IsDrawing = false },
+            _ => observed with { Kind = WorldActorKind.EventNpc },
+        };
+        Assert.False(step.Redo());
+        Assert.False(step.Redo());
+        Assert.Single(seam.Calls);
+        Assert.Equal(1, releases);
+    }
+
+    [Fact]
+    public void Failed_adoption_does_not_append_and_failed_release_keeps_the_claim_for_retry()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var seam = new CloneSeam { Throw = true };
+        var discovery = NewDiscovery(adapter, seam);
+        var history = new TransformHistory();
+        int releases = 0;
+        bool releaseAllowed = false;
+        var session = new WorldActorSession(discovery, history, _ => { releases++; return releaseAllowed; });
+        var candidate = Assert.Single(discovery.RefreshCandidates()).Id;
+        Assert.False(session.Adopt(candidate, out _).Success);
+        Assert.False(history.CanUndo);
+        seam.Throw = false;
+        seam.Result = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address);
+        Assert.True(session.Adopt(candidate, out _).Success);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        adapter.ThrowOnRevalidate = true;
+        Assert.False(step.Undo());
+        Assert.Equal(0, releases);
+        adapter.ThrowOnRevalidate = false;
+        Assert.False(step.Undo());
+        releaseAllowed = true;
+        Assert.True(step.Undo());
+        Assert.True(step.Undo());
+        Assert.Equal(2, releases);
+        Assert.Equal(2, seam.Calls.Count); // No adoption as a failed-undo fallback.
+    }
+
+    [Fact]
+    public void Adoption_history_survives_listing_refresh_and_releases_the_latest_wrapper()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var first = new ActorBase(new EntityId("first"), "Borrowed", observed.Address);
+        var second = new ActorBase(new EntityId("second"), "Borrowed", observed.Address);
+        var seam = new CloneSeam { Result = first };
+        var manager = new FakeActorManager();
+        var discovery = NewDiscovery(adapter, seam, manager: manager);
+        var history = new TransformHistory();
+        var released = new List<IActor>();
+        var session = new WorldActorSession(discovery, history, actor => { released.Add(actor); return true; });
+        Assert.True(session.Adopt(Assert.Single(discovery.RefreshCandidates()).Id, out var actor).Success);
+        Assert.Same(first, actor);
+        manager.Actors = [first];
+        Assert.Empty(discovery.RefreshCandidates()); // Held actors leave discovery; the claim must not.
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        manager.Actors = [];
+        seam.Result = second;
+        Assert.True(step.Redo());
+        Assert.True(step.Undo());
+        Assert.Equal(new IActor[] { first, second }, released);
+        Assert.True(step.Redo());
+        adapter.OnRevalidate = _ => observed with { GameObjectId = 77 };
+        Assert.True(step.Undo());
+        Assert.Equal(2, released.Count); // Undo must not release the replacement occupant either.
+    }
+
     [Fact]
     public void Refresh_filters_and_mints_stale_safe_candidate_ids()
     {
@@ -112,6 +238,8 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class FakeActorManager : IActorManager
     {
+        public bool Adopted { get; set; }
+        public bool IsAdopted(IActor actor) => Adopted;
         public IReadOnlyList<IActor> Actors { get; set; } = Array.Empty<IActor>();
         public IReadOnlyList<IActor> AuxiliaryActors { get; set; } =
             Array.Empty<IActor>();

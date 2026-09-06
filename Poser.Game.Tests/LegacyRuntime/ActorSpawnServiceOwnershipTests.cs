@@ -17,6 +17,30 @@ public sealed class ActorSpawnServiceOwnershipTests
 {
     private const ushort GPoseObjectTableBase = 200;
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Clone_reserves_a_usable_empty_slot_regardless_of_source_capability(bool sourceHasSlot)
+    {
+        var source = Actor(0x901);
+        var clone = Actor(0x900);
+        var native = new FakeNative(new(9, clone.Address, 900))
+        {
+            SourceDescriptor = new(5, source.Address, 901),
+            SourceHasSlot = sourceHasSlot,
+        };
+        using var service = NewService(native, new FakeActorManager(clone));
+
+        Assert.Equal(sourceHasSlot, service.HasCompanionSlot(source));
+        Assert.Same(clone, service.CloneActor(source));
+        Assert.Equal((byte)1, native.LastReservation);
+        Assert.True(service.HasCompanionSlot(clone));
+        Assert.Null(service.GetCompanionInfo(clone));
+        var attachment = new CompanionAttachment(CompanionKind.Ornament, 12);
+        Assert.True(service.SetCompanion(clone, attachment));
+        Assert.Equal(attachment, service.GetCompanionInfo(clone));
+    }
+
     [Fact]
     public void Spawn_replacement_and_dispose_retry_keep_exact_ownership()
     {
@@ -464,6 +488,9 @@ public sealed class ActorSpawnServiceOwnershipTests
         }
 
         public bool HasSlot { get; set; } = true;
+        public SpawnNativeDescriptor? SourceDescriptor { get; set; }
+        public bool SourceHasSlot { get; set; }
+        public byte LastReservation { get; private set; }
         public CompanionAttachment? Companion { get; set; }
         public bool CompanionReady { get; set; }
         public int CompanionReadinessChecks { get; private set; }
@@ -494,6 +521,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         public uint CreateBattleCharacter(byte reserveCompanionSlot)
         {
             CreateCalls++;
+            LastReservation = reserveCompanionSlot;
             return Objects.CreateBattleCharacter(reserveCompanionSlot);
         }
 
@@ -509,7 +537,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             Objects.ResolveByIndex(index);
 
         public SpawnNativeDescriptor? ResolveActor(nint address) =>
-            Objects.ResolveActor(address);
+            SourceDescriptor is { } source && source.Address == address ? source : Objects.ResolveActor(address);
 
         public bool DeleteExact(SpawnNativeDescriptor descriptor)
         {
@@ -566,7 +594,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             Gate(descriptor) ? ReadyToDraw : null;
 
         public bool HasCompanionSlot(SpawnNativeDescriptor descriptor) =>
-            Gate(descriptor) && HasSlot;
+            descriptor == SourceDescriptor ? SourceHasSlot : Gate(descriptor) && HasSlot;
 
         public bool TryReadCompanion(
             SpawnNativeDescriptor descriptor,
