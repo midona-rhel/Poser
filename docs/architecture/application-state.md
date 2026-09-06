@@ -56,3 +56,7 @@ When GPose closes, Poser asks for one final autosave before cleanup. Taking or
 queuing that snapshot does not prove it was saved. GPose cleanup is reported
 separately, and the background worker receives snapshots only. Autosave rules
 are in [files-and-transfer.md](../features/files-and-transfer.md).
+After final capture, `GPoseExitingEvent` restores presentation while actor
+bindings still exist; only then does `GPoseStateChangedEvent(false)` clear
+actors and bindings. Normal exit and plugin unload share this ordering.
+Destroyed native bodies are skipped, not written through retained bindings.

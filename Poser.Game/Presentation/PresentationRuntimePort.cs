@@ -45,6 +45,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
+    private readonly IObjectTable _objects;
 
     private sealed class Owned
     {
@@ -77,12 +78,14 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        IIntegrationRuntimePort integration)
+        IIntegrationRuntimePort integration,
+        IObjectTable objects)
     {
         _framework = framework;
         _log = log;
         _bindings = bindings;
         _integration = integration;
+        _objects = objects;
 
         try
         {
@@ -130,6 +133,15 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
             detail = resolved.Detail ?? $"Actor {actor} is no longer available.";
             return null;
         }
+        // The exit edge is observed after the game may have destroyed its
+        // GPose copies. Borrowed world bodies still exist; a stale binding
+        // alone is not permission to restore into a destroyed copy.
+        var current = _objects.CreateObjectReference(legacy.Address);
+        if (current is null || !current.IsValid())
+        {
+            detail = "The actor is no longer in the object table.";
+            return null;
+        }
         return (CSCharacter*)legacy.Address;
     }
 
@@ -145,11 +157,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     private static CharacterBase* BaseFor(CSCharacter* character, PresentationModel model) =>
         SlotCharacterBases.Resolve((nint)character, SlotFor(model));
 
-    public bool IsSupported(ActorId actor)
-    {
-        var resolved = _bindings.Resolve(actor);
-        return resolved.Success && resolved.Value is { } actorValue && actorValue.Address != nint.Zero;
-    }
+    public bool IsSupported(ActorId actor) => Resolve(actor, out _) != null;
 
     public PresentationReading? Read(ActorId actor)
     {
@@ -322,10 +330,9 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
             EnforceColors(actor, owned);
             if (_colorsDisposed) return;
             if (!_owned.TryGetValue(actor, out var currentOwned) || !ReferenceEquals(currentOwned, owned)) continue;
-            var resolved = _bindings.Resolve(actor);
-            if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
+            var character = Resolve(actor, out _);
+            if (character == null)
                 continue;
-            var character = (CSCharacter*)legacy.Address;
 
 
             foreach (var (model, tint) in owned.Tints)
@@ -356,10 +363,9 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         {
             if (owned.Tints.Count == 0)
                 continue;
-            var resolved = _bindings.Resolve(actor);
-            if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
+            var character = Resolve(actor, out _);
+            if (character == null)
                 continue;
-            var character = (CSCharacter*)legacy.Address;
             foreach (var model in owned.Tints.Keys)
             {
                 var characterBase = BaseFor(character, model);
