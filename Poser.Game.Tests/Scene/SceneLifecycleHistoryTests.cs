@@ -34,7 +34,7 @@ public sealed class SceneLifecycleHistoryTests
         })!;
         var runtime = new ActorRuntimeState(null, 0,
             new Poser.Application.Integration.ActorAppearanceSnapshot("authored appearance", null, null, null, null),
-            PresentationOverrides.None, null, Poser.Domain.Animation.AnimationOverrides.None,
+            PresentationOverrides.None,
             null, null, new GazeState(), null, false, false, false, []);
         var authored = new ActorState(MapStood, false, null) { Runtime = runtime };
         world.Actors.Edit(actor, authored);

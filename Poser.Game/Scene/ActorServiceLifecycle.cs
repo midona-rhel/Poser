@@ -90,12 +90,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IBonePosingService bonePosing,
         IActorManager actorManager,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Animation.AnimationSession animation,
         Integration.ISpawnCollectionPort collections)
     {
         _collections = collections;
         _presentation = presentation;
-        _animation = animation;
         _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;
@@ -190,6 +188,15 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     public ActorState Read(object actor)
     {
         var target = (IActor)actor;
+        return new ActorState(_posing.GetEffectiveTransform(target), _spawns.IsVisible(target), null)
+        {
+            Runtime = CaptureRuntime(target),
+        };
+    }
+
+    public ActorState ReadPoseForCopy(object actor)
+    {
+        var target = (IActor)actor;
         var pose = CapturePose(target);
         var rootScales = CapturePartialRootScales(target, pose);
         return new ActorState(
@@ -197,7 +204,6 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             _spawns.IsVisible(target),
             pose)
         {
-            Runtime = CaptureRuntime(target),
             PartialRootScales = rootScales,
             PhysicsDeltas = CapturePhysicsDeltas(target),
         };
@@ -496,7 +502,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         // nothing to restore onto and nothing to report.
         if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
             return;
-        if (state.Pose is not null &&
+        if ((state.Pose is not null || state.Runtime is not null) &&
             (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy))
         {
             Schedule(actor, state, attempts - 1, stillCurrent);
@@ -508,6 +514,12 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
 
+        if (state.Runtime is { } runtime)
+        {
+            runtime.Pose.Restore(_skeletons.GetSkeletons(actor), _bonePosing);
+            RestoreRuntime(actor, runtime, stillCurrent);
+            return;
+        }
         if (state.Pose is not { } pose)
         {
             RestoreRuntime(actor, state.Runtime, stillCurrent);
@@ -519,8 +531,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         // twice, 01:2x). Own the roots, let a pass run, then import.
         if (state.PartialRootScales is { } rootScales && DebugRootScales)
             ApplyPartialRootScales(actor, rootScales);
+        var options = RestoreOptions;
         var restored = _poses.ImportPose(
-            actor, pose, RestoreOptions, $"Restore pose for {actor.Name}",
+            actor, pose, options, $"Restore pose for {actor.Name}",
             onReceipt: receipt =>
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)

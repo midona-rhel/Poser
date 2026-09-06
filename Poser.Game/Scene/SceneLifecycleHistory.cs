@@ -123,6 +123,8 @@ internal interface IActorLifecycle
 
     ActorState Read(object actor);
 
+    ActorState ReadPoseForCopy(object actor) => Read(actor) with { Runtime = null };
+
     IActor? Recreate(ActorState state) => null;
 
     /// <summary>Runs <paramref name="act"/> once the actor's body is
@@ -434,7 +436,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IBonePosingService bonePosing,
         IActorManager actorManager,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Animation.AnimationSession animation,
         Integration.ISpawnCollectionPort collections)
         : this(
             history,
@@ -442,7 +443,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings, bonePosing, actorManager, presentation, animation, collections),
+                gaze, integration, bindings, bonePosing, actorManager, presentation, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
@@ -812,7 +813,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             lifecycle.DebugPhysicsDeltas = physicsDeltas;
             lifecycle.DebugRootScales = rootScales;
         }
-        var state = _actors.Read(from) with { Runtime = null };
+        var state = _actors.ReadPoseForCopy(from);
         _actors.Restore(to, state);
     }
 
@@ -820,7 +821,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
-        var state = _actors.Read(source) with { Runtime = null };
+        var state = _actors.ReadPoseForCopy(source);
         IActor? Posed()
         {
             var copy = spawn();

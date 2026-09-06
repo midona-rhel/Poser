@@ -15,55 +15,6 @@ public sealed class AnimationOwnershipTests
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
 
     [Fact]
-    public void Lifecycle_replays_applied_values_without_losing_staged_selection_or_loop_intent()
-    {
-        var port = FakePort.Create();
-        var reading = ActorAnimationReading.Empty with
-        {
-            BaseTimeline = 42, OverallSpeed = .5f, WeaponDrawn = true,
-            Slots = [new(AnimationSlot.Base, 42, .25f)],
-        };
-        port.ReadValue = reading;
-        var authored = AnimationOverrides.None with
-        {
-            SelectedSlots = new Dictionary<AnimationSlot, ushort> { [AnimationSlot.Base] = 99 },
-            LoopedSlots = new Dictionary<AnimationSlot, ushort> { [AnimationSlot.Base] = 42 },
-            LoopWantedSlots = new HashSet<AnimationSlot> { AnimationSlot.Base },
-            PositionLock = true,
-        };
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.RestoreHistory(Actor, reading, authored).Success);
-        var restored = session.OverridesFor(Actor);
-        Assert.Equal((ushort)99, session.SelectedFor(Actor, AnimationSlot.Base));
-        Assert.Equal((ushort)42, restored.LoopedSlots[AnimationSlot.Base]);
-        Assert.Equal(.5f, restored.OverallSpeed);
-        Assert.Equal(.25f, restored.SlotSpeeds[AnimationSlot.Base]);
-        Assert.True(restored.PositionLock);
-        Assert.Contains("PlayBase:42", port.Calls);
-        // Pose import temporarily freezes every layer before restoring the authored pose.
-        session.SetSlotSpeed(Actor, AnimationSlot.Base, 0);
-        session.SetSpeed(Actor, 0);
-        Assert.True(session.RestoreHistoryPlayback(Actor, reading).Success);
-        Assert.Equal(.25f, session.OverridesFor(Actor).SlotSpeeds[AnimationSlot.Base]);
-        Assert.Equal(.5f, session.OverridesFor(Actor).OverallSpeed);
-    }
-
-    [Fact]
-    public void Lifecycle_scrub_rebinds_to_replacement_token_and_clamps_to_current_duration()
-    {
-        var port = FakePort.Create();
-        var control = new ScrubControlId(0, 1);
-        var saved = ActorAnimationReading.Empty with
-        {
-            Controls = [new(control, 8, 10, 0), new(new(9, 9), 1, 2, 0)],
-            SkeletonToken = 111,
-        };
-        port.ReadValue = saved with { Controls = [new(control, 0, 5, 0)], SkeletonToken = 222 };
-        Assert.True(new AnimationSession(port.Port).RestoreHistoryTimes(Actor, saved).Success);
-        Assert.Equal((control, 5f, 222UL), Assert.Single(port.TimeWrites));
-    }
-
-    [Fact]
     public void Replacement_generation_does_not_inherit_animation_ownership()
     {
         var port = FakePort.Create();
@@ -223,7 +174,6 @@ public sealed class AnimationOwnershipTests
         public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
         public ActorAnimationReading? ReadValue { get; set; }
-        public List<(ScrubControlId, float, ulong)> TimeWrites { get; } = new();
         public BaseAnimationCapture BaseCapture { get; } =
             new(4, 0xA1B2C3D4u, 18, 27, 36);
         public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
@@ -244,14 +194,6 @@ public sealed class AnimationOwnershipTests
                     return true;
                 case "get_SupportsForceLoop":
                     return true;
-                case "get_SupportsStance":
-                    return true;
-                case "EnumerateControls":
-                    args![1] = ReadValue!.SkeletonToken;
-                    return ReadValue.Controls;
-                case "SetControlTime":
-                    TimeWrites.Add(((ScrubControlId)args![1]!, (float)args[2]!, (ulong)args[3]!));
-                    return AnimationPortResult.Ok();
                 case "TimelineSlot":
                     return (ushort)args![0]! switch
                     {

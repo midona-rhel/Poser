@@ -2158,5 +2158,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
         _cancellation?.Dispose();
         _disposal.Dispose();
+        (_runtime as IDisposable)?.Dispose();
     }
 }

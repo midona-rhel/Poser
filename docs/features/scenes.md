@@ -17,9 +17,12 @@ Removal captures the entity as last edited, not its original spawn arguments.
 Actor restoration creates a fresh body, applies captured appearance/equipment,
 collection and Poser body-profile values, then waits for its skeleton and bone
 bindings before applying placement, pose, presentation, gaze and IK. Companion
-state follows the owner's pose. In-session history also restores animation
-selection, playback speeds, loops and scrub position; scene files remain a
-picture, as described below. A repeated removal captures the latest edits again.
+state follows the owner's pose. Lifecycle history restores authored bone-transform
+stacks directly, like Brio's pose history, rather than exporting and re-importing
+the evaluated animation frame. Untouched bones remain untouched. Animation is not
+recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
+The user handles animation after undo/redo. Scene files remain pictures, as described
+below. A repeated removal captures the latest edits again.
 
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.
@@ -27,6 +30,8 @@ External targets that no longer exist are not replaced by unrelated entities.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
 MCDF history reuses its package reference; it is not a portable appearance export.
+Embedded scene packages stay staged until the GPose session ends or the plugin
+unloads, so deleting an actor does not invalidate its history's appearance source.
 
 ## Created entity names
 
@@ -238,8 +243,8 @@ the save reports a partial result — a path, a temporary collection, or any
 other live handle is not a portable save.
 
 Restoring an embedded payload streams the container entry into one owned
-temporary file and imports it through the same MCDF transaction a hand-driven
-import uses. Its checksum is not consulted: the bytes in the container are the
+temporary file retained for the session and imports it through the same MCDF
+transaction a hand-driven import uses. Its checksum is not consulted: the bytes in the container are the
 package, so there is nothing to identify them against.
 
 ## Appearance identity

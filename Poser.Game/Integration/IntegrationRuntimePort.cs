@@ -625,10 +625,14 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationPortResult.Fail(
                     $"Penumbra failed assigning the duplicate's collection (code {assignEc}).");
             }
+            // A fresh body's seed assignment is no longer its authored collection.
+            // Penumbra's GetCollectionForObject reports an individual assignment
+            // before checking the temporary collection, even when the latter renders.
+            var (clearEc, _) = _setCollectionForObject.InvokeFunc(cloneIndex, null, false, true);
             if (_duplicateCollections.Remove(cloneAddress, out var stale))
                 _deleteTemporaryCollection.InvokeFunc(stale);
             _duplicateCollections[cloneAddress] = collection;
-            return IntegrationPortResult.Ok();
+            return PenumbraResult(clearEc, "clearing the duplicate's seed collection");
         });
 
     public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) =>
