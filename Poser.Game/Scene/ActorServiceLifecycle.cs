@@ -409,7 +409,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         var target = (IActor)actor;
         _spawns.SetVisibility(target, state.Visible);
         if (state.Runtime is not null)
-            PrepareRuntime(target, state, 3600, stillCurrent);
+            // Spawn assigns its default collection on tick one. History must follow
+            // that assignment, including when a reused slot still has cached bones.
+            _framework.RunOnTick(() => PrepareRuntime(target, state, 3600, stillCurrent), delayTicks: 2);
         else
             Schedule(target, state, ReadyAttempts, stillCurrent);
     }

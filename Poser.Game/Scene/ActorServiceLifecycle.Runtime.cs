@@ -102,6 +102,11 @@ internal sealed partial class ActorServiceLifecycle
                 var result = _integration.RestoreHistory(id, appearance);
                 if (!result.Success) Note($"'{actor.Name}': {result.Detail}");
             }
+            if (runtime.InheritedCollection is not null)
+            {
+                var result = _integration.Redraw(id);
+                if (!result.Success) Note($"'{actor.Name}': {result.Detail}");
+            }
             // Appearance/collection application may queue its redraw for the next tick.
             Next(1, 3);
             return;

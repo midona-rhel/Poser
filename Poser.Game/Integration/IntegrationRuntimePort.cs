@@ -583,7 +583,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
                 return refusal;
             int sourceIndex = IndexOf(sourceAddress);
-            int cloneIndex = IndexOf(cloneAddress);
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationPortResult.Fail("Penumbra reported no resources for the source.");

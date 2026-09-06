@@ -74,7 +74,7 @@ public sealed class AnimationSession
         return failures.Count == 0 ? AnimationResult.Ok() : AnimationResult.Fail(string.Join("; ", failures));
     }
 
-    /// <summary>Called after replay has produced the replacement controls; never reuse the old skeleton token.</summary>
+    /// <summary>Reapplies playback after pose import's temporary freeze.</summary>
     public AnimationResult RestoreHistoryPlayback(ActorId actor, ActorAnimationReading reading)
     {
         foreach (var slot in reading.Slots)
