@@ -402,6 +402,17 @@ public sealed class WorldObjectRestoreTests
     }
 
     [Fact]
+    public async System.Threading.Tasks.Task Respawn_subscriber_failure_does_not_destroy_committed_body()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        world.Events.Subscribe<WorldObjectListChangedEvent>(_ => throw new InvalidOperationException("subscriber"));
+        Assert.True((await spawned.Respawn("bg/new.mdl")).Succeeded);
+        Assert.True(spawned.IsValid);
+        Assert.Equal(new[] { spawned.Address }, world.Port.LiveAddresses);
+    }
+
+    [Fact]
     public void Bg_initial_resource_attachment_keeps_allocation_but_reuse_does_not()
     {
         var loading = new WorldObjectIncarnation((nint)123, 1, 0);

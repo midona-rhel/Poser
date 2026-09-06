@@ -636,6 +636,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private void FinishRespawn(AdoptedWorldObject handle, PendingRespawn pending,
         bool succeeded, string? detail)
     {
+        // A post-commit subscriber failure must not roll back an already
+        // published native replacement or destroy the handle's new body.
+        if (!_respawns.TryGetValue(handle, out var active) || active != pending) return;
         _respawns.Remove(handle);
         if (!succeeded && !TryCleanupRespawnFresh(pending.Fresh))
             detail += " Replacement cleanup remains outstanding.";
