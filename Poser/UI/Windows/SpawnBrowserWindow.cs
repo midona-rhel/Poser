@@ -491,14 +491,14 @@ public sealed class SpawnBrowserWindow : Window
             TablerIcon.Stack2,
             help: "A frozen copy in the same pose and place"));
         rows.Add(ActionRow(
-            "##spawn-actor-mcdf", "Actor from file", TablerIcon.UserPlus,
+            "##spawn-actor-mcdf", "Actor from character file", TablerIcon.UserPlus,
             help: "Spawn a fresh actor and dress it from a character file"));
         rows.Add(ActionRow(
             "##spawn-actor-library", "Actor from library",
             TablerIcon.UserFromFile,
             help: "Browse the library's saved actors"));
         rows.Add(ActionRow(
-            "##spawn-actor-file", "Actor from file", TablerIcon.UserFromFile,
+            "##spawn-actor-file", "Actor from saved entity", TablerIcon.UserFromFile,
             help: "Load a saved actor entry"));
         rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Moneybag));
         rows.Add(ActionRow(

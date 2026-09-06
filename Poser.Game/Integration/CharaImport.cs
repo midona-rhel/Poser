@@ -9,17 +9,37 @@ namespace Poser.Game.Integration;
 
 public sealed class CharaImport(ActorIntegrationSession integration, DisruptiveSteps history)
 {
-    public IntegrationResult Apply(ActorId actor, string path)
+    public static IntegrationValue<JObject> Read(string path)
     {
         try
         {
             using var stream = File.OpenRead(path);
             if (stream.Length > 4 * 1024 * 1024)
-                return new(false, "The character file exceeds 4 MiB.");
+                return IntegrationValue<JObject>.Fail("The character file exceeds 4 MiB.");
             using var text = new StreamReader(stream);
             using var reader = new JsonTextReader(text) { MaxDepth = 32, DateParseHandling = DateParseHandling.None };
             var file = JObject.Load(reader);
-            if (reader.Read()) return new(false, "The character file has trailing data.");
+            if (reader.Read()) return IntegrationValue<JObject>.Fail("The character file has trailing data.");
+            var validated = CharaRequest.Build(null, file);
+            return validated.Success ? IntegrationValue<JObject>.Ok(file) : validated;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+        {
+            return IntegrationValue<JObject>.Fail($"The character file could not be read: {ex.Message}");
+        }
+    }
+
+    public IntegrationResult Apply(ActorId actor, string path)
+    {
+        var read = Read(path);
+        return read.Success && read.Value is { } file
+            ? Apply(actor, file) : new(false, read.Detail);
+    }
+
+    public IntegrationResult Apply(ActorId actor, JObject file)
+    {
+        try
+        {
             var before = integration.GetStateJson(actor);
             if (!before.Success || before.Value is null)
                 return new(false, before.Detail, before.AppearanceRefusal);
@@ -62,7 +82,9 @@ internal static class CharaRequest
         ("Neck", "Neck"), ("Wrists", "Wrists"), ("LeftRing", "LFinger"), ("RightRing", "RFinger"),
     ];
 
-    internal static IntegrationValue<JObject> Build(JObject snapshot, JObject file)
+    // A null snapshot validates the file before spawning; actor-dependent
+    // compatibility is checked once that actor's real state is available.
+    internal static IntegrationValue<JObject> Build(JObject? snapshot, JObject file)
     {
         try
         {
@@ -79,7 +101,8 @@ internal static class CharaRequest
             if (Present(file, "EnableHighlights"))
             {
                 if (file["EnableHighlights"]!.Type != JTokenType.Boolean) throw new JsonException("EnableHighlights must be boolean.");
-                values[CustomizeKey.Highlights] = file.Value<bool>("EnableHighlights") ? 1 : 0;
+                values[CustomizeKey.Highlights] = file.Value<bool>("EnableHighlights")
+                    ? CustomizeEncoding.FlagValue(CustomizeKey.Highlights) : 0;
             }
             Split("Eyes", CustomizeKey.EyeShape, CustomizeKey.SmallIris);
             Split("Mouth", CustomizeKey.Mouth, CustomizeKey.Lipstick);
@@ -88,13 +111,19 @@ internal static class CharaRequest
             {
                 int mask = file["FacialFeatures"]!.Type == JTokenType.String
                     ? FeatureMask(file.Value<string>("FacialFeatures")!) : Number(file["FacialFeatures"], 255);
-                for (int i = 0; i < 8; i++) values[CustomizeKey.FacialFeature1 + i] = (mask >> i) & 1;
+                for (int i = 0; i < 8; i++) values[CustomizeKey.FacialFeature1 + i] = mask & (1 << i);
             }
             if (Present(file, "ModelType") && Number(file["ModelType"], int.MaxValue) != 0)
                 return IntegrationValue<JObject>.Fail("This character file uses a nonhuman model; .chara import currently supports human appearance.");
             if (values.Count == 0 && !Gear.Any(g => Present(file, g.File)) && !Present(file, "Glasses"))
                 return IntegrationValue<JObject>.Fail("The file contains no supported character appearance.");
-            var result = CustomizeRequest.Build(snapshot, values);
+            if (values.TryGetValue(CustomizeKey.Race, out int race)
+                && values.TryGetValue(CustomizeKey.Clan, out int clan)
+                && (race == 0 || clan == 0 || (clan + 1) / 2 != race))
+                return IntegrationValue<JObject>.Fail("The requested race and clan do not form a valid body.");
+            var result = snapshot is null
+                ? IntegrationValue<JObject>.Ok(new JObject())
+                : CustomizeRequest.Build(snapshot, values);
             if (!result.Success || result.Value is null) return result;
             var request = result.Value;
             if (request["Equipment"] is not JObject) request["Equipment"] = new JObject();
@@ -117,7 +146,9 @@ internal static class CharaRequest
             }
             if (Present(file, "Glasses"))
             {
-                ushort glasses = (ushort)Number(file["Glasses"]?["GlassesId"], ushort.MaxValue);
+                // Brio accepts both the legacy numeric id and GlassesSave.
+                var saved = file["Glasses"]!;
+                ushort glasses = (ushort)Number(saved is JObject item ? item["GlassesId"] : saved, ushort.MaxValue);
                 // GlassesId is a sheet row (not its draw model); Penumbra's
                 // CustomItemId marks bonus rows with bit 49, without bit 48.
                 request["Bonus"] = new JObject { ["Glasses"] = new JObject { ["BonusId"] = glasses | (1ul << 49), ["Apply"] = true } };
@@ -139,7 +170,7 @@ internal static class CharaRequest
                 if (!Present(file, name)) return;
                 int value = Number(file[name], 255);
                 values[key] = value & 0x7f;
-                values[flag] = value >> 7;
+                values[flag] = value & CustomizeEncoding.FlagValue(flag);
             }
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or OverflowException)

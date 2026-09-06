@@ -306,6 +306,8 @@ public interface IWorldObjectPort
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);
 
+    bool TryReadOpacity(nint address, out float opacity);
+
     /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
     /// both. Never called with an adopted address — the map's own objects
     /// are always restored instead.</summary>

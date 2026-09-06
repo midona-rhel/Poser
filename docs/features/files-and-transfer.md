@@ -32,6 +32,11 @@ not Mare extraction or a temporary Penumbra collection. Import is one undo
 step; redo uses the imported values rather than rereading a changed file.
 Brio's `AnamnesisCharaFile` is the compatibility reference for human body
 customization, packed feature switches, equipment, both dyes, and facewear.
+Facewear accepts both legacy numeric `Glasses` and `{ "GlassesId": ... }`,
+matching Brio's legacy-reader fallback. Split switches retain native bit masks
+in Glamourer requests, exactly like the appearance controls. A fresh-actor
+import validates and retains the file before spawning, then applies those bytes
+once the body is ready; unreadable or malformed files do not spawn a clone.
 Missing/null fields are left alone. This reader does not import nonhuman
 model IDs, extended shader colours, transparency or body-scale overrides;
 nonhuman files are refused. It does not write `.chara`.

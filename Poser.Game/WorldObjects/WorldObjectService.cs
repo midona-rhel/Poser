@@ -30,7 +30,8 @@ public sealed class AdoptedWorldObject : IWorldObject
         byte initialFlags,
         bool initialVisible,
         bool spawned = false,
-        bool isVfx = false)
+        bool isVfx = false,
+        float initialOpacity = 1f)
     {
         _owner = owner;
         Id = id;
@@ -41,6 +42,7 @@ public sealed class AdoptedWorldObject : IWorldObject
         InitialPlacement = initialPlacement;
         InitialFlags = initialFlags;
         InitialVisible = initialVisible;
+        InitialOpacity = _opacity = initialOpacity;
         Spawned = spawned;
         _isVfx = isVfx;
         _placement = initialPlacement;
@@ -159,6 +161,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     }
 
     private float _opacity = 1f;
+    public float InitialOpacity { get; }
 
     /// <summary>The colour, when the user tinted it: a VFX's colour
     /// multiplier, a BG object's stain dye. Null leaves the file's own
@@ -1201,6 +1204,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 $"WorldObjectService: refusing VFX {address:X}; its playback state is unavailable.");
             return null;
         }
+        float opacity = snapshot.Color.W;
+        if (!isVfx && !_port.TryReadOpacity(address, out opacity))
+            return null;
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
@@ -1211,7 +1217,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             placement,
             flags,
             visible,
-            isVfx: isVfx);
+            isVfx: isVfx,
+            initialOpacity: opacity);
         // The original's own dressing, put back on release; the handle
         // starts from the same value so the buttons read true.
         handle.InitialNightState = _port.ReadBgNightState(address);
@@ -1462,7 +1469,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             // already put back exactly; WriteVisible would quantize a
             // fractional alpha to 0 or 1. BG keeps the legacy flag write.
             if (handle.InitialVfxSnapshot is null)
+            {
+                _port.WriteOpacity(handle.Address, handle.InitialOpacity);
                 _port.WriteVisible(handle.Address, handle.InitialVisible);
+            }
             handle.MarkReleased(handle.InitialPlacement);
             return true;
         }

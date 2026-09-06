@@ -611,6 +611,19 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
             tint.X, tint.Y, tint.Z, current.W);
     }
 
+    public bool TryReadOpacity(nint address, out float opacity)
+    {
+        var node = Resolve(address);
+        opacity = 1f;
+        if (node == null)
+            return false;
+        // BG dither runs in the opposite direction to VFX alpha.
+        opacity = node->GetObjectType() == ObjectType.VfxObject
+            ? ((CSVfx*)node)->Color.W
+            : 1f - ((BgObject*)node)->GetTransparency();
+        return float.IsFinite(opacity) && opacity is >= 0f and <= 1f;
+    }
+
     public void WriteOpacity(nint address, float opacity)
     {
         var node = Resolve(address);

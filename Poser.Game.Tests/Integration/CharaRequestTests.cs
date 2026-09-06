@@ -39,13 +39,69 @@ public sealed class CharaRequestTests
         Assert.Equal(204, c["Hairstyle"]!["Value"]);
         Assert.Equal(191, c["SkinColor"]!["Value"]);
         Assert.Equal(5, c["EyeShape"]!["Value"]);
-        Assert.Equal(1, c["SmallIris"]!["Value"]);
+        Assert.Equal(128, c["Highlights"]!["Value"]);
+        Assert.Equal(128, c["SmallIris"]!["Value"]);
         Assert.Equal(3, c["Mouth"]!["Value"]);
-        Assert.Equal(1, c["Lipstick"]!["Value"]);
-        Assert.Equal(1, c["FacePaintReversed"]!["Value"]);
-        Assert.Equal(1, c["FacialFeature7"]!["Value"]);
+        Assert.Equal(128, c["Lipstick"]!["Value"]);
+        Assert.Equal(128, c["FacePaintReversed"]!["Value"]);
+        Assert.Equal(64, c["FacialFeature7"]!["Value"]);
         Assert.Equal(0, c["FacialFeature2"]!["Value"]);
-        Assert.Equal(1, c["LegacyTattoo"]!["Value"]);
+        Assert.Equal(128, c["LegacyTattoo"]!["Value"]);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(12)]
+    [InlineData(300)]
+    public void Legacy_and_object_facewear_produce_identical_requests(int id)
+    {
+        var legacy = CharaRequest.Build(Snapshot(), new JObject { ["Glasses"] = id });
+        var current = CharaRequest.Build(Snapshot(), new JObject { ["Glasses"] = new JObject { ["GlassesId"] = id } });
+        Assert.True(legacy.Success, legacy.Detail);
+        Assert.True(current.Success, current.Detail);
+        Assert.True(JToken.DeepEquals(legacy.Value, current.Value));
+    }
+
+    [Fact]
+    public void Viera_fixture_flags_preserve_each_native_bit()
+    {
+        var result = CharaRequest.Build(Snapshot(), JObject.Parse("""
+            {"Race":"Viera","Tribe":"Rava","Gender":"Masculine","Hair":17,
+             "Eyes":131,"Mouth":128,"FacialFeatures":"Third, Fifth, Sixth","Glasses":0}
+            """));
+        Assert.True(result.Success, result.Detail);
+        var c = result.Value!["Customize"]!;
+        Assert.Equal(3, c["EyeShape"]!["Value"]);
+        Assert.Equal(128, c["SmallIris"]!["Value"]);
+        Assert.Equal(128, c["Lipstick"]!["Value"]);
+        Assert.Equal(4, c["FacialFeature3"]!["Value"]);
+        Assert.Equal(16, c["FacialFeature5"]!["Value"]);
+        Assert.Equal(32, c["FacialFeature6"]!["Value"]);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"Glasses\":\"broken\"}")]
+    [InlineData("{\"Glasses\":{}}")]
+    [InlineData("{\"Glasses\":65536}")]
+    [InlineData("{\"Hair\":256}")]
+    [InlineData("{\"MainHand\":{\"ModelSet\":1}}")]
+    [InlineData("{\"ModelType\":123,\"Hair\":1}")]
+    [InlineData("{\"Race\":6,\"Tribe\":1}")]
+    public void Preflight_refuses_bad_files_before_an_actor_is_needed(string json)
+    {
+        Assert.False(CharaRequest.Build(null, JObject.Parse(json)).Success);
+    }
+
+    [Fact]
+    public void Cleared_flags_are_zero()
+    {
+        var result = CharaRequest.Build(Snapshot(), JObject.Parse("""
+            {"Eyes":3,"Mouth":1,"FacePaint":2,"EnableHighlights":false,"FacialFeatures":"None"}
+            """));
+        Assert.True(result.Success, result.Detail);
+        foreach (var key in new[] { "SmallIris", "Lipstick", "FacePaintReversed", "Highlights", "FacialFeature3", "LegacyTattoo" })
+            Assert.Equal(0, result.Value!["Customize"]![key]!["Value"]);
     }
 
     [Fact]

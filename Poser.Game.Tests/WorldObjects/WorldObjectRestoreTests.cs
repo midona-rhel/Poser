@@ -61,6 +61,29 @@ public sealed class WorldObjectRestoreTests
         Assert.False(adopted.IsValid);
     }
 
+    [Theory]
+    [InlineData(0, 1f)]
+    [InlineData(1, .65f)]
+    [InlineData(2, .8f)]
+    public void Scenery_opacity_restores_on_release_exit_and_dispose(int action, float initial)
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        world.Port.WriteOpacity(address, initial);
+        var adopted = world.Service.Adopt(address)!;
+        Assert.Equal(initial, adopted.Opacity);
+        adopted.Opacity = .276f;
+        adopted.Visible = false;
+        if (action == 0) Assert.True(world.Service.Release(adopted));
+        else if (action == 1) world.Events.Publish(new GPoseStateChangedEvent(false));
+        else world.Service.Dispose();
+        Assert.True(world.Port.TryReadOpacity(address, out var restored));
+        Assert.Equal(initial, restored);
+        Assert.True(world.Port.VisibleOf(address));
+        if (action == 0)
+            Assert.Equal(initial, world.Service.Adopt(address)!.Opacity);
+    }
+
     // Identity re-adoption is GONE by ruling (2026-09-01): a document
     // never carries a borrow, so a load never matches the map. The
     // dead-address guard survives on the plain Adopt path.
@@ -842,6 +865,13 @@ private sealed class World
         public void WriteOpacity(nint address, float opacity)
         {
             if (ThrowOnOpacity) throw new InvalidOperationException("Injected opacity failure");
+            if (_nodes.TryGetValue(address, out var node)) node.Opacity = opacity;
+        }
+
+        public bool TryReadOpacity(nint address, out float opacity)
+        {
+            opacity = _nodes.TryGetValue(address, out var node) ? node.Opacity : 1f;
+            return node != null;
         }
 
         public nint Spawn(string path, in Transform placement)
@@ -1082,6 +1112,7 @@ private sealed class World
             public Vector4 Color = Vector4.One;
             public VfxPlaybackState Playback = VfxPlaybackState.Unavailable;
             public float Speed = 1f;
+            public float Opacity = 1f;
             public byte Outline = WorldObjectOutline.None;
         }
     }

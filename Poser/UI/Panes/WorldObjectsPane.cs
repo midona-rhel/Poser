@@ -155,6 +155,7 @@ public sealed class WorldObjectsPane
                 : null,
             options: new PickerOptions<WorldAsset>
             {
+                Width = 520f,
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire

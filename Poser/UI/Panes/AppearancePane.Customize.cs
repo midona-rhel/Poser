@@ -577,17 +577,7 @@ public sealed partial class AppearancePane
     /// <summary>The value a flag key takes when on: a facial feature is
     /// its own bit, the rest are the high bit — as Glamourer reads them
     /// back (a one is ignored; probed live 2026-09-02).</summary>
-    private static int Flag(CustomizeKey key) => key switch
-    {
-        CustomizeKey.FacialFeature1 => 1,
-        CustomizeKey.FacialFeature2 => 2,
-        CustomizeKey.FacialFeature3 => 4,
-        CustomizeKey.FacialFeature4 => 8,
-        CustomizeKey.FacialFeature5 => 16,
-        CustomizeKey.FacialFeature6 => 32,
-        CustomizeKey.FacialFeature7 => 64,
-        _ => 128,
-    };
+    private static int Flag(CustomizeKey key) => CustomizeEncoding.FlagValue(key);
 
     private static string ColorName(CustomizeKey key) => key switch
     {

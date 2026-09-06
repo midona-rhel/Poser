@@ -1145,15 +1145,26 @@ public sealed partial class AppearancePane
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
+            Newtonsoft.Json.Linq.JObject? chara = null;
+            if (System.IO.Path.GetExtension(chosen).Equals(".chara", StringComparison.OrdinalIgnoreCase))
+            {
+                var read = Game.Integration.CharaImport.Read(chosen);
+                if (!read.Success || read.Value is null)
+                {
+                    _notices.Failed($"Import character appearance: {read.Detail}");
+                    return;
+                }
+                chara = read.Value;
+            }
             var body = spawn();
             if (body == null)
                 return;
-            _pendingMcdfDress = (body, chosen);
+            _pendingMcdfDress = (body, chosen, chara);
         });
     }
 
     /// <summary>The spawn whose body still owes its character file.</summary>
-    private (global::Poser.Entities.IActor Body, string Path)?
+    private (global::Poser.Entities.IActor Body, string Path, Newtonsoft.Json.Linq.JObject? Chara)?
         _pendingMcdfDress;
 
     /// <summary>Second half of <see cref="OpenMcdfSpawn"/>, pumped with the
@@ -1171,7 +1182,7 @@ public sealed partial class AppearancePane
         _pendingMcdfDress = null;
         if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase))
         {
-            ReportExternal(_chara.Apply(bound, dress.Path), "Import character appearance");
+            ReportExternal(_chara.Apply(bound, dress.Chara!), "Import character appearance");
             return;
         }
         var begun = _disruptive.Run(bound, "Import character file",
