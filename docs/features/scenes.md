@@ -1,5 +1,13 @@
 ﻿# Scenes
 
+## Load history
+
+A completed scene load records one undo step. Undo removes that load's
+created entities and restores its captured baselines; redo reads the file
+again and retargets the same step to the new load. Repeated undo never uses
+an earlier load's emptied cleanup lists. Wait for loading to finish before
+undoing it. Clearing existing scene content before a load remains destructive.
+
 ## Created entity names
 
 Created actors, cameras, lights, props, overlays, world objects and groups

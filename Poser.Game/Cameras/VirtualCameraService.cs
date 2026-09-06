@@ -146,6 +146,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     // actor-address deref resolves through it first — a raw IActor address
     // is a claim, not a proof (WorldActorDiscovery standard).
     private readonly Dalamud.Plugin.Services.IObjectTable? _objectTable;
+    private readonly IKeyState? _keyState;
 
     private bool _disposed;
 
@@ -156,13 +157,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IPluginLog log,
         IGPoseService gPose,
         IEventBus events,
-        Dalamud.Plugin.Services.IObjectTable objectTable)
+        Dalamud.Plugin.Services.IObjectTable objectTable,
+        IKeyState keyState)
     {
         _log = log;
         _framework = framework;
         _gPose = gPose;
         _events = events;
         _objectTable = objectTable;
+        _keyState = keyState;
 
         using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
             error => log.Error(error, "Camera activation cleanup failed"));
@@ -232,7 +235,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IGPoseService gPose,
         IEventBus events,
         Func<nint> nativeCameraOverride,
-        bool isAvailable)
+        bool isAvailable,
+        IKeyState? keyState = null)
     {
         _log = log;
         _framework = framework;
@@ -240,6 +244,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _events = events;
         _nativeCameraOverride = nativeCameraOverride;
         IsAvailable = isAvailable;
+        _keyState = keyState;
 
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
@@ -820,7 +825,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         }
     }
 
-    private void HandleFreeCameraInput(
+    internal void HandleFreeCameraInput(
         VirtualCamera live, MouseFrame* mouse, KeyboardFrame* keyboard)
     {
         // A locked camera holds its shot: the look-drag stops accumulating
@@ -870,13 +875,16 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (keyboard == null || !live.MovementEnabled || SuppressFlightKeys)
             return;
 
+        // Brio samples IKeyState for continuous movement. KeyboardFrame is
+        // the consumable native input buffer, not the held-key authority.
+        bool Held(VirtualKey key) => _keyState?[key] == true;
         int forwardBack = 0;
-        if (keyboard->KeyDown(VirtualKey.W)) forwardBack -= 1;
-        if (keyboard->KeyDown(VirtualKey.S)) forwardBack += 1;
+        if (Held(VirtualKey.W)) forwardBack -= 1;
+        if (Held(VirtualKey.S)) forwardBack += 1;
 
         int leftRight = 0;
-        if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
-        if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
+        if (Held(VirtualKey.A)) leftRight -= 1;
+        if (Held(VirtualKey.D)) leftRight += 1;
 
         // The modifier contract's vertical map: Q or Space rises, E or C
         // falls. Shift-descend (Brio's map) is DEAD — Shift is a speed
@@ -885,11 +893,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         // up rather than the world's — pitched down, rising also carries
         // you forward. Move2D is the switch that pins it to world vertical.
         int upDown = 0;
-        if (keyboard->KeyDown(VirtualKey.Q) ||
-            keyboard->KeyDown(VirtualKey.SPACE))
+        if (Held(VirtualKey.Q) ||
+            Held(VirtualKey.SPACE))
             upDown += 1;
-        if (keyboard->KeyDown(VirtualKey.E) ||
-            keyboard->KeyDown(VirtualKey.C))
+        if (Held(VirtualKey.E) ||
+            Held(VirtualKey.C))
             upDown -= 1;
 
         // Shift = faster, Ctrl = slower — increase and decrease, in that
@@ -900,9 +908,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
         var settings = CameraSettings;
         _freeMoveSpeed = live.MovementSpeed;
-        if (keyboard->KeyDown(VirtualKey.SHIFT))
+        if (Held(VirtualKey.SHIFT))
             _freeMoveSpeed = live.MovementSpeed * settings.FastMultiplier;
-        else if (keyboard->KeyDown(VirtualKey.CONTROL))
+        else if (Held(VirtualKey.CONTROL))
             _freeMoveSpeed = live.MovementSpeed * settings.SlowMultiplier;
 
         keyboard->HandleKey(VirtualKey.W);
@@ -962,7 +970,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// <summary>Brio's UpdateMatrix, whole: integrates the frame inputs into
     /// position/rotation and builds the fly-cam view matrix, roll applied as
     /// a Z-axis transform at the end.</summary>
-    private Matrix4x4 UpdateFreeCamera(VirtualCamera live)
+    internal Matrix4x4 UpdateFreeCamera(VirtualCamera live)
     {
         var mouse = _freeMouseDelta * live.MouseSensitivity * (MathF.PI / 180f);
         if (live.IsPortraitMode)

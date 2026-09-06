@@ -4,11 +4,68 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Game.Cameras;
 using Poser.Services;
+using Dalamud.Game.ClientState.Keys;
+using System.Numerics;
 
 namespace Poser.Game.Tests.Cameras;
 
 public sealed unsafe class DefaultCameraRetryTests : IDisposable
 {
+    [Theory]
+    [InlineData(VirtualKey.W, VirtualKey.A)]
+    [InlineData(VirtualKey.A, VirtualKey.W)]
+    public void Held_keys_move_together_even_when_native_input_was_consumed(VirtualKey first, VirtualKey second)
+    {
+        var keys = DispatchProxy.Create<IKeyState, HeldKeysProxy>();
+        var held = ((HeldKeysProxy)(object)keys).Held;
+        var setup = NewService(new NativeGate(), true, keys);
+        using var service = setup.Service;
+        var camera = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false)
+        { MovementSpeed = 1f };
+        Vector3 Move()
+        {
+            KeyboardFrame consumed = default;
+            var before = camera.Position;
+            // The consumable buffer is empty; the held-key source retains
+            // both keys, independently of native input consumption.
+            service.HandleFreeCameraInput(camera, null, &consumed);
+            service.UpdateFreeCamera(camera);
+            return camera.Position - before;
+        }
+        held.Add(first);
+        var initial = Move();
+        held.Add(second);
+        for (var frame = 0; frame < 5; frame++)
+            Assert.Equal(new Vector3(-1, 0, -1), Move());
+        held.Remove(second);
+        Assert.Equal(initial, Move());
+        held.Add(second);
+        held.Add(VirtualKey.SHIFT);
+        var fast = Move();
+        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.X, 4);
+        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.Z, 4);
+        held.Remove(VirtualKey.SHIFT);
+        held.Add(VirtualKey.CONTROL);
+        var slow = Move();
+        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.X, 4);
+        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.Z, 4);
+        held.Clear();
+        Assert.Equal(Vector3.Zero, Move());
+        held.Add(first);
+        service.SuppressFlightKeys = true;
+        Assert.Equal(Vector3.Zero, Move());
+        service.SuppressFlightKeys = false;
+        camera.IsLocked = true;
+        Assert.Equal(Vector3.Zero, Move());
+    }
+
+    public class HeldKeysProxy : DispatchProxy
+    {
+        public readonly HashSet<VirtualKey> Held = new();
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method?.Name == "get_Item" && args?[0] is VirtualKey key ? Held.Contains(key) : null;
+    }
+
     private readonly nint _nativeBlock;
 
     public DefaultCameraRetryTests()
@@ -94,7 +151,7 @@ private sealed record Setup(
         FakeGPoseService GPose,
         FakeEventBus Bus);
 
-    private static Setup NewService(NativeGate gate, bool isAvailable)
+    private static Setup NewService(NativeGate gate, bool isAvailable, IKeyState? keys = null)
     {
         var framework = new FakeFramework();
         var gPose = new FakeGPoseService();
@@ -105,7 +162,7 @@ private sealed record Setup(
             gPose,
             bus,
             gate.Read,
-            isAvailable);
+            isAvailable, keys);
         return new Setup(service, framework, gPose, bus);
     }
 
