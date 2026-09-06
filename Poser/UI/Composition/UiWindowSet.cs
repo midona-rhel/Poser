@@ -56,6 +56,15 @@ public sealed class UiWindowSet : IDisposable
         _overlayPresentation = overlayPresentation;
         _worldAdoption = worldAdoption;
         _configService = configService;
+        Crystarium.ReadSectionOpen = key =>
+            !_configService.Config.UI.SectionDisclosure.TryGetValue(key, out var open) || open;
+        Crystarium.WriteSectionOpen = (key, open) =>
+        {
+            _configService.Config.UI.SectionDisclosure[key] = open;
+            // UI memory is not a settings change: do not reopen hidden split
+            // windows or reconfigure runtime services when a header is clicked.
+            _configService.Save(notify: false);
+        };
         _services = services;
         // Tight, drawn gizmo handles resolve before the markers' padded hitboxes.
         GizmoOverlay = gizmoOverlay;
@@ -67,9 +76,9 @@ public sealed class UiWindowSet : IDisposable
         Main = main;
         System.AddWindow(Main);
 
-        SidebarPart = new SidebarPartWindow(main);
+        SidebarPart = new SidebarPartWindow(main, configService);
         System.AddWindow(SidebarPart);
-        InspectorPart = new InspectorPartWindow(main);
+        InspectorPart = new InspectorPartWindow(main, configService);
         System.AddWindow(InspectorPart);
         LibraryPart = new LibraryWindow(main);
         System.AddWindow(LibraryPart);
@@ -204,8 +213,8 @@ public sealed class UiWindowSet : IDisposable
         // The properties window sheds or regains the rail's width so the
         // split reads as a split, not a widening.
         Main.ApplyRailShift(ui.SplitInspector ? +1 : -1);
-        if (ui.SplitInspector && !ui.DetachedWindowsRemember)
-            InspectorPart.PlaceAt(
+        if (ui.SplitInspector)
+            InspectorPart.RestorePlacement(
                 Main.RailSeatScreen,
                 new System.Numerics.Vector2(
                     global::Poser.UI.Views.AppShellView.RailWidth + 2f,
@@ -220,15 +229,9 @@ public sealed class UiWindowSet : IDisposable
         ui.DetachedShell = detaching;
         if (detaching)
         {
-            // Seated where it sat attached, unless the window is to open
-            // where it was last: then ImGui's own memory of the window
-            // stands. The toolbar is ALWAYS its own window with its own
-            // remembered position — detaching the shell must not move it.
-            if (!ui.DetachedWindowsRemember)
-                SidebarPart.PlaceAt(
-                    Main.LastPosition,
-                    new System.Numerics.Vector2(
-                        Main.LastSidebarWidth, Main.LastHeight));
+            SidebarPart.RestorePlacement(
+                Main.LastPosition,
+                new System.Numerics.Vector2(Main.LastSidebarWidth, Main.LastHeight));
             Main.ApplyDetachShift(+1);
         }
         else
@@ -297,6 +300,8 @@ public sealed class UiWindowSet : IDisposable
 
     public void Dispose()
     {
+        Crystarium.ReadSectionOpen = null;
+        Crystarium.WriteSectionOpen = null;
         _referenceImages.OnAdded -= AddReferenceWindow;
         _referenceImages.OnRemoved -= DismissReferenceWindow;
         _referenceWindows.Clear();

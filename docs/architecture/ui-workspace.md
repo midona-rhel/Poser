@@ -16,6 +16,12 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Form section headers start expanded. Their disclosure preferences persist in
+configuration under stable page/section keys, independent of actors, entity ids,
+and attached/detached hosts. Reopening a window or restarting does not reset them.
+Settings categories have separate keys even when section titles match. Search
+temporarily reveals matching content without changing saved disclosure.
+
 New explanatory or advisory text placed in a UI layout requires explicit user
 approval before implementation. Do not add free-standing notices as a substitute
 for correct behavior; propose the message and placement first.
@@ -54,6 +60,12 @@ The shell owns the content origin, inset, scrollbar gutter, and content mode.
 Panes use the content box they receive. Scroll position includes both the
 active strip and tab. Detaching the sidebar or toolbar leaves the attached
 content and inspector geometry in place. Collapse leaves the title bar.
+
+The sidebar and inspector each retain their last detached position and expanded
+size in configuration. First detach seats a panel where it was attached;
+reattaching does not overwrite its detached placement. Subsequent detach and
+restart restore that placement. Geometry is saved after a move/resize finishes,
+not on every drag frame, and title-bar collapse does not replace the expanded size.
 
 The separate toolbar has its own session-only compact state. Double-click
 the Poser/GPose brand/status region to show only that content and shrink the

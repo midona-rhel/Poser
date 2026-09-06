@@ -16,6 +16,7 @@ namespace Poser.UI;
 /// </summary>
 public sealed class SidebarPartWindow : Window
 {
+    private readonly Controls.DetachedPlacementMemory _placement;
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
     private Vector2? _pendingSize;
@@ -28,13 +29,15 @@ public sealed class SidebarPartWindow : Window
     /// <summary>Reattach clicked: the window set merges the shell.</summary>
     public event Action? OnReattach;
 
-    public SidebarPartWindow(MainWindow main)
+    public SidebarPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
         _main = main;
+        _placement = new(configuration, "sidebar");
+        if (_placement.Saved is { } saved) PlaceAt(saved.Position, saved.Size);
         Size = new Vector2(300f, 520f);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
@@ -45,10 +48,15 @@ public sealed class SidebarPartWindow : Window
         RespectCloseHotkey = false;
     }
 
-    /// <summary>Seats the window at the detach moment: the sidebar stays in
-    /// the same place it occupied inside the main window, so the toggle
-    /// reads as a split, not a teleport. Screen px; size logical.</summary>
-    public void PlaceAt(Vector2 position, Vector2 sizeLogical)
+    /// <summary>Restores detached geometry; only first use seats it at the
+    /// attached location. Screen-pixel position, logical size.</summary>
+    public void RestorePlacement(Vector2 firstPosition, Vector2 firstSize)
+    {
+        var saved = _placement.Saved;
+        PlaceAt(saved?.Position ?? firstPosition, saved?.Size ?? firstSize);
+    }
+
+    private void PlaceAt(Vector2 position, Vector2 sizeLogical)
     {
         _pendingPos = position;
         _pendingSize = sizeLogical;
@@ -135,6 +143,8 @@ public sealed class SidebarPartWindow : Window
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         _lastLogicalSize = (max - min) / s;
+        _placement.Remember(min, _collapsed
+            ? new Vector2(_lastLogicalSize.X, _savedHeight) : _lastLogicalSize);
         var dl = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
             "poser-part-sidebar", InteractionLayer.Window, min, max);
@@ -358,6 +368,7 @@ public sealed class ToolbarPartWindow : Window
 /// bar's merge folds it back in.</summary>
 public sealed class InspectorPartWindow : Window
 {
+    private readonly Controls.DetachedPlacementMemory _placement;
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
     private Vector2? _pendingSize;
@@ -369,13 +380,15 @@ public sealed class InspectorPartWindow : Window
     /// <summary>Merge clicked: the rail returns to the shell.</summary>
     public event Action? OnMerge;
 
-    public InspectorPartWindow(MainWindow main)
+    public InspectorPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
         _main = main;
+        _placement = new(configuration, "inspector");
+        if (_placement.Saved is { } saved) PlaceAt(saved.Position, saved.Size);
         float width = AppShellView.RailWidth + 2f;
         Size = new Vector2(width, 560f);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -389,9 +402,15 @@ public sealed class InspectorPartWindow : Window
         RespectCloseHotkey = false;
     }
 
-    /// <summary>Seats the window where the rail stood at the split moment,
-    /// so the toggle reads as a split, not a teleport.</summary>
-    public void PlaceAt(Vector2 position, Vector2 sizeLogical)
+    /// <summary>Restores detached geometry, falling back to the attached seat
+    /// on first use. Screen-pixel position, logical size.</summary>
+    public void RestorePlacement(Vector2 firstPosition, Vector2 firstSize)
+    {
+        var saved = _placement.Saved;
+        PlaceAt(saved?.Position ?? firstPosition, saved?.Size ?? firstSize);
+    }
+
+    private void PlaceAt(Vector2 position, Vector2 sizeLogical)
     {
         _pendingPos = position;
         _pendingSize = sizeLogical;
@@ -462,6 +481,8 @@ public sealed class InspectorPartWindow : Window
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         _lastLogicalSize = (max - min) / s;
+        _placement.Remember(min, _collapsed
+            ? new Vector2(_lastLogicalSize.X, _savedHeight) : _lastLogicalSize);
         var dl = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
             "poser-part-inspector", InteractionLayer.Window, min, max);
