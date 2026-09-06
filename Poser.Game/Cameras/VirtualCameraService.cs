@@ -136,7 +136,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     // Set when GPose was entered before the native camera manager was ready;
     // the per-tick handler retries the default-camera mint until it lands or
     // GPose ends. One pointer read per frame, no scans, no new subscriptions.
-    private bool _defaultCameraPending;
+    // The GPose entry event may precede service activation during a reload.
+    // Reconcile once on the framework thread even without a new entry edge.
+    private bool _defaultCameraPending = true;
 
     // Test seam: replaces the CameraManager singleton read so the retry
     // policy is drivable without the game. Null in production.
@@ -1139,7 +1141,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         if (_defaultCameraPending)
         {
-            if (!_gPose.IsGPosing)
+            if (!IsAvailable || !_gPose.IsGPosing)
                 _defaultCameraPending = false;
             else if (TryMintDefaultCamera())
                 _defaultCameraPending = false;

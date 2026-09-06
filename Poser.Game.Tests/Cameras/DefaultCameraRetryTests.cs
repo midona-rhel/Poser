@@ -126,6 +126,45 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Equal(calls, gate.Calls);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Startup_in_active_gpose_initializes_once_without_an_entry_event(bool delayedNative)
+    {
+        var gate = new NativeGate { Value = delayedNative ? 0 : _nativeBlock };
+        var setup = NewService(gate, isAvailable: true, inGpose: true);
+        using var service = setup.Service;
+        Assert.Empty(service.Cameras); // No native reads during construction.
+        Assert.Equal(0, gate.Calls);
+        setup.Framework.RaiseUpdate();
+        if (delayedNative)
+        {
+            Assert.Empty(service.Cameras);
+            gate.Value = _nativeBlock;
+            setup.Framework.RaiseUpdate();
+        }
+        var main = Assert.Single(service.Cameras);
+        Assert.True(main.IsDefault);
+        Assert.Same(main, service.LiveCamera);
+        var calls = gate.Calls;
+        setup.Framework.RaiseUpdate();
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        Assert.Same(main, Assert.Single(service.Cameras));
+        Assert.Equal(1, setup.Bus.CameraListChanges);
+        Assert.Equal(calls, gate.Calls);
+    }
+
+    [Fact]
+    public void Unavailable_startup_does_not_read_native_camera_in_active_gpose()
+    {
+        var gate = new NativeGate { Value = _nativeBlock };
+        var setup = NewService(gate, isAvailable: false, inGpose: true);
+        using var service = setup.Service;
+        setup.Framework.RaiseUpdate();
+        Assert.Empty(service.Cameras);
+        Assert.Equal(0, gate.Calls);
+    }
+
     [Fact]
     public void Unavailable_or_exited_capability_never_mints_a_camera()
     {
@@ -151,10 +190,11 @@ private sealed record Setup(
         FakeGPoseService GPose,
         FakeEventBus Bus);
 
-    private static Setup NewService(NativeGate gate, bool isAvailable, IKeyState? keys = null)
+    private static Setup NewService(NativeGate gate, bool isAvailable, IKeyState? keys = null,
+        bool inGpose = false)
     {
         var framework = new FakeFramework();
-        var gPose = new FakeGPoseService();
+        var gPose = new FakeGPoseService { IsGPosing = inGpose };
         var bus = new FakeEventBus();
         var service = new VirtualCameraService(
             framework,
