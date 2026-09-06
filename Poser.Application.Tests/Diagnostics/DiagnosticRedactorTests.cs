@@ -7,6 +7,19 @@ namespace Poser.Application.Tests.Diagnostics;
 public class DiagnosticRedactorTests
 {
     [Fact]
+    public void ConfiguredFolderNamesDoNotRenameReportSchema()
+    {
+        var redactor = new DiagnosticRedactor();
+        redactor.RegisterPathsJson(JsonSerializer.Serialize(@"D:\Private Client\Poser\Library"));
+        using var result = JsonDocument.Parse(redactor.ScrubJson("""
+            {"Poser":"0.9.6.0","Settings":{"Library":{"Root":"D:\\Private Client\\Poser\\Library"}},"Log":["Private Client"]}
+            """));
+        Assert.Equal("0.9.6.0", result.RootElement.GetProperty("Poser").GetString());
+        Assert.Contains("[path", result.RootElement.GetProperty("Settings").GetProperty("Library").GetProperty("Root").GetString());
+        Assert.DoesNotContain("Private Client", result.RootElement.ToString());
+    }
+
+    [Fact]
     public void EveryZipMemberUsesDecodedRedactionIncludingFailuresAndDictionaryKeys()
     {
         var redactor = new DiagnosticRedactor();

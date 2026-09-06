@@ -72,7 +72,11 @@ public sealed class DiagnosticRedactor
         var result = new JsonObject();
         foreach (var pair in obj)
         {
-            string key = ScrubText(pair.Key);
+            // Property names are schema, not free text: a configured folder
+            // called Poser or Library must not rename those report fields.
+            // Dictionary keys containing paths or exact actor/user names are data.
+            string key = AbsolutePath.IsMatch(pair.Key) || _identities.ContainsKey(pair.Key)
+                ? ScrubText(pair.Key) : pair.Key;
             // Redacted dictionary names can collide; keep every diagnostic value.
             string unique = key;
             for (int suffix = 2; result.ContainsKey(unique); suffix++) unique = $"{key} {suffix}";
