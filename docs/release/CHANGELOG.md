@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.7-beta — world lifecycle and persistent workspace
+
+- Unify world borrowing controls and edit borrowed lights in place, with release restoring the original.
+- Wait for spawned scenery/VFX replacements to become ready and preserve ownership through cleanup failures.
+- Import human Anamnesis character files, including palette, equipment, dyes and facewear.
+- Restore authored actor appearance, integration state and manual bone transforms through lifecycle history.
+- Preserve Customize Plus on plain actor copies and copies of copies.
+- Remember section disclosure and detached window geometry; add a hidden-handles default.
+- Use consistent numbered names across created entities, and correct area-light labels and spotlight outlines.
+- Add file-picker search, compact toolbar and scene-entity IK targets; fix preview isolation and drag history.
+- Correct multi-key camera movement and scene-load history restoration.
+
+User accepted the current stack; see [acceptance and coverage](0.9.7-acceptance.md).
+Known follow-up: actor nicknames can carry to unrelated actors after GPose slot
+reuse ([#196](https://github.com/midona-rhel/Poser/issues/196)). Lifecycle history
+restores authored bone transforms, not animation playback. Off-list weather may
+still resolve to None. The later renderer crash is not claimed fixed here.
+
 ## 0.9.6-beta — scene fixes and consistent controls
 
 - Correct VFX borrowing/release lifecycle while preserving the accepted movement behavior.
