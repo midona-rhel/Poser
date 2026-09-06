@@ -296,6 +296,111 @@ public sealed class WorldObjectRestoreTests
     }
 
     [Fact]
+    public void Respawn_speed_refusal_keeps_old_instance_and_discards_replacement()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
+        var original = spawned.Address;
+        spawned.VfxSpeed = 2f;
+        world.Port.NoOpSpeed = true;
+        int changes = 0;
+        world.Events.Subscribe<WorldObjectListChangedEvent>(_ => changes++);
+
+        Assert.False(spawned.Respawn("vfx/new.avfx", out _));
+        Assert.Equal(original, spawned.Address);
+        Assert.Equal("vfx/fire.avfx", spawned.Path);
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.DoesNotContain(original, world.Port.Destroyed);
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    public void Respawn_opacity_exception_keeps_old_instance_and_discards_replacement()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
+        var original = spawned.Address;
+        spawned.Opacity = .4f;
+        world.Port.ThrowOnOpacity = true;
+
+        Assert.False(spawned.Respawn("vfx/new.avfx", out _));
+        Assert.Equal(original, spawned.Address);
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.DoesNotContain(original, world.Port.Destroyed);
+    }
+
+    [Fact]
+    public void Respawn_pending_bg_cleanup_never_destroys_a_replacement_at_the_same_address()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        var original = spawned.Address;
+        world.Port.FailDestroyAddresses.Add(original);
+        world.Port.FailFreshDestroy = true;
+        Assert.False(spawned.Respawn("bg/new.mdl", out _));
+        var pending = world.Port.LastSpawned;
+        world.Port.Replace(pending, "bg/unrelated.mdl", Moved);
+        world.Port.FailDestroyAddresses.Clear();
+        world.Port.FailFreshDestroy = false;
+
+        world.Service.ReleaseAll();
+        world.Service.ReleaseAll();
+        Assert.Contains(pending, world.Port.LiveAddresses);
+        Assert.DoesNotContain(pending, world.Port.Destroyed);
+        Assert.Equal(Moved, world.Port.PlacementOf(pending));
+    }
+
+    [Fact]
+    public void Respawn_refuses_reused_old_bg_address_and_release_leaves_its_replacement_alone()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        var original = spawned.Address;
+        world.Port.Replace(original, "bg/unrelated.mdl", Moved);
+
+        Assert.False(spawned.Respawn("bg/new.mdl", out _));
+        Assert.True(world.Service.Release(spawned));
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.DoesNotContain(original, world.Port.Destroyed);
+    }
+
+    [Fact]
+    public void Respawn_restores_pause_before_releasing_old_and_commits_matching_playback()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
+        var original = spawned.Address;
+        spawned.VfxPaused = true;
+        world.Port.NoOpPlayback = true;
+        Assert.False(spawned.Respawn("vfx/new.avfx", out _));
+        Assert.Equal(original, spawned.Address);
+
+        world.Port.NoOpPlayback = false;
+        Assert.True(spawned.Respawn("vfx/new.avfx", out _));
+        Assert.True(spawned.VfxPaused);
+        Assert.Equal(VfxPlaybackState.Paused, spawned.VfxPlayback);
+        Assert.Equal(VfxPlaybackState.Paused, world.Port.PlaybackOf(spawned.Address));
+        Assert.Equal(DateTime.MaxValue, spawned.NextVfxRefresh);
+        Assert.Contains(original, world.Port.Destroyed);
+    }
+
+    [Fact]
+    public void Respawn_failed_spawn_leaves_old_handle_unchanged()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
+        var original = spawned.Address;
+        world.Port.FailSpawn = true;
+
+        Assert.False(spawned.Respawn("vfx/new.avfx", out _));
+        Assert.Equal(original, spawned.Address);
+        Assert.Equal("vfx/fire.avfx", spawned.Path);
+        Assert.Equal(Placed, spawned.Transform);
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.Empty(world.Port.Destroyed);
+    }
+
+    [Fact]
     public void Gpose_exit_failure_enters_teardown_only_mode()
     {
         var world = new World();
@@ -409,6 +514,8 @@ private sealed class World
 
         public int Writes { get; private set; }
         public bool ThrowOnWrite { get; set; }
+        public bool ThrowOnOpacity { get; set; }
+        public bool FailSpawn { get; set; }
         public bool NoOpSpeed { get; set; }
         public bool NoOpPlayback { get; set; }
         public bool NoOpRefresh { get; set; }
@@ -569,10 +676,14 @@ private sealed class World
             return true;
         }
 
-        public void WriteOpacity(nint address, float opacity) { }
+        public void WriteOpacity(nint address, float opacity)
+        {
+            if (ThrowOnOpacity) throw new InvalidOperationException("Injected opacity failure");
+        }
 
         public nint Spawn(string path, in Transform placement)
         {
+            if (FailSpawn) return nint.Zero;
             var address = _next++;
             LastSpawned = address;
             _nodes[address] = new Node

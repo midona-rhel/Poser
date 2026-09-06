@@ -167,6 +167,14 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+Respawning a world object keeps its old native and stable handle until the
+replacement accepts its immediately writable settings (visibility, opacity
+and VFX playback/colour). Refusal cleans the replacement, or retains its
+exact incarnation for cleanup retry; neither case publishes a successful
+replacement. Deferred BG staining and night-state writes still follow model
+streaming readiness. Cleanup must not destroy a different incarnation that
+later occupies a retained address.
+
 ## Light controls and outlines
 
 Area-light Skew X/Y tilt the throw around the local X/Y axes; they do not

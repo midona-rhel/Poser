@@ -535,7 +535,9 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 : "Respawn cleanup remains outstanding.";
             return false;
         }
-        if (!IsHandleCurrent(handle))
+        if (!IsHandleCurrent(handle)
+            || !_port.TryReadIncarnation(handle.Address, out var oldIdentity)
+            || oldIdentity != handle.Identity)
         {
             // The replacement is not committed while old teardown is
             // uncertain. This preserves the old claim and avoids reporting a
@@ -546,9 +548,13 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 : "Respawn cleanup remains outstanding.";
             return false;
         }
-        bool oldDestroyed = handle.IsVfx
-            ? _port.TryDestroyVfx(handle.Identity)
-            : _port.TryDestroy(handle.Address);
+        if (!PrepareRespawn(handle, freshIdentity, visible, out detail))
+        {
+            if (!TryCleanupRespawnFresh(freshIdentity))
+                detail += " Replacement cleanup remains outstanding.";
+            return false;
+        }
+        bool oldDestroyed = TryDestroyRespawnIncarnation(handle.Identity);
         if (!oldDestroyed)
         {
             bool freshDestroyed = TryCleanupRespawnFresh(freshIdentity);
@@ -562,21 +568,12 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         handle.Path = path;
         handle._isVfx = NativeWorldObjectPort.IsVfxPath(path);
         handle.VfxPlayback = handle.IsVfx
-            ? VfxPlaybackState.Playing
+            ? handle.VfxPaused ? VfxPlaybackState.Paused : VfxPlaybackState.Playing
             : VfxPlaybackState.Unavailable;
-        if (!visible)
-            handle.Visible = false;
         if (handle.IsVfx)
         {
-            if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f)
-                _port.SetVfxSpeed(fresh, handle.VfxSpeed);
-            if (handle.Tint is { } tint)
-                _port.WriteVfxTint(fresh, tint);
-            if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
-                _port.SetVfxIntensity(fresh, handle.VfxIntensity);
             if (handle.VfxPaused)
             {
-                _port.PauseVfx(fresh);
                 handle.NextVfxRefresh = DateTime.MaxValue;
             }
             else
@@ -595,10 +592,46 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             if (handle.AnimationPaused)
                 handle.AnimationPauseRetries = AnimationPauseRetryTicks;
         }
-        if (handle.Opacity < 1f && visible)
-            _port.WriteOpacity(fresh, handle.Opacity);
         _events.Publish(new WorldObjectListChangedEvent());
         return true;
+    }
+
+    private bool PrepareRespawn(AdoptedWorldObject handle,
+        WorldObjectIncarnation fresh, bool visible, out string? detail)
+    {
+        detail = null;
+        try
+        {
+            // Replay immediately writable properties on the replacement while
+            // the old native and stable handle are still untouched. BG model
+            // staining/night state retain their separate streaming-ready pump.
+            if (!visible) _port.WriteVisible(fresh.Address, false);
+            if (fresh.IsVfx)
+            {
+                if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f
+                    && !_port.TrySetVfxSpeed(fresh.Address, handle.VfxSpeed))
+                {
+                    detail = "The replacement could not take the playback speed.";
+                    return false;
+                }
+                if (handle.Tint is { } tint) _port.WriteVfxTint(fresh.Address, tint);
+                if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
+                    _port.SetVfxIntensity(fresh.Address, handle.VfxIntensity);
+                if (handle.VfxPaused && !_port.TryPauseVfx(fresh.Address))
+                {
+                    detail = "The replacement could not be paused.";
+                    return false;
+                }
+            }
+            if (handle.Opacity < 1f && visible)
+                _port.WriteOpacity(fresh.Address, handle.Opacity);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            detail = $"The replacement settings could not be applied: {ex.Message}";
+            return false;
+        }
     }
 
     internal bool TryWriteVfxSpeed(AdoptedWorldObject handle, float speed)
@@ -1229,12 +1262,28 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     private bool TryCleanupRespawnFresh(WorldObjectIncarnation identity)
     {
-        bool cleaned = identity.IsVfx
-            ? _port.TryDestroyVfx(identity)
-            : _port.TryDestroy(identity.Address);
+        bool cleaned = TryDestroyRespawnIncarnation(identity);
         if (!cleaned && !_pendingTeardowns.Contains(identity))
             _pendingTeardowns.Add(identity);
         return cleaned;
+    }
+
+    private bool TryDestroyRespawnIncarnation(WorldObjectIncarnation identity)
+    {
+        try
+        {
+            if (identity.IsVfx) return _port.TryDestroyVfx(identity);
+            if (!_port.IsAlive(identity.Address)) return true;
+            if (!_port.TryReadIncarnation(identity.Address, out var current)) return false;
+            // A queued BG cleanup owns this incarnation, not a reusable slot.
+            if (current != identity) return true;
+            return _port.TryDestroy(identity.Address);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"WorldObjectService: respawn teardown remains pending: {ex.Message}");
+            return false;
+        }
     }
 
     private bool TryCleanupUnidentifiedFresh(string path, nint address)
@@ -1253,9 +1302,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         for (int i = _pendingTeardowns.Count - 1; i >= 0; i--)
         {
             var identity = _pendingTeardowns[i];
-            bool cleaned = identity.IsVfx
-                ? _port.TryDestroyVfx(identity)
-                : _port.TryDestroy(identity.Address);
+            bool cleaned = TryDestroyRespawnIncarnation(identity);
             if (cleaned)
                 _pendingTeardowns.RemoveAt(i);
         }
@@ -1326,9 +1373,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 handle.MarkReleased(handle.InitialPlacement);
                 return true;
             }
-            if (handle.IsVfx
-                ? !_port.TryDestroyVfx(handle.Identity)
-                : !_port.TryDestroy(handle.Address))
+            if (!TryDestroyRespawnIncarnation(handle.Identity))
             {
                 _log.Warning(
                     $"WorldObjectService: destroying spawned {handle.Address:X} remains pending.");
