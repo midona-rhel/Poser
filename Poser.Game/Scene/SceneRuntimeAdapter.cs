@@ -626,11 +626,17 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private void Trace(string message) =>
         _log?.Debug($"Scene pose leg: {message}");
 
+    // Weapon skeletons can arrive before the body. They do not make a
+    // character ready for its scene pose (report 2026-09-06).
+    internal static bool HasCharacterSkeleton(IReadOnlyList<ISkeleton> skeletons) =>
+        skeletons.Any(skeleton => skeleton.Slot == Poser.Domain.Identity.PoseSlot.Character
+            && skeleton.RootBone is not null && skeleton.Bones.Count > 0);
+
     public bool ActorReady(object actor)
     {
         var candidate = (IActor)actor;
         var skeletons = _skeletons.GetSkeletons(candidate);
-        if (skeletons.Count == 0 ||
+        if (!HasCharacterSkeleton(skeletons) ||
             _bindings.GetActorId(candidate) is not { } id)
             return false;
         if (_bindings.Resolve(id) is not { Success: true, Value: { } bound } ||
@@ -837,12 +843,16 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// complete captured state, not an interactive rotation-only import.
     /// Placement is absolute and separate (<see cref="PlaceActor"/>), so the
     /// difference-based model transform stays off.</summary>
-    private static readonly PoseImportOptions SceneImportOptions = new()
+    internal static readonly PoseImportOptions SceneImportOptions = new()
     {
         ApplyRotation = true,
         ApplyPosition = true,
         ApplyScale = true,
         ApplyModelTransform = false,
+        // The whole load owns history; its internal actor/companion imports
+        // must neither append extra steps nor resume the frozen scene pose.
+        SuppressHistory = true,
+        FreezeOnImport = true,
     };
 
     public string? ArmPoseImport(

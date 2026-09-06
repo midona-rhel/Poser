@@ -5,6 +5,7 @@ using Poser.Domain.Operations;
 using Poser.Domain.Companions;
 using Poser.Files;
 using Poser.Game.Scene;
+using Poser.Application.Transforms;
 
 namespace Poser.Game.Tests.Scene;
 
@@ -17,6 +18,50 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    [Fact]
+    public async Task Load_history_tracks_each_redo_incarnation_without_appending_again()
+    {
+        var scene = SceneWith();
+        scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Imported" } });
+        var runtime = new FakeRuntime { ReadResult = scene };
+        var history = new TransformHistory();
+        var appends = 0;
+        history.Appended += _ => appends++;
+        using var load = new SceneWorkflow(runtime, history: history);
+        Assert.True(load.BeginLoad("light.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            var current = runtime.SpawnedLightTokens[^1];
+            Assert.True(step.Undo());
+            history.CommitUndo(step);
+            Assert.Same(current, runtime.DestroyedLightTokens[^1]);
+            Assert.Equal(cycle + 1, runtime.DestroyedLightTokens.Count);
+            Assert.True(step.Redo());
+            history.CommitRedo(step);
+            await load.Drain;
+            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            Assert.NotSame(current, runtime.SpawnedLightTokens[^1]);
+            Assert.Same(step, history.PeekUndo());
+        }
+        Assert.Equal(1, appends);
+        Assert.DoesNotContain("ClearScene", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Failed_scene_load_does_not_append_history()
+    {
+        var runtime = new FakeRuntime { ReadFailure = Corrupt("invalid scene") };
+        var history = new TransformHistory();
+        using var load = new SceneWorkflow(runtime, history: history);
+        Assert.True(load.BeginLoad("invalid.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.False(history.CanUndo);
+    }
+
     // ── the seam fake ────────────────────────────────────────────────────
 
     private sealed class FakeRuntime : ISceneRuntime
@@ -363,12 +408,18 @@ public sealed class SceneWorkflowTests
 
         public readonly ConcurrentQueue<string> Released = new();
 
+        public readonly List<object> SpawnedLightTokens = new();
+        public readonly List<object> DestroyedLightTokens = new();
+
         public object? SpawnLight(
             SceneLight data, object? attachmentOwner, out string? detail)
         {
             Record("SpawnLight");
             detail = LightSpawnFailure?.Invoke(data);
-            return detail is null ? new Token("light") : null;
+            if (detail is not null) return null;
+            var token = new Token("light");
+            SpawnedLightTokens.Add(token);
+            return token;
         }
 
         public CameraFile CaptureDefaultCameraState()
@@ -456,7 +507,11 @@ public sealed class SceneWorkflowTests
         public void DestroyActor(object actor) => Destroy(actor);
         public void DestroyProp(object prop) => Destroy(prop);
         public void DestroyOverlay(object overlay) => Destroy(overlay);
-        public void DestroyLight(object light) => Destroy(light);
+        public void DestroyLight(object light)
+        {
+            DestroyedLightTokens.Add(light);
+            Destroy(light);
+        }
         public void DestroyCamera(object camera) => Destroy(camera);
 
         private void Destroy(object token)

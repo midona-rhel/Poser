@@ -140,7 +140,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
             worldObjects, place, mcdfHashes, selection, log), log, sceneGroups,
-            library, groupTransforms)
+            library, groupTransforms, history)
     {
     }
 
@@ -149,13 +149,15 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         Dalamud.Plugin.Services.IPluginLog? log = null,
         Poser.Application.Scene.SceneGroups? groups = null,
         Poser.Library.IPoseLibraryService? library = null,
-        Poser.Application.Transforms.GroupTransformState? groupTransforms = null)
+        Poser.Application.Transforms.GroupTransformState? groupTransforms = null,
+        TransformHistory? history = null)
     {
         _runtime = runtime;
         _log = log;
         _groups = groups;
         _library = library;
         _groupTransforms = groupTransforms;
+        _history = history;
     }
 
     /// <summary>The sidebar's structure store — null only under the test
@@ -211,7 +213,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         /// <summary>Whether a landed load appends its step. A load the
         /// journal itself started as a redo does not: its step is the one
         /// being redone.</summary>
-        public bool Journal = true;
+        public LoadHistory? Replay;
 
         public ActorId Target => new(SceneScopeId, 0);
 
@@ -347,7 +349,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// load as it has always been — see <see cref="SceneLoadOptions.Default"/>.
     /// </summary>
     public SceneActionResult BeginLoad(
-        string path, SceneLoadOptions? options = null)
+        string path, SceneLoadOptions? options = null) => BeginLoad(path, options, null);
+
+    private SceneActionResult BeginLoad(
+        string path, SceneLoadOptions? options, LoadHistory? replay)
     {
         var chosen = options ?? SceneLoadOptions.Default;
         if (AdmissionGate() is { } refused)
@@ -364,8 +369,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         var operation = Admit(
             Guid.NewGuid(), System.IO.Path.GetFileName(path),
             SceneOperationKind.Load, session);
-        operation.Journal = !_redoing;
-        _redoing = false;
+        operation.Replay = replay;
+        if (replay is not null)
+            replay.Current = operation;
         var cancellation = _cancellation!.Token;
         _progress = new SceneProgress(
             SceneOperationKind.Load, operation.FileName,
@@ -377,7 +383,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         return SceneActionResult.Ok();
     }
 
-    private bool _redoing;
+    private sealed class LoadHistory(Operation current)
+    {
+        public Operation Current = current;
+    }
 
     /// <summary>
     /// A landed load is one step. Its undo is the load's own rollback: every
@@ -390,18 +399,15 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// </summary>
     private void AppendLoadStep(Operation operation, string path, SceneLoadOptions options)
     {
-        if (!operation.Journal)
+        if (operation.Replay is not null)
             return;
+        // Redo creates new native entities. Keep the inverse attached to that
+        // new operation rather than the first load's emptied rollback lists.
+        var load = new LoadHistory(operation);
         _history?.Append(new JournalStep(
             $"Load {operation.FileName}",
-            () => Rollback(operation) is null,
-            () =>
-            {
-                _redoing = true;
-                var begun = BeginLoad(path, options);
-                _redoing = false;
-                return begun.Success;
-            })
+            () => !_disposed && !Busy && Rollback(load.Current) is null,
+            () => BeginLoad(path, options, load).Success)
         {
             Context = new StepContext(
                 Array.Empty<ActorStateKey>(),

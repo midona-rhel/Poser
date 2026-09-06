@@ -126,6 +126,16 @@ bind both snapshots; origin and yaw placement move them and the frame together.
 Legacy groups initialize after binding. Invalid present metadata is refused,
 never replaced with a plausible identity baseline.
 
+## Camera movement
+
+Camera startup checks the current GPose session on its first framework tick,
+including reloads inside GPose. It waits for native camera readiness and
+creates the default camera once; it does not require another GPose entry.
+
+Free-camera movement samples held keys through Dalamud `IKeyState`, as
+Brio's `InputManagerService` does. The native keyboard frame is consumed
+only to block game input, never used as the authority for continuous movement.
+
 ## The journal
 
 Every change made through the UI is one step with an inverse. Undo runs
