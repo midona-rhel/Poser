@@ -101,6 +101,12 @@ Dalamud's localized ornament action-string evaluator, then `Ornament {id}` as
 a fallback, matching Brio's catalog compatibility rule. Identity stays
 `(CompanionKind, row ID)`; a missing display name never removes a valid parasol.
 
+Slot-capable actor owners use a person icon with a bottom-right box in the
+same icon cell; ordinary actors stay plain and attached children keep their
+kind icons. Actor > General and the context menu share attachment controls.
+Duplicating an actor reserves an empty usable slot regardless of the source's
+slot capability; it does not implicitly copy the source attachment.
+
 ## The look goes back
 
 Custom colours are nullable intent, separate from observed shader readings.

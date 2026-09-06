@@ -47,6 +47,8 @@ public class Poser : IDalamudPlugin
         log.Info($"Starting {PluginConstants.PluginName}...");
 
         _commandManager = commandManager;
+        using var startup = new StartupCleanup(error =>
+            log.Error(error, "Failed-startup cleanup failed"));
         BoneInfoService.Initialize(log);
         _serviceProvider = ConfigureServices(
             pluginInterface,
@@ -64,6 +66,7 @@ public class Poser : IDalamudPlugin
             chatGui,
             notificationManager,
             seStringEvaluator);
+        startup.OnFailure(_serviceProvider.Dispose);
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
@@ -122,6 +125,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
+        startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);
         global::Poser.UI.Crystarium.Log = message =>
             _serviceProvider.GetRequiredService<
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
@@ -133,6 +137,8 @@ public class Poser : IDalamudPlugin
         _standbyFontAtlas = pluginInterface.UiBuilder.CreateFontAtlas(
             Dalamud.Interface.ManagedFontAtlas.FontAtlasAutoRebuildMode.Async,
             debugName: "Poser standby fonts");
+        startup.OnFailure(_standbyFontAtlas.Dispose);
+        startup.OnFailure(FontRegistry.Dispose);
         FontRegistry.Register(
             pluginInterface.UiBuilder.FontAtlas,
             System.IO.Path.Combine(
@@ -147,17 +153,23 @@ public class Poser : IDalamudPlugin
                 "Crystarium icon");
             return ((nint)wrap.Handle.Handle, wrap);
         };
+        startup.OnFailure(() => Crystarium.IconTextureUploader = null);
+        startup.OnFailure(() => Crystarium.PanelShadowTextureUploader = null);
+        startup.OnFailure(() => Crystarium.FloatingSurface.BackdropBlurAvailable = false);
         Crystarium.IconTextureUploader = textureUploader;
         Crystarium.PanelShadowTextureUploader = textureUploader;
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
         log.Debug("Load stage: UI manager");
         _ = _serviceProvider.GetRequiredService<IUIManager>();
-        _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        if (!_commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open Poser. Use \"/poser test\" for the focused in-game validation harness."
-        });
+        }))
+            throw new InvalidOperationException("The /poser command is already registered.");
+        startup.OnFailure(() => _commandManager.RemoveHandler(CommandName));
 
         log.Info($"{PluginConstants.PluginName} started successfully!");
+        startup.Complete();
     }
 
     private void OnCommand(string command, string args)
@@ -262,6 +274,8 @@ public class Poser : IDalamudPlugin
                 _commandManager.RemoveHandler(CommandName);
                 Crystarium.IconTextureUploader = null;
                 Crystarium.PanelShadowTextureUploader = null;
+                Crystarium.Log = null;
+                Crystarium.FloatingSurface.BackdropBlurAvailable = false;
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });

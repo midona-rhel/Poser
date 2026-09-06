@@ -134,7 +134,7 @@ internal interface IActorLifecycle
     /// returns long before the actor looks right; the restore is complete or
     /// it says why, and never fails the entry that asked for it — the actor
     /// is back either way.</summary>
-    void Restore(object actor, ActorState state);
+    void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null);
 
     /// <summary>The seam's refusal channel. An act it cannot journal says so
     /// here rather than passing for one it can.</summary>
@@ -353,6 +353,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IActorLifecycle _actors;
+    internal IActorLifecycle ActorStatePort => _actors;
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
     private readonly IWorldObjectLifecycle _worldObjects;

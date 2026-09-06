@@ -151,6 +151,9 @@ public class GPoseService : IGPoseService
                 $"GPose exit final capture failed: {exit.Capture.Detail ?? exit.Capture.PersistenceDetail ?? "unknown failure"}");
         }
 
+        // Separate from the state-change notification: actor-list subscribers
+        // clear bindings there, before later subscribers can restore tint.
+        _eventBus.Publish(new GPoseExitingEvent());
         return true;
     }
 

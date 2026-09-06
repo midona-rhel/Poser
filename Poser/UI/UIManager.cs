@@ -74,10 +74,13 @@ public sealed class UIManager : IUIManager
 
         _keybinds = BuildKeybinds();
         _keyEvents = keyEvents;
+        _values = values;
+        using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
+            error => log.Error(error, "UI activation cleanup failed"));
+        startup.OnFailure(Dispose);
         _keyEvents.KeyEvent += OnKeyEvent;
         // A released drag or an accepted typed value seals the journal's
         // open step, so every control's edit is one step, press to release.
-        _values = values;
         Crystarium.ValueCommitted += _values.CommitEdit;
         Crystarium.ValueEditBegan += _values.BeginEdit;
         Crystarium.ValueEditEnded += _values.EndEdit;
@@ -95,6 +98,7 @@ public sealed class UIManager : IUIManager
         ApplyUiHidePolicy();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        startup.Complete();
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)

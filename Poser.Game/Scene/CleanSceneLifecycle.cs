@@ -95,6 +95,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Subscribe<WorldObjectListChangedEvent>(OnWorldObjectListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+        _events.Subscribe<GPoseExitingEvent>(OnGPoseExiting);
         // Discovery, retries, and refreshes all run on the framework thread:
         // the registry refresh reads native skeleton data and shared
         // bone-name state, while events publish from the framework thread —
@@ -116,6 +117,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Unsubscribe<WorldObjectListChangedEvent>(OnWorldObjectListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+        _events.Unsubscribe<GPoseExitingEvent>(OnGPoseExiting);
 
         // Plugin unload while still in GPose is the same last moment as a
         // GPose exit: the overridden actors are about to become
@@ -371,6 +373,8 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
         Refresh();
+
+    private void OnGPoseExiting(GPoseExitingEvent _) => _presentation.ResetAll();
 
     private void OnGPoseChanged(GPoseStateChangedEvent evt)
     {

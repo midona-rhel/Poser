@@ -336,8 +336,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     private void ApplyPhysicsDeltasOver(
         IActor actor,
         IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)> locals,
-        int passes)
+        int passes, Func<bool>? stillCurrent = null)
     {
+        if (stillCurrent?.Invoke() == false)
+            return;
         ApplyPhysicsDeltas(actor, locals);
         if (passes <= 1)
             return;
@@ -346,7 +348,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
             _framework.RunOnTick(() =>
             {
                 if (actor.Address != nint.Zero)
-                    ApplyPhysicsDeltasOver(actor, locals, passes - 1);
+                    ApplyPhysicsDeltasOver(actor, locals, passes - 1, stillCurrent);
             }, delayTicks: 1);
         }
         catch (Exception ex)
@@ -391,13 +393,15 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    public void Restore(object actor, ActorState state)
+    public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null)
     {
+        if (stillCurrent?.Invoke() == false)
+            return;
         // Visibility is a plain field write and needs no body, so it lands
         // now: a restored-hidden actor must never flash into view first.
         var target = (IActor)actor;
         _spawns.SetVisibility(target, state.Visible);
-        Schedule(target, state, ReadyAttempts);
+        Schedule(target, state, ReadyAttempts, stillCurrent);
     }
 
     public void Note(string detail) => _log.Warning(detail);
@@ -442,7 +446,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private void Schedule(IActor actor, ActorState state, int attempts)
+    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent)
     {
         if (attempts <= 0)
         {
@@ -458,7 +462,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
                 // an unobserved-task error a minute later, not a report.
                 try
                 {
-                    Attempt(actor, state, attempts);
+                    Attempt(actor, state, attempts, stillCurrent);
                 }
                 catch (Exception ex)
                 {
@@ -474,16 +478,16 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private void Attempt(IActor actor, ActorState state, int attempts)
+    private void Attempt(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent)
     {
         // Gone again — a second despawn, a scene load, GPose ending. There is
         // nothing to restore onto and nothing to report.
-        if (actor.Address == nint.Zero)
+        if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
             return;
         if (state.Pose is not null &&
             (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy))
         {
-            Schedule(actor, state, attempts - 1);
+            Schedule(actor, state, attempts - 1, stillCurrent);
             return;
         }
 
@@ -506,6 +510,6 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
         if (state.PhysicsDeltas is { } physicsDeltas && DebugPhysicsDeltas)
-            ApplyPhysicsDeltasOver(actor, physicsDeltas, passes: 4);
+            ApplyPhysicsDeltasOver(actor, physicsDeltas, passes: 4, stillCurrent);
     }
 }

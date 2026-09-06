@@ -416,6 +416,7 @@ internal static class ServiceRegistration
         services.AddSingleton<IActorSpawnService>(
             sp => sp.GetRequiredService<ActorSpawnService>());
         services.AddSingleton<WorldActorDiscovery>();
+        services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
         services.AddSingleton<Application.Actors.IWorldActorReadPort>(
             sp => sp.GetRequiredService<WorldActorDiscovery>());
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();

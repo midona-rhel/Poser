@@ -321,7 +321,7 @@ public partial class MainWindow
     }
 
     /// <summary>Catalog spawns carry their spawn kind's icon; slot
-    /// companions keep the paw; everything else is a person.</summary>
+    /// companions keep their kind; owners with a reserved slot get its badge.</summary>
     private TablerIcon SidebarActorIcon(ActorDescriptor actor)
     {
         if (actor.AttachmentKind is { } attachmentKind)
@@ -341,7 +341,9 @@ public partial class MainWindow
             CompanionKind.Companion => TablerIcon.Paw,
             CompanionKind.Mount => TablerIcon.Horse,
             CompanionKind.Ornament => TablerIcon.Diamond,
-            _ => actor.IsCompanion ? TablerIcon.Paw : TablerIcon.User,
+            _ => actor.IsCompanion ? TablerIcon.Paw
+                : resolved.Success && resolved.Value is { } owner && _spawnService.HasCompanionSlot(owner)
+                    ? TablerIcon.UserWithSlot : TablerIcon.User,
         };
     }
 

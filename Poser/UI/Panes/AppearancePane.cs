@@ -77,7 +77,7 @@ public sealed partial class AppearancePane
     private readonly IInvisibleSkinService _invisibleSkin;
     private readonly Game.Journal.ActorValueSession _values;
     private readonly Game.Journal.DisruptiveSteps _disruptive;
-    private readonly TransformHistory _history;
+    private readonly Game.Journal.WorldActorSession _worldActors;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -162,7 +162,7 @@ public sealed partial class AppearancePane
         UserNotices notices,
         Game.Journal.ActorValueSession values,
         Game.Journal.DisruptiveSteps disruptive,
-        TransformHistory history,
+        Game.Journal.WorldActorSession worldActors,
         IWardrobeCatalog wardrobe,
         IPropCatalog props,
         Game.Journal.WardrobeSession wardrobeSession,
@@ -198,7 +198,7 @@ public sealed partial class AppearancePane
         _facewearTexture = entry => ResolveIcon(entry.Icon);
         _values = values;
         _disruptive = disruptive;
-        _history = history;
+        _worldActors = worldActors;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -479,16 +479,9 @@ public sealed partial class AppearancePane
             _notices.Failed("Release: the actor is no longer in the scene.");
             return;
         }
-        var address = live.Address;
-        if (_spawn.RemoveActorFromScene(live))
+        if (_worldActors.Release(live))
         {
             _notices.Done($"Released '{_scene.Snapshot.FindActor(id)?.Name ?? live.Name}'.");
-            _history.Append(new JournalStep(
-                "Release actor",
-                () => _spawn.AdoptFromWorld(address) is not null,
-                () => _bindings.Resolve(id) is { Success: true, Value: { } again }
-                    ? _spawn.RemoveActorFromScene(again)
-                    : _scene.Snapshot.FindActor(id.LogicalId) is null));
         }
         else
             _notices.Failed("Release: the actor could not be handed back.");

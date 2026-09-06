@@ -16,6 +16,10 @@ namespace Poser.Core;
 /// </summary>
 public record GPoseStateChangedEvent(bool IsGPosing) : IEvent;
 
+/// <summary>Final capture has finished; restore owned native values before
+/// GPoseStateChangedEvent(false) removes actors and their bindings.</summary>
+public record GPoseExitingEvent : IEvent;
+
 /// <summary>
 /// Published when the actor list changes (actors added/removed from GPose).
 /// </summary>
