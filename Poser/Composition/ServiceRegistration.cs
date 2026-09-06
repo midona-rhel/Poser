@@ -205,6 +205,10 @@ internal static class ServiceRegistration
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
         services.AddSingleton<ValueJournal>();
+        // Native overlays are discovered before the journal's actor-key source,
+        // which itself needs the binding registry and overlays. Resolve the
+        // journal only when a native drag completes, after construction.
+        services.AddSingleton(sp => new System.Lazy<ValueJournal>(sp.GetRequiredService<ValueJournal>));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
