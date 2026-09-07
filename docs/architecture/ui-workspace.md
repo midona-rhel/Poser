@@ -26,6 +26,10 @@ showing it again preserves which panels were open. Unrelated configuration
 notifications do not reset panel visibility. Opening/closing the workspace or
 changing its attached/split layout still applies the requested layout.
 
+Detached sidebar/Inspector X buttons and their menu Close actions close the
+window without reattaching it. Menu Open restores it; Attach changes the layout.
+Title-bar collapse leaves the bar visible and remains a separate action.
+
 Opening Settings normally starts at General, scrolled to the top, with no search.
 Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
 open their named category at the top.

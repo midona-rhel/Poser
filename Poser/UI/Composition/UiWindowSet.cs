@@ -98,10 +98,7 @@ public sealed class UiWindowSet : IDisposable
         };
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
-        SidebarPart.OnReattach += ToggleDetached;
-        InspectorPart.OnMerge += ToggleSplitInspector;
         Main.OnInspectorSplitToggleRequested += ToggleSplitInspector;
-        ToolbarPart.OnReattach += ToggleDetached;
         Main.OnDetachToggleRequested += ToggleDetached;
         Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
         Main.OnSceneWindowToggleRequested += ToggleSceneWindow;
