@@ -9,6 +9,32 @@ namespace Poser.Tests.Files;
 public sealed class SceneWorldObjectCodecTests
 {
     [Fact]
+    public void Furniture_scene_and_library_payload_round_trips_stain_and_custom_tint()
+    {
+        using var file = new TempWorldScene();
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = [new SceneWorldObject
+        {
+            Key = Guid.NewGuid(),
+            Path = "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb",
+            Name = "Chair 1", Spawned = true, Stain = 42,
+            FurnitureLights = [new("/0", false), new("/2/0", true)],
+            Tint = new Vector3(.2f, .3f, .4f), Opacity = .4f, Visible = false,
+        }];
+        Assert.True(SceneFileStore.Default.Write(scene, file.Path).Succeeded);
+        var read = SceneFileStore.Default.Read(file.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var furniture = Assert.Single(read.Scene!.WorldObjects!);
+        Assert.Equal(scene.WorldObjects[0].Path, furniture.Path);
+        Assert.Equal((byte)42, furniture.Stain);
+        Assert.Equal(scene.WorldObjects[0].FurnitureLights, furniture.FurnitureLights);
+        Assert.Equal(scene.WorldObjects[0].Tint, furniture.Tint);
+        Assert.Equal(.4f, furniture.Opacity);
+        Assert.False(furniture.Visible);
+        Assert.True(furniture.Spawned);
+    }
+
+    [Fact]
     public void Scene_codec_round_trips_world_objects()
     {
         using var file = new TempWorldScene();

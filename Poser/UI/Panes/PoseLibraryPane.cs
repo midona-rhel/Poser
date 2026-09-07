@@ -919,7 +919,7 @@ public sealed partial class PoseLibraryPane
         for (int i = 0; i < entries.Count; i++)
         {
             if (!InTab(entries[i].Kind, kind)
-                || !KindAdmitted(entries[i].Kind, kind))
+                || !KindAdmitted(entries[i], kind))
                 continue;
             total++;
             if (favorites.Contains(entries[i].FilePath))
@@ -1044,7 +1044,12 @@ public sealed partial class PoseLibraryPane
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
                     PoseLibraryEntryKind.Group => TablerIcon.Folder,
-                    PoseLibraryEntryKind.WorldObject => TablerIcon.Plant,
+                    PoseLibraryEntryKind.WorldObject => entry.WorldKind switch
+                    {
+                        WorldAssetKind.Furniture => TablerIcon.Couch,
+                        WorldAssetKind.Effect => TablerIcon.Fire,
+                        _ => TablerIcon.Plant,
+                    },
                     PoseLibraryEntryKind.Prop => TablerIcon.Moneybag,
                     _ => entry.IsLegacy
                         ? TablerIcon.File

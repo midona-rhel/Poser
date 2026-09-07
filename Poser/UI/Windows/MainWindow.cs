@@ -436,6 +436,8 @@ public partial class MainWindow : Window
         new() { Label = "Object" },
     ];
 
+    private readonly ShellTab[] _furnitureTabs = [new() { Label = "Furniture" }];
+
     /// <summary>A camera's tab strip, the light strip's sibling: while a
     /// camera is selected the one tab is the camera editor — the camera's
     /// offset and its bone tracking live on the inspector rail instead.

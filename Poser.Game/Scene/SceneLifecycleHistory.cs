@@ -210,6 +210,8 @@ internal readonly record struct WorldObjectState(
     public string? Name { get; init; }
     public float Opacity { get; init; } = 1f;
     public Vector3? Tint { get; init; }
+    public byte Stain { get; init; }
+    public FurnitureLightState[] FurnitureLights { get; init; } = [];
     public bool NightState { get; init; }
     public bool AnimationPaused { get; init; }
     public bool LoopVfx { get; init; } = true;
@@ -296,6 +298,8 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
             Name = handle.Name,
             Opacity = handle.Opacity,
             Tint = handle.Tint,
+            Stain = handle.Stain,
+            FurnitureLights = System.Linq.Enumerable.ToArray(handle.FurnitureLights),
             NightState = handle.NightState,
             AnimationPaused = handle.AnimationPaused,
             LoopVfx = handle.LoopVfx,
@@ -313,6 +317,8 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
         handle.Transform = state.Placement;
         handle.Opacity = state.Opacity;
         handle.Tint = state.Tint;
+        handle.Stain = state.Stain;
+        handle.FurnitureLights = state.FurnitureLights;
         if (handle.IsVfx)
         {
             handle.LoopVfx = state.LoopVfx;
@@ -1254,6 +1260,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         copy.Name = name;
         copy.Opacity = source.Opacity;
         copy.Tint = source.Tint;
+        copy.Stain = source.Stain;
+        copy.FurnitureLights = System.Linq.Enumerable.ToArray(source.FurnitureLights);
         if (source.IsVfx)
         {
             copy.LoopVfx = source.LoopVfx;

@@ -307,7 +307,7 @@ public class PoseFileService : IPoseFileService
                         var writeComponents = AnchorMask(match, options, components);
                         if (writeComponents == TransformComponents.None)
                             continue;
-                        PlanBoneTransform(plan, bone, boneData, writeComponents, collection);
+                        PlanBoneTransform(plan, bone, boneData, writeComponents);
                         applied = true;
                     }
                     if (applied)
@@ -517,7 +517,7 @@ public class PoseFileService : IPoseFileService
                 var writeComponents = AnchorMask(match, options, boneComponents);
                 if (writeComponents == TransformComponents.None)
                     continue;
-                PlanBoneTransform(plan, bone, boneData, writeComponents, poseFile.Bones);
+                PlanBoneTransform(plan, bone, boneData, writeComponents);
                 applied = true;
             }
             if (applied)
@@ -653,8 +653,7 @@ public class PoseFileService : IPoseFileService
     }
 
     private void PlanBoneTransform(
-        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components,
-        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
+        PoseImportPlan plan, IBone bone, PoseFile.BoneData boneData, TransformComponents components)
     {
 
         // The FILE transform verbatim: file bones are LastRawTransform
@@ -663,28 +662,20 @@ public class PoseFileService : IPoseFileService
         // basis is the apply pass's own just-refreshed bone.LastRawTransform
         // (Brio PoseImporter.cs:35) — a basis read here, outside the pass,
         // would predate the parents' deltas the same pass propagates. For
-        // partial-0 bones the two spaces coincide; for non-zero partials the
-        // file data is post-reparent while the pass basis is pre-reparent,
-        // and PoseImportCapture's reconcile stage is what converges the face
-        // after that wrong-space first diff (Brio PosingCapability.cs:
-        // 316-317, :370-401). Excluded components are masked on the DELTA
+        // partial-0 bones the two spaces coincide. Partial descendants are
+        // converted by the posing runtime from post-reparent file space to
+        // the current pre-reparent apply frame before taking the diff.
+        // Excluded components are masked on the DELTA
         // (Brio PoseInfo.cs:108), so the bone's live values stay put without
         // being re-asserted.
         // A file bone with an all-zero rotation (older captures kept the
         // game's zero-quaternion helpers) has nothing to apply.
         if (IsZeroRotation(boneData.Rotation))
             return;
-        // Position travels as the bone's OFFSET FROM ITS PARENT, not as a
-        // place in model space. A bone whose local offset already matches
-        // the file's — a rigid limb, a chain link, a physics link — gets no
-        // position write: its place is its parent's and the game's to
-        // derive, and a written place fights that derivation (a minion's
-        // leash shortened every rotation down the chain to nothing,
-        // 2026-09-02). A root, a hip, or a bone a Customize+ offset moved
-        // differs locally and is written.
-        if (components.HasFlag(TransformComponents.Position)
-            && LocalOffsetMatches(bone, boneData, collection))
-            components &= ~TransformComponents.Position;
+        // Keep requested positions, like Brio's PoseImporter.ApplyBone.
+        // Matching parent-local offsets in these planning-time caches cannot
+        // prove a write redundant after reset, animation settling, or parent
+        // propagation. The apply pass computes the actual delta in native order.
         if (components == TransformComponents.None)
             return;
         plan.Writes.Add(new PoseImportWrite(
@@ -698,47 +689,6 @@ public class PoseFileService : IPoseFileService
                 Scale = boneData.Scale
             },
             components));
-    }
-
-    /// <summary>Whether the file places this bone at the same offset from
-    /// its parent as the live skeleton does, to half a millimetre. A root
-    /// has no parent to measure against and always keeps its position.</summary>
-    private static bool LocalOffsetMatches(
-        IBone bone, PoseFile.BoneData boneData,
-        IReadOnlyDictionary<string, PoseFile.BoneData> collection)
-    {
-        // A partial root is seated on its parent by the per-frame reparent,
-        // not by the game's hierarchy: its children take the root's move
-        // from that reparent AND from their own absolute delta unless the
-        // root's own write refreshes them first. Roots and cross-partial
-        // parents are therefore always written.
-        if (bone.ParentBone is not { } parent
-            || bone.IsPartialRoot
-            || parent.PartialId != bone.PartialId
-            || !collection.TryGetValue(parent.BoneName, out var parentData)
-            || !TransformMath.IsValidRotation(parentData.Rotation))
-            return false;
-        var rawParent = parent.LastRawTransform;
-        if (!TransformMath.IsValidRotation(rawParent.Rotation))
-            return false;
-        var fileLocal = LocalOffset(
-            boneData.Position, parentData.Position, parentData.Rotation, parentData.Scale);
-        var rawLocal = LocalOffset(
-            bone.LastRawTransform.Position, rawParent.Position, rawParent.Rotation, rawParent.Scale);
-        const float halfMillimetreSquared = 0.0005f * 0.0005f;
-        return Vector3.DistanceSquared(fileLocal, rawLocal) < halfMillimetreSquared;
-    }
-
-    private static Vector3 LocalOffset(
-        Vector3 position, Vector3 parentPosition, Quaternion parentRotation, Vector3 parentScale)
-    {
-        var offset = Vector3.Transform(
-            position - parentPosition,
-            Quaternion.Inverse(TransformMath.NormalizeRotation(parentRotation)));
-        return new Vector3(
-            parentScale.X > 0.0001f ? offset.X / parentScale.X : offset.X,
-            parentScale.Y > 0.0001f ? offset.Y / parentScale.Y : offset.Y,
-            parentScale.Z > 0.0001f ? offset.Z / parentScale.Z : offset.Z);
     }
 
     /// <summary>Brio PoseWindow's TransformComponents assembly from the three

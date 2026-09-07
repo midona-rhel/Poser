@@ -28,6 +28,7 @@ public sealed class UIManager : IUIManager
     private readonly UiWindowSet _windows;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly IVirtualCameraService _cameras;
+    private readonly IPosingService _posing;
     private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
@@ -52,6 +53,7 @@ public sealed class UIManager : IUIManager
         UiWindowSet windows,
         PoseFileInspectorSection poseFileSection,
         IVirtualCameraService cameras,
+        IPosingService posing,
         SceneSession scene,
         AnimationSceneActions sceneActions,
         Dalamud.Plugin.Services.IPluginLog log)
@@ -69,6 +71,7 @@ public sealed class UIManager : IUIManager
         _windows = windows;
         _poseFileSection = poseFileSection;
         _cameras = cameras;
+        _posing = posing;
         _scene = scene;
         _sceneActions = sceneActions;
 
@@ -121,6 +124,7 @@ public sealed class UIManager : IUIManager
 
     private void DrawUI()
     {
+        _posing.DeferCameraOrbitUpdate = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         if (!Crystarium.AdvanceTheme())
             return;
 

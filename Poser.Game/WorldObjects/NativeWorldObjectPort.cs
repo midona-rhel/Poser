@@ -31,6 +31,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     private const int MaxNodes = 100_000;
 
     private readonly IPluginLog _log;
+    private readonly FurnitureLayoutDriver _furniture;
     private readonly List<WorldObjectRow> _rows = new();
     private readonly List<nint> _lights = new();
     private readonly HashSet<nint> _visited = new();
@@ -69,9 +70,11 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     public NativeWorldObjectPort(
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
-        IPluginLog log)
+        IPluginLog log,
+        IDataManager data)
     {
         _log = log;
+        _furniture = new FurnitureLayoutDriver(sigScanner, data, log);
         // Each signature is guarded on its own: a patch that breaks one
         // takes VFX away and leaves BG objects standing.
         try
@@ -132,6 +135,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// Keeping one traversal avoids a second read of the graph.</summary>
     private void Walk(bool wantLights)
     {
+        _furniture.RefreshGraphics();
         _rows.Clear();
         _lights.Clear();
         _visited.Clear();
@@ -155,6 +159,9 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 if (node == null)
                     continue;
                 PushRing(node->ChildObject);
+                // These graphics belong to a furniture layout, not to the map.
+                // Borrowing one would leave a dangling claim when its owner dies.
+                if (_furniture.OwnsGraphics(address)) continue;
                 var type = node->GetObjectType();
                 if (wantLights)
                 {
@@ -188,11 +195,21 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         }
     }
 
-    public bool IsAlive(nint address) => Resolve(address) != null;
+    public void Pump() => _furniture.Pump();
+
+    public IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => _furniture.ReadLights(address);
+    public void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) =>
+        _furniture.SetLights(address, lights);
+
+    public bool WriteFurnitureColor(nint address, byte stain, System.Numerics.Vector3? tint) =>
+        !_furniture.Contains(address) || _furniture.SetColor(address, stain, tint);
+
+    public bool IsAlive(nint address) => _furniture.Contains(address) || Resolve(address) != null;
 
     public bool TryReadIncarnation(
         nint address, out WorldObjectIncarnation incarnation)
     {
+        if (_furniture.TryIdentity(address, out incarnation)) return true;
         incarnation = default;
         var node = Resolve(address);
         if (node == null)
@@ -222,6 +239,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool TryRead(nint address, out Transform placement)
     {
+        if (_furniture.Contains(address)) { placement = _furniture.Read(address); return true; }
         placement = Transform.Identity;
         var node = Resolve(address);
         if (node == null)
@@ -232,6 +250,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void Write(nint address, in Transform placement)
     {
+        if (_furniture.Contains(address)) { _furniture.Write(address, placement); return; }
         var node = Resolve(address);
         if (node == null)
             return;
@@ -315,6 +334,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool TryReadFlags(nint address, out byte flags)
     {
+        if (_furniture.Contains(address)) { flags = _furniture.Visible(address) ? (byte)1 : (byte)0; return true; }
         flags = 0;
         var node = Resolve(address);
         if (node == null)
@@ -325,6 +345,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void WriteFlags(nint address, byte flags)
     {
+        if (_furniture.Contains(address)) { _furniture.SetVisible(address, flags != 0); return; }
         var node = Resolve(address);
         if (node == null)
             return;
@@ -337,6 +358,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool TryReadVisible(nint address, out bool visible)
     {
+        if (_furniture.Contains(address)) { visible = _furniture.Visible(address); return true; }
         visible = false;
         var node = Resolve(address);
         if (node == null)
@@ -349,6 +371,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void WriteVisible(nint address, bool visible)
     {
+        if (_furniture.Contains(address)) { _furniture.SetVisible(address, visible); return; }
         var node = Resolve(address);
         if (node == null)
             return;
@@ -368,6 +391,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// </summary>
     public bool WriteBgTint(nint address, System.Numerics.Vector3? tint)
     {
+        if (_furniture.Contains(address)) return _furniture.SetTint(address, tint);
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return true;
@@ -389,6 +413,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// moment its bytes are worth dumping.</summary>
     public bool IsBgReady(nint address)
     {
+        if (_furniture.Contains(address)) return _furniture.Ready(address);
         var node = Resolve(address);
         return node != null
             && node->GetObjectType() != ObjectType.VfxObject
@@ -409,6 +434,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// the model is still streaming.</summary>
     public bool? CanDyeBg(nint address)
     {
+        if (_furniture.Contains(address)) return _furniture.Ready(address) ? true : null;
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return false;
@@ -580,6 +606,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool? ReadBgNightState(nint address)
     {
+        if (_furniture.Contains(address)) return _furniture.NightState(address);
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return null;
@@ -588,11 +615,18 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void WriteBgNightState(nint address, bool night)
     {
+        if (_furniture.Contains(address)) { _furniture.SetNightState(address, night); return; }
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return;
-        *((byte*)node + BgNightStateOffset) = night ? byte.MaxValue : (byte)0;
-        var bg = (BgObject*)node;
+        WriteModelNightState((BgObject*)node, night);
+    }
+
+    internal static void WriteModelNightState(BgObject* bg, bool night)
+    {
+        // The byte belongs to a BG graphics object, including a furniture
+        // child model. It is never a field of its owning SGL or a light node.
+        *((byte*)bg + BgNightStateOffset) = night ? byte.MaxValue : (byte)0;
         if (RenderReady(bg))
         {
             bg->UpdateCulling();
@@ -613,6 +647,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool TryReadOpacity(nint address, out float opacity)
     {
+        if (_furniture.Contains(address)) { opacity = _furniture.Opacity(address); return true; }
         var node = Resolve(address);
         opacity = 1f;
         if (node == null)
@@ -626,6 +661,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public void WriteOpacity(nint address, float opacity)
     {
+        if (_furniture.Contains(address)) { _furniture.SetOpacity(address, opacity); return; }
         var node = Resolve(address);
         if (node == null)
             return;
@@ -904,12 +940,16 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         {
             if (IsVfxPath(path))
                 return SpawnVfx(path, placement, out identity);
+            if (path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
+                return _furniture.Spawn(path, placement, ++_nextGeneration, out identity);
+            if (!path.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase)) return 0;
             // The second argument is an unused debug string (Brio's own
             // note); empty is what the game expects.
             var bg = BgObject.Create(path, string.Empty);
             if (bg == null)
                 return nint.Zero;
             var address = (nint)bg;
+            _furniture.ForgetReusedGraphicsAddress(address);
             lock (_handledLock)
             {
                 var generation = ++_nextGeneration;
@@ -939,6 +979,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
 
     public bool TryDestroy(nint address)
     {
+        if (_furniture.Contains(address)) { _furniture.Destroy(address); return true; }
         var node = Resolve(address);
         if (node == null)
         {
@@ -1041,6 +1082,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 return nint.Zero;
             }
             lease = _vfxOwnership.Reserve((nint)vfx, claim);
+            _furniture.ForgetReusedGraphicsAddress((nint)vfx);
             leased = true;
             vfx->SomeFlags &= 0xF7;
             vfx->Update(0f);
@@ -1278,7 +1320,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// stopped being one is inert rather than written blind.</summary>
     private CSObject* Resolve(nint address)
     {
-        if (address == nint.Zero)
+        if (address == nint.Zero || _furniture.IsLayoutAddress(address))
             return null;
         try
         {
@@ -1372,6 +1414,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     {
         if (_disposed)
             return;
+        _furniture.Dispose();
         var claims = _vfxOwnership.LiveIdentities;
         var pending = _vfxOwnership.PendingLeases;
         foreach (var identity in claims)

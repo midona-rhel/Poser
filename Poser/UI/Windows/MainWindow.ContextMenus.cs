@@ -1060,7 +1060,7 @@ public partial class MainWindow
         {
             () => _sessions.WorldObjects.SetVisible(worldObject, !worldObject.Visible),
             () => OpenEntityRename(
-                "Rename object", worldObject.Name,
+                worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
             () =>
             {
@@ -1069,7 +1069,7 @@ public partial class MainWindow
                     _selection.Select(SelectionId.ForWorldObject(copyId));
             },
             () => OpenEntityRename(
-                "Save object to library", worldObject.Name,
+                worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
                 name => _scenePane.SaveWorldObjectEntry(
                     worldObjectId.LogicalId, name)),
             null, // separator
@@ -1081,6 +1081,17 @@ public partial class MainWindow
         };
         var stateItems = new List<ContextMenuItem>();
         var stateActions = new List<Action?>();
+        if (worldObject.IsFurniture)
+        {
+            var lights = worldObject.FurnitureLights;
+            for (int i = 0; i < lights.Count; i++)
+            {
+                var light = lights[i];
+                stateItems.Add(new($"Light {i + 1}: {(light.Enabled ? "On" : "Off")}",
+                    TablerIcon.Bulb, keepOpen: true));
+                stateActions.Add(() => _sessions.WorldObjects.SetFurnitureLight(worldObject, light.Key, !light.Enabled));
+            }
+        }
         if (worldObject.IsVfx)
         {
             stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",

@@ -91,7 +91,24 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// is readable; spawned handles classify at the requested-path boundary.
     /// </summary>
     public bool IsVfx => _isVfx;
+    public bool IsFurniture => Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase);
+    private byte _stain;
+    public byte Stain
+    {
+        get => _stain;
+        set
+        {
+            _stain = value;
+            if (!_released && IsFurniture) _owner.WriteTint(this);
+        }
+    }
     internal bool _isVfx;
+
+    public IReadOnlyList<FurnitureLightState> FurnitureLights
+    {
+        get => _owner.ReadFurnitureLights(this);
+        set => _owner.WriteFurnitureLights(this, value);
+    }
 
     internal VfxPlaybackState VfxPlayback { get; set; } =
         VfxPlaybackState.Playing;
@@ -405,6 +422,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     private readonly List<AdoptedWorldObject> _adopted = new();
     private readonly List<WorldObjectIncarnation> _pendingTeardowns = new();
     private readonly Dictionary<AdoptedWorldObject, PendingRespawn> _respawns = new();
+    private readonly Dictionary<AdoptedWorldObject, DateTime> _loadingFurniture = new();
 
     private sealed record PendingRespawn(
         WorldObjectIncarnation Fresh, string Path, DateTime Deadline,
@@ -445,6 +463,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (_disposed)
             return;
         RetryPendingTeardowns();
+        _port.Pump();
+        PumpFurnitureLoads(DateTime.UtcNow);
         PumpRespawns(DateTime.UtcNow);
         if (_teardownOnly)
         {
@@ -589,6 +609,12 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         if (!freshIdentity.IsVfx)
         {
             if (!_port.IsBgReady(freshIdentity.Address)) return;
+            if (pending.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_port.WriteFurnitureColor(freshIdentity.Address, handle.Stain, handle.Tint)) return;
+                if (pending.Path == handle.Path)
+                    _port.WriteFurnitureLights(freshIdentity.Address, handle.FurnitureLights);
+            }
             // Undyeable models have no stain buffer and must not wait for one.
             if (handle.Tint is not null && _port.CanDyeBg(freshIdentity.Address) != false
                 && !_port.WriteBgTint(freshIdentity.Address, handle.Tint)) return;
@@ -989,6 +1015,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 _port.WriteVfxTint(handle.Address, tint);
             return;
         }
+        if (handle.IsFurniture)
+        {
+            _port.WriteFurnitureColor(handle.Address, handle.Stain, handle.Tint);
+            return;
+        }
         if (!_port.WriteBgTint(handle.Address, handle.Tint))
             _pendingStains.Add(handle);
     }
@@ -1001,7 +1032,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             || !IsHandleCurrent(handle))
             return;
         _port.WriteOpacity(
-            handle.Address, handle.Visible ? handle.Opacity : 0f);
+            handle.Address, handle.IsFurniture || handle.Visible ? handle.Opacity : 0f);
     }
 
     /// <summary>The live claims. It is the service's own list, so a caller
@@ -1165,8 +1196,37 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             // day, written once the model streams in.
             handle.NightStatePending = true;
         _adopted.Add(handle);
+        if (handle.IsFurniture)
+            _loadingFurniture[handle] = DateTime.UtcNow.AddSeconds(15);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
+    }
+
+    internal IReadOnlyList<FurnitureLightState> ReadFurnitureLights(AdoptedWorldObject handle) =>
+        !_disposed && handle.IsFurniture && IsHandleCurrent(handle) ? _port.ReadFurnitureLights(handle.Address) : [];
+
+    internal void WriteFurnitureLights(AdoptedWorldObject handle, IReadOnlyList<FurnitureLightState> lights)
+    {
+        if (!_disposed && handle.IsFurniture && IsHandleCurrent(handle))
+            _port.WriteFurnitureLights(handle.Address, lights);
+    }
+
+    internal void PumpFurnitureLoads(DateTime now)
+    {
+        foreach (var (handle, deadline) in _loadingFurniture.ToArray())
+        {
+            if (!_adopted.Contains(handle) || _port.IsBgReady(handle.Address))
+            {
+                _loadingFurniture.Remove(handle);
+                continue;
+            }
+            if (now < deadline) continue;
+            if (Release(handle))
+            {
+                _loadingFurniture.Remove(handle);
+                _log.Warning($"Furniture '{handle.Name}' did not finish loading and was removed.");
+            }
+        }
     }
 
     public AdoptedWorldObject? Adopt(nint address)

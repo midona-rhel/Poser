@@ -18,5 +18,6 @@ namespace Poser.Services;
 public interface IWorldAssetCatalog
 {
     IReadOnlyList<WorldAsset> Models { get; }
+    IReadOnlyList<WorldAsset> Furniture { get; }
     IReadOnlyList<WorldAsset> Effects { get; }
 }

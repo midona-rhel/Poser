@@ -99,6 +99,7 @@ public sealed class SettingsViewModel
     public bool KeepBoundKeysFromGame = true;
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
+    public bool CameraUpdateOrbitWithActorPosition = true;
     public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
@@ -1113,11 +1114,18 @@ public static partial class SettingsView
             form.EndPair();
         }, divider: false);
         page.Section("Selection", form =>
+        {
             form.Switch(
                 "Look through a selected camera",
                 vm.CameraLookThroughSelected,
                 next => vm.CameraLookThroughSelected = next,
-                "Selecting a camera in the sidebar switches the view to it"));
+                "Selecting a camera in the sidebar switches the view to it");
+            form.Switch(
+                "Update camera orbit with actor position",
+                vm.CameraUpdateOrbitWithActorPosition,
+                next => vm.CameraUpdateOrbitWithActorPosition = next,
+                "The native GPose pivot follows a moved actor after release; locked cameras are unchanged");
+        });
         page.Section("Speed keys", form =>
         {
             form.PairRows();

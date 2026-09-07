@@ -30,7 +30,6 @@ public sealed partial class AppearancePane
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
     private readonly Func<WardrobeItem, nint> _wardrobeItemTexture;
     private readonly Func<WardrobeItem, string?> _wardrobeItemBadge;
-    private readonly Func<DyeEntry, Vector4?> _dyeRowFill;
     private readonly Func<FacewearEntry, nint> _facewearTexture;
     private static readonly Func<PropRow, string?> _propBadge = static row => row.Detail;
     private static readonly Func<PropRow, TablerIcon?> _propGlyph = static _ => TablerIcon.Wand;
@@ -197,7 +196,6 @@ public sealed partial class AppearancePane
         });
         _wardrobeItemTexture = item => ResolveIcon(item.Icon);
         _wardrobeItemBadge = item => "#" + item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        _dyeRowFill = dye => dye.Id == 0 ? null : DyeColor(dye.Color);
         _facewearTexture = entry => ResolveIcon(entry.Icon);
         _values = values;
         _disruptive = disruptive;

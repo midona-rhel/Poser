@@ -43,7 +43,8 @@ reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
 are independent and remain usable.
 
 Entity save-to-file, save-to-library, and category-wide destruction live under
-More in the inspector or entity context menu, only where supported. More uses
+More in the inspector or entity context menu, only where supported. A lone
+save action stays a direct button/menu item instead of a one-item More menu. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
 destruction (lights, cameras, objects, and overlays) opens a modal with the target count
 and what is released or protected; only its explicit confirmation runs the
@@ -87,6 +88,15 @@ Search filters cached current-directory names case-insensitively, including
 folders, after extension filtering; it never walks subfolders or rescans per
 keystroke. Navigation and reopening clear the query. A filtered-out selection
 clears its preview and confirmation state; a separately typed save name stays.
+
+Spawn browsing keeps predefined actions first, library entries second, then
+the existing catalog order. With an active search, each source group orders
+categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.
+Action order stays fixed within its category; other matches rank name prefixes
+then alphabetically within each category. Sorting changes visible row indices,
+not the backing activation identities. Furniture has its own import actions;
+world-entry library filters distinguish scenery, furniture and VFX despite
+their shared file extension.
 
 Pages default to a readable content-width cap. Actor opts into the
 shared responsive policy: it fills the host's content box after the leading

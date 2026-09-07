@@ -22,6 +22,120 @@ namespace Poser.Game.Tests.WorldObjects;
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
+    [Fact]
+    public void Furniture_light_switch_preserves_peers_and_restores_through_history_and_respawn()
+    {
+        var world = new World();
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
+        FurnitureLightState[] initial = [new("/0", true), new("/1/0", false)];
+        furniture.FurnitureLights = initial;
+        var history = new Poser.Application.Transforms.TransformHistory();
+        var session = new Poser.Game.Journal.WorldObjectSession(new Poser.Application.Transforms.ValueJournal(history));
+        session.SetFurnitureLight(furniture, "/0", false);
+        Assert.All(furniture.FurnitureLights, light => Assert.False(light.Enabled));
+        var step = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(initial, furniture.FurnitureLights);
+        Assert.True(step.Redo());
+        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
+        var state = lifecycle.Read(furniture);
+        lifecycle.Release(furniture);
+        var restored = (AdoptedWorldObject)lifecycle.Spawn(state.Path, state.Placement, state.Visible)!;
+        lifecycle.Apply(restored, state);
+        Assert.Equal(state.FurnitureLights, restored.FurnitureLights);
+        Assert.All(restored.FurnitureLights, light => Assert.False(light.Enabled));
+    }
+
+    [Fact]
+    public void Choosing_furniture_dye_clears_custom_tint_as_one_undoable_edit()
+    {
+        var world = new World();
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
+        furniture.Stain = 7;
+        var tint = new Vector3(.2f, .3f, .4f);
+        furniture.Tint = tint;
+        var history = new Poser.Application.Transforms.TransformHistory();
+        var session = new Poser.Game.Journal.WorldObjectSession(new Poser.Application.Transforms.ValueJournal(history));
+        session.SetStain(furniture, 42);
+        session.Seal();
+        Assert.Null(furniture.Tint);
+        Assert.Equal((byte)42, furniture.Stain);
+        var step = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(tint, furniture.Tint);
+        Assert.Equal((byte)7, furniture.Stain);
+        Assert.True(step.Redo());
+        Assert.Null(furniture.Tint);
+        Assert.Equal((byte)42, furniture.Stain);
+    }
+
+    [Theory]
+    [InlineData(1u, true, "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb")]
+    [InlineData(12345u, false, "bgcommon/hou/outdoor/general/12345/asset/gar_b0_m12345.sgb")]
+    public void Furniture_paths_keep_model_key_and_indoor_outdoor_identity(uint key, bool indoors, string expected) =>
+        Assert.Equal(expected, FurnitureCatalog.PathFor(key, indoors));
+
+    [Fact]
+    public void Furniture_lifecycle_restores_stain_tint_placement_and_opacity()
+    {
+        var world = new World();
+        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
+        Assert.True(furniture.IsFurniture);
+        furniture.Transform = Moved;
+        furniture.Stain = 42;
+        furniture.NightState = true;
+        furniture.Tint = new Vector3(.1f, .2f, .3f);
+        furniture.Visible = false;
+        furniture.Opacity = .4f;
+        Assert.Equal(.4f, world.Port.OpacityOf(furniture.Address));
+        var state = lifecycle.Read(furniture);
+        for (int i = 0; i < 2; i++)
+        {
+            lifecycle.Release(furniture);
+            furniture = (AdoptedWorldObject)lifecycle.Spawn(state.Path, state.Placement, state.Visible)!;
+            lifecycle.Apply(furniture, state);
+            Assert.Equal(state with { Address = furniture.Address }, lifecycle.Read(furniture));
+            Assert.Equal((byte)42, world.Port.LastFurnitureStain);
+            Assert.True(furniture.NightState);
+            Assert.True(world.Port.LastNightState);
+            Assert.Equal(state.Tint, world.Port.LastBgTint);
+        }
+    }
+
+    [Fact]
+    public void Furniture_timeout_removes_only_unready_furniture_and_cleans_allocation_once()
+    {
+        var world = new World();
+        world.Port.BgReady = false;
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
+        var model = world.Service.Spawn("bg/tree.mdl", Placed, true, out _)!;
+        world.Service.PumpFurnitureLoads(DateTime.UtcNow);
+        Assert.True(furniture.IsValid);
+        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(16));
+        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(17));
+        Assert.False(furniture.IsValid);
+        Assert.True(model.IsValid);
+        Assert.Equal(furniture.Address, Assert.Single(world.Port.Destroyed));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ready_or_explicitly_released_furniture_has_no_later_timeout(bool release)
+    {
+        var world = new World();
+        world.Port.BgReady = false;
+        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, false), Placed, true, out _)!;
+        if (release) world.Service.Release(furniture);
+        else world.Port.BgReady = true;
+        world.Service.PumpFurnitureLoads(DateTime.UtcNow);
+        world.Port.BgReady = false;
+        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(16));
+        Assert.Equal(!release, furniture.IsValid);
+        Assert.Equal(release ? 1 : 0, world.Port.Destroyed.Count);
+    }
+
     private static readonly Transform Placed = new(
         new Vector3(10f, 2f, -4f),
         Quaternion.CreateFromYawPitchRoll(0.5f, 0f, 0f),
@@ -737,6 +851,19 @@ private sealed class World
         public bool BgDyeable { get; set; } = true;
         public bool FailBgTint { get; set; }
         public System.Numerics.Vector3? LastBgTint { get; private set; }
+        public byte LastFurnitureStain { get; private set; }
+        private readonly Dictionary<nint, FurnitureLightState[]> _furnitureLights = new();
+        public IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) =>
+            _furnitureLights.TryGetValue(address, out var lights) ? lights : [];
+        public void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) =>
+            _furnitureLights[address] = System.Linq.Enumerable.ToArray(lights);
+        public float OpacityOf(nint address) => _nodes[address].Opacity;
+        public bool WriteFurnitureColor(nint address, byte stain, Vector3? tint)
+        {
+            LastFurnitureStain = stain;
+            LastBgTint = tint;
+            return BgReady;
+        }
         public bool LastNightState { get; private set; }
         public bool NoOpSpeed { get; set; }
         public bool NoOpPlayback { get; set; }

@@ -267,6 +267,7 @@ public class SettingsWindow : Window
             KeepBoundKeysFromGame = c.Camera.KeepBoundKeysFromGame,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
+            CameraUpdateOrbitWithActorPosition = c.Camera.UpdateOrbitWithActorPosition,
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
@@ -524,6 +525,7 @@ public class SettingsWindow : Window
         c.Camera.KeepBoundKeysFromGame = _vm.KeepBoundKeysFromGame;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
+        c.Camera.UpdateOrbitWithActorPosition = _vm.CameraUpdateOrbitWithActorPosition;
         c.DefaultSpawnPlacement =
             (global::Poser.Files.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 

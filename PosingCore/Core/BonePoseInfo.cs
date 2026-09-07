@@ -18,6 +18,9 @@ public enum TransformFrame
     /// conjugated by the head rotation; position rotates by the head rotation
     /// before the model-space add.</summary>
     HeadRelative = 1,
+    /// <summary>Ktisis testing: position uses the live parent rotation,
+    /// rotation post-multiplies the bone, and scale multiplies its baseline.</summary>
+    ParentRelative = 2,
 }
 
 /// <summary>

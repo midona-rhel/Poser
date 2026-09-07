@@ -1,10 +1,13 @@
 using System.Numerics;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain.Presentation;
 
 namespace Poser.Services;
 
 public readonly record struct WorldObjectRespawnResult(bool Succeeded, string? Detail = null);
+
+public readonly record struct FurnitureLightState(string Key, bool Enabled);
 
 /// <summary>A world object the scene holds: a spawned or adopted map object or effect with its placement, look and animation state.</summary>
 public interface IWorldObject
@@ -15,6 +18,9 @@ public interface IWorldObject
     string Path { get; }
     nint Address { get; }
     bool IsVfx { get; }
+    bool IsFurniture => Path.EndsWith(".sgb", System.StringComparison.OrdinalIgnoreCase);
+    byte Stain { get => 0; set { } }
+    IReadOnlyList<FurnitureLightState> FurnitureLights { get => []; set { } }
     bool LoopVfx { get; set; }
     float VfxSpeed { get; set; }
     float VfxIntensity { get; set; }

@@ -27,6 +27,22 @@ public sealed class WorldObjectSession
     public void SetTint(IWorldObject o, Vector3? value) =>
         _journal.Set((o, "Tint"), "Set object tint", () => o.Tint, v => o.Tint = v, value, () => o.IsValid);
 
+    public void SetStain(IWorldObject o, byte value) =>
+        _journal.Set((o, "Stain"), "Dye furniture", () => (o.Stain, o.Tint),
+            v => { o.Tint = v.Item2; o.Stain = v.Item1; },
+            (value, (Vector3?)null), () => o.IsValid);
+
+    public void SetFurnitureLight(IWorldObject o, string key, bool enabled)
+    {
+        var before = System.Linq.Enumerable.ToArray(o.FurnitureLights);
+        var after = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(before,
+            light => light.Key == key ? light with { Enabled = enabled } : light));
+        _journal.Seal();
+        _journal.Set((o, "FurnitureLights"), "Set furniture light", () => before,
+            value => o.FurnitureLights = value, after, () => o.IsValid);
+        _journal.Seal();
+    }
+
     public void SetNightState(IWorldObject o, bool value) =>
         _journal.Set((o, "Night"), "Set object night state", () => o.NightState, v => o.NightState = v, value, () => o.IsValid);
 

@@ -88,6 +88,17 @@ The runtime then refreshes caches, reparents, refreshes again, and publishes
 the final snapshot. A missing slot is normal. Replacing one slot releases only
 that slot's bindings, caches, and pose state.
 
+Displayed partial-bone transforms and pose files are post-reparent model-space
+values; stored interactive deltas apply before reparenting. The runtime captures
+each partial root's before/after attachment frame and converts visible edit,
+import and IK-bake targets before computing their deltas. Rotation, translation
+and inherited scale all participate. Existing stored layers are not reinterpreted.
+An in-pass raw head-restore target is already in apply space and is not converted.
+This makes the partial-space adjustment explicit, as Ktisis's partial importer
+does, instead of relying on repeated head reconciliation to correct a wrong-space
+write. Duplicates retain visible child scales unchanged; physics-local restores
+run parent-first after the main import completes, not alongside it on timer ticks.
+
 The CharaView preview body is outside the 201–439 GPose scan and has no scene
 descriptor. It enters through its bindings. Panes, pickers, and gizmos read the
 snapshot. Refresh checks both scene and auxiliary-binding changes.

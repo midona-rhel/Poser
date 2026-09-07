@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
+using Poser.Services;
 
 namespace Poser.UI;
 
@@ -36,31 +37,33 @@ public sealed class LibraryWindow : Window
     private static readonly string[] StripLabels =
         ["Poses", "Auto-saves", "Objects", "MCDF", "Scenes"];
 
-    /// <summary>The Objects tab's kind toggles, in the SPAWN PORTAL's
-    /// tab order — actors, lights, cameras, props, objects, overlays —
-    /// with the kinds the portal has no tab for (environments, groups)
-    /// last (ruled 2026-09-01). Each wears its kind's own mark.</summary>
+    /// <summary>The Objects tab's kind toggles follow spawn search's
+    /// category order, with environments and groups last.</summary>
     private static readonly
         (global::Poser.Library.PoseLibraryEntryKind Kind, TablerIcon Icon,
-            string Name)[]
+            string Name, WorldAssetKind? WorldKind)[]
         KindToggles =
     [
         (global::Poser.Library.PoseLibraryEntryKind.Actor, TablerIcon.User,
-            "Actors"),
+            "Actors", null),
         (global::Poser.Library.PoseLibraryEntryKind.Light, TablerIcon.Bulb,
-            "Lights"),
+            "Lights", null),
         (global::Poser.Library.PoseLibraryEntryKind.Camera, TablerIcon.Camera,
-            "Cameras"),
+            "Cameras", null),
+        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Couch,
+            "Furniture", WorldAssetKind.Furniture),
         (global::Poser.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
-            "Props"),
+            "Props", null),
         (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
-            "Objects"),
+            "Objects", WorldAssetKind.Scenery),
+        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Fire,
+            "VFX", WorldAssetKind.Effect),
         (global::Poser.Library.PoseLibraryEntryKind.Overlay, TablerIcon.Message,
-            "Overlays"),
+            "Overlays", null),
         (global::Poser.Library.PoseLibraryEntryKind.Environment, TablerIcon.Sun,
-            "Environments"),
+            "Environments", null),
         (global::Poser.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
-            "Groups"),
+            "Groups", null),
     ];
 
     /// <summary>The preview column, logical: the old 280 rail less a
@@ -386,8 +389,8 @@ public sealed class LibraryWindow : Window
                 max.X - inset - cluster,
                 top + (height - buttonSide) * 0.5f);
             bool allActive = true;
-            foreach (var (kind, _, _) in KindToggles)
-                allActive &= pane.KindFilterContains(kind);
+            foreach (var (kind, _, _, worldKind) in KindToggles)
+                allActive &= pane.KindFilterContains(kind, worldKind);
 
             // The union is a true toggle: all on, or — pressed again while
             // everything is on — all off (ruled 2026-09-01).
@@ -403,14 +406,14 @@ public sealed class LibraryWindow : Window
             // An admitted kind is latched (the pill's white highlight); a
             // filtered-out kind is dim but still CLICKABLE — the same press
             // re-admits it (ruled 2026-09-01, reversing same-day "inert").
-            foreach (var (kind, icon, name) in KindToggles)
+            foreach (var (kind, icon, name, worldKind) in KindToggles)
             {
-                bool latched = pane.KindFilterContains(kind);
+                bool latched = pane.KindFilterContains(kind, worldKind);
                 ImGui.SetCursorScreenPos(seat);
                 Crystarium.TemporaryIconToggle(
                     icon,
                     latched,
-                    () => pane.ToggleKindFilter(kind),
+                    () => pane.ToggleKindFilter(kind, worldKind),
                     help: name,
                     id: "##library-kind-" + name,
                     dimmed: !latched);

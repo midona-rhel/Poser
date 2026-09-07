@@ -571,10 +571,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
     }
 
     /// <summary>One entry from the directory listing alone: name, kind,
-    /// stamp. Nothing is opened — what a file holds (author, tags, what a
-    /// scene contains, whether it is sound) is read when the entry is
-    /// selected, the way Brio's library works, so a scan of thousands of
-    /// files costs a listing and nothing more.</summary>
+    /// stamp. Only shared .xivw entries need their small scene document read
+    /// here to distinguish scenery, furniture and VFX. Other metadata stays
+    /// lazy; packages and thumbnails are never opened by the background scan.</summary>
     private static PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
     {
         var name = Path.GetFileNameWithoutExtension(filePath);
@@ -590,9 +589,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var kind = KindOf(filePath);
         var isLegacy = kind == PoseLibraryEntryKind.Pose
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
+        var worldKind = kind == PoseLibraryEntryKind.WorldObject
+            ? Services.WorldAsset.KindOf(SceneFileStore.Default.Read(filePath).Scene?.WorldObjects?.FirstOrDefault()?.Path)
+            : Services.WorldAssetKind.Scenery;
         return new PoseLibraryEntry
         {
             Kind = kind,
+            WorldKind = worldKind,
             FilePath = filePath,
             Name = name,
             NameLower = name.ToLowerInvariant(),

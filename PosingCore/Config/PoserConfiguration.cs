@@ -75,6 +75,10 @@ public class PoserConfiguration : IPluginConfiguration
     /// </summary>
     public bool LinkSiblingBones { get; set; } = false;
 
+    public bool LinkExpressionSides { get; set; } = false;
+    public bool CombineExpressionSides { get; set; } = true;
+    public bool UnlockExpressionWeights { get; set; } = false;
+
     /// <summary>
     /// The toolbar's Off | Link | Mirror remembers PER BONE: with this on,
     /// clicking the toolbar while bones are selected states those bones'

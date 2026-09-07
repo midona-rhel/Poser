@@ -8,6 +8,10 @@ namespace Poser.Services;
 /// </summary>
 public interface IPosingService : IDisposable
 {
+    /// <summary>UI publishes left-mouse state once per frame; native camera
+    /// pivot updates wait until manipulation has ended.</summary>
+    bool DeferCameraOrbitUpdate { get; set; }
+
     /// <summary>
     /// Gets the current transform override for an actor, if any.
     /// </summary>

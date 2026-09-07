@@ -128,6 +128,15 @@ never replaced with a plausible identity baseline.
 
 ## Camera movement
 
+`Update camera orbit with actor position` defaults on, matching
+[Ktisis 650d1bb9](https://github.com/ktisis-tools/Ktisis/commit/650d1bb9).
+Actor transform edits defer native pivot synchronization until left-mouse
+release and while the live camera is locked. Unlocking applies only the latest
+pending position. Turning the setting off discards pending synchronization;
+turning it on affects subsequent edits. Explicit actor/bone follow is separate.
+The transform owner restores the original native position and default position
+when its override is cleared, on GPose exit, or when the plugin unloads.
+
 Camera startup checks the current GPose session on its first framework tick,
 including reloads inside GPose. It waits for native camera readiness and
 creates the default camera once; it does not require another GPose entry.

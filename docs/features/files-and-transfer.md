@@ -12,6 +12,11 @@ and saved again, but Poser does not use them. Model transforms apply only when
 requested; `.cmp` files never change position. When an Anamnesis alias maps to
 one game name, Poser always chooses that name.
 
+Requested bone positions remain absolute targets through planning, including
+duplicate-with-pose and reset/reapply. As in Brio's importer, the native apply
+pass computes each delta after its parents have moved; matching cached local
+offsets before that pass does not remove a requested position component.
+
 The import dialog keeps the selected actor and bones it showed the user. Poser
 plans the whole import before changing anything. If a write fails, it tries to
 restore every changed value. If restore cannot finish, it keeps recovery
@@ -62,6 +67,10 @@ and any entries previously published for that source are omitted from the new
 snapshot. Healthy sources publish their fresh entries. Source order and
 index-based folder keys remain stable even when roots overlap. A cancelled or
 stale pass does not publish.
+
+World-entry (`.xivw`) documents are read during that background pass solely to
+classify their saved asset as scenery, furniture or VFX. Other file metadata
+remains lazy; the scan does not extract appearance packages or thumbnails.
 
 Publication is limited to 64 configured source records, 32,768 files and 4,096
 folders overall. Excess source records have an explicit skipped count; a source

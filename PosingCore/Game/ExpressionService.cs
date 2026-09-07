@@ -13,9 +13,8 @@ using Poser.Services;
 namespace Poser.Game;
 
 /// <summary>
-/// Ktisis v0.4.0.0 action-unit expression blending. Per-race catalog deltas are
-/// weighted and written to one named head-relative pose layer (the source's
-/// verified convention — see docs/features/expression-gaze-and-ik.md). The layer is
+/// Ktisis action-unit expression blending. Catalog deltas are weighted and
+/// written to one named parent-relative pose layer. The layer is
 /// replaced on every slider change and never clears interactive face-bone
 /// edits. Race/tribe resolve from customize bytes; a combination without a
 /// catalog is quietly unavailable instead of destructively applying another
@@ -35,10 +34,11 @@ public interface IExpressionService
 
     float GetWeight(IActor actor, string unitId);
 
-    /// <summary>Sets a unit weight (0..1, or −1..1 when bidirectional) and re-blends.</summary>
+    /// <summary>Sets a finite authored weight and re-blends. UI bounds are an
+    /// editing mode, not a constraint on saved values or history replay.</summary>
     void SetWeight(IActor actor, string unitId, float weight);
 
-    /// <summary>Clears all weights and restores the captured neutral pose.</summary>
+    /// <summary>Clears the expression layer, leaving the authored base pose.</summary>
     void ResetExpression(IActor actor);
 
     bool HasActiveExpression(IActor actor);
@@ -52,9 +52,15 @@ public class ExpressionService : IExpressionService
     {
         public string Id { get; set; } = "";
         public string Label { get; set; } = "";
-        public bool Bidirectional { get; set; }
-        public bool UsePosition { get; set; }
+        public Dictionary<byte, Dictionary<string, TransformJson>> Faces { get; set; } = new();
         public Dictionary<string, TransformJson> Bones { get; set; } = new();
+
+        public ActionUnit ForFace(byte face) => new()
+        {
+            Id = Id, Label = Label,
+            Bones = Faces.Count == 0 ? Bones : Faces.GetValueOrDefault(face)
+                ?? Faces.OrderBy(pair => pair.Key).First().Value,
+        };
     }
 
     private sealed class TransformJson
@@ -122,18 +128,20 @@ public class ExpressionService : IExpressionService
                 var catalog = JsonSerializer.Deserialize<CatalogJson>(stream, options);
                 if (catalog == null) continue;
                 var key = name["Poser.Data.Expressions.".Length..^".json".Length];
-                _catalogs[key] = catalog.Groups.SelectMany(g => g.Units).ToList();
+                var units = catalog.Groups.SelectMany(g => g.Units).ToList();
+                _catalogs[key] = units.Select(u => u.ForFace(0)).ToList();
+                foreach (var face in units.SelectMany(u => u.Faces.Keys).Distinct())
+                    _catalogs[$"{key}.{face}"] = units.Select(u => u.ForFace(face)).ToList();
             }
             catch (Exception ex)
             {
                 _log.Warning($"ExpressionService: failed to load {name}: {ex.Message}");
             }
         }
-        _log.Info($"ExpressionService: {_catalogs.Count} race catalogs loaded (Ktisis v0.4.0.0 data)");
+        _log.Info($"ExpressionService: {_catalogs.Count} race/face catalogs loaded (Ktisis 847f3673 data)");
     }
 
-    /// <summary>Race/tribe/gender → catalog key (Ktisis v0.4.0.0 resolution,
-    /// including the Roegadyn Sea Wolf/Hellsguard tribe split). A combination
+    /// <summary>Race/tribe/gender/face → catalog key. A combination
     /// without a catalog — or unreadable customize data — returns null: the UI
     /// shows a quiet unavailable state and no other race's face data is ever
     /// applied destructively.</summary>
@@ -164,7 +172,8 @@ public class ExpressionService : IExpressionService
                 (8, _) => $"Viera_{gender}",
                 _ => "",
             };
-            return _catalogs.ContainsKey(key) ? key : null;
+            var faceKey = $"{key}.{customize.Face}";
+            return _catalogs.ContainsKey(faceKey) ? faceKey : _catalogs.ContainsKey(key) ? key : null;
         }
         catch
         {
@@ -188,7 +197,7 @@ public class ExpressionService : IExpressionService
         var units = _catalogs[key];
         var skeleton = _skeletons.GetSkeleton(actor);
         if (skeleton is not { IsValid: true })
-            return units.Select(u => (u.Id, u.Label, u.Bidirectional, true)).ToList();
+            return units.Select(u => (u.Id, u.Label, false, true)).ToList();
         if (_units is not null && ReferenceEquals(_unitsSkeleton, skeleton)
             && _unitsRevision == skeleton.BuildRevision && _unitsKey == key)
             return _units;
@@ -206,7 +215,7 @@ public class ExpressionService : IExpressionService
             .Select(u => (
                 u.Id,
                 u.Label,
-                u.Bidirectional,
+                false,
                 u.Bones.Keys.Any(name => ResolveExpressionBones(byName, name).Count > 0)))
             .ToList();
     }
@@ -251,6 +260,8 @@ public class ExpressionService : IExpressionService
 
     public void SetWeight(IActor actor, string unitId, float weight)
     {
+        if (!float.IsFinite(weight))
+            return;
         var skeleton = _skeletons.GetSkeleton(actor);
         if (skeleton is not { IsValid: true })
             return;
@@ -276,11 +287,10 @@ public class ExpressionService : IExpressionService
         if (unit.Bones.Keys.All(name => ResolveExpressionBones(lookup, name).Count == 0))
             return;
 
-        var clamped = Math.Clamp(weight, unit.Bidirectional ? -1f : 0f, 1f);
-        if (MathF.Abs(clamped) < 0.0001f)
+        if (MathF.Abs(weight) < 0.0001f)
             session.Weights.Remove(unitId);
         else
-            session.Weights[unitId] = clamped;
+            session.Weights[unitId] = weight;
 
         Blend(skeleton, session, units);
         if (session.Weights.Count == 0)
@@ -298,13 +308,8 @@ public class ExpressionService : IExpressionService
     }
 
     /// <summary>
-    /// Recomputes one head-relative expression layer per affected bone. No
-    /// cached parent transforms or absolute targets are involved, so slider
-    /// updates are idempotent and cannot amplify stale cross-partial
-    /// coordinates. Units aggregate in catalog order; the source convention is
-    /// a pre-multiply, so a later unit's rotation left-multiplies the
-    /// accumulated head-frame rotation and weighted positions sum — the result
-    /// is deterministic for any slider edit order.
+    /// Replaces parent-local deltas in catalog priority order. The native pass
+    /// supplies the live parent frame; no posed parent is captured here.
     /// </summary>
     private void Blend(ISkeleton skeleton, Session session, List<ActionUnit> units)
     {
@@ -327,10 +332,14 @@ public class ExpressionService : IExpressionService
                     Rotation = new Quaternion(json.Rotation.X, json.Rotation.Y, json.Rotation.Z, json.Rotation.W),
                     Scale = json.Scale
                 };
-                var weighted = PoseMath.WeightPoseDelta(source, weight, unit.UsePosition);
-                blended[boneName] = blended.TryGetValue(boneName, out var current)
-                    ? BonePoseInfo.Combine(weighted, current)
-                    : weighted;
+                var weighted = PoseMath.WeightExpressionDelta(source, weight);
+                if (blended.TryGetValue(boneName, out var current))
+                {
+                    var combined = BonePoseInfo.Combine(current, weighted);
+                    combined.Scale = (Vector3.One + weighted.Scale) * (Vector3.One + current.Scale) - Vector3.One;
+                    blended[boneName] = combined;
+                }
+                else blended[boneName] = weighted;
             }
         }
 
@@ -343,9 +352,8 @@ public class ExpressionService : IExpressionService
             {
                 var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
                 if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
-                    info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.None, TransformFrame.HeadRelative);
-                else
-                    info.RemoveLayer(ExpressionLayer);
+                    info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.All, TransformFrame.ParentRelative);
+                else info.RemoveLayer(ExpressionLayer);
             }
         }
     }
@@ -356,7 +364,10 @@ public class ExpressionService : IExpressionService
         var poseInfo = _posing.GetPoseInfo(skeleton);
         foreach (var boneName in units.SelectMany(unit => unit.Bones.Keys).Distinct(StringComparer.Ordinal))
             foreach (var bone in ResolveExpressionBones(byName, boneName))
-                poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).RemoveLayer(ExpressionLayer);
+            {
+                var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
+                info.RemoveLayer(ExpressionLayer);
+            }
     }
 
     private readonly HashSet<string> _diagnosedCatalogs = new(StringComparer.Ordinal);

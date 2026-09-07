@@ -8,6 +8,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Config;
+using Poser.Game.Posing;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
@@ -24,6 +26,10 @@ public unsafe class PosingService : IPosingService
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
     private readonly Dalamud.Plugin.Services.IObjectTable _objectTable;
+    private readonly ConfigurationService _configuration;
+    private readonly IVirtualCameraService _cameras;
+    private readonly Dictionary<nint, ActorOrbitPosition> _orbitPositions = new();
+    public bool DeferCameraOrbitUpdate { get; set; }
 
     /// <summary>Reused per-frame buffer for entries whose stored address no
     /// longer resolves in the object table (single-threaded framework tick;
@@ -51,13 +57,17 @@ public unsafe class PosingService : IPosingService
         IGPoseService gPoseService,
         IEventBus eventBus,
         IGameInteropProvider hooking,
-        Dalamud.Plugin.Services.IObjectTable objectTable)
+        Dalamud.Plugin.Services.IObjectTable objectTable,
+        ConfigurationService configuration,
+        IVirtualCameraService cameras)
     {
         _log = log;
         _framework = framework;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
         _objectTable = objectTable;
+        _configuration = configuration;
+        _cameras = cameras;
 
         // Hook SetPosition to intercept game reset attempts (like Brio does)
         try
@@ -140,6 +150,7 @@ public unsafe class PosingService : IPosingService
                 continue;
             }
 
+            UpdateCameraOrbit(actorAddress);
             ApplyTransformToActor(actorAddress, transform);
         }
 
@@ -147,7 +158,24 @@ public unsafe class PosingService : IPosingService
         {
             _transformOverrides.Remove(address);
             _originalTransforms.Remove(address);
+            _orbitPositions.Remove(address);
         }
+    }
+
+    private void UpdateCameraOrbit(nint address)
+    {
+        if (_setPositionHook == null || !_orbitPositions.TryGetValue(address, out var state))
+            return;
+        var native = (GameObject*)address;
+        if (native->DrawObject == null || !state.TryTake(native->DrawOffset,
+                _configuration.Config.Camera.UpdateOrbitWithActorPosition,
+                DeferCameraOrbitUpdate, _cameras.LiveCamera is { IsLocked: true }, out var position))
+            return;
+        // Our Brio-style detour blocks game resets while the draw transform
+        // is held. This intentional Ktisis pivot update must bypass it.
+        _setPositionHook.Original(native, position.X, position.Y, position.Z);
+        native->DefaultPosition = native->Position;
+        // The caller reapplies the authored draw transform after SetPosition.
     }
 
     private void ApplyTransformToActor(nint actorAddress, Transform transform)
@@ -188,9 +216,13 @@ public unsafe class PosingService : IPosingService
         if (!_originalTransforms.ContainsKey(actor.Address))
         {
             _originalTransforms[actor.Address] = GetOriginalTransform(actor);
+            var native = (GameObject*)actor.Address;
+            _orbitPositions[actor.Address] = new(native->Position, native->DefaultPosition);
         }
 
         _transformOverrides[actor.Address] = transform;
+        _orbitPositions[actor.Address].Schedule(transform.Position,
+            _configuration.Config.Camera.UpdateOrbitWithActorPosition);
 
         // Apply immediately for responsive feedback
         ApplyTransformToActor(actor.Address, transform);
@@ -210,6 +242,7 @@ public unsafe class PosingService : IPosingService
             // state without writing the old transform through a stale pointer.
             _transformOverrides.Remove(address);
             _originalTransforms.Remove(address);
+            _orbitPositions.Remove(address);
         }
     }
 
@@ -294,10 +327,25 @@ public unsafe class PosingService : IPosingService
         {
             if (_originalTransforms.TryGetValue(address, out var original))
             {
-                ApplyTransformToActor(address, original);
+                if (_objectTable.CreateObjectReference(address) != null)
+                {
+                    RestoreCameraOrbit(address);
+                    ApplyTransformToActor(address, original);
+                }
                 _originalTransforms.Remove(address);
             }
+            _orbitPositions.Remove(address);
         }
+    }
+
+    private void RestoreCameraOrbit(nint address)
+    {
+        if (_setPositionHook == null || !_orbitPositions.TryGetValue(address, out var state) || !state.Applied)
+            return;
+        var native = (GameObject*)address;
+        var original = state.OriginalPosition;
+        _setPositionHook.Original(native, original.X, original.Y, original.Z);
+        native->DefaultPosition = state.OriginalDefaultPosition;
     }
 
     public void ClearAllOverrides()
@@ -305,11 +353,14 @@ public unsafe class PosingService : IPosingService
         // Restore all original transforms
         foreach (var (actorAddress, original) in _originalTransforms)
         {
+            if (_objectTable.CreateObjectReference(actorAddress) == null) continue;
+            RestoreCameraOrbit(actorAddress);
             ApplyTransformToActor(actorAddress, original);
         }
 
         _transformOverrides.Clear();
         _originalTransforms.Clear();
+        _orbitPositions.Clear();
     }
 
     public bool HasTransformOverride(IActor actor)
@@ -319,11 +370,11 @@ public unsafe class PosingService : IPosingService
 
     public void Dispose()
     {
+        ClearAllOverrides();
         _setPositionHook?.Dispose();
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _framework.Update -= OnFrameworkUpdate;
-        ClearAllOverrides();
         GC.SuppressFinalize(this);
     }
 }
