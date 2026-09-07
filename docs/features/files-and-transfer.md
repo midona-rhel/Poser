@@ -12,6 +12,11 @@ and saved again, but Poser does not use them. Model transforms apply only when
 requested; `.cmp` files never change position. When an Anamnesis alias maps to
 one game name, Poser always chooses that name.
 
+Requested bone positions remain absolute targets through planning, including
+duplicate-with-pose and reset/reapply. As in Brio's importer, the native apply
+pass computes each delta after its parents have moved; matching cached local
+offsets before that pass does not remove a requested position component.
+
 The import dialog keeps the selected actor and bones it showed the user. Poser
 plans the whole import before changing anything. If a write fails, it tries to
 restore every changed value. If restore cannot finish, it keeps recovery

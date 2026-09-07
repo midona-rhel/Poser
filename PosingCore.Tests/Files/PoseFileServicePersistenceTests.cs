@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 using NSubstitute;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
@@ -14,6 +15,56 @@ namespace Poser.Tests.Files;
 
 public sealed class PoseFileServicePersistenceTests
 {
+    [Theory]
+    [InlineData(PoseSlot.Character, false)]
+    [InlineData(PoseSlot.Character, true)]
+    [InlineData(PoseSlot.MainHand, false)]
+    [InlineData(PoseSlot.MainHand, true)]
+    public void Captured_chain_keeps_requested_positions_even_when_local_offsets_match(
+        PoseSlot slot, bool reset)
+    {
+        var skeleton = Substitute.For<ISkeleton>();
+        skeleton.Slot.Returns(slot);
+        var pose = new PoseFile();
+        var collection = slot == PoseSlot.Character ? pose.Bones : pose.MainHand;
+        var bones = new List<IBone>();
+        // The reported FABRIK chain has 23 links. Capture the already-posed
+        // chain, as reset/reapply does; all local offsets match at plan time.
+        for (int i = 0; i < 24; i++)
+        {
+            var transform = new Transform(
+                new Vector3(0, 1 + 0.2f * MathF.Sin(i * 0.15f), i * 0.04f),
+                Quaternion.CreateFromAxisAngle(Vector3.UnitX, i * 0.15f),
+                Vector3.One);
+            var bone = Bone($"nf_leash_chain_{20 + i}", transform);
+            bone.Skeleton.Returns(skeleton);
+            bone.ParentBone.Returns(i == 0 ? null : bones[i - 1]);
+            skeleton.GetBone(bone.BoneName).Returns(bone);
+            bones.Add(bone);
+            collection[bone.BoneName] = transform;
+        }
+        skeleton.Bones.Returns(bones);
+        var options = new PoseImportOptions
+        {
+            ApplyPosition = true, ApplyScale = true, ResetBeforeImport = reset,
+        };
+        var plan = Service().BuildImportPlan(new[] { skeleton }, pose, options);
+
+        Assert.Equal(24, plan.Writes.Count);
+        Assert.All(plan.Writes, write =>
+        {
+            Assert.Equal(TransformComponents.All, write.Components);
+            Assert.Equal(collection[write.Bone].Position, write.File.Position);
+        });
+
+        // A user disabling positions still gets rotation/scale only.
+        options.ApplyPosition = false;
+        var rotationPlan = Service().BuildImportPlan(new[] { skeleton }, pose, options);
+        Assert.Equal(24, rotationPlan.Writes.Count);
+        Assert.All(rotationPlan.Writes, write =>
+            Assert.False(write.Components.HasFlag(TransformComponents.Position)));
+    }
+
     [Fact]
     public void Import_and_export_refuse_invalid_numeric_documents_without_mutating_state()
     {
