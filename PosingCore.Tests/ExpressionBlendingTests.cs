@@ -138,11 +138,30 @@ public sealed class ExpressionBlendingTests
         var delta = new Transform(new Vector3(.01f, 0, .02f),
             Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .2f), Vector3.Zero);
         var localBone = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f);
-        var projected = PoseMath.ReframeDelta(delta, parent);
-        var actual = projected.Rotation * (parent * localBone);
-        var expected = parent * (delta.Rotation * localBone);
+        var projected = PoseMath.ProjectExpressionDelta(delta, parent);
+        var initial = parent * localBone;
+        var actual = initial * projected.Rotation;
+        // Literal Ktisis ApplyBlend expression with a fresh (identity) last delta.
+        var expected = (initial / parent) * (parent * delta.Rotation);
         Assert.True(MathF.Abs(Quaternion.Dot(expected, actual)) > .99999f);
         Assert.True(Vector3.Distance(Vector3.Transform(projected.Position, Quaternion.Inverse(parent)), delta.Position) < .00001f);
+    }
+
+    [Fact]
+    public void Multiple_blends_post_multiply_in_catalog_order_not_slider_edit_order()
+    {
+        using var f = new Fixture();
+        const string name = "j_f_miken_01_l";
+        f.Service.SetWeight(f.Actor, "BrowUpL", .7f);
+        var brow = Assert.Single(f.Pose.GetPoseInfo(name, 1).Stacks).Transform;
+        f.Service.ResetExpression(f.Actor);
+        f.Service.SetWeight(f.Actor, "BrowFurrowL", .4f);
+        var furrow = Assert.Single(f.Pose.GetPoseInfo(name, 1).Stacks).Transform;
+        f.Service.SetWeight(f.Actor, "BrowUpL", .7f);
+        var combined = Assert.Single(f.Pose.GetPoseInfo(name, 1).Stacks).Transform;
+        Assert.True(MathF.Abs(Quaternion.Dot(brow.Rotation * furrow.Rotation, combined.Rotation)) > .99999f);
+        Assert.Equal(brow.Position + furrow.Position, combined.Position);
+        Assert.Equal((Vector3.One + brow.Scale) * (Vector3.One + furrow.Scale) - Vector3.One, combined.Scale);
     }
 
     private sealed unsafe class Fixture : IDisposable

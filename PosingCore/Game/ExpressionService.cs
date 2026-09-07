@@ -335,7 +335,7 @@ public class ExpressionService : IExpressionService
                 var weighted = PoseMath.WeightExpressionDelta(source, weight);
                 if (blended.TryGetValue(boneName, out var current))
                 {
-                    var combined = BonePoseInfo.Combine(weighted, current);
+                    var combined = BonePoseInfo.Combine(current, weighted);
                     combined.Scale = (Vector3.One + weighted.Scale) * (Vector3.One + current.Scale) - Vector3.One;
                     blended[boneName] = combined;
                 }

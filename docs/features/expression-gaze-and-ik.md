@@ -12,6 +12,8 @@ the expression changes and removes it when cleared. Manual face layers are left
 alone. Missing parts are hidden rather than applied to another bone.
 The new catalogs are parent-local deltas, resolved against the live Havok parent
 during application; they must not be interpreted as the old head-relative data.
+As in Ktisis, translations use that parent, rotations post-multiply the bone
+in catalog priority order, and scale factors multiply the authored baseline.
 Only the new catalog is offered; legacy Sneer definitions are not retained.
 `tools/Update-ExpressionCatalogs.ps1` reproduces the normalized data from that ref.
 

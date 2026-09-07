@@ -181,10 +181,12 @@ public static class PoseMath
         Scale = (delta.Scale - Vector3.One) * weight,
     };
 
-    public static Transform ReframeDelta(Transform delta, Quaternion basis) => delta with
+    // Ktisis ExpressionController.ApplyBlend divides out (parent * previous)
+    // before multiplying (parent * next). The parents cancel for rotation:
+    // a fresh delta post-multiplies the bone, while position uses the parent.
+    public static Transform ProjectExpressionDelta(Transform delta, Quaternion parent) => delta with
     {
-        Position = Vector3.Transform(delta.Position, basis),
-        Rotation = Quaternion.Normalize(basis * delta.Rotation * Quaternion.Inverse(basis)),
+        Position = Vector3.Transform(delta.Position, parent),
     };
     /// <summary>
     /// Returns the opposite-side bone name for left/right suffixed bones
