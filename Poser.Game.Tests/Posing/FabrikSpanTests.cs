@@ -21,7 +21,7 @@ public sealed class FabrikSpanTests
         var nodes = Chain(5);
         nodes[2].Children.Add(new Node(nodes[0].Skeleton).Bone);
         var span = BonePosingService.FabrikMembers(nodes[1].Bone,
-            IkChainConfig.DefaultsForChain() with { ChildDepth = 10 });
+            IkChainConfig.DefaultsForChain() with { ParentDepth = 0, ChildDepth = 10 });
         Assert.Equal(new[] { nodes[1].Bone, nodes[2].Bone }, span);
     }
 

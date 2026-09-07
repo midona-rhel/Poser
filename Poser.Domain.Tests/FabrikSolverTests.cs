@@ -81,10 +81,10 @@ public sealed class FabrikSolverTests
     }
 
     [Fact]
-    public void Depths_share_the_fifty_link_limit_and_only_children_are_on_by_default()
+    public void Depths_share_the_fifty_link_limit_and_preserve_parent_traversal_by_default()
     {
         var config = IkChainConfig.DefaultsForChain();
-        Assert.Equal(0, config.ParentDepth); Assert.Equal(3, config.ChildDepth);
+        Assert.Equal(3, config.ParentDepth); Assert.Equal(0, config.ChildDepth);
         Assert.Null((config with { ParentDepth = 25, ChildDepth = 25 }).Validate());
         Assert.NotNull((config with { ParentDepth = 26, ChildDepth = 25 }).Validate());
         Assert.NotNull((config with { ParentDepth = -1 }).Validate());

@@ -59,8 +59,8 @@ public sealed record IkChainConfig(
     float SwivelDegrees = 0f,
     bool HoldRotation = true)
 {
-    public int ParentDepth { get; init; }
-    public int ChildDepth { get; init; } = 3;
+    public int ParentDepth { get; init; } = 3;
+    public int ChildDepth { get; init; }
     public FabrikControl? Fabrik { get; init; }
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past

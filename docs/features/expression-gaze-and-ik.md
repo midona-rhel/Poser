@@ -83,7 +83,8 @@ IK configuration control, while the runtime resolves the live transform.
 FABRIK and Rope use Parent depth and Child depth around the selected bone;
 that bone remains the only transform handle and target. Each far end is anchored
 in actor-model space. Zero disables a side; the two depths total at most 50
-links. Defaults are Parent 0 / Child 3. There are no direction or endpoint modes.
+links. Defaults are Parent 3 / Child 0, preserving the old ancestor traversal.
+There are no direction or endpoint modes.
 Child traversal stops at a fork rather than choosing a branch; both walks stop
 at hidden bones or a partial boundary. Active chains cannot overlap another
 active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
