@@ -13,7 +13,10 @@ internal static class ActorBodyColliderBuilder
         IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
     {
         var spans = new List<Span> {
-            new("Waist", "j_kosi", "j_kubi"), new("Neck", "j_kubi", "j_kao"),
+            new("Waist", "j_kosi", "j_sebo_a"),
+            new("Lower back", "j_sebo_a", "j_sebo_b"),
+            new("Middle back", "j_sebo_b", "j_sebo_c"),
+            new("Upper back", "j_sebo_c", "j_kubi"), new("Neck", "j_kubi", "j_kao"),
             new("Head", "j_kao", "j_kubi", true, true) };
         foreach (var side in new[] { "l", "r" })
         {
@@ -28,8 +31,7 @@ internal static class ActorBodyColliderBuilder
             (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
         if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
-        if (roots.TryGetValue("j_kosi", out int waist))
-            foreach (var spine in new[] { "n_hara", "j_sebo_a", "j_sebo_b", "j_sebo_c" }) roots[spine] = waist;
+        if (roots.TryGetValue("j_kosi", out int waist)) roots["n_hara"] = waist;
         var samples = spans.Select(_ => new List<Vector3>()).ToArray();
         var owners = new Dictionary<string, int>();
         int Owner(string name)
@@ -147,12 +149,13 @@ internal static class ActorBodyColliderBuilder
             fitted.Add(new(name, new IkCollider { Shape = IkColliderShape.Sphere,
                 Transform = new(joint.Position, Quaternion.Identity, new(radius * 2)) }));
         }
-        JointSphere("Lumbar", "j_sebo_a", "Waist");
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
+            JointSphere($"{label} hip", $"j_asi_a_{side}", $"{label} thigh");
             JointSphere($"{label} elbow", $"j_ude_b_{side}", $"{label} upper arm", $"{label} forearm");
             JointSphere($"{label} knee", $"j_asi_b_{side}", $"{label} thigh", $"{label} lower leg");
+            JointSphere($"{label} ankle", $"j_asi_d_{side}", $"{label} lower leg");
         }
         if (fitted.Count == 0) throw new InvalidDataException("No visible body surface could be fitted to the actor's bones.");
         return fitted.ToArray();
