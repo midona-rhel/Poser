@@ -1148,7 +1148,8 @@ public static partial class Crystarium
             string? help = null,
             bool disabled = false,
             Action? onCommit = null,
-            float? altReset = null)
+            float? altReset = null,
+            bool fill = false)
         {
             string id = Id(label);
             var row = _page.BeginRow(label, help);
@@ -1170,7 +1171,7 @@ public static partial class Crystarium
                 format,
                 ControlStyle.Workspace with
                 {
-                    Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
+                    Width = UiWidth.Fixed(fill ? row.ControlWidth / row.Scale : ActiveTheme.Form.ValueColumnWidth),
                 },
                 disabled,
                 altReset: altReset);

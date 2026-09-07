@@ -8,11 +8,15 @@ namespace Poser.Config;
 /// speed modifiers are worth, and how much of the game's own input Poser
 /// takes off the table while a camera is live.
 ///
-/// <para>Every default here is what Poser already did before the setting
-/// existed, so a config written by an older build changes nothing.</para>
+/// <para>Free-camera defaults preserve existing behavior. Native orbit
+/// synchronization follows Ktisis's default-on preference.</para>
 /// </summary>
 public class CameraConfiguration
 {
+    /// <summary>Ktisis's default-on native GPose pivot synchronization.
+    /// Independent of Poser actor/bone follow; deferred while dragging or locked.</summary>
+    public bool UpdateOrbitWithActorPosition { get; set; } = true;
+
     /// <summary>The fly speed a new free camera is created with — Brio's
     /// <c>DefaultFreeCameraMovementSpeed</c>. A per-camera Speed row still
     /// overrides it, and the wheel still steps that row.</summary>

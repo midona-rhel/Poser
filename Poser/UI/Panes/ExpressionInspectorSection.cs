@@ -279,7 +279,7 @@ public sealed class ExpressionInspectorSection
         if (Unlocked)
         {
             form.Number(label, _expressions.GetWeight(actor, id),
-                next => SetWeight(actor, id, next), .005f, "0%", altReset: 0f);
+                next => SetWeight(actor, id, next), .005f, "0%", altReset: 0f, fill: true);
             return;
         }
         form.Slider(
