@@ -115,8 +115,11 @@ seams are not outlined; sharp rims and box/plane edges are.
 FABRIK and Rope opt into all enabled colliders through the chain's Colliders
 switch. Bone width is the diameter of every segment, in world yalms, independent
 of actor scale; only dragging that slider shows the temporary width overlay.
-Contacts test segment interiors as well as endpoints, after swivel, and alternate
-with distance constraints under a bounded iteration budget. Endpoint pins remain
+Contacts test segment interiors as well as endpoints, after swivel, and project
+whole links outside a face after each forward/backward length sweep. A face
+shared by the anchors guides the span instead of neighbouring links choosing
+opposite sides. Rope settles downward onto surfaces; FABRIK does not add gravity.
+This is a bounded static solve, not accumulated frame-to-frame physics. Endpoint pins remain
 fixed. Conflicting pins/obstacles cannot promise clearance; no actor movement or
 dynamics is used to hide an impossible arrangement. Two Joint and CCD are unchanged.
 If collision passes cannot retain link lengths, they leave the ordinary solved

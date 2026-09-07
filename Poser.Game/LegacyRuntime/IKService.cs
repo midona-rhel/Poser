@@ -211,7 +211,8 @@ public unsafe class IKService : IIKService
             {
                 var world = positions.Select(p => Vector3.Transform(p, model)).ToArray();
                 IkCollisionSolver.Solve(world, control.HandleIndex, colliders,
-                    request.Config.CollisionRadius, 32);
+                    request.Config.CollisionRadius, 32,
+                    request.Config.Solver == IkSolver.Rope ? -Vector3.UnitY : null);
                 for (int i = 0; i < positions.Length; i++) positions[i] = Vector3.Transform(world[i], inverse);
             }
         }
