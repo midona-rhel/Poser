@@ -104,6 +104,26 @@ public class ActorColliderMeshTests
             new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], []));
     }
 
+    [Fact]
+    public void BodyCaptureIgnoresUnrelatedMissingBonesButRequiresBodyTransforms()
+    {
+        var vertices = new List<Vector3>();
+        var indices = new List<int>();
+        ActorColliderMeshBuilder.Append(Model(true), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero,
+            vertices, indices, bodyBones: new HashSet<string> { "head" });
+        Assert.Empty(indices);
+        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(true), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero,
+            [], [], bodyBones: new HashSet<string> { "arm" }));
+
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
+            ["j_kao"] = new(Vector3.UnitY, "j_kubi"), ["j_kubi"] = new(Vector3.Zero, null),
+            ["j_ex_h0127_ke_r"] = new(Vector3.One, "j_kao") };
+        Assert.DoesNotContain("j_ex_h0127_ke_r", ActorBodyColliderBuilder.BodyBones(joints));
+        Assert.Contains("j_kao", ActorBodyColliderBuilder.BodyBones(joints));
+    }
+
     // A complete minimal binary MDL: weighted triangle, attribute-gated submesh,
     // and one shape replacement. Exercises file parsing, not a mocked parsed model.
     private static byte[] Model(bool v6, bool eightWeights = false)

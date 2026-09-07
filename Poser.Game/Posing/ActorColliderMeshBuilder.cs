@@ -13,7 +13,8 @@ internal static class ActorColliderMeshBuilder
 {
     internal static void Append(byte[] bytes, uint attributes, uint shapes,
         IReadOnlyDictionary<string, Matrix4x4> bones, Matrix4x4 world, Vector3 origin,
-        List<Vector3> vertices, List<int> indices, List<string?>? influences = null)
+        List<Vector3> vertices, List<int> indices, List<string?>? influences = null,
+        IReadOnlySet<string>? bodyBones = null)
     {
         var file = Read(bytes);
         Span<float> weightValues = stackalloc float[8];
@@ -43,6 +44,7 @@ internal static class ActorColliderMeshBuilder
             var palette = mesh.BoneTableIndex < file.BoneTables.Length
                 ? file.BoneTables[mesh.BoneTableIndex].BoneIndex : [];
             int start = vertices.Count;
+            var included = new bool[mesh.VertexCount];
             for (int v = 0; v < mesh.VertexCount; v++)
             {
                 var p = ReadElement(bytes, file, mesh, positions[0], v);
@@ -51,6 +53,7 @@ internal static class ActorColliderMeshBuilder
                 float total = 0;
                 float strongest = 0;
                 string? influence = null;
+                string? missingBone = null;
                 for (int set = 0; set < weights.Length; set++)
                 {
                     int count = ReadBlend(bytes, file, mesh, weights[set], v, weightValues);
@@ -64,14 +67,20 @@ internal static class ActorColliderMeshBuilder
                         if ((uint)localBone >= (uint)palette.Length || palette[localBone] >= boneNames.Length)
                             throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: invalid bone palette index {localBone}.");
                         if (!bones.TryGetValue(boneNames[palette[localBone]], out var skin))
-                            throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{boneNames[palette[localBone]]}' has no captured transform.");
-                        posed += Vector3.Transform(position, skin) * weight;
+                            missingBone = boneNames[palette[localBone]];
+                        else posed += Vector3.Transform(position, skin) * weight;
                         if (weight > strongest) { strongest = weight; influence = boneNames[palette[localBone]]; }
                         total += weight;
                     }
                 }
+                // Classify before requiring transforms: hair/accessory vertices
+                // are not body-fit samples. Retained vertices still need every
+                // weighted transform; never substitute bind pose for missing data.
+                included[v] = bodyBones == null || influence != null && bodyBones.Contains(influence);
+                if (included[v] && missingBone != null)
+                    throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{missingBone}' has no captured transform.");
                 vertices.Add((total > 0 ? posed / total : Vector3.Transform(position, world)) - origin);
-                influences?.Add(influence);
+                influences?.Add(included[v] ? influence : null);
             }
             var meshIndices = new int[checked((int)mesh.IndexCount)];
             int indexOffset = checked((int)(file.FileHeader.IndexOffset[0] + mesh.StartIndex * 2));
@@ -101,6 +110,7 @@ internal static class ActorColliderMeshBuilder
                     int a = start + meshIndices[i], b = start + meshIndices[i + 1], c = start + meshIndices[i + 2];
                     if ((uint)(a - start) >= mesh.VertexCount || (uint)(b - start) >= mesh.VertexCount || (uint)(c - start) >= mesh.VertexCount)
                         throw new InvalidDataException("An actor mesh triangle references a missing vertex.");
+                    if (!included[a - start] || !included[b - start] || !included[c - start]) continue;
                     if (Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).LengthSquared() < 1e-16f) continue;
                     indices.Add(a); indices.Add(b); indices.Add(c);
                 }

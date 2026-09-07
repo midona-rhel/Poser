@@ -9,8 +9,7 @@ internal static class ActorBodyColliderBuilder
     internal sealed record Fitted(string Name, IkCollider Collider);
     private sealed record Span(string Name, string Start, string End, bool FitEnds = false, bool Sphere = false);
 
-    internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
-        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
+    private static List<Span> BodySpans(IReadOnlyDictionary<string, Joint> joints)
     {
         var spans = new List<Span> {
             new("Waist", "j_kosi", "j_sebo_a"),
@@ -30,6 +29,36 @@ internal static class ActorBodyColliderBuilder
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
             (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
         if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
+        return spans;
+    }
+
+    internal static HashSet<string> BodyBones(IReadOnlyDictionary<string, Joint> joints)
+    {
+        var roots = BodySpans(joints).Select(s => s.Start).ToHashSet();
+        if (roots.Contains("j_kosi")) roots.Add("n_hara");
+        return joints.Keys.Where(name =>
+        {
+            string? current = name;
+            for (int depth = 0; current != null && depth < joints.Count; depth++)
+            {
+                if (Excluded(current)) return false;
+                if (roots.Contains(current)) return true;
+                current = joints.TryGetValue(current, out var joint) ? joint.Parent : null;
+            }
+            return false;
+        }).ToHashSet();
+    }
+
+    private static bool Excluded(string name) =>
+        name.StartsWith("j_kami", StringComparison.Ordinal) ||
+        name.StartsWith("j_ex_h", StringComparison.Ordinal) ||
+        name.StartsWith("j_sippo", StringComparison.Ordinal) ||
+        name.StartsWith("j_sk_", StringComparison.Ordinal);
+
+    internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
+        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
+    {
+        var spans = BodySpans(joints);
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
         if (roots.TryGetValue("j_kosi", out int waist)) roots["n_hara"] = waist;
         var samples = spans.Select(_ => new List<Vector3>()).ToArray();
@@ -43,8 +72,7 @@ internal static class ActorBodyColliderBuilder
             {
                 // Hair, tails and skirt chains are not body volume. Do not let
                 // a long accessory inflate the head or waist.
-                if (current.StartsWith("j_kami", StringComparison.Ordinal) || current.StartsWith("j_sippo", StringComparison.Ordinal) ||
-                    current.StartsWith("j_sk_", StringComparison.Ordinal)) break;
+                if (Excluded(current)) break;
                 if (roots.TryGetValue(current, out result)) break;
                 result = -1;
                 current = joints.TryGetValue(current, out var joint) ? joint.Parent : null;

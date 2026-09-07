@@ -120,6 +120,7 @@ public sealed class ActorColliderCapture(
         var vertices = new List<Vector3>();
         var indices = new List<int>();
         var influences = new List<string?>();
+        var bodyBones = ActorBodyColliderBuilder.BodyBones(snapshot.Joints);
         byte[] ReadFile(string path) => Path.IsPathRooted(path) ? File.ReadAllBytes(path)
             : data.GetFile(path)?.Data ?? throw new IOException("Could not load actor resource: " + path);
         byte[]? pbd = null;
@@ -142,7 +143,7 @@ public sealed class ActorColliderCapture(
                     }
                 }
                 ActorColliderMeshBuilder.Append(bytes, model.Attributes, model.Shapes,
-                    bones, snapshot.World, snapshot.Origin, vertices, indices, influences);
+                    bones, snapshot.World, snapshot.Origin, vertices, indices, influences, bodyBones);
             }
             catch (InvalidDataException ex)
             {
