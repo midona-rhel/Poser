@@ -36,6 +36,21 @@ public sealed class PartialPoseFrameTests
     }
 
     [Fact]
+    public void Fabrik_endpoint_world_projection_roundtrips_a_moved_scaled_partial()
+    {
+        var after = PosedRoot;
+        after.Scale = new Vector3(.8f, 1.3f, 1.1f);
+        var frame = new PartialPoseFrame(AnimatedRoot, after);
+        var raw = new Transform(new Vector3(.15f, 1.62f, -.07f),
+            Quaternion.CreateFromYawPitchRoll(.2f, .3f, -.4f), Vector3.One);
+        var visible = frame.ToDisplay(raw);
+        Near(Reparent(raw, frame), visible);
+        Near(raw, frame.ToApply(visible));
+        visible.Position += new Vector3(.1f, .2f, -.3f);
+        Near(visible, frame.ToDisplay(frame.ToApply(visible)));
+    }
+
+    [Fact]
     public void Upward_mouth_drag_remains_up_after_head_reparenting()
     {
         var frame = new PartialPoseFrame(AnimatedRoot, PosedRoot);

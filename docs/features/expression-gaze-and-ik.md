@@ -46,9 +46,10 @@ event side effects.
 
 ## IK
 
-IK calls the game's Havok solvers during pose application. Only translation
-deltas start a solve. The solve itself is not stored, so undo and export remain
-ordinary pose deltas. Configuration belongs to one skeleton instance.
+Two Joint and CCD use the game's Havok solvers; FABRIK and Rope use managed
+solvers. Relative translation edits or held targets drive solving during pose
+application. Solver iterations are not history: authored deltas and configuration
+are. Configuration belongs to one skeleton instance.
 
 Imported pose transforms do not edit IK targets (Brio likewise marks imported
 stacks IK-disabled). Held chains solve against the combined explicit handle
@@ -78,3 +79,19 @@ Keep rotation controls orientation following. Missing targets remain recorded
 and unavailable, never rebound to a replacement; choose another target or
 Detach to hold the current world point. Inspector targeting uses the existing
 IK configuration control, while the runtime resolves the live transform.
+
+FABRIK retains Depth (at most 50 links). Forward pins the root, Reverse pins
+the tip, and Bidirectional exposes both endpoint targets. Direction changes
+capture the visible chain and both endpoints without reparenting native bones
+or moving the actor. The authored chain seed and endpoint descriptors belong
+to configuration/history; repeated evaluation never measures new link lengths
+from its own previous output. Two Joint, CCD and Rope keep their existing paths.
+In unreachable configurations, Forward/Bidirectional prioritize the root;
+Reverse prioritizes the tip. Links remain their captured lengths. Actor targets
+are model-space points; World targets are world points; bone/entity positions
+are world offsets without inherited scale. Missing references suspend the solve.
+Scenes store portable references and restore targets after all entities exist;
+previews instead snapshot both targets into their own model frame. An endpoint
+drag is one history step. Baking writes the solved pose and disables the chain.
+Controlled FABRIK chains cannot overlap another active IK chain; they never
+implicitly connect. Inspector and bone context menus share direction controls.

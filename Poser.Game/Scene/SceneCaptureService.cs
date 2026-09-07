@@ -106,6 +106,7 @@ public sealed class SceneCaptureService
     private readonly IWorldRenderingService _rendering;
     private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
+    private readonly IBonePosingService _bonePosing;
 
     public SceneCaptureService(
         IFramework framework,
@@ -129,8 +130,10 @@ public sealed class SceneCaptureService
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingService rendering,
         World.WorldService worldObjects,
-        PlacementAnchorSource anchors)
+        PlacementAnchorSource anchors,
+        IBonePosingService bonePosing)
     {
+        _bonePosing = bonePosing;
         _anchors = anchors;
         _worldObjects = worldObjects;
         _rendering = rendering;
@@ -345,6 +348,7 @@ public sealed class SceneCaptureService
                     ? null
                     : CaptureCompanionPose(actor, notes),
                 Pose = pose,
+                Fabrik = CaptureFabrik(slots),
                 ModelTransform = NormalizedTransform(
                     _posing.GetEffectiveTransform(actor),
                     $"Actor '{actor.Name}' placement", notes),
@@ -356,6 +360,18 @@ public sealed class SceneCaptureService
 
         CaptureGaze(captured, keys, notes);
         return keys;
+    }
+
+    private List<SceneFabrikChain>? CaptureFabrik(IReadOnlyList<ISkeleton> slots)
+    {
+        var result = new List<SceneFabrikChain>();
+        foreach (var skeleton in slots)
+            foreach (var chain in _bonePosing.GetIkChains(skeleton))
+                if (chain.Config.Solver == Poser.Domain.Posing.IkSolver.Fabrik
+                    && _bonePosing.SnapshotFabrik(chain.Endpoint) is { Fabrik: not null } config)
+                    result.Add(SceneFabrikChain.Capture(skeleton.Slot, chain.Endpoint.PartialId,
+                        chain.Endpoint.BoneName, config));
+        return result.Count == 0 ? null : result;
     }
 
     /// <summary>

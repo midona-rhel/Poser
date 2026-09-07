@@ -352,6 +352,8 @@ public class SceneActor
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorGaze? Gaze { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SceneFabrikChain>? Fabrik { get; set; }
 
     /// <summary>The character file the actor is WEARING. Absent when the
     /// actor's appearance is not an imported MCDF, which is the ordinary

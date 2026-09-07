@@ -24,7 +24,7 @@ namespace Poser.Game.Scene;
 /// services, and the scene codec/store. It owns no transaction state; every
 /// method is one materialization step.
 /// </summary>
-internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
+internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
@@ -43,6 +43,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
+    private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingService _rendering;
     private readonly IActorManager _actors;
@@ -89,8 +90,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
+        IBonePosingService bonePosing,
         IPluginLog? log = null)
     {
+        _bonePosing = bonePosing;
         _mcdfHashes = mcdfHashes;
         _selection = selection;
         _log = log;

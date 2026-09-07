@@ -28,7 +28,7 @@ using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 namespace Poser.UI;
 
 /// <summary>Renders Inspector rail and workspace pose controls.</summary>
-public class PoseInspectorPane
+public partial class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
@@ -2055,10 +2055,12 @@ public class PoseInspectorPane
     private void DrawIkBoneTarget(
         Crystarium.FormScope form,
         global::Poser.Domain.Identity.BoneId endpoint,
-        TransformTargetId ikTarget)
+        TransformTargetId ikTarget, bool? fabrikRoot = null)
     {
         var actors = _scene.Snapshot.Actors;
-        var current = _ikPort.BoneTarget(ikTarget);
+        var current = fabrikRoot is { } root
+            ? (root ? _ikPort.Get(ikTarget)?.Fabrik?.Root : _ikPort.Get(ikTarget)?.Fabrik?.Tip)?.Bone
+            : _ikPort.BoneTarget(ikTarget);
         // The dropdown leads with Any actor: the list needs one named, the
         // pick in the view is limited to the named one and free otherwise.
         var shownActor = _ikBoneActor ?? current?.Skeleton.Actor;
@@ -2084,7 +2086,10 @@ public class PoseInspectorPane
             : "Choose a bone";
         void Aim(global::Poser.Domain.Identity.BoneId bone)
         {
-            if (_ikPort.SetBoneTarget(ikTarget, bone) is { Success: false } failed)
+            var result = fabrikRoot is { } side
+                ? _ikPort.SetFabrikTarget(ikTarget, side, IkTargetMode.Bone, bone)
+                : _ikPort.SetBoneTarget(ikTarget, bone);
+            if (result is { Success: false } failed)
                 _notices.Failed($"IK target: {failed.Detail}");
             else
                 _ikBoneActor = bone.Skeleton.Actor;
@@ -2130,9 +2135,11 @@ public class PoseInspectorPane
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint)
+    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint, bool? fabrikRoot = null)
     {
-        var current = _ikPort.EntityTarget(endpoint);
+        var current = fabrikRoot is { } root
+            ? (root ? _ikPort.Get(endpoint)?.Fabrik?.Root : _ikPort.Get(endpoint)?.Fabrik?.Tip)?.Entity
+            : _ikPort.EntityTarget(endpoint);
         var scene = _scene.Snapshot;
         string? currentName = current switch
         {
@@ -2166,6 +2173,11 @@ public class PoseInspectorPane
                 }, help: "Follow an object, scenery, light or VFX while keeping the current offset");
             actions.Button("Detach", () =>
             {
+                if (fabrikRoot is { } side)
+                {
+                    _ikPort.SetFabrikTarget(endpoint, side, IkTargetMode.World);
+                    return;
+                }
                 if (_ikPort.Get(endpoint) is { } config
                     && _ikPort.Set(endpoint, config with { TargetMode = IkTargetMode.World })
                         is { Success: false } failed)
@@ -2174,9 +2186,13 @@ public class PoseInspectorPane
         });
         if (current != null && currentName == null)
             form.Status("Target unavailable — choose another entity or detach.", warning: true);
-        if (_ikEntityPicker.Draw() is { } chosen
-            && _ikPort.SetEntityTarget(endpoint, chosen.Item.Id) is { Success: false } refusal)
-            _notices.Failed($"IK target: {refusal.Detail}");
+        if (_ikEntityPicker.Draw() is { } chosen)
+        {
+            var result = fabrikRoot is { } side
+                ? _ikPort.SetFabrikTarget(endpoint, side, IkTargetMode.Entity, entity: chosen.Item.Id)
+                : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
+            if (result is { Success: false } refusal) _notices.Failed($"IK target: {refusal.Detail}");
+        }
     }
 
     private void DrawIk(Crystarium.FormScope form)
@@ -2188,8 +2204,10 @@ public class PoseInspectorPane
 
         void Apply(Domain.Posing.IkChainConfig next)
         {
-            if (_ikPort.Set(ikTarget, next).Success)
+            var result = _ikPort.Set(ikTarget, next);
+            if (result.Success)
                 config = _ikPort.Get(ikTarget);
+            else _notices.Failed($"IK: {result.Detail}");
         }
 
         void Adjust(Domain.Posing.IkChainConfig next)
@@ -2274,6 +2292,18 @@ public class PoseInspectorPane
                 });
             },
             help: "Two Joint is a real arm or leg; CCD and FABRIK bend a chain; Rope hangs it");
+        if (config.Solver == IkSolver.Fabrik)
+        {
+            form.Dropdown("Direction", FabrikDirections, (int)config.FabrikMode,
+                next =>
+                {
+                    if (_ikPort.SetFabrikDirection(ikTarget, (FabrikControlMode)next) is { Success: false } failure)
+                        _notices.Failed($"IK: {failure.Detail}");
+                    _fabrikPicking = null;
+                    config = _ikPort.Get(ikTarget) ?? config;
+                },
+                help: "Forward moves the tip; Reverse moves the root; Bidirectional controls both ends");
+        }
         form.Slider(
             "Swivel",
             config.SwivelDegrees,
@@ -2282,6 +2312,10 @@ public class PoseInspectorPane
             next => Adjust(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
+        if (config.Solver == IkSolver.Fabrik && config.Fabrik != null)
+            DrawFabrikTargets(form, boneId, ikTarget, config);
+        else
+        {
         int modeIndex = config.TargetMode switch
         {
             Domain.Posing.IkTargetMode.World => 1,
@@ -2314,6 +2348,7 @@ public class PoseInspectorPane
             next => Apply(config with { HoldRotation = next }),
             disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
             help: "The tip keeps its rotation to the held spot or bone as well");
+        }
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
@@ -2385,11 +2420,12 @@ public class PoseInspectorPane
         }
         else
         {
-            form.Switch(
-                "Constraints",
-                config.EnforceConstraints,
-                next => Apply(config with { EnforceConstraints = next }),
-                help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
+            if (config.Solver != IkSolver.Fabrik || config.Fabrik == null)
+                form.Switch(
+                    "Constraints",
+                    config.EnforceConstraints,
+                    next => Apply(config with { EnforceConstraints = next }),
+                    help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
             form.Slider(
                 "Depth",
                 config.CcdDepth,

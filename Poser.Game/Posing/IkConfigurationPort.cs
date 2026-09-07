@@ -44,6 +44,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         _journal.Seal();
         var before = Get(target);
         var result = Write(target, config);
+        config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)
             return result;
         _journal.Record(
@@ -204,6 +205,34 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             }, config,
             () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return new IkPortResult(result.Success, result.Detail);
+    }
+
+    public IkPortResult SetFabrikTarget(TransformTargetId target, bool root, IkTargetMode mode,
+        BoneId? bone = null, SelectionId? entity = null)
+    {
+        if (_gestures.ActiveGesture != null)
+            return IkPortResult.Fail("Finish the active transform before changing the IK target.");
+        if (target.Bone is not { } id || _bindings.Resolve(id) is not { Success: true, Value: { } endpoint }
+            || Get(target) is not { Fabrik: { } control } config)
+            return IkPortResult.Fail("The FABRIK chain is unavailable.");
+        if (bone is { } anchor && anchor.Skeleton == id.Skeleton
+            && _bindings.Resolve(anchor) is { Success: true, Value: { } followed })
+            for (var ancestor = followed; ancestor != null; ancestor = ancestor.ParentBone)
+                if (control.Bones.Any(b => b.Name == ancestor.BoneName && b.Partial == ancestor.PartialId))
+                    return IkPortResult.Fail("An endpoint cannot follow its own chain or a bone moved by that chain.");
+        var capture = _bonePosing.CaptureFabrikTarget(endpoint, root, mode, bone, entity);
+        if (capture == null) return IkPortResult.Fail("Choose an available target.");
+        return Set(target, config with { Fabrik = root
+            ? control with { Root = capture } : control with { Tip = capture } });
+    }
+
+    public IkPortResult SetFabrikDirection(TransformTargetId target, FabrikControlMode mode)
+    {
+        if (_gestures.ActiveGesture != null) return IkPortResult.Fail("Finish the current transform first.");
+        if (target.Bone is not { } id || _bindings.Resolve(id) is not { Success: true, Value: { } endpoint }
+            || _bonePosing.CaptureFabrikDirection(endpoint, mode) is not { } config)
+            return IkPortResult.Fail("The FABRIK chain is unavailable.");
+        return Set(target, config);
     }
 
     private IkPortResult WriteEntityTarget(TransformTargetId target, SelectionId entity)

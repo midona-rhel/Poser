@@ -26,8 +26,8 @@ public readonly record struct IkChainSummary(
 /// The ONE stable-id path the UI uses to read and write per-chain IK
 /// configuration. Implemented by the game runtime; the UI never exchanges
 /// retained entities, and configuration changes are rejected while a
-/// transform gesture is active. IK stays session-only: no export, stash, or
-/// history participation.
+/// transform gesture is active. FABRIK endpoint controls use the same journal
+/// and are restored by the scene workflow after target entities are bound.
 /// </summary>
 public interface IIkConfigurationPort
 {
@@ -51,6 +51,9 @@ public interface IIkConfigurationPort
     /// or enabling a Fixed chain captures the current effective target.</summary>
     IkPortResult Set(TransformTargetId target, IkChainConfig config);
     IkPortResult Adjust(TransformTargetId target, IkChainConfig config);
+    IkPortResult SetFabrikDirection(TransformTargetId target, FabrikControlMode mode) => IkPortResult.Fail("FABRIK unavailable.");
+    IkPortResult SetFabrikTarget(TransformTargetId target, bool root, IkTargetMode mode,
+        BoneId? bone = null, SelectionId? entity = null) => IkPortResult.Fail("FABRIK targets unavailable.");
 
     /// <summary>Restores the chain's defaults while preserving its current
     /// Enabled state.</summary>

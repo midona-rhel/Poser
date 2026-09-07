@@ -101,7 +101,8 @@ public unsafe class IKService : IIKService
             SolveTwoJoint(pose, request);
         else
             return;
-        if (MathF.Abs(request.Config.SwivelDegrees) > 0.01f)
+        if (request.Config is not { Solver: IkSolver.Fabrik, Fabrik: not null }
+            && MathF.Abs(request.Config.SwivelDegrees) > 0.01f)
             ApplySwivel(pose, endpoint, request);
     }
 
@@ -164,6 +165,11 @@ public unsafe class IKService : IIKService
     /// its old link direction into its new one.</summary>
     private void SolveFabrik(hkaPose* pose, IBone endpoint, in IkSolveRequest request)
     {
+        if (request.Config.Fabrik is { } control && request.RootTarget is { } rootTarget)
+        {
+            SolveFabrikControl(pose, endpoint, request, control, rootTarget);
+            return;
+        }
         var bones = GetBonesToDepth(endpoint, request.Config.CcdDepth, true);
         int count = bones.Count;
         if (count <= 1)
@@ -231,6 +237,34 @@ public unsafe class IKService : IIKService
             rotations[count - 1] = request.TargetRotation;
         for (int i = 0; i < count; i++)
             WriteModelSpace(pose, indices[i], positions[i], rotations[i]);
+    }
+
+    private void SolveFabrikControl(hkaPose* pose, IBone endpoint, in IkSolveRequest request,
+        FabrikControl control, Vector3 root)
+    {
+        var bones = GetBonesToDepth(endpoint, control.Bones.Length - 1, true);
+        if (bones.Count != control.Bones.Length) return;
+        var source = control.Bones.Select(b => b.Position).ToArray();
+        var positions = FabrikSolver.Solve(source, root, request.Target,
+            request.Config.FabrikMode, request.Config.CcdIterations);
+        var axis = positions[^1] - positions[0];
+        var spin = axis.LengthSquared() < 1e-10f ? Quaternion.Identity :
+            Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis),
+                (request.Config.SwivelDegrees - control.SwivelBaseline) * MathF.PI / 180f);
+        for (int i = 1; i < positions.Length - 1; i++)
+            positions[i] = positions[0] + Vector3.Transform(positions[i] - positions[0], spin);
+        for (int i = 0; i < positions.Length; i++)
+        {
+            var rotation = control.Bones[i].Rotation;
+            if (i < positions.Length - 1)
+                rotation = Quaternion.Normalize(FromTo(source[i + 1] - source[i],
+                    positions[i + 1] - positions[i]) * rotation);
+            if (i == 0 && control.Root.HoldRotation && request.RootRotation is { } rootRotation)
+                rotation = rootRotation;
+            if (i == positions.Length - 1 && control.Tip.HoldRotation)
+                rotation = request.TargetRotation;
+            WriteModelSpace(pose, bones[bones.Count - 1 - i].BoneIndex, positions[i], rotation);
+        }
     }
 
     // ── the rope ────────────────────────────────────────────────────────

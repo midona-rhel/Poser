@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Poser.Domain.Animation;
 using Poser.Domain.Companions;
@@ -295,6 +296,11 @@ public static class SceneFileValidation
         if (actor.Pose is null)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' has no embedded pose document.");
+        if (actor.Fabrik is { } chains && (chains.Count > 512 || chains.Any(chain => chain is null
+            || chain.Config is null || chain.Config.Solver != Poser.Domain.Posing.IkSolver.Fabrik
+            || chain.Config.Fabrik == null || chain.Config.Validate() != null
+            || string.IsNullOrWhiteSpace(chain.Endpoint) || chain.Partial < 0 || !Enum.IsDefined(chain.Slot))))
+            return Fail(SceneFileValidationFailureKind.EmbeddedPose, $"Actor '{actor.Name}' has invalid FABRIK state.");
         var pose = PoseFileValidation.Validate(actor.Pose);
         if (!pose.Succeeded)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,

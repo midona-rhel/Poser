@@ -38,8 +38,8 @@ public enum IkTargetMode
 
 /// <summary>
 /// Per-chain IK configuration carrying both solver settings so switching
-/// solver never discards tuning. Validation is explicit; this is session-only
-/// and is never exported, stashed, or recorded in transform history.
+/// solver never discards tuning. FABRIK endpoint state is authored configuration;
+/// history retains it exactly and scene files remap its portable references.
 /// </summary>
 public sealed record IkChainConfig(
     bool Enabled,
@@ -59,6 +59,8 @@ public sealed record IkChainConfig(
     float SwivelDegrees = 0f,
     bool HoldRotation = true)
 {
+    public FabrikControlMode FabrikMode { get; init; }
+    public FabrikControl? Fabrik { get; init; }
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past
     /// about twenty bones (measured at 40, 2026-09-02); FABRIK, being
@@ -76,6 +78,8 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
+        if (!Enum.IsDefined(FabrikMode)) return "FABRIK direction is unsupported.";
+        if (Fabrik?.Validate() is { } fabrikError) return fabrikError;
         if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
         if (!float.IsFinite(SwivelDegrees)
@@ -422,7 +426,9 @@ public readonly record struct IkSolveRequest(
     Vector3 Target,
     Quaternion TargetRotation,
     IkChainConfig Config,
-    IkResolvedChain Chain);
+    IkResolvedChain Chain,
+    Vector3? RootTarget = null,
+    Quaternion? RootRotation = null);
 
 /// <summary>Native bone indices of one resolved chain (same skeleton, same
 /// partial as the endpoint); -1 marks a missing optional twist.</summary>
