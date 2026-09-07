@@ -105,12 +105,42 @@ frame. Baking writes the solved pose and disables the chains.
 ### IK colliders
 
 Colliders are world-space overlay entities, not native game objects or dialogue
-UI nodes. Plane, box, cylinder and cone share the overlay lifecycle, selection,
+UI nodes. Plane, box, cylinder, cone, capsule and sphere share the overlay lifecycle, selection,
 history and scene-file storage. Their Overlay page controls shape, collision
 participation, transform locking, visibility and face opacity; the inspector and
 world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
+An actor's **Create collider from current pose** action creates a named group
+of at most 30 ordinary colliders: a short waist capsule and one capsule per spine segment, capsules for the neck,
+shoulders, upper/lower limbs and feet, and spheres for the head, hands, breasts,
+hips, elbows, knees and ankles. Joint spheres use the neighbouring capsules' average radius;
+hip and ankle caps match the thigh and lower-leg radius respectively.
+Feet follow the posed
+ankle-to-toe direction, centered and extended to their surface. Each part can be edited or removed
+individually; creating the group is one undo step. Later actor edits, animation
+or removal do not change these frozen, scene/library-saveable shapes.
+Loaded model weights assign surfaces to body sections; joint positions supply
+limb lengths. Bone joints are capsule endcap centers, so the rounded ends extend
+past the joints and overlap neighbouring parts; surface-fitted feet keep their
+measured outer length. Radius averages the surface distances in both directions of two
+local cross-section axes across three slices. Head/hand/breast spheres use the
+average half-extent across three axes (2nd–98th percentile surface bounds),
+not internal mouth/eye ray hits or density-biased mean vertex distances.
+Incomplete open capsule surfaces use mean vertex distance.
+Hair, tail and skirt chains do not inflate the fit. This is a coarse body approximation, not exact
+clothing collision; unsupported rigs refuse capture. No actor triangles enter
+the physics world. Capsule scale Y is total tip-to-tip length; its round radius
+uses the smallest scale dimension, also used by spheres, never a polygonal hull.
+Human capture applies the actor's resolved racial deformer per model before
+posed skinning, so shared-race equipment lines up with its actor skeleton.
+Existing saved triangle-mesh captures remain supported and are not silently
+rewritten. They draw silhouette and open-boundary lines only, without triangle
+fill or internal wireframe, and retain their two-sided surface contacts.
+The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
+unmapped bones or unsupported vertex formats refuse capture instead of silently
+substituting an unposed model. Native reads precede background file parsing and
+skinning; creation returns to the framework thread.
 Overlay tessellation is independent of collision geometry. Shared translucent
 triangle edges are not anti-aliased individually, which would expose mesh seams.
 
@@ -128,9 +158,10 @@ Continuation belongs to the exact live chain; solver/span/swivel changes and
 disabling collisions reset it. Removal, GPose exit and unload dispose its native
 buffers. Another actor or preview never shares it. Snapshots capture the visible
 route as the receiving skeleton's authored seed, not physics velocities.
-Bone frames are transported continuously between solved directions, retaining
-authored roll rather than adopting a round capsule's free spin or choosing a
-new arbitrary axis when a link folds backwards.
+Bone frames share a root roll reference and are transported along the solved
+span, preserving authored relative roll. Links must not independently accumulate
+roll from their motion history or adopt a round capsule's free spin. The root
+frame continues smoothly when folding backwards.
 The selected handle has limited pulling force so a taut wrapped span can stop
 short of its target. FABRIK/Rope translation edits clamp their authored target to
 the span's distance limits; rejected drag travel is discarded so reversing responds

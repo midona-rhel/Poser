@@ -163,8 +163,11 @@ public sealed class OverlayPane
         {
             form.TextInput("Name", node.Name, next => _values.SetName(node, next));
             form.Pair("Shape", cell => cell.Dropdown("##collider-shape",
-                    new[] { "Plane", "Box", "Cylinder", "Cone" }, (int)collider.Shape,
-                    next => _values.SetCollider(node, node.State.Collider! with { Shape = (Domain.Posing.IkColliderShape)next })),
+                    collider.Shape == Domain.Posing.IkColliderShape.Mesh
+                        ? new[] { "Captured mesh" } : new[] { "Plane", "Box", "Cylinder", "Cone", "Capsule", "Sphere" },
+                    collider.Shape == Domain.Posing.IkColliderShape.Mesh ? 0 : (int)collider.Shape > 4 ? (int)collider.Shape - 1 : (int)collider.Shape,
+                    next => _values.SetCollider(node, node.State.Collider! with { Shape = (Domain.Posing.IkColliderShape)(next >= 4 ? next + 1 : next) }),
+                    disabled: collider.Shape == Domain.Posing.IkColliderShape.Mesh),
                 "Collision", cell => cell.Switch("##collider-enabled", collider.Enabled,
                     next => _values.SetCollider(node, node.State.Collider! with { Enabled = next })));
             form.Pair("Lock transform", cell => cell.Switch("##collider-lock", collider.Locked,

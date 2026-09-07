@@ -21,6 +21,8 @@ public class GPoseService : IGPoseService
     private readonly IPluginLog _log;
     private readonly ISessionLifecycleCoordinator _lifecycle;
     private readonly Func<IPoseImportLifecycleControl>? _importControl;
+    private readonly IObjectTable? _objects;
+    private int _entryDiagnosticTicks;
     private readonly object _stateGate = new();
 
     private bool _lastGPoseState = false;
@@ -36,7 +38,8 @@ public class GPoseService : IGPoseService
         IEventBus eventBus,
         IPluginLog log,
         ISessionLifecycleCoordinator lifecycle,
-        Func<IPoseImportLifecycleControl>? importControl = null)
+        Func<IPoseImportLifecycleControl>? importControl = null,
+        IObjectTable? objects = null)
     {
         _clientState = clientState;
         _framework = framework;
@@ -44,6 +47,7 @@ public class GPoseService : IGPoseService
         _log = log;
         _lifecycle = lifecycle;
         _importControl = importControl;
+        _objects = objects;
 
         _framework.Update += OnFrameworkUpdate;
     }
@@ -66,6 +70,8 @@ public class GPoseService : IGPoseService
                 return;
 
             var currentState = _clientState.IsGPosing;
+            if (currentState && _entryDiagnosticTicks > 0 && --_entryDiagnosticTicks == 0)
+                Diagnostics.GPoseTransitionLog.Snapshot(_log, "enter+10-updates", _objects);
 
             if (currentState == _lastGPoseState)
                 return;
@@ -73,6 +79,8 @@ public class GPoseService : IGPoseService
             _lastGPoseState = currentState;
             if (currentState)
             {
+                Diagnostics.GPoseTransitionLog.Snapshot(_log, "enter-observed", _objects);
+                _entryDiagnosticTicks = 10;
                 var generation = _lifecycle.OnGposeEntered();
                 if (!generation.HasValue)
                     return;
@@ -80,11 +88,15 @@ public class GPoseService : IGPoseService
                 _sessionActive = true;
                 _unloadExitHandled = false;
                 _eventBus.Publish(new GPoseStateChangedEvent(true));
+                Diagnostics.GPoseTransitionLog.Snapshot(_log, "enter-handlers-complete", _objects);
             }
             else
             {
                 if (ProcessExitEdge())
+                {
                     _eventBus.Publish(new GPoseStateChangedEvent(false));
+                    Diagnostics.GPoseTransitionLog.Snapshot(_log, "exit-handlers-complete", _objects);
+                }
             }
         }
     }
@@ -128,6 +140,9 @@ public class GPoseService : IGPoseService
     {
         if (!_sessionActive)
             return false;
+
+        _entryDiagnosticTicks = 0;
+        Diagnostics.GPoseTransitionLog.Snapshot(_log, "exit-before-cleanup", _objects);
 
         var imports = _importControl?.Invoke();
         if (imports?.IsPending == true)

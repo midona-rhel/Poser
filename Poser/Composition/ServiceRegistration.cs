@@ -213,6 +213,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
         services.AddSingleton<Game.Journal.OverlaySession>();
+        services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Game.Journal.EnvironmentSession>();

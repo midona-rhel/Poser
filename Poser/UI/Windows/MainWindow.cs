@@ -526,6 +526,7 @@ public partial class MainWindow : Window
         WorldObjectsPane worldObjectsPane,
         IOverlayNodeService overlayService,
         OverlayPane overlayPane,
+        Game.Posing.ActorColliderCapture actorColliderCapture,
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         BoneVisibilityPresetService bonePresets,
@@ -579,6 +580,7 @@ public partial class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _actorColliderCapture = actorColliderCapture;
         _names = names;
         _issueReport = issueReport;
         _sceneWorkflow = sceneWorkflow;
@@ -1271,6 +1273,7 @@ public partial class MainWindow : Window
     private readonly IOverlayNodeService _overlayService;
 
     private readonly OverlayPane _overlayPane;
+    private readonly Game.Posing.ActorColliderCapture _actorColliderCapture;
 
     private readonly CompanionSection _companions;
 

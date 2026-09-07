@@ -296,9 +296,11 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     {
         if (_nodes.Count == 0)
             return;
+        _log.Information($"[GPoseLifetime] overlay-cleanup-before total={_nodes.Count} colliders={_nodes.Count(n => n.Kind == OverlayNodeKind.Collider)}");
         for (int i = 0; i < _nodes.Count; i++)
             DestroyNative(_nodes[i]);
         _nodes.Clear();
+        _log.Information("[GPoseLifetime] overlay-cleanup-complete");
         _events.Publish(new OverlayNodeListChangedEvent());
     }
 

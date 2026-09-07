@@ -15,8 +15,10 @@ tool/space/pivot changes, and selection changes cancel the gesture.
 Multi-selection applies each target's delta to its own baseline. Ring drags
 keep pointer ownership through release, so ending a drag cannot pick a bone.
 
-Frame wells edit model-space values. World and Local gizmo spaces keep their
-different axis meanings. Self rotates in place; Parent orbits around the
+Frame wells edit model-space values. World gizmo axes stay aligned to the world,
+including bones on attached entities; Local axes follow the bone's world orientation.
+World drag deltas convert back into the skeleton's model space before application.
+Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay places its pivot in perspective and
 draws nothing for an unprojectable pivot. Inspector rotation stays in place.
 

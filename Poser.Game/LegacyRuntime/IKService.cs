@@ -206,7 +206,7 @@ public unsafe class IKService : IIKService
         if (request.Config.Collisions && endpoint.Skeleton is Skeleton collisionSkeleton)
         {
             var colliders = _overlays.Nodes.Where(n => n.IsValid && n.State.Collider is { Enabled: true })
-                .Select(n => new ColliderGeometry(n.State.Collider!)).ToArray();
+                .Select(n => ColliderGeometry.Cached(n.State.Collider!)).ToArray();
             var model = collisionSkeleton.GetModelMatrix();
             if (Matrix4x4.Invert(model, out var inverse))
             {
