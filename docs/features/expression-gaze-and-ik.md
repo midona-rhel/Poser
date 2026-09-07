@@ -111,6 +111,8 @@ participation, transform locking, visibility and face opacity; the inspector and
 world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
+Overlay tessellation is independent of collision geometry. Shared translucent
+triangle edges are not anti-aliased individually, which would expose mesh seams.
 
 FABRIK and Rope opt into all enabled colliders through the chain's Colliders
 switch. Bone width is the diameter of every segment, in world yalms, independent
@@ -126,6 +128,9 @@ Continuation belongs to the exact live chain; solver/span/swivel changes and
 disabling collisions reset it. Removal, GPose exit and unload dispose its native
 buffers. Another actor or preview never shares it. Snapshots capture the visible
 route as the receiving skeleton's authored seed, not physics velocities.
+Bone frames are transported continuously between solved directions, retaining
+authored roll rather than adopting a round capsule's free spin or choosing a
+new arbitrary axis when a link folds backwards.
 The selected handle has limited pulling force so a taut wrapped span can stop
 short of its target. Conflicting anchors or inserting geometry through an already
 pinned chain can remain unresolved; collision is not a guarantee that every

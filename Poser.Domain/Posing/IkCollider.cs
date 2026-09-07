@@ -28,10 +28,10 @@ public sealed class ColliderGeometry
     public (int A, int B)[] Edges { get; }
     private readonly Plane[] _planes;
 
-    public ColliderGeometry(IkCollider collider)
+    public ColliderGeometry(IkCollider collider, int sides = 32)
     {
         Description = collider;
-        const int sides = 32;
+        sides = Math.Clamp(sides, 8, 64);
         var vertices = new List<Vector3>();
         var faces = new List<int[]>();
         var edges = new List<(int, int)>();
@@ -139,5 +139,6 @@ public interface IIkCollisionState : IDisposable
 {
     void Solve(Vector3[] positions, int handle, IReadOnlyList<ColliderGeometry> colliders,
         float radius, Vector3? down, IReadOnlyList<Vector3> restPose);
+    Quaternion ResolveRotation(int link, Vector3 authoredDirection, Vector3 solvedDirection, Quaternion authoredRotation);
     void Reset();
 }

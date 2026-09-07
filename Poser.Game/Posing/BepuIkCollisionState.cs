@@ -22,8 +22,9 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
     private Vector3? _down;
     private int _handle;
     private Vector3[] _targets = [];
+    private readonly Dictionary<int, (Vector3 Direction, Quaternion Swing)> _rotationFrames = [];
     private const float Dt = 1f / 240;
-    private const int Steps = 8;
+    private const int Steps = 4;
 
     public void Solve(Vector3[] positions, int handle, IReadOnlyList<ColliderGeometry> colliders,
         float radius, Vector3? down, IReadOnlyList<Vector3> restPose)
@@ -97,7 +98,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
         // This world owns at most one 50-link chain, not a game's worth of bodies.
         // Capacities can grow for additional scene colliders.
         _simulation = Simulation.Create(_pool, new Contacts(), new Integrator(down ?? Vector3.Zero),
-            new SolveDescription(16, 4), initialAllocationSizes: new SimulationAllocationSizes
+            new SolveDescription(4, 4), initialAllocationSizes: new SimulationAllocationSizes
             {
                 Bodies = 64, Statics = 1, Islands = 8, ShapesPerType = 64,
                 Constraints = 128, ConstraintsPerTypeBatch = 64, ConstraintCountPerBodyEstimate = 4,
@@ -117,7 +118,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
                 {
                     LocalOffsetA = Vector3.UnitY * lengths[i - 1] * .5f,
                     LocalOffsetB = -Vector3.UnitY * lengths[i] * .5f,
-                    SpringSettings = new SpringSettings(1200, 1),
+                    SpringSettings = new SpringSettings(360, 1),
                 });
         }
         _pins = new[] { 0, handle, source.Count - 1 }.Distinct().Select(bone =>
@@ -133,7 +134,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
     private static OneBodyLinearServo Pin(Vector3 offset, Vector3 target, bool handle) => new()
     {
         LocalOffset = offset, Target = target,
-        SpringSettings = new SpringSettings(600, 1),
+        SpringSettings = new SpringSettings(300, 1),
         // A limited handle yields when the wrapped chain is taut, rather than
         // forcing its rigid links through an obstacle or pulling joints apart.
         ServoSettings = new ServoSettings(4, 0, handle ? 200 : 10000),
@@ -184,6 +185,39 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
         }
     }
 
+    public Quaternion ResolveRotation(int link, Vector3 authoredDirection, Vector3 solvedDirection, Quaternion authoredRotation)
+    {
+        if (authoredDirection.LengthSquared() < 1e-12f || solvedDirection.LengthSquared() < 1e-12f)
+            return authoredRotation;
+        var direction = Vector3.Normalize(solvedDirection);
+        var prior = _rotationFrames.TryGetValue(link, out var frame)
+            ? frame : (Direction: Vector3.Normalize(authoredDirection), Swing: Quaternion.Identity);
+        var cross = Vector3.Cross(prior.Direction, direction);
+        float dot = Math.Clamp(Vector3.Dot(prior.Direction, direction), -1, 1);
+        Quaternion turn;
+        if (dot < 0 && cross.LengthSquared() < 1e-12f)
+        {
+            // At an exact reversal there is no unique swing axis. Preserve
+            // the bone's own frame, not an arbitrary world-axis fallback.
+            var basis = prior.Swing * authoredRotation;
+            var axis = Vector3.Transform(Vector3.UnitX, basis);
+            axis -= prior.Direction * Vector3.Dot(axis, prior.Direction);
+            if (axis.LengthSquared() < 1e-6f)
+            {
+                axis = Vector3.Transform(Vector3.UnitY, basis);
+                axis -= prior.Direction * Vector3.Dot(axis, prior.Direction);
+            }
+            turn = Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), MathF.PI);
+        }
+        else
+            turn = Quaternion.Normalize(new Quaternion(cross, 1 + dot));
+        // Parallel-transport the authored frame between solved directions.
+        // A round physics capsule's free axial spin is not an authored bone roll.
+        var swing = Quaternion.Normalize(turn * prior.Swing);
+        _rotationFrames[link] = (direction, swing);
+        return Quaternion.Normalize(swing * authoredRotation);
+    }
+
     public void Reset()
     {
         _simulation?.Dispose();
@@ -193,6 +227,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
         _lengths = [];
         _pins = [];
         _targets = [];
+        _rotationFrames.Clear();
         _obstacles = [];
     }
     public void Dispose() => Reset();
@@ -206,7 +241,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
         public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold,
             out PairMaterialProperties pairMaterial) where TManifold : unmanaged, IContactManifold<TManifold>
         {
-            pairMaterial = new PairMaterialProperties(.15f, 4, new SpringSettings(1200, 1));
+            pairMaterial = new PairMaterialProperties(.15f, 4, new SpringSettings(360, 1));
             return true;
         }
         public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB,

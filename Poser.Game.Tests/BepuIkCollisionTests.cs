@@ -6,6 +6,26 @@ namespace Poser.Game.Tests;
 
 public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
 {
+    [Fact]
+    public void FoldingPastBackwardsDoesNotFlipTheAuthoredRoll()
+    {
+        using var state = new BepuIkCollisionState();
+        var authored = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .7f);
+        Quaternion previous = authored;
+        for (int degree = 0; degree <= 200; degree++)
+        {
+            var direction = Vector3.Transform(Vector3.UnitZ, Quaternion.CreateFromAxisAngle(Vector3.UnitX, degree * MathF.PI / 180));
+            var rotation = state.ResolveRotation(0, Vector3.UnitZ, direction, authored);
+            Assert.True(MathF.Abs(Quaternion.Dot(previous, rotation)) > .999f, $"Roll flipped at {degree} degrees");
+            Assert.True(Vector3.Distance(Vector3.Transform(Vector3.UnitZ, rotation), direction) < .0001f);
+            previous = rotation;
+        }
+        state.Reset();
+        var a = state.ResolveRotation(0, Vector3.UnitZ, Vector3.Normalize(new Vector3(0, .005f, -1)), authored);
+        var b = state.ResolveRotation(0, Vector3.UnitZ, Vector3.Normalize(new Vector3(0, .004f, -1)), authored);
+        Assert.True(MathF.Abs(Quaternion.Dot(a, b)) > .999f);
+    }
+
     [Theory]
     [InlineData(0f, 0f)]
     [InlineData(.08f, .15f)]
@@ -76,7 +96,7 @@ public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
             }
             previous = positions;
         }
-        Assert.Contains(previous, p => p.Z < -.54f);
+        Assert.True(previous.Any(p => p.Z < -.54f), $"Lowest wrapped point: {previous.Min(p => p.Z)}");
         output.WriteLine($"{links} links, Rope={rope}: {timer.Elapsed.TotalMilliseconds / 150:F3} ms/solve (headless, warm)");
     }
 

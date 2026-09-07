@@ -202,6 +202,7 @@ public unsafe class IKService : IIKService
         }
         Swivel(positions, 0, control.HandleIndex);
         Swivel(positions, control.HandleIndex, positions.Length - 1);
+        bool collisionSolved = false;
         if (request.Config.Collisions && endpoint.Skeleton is Skeleton collisionSkeleton)
         {
             var colliders = _overlays.Nodes.Where(n => n.IsValid && n.State.Collider is { Enabled: true })
@@ -218,24 +219,20 @@ public unsafe class IKService : IIKService
                 request.CollisionState?.Solve(world, control.HandleIndex, colliders,
                     request.Config.CollisionRadius,
                     request.Config.Solver == IkSolver.Rope ? -Vector3.UnitY : null, restWorld);
+                collisionSolved = request.CollisionState != null && colliders.Length > 0;
                 for (int i = 0; i < positions.Length; i++) positions[i] = Vector3.Transform(world[i], inverse);
             }
         }
         for (int i = 0; i < positions.Length; i++)
         {
-            var rotation = control.Bones[i].Rotation;
+            var rotation = i == control.HandleIndex && request.Config.TargetMode == IkTargetMode.Actor
+                ? request.TargetRotation : control.Bones[i].Rotation;
             if (i < positions.Length - 1)
-                rotation = Quaternion.Normalize(FromTo(source[i + 1] - source[i],
-                    positions[i + 1] - positions[i]) * rotation);
-            if (i == control.HandleIndex)
-            {
-                if (request.Config.TargetMode == IkTargetMode.Actor)
-                    rotation = i == positions.Length - 1 ? request.TargetRotation
-                        : Quaternion.Normalize(FromTo(source[i + 1] - source[i],
-                            positions[i + 1] - positions[i]) * request.TargetRotation);
-                else if (request.Config.HoldRotation)
-                    rotation = request.TargetRotation;
-            }
+                rotation = collisionSolved
+                    ? request.CollisionState!.ResolveRotation(i, source[i + 1] - source[i], positions[i + 1] - positions[i], rotation)
+                    : Quaternion.Normalize(FromTo(source[i + 1] - source[i], positions[i + 1] - positions[i]) * rotation);
+            if (i == control.HandleIndex && request.Config.TargetMode != IkTargetMode.Actor && request.Config.HoldRotation)
+                rotation = request.TargetRotation;
             WriteModelSpace(pose, bones[i]!.BoneIndex, positions[i], rotation);
         }
     }

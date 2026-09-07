@@ -19,7 +19,7 @@ public partial class SkeletonOverlayWindow
             var node = _bindings.Resolve(descriptor.Id).Value;
             if (node?.State.Collider is not { } collider || !node.Visible) continue;
             var id = SelectionId.ForOverlay(descriptor.Id);
-            var geometry = new ColliderGeometry(collider);
+            var geometry = new ColliderGeometry(collider, sides: 16);
             var color = _selection.IsSelected(id) ? new Vector4(.4f, .9f, 1f, 1f) : new Vector4(.65f, .45f, 1f, 1f);
             uint fill = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha });
             uint line = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha > 0 ? .95f : 0 });
@@ -35,7 +35,12 @@ public partial class SkeletonOverlayWindow
                     points[i] = viewport + screen;
                 }
                 if (!visible) continue;
+                // Adjacent translucent triangles must not each get an AA
+                // fringe: those overlapping fringes expose the internal mesh.
+                var flags = draw.Flags;
+                draw.Flags &= ~ImDrawListFlags.AntiAliasedFill;
                 for (int i = 1; i < points.Length - 1; i++) draw.AddTriangleFilled(points[0], points[i], points[i + 1], fill);
+                draw.Flags = flags;
             }
             foreach (var (a, b) in geometry.Edges)
                 if (_cameraService.WorldToScreen(geometry.Vertices[a], out var sa) &&
