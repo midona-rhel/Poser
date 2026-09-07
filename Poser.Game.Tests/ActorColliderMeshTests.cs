@@ -42,7 +42,7 @@ public class ActorColliderMeshTests
             ["j_ude_a_l"] = new(Vector3.Zero, null), ["j_ude_b_l"] = new(Vector3.UnitY, "j_ude_a_l") };
         var fitted = ActorBodyColliderBuilder.Fit(joints, vertices, Enumerable.Range(0, vertices.Count).ToArray(),
             Enumerable.Repeat<string?>("j_ude_a_l", vertices.Count).ToArray());
-        var capsule = Assert.Single(fitted);
+        var capsule = Assert.Single(fitted.Where(p => p.Name == "Left upper arm"));
         Assert.Equal("Left upper arm", capsule.Name);
         Assert.Equal(IkColliderShape.Capsule, capsule.Collider.Shape);
         float averageRadius = (100 * .2f + 10) / 101;

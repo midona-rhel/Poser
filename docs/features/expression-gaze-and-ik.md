@@ -112,15 +112,19 @@ world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
 An actor's **Create collider from current pose** action creates a named group
-of at most 14 ordinary colliders: one waist capsule, capsules for upper/lower
-limbs and feet, and spheres for the head and hands. Feet follow the posed
+of at most 23 ordinary colliders: one waist capsule, capsules for upper/lower
+limbs and feet, and spheres for the head, hands, breasts, lumbar area, shoulders,
+elbows and knees. Joint spheres use the neighbouring capsules' average radius.
+Feet follow the posed
 ankle-to-toe direction, centered and extended to their surface. Each part can be edited or removed
 individually; creating the group is one undo step. Later actor edits, animation
 or removal do not change these frozen, scene/library-saveable shapes.
 Loaded model weights assign surfaces to body sections; joint positions supply
 limb lengths. Radius averages the surface distances in both directions of two
-local cross-section axes across three slices. Head/hands use a centered sphere
-and six directions. Incomplete open surfaces use mean vertex distance.
+local cross-section axes across three slices. Head/hand/breast spheres use the
+average half-extent across three axes (2nd–98th percentile surface bounds),
+not internal mouth/eye ray hits or density-biased mean vertex distances.
+Incomplete open capsule surfaces use mean vertex distance.
 Hair, tail and skirt chains do not inflate the fit. This is a coarse body approximation, not exact
 clothing collision; unsupported rigs refuse capture. No actor triangles enter
 the physics world. Capsule scale Y is total tip-to-tip length; its round radius

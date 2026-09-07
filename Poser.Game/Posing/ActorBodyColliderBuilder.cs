@@ -17,12 +17,13 @@ internal static class ActorBodyColliderBuilder
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
-            spans.AddRange([new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
+            spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true, true),
+                new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
                 new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
                 new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
         }
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
-            Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f);
+            (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
         if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
         if (roots.TryGetValue("j_kosi", out int waist))
@@ -65,7 +66,29 @@ internal static class ActorBodyColliderBuilder
             var span = spans[i];
             var start = joints[span.Start].Position;
             var end = joints[span.End].Position;
-            var axis = Vector3.Normalize(end - start);
+            var axis = Vector3.DistanceSquared(start, end) > 1e-10f ? Vector3.Normalize(end - start) : Vector3.UnitY;
+            if (span.Sphere)
+            {
+                // Head/hand meshes contain internal eyes, mouth and dense finger
+                // detail. Their nearest hits/mean vertex radius measure those
+                // details, not the part's size. Average the three surface extents.
+                var uSphere = Vector3.Normalize(Vector3.Cross(axis, MathF.Abs(axis.Y) < .9f ? Vector3.UnitY : Vector3.UnitX));
+                var vSphere = Vector3.Cross(axis, uSphere);
+                var sphereCenter = Vector3.Zero;
+                float sphereRadius = 0;
+                foreach (var direction in new[] { uSphere, vSphere, axis })
+                {
+                    var values = points.Select(p => Vector3.Dot(p, direction)).Order().ToArray();
+                    float low = values[(int)((values.Length - 1) * .02f)];
+                    float high = values[(int)((values.Length - 1) * .98f)];
+                    sphereCenter += direction * ((low + high) * .5f);
+                    sphereRadius += (high - low) / 6;
+                }
+                if (sphereRadius >= .0001f)
+                    fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Sphere,
+                        Transform = new(sphereCenter, Quaternion.Identity, new(sphereRadius * 2)) }));
+                continue;
+            }
             var axial = points.Select(p => Vector3.Dot(p - start, axis)).Order().ToArray();
             if (span.FitEnds)
             {
@@ -87,26 +110,44 @@ internal static class ActorBodyColliderBuilder
                 center += Middle(u) + Middle(v);
             }
             var widths = new List<float>();
-            foreach (float t in span.Sphere ? new[] { .5f } : new[] { .25f, .5f, .75f })
+            foreach (float t in new[] { .25f, .5f, .75f })
             {
                 var origin = center + axis * ((t - .5f) * Vector3.Distance(start, end));
-                var directions = span.Sphere ? new[] { u, -u, v, -v, axis, -axis } : new[] { u, -u, v, -v };
+                var directions = new[] { u, -u, v, -v };
                 var distances = directions.Select(d => NearestSurface(origin, d, triangles[i])).ToArray();
                 if (distances.All(float.IsFinite)) widths.Add(distances.Average());
             }
             // Average the sampled surface distances rather than choosing the
             // narrowest side. Open surfaces use mean vertex distance instead.
             float radius = widths.Count > 0 ? widths.Average()
-                : points.Select(p => span.Sphere ? Vector3.Distance(p, center)
-                    : (p - center - axis * Vector3.Dot(p - center, axis)).Length()).Average();
+                : points.Select(p => (p - center - axis * Vector3.Dot(p - center, axis)).Length()).Average();
             float length = Vector3.Distance(start, end);
-            if (!span.Sphere) radius = MathF.Min(radius, length * .5f);
+            radius = MathF.Min(radius, length * .5f);
             if (radius < .0001f) continue;
             var cross = Vector3.Cross(Vector3.UnitY, axis);
-            var rotation = span.Sphere ? Quaternion.Identity : axis.Y < -.999999f
+            var rotation = axis.Y < -.999999f
                 ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI) : Quaternion.Normalize(new Quaternion(cross, 1 + axis.Y));
-            fitted.Add(new(span.Name, new IkCollider { Shape = span.Sphere ? IkColliderShape.Sphere : IkColliderShape.Capsule,
-                Transform = new(center, rotation, new(radius * 2, span.Sphere ? radius * 2 : length, radius * 2)) }));
+            fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Capsule,
+                Transform = new(center, rotation, new(radius * 2, length, radius * 2)) }));
+        }
+        // Joint spheres bridge the rounded capsule ends without changing the
+        // limb lengths. Derive their size from the neighbouring fitted limbs.
+        void JointSphere(string name, string bone, params string[] neighbours)
+        {
+            if (!joints.TryGetValue(bone, out var joint)) return;
+            var radii = fitted.Where(p => neighbours.Contains(p.Name)).Select(p => p.Collider.RoundDimensions().Radius).ToArray();
+            if (radii.Length == 0) return;
+            float radius = radii.Average();
+            fitted.Add(new(name, new IkCollider { Shape = IkColliderShape.Sphere,
+                Transform = new(joint.Position, Quaternion.Identity, new(radius * 2)) }));
+        }
+        JointSphere("Lumbar", "j_sebo_a", "Waist");
+        foreach (var side in new[] { "l", "r" })
+        {
+            string label = side == "l" ? "Left" : "Right";
+            JointSphere($"{label} shoulder", $"j_ude_a_{side}", $"{label} upper arm");
+            JointSphere($"{label} elbow", $"j_ude_b_{side}", $"{label} upper arm", $"{label} forearm");
+            JointSphere($"{label} knee", $"j_asi_b_{side}", $"{label} thigh", $"{label} lower leg");
         }
         if (fitted.Count == 0) throw new InvalidDataException("No visible body surface could be fitted to the actor's bones.");
         return fitted.ToArray();
