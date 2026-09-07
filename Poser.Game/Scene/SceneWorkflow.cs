@@ -1117,17 +1117,23 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             // the ownership it registers — and the by-name unlock-and-restore
             // teardown that ownership buys — is the same one a hand-driven
             // import leaves behind.
-            if (actors.Any(entry => entry.Mcdf is not null))
+            if (actors.Any(entry => entry.Mcdf is not null || entry.PenumbraCollection is not null))
             {
                 Step(ScenePhase.ApplyingAppearance);
                 foreach (var actor in actors)
                 {
-                    if (actor.Mcdf is null)
-                        continue;
                     if (Guard(operation, cancellation) is { } stop)
                     {
                         await Abort(stop);
                         return;
+                    }
+                    if (actor.Mcdf is null)
+                    {
+                        var collectionError = await _runtime.RestoreCollection(
+                            actorTokens[actor.Key], actor, ActorReadyTimeout, cancellation);
+                        if (collectionError is not null)
+                            entities.Add(new SceneEntityOutcome("Collection", actor.Name, false, collectionError));
+                        continue;
                     }
                     var appearance = await _runtime.ImportMcdf(
                         path, actorTokens[actor.Key], actor,

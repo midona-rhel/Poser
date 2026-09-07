@@ -692,6 +692,21 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return true;
     }
 
+    public async Task<string?> RestoreCollection(object actor, SceneActor data, TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        if (data.PenumbraCollection is not { } collection || data.Mcdf is not null)
+            return null;
+        var target = await OnFramework(() => _bindings.GetActorId((IActor)actor));
+        if (target is not { } id) return "The actor is no longer bound.";
+        var available = await OnFramework(() => _integration.ListCollections());
+        var name = collection == Guid.Empty ? "None"
+            : available.Value?.FirstOrDefault(x => x.Id == collection)?.Name;
+        if (name is null) return "The saved Penumbra collection is not available on this machine.";
+        var result = await _integration.SetCollectionAndWait(id, collection, name, bound, cancellation);
+        return result.Success ? null : result.Detail;
+    }
+
     /// <summary>
     /// Re-imports the saved character file through <c>McdfTransaction</c> —
     /// the ONE import path. Nothing here reimplements a phase: the file is

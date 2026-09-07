@@ -337,6 +337,7 @@ public sealed class SceneCaptureService
                 Key = key,
                 Name = Bounded(actor.Name, $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
+                PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
                 // A live attachment proves the slot exists even when the
                 // actor was not spawned by Poser with an explicit reservation.
@@ -360,6 +361,19 @@ public sealed class SceneCaptureService
 
         CaptureGaze(captured, keys, notes);
         return keys;
+    }
+
+    private Guid? CaptureCollection(Poser.Domain.Identity.ActorId actor)
+    {
+        if (_integration.ReadCollection(actor) is not { Success: true, Value: { } assignment })
+            return null;
+        // A duplicate/MCDF temporary collection's ID dies with its actor.
+        // Only permanent local references can be reused on a later load.
+        if (assignment.EffectiveId == Guid.Empty)
+            return Guid.Empty;
+        return _integration.ListCollections() is { Success: true, Value: { } collections }
+            && collections.Any(x => x.Id == assignment.EffectiveId)
+                ? assignment.EffectiveId : null;
     }
 
     private List<SceneFabrikChain>? CaptureFabrik(IReadOnlyList<ISkeleton> slots)

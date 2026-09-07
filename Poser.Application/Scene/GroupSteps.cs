@@ -39,6 +39,8 @@ public sealed class GroupSteps
     /// hands the routine in.</summary>
     public Action? ReapplyGates { get; set; }
 
+    public Action<GroupsSnapshot>? RestoreReleasedGates { get; set; }
+
     /// <summary>Runs <paramref name="act"/> as one step. Entries the act
     /// appends on its own fold into the step.</summary>
     public T Run<T>(string description, Func<T> act)
@@ -97,6 +99,9 @@ public sealed class GroupSteps
                 deferredCapture = true;
                 return false;
             }
+            // The destination snapshot may predate closing the gate and has
+            // no remembered flags. Restore those from the outgoing snapshot.
+            RestoreReleasedGates?.Invoke(previous);
             ReapplyGates?.Invoke();
             // Seal a deferred capture on its first successful restore. Later
             // undo/redo replays this complete snapshot, not fresh geometry.

@@ -123,6 +123,9 @@ internal interface ISceneRuntime
     /// required before the pose-import admission can succeed.</summary>
     bool ActorReady(object actor);
 
+    Task<string?> RestoreCollection(object actor, SceneActor data, TimeSpan bound,
+        System.Threading.CancellationToken cancellation) => Task.FromResult<string?>(null);
+
     /// <summary>
     /// Re-imports the actor's saved character file through the EXISTING MCDF
     /// transaction — the same admission, phases, redraw barrier, rollback and
