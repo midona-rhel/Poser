@@ -33,7 +33,7 @@ public sealed class UIManager : IUIManager
     private readonly AnimationSceneActions _sceneActions;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly Keybind[] _keybinds;
-    private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
+    private bool _uiHidden;
 
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
@@ -148,7 +148,8 @@ public sealed class UIManager : IUIManager
             Interactive.BeginFrame();
             try
             {
-                _windows.System.Draw();
+                if (!_uiHidden)
+                    _windows.System.Draw();
             }
             catch (Exception ex)
             {
@@ -157,15 +158,18 @@ public sealed class UIManager : IUIManager
                 _recorder.Exception(ex);
                 throw;
             }
-            using (FrameProfiler.Scope("Shell · reference images"))
-                _windows.PumpReferenceImages();
-            // The report dialog is a popup, not a window: it draws from
-            // the frame so it opens from the burger and from Settings alike.
-            _issueReport.Draw();
+            if (!_uiHidden)
+            {
+                using (FrameProfiler.Scope("Shell · reference images"))
+                    _windows.PumpReferenceImages();
+                // The report dialog is a popup, not a window.
+                _issueReport.Draw();
+            }
             using (FrameProfiler.Scope("Shell · floating menus"))
                 Crystarium.FloatingMenu.EndFrame();
             using (FrameProfiler.Scope("Shell · hover help"))
-                Crystarium.HoverHelp.Render();
+                if (!_uiHidden)
+                    Crystarium.HoverHelp.Render();
             using (FrameProfiler.Scope("Shell · interactive end"))
                 Interactive.EndFrame();
         }
@@ -484,20 +488,9 @@ public sealed class UIManager : IUIManager
         }
     }
 
-    private void ToggleAllUi()
-    {
-        if (_hiddenWindows == null)
-        {
-            _hiddenWindows = _windows.System.Windows.Where(window => window.IsOpen).ToList();
-            foreach (var window in _hiddenWindows)
-                window.IsOpen = false;
-            return;
-        }
-
-        foreach (var window in _hiddenWindows)
-            window.IsOpen = true;
-        _hiddenWindows = null;
-    }
+    // Hiding is not closing: preserve each window's open state and avoid
+    // triggering Settings cancellation or the workspace's open request.
+    private void ToggleAllUi() => _uiHidden = !_uiHidden;
 
     public void ToggleMainWindow()
         => _windows.SetPrimaryOpen(!_windows.IsPrimaryOpen);

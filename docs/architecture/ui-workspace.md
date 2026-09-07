@@ -21,6 +21,11 @@ Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
 selection, not the target it last displayed.
 
+Hide UI suspends drawing without closing windows or cancelling Settings edits;
+showing it again preserves which panels were open. Unrelated configuration
+notifications do not reset panel visibility. Opening/closing the workspace or
+changing its attached/split layout still applies the requested layout.
+
 Form section headers start expanded. Their disclosure preferences persist in
 configuration under stable page/section keys, independent of actors, entity ids,
 and attached/detached hosts. Reopening a window or restarting does not reset them.
