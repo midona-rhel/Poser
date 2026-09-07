@@ -26,6 +26,10 @@ showing it again preserves which panels were open. Unrelated configuration
 notifications do not reset panel visibility. Opening/closing the workspace or
 changing its attached/split layout still applies the requested layout.
 
+Opening Settings normally starts at General, scrolled to the top, with no search.
+Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
+open their named category at the top.
+
 Form section headers start expanded. Their disclosure preferences persist in
 configuration under stable page/section keys, independent of actors, entity ids,
 and attached/detached hosts. Reopening a window or restarting does not reset them.
