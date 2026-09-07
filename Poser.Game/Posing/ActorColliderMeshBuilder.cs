@@ -13,7 +13,7 @@ internal static class ActorColliderMeshBuilder
 {
     internal static void Append(byte[] bytes, uint attributes, uint shapes,
         IReadOnlyDictionary<string, Matrix4x4> bones, Matrix4x4 world, Vector3 origin,
-        List<Vector3> vertices, List<int> indices)
+        List<Vector3> vertices, List<int> indices, List<string?>? influences = null)
     {
         var file = Read(bytes);
         Span<float> weightValues = stackalloc float[8];
@@ -49,6 +49,8 @@ internal static class ActorColliderMeshBuilder
                 Vector3 position = new(p.X, p.Y, p.Z);
                 Vector3 posed = default;
                 float total = 0;
+                float strongest = 0;
+                string? influence = null;
                 for (int set = 0; set < weights.Length; set++)
                 {
                     int count = ReadBlend(bytes, file, mesh, weights[set], v, weightValues);
@@ -64,10 +66,12 @@ internal static class ActorColliderMeshBuilder
                         if (!bones.TryGetValue(boneNames[palette[localBone]], out var skin))
                             throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{boneNames[palette[localBone]]}' has no captured transform.");
                         posed += Vector3.Transform(position, skin) * weight;
+                        if (weight > strongest) { strongest = weight; influence = boneNames[palette[localBone]]; }
                         total += weight;
                     }
                 }
                 vertices.Add((total > 0 ? posed / total : Vector3.Transform(position, world)) - origin);
+                influences?.Add(influence);
             }
             var meshIndices = new int[checked((int)mesh.IndexCount)];
             int indexOffset = checked((int)(file.FileHeader.IndexOffset[0] + mesh.StartIndex * 2));

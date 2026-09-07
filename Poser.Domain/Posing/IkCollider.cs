@@ -3,7 +3,7 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-public enum IkColliderShape { Plane, Box, Cylinder, Cone, Mesh }
+public enum IkColliderShape { Plane, Box, Cylinder, Cone, Mesh, Capsule, Sphere }
 
 /// <summary>Frozen, indexed geometry in collider-local space. Shared by history; never edited in place.</summary>
 public sealed class IkColliderMesh
@@ -37,11 +37,23 @@ public sealed record IkCollider
             : Enum.IsDefined(Shape) ? Shape : IkColliderShape.Box,
         Transform = Transform.IsValid ? Transform : PoseTransform.Identity,
     };
+
+    public (float Radius, float Stem) RoundDimensions()
+    {
+        var scale = Vector3.Abs(Transform.Scale);
+        float radius = MathF.Min(scale.X, MathF.Min(scale.Y, scale.Z)) * .5f;
+        return (radius, Shape == IkColliderShape.Capsule ? MathF.Max(0, scale.Y - radius * 2) : 0);
+    }
 }
 
 /// <summary>World-space geometry; primitive contact queries are convex, mesh contacts belong to Bepu.</summary>
 public sealed class ColliderGeometry
 {
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IkCollider, ColliderGeometry> PhysicsCache = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IkCollider, ColliderGeometry> OverlayCache = new();
+    public static ColliderGeometry Cached(IkCollider collider, bool overlay = false) => overlay
+        ? OverlayCache.GetValue(collider, static c => new(c, 16))
+        : PhysicsCache.GetValue(collider, static c => new(c));
     public IkCollider Description { get; }
     private Vector3[]? _vertices;
     public Vector3[] Vertices => _vertices ??= Description.Mesh!.Vertices.Select(v =>
@@ -82,6 +94,27 @@ public sealed class ColliderGeometry
                 if (height > 0) { edges.Add((i + 4, (i + 1) % 4 + 4)); edges.Add((i, i + 4)); }
             }
         }
+        else if (collider.Shape is IkColliderShape.Capsule or IkColliderShape.Sphere)
+        {
+            var (radius, stem) = collider.RoundDimensions();
+            // Four latitude bands per hemisphere; no edges along smooth seams.
+            for (int ring = 0; ring <= 9; ring++)
+            {
+                int latitude = ring <= 4 ? ring : ring - 1;
+                float angle = -MathF.PI / 2 + latitude * MathF.PI / 8;
+                for (int i = 0; i < sides; i++)
+                {
+                    float around = i * MathF.Tau / sides;
+                    vertices.Add(new(radius * MathF.Cos(angle) * MathF.Cos(around),
+                        radius * MathF.Sin(angle) + (ring <= 4 ? -stem * .5f : stem * .5f),
+                        radius * MathF.Cos(angle) * MathF.Sin(around)));
+                }
+            }
+            for (int ring = 0; ring < 9; ring++)
+                for (int i = 0; i < sides; i++)
+                    faces.Add([ring * sides + i, ring * sides + (i + 1) % sides,
+                        (ring + 1) * sides + (i + 1) % sides, (ring + 1) * sides + i]);
+        }
         else
         {
             for (int i = 0; i < sides; i++)
@@ -106,7 +139,7 @@ public sealed class ColliderGeometry
             }
         }
         var transform = collider.Transform;
-        Vector3 World(Vector3 v) => Vector3.Transform(v * transform.Scale, transform.Rotation) + transform.Position;
+        Vector3 World(Vector3 v) => Vector3.Transform(collider.Shape is IkColliderShape.Capsule or IkColliderShape.Sphere ? v : v * transform.Scale, transform.Rotation) + transform.Position;
         _vertices = vertices.Select(World).ToArray();
         Faces = faces.ToArray();
         Edges = edges.ToArray();
@@ -127,7 +160,9 @@ public sealed class ColliderGeometry
         else foreach (var face in Faces)
         {
             var a = Vertices[face[0]];
-            var normal = Vector3.Normalize(Vector3.Cross(Vertices[face[1]] - a, Vertices[face[2]] - a));
+            var normal = Vector3.Cross(Vertices[face[1]] - a, Vertices[face[2]] - a);
+            if (normal.LengthSquared() < 1e-16f) continue;
+            normal = Vector3.Normalize(normal);
             if (Vector3.Dot(normal, a - transform.Position) < 0) normal = -normal;
             planes.Add(new Plane(normal, -Vector3.Dot(normal, a)));
         }

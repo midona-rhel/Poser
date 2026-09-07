@@ -75,7 +75,9 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowColliderBox = RowColliderPlane + 1;
     private const int RowColliderCylinder = RowColliderBox + 1;
     private const int RowColliderCone = RowColliderCylinder + 1;
-    private const int ActionRows = RowColliderCone + 1;
+    private const int RowColliderCapsule = RowColliderCone + 1;
+    private const int RowColliderSphere = RowColliderCapsule + 1;
+    private const int ActionRows = RowColliderSphere + 1;
     private readonly ICameraService _viewCamera;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
@@ -618,7 +620,7 @@ public sealed class SpawnBrowserWindow : Window
             noCameras));
         rows.Add(ActionRow("##spawn-furniture-library", "Furniture from library", TablerIcon.Couch));
         rows.Add(ActionRow("##spawn-furniture-file", "Furniture from file", TablerIcon.Couch));
-        foreach (var shape in new[] { "Plane", "Box", "Cylinder", "Cone" })
+        foreach (var shape in new[] { "Plane", "Box", "Cylinder", "Cone", "Capsule", "Sphere" })
             rows.Add(ActionRow("##spawn-collider-" + shape, "IK collider: " + shape, TablerIcon.Cube));
 
         // Tab per action row, by the fixed row order above. The prop entry
@@ -1160,6 +1162,8 @@ public sealed class SpawnBrowserWindow : Window
             case RowColliderBox:
             case RowColliderCylinder:
             case RowColliderCone:
+            case RowColliderCapsule:
+            case RowColliderSphere:
             case RowOverlayBalloon:
             case RowOverlayStatus:
             {
@@ -1179,8 +1183,11 @@ public sealed class SpawnBrowserWindow : Window
                         Kind = OverlayNodeKind.Collider, Alpha = .2f,
                         Collider = new Domain.Posing.IkCollider
                         {
-                            Shape = (Domain.Posing.IkColliderShape)(index - RowColliderPlane),
-                            Transform = Domain.Transforms.PoseTransform.Identity with { Position = position },
+                            Shape = index == RowColliderCapsule ? Domain.Posing.IkColliderShape.Capsule
+                                : index == RowColliderSphere ? Domain.Posing.IkColliderShape.Sphere
+                                : (Domain.Posing.IkColliderShape)(index - RowColliderPlane),
+                            Transform = Domain.Transforms.PoseTransform.Identity with { Position = position,
+                                Scale = index == RowColliderCapsule ? new Vector3(.5f, 1, .5f) : Vector3.One },
                         },
                     };
                 }

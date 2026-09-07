@@ -273,8 +273,10 @@ public partial class MainWindow
     {
         try
         {
-            var node = await _actorColliderCapture.CreateAsync(actorId, name);
-            _overlayPane.SelectWhenBound(node);
+            var group = await _actorColliderCapture.CreateAsync(actorId, name);
+            _selection.Select(group.Members[0]);
+            foreach (var member in group.Members.Skip(1)) _selection.Add(member);
+            _groups.ActiveGroupId = group.Id;
         }
         catch (Exception ex)
         {

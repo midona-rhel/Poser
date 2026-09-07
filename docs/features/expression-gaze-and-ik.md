@@ -105,19 +105,31 @@ frame. Baking writes the solved pose and disables the chains.
 ### IK colliders
 
 Colliders are world-space overlay entities, not native game objects or dialogue
-UI nodes. Plane, box, cylinder and cone share the overlay lifecycle, selection,
+UI nodes. Plane, box, cylinder, cone, capsule and sphere share the overlay lifecycle, selection,
 history and scene-file storage. Their Overlay page controls shape, collision
 participation, transform locking, visibility and face opacity; the inspector and
 world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
-An actor's **Create collider from current pose** action captures loaded model
-geometry as an independent, concave triangle-mesh overlay. Bone weights and
-current native transforms pose the mesh once; later actor edits, animation or
-removal do not change it. The snapshot contains geometry, not model paths or
-actor references, so ordinary overlay undo, grouping and scene/library storage
-retain it. Captured meshes cannot switch to a primitive shape. Surfaces collide
-from either side; this is surface collision, not a solid-volume inside test.
+An actor's **Create collider from current pose** action creates a named group
+of at most 15 ordinary colliders: capsules for the humanoid torso, head and
+upper/lower limbs, spheres for hands and feet. Each part can be edited or removed
+individually; creating the group is one undo step. Later actor edits, animation
+or removal do not change these frozen, scene/library-saveable shapes.
+Loaded model weights assign surfaces to body sections; joint positions supply
+limb lengths. Radius uses the nearest surface in both directions of two local
+cross-section axes, taking the narrower side and the median of three slices.
+Hands/feet use a centered sphere and six directions. Incomplete open surfaces
+fall back to the inner quartile of vertex distances. Hair, tail and skirt chains
+do not inflate the fit. This is an inward, coarse body approximation, not exact
+clothing collision; unsupported rigs refuse capture. No actor triangles enter
+the physics world. Capsule scale Y is total tip-to-tip length; its round radius
+uses the smallest scale dimension, also used by spheres, never a polygonal hull.
+Human capture applies the actor's resolved racial deformer per model before
+posed skinning, so shared-race equipment lines up with its actor skeleton.
+Existing saved triangle-mesh captures remain supported and are not silently
+rewritten. They draw silhouette and open-boundary lines only, without triangle
+fill or internal wireframe, and retain their two-sided surface contacts.
 The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
 unmapped bones or unsupported vertex formats refuse capture instead of silently
 substituting an unposed model. Native reads precede background file parsing and

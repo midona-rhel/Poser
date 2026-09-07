@@ -6,6 +6,28 @@ namespace Poser.Game.Tests;
 
 public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
 {
+    [Fact]
+    public void ChangingWidthOnRestingRopeChangesSurfaceClearance()
+    {
+        var mesh = new IkColliderMesh([new(-2, 0, -2), new(2, 0, -2), new(2, 0, 2), new(-2, 0, 2)], [0, 1, 2, 0, 2, 3]);
+        var collider = new ColliderGeometry(new() { Shape = IkColliderShape.Mesh, Mesh = mesh,
+            Transform = new(new(0, .9f, 0), Quaternion.Identity, Vector3.One) });
+        var rest = Enumerable.Range(0, 21).Select(i => new Vector3(-1.5f + i * .15f, 1.4f + .7f * MathF.Sin(i * MathF.PI / 20), 0)).ToArray();
+        using var state = new BepuIkCollisionState();
+        foreach (float radius in new[] { .08f, .01f, .14f })
+        {
+            var positions = rest.ToArray();
+            for (int frame = 0; frame < 360; frame++)
+            {
+                positions = rest.ToArray();
+                state.Solve(positions, 20, [collider], radius, -Vector3.UnitY, rest);
+            }
+            float clearance = positions.Min(p => p.Y) - .9f;
+            output.WriteLine($"Radius {radius}: clearance {clearance}");
+            Assert.InRange(clearance, radius - .006f, radius + .006f);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -176,6 +176,13 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
                 }
                 shape = _simulation!.Shapes.Add(new Mesh(triangles, transform.Scale, _pool));
             }
+            else if (collider.Shape is IkColliderShape.Capsule or IkColliderShape.Sphere)
+            {
+                var (radius, stem) = collider.RoundDimensions();
+                shape = collider.Shape == IkColliderShape.Sphere
+                    ? _simulation!.Shapes.Add(new Sphere(radius))
+                    : _simulation!.Shapes.Add(new Capsule(radius, stem));
+            }
             else if (collider.Shape is IkColliderShape.Box or IkColliderShape.Plane)
                 shape = _simulation!.Shapes.Add(new Box(scale.X, collider.Shape == IkColliderShape.Plane ? .0002f : scale.Y, scale.Z));
             else if (collider.Shape == IkColliderShape.Cylinder && MathF.Abs(scale.X - scale.Z) < .0001f)

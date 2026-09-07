@@ -10,6 +10,49 @@ namespace Poser.Game.Tests;
 
 public class ActorColliderMeshTests
 {
+    [Fact]
+    public void RacialDeformationMovesTheModelBeforePosedSkinning()
+    {
+        using var stream = new MemoryStream();
+        using var w = new BinaryWriter(stream);
+        w.Write(2);
+        w.Write((ushort)801); w.Write((short)0); w.Write(44); w.Write(1f);
+        w.Write((ushort)201); w.Write((short)1); w.Write(0); w.Write(1f);
+        foreach (short value in new short[] { 1, -1, -1, 0, -1, 0, -1, 1 }) w.Write(value);
+        w.Write(1); w.Write((ushort)56); w.Write((ushort)0);
+        foreach (float value in new float[] { 1, 0, 0, 2, 0, 1, 0, 0, 0, 0, 1, 0 }) w.Write(value);
+        w.Write(Encoding.UTF8.GetBytes("arm\0"));
+        var pbd = stream.ToArray();
+        var deform = ActorColliderDeformation.Read(pbd, 801, 201)["arm"];
+        var posed = Matrix4x4.CreateRotationZ(MathF.PI / 2) * Matrix4x4.CreateTranslation(0, 3, 0);
+        var vertices = new List<Vector3>();
+        ActorColliderMeshBuilder.Append(Model(true), 1, 0, new Dictionary<string, Matrix4x4> { ["arm"] = deform * posed },
+            Matrix4x4.Identity, Vector3.Zero, vertices, []);
+        Assert.True(Vector3.Distance(vertices[1], new(0, 6, 0)) < .0001f);
+        Assert.Empty(ActorColliderDeformation.Read(pbd, 801, 801));
+    }
+
+    [Fact]
+    public void BodyFitUsesBoneLengthAndSkinWidthWithoutAccessoryOutlier()
+    {
+        var vertices = new List<Vector3>();
+        for (int i = 0; i < 100; i++) vertices.Add(new(.2f * MathF.Cos(i), i / 100f, .2f * MathF.Sin(i)));
+        vertices.Add(new(10, .5f, 0));
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
+            ["j_ude_a_l"] = new(Vector3.Zero, null), ["j_ude_b_l"] = new(Vector3.UnitY, "j_ude_a_l") };
+        var fitted = ActorBodyColliderBuilder.Fit(joints, vertices, Enumerable.Range(0, vertices.Count).ToArray(),
+            Enumerable.Repeat<string?>("j_ude_a_l", vertices.Count).ToArray());
+        var capsule = Assert.Single(fitted);
+        Assert.Equal("Left upper arm", capsule.Name);
+        Assert.Equal(IkColliderShape.Capsule, capsule.Collider.Shape);
+        Assert.InRange(capsule.Collider.RoundDimensions().Radius, .1999f, .2001f);
+        Assert.Equal(new Vector3(0, .5f, 0), capsule.Collider.Transform.Position);
+        Assert.Equal(1f, capsule.Collider.Transform.Scale.Y);
+        var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(capsule.Collider, global::Poser.Files.SceneFile.JsonOptions),
+            global::Poser.Files.SceneFile.JsonOptions)!;
+        Assert.Equal(capsule.Collider, restored);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

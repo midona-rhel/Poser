@@ -1110,6 +1110,53 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     public object? SpawnOverlay(OverlayNodeKind kind) =>
         SpawnOverlay(OverlayNodeService.DefaultState(kind));
 
+    internal Poser.Application.Scene.SceneGroup SpawnOverlayGroup(string name,
+        IReadOnlyList<OverlayNodeState> states, Poser.Application.Scene.SceneGroups groups,
+        Func<object, Poser.Domain.Identity.SelectionId?> selection)
+    {
+        var before = groups.Capture();
+        var slots = new List<OverlaySlot>();
+        Poser.Domain.Identity.SelectionId[] Members() => slots.Select(s => selection(s.Live!)
+            ?? throw new InvalidOperationException("A collider has not joined the scene.")).ToArray();
+        Poser.Application.Scene.SceneGroup group;
+        try
+        {
+            foreach (var state in states)
+                slots.Add(OverlaySlotFor(_overlayNodes.Create(state)
+                    ?? throw new InvalidOperationException("A body collider could not be created.")));
+            group = groups.Create(name, Members(), allowThin: true)
+                ?? throw new InvalidOperationException("The collider group could not be created.");
+        }
+        catch
+        {
+            RemoveOverlays(slots);
+            groups.Restore(before);
+            throw;
+        }
+        var after = groups.Capture();
+        var oldMembers = Members();
+        _history.Append(new SceneLifecyclePatch("Create body colliders",
+            () =>
+            {
+                after = groups.Capture();
+                oldMembers = Members();
+                bool removed = RemoveOverlays(slots);
+                groups.Restore(before);
+                return removed;
+            },
+            () =>
+            {
+                if (!RestoreOverlays(slots)) return false;
+                var members = Members();
+                var remap = oldMembers.Select((id, i) => (id, current: members[i])).ToDictionary(x => x.id, x => x.current);
+                groups.Restore(after);
+                groups.RemapTransformMembers(target => remap.TryGetValue(target.ToSelectionId(), out var current)
+                    ? Poser.Application.Transforms.GroupTransformCoordinator.Target(current) : target);
+                return true;
+            }));
+        return group;
+    }
+
     /// <summary>Records one overlay node the user added, from a complete
     /// document: a fresh create, a duplicate of the selected node, or a
     /// restored one.</summary>
