@@ -56,14 +56,16 @@ public class IkColliderTests
         }
     }
 
-    [Fact]
-    public void SlackChainRoutesAroundBoxAcrossItsMiddle()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(32)]
+    public void SlackChainRoutesAroundBoxAcrossItsMiddle(int iterations)
     {
         var positions = Enumerable.Range(0, 13).Select(i =>
             new Vector3(-1.5f + i * .25f, .8f - 1.2f * MathF.Sin(i * MathF.PI / 12), 0)).ToArray();
         var before = positions.ToArray();
         var geometry = new ColliderGeometry(new());
-        IkCollisionSolver.Solve(positions, 12, new[] { geometry }, .04f, 32);
+        IkCollisionSolver.Solve(positions, 12, new[] { geometry }, .04f, iterations);
         Assert.Equal(before[0], positions[0]);
         Assert.Equal(before[^1], positions[^1]);
         for (int i = 0; i < positions.Length - 1; i++)

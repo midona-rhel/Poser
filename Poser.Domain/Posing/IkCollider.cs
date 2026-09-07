@@ -189,7 +189,25 @@ public static class IkCollisionSolver
             .Any(i => c.Contact(positions[i], positions[i + 1], radius, out _, out _)));
         if (!intersects) return;
         int passes = Math.Clamp(iterations, 1, 60);
-        for (int pass = 0; pass < passes; pass++)
+        bool LengthsValid()
+        {
+            for (int i = 0; i < lengths.Length; i++)
+                if (!TransformMath.IsFinite(positions[i]) || !TransformMath.IsFinite(positions[i + 1]) ||
+                    MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - lengths[i]) > .0001f + lengths[i] * .001f)
+                    return false;
+            return true;
+        }
+        bool Clear(int first, int last)
+        {
+            foreach (var collider in colliders)
+                for (int i = first; i < last; i++)
+                    if (collider.Contact(positions[i], positions[i + 1], radius, out _, out var correction)
+                        && correction.LengthSquared() > 1e-8f) return false;
+            return true;
+        }
+        // Longer spans need more length propagation. The nominal iteration
+        // budget is not permission to abandon a still-penetrating solution.
+        for (int pass = 0; pass < Math.Max(passes, positions.Length * 8); pass++)
         {
             if (down is { } gravity && pass < passes / 2)
                 for (int i = 1; i < positions.Length - 1; i++)
@@ -241,15 +259,32 @@ public static class IkCollisionSolver
                             Pinned(i), Pinned(i + 1), radius, supports[c][i < handle ? 0 : 1]);
                     }
             }
+            if (pass >= passes && LengthsValid() && Clear(0, lengths.Length)) return;
         }
-        // Pins can make the constraints incompatible. Keep the ordinary solved
-        // pose in that case rather than publishing stretched or invalid bones.
-        for (int i = 0; i < lengths.Length; i++)
-            if (!TransformMath.IsFinite(positions[i]) || !TransformMath.IsFinite(positions[i + 1]) ||
-                MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - lengths[i]) > .0001f + lengths[i] * .001f)
+        if (LengthsValid() && Clear(0, lengths.Length)) return;
+
+        // Before conceding to the pinned reach limits, try turning each authored
+        // span around its anchor axis. This preserves every length and pin exactly
+        // and can escape a blocked local minimum without returning through the box.
+        original.CopyTo(positions, 0);
+        for (int side = 0; side < 2; side++)
+        {
+            int first = side == 0 ? 0 : handle, last = side == 0 ? handle : positions.Length - 1;
+            if (last - first < 2 || Clear(first, last)) continue;
+            var axis = positions[last] - positions[first];
+            if (axis.LengthSquared() < 1e-10f) continue;
+            axis = Vector3.Normalize(axis);
+            bool cleared = false;
+            for (int step = 1; step <= 24 && !cleared; step++)
             {
-                original.CopyTo(positions, 0);
-                break;
+                float angle = ((step + 1) / 2) * MathF.PI / 12 * (step % 2 == 0 ? -1 : 1);
+                var turn = Quaternion.CreateFromAxisAngle(axis, angle);
+                for (int i = first + 1; i < last; i++)
+                    positions[i] = original[first] + Vector3.Transform(original[i] - original[first], turn);
+                cleared = Clear(first, last);
             }
+            if (!cleared)
+                for (int i = first + 1; i < last; i++) positions[i] = original[i];
+        }
     }
 }

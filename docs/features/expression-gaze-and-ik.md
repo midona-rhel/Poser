@@ -122,5 +122,6 @@ opposite sides. Rope settles downward onto surfaces; FABRIK does not add gravity
 This is a bounded static solve, not accumulated frame-to-frame physics. Endpoint pins remain
 fixed. Conflicting pins/obstacles cannot promise clearance; no actor movement or
 dynamics is used to hide an impossible arrangement. Two Joint and CCD are unchanged.
-If collision passes cannot retain link lengths, they leave the ordinary solved
-pose intact instead of publishing stretched bones.
+An iteration-budget miss is not a reach-limit diagnosis: the solver continues
+length propagation and tests length-preserving span turns before falling back
+on an unresolved span. It never moves pins or stretches bones to force clearance.
