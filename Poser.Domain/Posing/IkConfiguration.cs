@@ -427,8 +427,7 @@ public static class IkPolicy
     }
 }
 
-/// <summary>One immutable solve request: target, optional end rotation,
-/// the validated configuration, and the resolved chain.</summary>
+/// <summary>Target, configuration, resolved chain, and optional live collision continuation.</summary>
 public readonly record struct IkSolveRequest(
     Vector3 Target,
     Quaternion TargetRotation,
@@ -436,7 +435,8 @@ public readonly record struct IkSolveRequest(
     IkResolvedChain Chain,
     Vector3? RootTarget = null,
     Quaternion? RootRotation = null,
-    Vector3? TipTarget = null);
+    Vector3? TipTarget = null,
+    IIkCollisionState? CollisionState = null);
 
 /// <summary>Native bone indices of one resolved chain (same skeleton, same
 /// partial as the endpoint); -1 marks a missing optional twist.</summary>

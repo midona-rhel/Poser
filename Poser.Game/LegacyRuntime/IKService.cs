@@ -191,28 +191,33 @@ public unsafe class IKService : IIKService
             }
         }
         var swivel = request.Config.SwivelDegrees;
-        void Swivel(int first, int last)
+        void Swivel(Vector3[] values, int first, int last)
         {
-            var axis = positions[last] - positions[first];
+            var axis = values[last] - values[first];
             var spin = axis.LengthSquared() < 1e-10f ? Quaternion.Identity :
                 Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis),
                     (swivel - control.SwivelBaseline) * MathF.PI / 180f);
             for (int i = first + 1; i < last; i++)
-                positions[i] = positions[first] + Vector3.Transform(positions[i] - positions[first], spin);
+                values[i] = values[first] + Vector3.Transform(values[i] - values[first], spin);
         }
-        Swivel(0, control.HandleIndex);
-        Swivel(control.HandleIndex, positions.Length - 1);
+        Swivel(positions, 0, control.HandleIndex);
+        Swivel(positions, control.HandleIndex, positions.Length - 1);
         if (request.Config.Collisions && endpoint.Skeleton is Skeleton collisionSkeleton)
         {
             var colliders = _overlays.Nodes.Where(n => n.IsValid && n.State.Collider is { Enabled: true })
                 .Select(n => new ColliderGeometry(n.State.Collider!)).ToArray();
             var model = collisionSkeleton.GetModelMatrix();
-            if (colliders.Length > 0 && Matrix4x4.Invert(model, out var inverse))
+            if (Matrix4x4.Invert(model, out var inverse))
             {
                 var world = positions.Select(p => Vector3.Transform(p, model)).ToArray();
-                IkCollisionSolver.Solve(world, control.HandleIndex, colliders,
-                    request.Config.CollisionRadius, 32,
-                    request.Config.Solver == IkSolver.Rope ? -Vector3.UnitY : null);
+                var restWorld = source.Select(p => Vector3.Transform(p, model)).ToArray();
+                // Swivel is an authored change, so a new collision continuation
+                // starts from that rotated route, not the pre-swivel capture.
+                Swivel(restWorld, 0, control.HandleIndex);
+                Swivel(restWorld, control.HandleIndex, restWorld.Length - 1);
+                request.CollisionState?.Solve(world, control.HandleIndex, colliders,
+                    request.Config.CollisionRadius,
+                    request.Config.Solver == IkSolver.Rope ? -Vector3.UnitY : null, restWorld);
                 for (int i = 0; i < positions.Length; i++) positions[i] = Vector3.Transform(world[i], inverse);
             }
         }

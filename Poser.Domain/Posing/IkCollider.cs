@@ -22,6 +22,7 @@ public sealed record IkCollider
 /// <summary>Convex world-space geometry shared by rendering and contact queries.</summary>
 public sealed class ColliderGeometry
 {
+    public IkCollider Description { get; }
     public Vector3[] Vertices { get; }
     public int[][] Faces { get; }
     public (int A, int B)[] Edges { get; }
@@ -29,6 +30,7 @@ public sealed class ColliderGeometry
 
     public ColliderGeometry(IkCollider collider)
     {
+        Description = collider;
         const int sides = 32;
         var vertices = new List<Vector3>();
         var faces = new List<int[]>();
@@ -130,161 +132,12 @@ public sealed class ColliderGeometry
         return correction.LengthSquared() > 1e-12f;
     }
 
-    internal Plane? SupportingFace(Vector3 a, Vector3 b, float radius)
-    {
-        // Both anchors outside the same face define a coherent route. Without
-        // this, neighbouring links can independently choose opposite box faces.
-        Plane? result = null;
-        float nearest = float.PositiveInfinity;
-        foreach (var plane in _planes)
-        {
-            float da = Plane.DotCoordinate(plane, a) - radius;
-            float db = Plane.DotCoordinate(plane, b) - radius;
-            if (da < 0 || db < 0 || da + db >= nearest) continue;
-            nearest = da + db;
-            result = plane;
-        }
-        return result;
-    }
-
-    internal void ProjectSegment(ref Vector3 a, ref Vector3 b, bool pinA, bool pinB,
-        float radius, Plane? support)
-    {
-        if (!Contact(a, b, radius, out _, out _)) return;
-        radius = MathF.Max(radius, .0001f);
-        Vector3 moveA = default, moveB = default;
-        float best = float.PositiveInfinity;
-        for (int index = 0; index < (support.HasValue ? 1 : _planes.Length); index++)
-        {
-            var plane = support ?? _planes[index];
-            float da = MathF.Max(0, radius - Plane.DotCoordinate(plane, a));
-            float db = MathF.Max(0, radius - Plane.DotCoordinate(plane, b));
-            if ((pinA && da > 1e-6f) || (pinB && db > 1e-6f)) continue;
-            float cost = da * da + db * db;
-            if (cost >= best) continue;
-            best = cost;
-            moveA = pinA ? default : plane.Normal * da;
-            moveB = pinB ? default : plane.Normal * db;
-        }
-        // Move the whole link outside one face, not just its intersection midpoint.
-        a += moveA;
-        b += moveB;
-    }
 }
 
-public static class IkCollisionSolver
+/// <summary>Owned continuation of one live chain, independent of the physics backend.</summary>
+public interface IIkCollisionState : IDisposable
 {
-    public static void Solve(Vector3[] positions, int handle, IReadOnlyList<ColliderGeometry> colliders,
-        float radius, int iterations, Vector3? down = null)
-    {
-        if (colliders.Count == 0 || positions.Length < 2) return;
-        var original = positions.ToArray();
-        var lengths = Enumerable.Range(0, positions.Length - 1)
-            .Select(i => Vector3.Distance(positions[i], positions[i + 1])).ToArray();
-        bool Pinned(int i) => i == 0 || i == handle || i == positions.Length - 1;
-        var supports = colliders.Select(c => new[] {
-            c.SupportingFace(positions[0], positions[handle], radius),
-            c.SupportingFace(positions[handle], positions[^1], radius) }).ToArray();
-        bool intersects = colliders.Any(c => Enumerable.Range(0, lengths.Length)
-            .Any(i => c.Contact(positions[i], positions[i + 1], radius, out _, out _)));
-        if (!intersects) return;
-        int passes = Math.Clamp(iterations, 1, 60);
-        bool LengthsValid()
-        {
-            for (int i = 0; i < lengths.Length; i++)
-                if (!TransformMath.IsFinite(positions[i]) || !TransformMath.IsFinite(positions[i + 1]) ||
-                    MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - lengths[i]) > .0001f + lengths[i] * .001f)
-                    return false;
-            return true;
-        }
-        bool Clear(int first, int last)
-        {
-            foreach (var collider in colliders)
-                for (int i = first; i < last; i++)
-                    if (collider.Contact(positions[i], positions[i + 1], radius, out _, out var correction)
-                        && correction.LengthSquared() > 1e-8f) return false;
-            return true;
-        }
-        // Longer spans need more length propagation. The nominal iteration
-        // budget is not permission to abandon a still-penetrating solution.
-        for (int pass = 0; pass < Math.Max(passes, positions.Length * 8); pass++)
-        {
-            if (down is { } gravity && pass < passes / 2)
-                for (int i = 1; i < positions.Length - 1; i++)
-                    if (!Pinned(i)) positions[i] += gravity * MathF.Min(lengths[i - 1], lengths[i]) * .05f;
-            if (pass == 4)
-                for (int c = 0; c < colliders.Count; c++)
-                    for (int side = 0; side < 2; side++)
-                    {
-                        int first = side == 0 ? 0 : handle, last = side == 0 ? handle : positions.Length - 1;
-                        if (last - first < 2 || supports[c][side] is not { } support) continue;
-                        float error = 0;
-                        for (int i = first; i < last; i++)
-                            error += MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - lengths[i]);
-                        if (error < .001f) continue;
-                        var across = Vector3.Cross(support.Normal, positions[last] - positions[first]);
-                        if (across.LengthSquared() < 1e-10f) continue;
-                        across = Vector3.Normalize(across);
-                        bool planar = true;
-                        for (int i = first + 1; i < last; i++)
-                            planar &= MathF.Abs(Vector3.Dot(positions[i] - positions[first], across)) < .0001f;
-                        if (!planar) continue;
-                        // A compressed planar span needs one coherent out-of-plane
-                        // bend to escape a symmetric deadlock, not a different kick
-                        // at every contact (which creates alternating little arches).
-                        for (int i = first + 1; i < last; i++)
-                            positions[i] += across * error * MathF.Sin(MathF.PI * (i - first) / (last - first));
-                    }
-            // Contacts follow every distance sweep, so restoring link lengths
-            // cannot repeatedly pull a settled span back through the surface.
-            for (int sweep = 0; sweep < 8; sweep++)
-            {
-                for (int step = 0; step < lengths.Length; step++)
-                {
-                    int i = (sweep & 1) == 0 ? step : lengths.Length - 1 - step;
-                    var delta = positions[i + 1] - positions[i];
-                    float length = delta.Length();
-                    bool moveA = !Pinned(i) && (Pinned(i + 1) || (sweep & 1) != 0);
-                    bool moveB = !Pinned(i + 1) && !moveA;
-                    if (length < 1e-8f || (!moveA && !moveB)) continue;
-                    var correction = delta * ((length - lengths[i]) / length);
-                    if (moveA) positions[i] += correction;
-                    if (moveB) positions[i + 1] -= correction;
-                }
-                for (int c = 0; c < colliders.Count; c++)
-                    for (int step = 0; step < lengths.Length; step++)
-                    {
-                        int i = (sweep & 1) == 0 ? step : lengths.Length - 1 - step;
-                        colliders[c].ProjectSegment(ref positions[i], ref positions[i + 1],
-                            Pinned(i), Pinned(i + 1), radius, supports[c][i < handle ? 0 : 1]);
-                    }
-            }
-            if (pass >= passes && LengthsValid() && Clear(0, lengths.Length)) return;
-        }
-        if (LengthsValid() && Clear(0, lengths.Length)) return;
-
-        // Before conceding to the pinned reach limits, try turning each authored
-        // span around its anchor axis. This preserves every length and pin exactly
-        // and can escape a blocked local minimum without returning through the box.
-        original.CopyTo(positions, 0);
-        for (int side = 0; side < 2; side++)
-        {
-            int first = side == 0 ? 0 : handle, last = side == 0 ? handle : positions.Length - 1;
-            if (last - first < 2 || Clear(first, last)) continue;
-            var axis = positions[last] - positions[first];
-            if (axis.LengthSquared() < 1e-10f) continue;
-            axis = Vector3.Normalize(axis);
-            bool cleared = false;
-            for (int step = 1; step <= 24 && !cleared; step++)
-            {
-                float angle = ((step + 1) / 2) * MathF.PI / 12 * (step % 2 == 0 ? -1 : 1);
-                var turn = Quaternion.CreateFromAxisAngle(axis, angle);
-                for (int i = first + 1; i < last; i++)
-                    positions[i] = original[first] + Vector3.Transform(original[i] - original[first], turn);
-                cleared = Clear(first, last);
-            }
-            if (!cleared)
-                for (int i = first + 1; i < last; i++) positions[i] = original[i];
-        }
-    }
+    void Solve(Vector3[] positions, int handle, IReadOnlyList<ColliderGeometry> colliders,
+        float radius, Vector3? down, IReadOnlyList<Vector3> restPose);
+    void Reset();
 }

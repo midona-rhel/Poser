@@ -138,6 +138,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         public IBone? TargetBone;
         public SelectionId? TargetEntity;
         public bool PreviewModelSpace;
+        public readonly Poser.Game.Posing.BepuIkCollisionState CollisionState = new();
     }
 
     /// <summary>What a held chain captured: World mode's world point and
@@ -450,7 +451,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         foreach (var chainKey in _ikChains.Keys
                      .Where(chainKey => chainKey.Skeleton == key)
                      .ToArray())
-            _ikChains.Remove(chainKey);
+            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -462,6 +463,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             _skeletonsToUpdate.Clear();
             _evaluationObservations.Clear();
             _partialFrames.Clear();
+            foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
             _ikChains.Clear();
             _ikImports.Clear();
         }
@@ -1220,6 +1222,10 @@ public unsafe partial class BonePosingService : IBonePosingService
         }
         var state = previous ?? new IkChainState { Config = config };
         state.Chain = chain;
+        if (previous != null && (previous.Config.Enabled != config.Enabled
+            || previous.Config.Collisions != config.Collisions || previous.Config.Solver != config.Solver
+            || previous.Config.Fabrik != config.Fabrik || previous.Config.SwivelDegrees != config.SwivelDegrees))
+            state.CollisionState.Reset();
 
         // Fixed-target lifecycle: capture on entering Fixed or enabling a
         // Fixed chain; disabling retains tuning but clears the capture.
@@ -1545,7 +1551,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         foreach (var chainKey in _ikChains.Keys
                      .Where(chainKey => chainKey.Skeleton == key)
                      .ToArray())
-            _ikChains.Remove(chainKey);
+            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
 
     }
 
@@ -1913,6 +1919,8 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     public void Dispose()
     {
+        foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
+        _ikChains.Clear();
         _updateBonePhysicsHook?.Dispose();
         _finalizeSkeletonsHook?.Dispose();
         _framework.Update -= OnFrameworkUpdate;

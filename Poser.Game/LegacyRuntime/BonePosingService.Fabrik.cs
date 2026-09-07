@@ -168,7 +168,7 @@ public unsafe partial class BonePosingService
             var handleTarget = ResolveFabrikTarget(tip, control.Handle, true);
             if (rootTarget is not { } root || tipTarget is not { } end || handleTarget is not { } handle) continue;
             _ikService.Solve(tip, new IkSolveRequest(handle.Position, handle.Rotation,
-                config, state.Chain, root.Position, root.Rotation, end.Position));
+                config, state.Chain, root.Position, root.Rotation, end.Position, state.CollisionState));
         }
     }
 
@@ -178,6 +178,10 @@ public unsafe partial class BonePosingService
         if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return config;
         var control = config.Fabrik;
         if (control == null) return config;
+        // Capture the owned visible route for scenes/copies/previews; copying
+        // the pre-collision seed would unwrap it in the new skeleton instance.
+        if (config.Collisions && CaptureFabrikControl(tip, config) is { } visible)
+            control = control with { Bones = visible.Bones, SwivelBaseline = visible.SwivelBaseline };
         var members = FabrikMembers(tip, config);
         FabrikTarget Capture(IBone bone, FabrikTarget target, bool movable)
         {

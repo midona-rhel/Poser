@@ -65,6 +65,7 @@ Verified against `Poser/bin` output and the `packages.lock.json` graph.
 
 | Package | Version | License | Direct/transitive | Evidence |
 |---|---|---|---|---|
+| BepuPhysics / BepuUtilities | 2.4.0 | **Apache-2.0** | Direct / transitive (`Poser.Game.csproj`) | Bepu Entertainment's package metadata and [v2.4.0 license](https://github.com/bepu/bepuphysics2/blob/v2.4.0/LICENSE.md); bundled as `Data/Licenses/Bepu-Apache-2.0.txt`. Headless IK collision backend; no upstream source is modified. |
 | KamiToolKit | 2.2.27 | **MIT** | Direct (`Poser.Game.csproj`) | Package `.nuspec` declares no license, but its `<repository url>` is `https://github.com/MidoriKami/KamiToolKit`; that repo's `LICENSE` reads "MIT License / Copyright (c) 2024 MidoriKami". Fetched from `raw.githubusercontent.com/MidoriKami/KamiToolKit/master/LICENSE`. |
 | K4os.Compression.LZ4.Legacy | 1.3.8 | **MIT** | Direct (`Poser.Game.csproj`) | The `.nuspec` carries only a `licenseUrl` pointing at `github.com/MiloszKrajewski/K4os.Compression.LZ4/blob/master/LICENSE`; that file reads "MIT License / Copyright (c) 2017 Milosz Krajewski". Fetched. |
 | K4os.Compression.LZ4 | 1.3.8 | **MIT** | Transitive, via `.Legacy` | Same repository and LICENSE file. |

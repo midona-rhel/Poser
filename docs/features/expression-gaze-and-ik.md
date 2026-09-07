@@ -90,7 +90,7 @@ at hidden bones or a partial boundary. Active chains cannot overlap another
 active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
 
 Depth edits capture the visible span and anchors before entering history.
-The seed is authored state, not a measurement of the previous solve. The handle
+The seed is authored state; collision continuation is described below. The handle
 is constrained to the reach of both spans; taut spans cannot be stretched by a
 drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve
 on each side. Swivel rotates the bend of each span without moving its endpoints.
@@ -115,13 +115,18 @@ seams are not outlined; sharp rims and box/plane edges are.
 FABRIK and Rope opt into all enabled colliders through the chain's Colliders
 switch. Bone width is the diameter of every segment, in world yalms, independent
 of actor scale; only dragging that slider shows the temporary width overlay.
-Contacts test segment interiors as well as endpoints, after swivel, and project
-whole links outside a face after each forward/backward length sweep. A face
-shared by the anchors guides the span instead of neighbouring links choosing
-opposite sides. Rope settles downward onto surfaces; FABRIK does not add gravity.
-This is a bounded static solve, not accumulated frame-to-frame physics. Endpoint pins remain
-fixed. Conflicting pins/obstacles cannot promise clearance; no actor movement or
-dynamics is used to hide an impossible arrangement. Two Joint and CCD are unchanged.
-An iteration-budget miss is not a reach-limit diagnosis: the solver continues
-length propagation and tests length-preserving span turns before falling back
-on an unresolved span. It never moves pins or stretches bones to force clearance.
+Bepu runs a headless world per collision-enabled chain: rigid capsule links,
+ball-socket joints and positional targets, with fixed substeps and continuous
+collision detection. Link lengths come from the authored span, not Rope's sampled
+curve. The physics world retains the last route while dragging; it is not rebuilt
+from an obstacle-free FABRIK/catenary result each frame. Only the authored scene
+colliders participate, not other chains or native game geometry. Rope settles
+downward; FABRIK adds no gravity. Settled bodies sleep. Two Joint and CCD are unchanged.
+Continuation belongs to the exact live chain; solver/span/swivel changes and
+disabling collisions reset it. Removal, GPose exit and unload dispose its native
+buffers. Another actor or preview never shares it. Snapshots capture the visible
+route as the receiving skeleton's authored seed, not physics velocities.
+The selected handle has limited pulling force so a taut wrapped span can stop
+short of its target. Conflicting anchors or inserting geometry through an already
+pinned chain can remain unresolved; collision is not a guarantee that every
+requested arrangement is physically possible.
