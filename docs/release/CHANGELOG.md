@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.9-beta — actor body colliders and world-space posing
+
+- Create a frozen, individually editable group of body colliders from an actor's current pose.
+- Add capsule and sphere spawners; fit separate spine, shoulder, neck, limb and joint shapes with overlapping caps.
+- Respect loaded model weights and racial deformation; handle packed bone influences and exclude hair, tails and non-body geometry before capture validation.
+- Render legacy captured meshes as outlines and cache collider geometry.
+- Prevent independent collision-chain links from accumulating unwanted twist.
+- Keep World bone gizmo axes aligned to the world, including attached minions.
+- Add bounded GPose lifetime diagnostics to investigate re-entry crashes; this is not a crash fix.
+
+Body fitting is approximate and frozen at capture time. Edit individual shapes
+as needed and recreate existing groups to use the new fitting.
+The locked-collider coordinate display and GPose re-entry crash remain tracked.
+All twelve commits through `bae6ddc0` were authorized for this release on 2026-09-07.
+No additional in-game verification is claimed for this release.
+
+
 ## 0.9.8-beta — furniture and collider-aware chain IK
 
 - Add furniture as a dedicated spawn/sidebar/library category with dye, lighting and night controls.
