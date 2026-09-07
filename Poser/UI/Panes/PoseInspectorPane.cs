@@ -485,7 +485,7 @@ public partial class PoseInspectorPane
             else
             {
                 frameWorld = _editorState.TransformOrientation == TransformOrientation.Global
-                    ? actorRotation
+                    ? Quaternion.Identity
                     : Quaternion.Normalize(actorRotation * model.Rotation);
             }
             return (frameWorld, actorRotation, canEdit);

@@ -793,11 +793,12 @@ public class GizmoOverlayWindow : Window
 
         Matrix4x4.Decompose(modelMatrix, out _, out var actorRotation, out _);
 
-        // Global uses model axes; Local uses target axes. Scale is local.
+        // World axes must not inherit the skeleton/attachment rotation.
+        // Drag deltas still convert back through the model matrix below.
         var localFrame = Quaternion.Normalize(
             actorRotation * currentTransform.Rotation);
         var translateFrame = orientation == TransformOrientation.Global
-            ? actorRotation
+            ? Quaternion.Identity
             : localFrame;
         var scaleFrame = localFrame;
 
