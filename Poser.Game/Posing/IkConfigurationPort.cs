@@ -43,7 +43,14 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         _journal.Seal();
         var before = Get(target);
+        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control }
+            && config.TargetMode is IkTargetMode.Actor or IkTargetMode.World
+            && control.Handle.Mode != config.TargetMode
+            && target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint }
+            && _bonePosing.CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
+            config = config with { Fabrik = control with { Handle = handle } };
         var result = Write(target, config);
+        config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)
             return result;
         _journal.Record(
@@ -118,6 +125,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     public IkPortResult SetBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
     {
+        if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
+            return SetFabrikTarget(target, IkTargetMode.Bone, bone);
         var before = BoneTarget(target);
         var result = WriteBoneTarget(target, bone);
         // Without a previous anchor there is no inverse to record: the
@@ -154,6 +163,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
 
     public global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target)
     {
+        if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
+            return control.Handle.Bone;
         if (target.Bone is not { } endpointId)
             return null;
         var endpoint = _bindings.Resolve(endpointId);
@@ -182,6 +193,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
 
     public IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity)
     {
+        if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
+            return SetFabrikTarget(target, IkTargetMode.Entity, entity: entity);
         var before = EntityTarget(target);
         var result = WriteEntityTarget(target, entity);
         if (result.Success && before is { } previous && previous != entity)
@@ -195,6 +208,10 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         if (Get(target) is not { } initial)
             return IkPortResult.Fail("IK configuration requires a live bone target.");
+        // Depth edits capture a new authored span before the journal stages it.
+        // Redo restores that span, not another capture from the later live pose.
+        if (target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint })
+            config = _bonePosing.PrepareIkConfiguration(endpoint, config);
         var result = _journal.Adjust(("IK", target), "Set IK",
             () => Get(target) ?? initial,
             next =>
@@ -204,6 +221,24 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             }, config,
             () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return new IkPortResult(result.Success, result.Detail);
+    }
+
+    public IkPortResult SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
+        BoneId? bone = null, SelectionId? entity = null)
+    {
+        if (_gestures.ActiveGesture != null)
+            return IkPortResult.Fail("Finish the active transform before changing the IK target.");
+        if (target.Bone is not { } id || _bindings.Resolve(id) is not { Success: true, Value: { } endpoint }
+            || Get(target) is not { Fabrik: { } control } config)
+            return IkPortResult.Fail("The FABRIK chain is unavailable.");
+        if (bone is { } anchor && anchor.Skeleton == id.Skeleton
+            && _bindings.Resolve(anchor) is { Success: true, Value: { } followed })
+            for (var ancestor = followed; ancestor != null; ancestor = ancestor.ParentBone)
+                if (control.Bones.Any(b => b.Name == ancestor.BoneName && b.Partial == ancestor.PartialId))
+                    return IkPortResult.Fail("An endpoint cannot follow its own chain or a bone moved by that chain.");
+        var capture = _bonePosing.CaptureFabrikTarget(endpoint, mode, bone, entity);
+        if (capture == null) return IkPortResult.Fail("Choose an available target.");
+        return Set(target, config with { TargetMode = mode, Fabrik = control with { Handle = capture } });
     }
 
     private IkPortResult WriteEntityTarget(TransformTargetId target, SelectionId entity)
@@ -219,9 +254,12 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return error == null ? IkPortResult.Ok() : IkPortResult.Fail(error);
     }
 
-    public SelectionId? EntityTarget(TransformTargetId target) =>
-        target.Bone is { } endpointId
-        && _bindings.Resolve(endpointId) is { Success: true, Value: { } endpoint }
-            ? _bonePosing.GetIkEntityTarget(endpoint)
-            : null;
+    public SelectionId? EntityTarget(TransformTargetId target)
+    {
+        if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
+            return control.Handle.Entity;
+        return target.Bone is { } endpointId
+            && _bindings.Resolve(endpointId) is { Success: true, Value: { } endpoint }
+                ? _bonePosing.GetIkEntityTarget(endpoint) : null;
+    }
 }

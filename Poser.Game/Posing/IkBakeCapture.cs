@@ -613,6 +613,12 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             result.Add(bone);
         }
 
+        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
+        {
+            foreach (var member in control.Bones)
+                Add(endpoint.Skeleton.Bones.FirstOrDefault(b => b.BoneName == member.Name && b.PartialId == member.Partial));
+            return result;
+        }
         if (config.Solver != IkSolver.TwoJoint)
         {
             var walked = new List<IBone> { endpoint };
@@ -646,6 +652,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// holds its captured target with or without an authored delta, a
     /// Relative one solves only for a translation.</summary>
     private bool HasSolveInput(IBone endpoint, IkChainConfig config) =>
+        config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null } ||
         config.TargetMode != IkTargetMode.Actor ||
         _posing.GetModification(endpoint) is { } modification &&
         modification.Position != System.Numerics.Vector3.Zero;

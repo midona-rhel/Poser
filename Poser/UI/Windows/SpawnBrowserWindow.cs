@@ -71,7 +71,12 @@ public sealed class SpawnBrowserWindow : Window
     // The catalog starts after the LAST fixed row: a row added above
     // shifted every catalog activation one entry off ("crystal" spawned
     // the disco lights, 2026-09-02).
-    private const int ActionRows = RowFurnitureFromFile + 1;
+    private const int RowColliderPlane = RowFurnitureFromFile + 1;
+    private const int RowColliderBox = RowColliderPlane + 1;
+    private const int RowColliderCylinder = RowColliderBox + 1;
+    private const int RowColliderCone = RowColliderCylinder + 1;
+    private const int ActionRows = RowColliderCone + 1;
+    private readonly ICameraService _viewCamera;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
     /// the stated kind (null = everything) — the from-library rows' one
@@ -155,6 +160,7 @@ public sealed class SpawnBrowserWindow : Window
     private IWorldObject? _pendingSelectSpawnedWorldObject;
 
     public SpawnBrowserWindow(
+        ICameraService viewCamera,
         IActorSpawnService spawnService,
         IPropCatalog propService,
         IOverlayNodeService overlayService,
@@ -196,6 +202,7 @@ public sealed class SpawnBrowserWindow : Window
         _lightingService = lightingService;
         _lightPane = lightPane;
         _cameraService = cameraService;
+        _viewCamera = viewCamera;
         _cameraPane = cameraPane;
         _catalog = catalog;
         _selection = selection;
@@ -611,6 +618,8 @@ public sealed class SpawnBrowserWindow : Window
             noCameras));
         rows.Add(ActionRow("##spawn-furniture-library", "Furniture from library", TablerIcon.Couch));
         rows.Add(ActionRow("##spawn-furniture-file", "Furniture from file", TablerIcon.Couch));
+        foreach (var shape in new[] { "Plane", "Box", "Cylinder", "Cone" })
+            rows.Add(ActionRow("##spawn-collider-" + shape, "IK collider: " + shape, TablerIcon.Cube));
 
         // Tab per action row, by the fixed row order above. The prop entry
         // is its own tab (a prop catalog arrives later); everything the
@@ -630,7 +639,8 @@ public sealed class SpawnBrowserWindow : Window
                 <= RowOverlayFromFile => SpawnBrowserTab.Overlays,
                 <= RowLightFromFile => SpawnBrowserTab.Lights,
                 <= RowCameraFromFile => SpawnBrowserTab.Cameras,
-                _ => SpawnBrowserTab.Furniture,
+                <= RowFurnitureFromFile => SpawnBrowserTab.Furniture,
+                _ => SpawnBrowserTab.Overlays,
             });
 
         var entries = _catalog.Entries;
@@ -682,7 +692,7 @@ public sealed class SpawnBrowserWindow : Window
                 global::Poser.Library.PoseLibraryEntryKind.Actor =>
                     (TablerIcon.User, SpawnBrowserTab.Actors),
                 global::Poser.Library.PoseLibraryEntryKind.Group =>
-                    (TablerIcon.Folder, SpawnBrowserTab.Actors),
+                    (TablerIcon.Folder, SpawnBrowserTab.All),
                 global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
                     entry.WorldKind switch
                     {
@@ -709,7 +719,7 @@ public sealed class SpawnBrowserWindow : Window
                 entry.NameLower,
                 placed.glyph,
                 0u,
-                "Library",
+                entry.Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? "Library · Group" : "Library",
                 false));
             _rowTabs.Add(placed.tab);
         }
@@ -904,7 +914,8 @@ public sealed class SpawnBrowserWindow : Window
     {
         if (row < ActionRows) return 0;
         int savedStart = ActionRows + _actorEntryCount + _propEntryCount;
-        return row >= savedStart && row < savedStart + _savedObjects.Count ? 1 : 2;
+        if (row < savedStart || row >= savedStart + _savedObjects.Count) return 3;
+        return _savedObjects[row - savedStart].Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? 1 : 2;
     }
 
     private static int CategoryRank(SpawnBrowserTab tab) => tab switch
@@ -934,7 +945,7 @@ public sealed class SpawnBrowserWindow : Window
         return name != 0 ? name : left.CompareTo(right);
     }
 
-    /// <summary>Actions, library, then catalogs. Search orders categories
+    /// <summary>Actions, saved groups, library items, then catalogs. Search orders categories
     /// within each source, then prefix/name matches within the category.</summary>
     private void Refilter()
     {
@@ -947,9 +958,9 @@ public sealed class SpawnBrowserWindow : Window
         if (_queryLower.Length == 0)
         {
             visible.Clear();
-            for (int source = 0; source < 3; source++)
+            for (int source = 0; source < 4; source++)
                 for (int i = 0; i < rows.Count; i++)
-                    if (SourceRank(i) == source && (tab == SpawnBrowserTab.All || _rowTabs[i] == tab))
+                    if (SourceRank(i) == source && MatchesTab(i, tab))
                         visible.Add(i);
             _filteredQuery = string.Empty;
             _filteredTab = (int)tab;
@@ -972,7 +983,7 @@ public sealed class SpawnBrowserWindow : Window
         {
             for (int i = 0; i < rows.Count; i++)
             {
-                if (tab != SpawnBrowserTab.All && _rowTabs[i] != tab)
+                if (!MatchesTab(i, tab))
                     continue;
                 RankRow(rows, i);
             }
@@ -984,6 +995,10 @@ public sealed class SpawnBrowserWindow : Window
         _filteredQuery = _queryLower;
         _filteredTab = (int)tab;
     }
+
+    // A group can contain any mix of entities; it is available from every category.
+    private bool MatchesTab(int row, SpawnBrowserTab tab) =>
+        tab == SpawnBrowserTab.All || _rowTabs[row] == SpawnBrowserTab.All || _rowTabs[row] == tab;
 
     private void RankRow(List<SpawnBrowserRow> rows, int index)
     {
@@ -1141,6 +1156,10 @@ public sealed class SpawnBrowserWindow : Window
                 });
                 return;
             case RowOverlayTalk:
+            case RowColliderPlane:
+            case RowColliderBox:
+            case RowColliderCylinder:
+            case RowColliderCone:
             case RowOverlayBalloon:
             case RowOverlayStatus:
             {
@@ -1150,7 +1169,22 @@ public sealed class SpawnBrowserWindow : Window
                     RowOverlayStatus => OverlayNodeKind.Status,
                     _ => OverlayNodeKind.Talk,
                 };
-                if (_lifecycle.SpawnOverlay(overlayKind)
+                var state = Game.Overlays.OverlayNodeService.DefaultState(overlayKind);
+                if (index >= RowColliderPlane)
+                {
+                    Matrix4x4.Invert(_viewCamera.GetViewMatrix(), out var view);
+                    var position = _viewCamera.GetCameraPosition() - new Vector3(view.M31, view.M32, view.M33) * 2f;
+                    state = new Domain.Presentation.OverlayNodeState
+                    {
+                        Kind = OverlayNodeKind.Collider, Alpha = .2f,
+                        Collider = new Domain.Posing.IkCollider
+                        {
+                            Shape = (Domain.Posing.IkColliderShape)(index - RowColliderPlane),
+                            Transform = Domain.Transforms.PoseTransform.Identity with { Position = position },
+                        },
+                    };
+                }
+                if (_lifecycle.SpawnOverlay(state)
                     is IOverlayNode staged)
                 {
                     // The pane owns the pending select and is pumped by the

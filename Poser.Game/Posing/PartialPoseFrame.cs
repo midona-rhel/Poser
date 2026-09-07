@@ -21,4 +21,6 @@ internal readonly record struct PartialPoseFrame(Transform Before, Transform Aft
             Quaternion.Normalize(Before.Rotation * Quaternion.Inverse(After.Rotation) * visible.Rotation),
             visible.Scale / After.Scale * Before.Scale);
     }
+
+    public Transform ToDisplay(Transform applied) => new PartialPoseFrame(After, Before).ToApply(applied);
 }

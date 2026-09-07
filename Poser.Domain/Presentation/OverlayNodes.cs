@@ -21,6 +21,8 @@ public enum OverlayNodeKind
     /// <summary>One line of the status bar: an icon and a named effect.
     /// </summary>
     Status,
+    /// <summary>Managed world-space geometry, with no native UI subtree.</summary>
+    Collider,
 }
 
 /// <summary>
@@ -117,6 +119,7 @@ public enum StatusKind
 /// </summary>
 public sealed record OverlayNodeState
 {
+    public Posing.IkCollider? Collider { get; init; }
     public OverlayNodeKind Kind { get; init; } = OverlayNodeKind.Talk;
 
     /// <summary>The sidebar's name for this node. Never the drawn text.
@@ -124,8 +127,7 @@ public sealed record OverlayNodeState
     public string Name { get; init; } = string.Empty;
 
     /// <summary>Where the node sits, in SCREEN pixels from the viewport's
-    /// top-left. An overlay node is a 2D thing: it has no world transform and
-    /// never enters the gizmo.</summary>
+    /// top-left, for native UI panels only. Colliders use Collider.Transform.</summary>
     public Vector2 Position { get; init; }
 
     /// <summary>Uniform scale; the node has no independent axes.</summary>
@@ -179,6 +181,7 @@ public sealed record OverlayNodeState
     /// hostile file's numbers.</summary>
     public OverlayNodeState Normalized() => this with
     {
+        Collider = Kind == OverlayNodeKind.Collider ? (Collider ?? new()).Normalized() : null,
         Position = new Vector2(
             Finite(Position.X, 0f, OverlayNodeLimits.MaxPosition),
             Finite(Position.Y, 0f, OverlayNodeLimits.MaxPosition)),

@@ -32,6 +32,7 @@ internal enum GizmoTargetType
 
     /// <summary>Borrowed world object with one editable world transform.</summary>
     WorldObject,
+    Collider,
 
     /// <summary>The anonymous group: entities of MIXED kinds selected
     /// together, seated at their centroid.</summary>
@@ -590,6 +591,8 @@ public class GizmoOverlayWindow : Window
                 IsAttached(light) ? GizmoTargetType.None : GizmoTargetType.Light,
             { Kind: SceneEntityKind.Prop } => GizmoTargetType.Prop,
             { Kind: SceneEntityKind.WorldObject } => GizmoTargetType.WorldObject,
+            { Kind: SceneEntityKind.Overlay, Overlay: { } collider } when
+                _bindings.Resolve(collider).Value is { Visible: true, State.Collider: { Locked: false } } => GizmoTargetType.Collider,
             _ => GizmoTargetType.None,
         };
     }
@@ -605,7 +608,8 @@ public class GizmoOverlayWindow : Window
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformTargetResolver.Resolve(
             _selection.Selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, _selection.Selected));
+            id => _groups.IsLockedChild(id, _selection.Selected) ||
+                (id.Overlay is { } o && _bindings.Resolve(o).Value?.State.Collider?.Locked == true));
 
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
@@ -716,7 +720,7 @@ public class GizmoOverlayWindow : Window
                 return;
             primaryWorldObject = primaryWorldObjectId;
         }
-        else if (targetType != GizmoTargetType.Mixed)
+        else if (targetType is not (GizmoTargetType.Mixed or GizmoTargetType.Collider))
         {
             if (selection.Primary is not
                 { Kind: TransformTargetKind.Actor, Actor: { } primaryActorId })
@@ -769,6 +773,11 @@ public class GizmoOverlayWindow : Window
                 is { } propRest)
         {
             currentTransform = Transform.FromPose(propRest);
+        }
+        else if (targetType == GizmoTargetType.Collider &&
+            _viewport.GetModelTransform(selection.Primary) is { } colliderTransform)
+        {
+            currentTransform = Transform.FromPose(colliderTransform);
         }
         else if (primaryWorldObject is { } worldObjectTarget &&
             _viewport.GetModelTransform(
@@ -1214,6 +1223,7 @@ public class GizmoOverlayWindow : Window
             cleanCustomPivot,
             description: targetType switch
             {
+                GizmoTargetType.Collider => "Transform IK collider",
                 GizmoTargetType.Bone =>
                     $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.Light =>
@@ -1386,6 +1396,20 @@ public class GizmoOverlayWindow : Window
                         + GizmoSnap.Snap(offset, linearStep);
                 }
                 var newTransform = gesture.Start with { Position = position };
+                if (EffectiveSelection()?.Primary is { Bone: { } boneId }
+                    && _bindings.Resolve(boneId).Value is { } bone)
+                {
+                    var limited = gesture.Current.Position + _bonePosingService.ClampIkTranslation(
+                        bone, position - gesture.Current.Position);
+                    if (Vector3.DistanceSquared(limited, position) > 1e-10f)
+                    {
+                        // Discard rejected travel: reversing the mouse should move
+                        // immediately, not first unwind an unreachable target offset.
+                        newTransform = newTransform with { Position = limited };
+                        Matrix4x4.Invert(_dragInvModel, out var model);
+                        _dragAccumWorld = Vector3.TransformNormal(limited - gesture.Start.Position, model);
+                    }
+                }
                 if (DispatchUpdate(gesture, newTransform))
                     gesture.Current = newTransform;
                 return;

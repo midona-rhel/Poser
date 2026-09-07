@@ -51,6 +51,7 @@ public class PoserConfiguration : IPluginConfiguration
     // an explicit "Set game target" action.
     public bool SelectionChangesGPoseTarget { get; set; } = false;
     public bool GPoseTargetChangesSelection { get; set; } = true;
+    public bool BlockGPoseMouseTargeting { get; set; } = true;
 
 
     /// <summary>

@@ -23,6 +23,7 @@
     <InternalsVisibleTo Include="Poser.Game.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="BepuPhysics" Version="2.4.0" />
     <!-- The one allowed package for the MCDF legacy LZ4 stream (PBI-009). -->
     <PackageReference Include="K4os.Compression.LZ4.Legacy" Version="1.3.8" />
     <!-- The game-UI node library behind the overlay nodes (Poser.Game/Overlays).

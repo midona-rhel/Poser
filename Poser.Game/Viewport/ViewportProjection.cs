@@ -58,6 +58,8 @@ public sealed class ViewportProjection : IViewportReads
     public PoseTransform? GetModelTransform(TransformTargetId target) =>
         target.Kind switch
         {
+            TransformTargetKind.Collider when target.Collider is { } id =>
+                _bindings.Resolve(id).Value?.State.Collider?.Transform,
             TransformTargetKind.Actor when target.Actor is { } actorId =>
                 GetActorTransform(actorId),
             TransformTargetKind.Bone when target.Bone is { } boneId =>

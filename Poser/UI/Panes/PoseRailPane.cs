@@ -79,6 +79,7 @@ public class PoseRailPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        _inspector.RefreshSelection();
         float s = ImGuiHelpers.GlobalScale;
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;

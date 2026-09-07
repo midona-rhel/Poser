@@ -134,12 +134,13 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         Poser.Application.Scene.SceneGroups sceneGroups,
         Poser.Library.IPoseLibraryService library,
         Dalamud.Plugin.Services.IPluginLog log,
+        Poser.Services.IBonePosingService bonePosing,
         Poser.Application.Transforms.GroupTransformState? groupTransforms = null)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups,
+            worldObjects, place, mcdfHashes, selection, bonePosing, log), log, sceneGroups,
             library, groupTransforms, history)
     {
     }
@@ -1494,11 +1495,16 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
             // Commit — re-guarded: a cancellation or session replacement
             // landing after the last phase rolls back instead of committing.
+            if (scene.Actors.Any(actor => actor.Fabrik?.Count > 0))
+                await _runtime.WaitForFabrikBindings(actorTokens.Values.Concat(propTokens.Values)
+                    .Concat(worldObjectTokens.Values).Concat(lightTokens.Values), cancellation);
             Step(ScenePhase.Committing, cancellable: false);
             var committed = await _runtime.OnFramework(() =>
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
+                foreach (var error in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
+                    entities.Add(new SceneEntityOutcome("IK", "FABRIK", false, error));
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
                     ? $"Loaded {operation.FileName}: " +
@@ -1643,6 +1649,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                         new SceneStructureRef { Kind = "prop", Key = prop.LogicalId },
                     { Kind: TransformTargetKind.WorldObject, WorldObject: { } world } =>
                         new SceneStructureRef { Kind = "worldObject", Key = world.LogicalId },
+                    { Kind: TransformTargetKind.Collider, Collider: { } collider } =>
+                        new SceneStructureRef { Kind = "overlay", Key = collider.LogicalId },
                     { Kind: TransformTargetKind.Light, Light: { } light } =>
                         new SceneStructureRef { Kind = "light", Key = light.LogicalId },
                     _ => null,
@@ -1747,6 +1755,12 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             if (camera.Camera is { Kind: global::Poser.Domain.Scene.CameraKind.Free } document)
             {
                 sum += document.Position;
+                counted++;
+            }
+        foreach (var overlay in scene.Overlays ?? [])
+            if (overlay.Node?.Collider is { } collider)
+            {
+                sum += collider.Transform.Position;
                 counted++;
             }
         return counted == 0 ? null : sum / counted;

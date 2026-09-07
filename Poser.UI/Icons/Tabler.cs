@@ -132,6 +132,7 @@ public enum TablerIcon
     Dots,
     UserWithSlot,
     Couch,
+    Cube,
 }
 
 /// <summary>
@@ -266,6 +267,7 @@ public static class Tabler
         TablerIcon.Moneybag        => "moneybag",
         TablerIcon.Plant           => "plant-2",
         TablerIcon.Couch           => "sofa",
+        TablerIcon.Cube            => "ik-collider",
         TablerIcon.LayersUnion     => "layers-union",
         TablerIcon.UserFromFile    => "user+file",
         TablerIcon.MoneybagFromFile => "moneybag+file",

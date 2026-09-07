@@ -73,7 +73,8 @@ internal sealed partial class ActorServiceLifecycle
         foreach (var skeleton in _skeletons.GetSkeletons(actor))
             foreach (var chain in _bonePosing.GetIkChains(skeleton))
                 chains.Add(new(skeleton.Slot, chain.Endpoint.PartialId, chain.Endpoint.BoneName,
-                    chain.Config, _bonePosing.GetIkBoneTarget(chain.Endpoint) is { } bone
+                    chain.Config.Fabrik != null ? _bonePosing.SnapshotFabrik(chain.Endpoint) ?? chain.Config : chain.Config,
+                    _bonePosing.GetIkBoneTarget(chain.Endpoint) is { } bone
                         ? _bindings.GetBoneId(bone) : null,
                     _bonePosing.GetIkEntityTarget(chain.Endpoint)));
         return new ActorRuntimeState(id, _spawns.GetModelCharaId(actor), appearance,
@@ -167,6 +168,16 @@ internal sealed partial class ActorServiceLifecycle
         foreach (var saved in state.Ik)
         {
             if (LocalBone(saved.Slot, saved.Partial, saved.Bone) is not { } endpoint) continue;
+            if (saved.Config is { Solver: Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope, Fabrik: { } control })
+            {
+                Poser.Domain.Posing.FabrikTarget Rebind(Poser.Domain.Posing.FabrikTarget point) =>
+                    point.Bone is { } anchor && anchor.Skeleton.Actor == state.OriginalId
+                    ? point with { Bone = LocalBone(anchor.Slot, anchor.PartialId, anchor.CanonicalName) is { } live
+                        ? _bindings.GetBoneId(live) : null } : point;
+                _bonePosing.RestoreFabrik(endpoint, saved.Config with { Fabrik = control with
+                    { Handle = Rebind(control.Handle) } });
+                continue;
+            }
             _bonePosing.SetIkConfiguration(endpoint, saved.Config);
             if (saved.TargetBone is { } boneId)
             {

@@ -186,6 +186,10 @@ internal interface ISceneRuntime
     /// the restored actor the saved Entity key resolved to, or null when the
     /// file names none. Null on success, else the refusal detail.</summary>
     string? ApplyActorGaze(object actor, SceneActor data, object? target);
+    IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, object> actors,
+        IReadOnlyDictionary<Guid, object> props, IReadOnlyDictionary<Guid, object> worlds,
+        IReadOnlyDictionary<Guid, object> lights) => Array.Empty<string>();
+    Task WaitForFabrikBindings(IEnumerable<object> entities, System.Threading.CancellationToken cancellation) => Task.CompletedTask;
 
     void SetActorVisibility(object actor, bool visible);
 

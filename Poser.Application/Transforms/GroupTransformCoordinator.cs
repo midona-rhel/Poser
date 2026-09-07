@@ -43,6 +43,7 @@ public sealed class GroupTransformCoordinator : IDisposable
 
     public static TransformTargetId? Target(SelectionId id) => id switch
     {
+        { Kind: SceneEntityKind.Overlay, Overlay: { } overlay } => TransformTargetId.ForCollider(overlay),
         { Kind: SceneEntityKind.Actor, Actor: { } actor } => TransformTargetId.ForActor(actor),
         { Kind: SceneEntityKind.Light, Light: { } light } => TransformTargetId.ForLight(light),
         { Kind: SceneEntityKind.Prop, Prop: { } prop } => TransformTargetId.ForProp(prop),

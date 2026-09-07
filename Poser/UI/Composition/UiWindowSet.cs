@@ -28,6 +28,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly IServiceProvider _services;
     // Requested state can wait for bounded icon warming.
     private bool _primaryOpenRequested;
+    private (bool Open, bool Detached, bool SplitInspector)? _appliedLayout;
 
     public bool IsPrimaryOpen => _primaryOpenRequested;
 
@@ -97,10 +98,7 @@ public sealed class UiWindowSet : IDisposable
         };
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
-        SidebarPart.OnReattach += ToggleDetached;
-        InspectorPart.OnMerge += ToggleSplitInspector;
         Main.OnInspectorSplitToggleRequested += ToggleSplitInspector;
-        ToolbarPart.OnReattach += ToggleDetached;
         Main.OnDetachToggleRequested += ToggleDetached;
         Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
         Main.OnSceneWindowToggleRequested += ToggleSceneWindow;
@@ -178,6 +176,13 @@ public sealed class UiWindowSet : IDisposable
 
     private void SyncSplitWindows()
     {
+        var ui = _configService.Config.UI;
+        var layout = (Main.IsOpen, ui.DetachedShell, ui.SplitInspector);
+        // Settings previews/saves also notify here. Only an actual layout
+        // change should reset window visibility, not an unrelated setting.
+        if (_appliedLayout == layout)
+            return;
+        _appliedLayout = layout;
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
         SidebarPart.IsOpen = detached;
         InspectorPart.IsOpen =

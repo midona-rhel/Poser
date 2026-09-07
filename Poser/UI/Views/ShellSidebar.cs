@@ -252,7 +252,7 @@ public sealed class ShellSidebar
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
-                        : row.LightActions ? (row.PauseAction || row.NightAction ? 3 : 2)
+                        : row.LightActions ? (row.ColliderActions ? 4 : row.PauseAction || row.NightAction ? 3 : 2)
                         : row.GroupActions ? 4
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
@@ -842,7 +842,21 @@ public sealed class ShellSidebar
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
 
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (row.ColliderActions)
+                {
+                    ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                    if (Crystarium.TemporaryIconToggle(TablerIcon.Cube, selected: false, style: square,
+                            help: row.CollisionEnabled ? "Disable collision" : "Enable collision",
+                            id: "##collider-collision", dimmed: !row.CollisionEnabled))
+                        _vm.OnColliderCollision?.Invoke(row);
+                    ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
+                    if (Crystarium.TemporaryIconToggle(row.ColliderLocked ? TablerIcon.Lock : TablerIcon.LockOpen,
+                            selected: false, style: square,
+                            help: row.ColliderLocked ? "Unlock transform" : "Lock transform",
+                            id: "##collider-lock", dimmed: !row.ColliderLocked))
+                        _vm.OnColliderLock?.Invoke(row);
+                }
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * (row.ColliderActions ? 2f : 1f), 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,

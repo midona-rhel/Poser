@@ -28,7 +28,7 @@ using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 namespace Poser.UI;
 
 /// <summary>Renders Inspector rail and workspace pose controls.</summary>
-public class PoseInspectorPane
+public partial class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
@@ -265,7 +265,7 @@ public class PoseInspectorPane
     private EffectiveTransformSelection? EffectiveSelection()
     {
         var selected = _selection.Selected;
-        if (_effectivePrimed &&
+        if (!selected.Any(x => x.Overlay.HasValue) && _effectivePrimed &&
             _effectiveRevision == _scene.Revision &&
             SameSelection(_effectiveKey, selected))
             return _effective;
@@ -276,7 +276,8 @@ public class PoseInspectorPane
         _effectiveKey.AddRange(selected);
         _effective = TransformTargetResolver.Resolve(
             selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, selected));
+            id => _groups.IsLockedChild(id, selected) ||
+                (id.Overlay is { } o && _bindings.Resolve(o).Value?.State.Collider?.Locked == true));
         return _effective;
     }
 
@@ -352,8 +353,10 @@ public class PoseInspectorPane
         return null;
     }
 
-    public void SetSelection(SelectionId? primary)
+    // Each host reads the shared selection itself; Properties may not be drawn.
+    public void RefreshSelection()
     {
+        var primary = _selection.Primary;
         var selected = _selection.Selected;
         bool selectionChanged = selected.Count != _selectionSnapshot.Length;
         for (int i = 0; !selectionChanged && i < selected.Count; i++)
@@ -386,6 +389,7 @@ public class PoseInspectorPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        RefreshSelection();
         Game.BoneSnapshotDemand.Request();
         using var profile = FrameProfiler.Scope("Workspace · Pose");
         float s = ImGuiHelpers.GlobalScale;
@@ -694,7 +698,7 @@ public class PoseInspectorPane
         }
 
         // Overlay placement uses screen coordinates.
-        if (_primary is { Kind: SceneEntityKind.Overlay })
+        if (IsOverlaySelection)
         {
             if (_overlayPane.HasRailNode)
                 stack.Section(
@@ -2055,10 +2059,12 @@ public class PoseInspectorPane
     private void DrawIkBoneTarget(
         Crystarium.FormScope form,
         global::Poser.Domain.Identity.BoneId endpoint,
-        TransformTargetId ikTarget)
+        TransformTargetId ikTarget, bool fabrik = false)
     {
         var actors = _scene.Snapshot.Actors;
-        var current = _ikPort.BoneTarget(ikTarget);
+        var current = fabrik
+            ? _ikPort.Get(ikTarget)?.Fabrik?.Handle.Bone
+            : _ikPort.BoneTarget(ikTarget);
         // The dropdown leads with Any actor: the list needs one named, the
         // pick in the view is limited to the named one and free otherwise.
         var shownActor = _ikBoneActor ?? current?.Skeleton.Actor;
@@ -2084,7 +2090,10 @@ public class PoseInspectorPane
             : "Choose a bone";
         void Aim(global::Poser.Domain.Identity.BoneId bone)
         {
-            if (_ikPort.SetBoneTarget(ikTarget, bone) is { Success: false } failed)
+            var result = fabrik
+                ? _ikPort.SetFabrikTarget(ikTarget, IkTargetMode.Bone, bone)
+                : _ikPort.SetBoneTarget(ikTarget, bone);
+            if (result is { Success: false } failed)
                 _notices.Failed($"IK target: {failed.Detail}");
             else
                 _ikBoneActor = bone.Skeleton.Actor;
@@ -2130,9 +2139,11 @@ public class PoseInspectorPane
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint)
+    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint, bool fabrik = false)
     {
-        var current = _ikPort.EntityTarget(endpoint);
+        var current = fabrik
+            ? _ikPort.Get(endpoint)?.Fabrik?.Handle.Entity
+            : _ikPort.EntityTarget(endpoint);
         var scene = _scene.Snapshot;
         string? currentName = current switch
         {
@@ -2166,6 +2177,11 @@ public class PoseInspectorPane
                 }, help: "Follow an object, scenery, light or VFX while keeping the current offset");
             actions.Button("Detach", () =>
             {
+                if (fabrik)
+                {
+                    _ikPort.SetFabrikTarget(endpoint, IkTargetMode.World);
+                    return;
+                }
                 if (_ikPort.Get(endpoint) is { } config
                     && _ikPort.Set(endpoint, config with { TargetMode = IkTargetMode.World })
                         is { Success: false } failed)
@@ -2174,9 +2190,13 @@ public class PoseInspectorPane
         });
         if (current != null && currentName == null)
             form.Status("Target unavailable — choose another entity or detach.", warning: true);
-        if (_ikEntityPicker.Draw() is { } chosen
-            && _ikPort.SetEntityTarget(endpoint, chosen.Item.Id) is { Success: false } refusal)
-            _notices.Failed($"IK target: {refusal.Detail}");
+        if (_ikEntityPicker.Draw() is { } chosen)
+        {
+            var result = fabrik
+                ? _ikPort.SetFabrikTarget(endpoint, IkTargetMode.Entity, entity: chosen.Item.Id)
+                : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
+            if (result is { Success: false } refusal) _notices.Failed($"IK target: {refusal.Detail}");
+        }
     }
 
     private void DrawIk(Crystarium.FormScope form)
@@ -2188,8 +2208,10 @@ public class PoseInspectorPane
 
         void Apply(Domain.Posing.IkChainConfig next)
         {
-            if (_ikPort.Set(ikTarget, next).Success)
+            var result = _ikPort.Set(ikTarget, next);
+            if (result.Success)
                 config = _ikPort.Get(ikTarget);
+            else _notices.Failed($"IK: {result.Detail}");
         }
 
         void Adjust(Domain.Posing.IkChainConfig next)
@@ -2282,6 +2304,10 @@ public class PoseInspectorPane
             next => Adjust(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
+        if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope) && config.Fabrik != null)
+            DrawFabrikTargets(form, boneId, ikTarget, config);
+        else
+        {
         int modeIndex = config.TargetMode switch
         {
             Domain.Posing.IkTargetMode.World => 1,
@@ -2314,6 +2340,7 @@ public class PoseInspectorPane
             next => Apply(config with { HoldRotation = next }),
             disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
             help: "The tip keeps its rotation to the held spot or bone as well");
+        }
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
@@ -2385,12 +2412,35 @@ public class PoseInspectorPane
         }
         else
         {
-            form.Switch(
-                "Constraints",
-                config.EnforceConstraints,
-                next => Apply(config with { EnforceConstraints = next }),
-                help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
-            form.Slider(
+            if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
+                form.Switch(
+                    "Constraints",
+                    config.EnforceConstraints,
+                    next => Apply(config with { EnforceConstraints = next }),
+                    help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
+            if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+            {
+                form.Slider("Parent depth", config.ParentDepth, 0, IkChainConfig.MaxDepth - config.ChildDepth,
+                    next => Adjust(config with { ParentDepth = (int)MathF.Round(next) }), format: "0",
+                    help: "Links toward parents; zero disables this side. The far end stays anchored");
+                form.Switch("Colliders", config.Collisions,
+                    next => Apply(config with { Collisions = next }),
+                    help: "Avoid enabled IK colliders with this chain");
+                if (config.Collisions)
+                    form.Slider("Bone width", config.CollisionRadius * 2f, 0f, 1f,
+                        next =>
+                        {
+                            Adjust(config with { CollisionRadius = next * .5f });
+                            IkWidthPreview.Radius = next * .5f;
+                        },
+                        format: "0.000", help: "Diameter of every segment in this chain, in world yalms",
+                        onBegin: () => { IkWidthPreview.Target = ikTarget.Bone; IkWidthPreview.Radius = config.CollisionRadius; },
+                        onCommit: () => IkWidthPreview.Target = null);
+                form.Slider("Child depth", config.ChildDepth, 0, IkChainConfig.MaxDepth - config.ParentDepth,
+                    next => Adjust(config with { ChildDepth = (int)MathF.Round(next) }), format: "0",
+                    help: "Links toward children; stops at a branch. Zero disables this side");
+            }
+            else form.Slider(
                 "Depth",
                 config.CcdDepth,
                 Domain.Posing.IkChainConfig.MinDepth,
@@ -2720,7 +2770,8 @@ public class PoseInspectorPane
                 if (overlay.Id.Equals(primaryOverlay))
                     return (
                         overlay.Name,
-                        overlay.Visible ? "overlay" : "overlay · hidden",
+                        overlay.Kind == Domain.Presentation.OverlayNodeKind.Collider
+                            ? "IK collider" : overlay.Visible ? "overlay" : "overlay · hidden",
                         0);
             }
             return ("Overlay", "overlay", 0);
@@ -2738,7 +2789,8 @@ public class PoseInspectorPane
         _primary is { Kind: SceneEntityKind.Camera };
 
     public bool IsOverlaySelection =>
-        _primary is { Kind: SceneEntityKind.Overlay };
+        _primary is { Kind: SceneEntityKind.Overlay, Overlay: { } id } &&
+        _bindings.Resolve(id).Value?.State.Collider == null;
 
     /// <summary>The rail pad's overlay node — the camera ball's idiom.
     /// </summary>
@@ -2826,6 +2878,9 @@ public class PoseInspectorPane
 
         switch (EffectiveSelection()?.Primary)
         {
+            case { Kind: TransformTargetKind.Collider } collider:
+                return _viewport.GetModelTransform(collider) is { } value
+                    ? (Transform.FromPose(value), true) : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
                 // Model overrides stabilize actor transforms during animation.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
@@ -2886,6 +2941,7 @@ public class PoseInspectorPane
             case { Kind: TransformTargetKind.Light }:
             case { Kind: TransformTargetKind.Prop }:
             case { Kind: TransformTargetKind.WorldObject }:
+            case { Kind: TransformTargetKind.Collider }:
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
@@ -2932,6 +2988,7 @@ public class PoseInspectorPane
                     TransformTargetKind.Light => "light",
                     TransformTargetKind.Prop => "object",
                     TransformTargetKind.WorldObject => "world object",
+                    TransformTargetKind.Collider => "IK collider",
                     _ => "bone",
                 }}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
@@ -2967,6 +3024,7 @@ public class PoseInspectorPane
         if (!IsMultiEntitySelection && _entity is not (IActor or IBone) &&
             _primary is not { Kind: SceneEntityKind.Light } &&
             _primary is not { Kind: SceneEntityKind.Prop } &&
+            _primary is not { Kind: SceneEntityKind.Overlay } &&
             _primary is not { Kind: SceneEntityKind.WorldObject })
             return;
 
@@ -2974,6 +3032,10 @@ public class PoseInspectorPane
             _cleanModelStart is not { } modelStart)
             return;
 
+        if (_entity is IBone bone && _cleanDisplayedCurrent is { } previous
+            && displayedAfter.Position != previous.Position)
+            displayedAfter = displayedAfter with { Position = previous.Position
+                + _bonePosingService.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
         var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,

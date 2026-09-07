@@ -57,6 +57,10 @@ public static class TransformTargetResolver
             {
                 switch (id)
                 {
+                    case { Kind: SceneEntityKind.Overlay, Overlay: { } colliderId }:
+                        if (snapshot.Overlays.Any(x => x.Id == colliderId && x.Kind == Domain.Presentation.OverlayNodeKind.Collider))
+                            mixed.Add(TransformTargetId.ForCollider(colliderId));
+                        break;
                     case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
                     {
                         bool exists = false;
@@ -149,6 +153,14 @@ public static class TransformTargetResolver
             return actorTargets.Count == 0
                 ? null
                 : new EffectiveTransformSelection(actorTargets[0], actorTargets);
+        }
+
+        if (selected[0].Kind == SceneEntityKind.Overlay)
+        {
+            var colliders = selected.Where(id => id.Overlay is { } overlay &&
+                snapshot.Overlays.Any(x => x.Id == overlay && x.Kind == Domain.Presentation.OverlayNodeKind.Collider))
+                .Select(id => TransformTargetId.ForCollider(id.Overlay!.Value)).ToArray();
+            return colliders.Length == 0 ? null : new(colliders[0], colliders);
         }
 
         if (selected[0].Kind == SceneEntityKind.Light)

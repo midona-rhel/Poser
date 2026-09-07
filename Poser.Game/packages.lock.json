@@ -2,6 +2,15 @@
   "version": 1,
   "dependencies": {
     "net10.0-windows7.0": {
+      "BepuPhysics": {
+        "type": "Direct",
+        "requested": "[2.4.0, )",
+        "resolved": "2.4.0",
+        "contentHash": "Ck/BJgSQrBqYrj0T9jGljDdHNILBP5kTPTylc7N/hCzR1XJJc7p6ORzwtjTfjgoYkkdajvLHxEQv6BRC8kaysQ==",
+        "dependencies": {
+          "BepuUtilities": "2.4.0"
+        }
+      },
       "DotNet.ReproducibleBuilds": {
         "type": "Direct",
         "requested": "[1.2.39, )",
@@ -22,6 +31,11 @@
         "requested": "[2.2.27, )",
         "resolved": "2.2.27",
         "contentHash": "+xJxmutfgcVRb+G+20wWMRoRuMUul85FkC0FckHLxfhvLf7yTXbm5HRJGZei+Ir9idMqkJTrbptKQcb9TBigvw=="
+      },
+      "BepuUtilities": {
+        "type": "Transitive",
+        "resolved": "2.4.0",
+        "contentHash": "KNMxkzKLHAvV7jRtErxs3rPv71fHToqo/WN96HlT6iomWuwL97tohEbt0B1WA8A6sO5t6PP+qF08d4T9A8k2uA=="
       },
       "K4os.Compression.LZ4": {
         "type": "Transitive",

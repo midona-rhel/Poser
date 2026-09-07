@@ -20,6 +20,8 @@ public sealed class GroupTransformSource(
     {
         if (!scene.Contains(target)) return "A selected group member is unavailable.";
         if (target.Kind == TransformTargetKind.Bone) return "Bones cannot join an entity group transform.";
+        if (target.Collider is { } collider && bindings.Resolve(collider).Value?.State.Collider?.Locked == true)
+            return "The IK collider transform is locked.";
         if (target.Light is { } light)
         {
             var resolved = bindings.Resolve(light);
@@ -37,6 +39,9 @@ public sealed class GroupTransformSource(
         var logical = GroupTransformIdentity.LogicalId(target);
         return target.Kind switch
         {
+            TransformTargetKind.Collider => scene.Snapshot.Overlays.FirstOrDefault(x => x.Id.LogicalId == logical
+                && x.Kind == Domain.Presentation.OverlayNodeKind.Collider) is { } collider
+                ? TransformTargetId.ForCollider(collider.Id) : null,
             TransformTargetKind.Actor => scene.Snapshot.Actors.FirstOrDefault(x => x.Id.LogicalId == logical) is { } actor
                 ? TransformTargetId.ForActor(actor.Id) : null,
             TransformTargetKind.Prop => scene.Snapshot.Props.FirstOrDefault(x => x.Id.LogicalId == logical) is { } prop

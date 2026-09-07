@@ -44,6 +44,7 @@ public sealed class SettingsViewModel
     public bool LinkSiblingBones;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
+    public bool BlockGPoseMouseTargeting = true;
     public int UndoDepth = 500;
 
     /// <summary>Whether the frame profiler records and shows its panel.
@@ -564,6 +565,11 @@ public static partial class SettingsView
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
                 "Poser's windows close by themselves when you leave GPose");
+            form.Switch(
+                "Block game mouse targeting",
+                vm.BlockGPoseMouseTargeting,
+                next => vm.BlockGPoseMouseTargeting = next,
+                "Prevent mouse clicks from changing the game's target in GPose; Poser selection is unaffected");
             form.Switch(
                 "Selection follows the game target",
                 vm.FollowGameTarget,

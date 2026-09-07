@@ -189,6 +189,7 @@ public sealed class OverlayNodeHandle : IOverlayNode
 /// </summary>
 public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 {
+    private sealed class ColliderToken;
     private readonly IOverlayNodePort _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
@@ -257,7 +258,8 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             document = document with { Name = NextName(document.Kind) };
         try
         {
-            var node = _port.Create(document);
+            var node = document.Kind == OverlayNodeKind.Collider
+                ? new ColliderToken() : _port.Create(document);
             if (node == null)
             {
                 _log.Warning(
@@ -306,7 +308,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     /// the node is left as the game last drew it.</summary>
     internal void ApplyToNode(object node, OverlayNodeState state)
     {
-        if (_disposed)
+        if (_disposed || node is ColliderToken)
             return;
         try
         {
@@ -325,7 +327,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             return;
         try
         {
-            _port.Destroy(node);
+            if (node is not ColliderToken) _port.Destroy(node);
         }
         catch (Exception ex)
         {
@@ -347,6 +349,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 
     private static string KindName(OverlayNodeKind kind) => kind switch
     {
+        OverlayNodeKind.Collider => "IK collider",
         OverlayNodeKind.Balloon => "Balloon",
         OverlayNodeKind.Status => "Status",
         _ => "Dialog",
@@ -358,6 +361,12 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     public static OverlayNodeState DefaultState(OverlayNodeKind kind) =>
         kind switch
         {
+            OverlayNodeKind.Collider => new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Collider,
+                Collider = new(),
+                Alpha = .2f,
+            },
             OverlayNodeKind.Balloon => new OverlayNodeState
             {
                 Kind = OverlayNodeKind.Balloon,

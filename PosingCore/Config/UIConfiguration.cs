@@ -36,8 +36,6 @@ public class UIConfiguration
     public System.Collections.Generic.Dictionary<string, bool> SectionDisclosure { get; set; } = new();
     public System.Collections.Generic.Dictionary<string, WindowPlacement> DetachedPlacements { get; set; } = new();
 
-    /// <summary>The settings page last shown; the window opens there.</summary>
-    public int LastSettingsPage { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
     public bool ShowInGPose { get; set; } = true;

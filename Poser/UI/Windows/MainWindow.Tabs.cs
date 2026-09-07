@@ -488,7 +488,7 @@ public partial class MainWindow
                             () => OpenEntityRename(
                                 "Save group to library", group.Name,
                                 name => _scenePane.SaveGroupEntry(
-                                    group.Members, name, AllActorsOwned(group.Members))));
+                                    _groups.Descendants(group).ToArray(), name, AllActorsOwned(_groups.Descendants(group).ToArray()))));
                         actions.Button("Ungroup",
                             () => DissolveGroup(group.Id));
                     }
@@ -587,9 +587,6 @@ public partial class MainWindow
         }
 
         ImGui.SetCursorScreenPos(origin);
-        // Inspector-owned selection state drives IK and must be current even
-        // when another tab owns the centre pane.
-        _poseInspector.SetSelection(_selection.Primary);
 
         // The properties panel's empty state: one centred line.
         if (_selection.Primary == null

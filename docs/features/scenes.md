@@ -61,6 +61,10 @@ new history entries. Deferred pose restoration stops if the claim is released.
 
 ## Scene files
 
+Saved groups may include world-space IK colliders, including nested groups.
+The spawn browser offers saved groups in every category after fixed actions and
+before individual library entries; a mixed group does not belong only to Actors.
+
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store

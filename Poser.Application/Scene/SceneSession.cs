@@ -292,6 +292,8 @@ public sealed class SceneSession
     public bool Contains(TransformTargetId target) =>
         target.Kind switch
         {
+            TransformTargetKind.Collider => target.Collider is { } collider &&
+                _overlays.TryGetValue(collider, out var overlay) && overlay.Kind == OverlayNodeKind.Collider,
             TransformTargetKind.Actor =>
                 target.Actor is { } actor && _actors.ContainsKey(actor),
             TransformTargetKind.Bone =>

@@ -16,6 +16,24 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Inspector and Properties read the current selection independently when drawing.
+Changing selection retargets both panels; collapsing, hiding or switching tabs
+in one must not stop the other from updating. Reopening a panel reads the current
+selection, not the target it last displayed.
+
+Hide UI suspends drawing without closing windows or cancelling Settings edits;
+showing it again preserves which panels were open. Unrelated configuration
+notifications do not reset panel visibility. Opening/closing the workspace or
+changing its attached/split layout still applies the requested layout.
+
+Detached sidebar/Inspector X buttons and their menu Close actions close the
+window without reattaching it. Menu Open restores it; Attach changes the layout.
+Title-bar collapse leaves the bar visible and remains a separate action.
+
+Opening Settings normally starts at General, scrolled to the top, with no search.
+Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
+open their named category at the top.
+
 Form section headers start expanded. Their disclosure preferences persist in
 configuration under stable page/section keys, independent of actors, entity ids,
 and attached/detached hosts. Reopening a window or restarting does not reset them.

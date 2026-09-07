@@ -4,6 +4,11 @@ All surfaces share one ordered selection list. Changing mode does not clear it.
 Ctrl toggles compatible targets, Shift selects the visible range, and symmetry,
 linked lookup, ancestry, and parent traversal stay within a slot.
 
+`Block game mouse targeting` defaults on in General settings. Like Brio's
+`DisableGPoseMouseSelect`, it blocks native mouse targeting only in GPose;
+Poser selection, explicit target commands, and the two target-sync preferences
+remain independent. Turning it off restores game mouse targeting immediately.
+
 One drag or typed edit is one gesture and one history patch. Baselines freeze at
 pointer-down; each frame applies the total delta from those baselines. Escape,
 tool/space/pivot changes, and selection changes cancel the gesture.

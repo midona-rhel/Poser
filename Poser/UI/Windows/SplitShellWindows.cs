@@ -10,7 +10,7 @@ namespace Poser.UI;
 /// <summary>
 /// Detached mode's SCENE window: the sidebar exactly as it lives attached —
 /// search, tree, status bar — under a modal-height bar carrying undo/redo,
-/// the spawn plus and the reattach. Draws from <see cref="MainWindow"/>'s
+/// the spawn plus and close. Draws from <see cref="MainWindow"/>'s
 /// per-frame view model, so the window set registers it AFTER the main
 /// window; the file dialog's glass chassis, verbatim.
 /// </summary>
@@ -25,9 +25,6 @@ public sealed class SidebarPartWindow : Window
     private bool? _pendingCollapsed;
     private Vector2 _lastLogicalSize = new(300f, 520f);
     private float _savedHeight = 520f;
-
-    /// <summary>Reattach clicked: the window set merges the shell.</summary>
-    public event Action? OnReattach;
 
     public SidebarPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
@@ -163,9 +160,7 @@ public sealed class SidebarPartWindow : Window
         }
     }
 
-    /// <summary>The scene bar: the window's name, the spawn plus, the
-    /// reattach — undo/redo live on the toolbar strip (user 2026-08-11).
-    /// </summary>
+    /// <summary>The sidebar title bar; closing leaves the detached layout intact.</summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
@@ -189,7 +184,7 @@ public sealed class SidebarPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
-        // The shell's own order: collapse stands far right, the merge to
+        // The shell's own order: collapse stands far right, close to
         // its LEFT.
         float chevronX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
@@ -209,10 +204,10 @@ public sealed class SidebarPartWindow : Window
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
-            () => OnReattach?.Invoke(),
+            () => IsOpen = false,
             ControlStyle.Square(closeSide),
-            help: "Attach the sidebar",
-            id: "##part-reattach-sidebar");
+            help: "Close the sidebar",
+            id: "##part-close-sidebar");
         // The library button is the sidebar titlebar's — this window IS
         // the sidebar's titlebar while the shell is split. TWO sidebars,
         // ONE contract: the same TEXT button the merged cell carries.
@@ -262,15 +257,13 @@ public sealed class SidebarPartWindow : Window
 }
 
 /// <summary>Detached mode's TOOLBAR strip: the brand and its GPose pill,
-/// the command menu, the four segment groups, self-sized, reattach on the
-/// far end. The file dialog's glass chassis, verbatim.</summary>
+/// the command menu and the four segment groups, self-sized.
+/// The file dialog's glass chassis, verbatim.</summary>
 public sealed class ToolbarPartWindow : Window
 {
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
     private bool _compact;
-
-    public event Action? OnReattach;
 
     public ToolbarPartWindow(MainWindow main)
         : base($"Toolbar###{PluginConstants.PluginName}_split_toolbar",
@@ -364,8 +357,7 @@ public sealed class ToolbarPartWindow : Window
 
 /// <summary>The split INSPECTOR window: the rail exactly as it lives in
 /// the shell — same content seam, same width — under its own bar. It
-/// exists while the inspector is split from the properties window; the
-/// bar's merge folds it back in.</summary>
+/// can close independently while remaining split from Properties.</summary>
 public sealed class InspectorPartWindow : Window
 {
     private readonly Controls.DetachedPlacementMemory _placement;
@@ -376,9 +368,6 @@ public sealed class InspectorPartWindow : Window
     private bool? _pendingCollapsed;
     private Vector2 _lastLogicalSize = new(282f, 560f);
     private float _savedHeight = 560f;
-
-    /// <summary>Merge clicked: the rail returns to the shell.</summary>
-    public event Action? OnMerge;
 
     public InspectorPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
@@ -519,7 +508,7 @@ public sealed class InspectorPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
-        // The shell's own order: collapse stands far right, the merge to
+        // The shell's own order: collapse stands far right, close to
         // its LEFT.
         float chevronX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
@@ -539,10 +528,10 @@ public sealed class InspectorPartWindow : Window
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
-            () => OnMerge?.Invoke(),
+            () => IsOpen = false,
             ControlStyle.Square(closeSide),
-            help: "Attach the inspector",
-            id: "##part-merge-inspector");
+            help: "Close the inspector",
+            id: "##part-close-inspector");
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(

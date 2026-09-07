@@ -78,7 +78,8 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
         foreach (var slot in slots)
             foreach (var chain in _posing.GetIkChains(slot))
                 if (chain.Config.Enabled && _bindings.GetBoneId(chain.Endpoint) is { } endpoint)
-                    chains.Add(new IkChainSnapshot(endpoint, chain.Config));
+                    chains.Add(new IkChainSnapshot(endpoint, chain.Config.Fabrik != null
+                        ? _posing.SnapshotFabrik(chain.Endpoint) ?? chain.Config : chain.Config));
         return new ActorSnapshot(lineage, pose, chains);
     }
 
@@ -130,7 +131,8 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
             var bone = _bindings.Resolve(chain.Endpoint);
             if (!bone.Success || bone.Value is not { } endpoint)
                 continue;
-            if (_posing.SetIkConfiguration(endpoint, chain.Config) is { } refusal)
+            if ((chain.Config.Fabrik != null ? _posing.RestoreFabrik(endpoint, chain.Config)
+                : _posing.SetIkConfiguration(endpoint, chain.Config)) is { } refusal)
                 _log.Warning($"Journal restore could not re-arm {chain.Endpoint.CanonicalName}: {refusal}");
         }
     }

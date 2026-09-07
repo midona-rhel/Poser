@@ -58,6 +58,11 @@ public interface IBonePosingService : IDisposable
     /// <param name="originalTransform">The original transform before modification.</param>
     void ApplyTransform(IBone bone, Transform newTransform, Transform originalTransform);
 
+    /// <summary>Limit a translation step to the active FABRIK/Rope span's reach.
+    /// Authored writes also remove any existing excess; UI steps start at the reachable position.</summary>
+    System.Numerics.Vector3 ClampIkTranslation(IBone bone, System.Numerics.Vector3 delta,
+        bool fromAuthoredBaseline = false) => delta;
+
     /// <summary>Convert a displayed model-space target to the native pre-reparent apply frame.</summary>
     Transform ToApplySpace(IBone bone, Transform visible) => visible;
 
@@ -94,6 +99,11 @@ public interface IBonePosingService : IDisposable
     /// defaults); null when IK cannot be armed here at all — a virtual bone,
     /// or a bone with no parent for CCD to walk into.</summary>
     Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone);
+    Poser.Domain.Posing.FabrikTarget? CaptureFabrikTarget(IBone endpoint,
+        Poser.Domain.Posing.IkTargetMode mode, BoneId? bone = null, SelectionId? entity = null) => null;
+    Poser.Domain.Posing.IkChainConfig PrepareIkConfiguration(IBone endpoint, Poser.Domain.Posing.IkChainConfig config) => config;
+    Poser.Domain.Posing.IkChainConfig? SnapshotFabrik(IBone endpoint, bool modelSpace = false) => GetIkConfiguration(endpoint);
+    string? RestoreFabrik(IBone endpoint, Poser.Domain.Posing.IkChainConfig config) => SetIkConfiguration(endpoint, config);
 
     /// <summary>Every bone of the skeleton that carries stored IK
     /// configuration, armed or not, each with the bones its solver moves.
