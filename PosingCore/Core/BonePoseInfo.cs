@@ -18,6 +18,9 @@ public enum TransformFrame
     /// conjugated by the head rotation; position rotates by the head rotation
     /// before the model-space add.</summary>
     HeadRelative = 1,
+    /// <summary>Ktisis testing catalogs contain parent-local deltas. Resolve
+    /// the live parent frame during application, not from a cached posed head.</summary>
+    ParentRelative = 2,
 }
 
 /// <summary>

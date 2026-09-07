@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Entities;
+using Poser.Config;
 
 namespace Poser.UI;
 
@@ -18,22 +19,24 @@ namespace Poser.UI;
 /// owns the catalog feed and the shared picker it opens, and the surface that
 /// draws this section is the one that draws that picker.
 ///
-/// On a WIDE surface, units the catalog names "(L)" and "(R)" share ONE row —
-/// the two halves of a face read as one control, not as two unrelated rows a
-/// screen apart. The 280px rail has no width for two sliders and keeps one
-/// full-label row per unit.
+/// Combine L/R groups pairs on a row; Link L/R is an independent editing mode.
 /// </summary>
 public sealed class ExpressionInspectorSection
 {
     private readonly IExpressionService _expressions;
+    private readonly ConfigurationService _configuration;
+    private readonly Dictionary<string, string> _partners = new();
+    private bool Unlocked => _configuration.Config.UnlockExpressionWeights;
 
     private readonly Game.Journal.ExpressionSession _values;
 
     public ExpressionInspectorSection(
-        IExpressionService expressions, Game.Journal.ExpressionSession values)
+        IExpressionService expressions, Game.Journal.ExpressionSession values,
+        ConfigurationService configuration)
     {
         _expressions = expressions;
         _values = values;
+        _configuration = configuration;
     }
 
     /// <summary>Whether the action-unit backend is up. The section is drawn
@@ -61,6 +64,26 @@ public sealed class ExpressionInspectorSection
             return;
 
         var units = _expressions.GetUnits(actor);
+        if (units.Count == 0)
+            return;
+        var config = _configuration.Config;
+        form.Checkboxes("Sliders", false, false, 110f,
+            new("Combine L/R", config.CombineExpressionSides, value =>
+            { _values.Seal(); config.CombineExpressionSides = value; _configuration.Save(); },
+                "Place left and right sliders together"),
+            new("Link L/R", config.LinkExpressionSides, value =>
+            { _values.Seal(); config.LinkExpressionSides = value; _configuration.Save(); },
+                "Editing either side sets both sides to the same weight"),
+            new("Unlocked", config.UnlockExpressionWeights, value =>
+            { _values.Seal(); config.UnlockExpressionWeights = value; _configuration.Save(); },
+                "Use unbounded numeric drags instead of bounded sliders"));
+        paired = paired && config.CombineExpressionSides;
+        _partners.Clear();
+        var unmatched = new bool[units.Count];
+        for (int i = 0; i < units.Count; i++)
+            if (units[i].Available && SplitSide(units[i].Label) is { } side &&
+                FindPartner(units, unmatched, i, side, units[i].Bidirectional) is { } partner)
+                _partners[units[i].Id] = units[partner].Id;
         int drawn = 0;
         // A unit consumed as the second half of a pair must not emit its own
         // row later in the catalog order.
@@ -137,10 +160,9 @@ public sealed class ExpressionInspectorSection
                 continue;
             }
 
-            // The INSPECTOR form: one bare slider per row, no numeric
-            // value — the generic reset below is its only verb.
+            // Separate rows retain numeric editing and the same gesture journal.
             DrawUnit(form, actor, id, DisplayName(label), bidirectional,
-                bare: true);
+                bare: false);
         }
 
         if (pendingSingle is { } last)
@@ -245,25 +267,43 @@ public sealed class ExpressionInspectorSection
         return null;
     }
 
-    /// <summary>One unit's weight row. A bidirectional unit reads from -1, a
-    /// one-way unit from 0; both are shown as a percentage. The inspector's
-    /// rows are BARE — the slider is the whole row.</summary>
+    /// <summary>Bounded sliders or unbounded numeric drags, using the same journal.</summary>
     private void DrawUnit(
         Crystarium.FormScope form,
         IActor actor,
         string id,
         string label,
         bool bidirectional,
-        bool bare = false) =>
+        bool bare = false)
+    {
+        if (Unlocked)
+        {
+            form.Number(label, _expressions.GetWeight(actor, id),
+                next => SetWeight(actor, id, next), .005f, "0%", altReset: 0f);
+            return;
+        }
         form.Slider(
             label,
             _expressions.GetWeight(actor, id),
             bidirectional ? -1f : 0f,
             1f,
-            next => _values.SetWeight(actor, id, next),
+            next => SetWeight(actor, id, next),
             format: "0%",
             bare: bare,
             altReset: 0f, onBegin: _values.Seal);
+    }
+
+    private void SetWeight(IActor actor, string id, float weight)
+    {
+        if (_configuration.Config.LinkExpressionSides && _partners.TryGetValue(id, out var partner))
+        {
+            // Stable pair key regardless of which side starts this gesture.
+            var left = id.EndsWith("L", StringComparison.Ordinal) ? id : partner;
+            var right = left == id ? partner : id;
+            _values.SetPair(actor, left, right, weight);
+        }
+        else _values.SetWeight(actor, id, weight);
+    }
 
     /// <summary>Two unrelated single units share one surface row, each
     /// under its own label with its own value.</summary>
@@ -328,15 +368,23 @@ public sealed class ExpressionInspectorSection
         IActor actor,
         string id,
         float minimum,
-        string help) =>
+        string help)
+    {
+        if (Unlocked)
+        {
+            cell.Number(SliderId(id), _expressions.GetWeight(actor, id),
+                next => SetWeight(actor, id, next), .005f, "0%", altReset: 0f);
+            return;
+        }
         cell.Slider(
             SliderId(id),
             _expressions.GetWeight(actor, id),
             minimum,
             1f,
-            next => _values.SetWeight(actor, id, next),
+            next => SetWeight(actor, id, next),
             format: "0%",
-            help: help, onBegin: _values.Seal);
+            help: help, onBegin: _values.Seal, altReset: 0f);
+    }
 
     /// <summary>The cell label spoken in full for its hover: "Furrow L"
     /// hovers as "Furrow left".</summary>

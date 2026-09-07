@@ -890,27 +890,27 @@ public unsafe class BonePosingService : IBonePosingService
     {
         // Delta mode: ADD to Havok state (like Brio)
 
-        // Ktisis v0.4 action-unit deltas are authored with their axes fixed in
-        // the bone's partial-root ("head") frame, not the bone's own frame.
-        // Rotation applies pre-multiplied conjugated by the head rotation and
-        // the position delta rotates by the head rotation before the model
-        // add. Applying them bone-locally is exactly the defect that made
-        // Blink open the eyes and Pucker shove the mouth sideways.
+        // Older action units use the partial root; Ktisis 847f3673 samples
+        // parent-local deltas. Resolve that parent from THIS Havok pass, not
+        // a last-frame cache that already contains the authored expression.
+        bool relative = info.Frame != TransformFrame.BoneLocal;
         var headRotation = Quaternion.Identity;
-        if (info.Frame == TransformFrame.HeadRelative)
+        if (relative)
         {
-            var rootSpace = pose->AccessBoneModelSpace(0, hkaPose.PropagateOrNot.DontPropagate);
+            int frameIndex = info.Frame == TransformFrame.ParentRelative
+                ? pose->Skeleton->ParentIndices[boneIdx] : 0;
+            var rootSpace = frameIndex >= 0
+                ? pose->AccessBoneModelSpace(frameIndex, hkaPose.PropagateOrNot.DontPropagate) : null;
             if (rootSpace != null)
                 headRotation = new Quaternion(rootSpace->Rotation.X, rootSpace->Rotation.Y, rootSpace->Rotation.Z, rootSpace->Rotation.W);
         }
+        var framedDelta = relative ? PoseMath.ReframeDelta(info.Transform, headRotation) : info.Transform;
 
         // Position
         var prop = info.PropagateComponents.HasFlag(TransformComponents.Position);
         var modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforePos = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z);
-        var positionDelta = info.Frame == TransformFrame.HeadRelative
-            ? Vector3.Transform(info.Transform.Position, headRotation)
-            : info.Transform.Position;
+        var positionDelta = framedDelta.Position;
         var tempPos = beforePos + positionDelta;
         bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
         bool fixedMode = armed &&
@@ -933,10 +933,8 @@ public unsafe class BonePosingService : IBonePosingService
             var rotBefore = new Quaternion(
                 rotSpace->Rotation.X, rotSpace->Rotation.Y,
                 rotSpace->Rotation.Z, rotSpace->Rotation.W);
-            var requestedRotation = info.Frame == TransformFrame.HeadRelative
-                ? Quaternion.Normalize(
-                    headRotation * info.Transform.Rotation *
-                    Quaternion.Inverse(headRotation) * rotBefore)
+            var requestedRotation = relative
+                ? Quaternion.Normalize(framedDelta.Rotation * rotBefore)
                 : Quaternion.Normalize(rotBefore * info.Transform.Rotation);
 
             // A held target brings its own rotation when the chain holds
@@ -980,10 +978,8 @@ public unsafe class BonePosingService : IBonePosingService
             // same reading the delta was taken with (BonePoseInfo.UsableBasis).
             var beforeRot = BonePoseInfo.UsableBasis(new Quaternion(
                 modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W));
-            var tempRot = info.Frame == TransformFrame.HeadRelative
-                ? Quaternion.Normalize(
-                    headRotation * info.Transform.Rotation *
-                    Quaternion.Inverse(headRotation) * beforeRot)
+            var tempRot = relative
+                ? Quaternion.Normalize(framedDelta.Rotation * beforeRot)
                 : Quaternion.Normalize(beforeRot * info.Transform.Rotation);
             if (heldRotation is { } keep)
                 tempRot = keep;
@@ -994,7 +990,9 @@ public unsafe class BonePosingService : IBonePosingService
         prop = info.PropagateComponents.HasFlag(TransformComponents.Scale);
         modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
         var beforeScale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z);
-        var tempScale = beforeScale + info.Transform.Scale;
+        var tempScale = info.Frame == TransformFrame.ParentRelative
+            ? beforeScale * (Vector3.One + info.Transform.Scale)
+            : beforeScale + info.Transform.Scale;
         modelSpace->Scale = *(hkVector4f*)(&tempScale);
     }
 

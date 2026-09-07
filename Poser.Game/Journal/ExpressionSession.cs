@@ -30,6 +30,16 @@ public sealed class ExpressionSession
             x => _expressions.SetWeight(actor, unitId, x),
             weight, () => Alive(actor));
 
+    public void SetPair(IActor actor, string leftId, string rightId, float weight) =>
+        _journal.Set((actor, leftId, rightId), "Set expression pair",
+            () => (_expressions.GetWeight(actor, leftId), _expressions.GetWeight(actor, rightId)),
+            pair =>
+            {
+                _expressions.SetWeight(actor, leftId, pair.Item1);
+                _expressions.SetWeight(actor, rightId, pair.Item2);
+            },
+            (weight, weight), () => Alive(actor));
+
     public void Reset(IActor actor)
     {
         var before = _expressions.GetUnits(actor)

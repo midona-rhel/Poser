@@ -171,6 +171,21 @@ public static class PoseMath
             Scale = (delta.Scale - Vector3.One) * magnitude
         };
     }
+
+    /// <summary>Ktisis testing weights parent-local position/rotation and
+    /// multiplicative scale with signed, optionally extrapolated weights.</summary>
+    public static Transform WeightExpressionDelta(Transform delta, float weight) => new()
+    {
+        Position = delta.Position * weight,
+        Rotation = Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, delta.Rotation, weight)),
+        Scale = (delta.Scale - Vector3.One) * weight,
+    };
+
+    public static Transform ReframeDelta(Transform delta, Quaternion basis) => delta with
+    {
+        Position = Vector3.Transform(delta.Position, basis),
+        Rotation = Quaternion.Normalize(basis * delta.Rotation * Quaternion.Inverse(basis)),
+    };
     /// <summary>
     /// Returns the opposite-side bone name for left/right suffixed bones
     /// (e.g. "j_te_l" → "j_te_r"), or null when the bone has no mirror partner.

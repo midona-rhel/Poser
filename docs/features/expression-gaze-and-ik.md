@@ -2,11 +2,24 @@
 
 ## Expression
 
-Expression catalogs are race-specific action-unit data. If a catalog is
+Expression catalogs use Ktisis testing data at
+[847f3673](https://github.com/ktisis-tools/Ktisis/commit/847f3673), including
+face-specific blinks and symmetric brows. If a race catalog is
 missing, the feature is unavailable; Poser does not substitute another race.
+Unknown face numbers use the first face in that same catalog, as Ktisis does.
 Expression changes move with the head. Poser replaces its expression layer when
 the expression changes and removes it when cleared. Manual face layers are left
 alone. Missing parts are hidden rather than applied to another bone.
+The new catalogs are parent-local deltas, resolved against the live Havok parent
+during application; they must not be interpreted as the old head-relative data.
+Only the new catalog is offered; legacy Sneer definitions are not retained.
+`tools/Update-ExpressionCatalogs.ps1` reproduces the normalized data from that ref.
+
+Combine L/R controls layout; Link L/R writes equal weights to both sides as one
+gesture, with each original value restored on undo. Unlocked uses signed,
+unbounded numeric drags. Bounds belong to the control, never history replay.
+Changing these UI modes does not change the authored weights. Reset zeroes
+blends against the authored base face, without redraw or reference-pose reset.
 
 ## Gaze
 
