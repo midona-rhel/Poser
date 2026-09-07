@@ -114,8 +114,15 @@ public sealed class ActorColliderCapture(
         {
             var bytes = Path.IsPathRooted(model.Path) ? File.ReadAllBytes(model.Path)
                 : data.GetFile(model.Path)?.Data ?? throw new IOException("Could not load actor model: " + model.Path);
-            ActorColliderMeshBuilder.Append(bytes, model.Attributes, model.Shapes,
-                snapshot.Bones, snapshot.World, snapshot.Origin, vertices, indices);
+            try
+            {
+                ActorColliderMeshBuilder.Append(bytes, model.Attributes, model.Shapes,
+                    snapshot.Bones, snapshot.World, snapshot.Origin, vertices, indices);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new InvalidDataException($"{Path.GetFileName(model.Path)}: {ex.Message}", ex);
+            }
         }
         return new(vertices.ToArray(), indices.ToArray());
     }

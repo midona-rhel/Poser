@@ -38,6 +38,22 @@ public class ActorColliderMeshTests
     }
 
     [Fact]
+    public void CapturesEightPackedByteInfluencesIncludingTheLastBone()
+    {
+        var vertices = new List<Vector3>();
+        var indices = new List<int>();
+        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0,
+            new Dictionary<string, Matrix4x4>
+            {
+                ["arm"] = Matrix4x4.Identity,
+                ["tip"] = Matrix4x4.CreateTranslation(8, 0, 0),
+            }, Matrix4x4.Identity, Vector3.Zero, vertices, indices);
+        Assert.Equal(new[] { 0, 1, 2 }, indices);
+        Assert.True(Vector3.Distance(vertices[0], new(8f * 191 / 255, 0, 0)) < .0001f);
+        Assert.True(Vector3.Distance(vertices[1], vertices[0] + Vector3.UnitX) < .0001f);
+    }
+
+    [Fact]
     public void UnmappedWeightedBoneRefusesInsteadOfCapturingBindPose()
     {
         Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(true), 1, 0,
@@ -46,30 +62,34 @@ public class ActorColliderMeshTests
 
     // A complete minimal binary MDL: weighted triangle, attribute-gated submesh,
     // and one shape replacement. Exercises file parsing, not a mocked parsed model.
-    private static byte[] Model(bool v6)
+    private static byte[] Model(bool v6, bool eightWeights = false)
     {
         using var stream = new MemoryStream();
         using var w = new BinaryWriter(stream);
         w.Write(new byte[68]); // file header patched after buffers are written
         void Element(byte offset, byte type, byte usage) => w.Write(new byte[] { 0, offset, type, usage, 0, 0, 0, 0 });
-        Element(0, 2, 0); Element(12, 8, 1); Element(16, 5, 2);
+        Element(0, 2, 0);
+        Element(12, eightWeights ? (byte)17 : (byte)8, 1);
+        Element(eightWeights ? (byte)20 : (byte)16, eightWeights ? (byte)17 : (byte)5, 2);
         w.Write((byte)255); w.Write(new byte[17 * 8 - 25]);
-        var names = Encoding.UTF8.GetBytes("arm\0attr\0shape\0");
-        w.Write((ushort)3); w.Write((ushort)0); w.Write((uint)names.Length); w.Write(names);
+        var names = Encoding.UTF8.GetBytes(eightWeights ? "arm\0attr\0shape\0tip\0" : "arm\0attr\0shape\0");
+        w.Write(eightWeights ? (ushort)4 : (ushort)3); w.Write((ushort)0); w.Write((uint)names.Length); w.Write(names);
         Write(w, new MdlStructs.ModelHeader
         {
-            MeshCount = 1, AttributeCount = 1, SubmeshCount = 1, BoneCount = 1, BoneTableCount = 1,
+            MeshCount = 1, AttributeCount = 1, SubmeshCount = 1, BoneCount = eightWeights ? (ushort)2 : (ushort)1, BoneTableCount = 1,
             ShapeCount = 1, ShapeMeshCount = 1, ShapeValueCount = 1, LodCount = 1, Unknown7 = v6 ? (ushort)2 : (ushort)0,
         });
         Write(w, new MdlStructs.LodStruct { MeshCount = 1 });
         Write(w, new MdlStructs.LodStruct()); Write(w, new MdlStructs.LodStruct());
         w.Write((ushort)4); w.Write((ushort)0); w.Write((uint)3);
         w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)0);
-        w.Write((uint)0); w.Write(new byte[12]); w.Write(new byte[] { 20, 0, 0, 1 });
+        byte stride = eightWeights ? (byte)28 : (byte)20;
+        w.Write((uint)0); w.Write(new byte[12]); w.Write(new byte[] { stride, 0, 0, 1 });
         w.Write((uint)4); // attribute string offset
         Write(w, new MdlStructs.SubmeshStruct { IndexCount = 3, AttributeIndexMask = 1, BoneCount = 1 });
         w.Write((uint)0); // bone name offset
-        if (v6) { w.Write((ushort)1); w.Write((ushort)1); w.Write((ushort)0); w.Write((ushort)0); }
+        if (eightWeights) w.Write(15u);
+        if (v6) { w.Write((ushort)1); w.Write(eightWeights ? (ushort)2 : (ushort)1); w.Write((ushort)0); w.Write(eightWeights ? (ushort)1 : (ushort)0); }
         else { w.Write(new byte[128]); w.Write((uint)1); }
         w.Write((uint)9); w.Write(new byte[6]); w.Write((ushort)1); w.Write(new byte[4]);
         Write(w, new MdlStructs.ShapeMeshStruct { ShapeValueCount = 1 });
@@ -78,7 +98,12 @@ public class ActorColliderMeshTests
         foreach (var p in new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY, Vector3.UnitY * 2 })
         {
             w.Write(p.X); w.Write(p.Y); w.Write(p.Z);
-            w.Write(new byte[] { 255, 0, 0, 0 }); w.Write(new byte[4]);
+            if (eightWeights)
+            {
+                w.Write(new byte[] { 64, 64, 0, 0, 0, 0, 0, 127 });
+                w.Write(new byte[] { 0, 1, 0, 0, 0, 0, 0, 1 });
+            }
+            else { w.Write(new byte[] { 255, 0, 0, 0 }); w.Write(new byte[4]); }
         }
         uint indexOffset = (uint)stream.Position;
         w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)2);
@@ -86,7 +111,7 @@ public class ActorColliderMeshTests
         w.Write(v6 ? 0x01000006u : 0x01000005u); w.Write(136u); w.Write(vertexOffset - 68 - 136);
         w.Write((ushort)1); w.Write((ushort)0);
         w.Write(vertexOffset); w.Write(new byte[8]); w.Write(indexOffset); w.Write(new byte[8]);
-        w.Write(80u); w.Write(new byte[8]); w.Write(6u); w.Write(new byte[8]);
+        w.Write((uint)(stride * 4)); w.Write(new byte[8]); w.Write(6u); w.Write(new byte[8]);
         w.Write(new byte[] { 1, 0, 0, 0 });
         return stream.ToArray();
     }

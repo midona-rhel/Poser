@@ -16,6 +16,8 @@ internal static class ActorColliderMeshBuilder
         List<Vector3> vertices, List<int> indices)
     {
         var file = Read(bytes);
+        Span<float> weightValues = stackalloc float[8];
+        Span<float> indexValues = stackalloc float[8];
         string Name(uint offset)
         {
             var span = file.Strings.AsSpan(checked((int)offset));
@@ -49,16 +51,18 @@ internal static class ActorColliderMeshBuilder
                 float total = 0;
                 for (int set = 0; set < weights.Length; set++)
                 {
-                    var w = ReadElement(bytes, file, mesh, weights[set], v);
-                    var b = ReadElement(bytes, file, mesh, blendIndices[set], v);
-                    for (int component = 0; component < 4; component++)
+                    int count = ReadBlend(bytes, file, mesh, weights[set], v, weightValues);
+                    if (count != ReadBlend(bytes, file, mesh, blendIndices[set], v, indexValues))
+                        throw new InvalidDataException("Actor blend weights and indices have different lengths.");
+                    for (int component = 0; component < count; component++)
                     {
-                        float weight = w[component];
+                        float weight = weightValues[component];
                         if (weight <= 0) continue;
-                        int localBone = checked((int)b[component]);
-                        if ((uint)localBone >= (uint)palette.Length || palette[localBone] >= boneNames.Length ||
-                            !bones.TryGetValue(boneNames[palette[localBone]], out var skin))
-                            throw new InvalidDataException("An actor mesh bone could not be mapped to the loaded skeleton.");
+                        int localBone = checked((int)indexValues[component]);
+                        if ((uint)localBone >= (uint)palette.Length || palette[localBone] >= boneNames.Length)
+                            throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: invalid bone palette index {localBone}.");
+                        if (!bones.TryGetValue(boneNames[palette[localBone]], out var skin))
+                            throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{boneNames[palette[localBone]]}' has no captured transform.");
                         posed += Vector3.Transform(position, skin) * weight;
                         total += weight;
                     }
@@ -107,10 +111,28 @@ internal static class ActorColliderMeshBuilder
         }
     }
 
+    private static int ElementOffset(MdlFile file, MeshStruct mesh, VertexElement element, int vertex)
+        => checked((int)(file.FileHeader.VertexOffset[0] + mesh.VertexBufferOffset[element.Stream]
+            + vertex * mesh.VertexBufferStride[element.Stream] + element.Offset));
+
+    private static int ReadBlend(byte[] bytes, MdlFile file, MeshStruct mesh, VertexElement element, int vertex, Span<float> values)
+    {
+        // MDL UShort4 blend attributes pack EIGHT bytes, not four ushort indices.
+        // This matches Penumbra's MeshExporter.ReadVertexElement / VertexJoints8.
+        if (element.Type == 17)
+        {
+            var packed = bytes.AsSpan(ElementOffset(file, mesh, element, vertex), 8);
+            for (int i = 0; i < 8; i++) values[i] = element.Usage == 1 ? packed[i] / 255f : packed[i];
+            return 8;
+        }
+        var value = ReadElement(bytes, file, mesh, element, vertex);
+        for (int i = 0; i < 4; i++) values[i] = value[i];
+        return 4;
+    }
+
     private static Vector4 ReadElement(byte[] bytes, MdlFile file, MeshStruct mesh, VertexElement element, int vertex)
     {
-        int offset = checked((int)(file.FileHeader.VertexOffset[0] + mesh.VertexBufferOffset[element.Stream]
-            + vertex * mesh.VertexBufferStride[element.Stream] + element.Offset));
+        int offset = ElementOffset(file, mesh, element, vertex);
         var span = bytes.AsSpan(offset);
         float Single(int i) => BitConverter.ToSingle(bytes, offset + i * 4);
         float Half(int i) => (float)BitConverter.UInt16BitsToHalf(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset + i * 2)));
@@ -122,8 +144,6 @@ internal static class ActorColliderMeshBuilder
             8 => new Vector4(span[0], span[1], span[2], span[3]) / 255f,
             13 => new(Half(0), Half(1), 0, 0),
             14 => new(Half(0), Half(1), Half(2), Half(3)),
-            17 => new(BinaryPrimitives.ReadUInt16LittleEndian(span), BinaryPrimitives.ReadUInt16LittleEndian(span[2..]),
-                BinaryPrimitives.ReadUInt16LittleEndian(span[4..]), BinaryPrimitives.ReadUInt16LittleEndian(span[6..])),
             _ => throw new InvalidDataException($"Unsupported actor vertex format {element.Type}."),
         };
     }
