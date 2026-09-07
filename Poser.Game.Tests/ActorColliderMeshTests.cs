@@ -48,7 +48,7 @@ public class ActorColliderMeshTests
         float averageRadius = (100 * .2f + 10) / 101;
         Assert.InRange(capsule.Collider.RoundDimensions().Radius, averageRadius - .0001f, averageRadius + .0001f);
         Assert.Equal(new Vector3(0, .5f, 0), capsule.Collider.Transform.Position);
-        Assert.Equal(1f, capsule.Collider.Transform.Scale.Y);
+        Assert.InRange(capsule.Collider.Transform.Scale.Y, 1 + averageRadius * 2 - .0001f, 1 + averageRadius * 2 + .0001f);
         var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(capsule.Collider, global::Poser.Files.SceneFile.JsonOptions),
             global::Poser.Files.SceneFile.JsonOptions)!;
         Assert.Equal(capsule.Collider, restored);

@@ -13,11 +13,13 @@ internal static class ActorBodyColliderBuilder
         IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
     {
         var spans = new List<Span> {
-            new("Waist", "j_kosi", "j_kubi"), new("Head", "j_kao", "j_kubi", true, true) };
+            new("Waist", "j_kosi", "j_kubi"), new("Neck", "j_kubi", "j_kao"),
+            new("Head", "j_kao", "j_kubi", true, true) };
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
             spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true, true),
+                new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
                 new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
                 new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
                 new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
@@ -27,7 +29,7 @@ internal static class ActorBodyColliderBuilder
         if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
         if (roots.TryGetValue("j_kosi", out int waist))
-            foreach (var spine in new[] { "n_hara", "j_sebo_a", "j_sebo_b", "j_sebo_c", "j_kubi" }) roots[spine] = waist;
+            foreach (var spine in new[] { "n_hara", "j_sebo_a", "j_sebo_b", "j_sebo_c" }) roots[spine] = waist;
         var samples = spans.Select(_ => new List<Vector3>()).ToArray();
         var owners = new Dictionary<string, int>();
         int Owner(string name)
@@ -122,7 +124,11 @@ internal static class ActorBodyColliderBuilder
             float radius = widths.Count > 0 ? widths.Average()
                 : points.Select(p => (p - center - axis * Vector3.Dot(p - center, axis)).Length()).Average();
             float length = Vector3.Distance(start, end);
-            radius = MathF.Min(radius, length * .5f);
+            // Bone joints are cap CENTERS, not outer tips: keep the full bone
+            // span as the stem so the rounded ends overlap adjacent parts.
+            // Surface-fitted feet instead retain their measured tip-to-tip size.
+            if (span.FitEnds) radius = MathF.Min(radius, length * .5f);
+            else length += radius * 2;
             if (radius < .0001f) continue;
             var cross = Vector3.Cross(Vector3.UnitY, axis);
             var rotation = axis.Y < -.999999f
@@ -130,8 +136,8 @@ internal static class ActorBodyColliderBuilder
             fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Capsule,
                 Transform = new(center, rotation, new(radius * 2, length, radius * 2)) }));
         }
-        // Joint spheres bridge the rounded capsule ends without changing the
-        // limb lengths. Derive their size from the neighbouring fitted limbs.
+        // Joint spheres add coverage around bent knees/elbows. Derive their
+        // size from the neighbouring fitted limbs.
         void JointSphere(string name, string bone, params string[] neighbours)
         {
             if (!joints.TryGetValue(bone, out var joint)) return;
@@ -145,7 +151,6 @@ internal static class ActorBodyColliderBuilder
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
-            JointSphere($"{label} shoulder", $"j_ude_a_{side}", $"{label} upper arm");
             JointSphere($"{label} elbow", $"j_ude_b_{side}", $"{label} upper arm", $"{label} forearm");
             JointSphere($"{label} knee", $"j_asi_b_{side}", $"{label} thigh", $"{label} lower leg");
         }
