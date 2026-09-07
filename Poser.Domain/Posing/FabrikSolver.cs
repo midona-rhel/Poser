@@ -27,6 +27,14 @@ public static class FabrikSolver
         return positions;
     }
 
+    public static Vector3 MoveHandle(IReadOnlyList<Vector3> source, int handleIndex,
+        Vector3 root, Vector3 tip, Vector3 target, Vector3 step)
+    {
+        // An existing out-of-reach target must not consume reversed input.
+        var start = ClampHandle(source, handleIndex, root, tip, target);
+        return ClampHandle(source, handleIndex, root, tip, start + step);
+    }
+
     public static Vector3 ClampHandle(IReadOnlyList<Vector3> source, int handleIndex,
         Vector3 root, Vector3 tip, Vector3 target)
     {

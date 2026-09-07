@@ -363,6 +363,24 @@ public partial class MainWindow
             _sessions.WorldObjects.SetNightState(handle, !handle.NightState);
             row.Night = handle.NightState;
         };
+        _vm.OnColliderCollision = row =>
+        {
+            if (row.Tag is SelectionId { Overlay: { } id }
+                && _bindings.Resolve(id).Value is { State.Collider: { } collider } node)
+            {
+                _sessions.Overlays.SetCollider(node, collider with { Enabled = !collider.Enabled });
+                row.CollisionEnabled = !collider.Enabled;
+            }
+        };
+        _vm.OnColliderLock = row =>
+        {
+            if (row.Tag is SelectionId { Overlay: { } id }
+                && _bindings.Resolve(id).Value is { State.Collider: { } collider } node)
+            {
+                _sessions.Overlays.SetCollider(node, collider with { Locked = !collider.Locked });
+                row.ColliderLocked = !collider.Locked;
+            }
+        };
         _vm.OnLightVisibility = row =>
         {
             // A reference picture wears the same eye seat: its toggle is

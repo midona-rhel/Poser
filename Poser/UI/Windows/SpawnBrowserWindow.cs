@@ -692,7 +692,7 @@ public sealed class SpawnBrowserWindow : Window
                 global::Poser.Library.PoseLibraryEntryKind.Actor =>
                     (TablerIcon.User, SpawnBrowserTab.Actors),
                 global::Poser.Library.PoseLibraryEntryKind.Group =>
-                    (TablerIcon.Folder, SpawnBrowserTab.Actors),
+                    (TablerIcon.Folder, SpawnBrowserTab.All),
                 global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
                     entry.WorldKind switch
                     {
@@ -719,7 +719,7 @@ public sealed class SpawnBrowserWindow : Window
                 entry.NameLower,
                 placed.glyph,
                 0u,
-                "Library",
+                entry.Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? "Library · Group" : "Library",
                 false));
             _rowTabs.Add(placed.tab);
         }
@@ -914,7 +914,8 @@ public sealed class SpawnBrowserWindow : Window
     {
         if (row < ActionRows) return 0;
         int savedStart = ActionRows + _actorEntryCount + _propEntryCount;
-        return row >= savedStart && row < savedStart + _savedObjects.Count ? 1 : 2;
+        if (row < savedStart || row >= savedStart + _savedObjects.Count) return 3;
+        return _savedObjects[row - savedStart].Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? 1 : 2;
     }
 
     private static int CategoryRank(SpawnBrowserTab tab) => tab switch
@@ -944,7 +945,7 @@ public sealed class SpawnBrowserWindow : Window
         return name != 0 ? name : left.CompareTo(right);
     }
 
-    /// <summary>Actions, library, then catalogs. Search orders categories
+    /// <summary>Actions, saved groups, library items, then catalogs. Search orders categories
     /// within each source, then prefix/name matches within the category.</summary>
     private void Refilter()
     {
@@ -957,9 +958,9 @@ public sealed class SpawnBrowserWindow : Window
         if (_queryLower.Length == 0)
         {
             visible.Clear();
-            for (int source = 0; source < 3; source++)
+            for (int source = 0; source < 4; source++)
                 for (int i = 0; i < rows.Count; i++)
-                    if (SourceRank(i) == source && (tab == SpawnBrowserTab.All || _rowTabs[i] == tab))
+                    if (SourceRank(i) == source && MatchesTab(i, tab))
                         visible.Add(i);
             _filteredQuery = string.Empty;
             _filteredTab = (int)tab;
@@ -982,7 +983,7 @@ public sealed class SpawnBrowserWindow : Window
         {
             for (int i = 0; i < rows.Count; i++)
             {
-                if (tab != SpawnBrowserTab.All && _rowTabs[i] != tab)
+                if (!MatchesTab(i, tab))
                     continue;
                 RankRow(rows, i);
             }
@@ -994,6 +995,10 @@ public sealed class SpawnBrowserWindow : Window
         _filteredQuery = _queryLower;
         _filteredTab = (int)tab;
     }
+
+    // A group can contain any mix of entities; it is available from every category.
+    private bool MatchesTab(int row, SpawnBrowserTab tab) =>
+        tab == SpawnBrowserTab.All || _rowTabs[row] == SpawnBrowserTab.All || _rowTabs[row] == tab;
 
     private void RankRow(List<SpawnBrowserRow> rows, int index)
     {

@@ -14,6 +14,47 @@ namespace Poser.Tests.Files;
 public sealed class SceneFileStoreTests
 {
     [Fact]
+    public void Collider_group_saves_and_restores_members_transforms_and_flags()
+    {
+        using var fixture = new SceneFixture();
+        var scene = ValidScene();
+        scene.Actors.Clear();
+        scene.Props.Clear();
+        scene.Lights.Clear();
+        scene.Cameras.Clear();
+        scene.Overlays = [];
+        var group = new SceneGroupEntry { Key = Guid.NewGuid(), Name = "Collision test", Transform = new() };
+        foreach (var shape in new[] { Poser.Domain.Posing.IkColliderShape.Box, Poser.Domain.Posing.IkColliderShape.Cylinder })
+        {
+            var key = Guid.NewGuid();
+            var pose = new Poser.Domain.Transforms.PoseTransform(new(2 + (int)shape, 3, 4),
+                Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f), new(2, 1, 3));
+            scene.Overlays.Add(new() { Key = key, Node = new()
+            {
+                Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider, Name = shape.ToString(),
+                Collider = new() { Shape = shape, Transform = pose, Enabled = false, Locked = true },
+                Visible = false, Alpha = .3f,
+            } });
+            var reference = new SceneStructureRef { Kind = "overlay", Key = key };
+            group.Members.Add(reference);
+            group.Transform.Members.Add(new() { Member = reference, Initial = pose, Expected = pose });
+        }
+        scene.Groups = [group];
+        var write = SceneFileStore.Default.Write(scene, fixture.Path);
+        Assert.True(write.Succeeded, write.Failure?.Detail);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var restored = Assert.Single(read.Scene!.Groups!);
+        Assert.Equal(group.Name, restored.Name);
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.Equal(scene.Overlays[i].Node, read.Scene.Overlays![i].Node);
+            Assert.Equal(read.Scene.Overlays[i].Key, restored.Members[i].Key);
+            Assert.Equal(group.Transform.Members[i].Expected, restored.Transform!.Members[i].Expected);
+        }
+    }
+
+    [Fact]
     public void Collider_world_state_and_chain_width_round_trip()
     {
         using var fixture = new SceneFixture();

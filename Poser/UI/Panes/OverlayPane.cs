@@ -29,7 +29,6 @@ namespace Poser.UI;
 /// </summary>
 public sealed class OverlayPane
 {
-    public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly StatusIconCatalog _statusIcons;
@@ -163,13 +162,15 @@ public sealed class OverlayPane
         if (node.State.Collider is { } collider)
         {
             form.TextInput("Name", node.Name, next => _values.SetName(node, next));
-            form.Dropdown("Shape", new[] { "Plane", "Box", "Cylinder", "Cone" }, (int)collider.Shape,
-                next => _values.SetCollider(node, collider with { Shape = (Domain.Posing.IkColliderShape)next }));
-            form.Switch("Collision", collider.Enabled,
-                next => _values.SetCollider(node, collider with { Enabled = next }));
-            form.Switch("Lock transform", collider.Locked,
-                next => _values.SetCollider(node, collider with { Locked = next }));
-            form.Switch("Visible", node.Visible, next => _values.SetVisible(node, next));
+            form.Pair("Shape", cell => cell.Dropdown("##collider-shape",
+                    new[] { "Plane", "Box", "Cylinder", "Cone" }, (int)collider.Shape,
+                    next => _values.SetCollider(node, node.State.Collider! with { Shape = (Domain.Posing.IkColliderShape)next })),
+                "Collision", cell => cell.Switch("##collider-enabled", collider.Enabled,
+                    next => _values.SetCollider(node, node.State.Collider! with { Enabled = next })));
+            form.Pair("Lock transform", cell => cell.Switch("##collider-lock", collider.Locked,
+                    next => _values.SetCollider(node, node.State.Collider! with { Locked = next })),
+                "Visible", cell => cell.Switch("##collider-visible", node.Visible,
+                    next => _values.SetVisible(node, next)));
             form.Slider("Opacity", node.Alpha, 0f, 1f, next => _values.SetAlpha(node, next), onBegin: _values.Seal);
             return;
         }
@@ -462,30 +463,20 @@ public sealed class OverlayPane
     private void LifetimeRows(
         Crystarium.FormScope form, IOverlayNode node)
     {
-        form.ActionDropdown("More", ["Save to library", "Destroy all overlays…"], -1, "More",
-                choice =>
-                {
-                    if (choice == 1)
-                    {
-                        RequestDestroyAll?.Invoke();
-                        return;
-                    }
-                    _names.Open(
+        form.Actions(string.Empty, actions =>
+        {
+            actions.Button("Save to library", () => _names.Open(
                     "Save overlay to library", node.Name,
                     name =>
                     {
                         if (_bindings.GetOverlayId(node) is { } entryId)
                             _scenePane.SaveOverlayEntry(
                                 entryId.LogicalId, name);
-                    });
-                },
-                help: "Save this overlay as a library entry", icon: TablerIcon.Dots);
-        form.Actions("Overlay", actions =>
-        {
+                    }));
             actions.Button(
                 "Duplicate",
                 () => _pending = () => Duplicate(node),
-                help: "Add another overlay saying exactly this");
+                help: "Duplicate this overlay");
             actions.Button(
                 "Delete",
                 () => _pending = () =>
@@ -496,11 +487,7 @@ public sealed class OverlayPane
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
         });
-        form.Status(
-            _status.Length > 0
-                ? _status
-                : "Overlays are drawn behind the game's own interface and "
-                    + "survive hiding the UI, so they stay in the shot.");
+        if (_status.Length > 0) form.Status(_status);
     }
 
     // ── the icon picker ──────────────────────────────────────────────────

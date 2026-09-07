@@ -631,9 +631,13 @@ public partial class MainWindow
         };
         if (node.State.Collider is { } collider)
         {
-            items = new[] { new ContextMenuItem(collider.Locked ? "Unlock transform" : "Lock transform", TablerIcon.Lock) }
+            items = new[] {
+                new ContextMenuItem(collider.Locked ? "Unlock transform" : "Lock transform", TablerIcon.Lock),
+                new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
                 .Concat(items).ToArray();
-            actions = new Action?[] { () => _sessions.Overlays.SetCollider(node, collider with { Locked = !collider.Locked }) }
+            actions = new Action?[] {
+                () => _sessions.Overlays.SetCollider(node, collider with { Locked = !collider.Locked }),
+                () => _sessions.Overlays.SetCollider(node, collider with { Enabled = !collider.Enabled }) }
                 .Concat(actions).ToArray();
         }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
@@ -1190,7 +1194,7 @@ public partial class MainWindow
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(
-                    group.Members, name, AllActorsOwned(group.Members))),
+                    _groups.Descendants(group).ToArray(), name, AllActorsOwned(_groups.Descendants(group).ToArray()))),
             () => _groupSteps.SetLocked(groupId, !group.Locked),
             null, // separator
             () => SetGroupHidden(group, !group.Hidden),
@@ -1330,7 +1334,7 @@ public partial class MainWindow
             actions.Add(() => OpenEntityRename(
                 "Save group to library", matched.Name,
                 name => _scenePane.SaveGroupEntry(
-                    matched.Members, name, AllActorsOwned(matched.Members))));
+                    _groups.Descendants(matched).ToArray(), name, AllActorsOwned(_groups.Descendants(matched).ToArray()))));
             items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
             actions.Add(() => DissolveGroup(matched.Id));
         }

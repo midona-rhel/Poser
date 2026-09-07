@@ -132,6 +132,9 @@ Bone frames are transported continuously between solved directions, retaining
 authored roll rather than adopting a round capsule's free spin or choosing a
 new arbitrary axis when a link folds backwards.
 The selected handle has limited pulling force so a taut wrapped span can stop
-short of its target. Conflicting anchors or inserting geometry through an already
+short of its target. FABRIK/Rope translation edits clamp their authored target to
+the span's distance limits; rejected drag travel is discarded so reversing responds
+immediately. Collision lag does not feed back into that target.
+Conflicting anchors or inserting geometry through an already
 pinned chain can remain unresolved; collision is not a guarantee that every
 requested arrangement is physically possible.

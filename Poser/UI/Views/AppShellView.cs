@@ -82,6 +82,9 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
+    public bool ColliderActions;
+    public bool CollisionEnabled;
+    public bool ColliderLocked;
 
     /// <summary>Every world-object row's third seat: pause, the actor
     /// row's own play/pause glyph. Spawned SCENERY cannot be animated by
@@ -337,6 +340,8 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
+    public Action<ShellSidebarRow>? OnColliderCollision;
+    public Action<ShellSidebarRow>? OnColliderLock;
     public Action<ShellSidebarRow>? OnRowPause;
     public Action<ShellSidebarRow>? OnRowNight;
     public Action<ShellSidebarRow>? OnCameraLive;

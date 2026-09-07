@@ -8,6 +8,23 @@ public sealed class FabrikSolverTests
     private static readonly Vector3[] Bent = Enumerable.Range(0, 7).Select(i => new Vector3(i, i % 2, 0)).ToArray();
 
     [Theory]
+    [InlineData(3f)]
+    [InlineData(20f)]
+    public void Reach_limit_discards_excess_travel_and_reverses_immediately(float initialTarget)
+    {
+        Vector3[] source = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2, Vector3.UnitX * 3];
+        var target = new Vector3(initialTarget, 0, 0);
+        target = FabrikSolver.MoveHandle(source, 3, source[0], source[^1], target, Vector3.UnitX * 10);
+        Near(new(3, 0, 0), target);
+        target = FabrikSolver.MoveHandle(source, 3, source[0], source[^1], target, new(-.1f, 0, 0));
+        Near(new(2.9f, 0, 0), target);
+        Near(target, FabrikSolver.Solve(source, 3, source[0], source[^1], target, 60)[3]);
+        // Correct an old, already-overextended target on the first inward move too.
+        Near(new(2.9f, 0, 0), FabrikSolver.MoveHandle(source, 3, source[0], source[^1],
+            new(initialTarget, 0, 0), new(-.1f, 0, 0)));
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(3)]
     [InlineData(6)]

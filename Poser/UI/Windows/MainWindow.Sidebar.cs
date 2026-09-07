@@ -686,6 +686,9 @@ public partial class MainWindow
         Tag = SelectionId.ForOverlay(overlay.Id),
         LightActions = true,
         LightOn = overlay.Visible,
+        ColliderActions = overlay.Kind == OverlayNodeKind.Collider,
+        CollisionEnabled = _bindings.Resolve(overlay.Id).Value?.State.Collider?.Enabled ?? false,
+        ColliderLocked = _bindings.Resolve(overlay.Id).Value?.State.Collider?.Locked ?? false,
     };
 
     /// <summary>One grouped member's row(s), nested one level in — the

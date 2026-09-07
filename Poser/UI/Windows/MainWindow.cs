@@ -594,7 +594,6 @@ public partial class MainWindow : Window
         _worldObjectsPane = worldObjectsPane;
         _overlayService = overlayService;
         _overlayPane = overlayPane;
-        _overlayPane.RequestDestroyAll = ConfirmDestroyAllOverlays;
         _companions = companions;
         _poseInspector = poseInspector;
         _animationPane = animationPane;

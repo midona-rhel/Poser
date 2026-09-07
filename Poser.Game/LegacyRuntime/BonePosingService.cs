@@ -1047,6 +1047,9 @@ public unsafe partial class BonePosingService : IBonePosingService
         if (bone is VirtualBone)
             return;
 
+        newTransform = newTransform with { Position = originalTransform.Position
+            + ClampIkTranslation(bone, newTransform.Position - originalTransform.Position, fromAuthoredBaseline: true) };
+
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 

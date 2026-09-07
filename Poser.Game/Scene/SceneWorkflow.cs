@@ -1757,6 +1757,12 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 sum += document.Position;
                 counted++;
             }
+        foreach (var overlay in scene.Overlays ?? [])
+            if (overlay.Node?.Collider is { } collider)
+            {
+                sum += collider.Transform.Position;
+                counted++;
+            }
         return counted == 0 ? null : sum / counted;
     }
 

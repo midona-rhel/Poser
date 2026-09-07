@@ -149,6 +149,32 @@ public unsafe partial class BonePosingService
             ? (position, rotation) : null;
     }
 
+    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false)
+    {
+        if (GetIkConfiguration(bone) is not
+            { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control } config
+            || control.Bones.Length < 2) return delta;
+        var members = FabrikMembers(bone, config);
+        if (members.Count != control.Bones.Length) return delta;
+        var root = ResolveFabrikTarget(members[0], control.Root, false);
+        var tip = ResolveFabrikTarget(members[^1], control.Tip, false);
+        var handle = ResolveFabrikTarget(bone, control.Handle, true);
+        if (root == null || tip == null || handle == null) return delta;
+        // Reach is measured in the solver's pre-reparent frame. Only the
+        // distance limit feeds back into authored coordinates, never contact lag.
+        var displayed = FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
+        var requested = ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
+        var source = control.Bones.Select(b => b.Position).ToArray();
+        var limited = FabrikSolver.MoveHandle(source, control.HandleIndex, root.Value.Position, tip.Value.Position,
+            handle.Value.Position, requested.Position - handle.Value.Position);
+        var start = fromAuthoredBaseline ? displayed.Position : FromApplySpace(bone, requested with
+        {
+            Position = FabrikSolver.ClampHandle(source, control.HandleIndex,
+                root.Value.Position, tip.Value.Position, handle.Value.Position)
+        }).Position;
+        return FromApplySpace(bone, requested with { Position = limited }).Position - start;
+    }
+
     private void ApplyFabrikControls(SkeletonKey key, Skeleton skeleton)
     {
         if (_ikImports.Contains(key.Actor)) return;

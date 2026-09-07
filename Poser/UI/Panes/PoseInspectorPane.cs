@@ -3032,6 +3032,10 @@ public partial class PoseInspectorPane
             _cleanModelStart is not { } modelStart)
             return;
 
+        if (_entity is IBone bone && _cleanDisplayedCurrent is { } previous
+            && displayedAfter.Position != previous.Position)
+            displayedAfter = displayedAfter with { Position = previous.Position
+                + _bonePosingService.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
         var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,

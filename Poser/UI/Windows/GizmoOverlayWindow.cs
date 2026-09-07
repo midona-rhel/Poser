@@ -1396,6 +1396,20 @@ public class GizmoOverlayWindow : Window
                         + GizmoSnap.Snap(offset, linearStep);
                 }
                 var newTransform = gesture.Start with { Position = position };
+                if (EffectiveSelection()?.Primary is { Bone: { } boneId }
+                    && _bindings.Resolve(boneId).Value is { } bone)
+                {
+                    var limited = gesture.Current.Position + _bonePosingService.ClampIkTranslation(
+                        bone, position - gesture.Current.Position);
+                    if (Vector3.DistanceSquared(limited, position) > 1e-10f)
+                    {
+                        // Discard rejected travel: reversing the mouse should move
+                        // immediately, not first unwind an unreachable target offset.
+                        newTransform = newTransform with { Position = limited };
+                        Matrix4x4.Invert(_dragInvModel, out var model);
+                        _dragAccumWorld = Vector3.TransformNormal(limited - gesture.Start.Position, model);
+                    }
+                }
                 if (DispatchUpdate(gesture, newTransform))
                     gesture.Current = newTransform;
                 return;
