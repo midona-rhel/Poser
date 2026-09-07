@@ -107,6 +107,8 @@ public class ActorColliderMeshTests
     [Fact]
     public void BodyCaptureIgnoresUnrelatedMissingBonesButRequiresBodyTransforms()
     {
+        Assert.False(ActorColliderCapture.IsBodyModelPath("chara/human/c0801/obj/hair/h0007/model/c0801h0007_hir.mdl"));
+        Assert.True(ActorColliderCapture.IsBodyModelPath("chara/human/c0801/obj/face/f0001/model/c0801f0001_fac.mdl"));
         var vertices = new List<Vector3>();
         var indices = new List<int>();
         ActorColliderMeshBuilder.Append(Model(true), 1, 0,

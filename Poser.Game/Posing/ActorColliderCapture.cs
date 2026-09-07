@@ -81,6 +81,10 @@ public sealed class ActorColliderCapture(
             var path = model->ModelResourceHandle->FileName.ToString();
             // Penumbra's collection discriminator is resource identity, not a disk path.
             path = path[(path.LastIndexOf('|') + 1)..];
+            // Hair can also be weighted to the head, so bone ownership alone
+            // cannot classify it. Filter the original resource before resolving
+            // arbitrary Penumbra disk filenames.
+            if (!IsBodyModelPath(path) || resourcesForExcludedModel(path)) continue;
             if (replacements.TryGetValue(path, out var resolved)) path = resolved;
             var raceMatch = Regex.Match(Path.GetFileName(path), "^c([0-9]{4})", RegexOptions.CultureInvariant);
             ushort race = raceMatch.Success ? ushort.Parse(raceMatch.Groups[1].Value) : (ushort)0;
@@ -113,7 +117,14 @@ public sealed class ActorColliderCapture(
         ushort skeletonRace = character->GetModelType() == CharacterBase.ModelType.Human ? ((Human*)character)->RaceSexId : (ushort)0;
         var deformerPath = replacements.GetValueOrDefault(ActorColliderDeformation.GamePath, ActorColliderDeformation.GamePath);
         return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath);
+
+        bool resourcesForExcludedModel(string actual) => paths.Value is { } resourcePaths &&
+            resourcePaths.TryGetValue(actual, out var originals) && originals.Any(p => !IsBodyModelPath(p));
     }
+
+    internal static bool IsBodyModelPath(string path) =>
+        !Regex.IsMatch(path.Replace('\\', '/'), @"(?:/hair/|/tail/|_hir\.mdl$|_til\.mdl$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private ActorBodyColliderBuilder.Fitted[] Build(Snapshot snapshot)
     {
