@@ -385,6 +385,7 @@ internal static class ServiceRegistration
                 .Config.DefaultSpawnPlacement,
         });
         services.AddSingleton<TargetSyncService>();
+        services.AddSingleton<Game.Input.GPoseMouseTargetHook>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
     }

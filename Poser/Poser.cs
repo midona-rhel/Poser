@@ -131,6 +131,7 @@ public class Poser : IDalamudPlugin
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
+        _ = _serviceProvider.GetRequiredService<Game.Input.GPoseMouseTargetHook>();
         // The other polarity's fonts warm on a second atlas, so the atlas
         // the UI draws with is never rebuilt once it is up: the rebuild's
         // landing frame was the one frame the whole UI went missing.

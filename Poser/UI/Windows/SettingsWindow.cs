@@ -193,6 +193,7 @@ public class SettingsWindow : Window
             LinkSiblingBones = c.LinkSiblingBones,
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
+            BlockGPoseMouseTargeting = c.BlockGPoseMouseTargeting,
             UndoDepth = c.UndoDepth,
             ShowFrameProfiler = c.UI.ShowFrameProfiler,
 
@@ -425,6 +426,7 @@ public class SettingsWindow : Window
         c.LinkSiblingBones = _vm.LinkSiblingBones;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
+        c.BlockGPoseMouseTargeting = _vm.BlockGPoseMouseTargeting;
         c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
