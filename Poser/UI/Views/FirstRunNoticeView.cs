@@ -115,7 +115,7 @@ public sealed class FirstRunNoticeView
 
         Paragraph(
             $"Type \"{FirstRunNotice.ConfirmationPhrase}\" below to confirm you "
-                + "have read this and know what you are using.",
+                + "have read this and know what you're getting into.",
             width,
             new TextStyle { Weight = FontWeight.Medium, Color = theme.Text },
             gap: 0f);
