@@ -367,7 +367,7 @@ public sealed class SceneCaptureService
         var result = new List<SceneFabrikChain>();
         foreach (var skeleton in slots)
             foreach (var chain in _bonePosing.GetIkChains(skeleton))
-                if (chain.Config.Solver == Poser.Domain.Posing.IkSolver.Fabrik
+                if (chain.Config.Solver is (Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope)
                     && _bonePosing.SnapshotFabrik(chain.Endpoint) is { Fabrik: not null } config)
                     result.Add(SceneFabrikChain.Capture(skeleton.Slot, chain.Endpoint.PartialId,
                         chain.Endpoint.BoneName, config));

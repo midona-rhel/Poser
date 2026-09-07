@@ -168,14 +168,14 @@ internal sealed partial class ActorServiceLifecycle
         foreach (var saved in state.Ik)
         {
             if (LocalBone(saved.Slot, saved.Partial, saved.Bone) is not { } endpoint) continue;
-            if (saved.Config is { Solver: Poser.Domain.Posing.IkSolver.Fabrik, Fabrik: { } control })
+            if (saved.Config is { Solver: Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope, Fabrik: { } control })
             {
                 Poser.Domain.Posing.FabrikTarget Rebind(Poser.Domain.Posing.FabrikTarget point) =>
                     point.Bone is { } anchor && anchor.Skeleton.Actor == state.OriginalId
                     ? point with { Bone = LocalBone(anchor.Slot, anchor.PartialId, anchor.CanonicalName) is { } live
                         ? _bindings.GetBoneId(live) : null } : point;
                 _bonePosing.RestoreFabrik(endpoint, saved.Config with { Fabrik = control with
-                    { Root = Rebind(control.Root), Tip = Rebind(control.Tip) } });
+                    { Handle = Rebind(control.Handle) } });
                 continue;
             }
             _bonePosing.SetIkConfiguration(endpoint, saved.Config);

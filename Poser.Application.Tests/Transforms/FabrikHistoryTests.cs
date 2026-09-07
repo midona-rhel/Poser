@@ -17,9 +17,9 @@ public sealed class FabrikHistoryTests
             new(4, 5, 6), Quaternion.Identity);
         var seed = new FabrikControl([
             new("root", 0, Vector3.Zero, Quaternion.Identity, Vector3.Zero, Quaternion.Identity),
-            new("tip", 0, Vector3.UnitX, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)], point, point, 0);
+            new("tip", 0, Vector3.UnitX, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)], point, point, 0, 0, point);
         var before = IkChainConfig.DefaultsForChain(true) with
-            { FabrikMode = FabrikControlMode.Bidirectional, Fabrik = seed };
+            { Fabrik = seed };
         var current = before;
         for (int i = 1; i <= 10; i++)
         {
@@ -27,7 +27,7 @@ public sealed class FabrikHistoryTests
             journal.Adjust("chain", "Set IK", () => current,
                 next => { current = next; return ValueWriteResult.Ok(); },
                 current with { Fabrik = current.Fabrik! with
-                    { Root = point with { Position = new Vector3(i, 2, 3) } } });
+                    { Handle = point with { Position = new Vector3(i, 2, 3) } } });
             journal.EndEdit();
         }
         Assert.Empty(entries);

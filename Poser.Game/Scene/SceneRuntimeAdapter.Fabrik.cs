@@ -69,12 +69,11 @@ internal sealed partial class SceneRuntimeAdapter
                         Entity = Entity(entity) };
                 var restored = control with
                 {
-                    Root = Rebind(control.Root, saved.RootBone, saved.RootEntity),
-                    Tip = Rebind(control.Tip, saved.TipBone, saved.TipEntity),
+                    Handle = Rebind(control.Handle, saved.HandleBone, saved.HandleEntity),
                 };
                 bool Missing(FabrikTarget target) => target.Mode switch
                 { IkTargetMode.Bone => target.Bone == null, IkTargetMode.Entity => target.Entity == null, _ => false };
-                if (Missing(restored.Root) || Missing(restored.Tip))
+                if (Missing(restored.Handle))
                     failures.Add($"{actor.Name}: an endpoint target for {saved.Endpoint} is unavailable.");
                 if (_bonePosing.RestoreFabrik(tip, saved.Config with { Fabrik = restored }) is { } error)
                     failures.Add($"{actor.Name}: {error}");

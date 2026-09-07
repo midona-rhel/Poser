@@ -2055,11 +2055,11 @@ public partial class PoseInspectorPane
     private void DrawIkBoneTarget(
         Crystarium.FormScope form,
         global::Poser.Domain.Identity.BoneId endpoint,
-        TransformTargetId ikTarget, bool? fabrikRoot = null)
+        TransformTargetId ikTarget, bool fabrik = false)
     {
         var actors = _scene.Snapshot.Actors;
-        var current = fabrikRoot is { } root
-            ? (root ? _ikPort.Get(ikTarget)?.Fabrik?.Root : _ikPort.Get(ikTarget)?.Fabrik?.Tip)?.Bone
+        var current = fabrik
+            ? _ikPort.Get(ikTarget)?.Fabrik?.Handle.Bone
             : _ikPort.BoneTarget(ikTarget);
         // The dropdown leads with Any actor: the list needs one named, the
         // pick in the view is limited to the named one and free otherwise.
@@ -2086,8 +2086,8 @@ public partial class PoseInspectorPane
             : "Choose a bone";
         void Aim(global::Poser.Domain.Identity.BoneId bone)
         {
-            var result = fabrikRoot is { } side
-                ? _ikPort.SetFabrikTarget(ikTarget, side, IkTargetMode.Bone, bone)
+            var result = fabrik
+                ? _ikPort.SetFabrikTarget(ikTarget, IkTargetMode.Bone, bone)
                 : _ikPort.SetBoneTarget(ikTarget, bone);
             if (result is { Success: false } failed)
                 _notices.Failed($"IK target: {failed.Detail}");
@@ -2135,10 +2135,10 @@ public partial class PoseInspectorPane
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint, bool? fabrikRoot = null)
+    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint, bool fabrik = false)
     {
-        var current = fabrikRoot is { } root
-            ? (root ? _ikPort.Get(endpoint)?.Fabrik?.Root : _ikPort.Get(endpoint)?.Fabrik?.Tip)?.Entity
+        var current = fabrik
+            ? _ikPort.Get(endpoint)?.Fabrik?.Handle.Entity
             : _ikPort.EntityTarget(endpoint);
         var scene = _scene.Snapshot;
         string? currentName = current switch
@@ -2173,9 +2173,9 @@ public partial class PoseInspectorPane
                 }, help: "Follow an object, scenery, light or VFX while keeping the current offset");
             actions.Button("Detach", () =>
             {
-                if (fabrikRoot is { } side)
+                if (fabrik)
                 {
-                    _ikPort.SetFabrikTarget(endpoint, side, IkTargetMode.World);
+                    _ikPort.SetFabrikTarget(endpoint, IkTargetMode.World);
                     return;
                 }
                 if (_ikPort.Get(endpoint) is { } config
@@ -2188,8 +2188,8 @@ public partial class PoseInspectorPane
             form.Status("Target unavailable — choose another entity or detach.", warning: true);
         if (_ikEntityPicker.Draw() is { } chosen)
         {
-            var result = fabrikRoot is { } side
-                ? _ikPort.SetFabrikTarget(endpoint, side, IkTargetMode.Entity, entity: chosen.Item.Id)
+            var result = fabrik
+                ? _ikPort.SetFabrikTarget(endpoint, IkTargetMode.Entity, entity: chosen.Item.Id)
                 : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
             if (result is { Success: false } refusal) _notices.Failed($"IK target: {refusal.Detail}");
         }
@@ -2292,18 +2292,6 @@ public partial class PoseInspectorPane
                 });
             },
             help: "Two Joint is a real arm or leg; CCD and FABRIK bend a chain; Rope hangs it");
-        if (config.Solver == IkSolver.Fabrik)
-        {
-            form.Dropdown("Direction", FabrikDirections, (int)config.FabrikMode,
-                next =>
-                {
-                    if (_ikPort.SetFabrikDirection(ikTarget, (FabrikControlMode)next) is { Success: false } failure)
-                        _notices.Failed($"IK: {failure.Detail}");
-                    _fabrikPicking = null;
-                    config = _ikPort.Get(ikTarget) ?? config;
-                },
-                help: "Forward moves the tip; Reverse moves the root; Bidirectional controls both ends");
-        }
         form.Slider(
             "Swivel",
             config.SwivelDegrees,
@@ -2312,7 +2300,7 @@ public partial class PoseInspectorPane
             next => Adjust(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
-        if (config.Solver == IkSolver.Fabrik && config.Fabrik != null)
+        if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope) && config.Fabrik != null)
             DrawFabrikTargets(form, boneId, ikTarget, config);
         else
         {
@@ -2420,13 +2408,22 @@ public partial class PoseInspectorPane
         }
         else
         {
-            if (config.Solver != IkSolver.Fabrik || config.Fabrik == null)
+            if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
                 form.Switch(
                     "Constraints",
                     config.EnforceConstraints,
                     next => Apply(config with { EnforceConstraints = next }),
                     help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
-            form.Slider(
+            if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+            {
+                form.Slider("Parent depth", config.ParentDepth, 0, IkChainConfig.MaxDepth - config.ChildDepth,
+                    next => Adjust(config with { ParentDepth = (int)MathF.Round(next) }), format: "0",
+                    help: "Links toward parents; zero disables this side. The far end stays anchored");
+                form.Slider("Child depth", config.ChildDepth, 0, IkChainConfig.MaxDepth - config.ParentDepth,
+                    next => Adjust(config with { ChildDepth = (int)MathF.Round(next) }), format: "0",
+                    help: "Links toward children; stops at a branch. Zero disables this side");
+            }
+            else form.Slider(
                 "Depth",
                 config.CcdDepth,
                 Domain.Posing.IkChainConfig.MinDepth,

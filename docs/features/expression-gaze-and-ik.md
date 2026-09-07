@@ -60,11 +60,11 @@ file, then resumes the existing constraints. Descendants are imported against
 the unconstrained parent pose, so they remain relative when IK resumes.
 Held handle translations are solver targets, never direct pre-solve tip writes.
 
-A bone is eligible when it has a non-hidden parent. Two Joint uses its
-slot-local chain; other eligible endpoints use CCD. Chain settings cannot
-change during a gesture.
+A bone is eligible when it has a non-hidden parent; FABRIK and Rope also allow
+a bone with same-partial children. Two Joint uses its slot-local limb; other
+eligible bones default to FABRIK. Chain settings cannot change during a gesture.
 
-Relative targets follow animation. Fixed targets keep the captured target and
+Two Joint/CCD relative targets follow animation. Fixed targets keep the captured target and
 authored translation, so changing mode does not jump. IK bake disables the
 chain, waits for the pose to settle, and writes affected bones as one
 raw-baseline history entry. Disabling keeps tuning and clears only fixed
@@ -80,18 +80,23 @@ and unavailable, never rebound to a replacement; choose another target or
 Detach to hold the current world point. Inspector targeting uses the existing
 IK configuration control, while the runtime resolves the live transform.
 
-FABRIK retains Depth (at most 50 links). Forward pins the root, Reverse pins
-the tip, and Bidirectional exposes both endpoint targets. Direction changes
-capture the visible chain and both endpoints without reparenting native bones
-or moving the actor. The authored chain seed and endpoint descriptors belong
-to configuration/history; repeated evaluation never measures new link lengths
-from its own previous output. Two Joint, CCD and Rope keep their existing paths.
-In unreachable configurations, Forward/Bidirectional prioritize the root;
-Reverse prioritizes the tip. Links remain their captured lengths. Actor targets
-are model-space points; World targets are world points; bone/entity positions
-are world offsets without inherited scale. Missing references suspend the solve.
-Scenes store portable references and restore targets after all entities exist;
-previews instead snapshot both targets into their own model frame. An endpoint
-drag is one history step. Baking writes the solved pose and disables the chain.
-Controlled FABRIK chains cannot overlap another active IK chain; they never
-implicitly connect. Inspector and bone context menus share direction controls.
+FABRIK and Rope use Parent depth and Child depth around the selected bone;
+that bone remains the only transform handle and target. Each far end is anchored
+in actor-model space. Zero disables a side; the two depths total at most 50
+links. Defaults are Parent 0 / Child 3. There are no direction or endpoint modes.
+Child traversal stops at a fork rather than choosing a branch; both walks stop
+at hidden bones or a partial boundary. Active chains cannot overlap another
+active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
+
+Depth edits capture the visible span and anchors before entering history.
+The seed is authored state, not a measurement of the previous solve. The handle
+is constrained to the reach of both spans; taut spans cannot be stretched by a
+drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve
+on each side. Swivel rotates the bend of each span without moving its endpoints.
+Actor targets are model-space points; World targets are world points;
+bone/entity targets are world offsets without inherited scale. Missing references
+suspend solving. The ordinary bone controls edit the selected handle—there are
+no separate root/tip position fields. One drag is one history step.
+Scenes store the span, anchors and portable handle reference, restoring the
+reference after scene entities exist. Previews snapshot it into their own model
+frame. Baking writes the solved pose and disables the chains.

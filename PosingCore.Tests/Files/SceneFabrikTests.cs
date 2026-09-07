@@ -15,36 +15,64 @@ public sealed class SceneFabrikTests
             Vector3.Zero, Quaternion.Identity);
         return IkChainConfig.DefaultsForChain(true) with
         {
-            FabrikMode = FabrikControlMode.Bidirectional,
+            ParentDepth = 0, ChildDepth = 1,
             Fabrik = new([
                 new("root", 0, Vector3.Zero, Quaternion.Identity, Vector3.Zero, Quaternion.Identity),
                 new("tip", 0, Vector3.UnitX, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)],
-                Target(new(1, 2, 3)), Target(new(3, 2, 3)), 15),
+                Target(new(1, 2, 3)), Target(new(3, 2, 3)), 15, 0, Target(new(1, 2, 3))),
         };
     }
 
-    [Fact]
-    public void Scene_payload_roundtrips_both_targets_and_chain_without_native_generation_ids()
+    [Theory]
+    [InlineData(IkSolver.Fabrik)]
+    [InlineData(IkSolver.Rope)]
+    public void Scene_payload_roundtrips_handle_anchors_and_span_without_native_generation_ids(IkSolver solver)
     {
-        var config = Config();
+        var config = Config() with { Solver = solver };
         var actor = new ActorId(Guid.NewGuid(), 73);
         var anchor = new BoneId(new(actor, PoseSlot.Character, 91), 1, 37, "anchor");
         config = config with { Fabrik = config.Fabrik! with
-            { Root = config.Fabrik.Root with { Mode = IkTargetMode.Bone, Bone = anchor },
-              Tip = config.Fabrik.Tip with { Mode = IkTargetMode.Entity,
-                  Entity = SelectionId.ForLight(new(Guid.NewGuid(), 42)) } } };
+            { Handle = config.Fabrik.Handle with { Mode = IkTargetMode.Bone, Bone = anchor } } };
         var saved = SceneFabrikChain.Capture(PoseSlot.Character, 0, "tip", config);
         var json = JsonSerializer.Serialize(saved, SceneJsonOptionsAccessor.Options);
         var read = JsonSerializer.Deserialize<SceneFabrikChain>(json, SceneJsonOptionsAccessor.Options)!;
         Assert.Null(read.Config.Validate());
-        Assert.Equal(FabrikControlMode.Bidirectional, read.Config.FabrikMode);
+        Assert.Equal(solver, read.Config.Solver);
+        Assert.Equal(0, read.Config.ParentDepth);
+        Assert.Equal(1, read.Config.ChildDepth);
         Assert.Equal(config.Fabrik.Bones, read.Config.Fabrik!.Bones);
         Assert.Equal(config.Fabrik.Root.Position, read.Config.Fabrik.Root.Position);
-        Assert.Equal(actor.LogicalId, read.RootBone!.ActorKey);
-        Assert.Equal("anchor", read.RootBone.BoneName);
-        Assert.Null(read.Config.Fabrik.Root.Bone);
-        Assert.Null(read.Config.Fabrik.Tip.Entity);
+        Assert.Equal(actor.LogicalId, read.HandleBone!.ActorKey);
+        Assert.Equal("anchor", read.HandleBone.BoneName);
+        Assert.Null(read.Config.Fabrik.Handle.Bone);
         Assert.DoesNotContain("Generation", json);
+    }
+
+    [Fact]
+    public void Scene_entity_handle_uses_a_portable_reference()
+    {
+        var config = Config();
+        var light = new LightId(Guid.NewGuid(), 42);
+        config = config with { Fabrik = config.Fabrik! with { Handle = config.Fabrik.Handle with
+            { Mode = IkTargetMode.Entity, Entity = SelectionId.ForLight(light) } } };
+        var saved = SceneFabrikChain.Capture(PoseSlot.Character, 0, "root", config);
+        Assert.Null(saved.Config.Fabrik!.Handle.Entity);
+        Assert.Equal("light", saved.HandleEntity!.Kind);
+        Assert.Equal(light.LogicalId, saved.HandleEntity.Key);
+    }
+
+    [Fact]
+    public void Zero_depths_keep_the_handle_state_without_an_active_span()
+    {
+        var config = Config();
+        config = config with { ParentDepth = 0, ChildDepth = 0, Fabrik = config.Fabrik! with
+            { Bones = [config.Fabrik.Bones[0]], HandleIndex = 0 } };
+        var json = JsonSerializer.Serialize(SceneFabrikChain.Capture(PoseSlot.Character, 0, "root", config),
+            SceneJsonOptionsAccessor.Options);
+        var read = JsonSerializer.Deserialize<SceneFabrikChain>(json, SceneJsonOptionsAccessor.Options)!;
+        Assert.Null(read.Config.Validate());
+        Assert.Single(read.Config.Fabrik!.Bones);
+        Assert.Equal(config.Fabrik.Handle, read.Config.Fabrik.Handle);
     }
 
     [Fact]

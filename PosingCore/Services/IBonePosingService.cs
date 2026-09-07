@@ -94,11 +94,10 @@ public interface IBonePosingService : IDisposable
     /// defaults); null when IK cannot be armed here at all — a virtual bone,
     /// or a bone with no parent for CCD to walk into.</summary>
     Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone);
-    Poser.Domain.Posing.FabrikTarget? CaptureFabrikTarget(IBone endpoint, bool root,
+    Poser.Domain.Posing.FabrikTarget? CaptureFabrikTarget(IBone endpoint,
         Poser.Domain.Posing.IkTargetMode mode, BoneId? bone = null, SelectionId? entity = null) => null;
+    Poser.Domain.Posing.IkChainConfig PrepareIkConfiguration(IBone endpoint, Poser.Domain.Posing.IkChainConfig config) => config;
     Poser.Domain.Posing.IkChainConfig? SnapshotFabrik(IBone endpoint, bool modelSpace = false) => GetIkConfiguration(endpoint);
-    Poser.Domain.Posing.IkChainConfig? CaptureFabrikDirection(IBone endpoint,
-        Poser.Domain.Posing.FabrikControlMode mode) => null;
     string? RestoreFabrik(IBone endpoint, Poser.Domain.Posing.IkChainConfig config) => SetIkConfiguration(endpoint, config);
 
     /// <summary>Every bone of the skeleton that carries stored IK

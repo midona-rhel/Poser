@@ -5,40 +5,67 @@ namespace Poser.Domain.Tests;
 
 public sealed class FabrikSolverTests
 {
-    private static readonly Vector3[] Bent = [Vector3.Zero, new(1, 1, 0), new(2, 0, 0), new(3, 1, 0)];
+    private static readonly Vector3[] Bent = Enumerable.Range(0, 7).Select(i => new Vector3(i, i % 2, 0)).ToArray();
 
     [Theory]
-    [InlineData(FabrikControlMode.Forward)]
-    [InlineData(FabrikControlMode.Reverse)]
-    [InlineData(FabrikControlMode.Bidirectional)]
-    public void Captured_endpoints_do_not_change_the_pose(FabrikControlMode mode)
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void Capturing_either_or_both_sides_preserves_the_pose(int handle)
     {
-        var result = FabrikSolver.Solve(Bent, Bent[0], Bent[^1], mode, 8);
+        var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], Bent[handle], 8);
         for (int i = 0; i < Bent.Length; i++) Near(Bent[i], result[i]);
     }
 
     [Theory]
-    [InlineData(FabrikControlMode.Forward)]
-    [InlineData(FabrikControlMode.Reverse)]
-    [InlineData(FabrikControlMode.Bidirectional)]
-    public void Reachable_targets_preserve_both_ends_and_lengths(FabrikControlMode mode)
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void Selected_handle_moves_and_far_ends_stay_anchored(int handle)
     {
-        var root = new Vector3(2, 3, 1);
-        var tip = new Vector3(4, 4, 2);
-        var result = FabrikSolver.Solve(Bent, root, tip, mode, 60);
-        Near(root, result[0]); Near(tip, result[^1]); Lengths(Bent, result);
+        var target = Bent[handle] + new Vector3(0, .15f, .3f);
+        var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], target, 60);
+        Near(target, result[handle]);
+        if (handle > 0) Near(Bent[0], result[0]);
+        if (handle < Bent.Length - 1) Near(Bent[^1], result[^1]);
+        Lengths(Bent, result);
     }
 
     [Theory]
-    [InlineData(FabrikControlMode.Forward)]
-    [InlineData(FabrikControlMode.Reverse)]
-    [InlineData(FabrikControlMode.Bidirectional)]
-    public void Unreachable_targets_keep_the_priority_end_without_stretching(FabrikControlMode mode)
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void Unreachable_drag_clamps_the_handle_without_stretching(int handle)
     {
-        var root = new Vector3(-100, 0, 0); var tip = new Vector3(100, 0, 0);
-        var result = FabrikSolver.Solve(Bent, root, tip, mode, 8);
-        if (mode == FabrikControlMode.Reverse) Near(tip, result[^1]);
-        else Near(root, result[0]);
+        var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], new(100, 100, 100), 60);
+        if (handle > 0) Near(Bent[0], result[0]);
+        if (handle < Bent.Length - 1) Near(Bent[^1], result[^1]);
+        Lengths(Bent, result);
+    }
+
+    [Fact]
+    public void Two_single_link_sides_share_one_handle_on_their_intersection_circle()
+    {
+        Vector3[] chain = [Vector3.Zero, new(1, 1, 0), new(2, 0, 0)];
+        var result = FabrikSolver.Solve(chain, 1, chain[0], chain[^1], new(1, 0, 4), 8);
+        Near(new(1, 0, 1), result[1]);
+        Near(chain[0], result[0]); Near(chain[^1], result[^1]); Lengths(chain, result);
+    }
+
+    [Fact]
+    public void Taut_two_sided_chain_cannot_be_stretched_by_moving_its_middle()
+    {
+        Vector3[] chain = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2];
+        var result = FabrikSolver.Solve(chain, 1, chain[0], chain[^1], Vector3.One, 8);
+        for (int i = 0; i < chain.Length; i++) Near(chain[i], result[i]);
+    }
+
+    [Fact]
+    public void Default_iterations_keep_the_two_spans_connected()
+    {
+        var target = Bent[3] + new Vector3(0, .15f, .3f);
+        var result = FabrikSolver.Solve(Bent, 3, Bent[0], Bent[^1], target, 8);
+        Near(target, result[3]); Near(Bent[0], result[0]); Near(Bent[^1], result[^1]);
         Lengths(Bent, result);
     }
 
@@ -46,40 +73,61 @@ public sealed class FabrikSolverTests
     public void Fifty_links_are_supported_and_fifty_one_rejected()
     {
         var chain = Enumerable.Range(0, 51).Select(i => new Vector3(i, i % 2, 0)).ToArray();
-        Lengths(chain, FabrikSolver.Solve(chain, chain[0], new(40, 2, 1), FabrikControlMode.Forward, 60));
+        Lengths(chain, FabrikSolver.Solve(chain, 25, chain[0], chain[^1], new(25, 3, 1), 60));
         Assert.Throws<ArgumentOutOfRangeException>(() => FabrikSolver.Solve(
-            new Vector3[52], Vector3.Zero, Vector3.One, FabrikControlMode.Forward, 8));
+            new Vector3[52], 25, Vector3.Zero, Vector3.One, Vector3.UnitX, 8));
         Assert.Equal(50, IkChainConfig.MaxDepthFor(IkSolver.Fabrik));
         Assert.Equal(20, IkChainConfig.MaxDepthFor(IkSolver.Ccd));
     }
 
     [Fact]
-    public void A_straight_chain_can_bend_toward_a_closer_collinear_target()
+    public void Depths_share_the_fifty_link_limit_and_only_children_are_on_by_default()
+    {
+        var config = IkChainConfig.DefaultsForChain();
+        Assert.Equal(0, config.ParentDepth); Assert.Equal(3, config.ChildDepth);
+        Assert.Null((config with { ParentDepth = 25, ChildDepth = 25 }).Validate());
+        Assert.NotNull((config with { ParentDepth = 26, ChildDepth = 25 }).Validate());
+        Assert.NotNull((config with { ParentDepth = -1 }).Validate());
+        Assert.Null((config with { ParentDepth = 0, ChildDepth = 0 }).Validate());
+    }
+
+    [Fact]
+    public void Straight_chain_can_bend_toward_a_closer_collinear_handle()
     {
         Vector3[] chain = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2, Vector3.UnitX * 3];
-        var tip = Vector3.UnitX * 1.5f;
-        var result = FabrikSolver.Solve(chain, Vector3.Zero, tip, FabrikControlMode.Forward, 60);
-        Near(tip, result[^1]); Lengths(chain, result);
+        var result = FabrikSolver.Solve(chain, 3, chain[0], chain[^1], Vector3.UnitX * 1.5f, 60);
+        Near(Vector3.UnitX * 1.5f, result[^1]); Lengths(chain, result);
     }
 
     [Fact]
     public void Zero_length_links_and_coincident_targets_stay_finite()
     {
         Vector3[] chain = [Vector3.Zero, Vector3.Zero, Vector3.UnitX, Vector3.Zero];
-        var result = FabrikSolver.Solve(chain, Vector3.Zero, Vector3.Zero, FabrikControlMode.Reverse, 60);
+        var result = FabrikSolver.Solve(chain, 1, chain[0], chain[^1], Vector3.Zero, 60);
         Lengths(chain, result);
         Assert.All(result, p => Assert.True(float.IsFinite(p.LengthSquared())));
     }
 
     [Fact]
-    public void Solve_is_equivariant_under_actor_rotation_and_translation()
+    public void Solve_follows_actor_rotation_and_translation()
     {
         var rotation = Quaternion.CreateFromYawPitchRoll(.5f, -.2f, 1);
         Vector3 Move(Vector3 v) => Vector3.Transform(v, rotation) + new Vector3(7, -3, 9);
-        var a = FabrikSolver.Solve(Bent, Vector3.Zero, new(2, 1, 1), FabrikControlMode.Bidirectional, 60);
-        var b = FabrikSolver.Solve(Bent.Select(Move).ToArray(), Move(Vector3.Zero), Move(new(2, 1, 1)),
-            FabrikControlMode.Bidirectional, 60);
+        var target = new Vector3(3, 1, 1);
+        var a = FabrikSolver.Solve(Bent, 3, Bent[0], Bent[^1], target, 60);
+        var b = FabrikSolver.Solve(Bent.Select(Move).ToArray(), 3, Move(Bent[0]), Move(Bent[^1]), Move(target), 60);
         for (int i = 0; i < a.Length; i++) Near(Move(a[i]), b[i]);
+    }
+
+    [Fact]
+    public void Rope_keeps_its_hanging_curve_on_either_side()
+    {
+        Vector3[] chain = [new(0, 0, 0), new(1, 1, 0), new(2, 0, 0), new(3, 1, 0), new(4, 0, 0)];
+        var result = RopeSolver.Solve(chain, chain[0], chain[^1], -Vector3.UnitY);
+        Near(chain[0], result[0]); Near(chain[^1], result[^1]);
+        Assert.True(result[2].Y < 0);
+        var reversed = RopeSolver.Solve(chain.Reverse().ToArray(), chain[^1], chain[0], -Vector3.UnitY);
+        for (int i = 0; i < result.Length; i++) Near(result[i], reversed[result.Length - 1 - i]);
     }
 
     private static void Lengths(IReadOnlyList<Vector3> source, IReadOnlyList<Vector3> result)

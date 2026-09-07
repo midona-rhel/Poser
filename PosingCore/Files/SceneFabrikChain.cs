@@ -6,8 +6,7 @@ using Poser.Domain.Posing;
 namespace Poser.Files;
 
 public sealed record SceneFabrikChain(PoseSlot Slot, int Partial, string Endpoint,
-    IkChainConfig Config, SceneBoneAttachment? RootBone, SceneStructureRef? RootEntity,
-    SceneBoneAttachment? TipBone, SceneStructureRef? TipEntity)
+    IkChainConfig Config, SceneBoneAttachment? HandleBone, SceneStructureRef? HandleEntity)
 {
     public static SceneFabrikChain Capture(PoseSlot slot, int partial, string endpoint, IkChainConfig config)
     {
@@ -23,9 +22,8 @@ public sealed record SceneFabrikChain(PoseSlot Slot, int Partial, string Endpoin
             _ => null,
         };
         return new(slot, partial, endpoint, config with { Fabrik = control with
-            { Root = control.Root with { Bone = null, Entity = null },
-              Tip = control.Tip with { Bone = null, Entity = null } } },
-            Bone(control.Root), Entity(control.Root), Bone(control.Tip), Entity(control.Tip));
+            { Handle = control.Handle with { Bone = null, Entity = null } } },
+            Bone(control.Handle), Entity(control.Handle));
     }
 
     public static void Rebase(SceneFile scene, Func<Vector3, Vector3> move, Quaternion turn)
@@ -43,6 +41,6 @@ public sealed record SceneFabrikChain(PoseSlot Slot, int Partial, string Endpoin
                 for (int i = 0; i < chains.Count; i++)
                     if (chains[i].Config.Fabrik is { } control)
                         chains[i] = chains[i] with { Config = chains[i].Config with { Fabrik = control with
-                            { Root = RebaseTarget(control.Root), Tip = RebaseTarget(control.Tip) } } };
+                            { Root = RebaseTarget(control.Root), Tip = RebaseTarget(control.Tip), Handle = RebaseTarget(control.Handle) } } };
     }
 }

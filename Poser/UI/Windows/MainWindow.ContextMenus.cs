@@ -435,10 +435,6 @@ public partial class MainWindow
 
         var tree = BuildTreeSubmenu(_ctxBoneExpandKey, out var treeActions);
         var pose = BuildActorPoseSubmenu(owner!.Id, out var poseActions);
-        var fabrik = _poseInspector.FabrikDirectionMenu(boneId, out var fabrikActions);
-        if (fabrik.Length > 0)
-            items = items.Concat(new[] { new ContextMenuItem("FABRIK direction", TablerIcon.Rotate,
-                submenuItems: fabrik) }).ToArray();
         items = items.Concat(new[]
         {
             ContextMenuItem.Separator,
@@ -510,7 +506,6 @@ public partial class MainWindow
                 "Tree" => treeActions,
                 "Actor bone presets" => _bonePresetActions,
                 "Actor pose" => poseActions,
-                "FABRIK direction" => fabrikActions,
                 _ => null,
             };
             if (actions != null && sub < actions.Count) actions[sub]?.Invoke();

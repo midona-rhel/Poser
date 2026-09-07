@@ -51,8 +51,7 @@ public interface IIkConfigurationPort
     /// or enabling a Fixed chain captures the current effective target.</summary>
     IkPortResult Set(TransformTargetId target, IkChainConfig config);
     IkPortResult Adjust(TransformTargetId target, IkChainConfig config);
-    IkPortResult SetFabrikDirection(TransformTargetId target, FabrikControlMode mode) => IkPortResult.Fail("FABRIK unavailable.");
-    IkPortResult SetFabrikTarget(TransformTargetId target, bool root, IkTargetMode mode,
+    IkPortResult SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
         BoneId? bone = null, SelectionId? entity = null) => IkPortResult.Fail("FABRIK targets unavailable.");
 
     /// <summary>Restores the chain's defaults while preserving its current

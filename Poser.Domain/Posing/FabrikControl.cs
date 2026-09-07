@@ -4,8 +4,6 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-public enum FabrikControlMode { Forward, Reverse, Bidirectional }
-
 /// <summary>Actor-model point, world point, or world offset from an exact anchor.</summary>
 public sealed record FabrikTarget(
     IkTargetMode Mode, Vector3 Position, Quaternion Rotation,
@@ -17,21 +15,23 @@ public sealed record FabrikBonePose(
     string Name, int Partial, Vector3 Position, Quaternion Rotation,
     Vector3 AuthoredPosition, Quaternion AuthoredRotation);
 
-/// <summary>The authored chain at entry, root first. Reused across direction changes.</summary>
+/// <summary>Root-first authored span, anchored at its far ends around one selected handle.</summary>
 public sealed record FabrikControl(
-    FabrikBonePose[] Bones, FabrikTarget Root, FabrikTarget Tip, float SwivelBaseline)
+    FabrikBonePose[] Bones, FabrikTarget Root, FabrikTarget Tip, float SwivelBaseline,
+    int HandleIndex, FabrikTarget Handle)
 {
     public string? Validate()
     {
-        if (Bones is null || Bones.Length is < 2 or > IkChainConfig.MaxDepth + 1
-            || Root is null || Tip is null || !float.IsFinite(SwivelBaseline))
-            return "FABRIK requires 2–51 bones and two finite targets.";
+        if (Bones is null || Bones.Length is < 1 or > IkChainConfig.MaxDepth + 1
+            || Root is null || Tip is null || Handle is null
+            || HandleIndex < 0 || HandleIndex >= Bones.Length || !float.IsFinite(SwivelBaseline))
+            return "The chain requires 1–51 bones and finite targets.";
         foreach (var bone in Bones)
             if (bone is null || string.IsNullOrWhiteSpace(bone.Name) || bone.Partial < 0
                 || !TransformMath.IsFinite(bone.Position) || !RotationValid(bone.Rotation)
                 || !TransformMath.IsFinite(bone.AuthoredPosition) || !RotationValid(bone.AuthoredRotation))
                 return "FABRIK contains an invalid bone pose.";
-        foreach (var target in new[] { Root, Tip })
+        foreach (var target in new[] { Root, Tip, Handle })
             if (!Enum.IsDefined(target.Mode) || !TransformMath.IsFinite(target.Position)
                 || !RotationValid(target.Rotation) || !TransformMath.IsFinite(target.AuthoredPosition)
                 || !RotationValid(target.AuthoredRotation))

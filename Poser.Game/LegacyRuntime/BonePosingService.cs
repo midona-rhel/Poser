@@ -607,8 +607,8 @@ public unsafe partial class BonePosingService : IBonePosingService
                 var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
                 _ikChains.TryGetValue(
                     (slotKey, partialIdx, boneIdx), out var chainState);
-                if (chainState?.Config is { Solver: IkSolver.Fabrik, Fabrik: not null })
-                    chainState = null; // Authored two-end chains solve once, after pose layers.
+                if (chainState?.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
+                    chainState = null; // Authored spans solve once around the selected handle, after pose layers.
                 // Import deltas must be measured against the ordinary pose,
                 // before IK moves parents underneath the remaining file bones.
                 if (_ikImports.Contains(slotKey.Actor))
@@ -1101,7 +1101,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         if (bone is VirtualBone)
             return null;
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
-        if (definition == null && !IsCcdEligible(bone))
+        if (definition == null && !IsCcdEligible(bone) && !HasFabrikChildren(bone))
             return null;
         var key = ChainKey(bone);
         if (_ikChains.TryGetValue(key, out var state))
@@ -1141,8 +1141,10 @@ public unsafe partial class BonePosingService : IBonePosingService
         IBone endpoint,
         Poser.Domain.Posing.IkChainConfig config)
     {
-        if (config is { Solver: IkSolver.Fabrik, Fabrik: { } control })
+        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
             return control.Bones.Select(b => b.Name).ToArray();
+        if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+            return FabrikMembers(endpoint, config).Select(b => b.BoneName).ToArray();
         var names = new List<string> { endpoint.BoneName };
         if (config.Solver != Poser.Domain.Posing.IkSolver.TwoJoint)
         {
@@ -1175,7 +1177,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
         if (definition == null)
         {
-            if (!IsCcdEligible(bone))
+            if (!IsCcdEligible(bone) && !(config.Solver is (IkSolver.Fabrik or IkSolver.Rope) && HasFabrikChildren(bone)))
                 return $"{bone.BoneName} has no parent for IK to bend.";
             if (config.ValidateUndeclared() is { } rejected)
                 return rejected;
@@ -1204,21 +1206,15 @@ public unsafe partial class BonePosingService : IBonePosingService
         var key = ChainKey(bone);
         _ikChains.TryGetValue(key, out var previous);
         if (config.Enabled && GetIkChains(bone.Skeleton).Any(other => other.Config.Enabled
-            && other.Config is { Solver: IkSolver.Fabrik, Fabrik: not null }
+            && other.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null }
             && !ReferenceEquals(other.Endpoint, bone) && other.Endpoint.PartialId == bone.PartialId
             && ChainMemberNames(bone, config).Any(name => other.Bones.Contains(name))))
             return "This chain overlaps an active FABRIK chain. Reduce Depth or disable the other chain.";
-        if (config.Solver == IkSolver.Fabrik)
+        if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope))
         {
-            if (config.FabrikMode != FabrikControlMode.Forward && config.Fabrik == null
-                || previous != null && config.Fabrik != null
-                    && ReferenceEquals(config.Fabrik, previous.Config.Fabrik)
-                    && config.CcdDepth != previous.Config.CcdDepth)
-            {
-                var captured = CaptureFabrikControl(bone, config);
-                if (captured == null) return "The FABRIK chain is not ready.";
-                config = config with { Fabrik = captured };
-            }
+            config = PrepareIkConfiguration(bone, config);
+            if (config.Fabrik == null && config.Enabled && config.ParentDepth + config.ChildDepth > 0)
+                return "This depth reaches no bones. Increase Parent depth or Child depth.";
             if (config.Fabrik != null && FabrikOverlap(bone, config))
                 return "This FABRIK chain overlaps another active IK chain. Reduce Depth or disable the other chain.";
         }
@@ -1498,7 +1494,7 @@ public unsafe partial class BonePosingService : IBonePosingService
                     continue;
                 RefreshCache(summary.Endpoint);
                 var original = _ikChains[ChainKey(summary.Endpoint)];
-                if (summary.Config is { Solver: IkSolver.Fabrik, Fabrik: not null }
+                if (summary.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null }
                     && SnapshotFabrik(summary.Endpoint, modelSpace: true) is { } snapshot)
                 {
                     RestoreFabrik(tip, snapshot);

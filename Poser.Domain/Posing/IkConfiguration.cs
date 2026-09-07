@@ -59,7 +59,8 @@ public sealed record IkChainConfig(
     float SwivelDegrees = 0f,
     bool HoldRotation = true)
 {
-    public FabrikControlMode FabrikMode { get; init; }
+    public int ParentDepth { get; init; }
+    public int ChildDepth { get; init; } = 3;
     public FabrikControl? Fabrik { get; init; }
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past
@@ -78,7 +79,8 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
-        if (!Enum.IsDefined(FabrikMode)) return "FABRIK direction is unsupported.";
+        if (ParentDepth < 0 || ChildDepth < 0 || ParentDepth + ChildDepth > MaxDepth)
+            return $"FABRIK parent and child depth must total at most {MaxDepth} links.";
         if (Fabrik?.Validate() is { } fabrikError) return fabrikError;
         if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
@@ -428,7 +430,8 @@ public readonly record struct IkSolveRequest(
     IkChainConfig Config,
     IkResolvedChain Chain,
     Vector3? RootTarget = null,
-    Quaternion? RootRotation = null);
+    Quaternion? RootRotation = null,
+    Vector3? TipTarget = null);
 
 /// <summary>Native bone indices of one resolved chain (same skeleton, same
 /// partial as the endpoint); -1 marks a missing optional twist.</summary>

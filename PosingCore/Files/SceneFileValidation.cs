@@ -297,7 +297,7 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' has no embedded pose document.");
         if (actor.Fabrik is { } chains && (chains.Count > 512 || chains.Any(chain => chain is null
-            || chain.Config is null || chain.Config.Solver != Poser.Domain.Posing.IkSolver.Fabrik
+            || chain.Config is null || chain.Config.Solver is not (Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope)
             || chain.Config.Fabrik == null || chain.Config.Validate() != null
             || string.IsNullOrWhiteSpace(chain.Endpoint) || chain.Partial < 0 || !Enum.IsDefined(chain.Slot))))
             return Fail(SceneFileValidationFailureKind.EmbeddedPose, $"Actor '{actor.Name}' has invalid FABRIK state.");

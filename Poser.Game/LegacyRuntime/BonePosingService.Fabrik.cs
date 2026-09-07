@@ -8,23 +8,47 @@ namespace Poser.Game;
 
 public unsafe partial class BonePosingService
 {
-    private static List<IBone> FabrikMembers(IBone tip, int depth)
+    private static bool HasFabrikChildren(IBone bone) => bone.ChildBones.Any(b =>
+        !b.IsHiddenBone && b.PartialId == bone.PartialId && ReferenceEquals(b.Skeleton, bone.Skeleton));
+
+    internal static List<IBone> FabrikMembers(IBone tip, IkChainConfig config)
     {
         var result = new List<IBone>();
-        for (IBone? bone = tip; bone != null && result.Count <= depth; bone = bone.ParentBone)
+        for (IBone? bone = tip; bone != null && result.Count <= config.ParentDepth; bone = bone.ParentBone)
         {
             // A Havok pose cannot address indices from a different partial.
-            if (bone.PartialId != tip.PartialId || !ReferenceEquals(bone.Skeleton, tip.Skeleton)) break;
+            if (bone != tip && bone.IsHiddenBone || bone.PartialId != tip.PartialId || !ReferenceEquals(bone.Skeleton, tip.Skeleton)) break;
             result.Add(bone);
         }
         result.Reverse();
+        var child = tip;
+        for (int i = 0; i < config.ChildDepth; i++)
+        {
+            var children = child.ChildBones.Where(b => !b.IsHiddenBone
+                && b.PartialId == tip.PartialId && ReferenceEquals(b.Skeleton, tip.Skeleton)).ToArray();
+            // A depth does not identify a branch: stop rather than picking one arbitrarily.
+            if (children.Length != 1) break;
+            child = children[0];
+            result.Add(child);
+        }
         return result;
+    }
+
+    public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config)
+    {
+        if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return config;
+        var previous = GetIkConfiguration(endpoint);
+        if (config.Fabrik == null && config.Enabled
+            || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
+                && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
+            return config with { Fabrik = CaptureFabrikControl(endpoint, config) };
+        return config;
     }
 
     private bool FabrikOverlap(IBone tip, IkChainConfig config)
     {
         if (!config.Enabled) return false;
-        var members = FabrikMembers(tip, config.CcdDepth);
+        var members = FabrikMembers(tip, config);
         return GetIkChains(tip.Skeleton).Any(other => other.Config.Enabled
             && !ReferenceEquals(other.Endpoint, tip) && other.Endpoint.PartialId == tip.PartialId
             && members.Any(b => other.Bones.Contains(b.BoneName)));
@@ -32,8 +56,8 @@ public unsafe partial class BonePosingService
 
     private FabrikControl? CaptureFabrikControl(IBone tip, IkChainConfig config)
     {
-        var members = FabrikMembers(tip, config.CcdDepth);
-        if (members.Count < 2) return null;
+        var members = FabrikMembers(tip, config);
+        if (members.Count == 0) return null;
         RefreshCache(tip);
         var poses = members.Select(bone =>
         {
@@ -45,40 +69,21 @@ public unsafe partial class BonePosingService
         FabrikTarget Point(int index) => new(IkTargetMode.Actor,
             members[index].LastTransform.Position, members[index].LastTransform.Rotation,
             poses[index].AuthoredPosition, poses[index].AuthoredRotation);
+        var targetBone = GetIkBoneTarget(tip) is { } anchor ? _bindings.GetBoneId(anchor) : null;
+        var handle = config.Fabrik?.Handle
+            ?? CaptureFabrikTarget(tip, config.TargetMode, targetBone, GetIkEntityTarget(tip))
+            ?? Point(members.IndexOf(tip));
         return new(poses, Point(0) with { HoldRotation = false },
-            Point(poses.Length - 1) with { HoldRotation = config.HoldRotation }, config.SwivelDegrees);
+            Point(poses.Length - 1) with { HoldRotation = false }, config.SwivelDegrees,
+            members.IndexOf(tip), handle);
     }
 
-    public IkChainConfig? CaptureFabrikDirection(IBone tip, FabrikControlMode mode)
-    {
-        if (GetIkConfiguration(tip) is not { Solver: IkSolver.Fabrik } config
-            || CaptureFabrikControl(tip, config) is not { } captured) return null;
-        if (config.Fabrik is { } existing)
-        {
-            var root = CaptureFabrikTarget(tip, true, existing.Root.Mode, existing.Root.Bone, existing.Root.Entity)
-                ?? existing.Root;
-            var end = CaptureFabrikTarget(tip, false, existing.Tip.Mode, existing.Tip.Bone, existing.Tip.Entity)
-                ?? existing.Tip;
-            captured = captured with { Root = root with { HoldRotation = existing.Root.HoldRotation },
-                Tip = end with { HoldRotation = existing.Tip.HoldRotation } };
-        }
-        else if (config.TargetMode != IkTargetMode.Actor)
-        {
-            var targetBone = GetIkBoneTarget(tip) is { } anchor ? _bindings.GetBoneId(anchor) : null;
-            if (CaptureFabrikTarget(tip, false, config.TargetMode, targetBone, GetIkEntityTarget(tip)) is { } end)
-                captured = captured with { Tip = end with { HoldRotation = config.HoldRotation } };
-        }
-        return config with { FabrikMode = mode, Fabrik = captured };
-    }
-
-    public FabrikTarget? CaptureFabrikTarget(IBone endpoint, bool root, IkTargetMode mode,
+    public FabrikTarget? CaptureFabrikTarget(IBone endpoint, IkTargetMode mode,
         BoneId? bone = null, SelectionId? entity = null)
     {
         var config = GetIkConfiguration(endpoint);
-        if (config?.Solver != IkSolver.Fabrik) return null;
-        var members = FabrikMembers(endpoint, config.CcdDepth);
-        if (members.Count < 2 || config.Fabrik is { } control && members.Count != control.Bones.Length) return null;
-        var source = root ? members[0] : endpoint;
+        if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return null;
+        var source = endpoint;
         RefreshCache(source);
         var authored = GetIkModification(source) ?? Transform.Identity;
         var model = source.LastTransform;
@@ -150,30 +155,30 @@ public unsafe partial class BonePosingService
         foreach (var (identity, state) in _ikChains)
         {
             if (identity.Skeleton != key || state.Config is not
-                { Enabled: true, Solver: IkSolver.Fabrik, Fabrik: { } control } config) continue;
+                { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control } config) continue;
+            if (control.Bones.Length < 2) continue; // Both spans disabled; retain the authored target for re-enabling.
             var tip = skeleton.GetBone(identity.Partial, identity.Bone);
             if (tip == null) continue;
-            var members = FabrikMembers(tip, config.CcdDepth);
+            var members = FabrikMembers(tip, config);
             if (members.Count != control.Bones.Length
                 || members.Where((b, i) => b.BoneName != control.Bones[i].Name
                     || b.PartialId != control.Bones[i].Partial).Any()) continue;
-            var rootTarget = ResolveFabrikTarget(members[0], control.Root,
-                config.FabrikMode != FabrikControlMode.Forward);
-            var tipTarget = ResolveFabrikTarget(tip, control.Tip,
-                config.FabrikMode != FabrikControlMode.Reverse);
-            if (rootTarget is not { } root || tipTarget is not { } end) continue;
-            _ikService.Solve(tip, new IkSolveRequest(end.Position, end.Rotation,
-                config, state.Chain, root.Position, root.Rotation));
+            var rootTarget = ResolveFabrikTarget(members[0], control.Root, false);
+            var tipTarget = ResolveFabrikTarget(members[^1], control.Tip, false);
+            var handleTarget = ResolveFabrikTarget(tip, control.Handle, true);
+            if (rootTarget is not { } root || tipTarget is not { } end || handleTarget is not { } handle) continue;
+            _ikService.Solve(tip, new IkSolveRequest(handle.Position, handle.Rotation,
+                config, state.Chain, root.Position, root.Rotation, end.Position));
         }
     }
 
     public IkChainConfig? SnapshotFabrik(IBone tip, bool modelSpace = false)
     {
         var config = GetIkConfiguration(tip);
-        if (config?.Solver != IkSolver.Fabrik) return config;
-        var control = config.Fabrik ?? CaptureFabrikDirection(tip, config.FabrikMode)?.Fabrik;
+        if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return config;
+        var control = config.Fabrik;
         if (control == null) return config;
-        var members = FabrikMembers(tip, config.CcdDepth);
+        var members = FabrikMembers(tip, config);
         FabrikTarget Capture(IBone bone, FabrikTarget target, bool movable)
         {
             var resolved = ResolveFabrikTarget(bone, target, movable);
@@ -206,16 +211,17 @@ public unsafe partial class BonePosingService
         }
         return config with { Fabrik = control with
         {
-            Root = Capture(members[0], control.Root, config.FabrikMode != FabrikControlMode.Forward),
-            Tip = Capture(tip, control.Tip, config.FabrikMode != FabrikControlMode.Reverse),
+            Root = Capture(members[0], control.Root, false),
+            Tip = Capture(members[^1], control.Tip, false),
+            Handle = Capture(tip, control.Handle, true),
         } };
     }
 
     public string? RestoreFabrik(IBone tip, IkChainConfig config)
     {
-        if (config.Solver != IkSolver.Fabrik || config.Fabrik is not { } control)
+        if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope) || config.Fabrik is not { } control)
             return SetIkConfiguration(tip, config);
-        var members = FabrikMembers(tip, config.CcdDepth);
+        var members = FabrikMembers(tip, config);
         if (members.Count != control.Bones.Length) return "The saved FABRIK chain does not match this skeleton.";
         FabrikTarget Baseline(FabrikTarget target, IBone bone)
         {
@@ -223,7 +229,7 @@ public unsafe partial class BonePosingService
             return target with { AuthoredPosition = authored.Position, AuthoredRotation = authored.Rotation };
         }
         return SetIkConfiguration(tip, config with { Fabrik = control with
-            { Root = Baseline(control.Root, members[0]), Tip = Baseline(control.Tip, tip) } });
+            { Handle = Baseline(control.Handle, tip) } });
     }
 
     private Transform FromApplySpace(IBone bone, Transform applied)
