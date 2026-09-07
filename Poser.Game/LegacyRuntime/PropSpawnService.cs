@@ -415,8 +415,10 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
         try
         {
             var weapon = (CSWeapon*)handle.Address;
+            Diagnostics.GPoseTransitionLog.Model(_log, "prop-delete-before", handle.Address);
             weapon->CleanupRender();
             weapon->Dtor(1);
+            _log.Information($"[GPoseLifetime] prop-delete-complete draw=0x{handle.Address:X}");
         }
         catch (Exception ex)
         {

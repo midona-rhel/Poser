@@ -458,6 +458,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     {
         if (!e.IsGPosing)
         {
+            _log.Information($"[GPoseLifetime] ik-cleanup-before chains={_ikChains.Count} poseSlots={_poseInfos.Count}");
             EndTransitiveActions();
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
@@ -466,6 +467,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
             _ikChains.Clear();
             _ikImports.Clear();
+            _log.Information("[GPoseLifetime] ik-cleanup-complete chains=0");
         }
     }
 

@@ -889,8 +889,10 @@ internal static class SpawnOwnershipCleanup
             // still exists: Penumbra keys the assignment on the object's own
             // identifier, so after the delete there is nothing left to name.
             ReleaseCollection(ownership, collections, log);
+            Diagnostics.GPoseTransitionLog.Actor(log, "actor-delete-before", current.Value.Address, $"index={current.Value.Index}");
             if (!native.DeleteExact(ownership.Descriptor.Value))
                 return false;
+            log?.Information($"[GPoseLifetime] actor-delete-complete index={current.Value.Index} actor=0x{current.Value.Address:X}");
             return ledger.TryRetire(ownership);
         }
         catch
@@ -1968,6 +1970,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // may be emptied and refilled.
         if (!_native.TryReadCompanion(descriptor, out var existing))
             return false;
+        Diagnostics.GPoseTransitionLog.Actor(_log, "companion-set-before", descriptor.Address, $"index={descriptor.Index} previous={existing} requested={container}");
         if (existing is { } attached
             && !_native.WriteCompanion(descriptor, attached.Kind, 0))
             return false;
@@ -1976,6 +1979,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id))
             return false;
+        Diagnostics.GPoseTransitionLog.Actor(_log, "companion-set-complete", descriptor.Address, $"index={descriptor.Index} requested={want}");
 
         // The companion needs a few frames before it can draw. Bounded poll (with a
         // hard timeout + log), not a blind tick delay — matches the redraw policy.
@@ -2001,7 +2005,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (!_native.TryReadCompanion(descriptor, out var info)
             || info is not { } attached)
             return;
-        _native.WriteCompanion(descriptor, attached.Kind, 0);
+        Diagnostics.GPoseTransitionLog.Actor(_log, "companion-detach-before", descriptor.Address, $"index={descriptor.Index} previous={attached}");
+        var detached = _native.WriteCompanion(descriptor, attached.Kind, 0);
+        _log?.Information($"[GPoseLifetime] companion-detach-complete actor=0x{descriptor.Address:X} success={detached}");
     }
 
     public CompanionAttachment? GetCompanionInfo(IActor owner)

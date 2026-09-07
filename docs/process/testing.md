@@ -1,5 +1,14 @@
 # Testing
 
+- Native GPose lifetime investigations use `[GPoseLifetime]` log entries at
+  entry/exit, after entry settles, and around actor/companion/overlay/IK teardown.
+  Model, skeleton, owner and bounded parent-chain addresses are read with
+  `ReadProcessMemory`, not by dereferencing potentially stale pointers. These
+  breadcrumbs correlate lifetime events; they do not establish fault ownership.
+  Collect the full Dalamud log and crash dump after recurrence. A crash before
+  the framework observes entry may leave only the preceding exit breadcrumbs.
+  There is no continuous per-frame logging or change to cleanup behavior.
+
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,
   `transform.actor-components`, `transform.actor-undo-redo`,
