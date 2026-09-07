@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.8-beta — furniture and collider-aware chain IK
+
+- Add furniture as a dedicated spawn/sidebar/library category with dye, lighting and night controls.
+- Update expression controls and camera orbit around moved actors; expand detached inspector numeric fields.
+- Add parent and child spans for FABRIK and Rope, with parent-first defaults and a 50-link limit.
+- Add transformable plane, box, cylinder and cone IK colliders using Bepu, with chain collision width and independent visibility, collision and lock controls.
+- Improve collision stability, solver cost, bone rotations and rounded collider rendering.
+- Clamp authored IK target coordinates at chain reach and discard excess drag distance.
+- Save collider groups to the library and offer saved groups in spawn categories.
+- Decouple inspector selection updates from Properties visibility; fix detached Close and Settings navigation/state behavior.
+- Add enabled-by-default protection against game mouse target changes in GPose.
+- Refine the first-run confirmation to say "know what you're getting into."
+
+See [release authorization and test coverage](0.9.8-acceptance.md). Locked colliders
+can display identity coordinates in the inspector until unlocked; deferred by the
+user. The continuous held-mouse overshoot/reversal gesture was not completed live;
+live runtime checks covered clamping and reverse input for both chain solvers.
+Animation playback is not reconstructed by lifecycle history. Off-list weather
+may still resolve to None.
+
 ## 0.9.7-beta — world lifecycle and persistent workspace
 
 - Unify world borrowing controls and edit borrowed lights in place, with release restoring the original.
