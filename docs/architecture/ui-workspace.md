@@ -16,6 +16,11 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Inspector and Properties read the current selection independently when drawing.
+Changing selection retargets both panels; collapsing, hiding or switching tabs
+in one must not stop the other from updating. Reopening a panel reads the current
+selection, not the target it last displayed.
+
 Form section headers start expanded. Their disclosure preferences persist in
 configuration under stable page/section keys, independent of actors, entity ids,
 and attached/detached hosts. Reopening a window or restarting does not reset them.

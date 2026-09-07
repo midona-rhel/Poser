@@ -352,8 +352,10 @@ public partial class PoseInspectorPane
         return null;
     }
 
-    public void SetSelection(SelectionId? primary)
+    // Each host reads the shared selection itself; Properties may not be drawn.
+    public void RefreshSelection()
     {
+        var primary = _selection.Primary;
         var selected = _selection.Selected;
         bool selectionChanged = selected.Count != _selectionSnapshot.Length;
         for (int i = 0; !selectionChanged && i < selected.Count; i++)
@@ -386,6 +388,7 @@ public partial class PoseInspectorPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        RefreshSelection();
         Game.BoneSnapshotDemand.Request();
         using var profile = FrameProfiler.Scope("Workspace · Pose");
         float s = ImGuiHelpers.GlobalScale;
