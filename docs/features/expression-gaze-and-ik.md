@@ -139,9 +139,10 @@ Continuation belongs to the exact live chain; solver/span/swivel changes and
 disabling collisions reset it. Removal, GPose exit and unload dispose its native
 buffers. Another actor or preview never shares it. Snapshots capture the visible
 route as the receiving skeleton's authored seed, not physics velocities.
-Bone frames are transported continuously between solved directions, retaining
-authored roll rather than adopting a round capsule's free spin or choosing a
-new arbitrary axis when a link folds backwards.
+Bone frames share a root roll reference and are transported along the solved
+span, preserving authored relative roll. Links must not independently accumulate
+roll from their motion history or adopt a round capsule's free spin. The root
+frame continues smoothly when folding backwards.
 The selected handle has limited pulling force so a taut wrapped span can stop
 short of its target. FABRIK/Rope translation edits clamp their authored target to
 the span's distance limits; rejected drag travel is discarded so reversing responds

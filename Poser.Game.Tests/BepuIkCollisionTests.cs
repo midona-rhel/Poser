@@ -30,6 +30,30 @@ public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
     }
 
     [Fact]
+    public void ReturningDeformedSpanToStraightDoesNotLeaveIndependentLinkTwist()
+    {
+        using var state = new BepuIkCollisionState();
+        var authored = Enumerable.Range(0, 3)
+            .Select(i => Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .2f + i * .35f)).ToArray();
+        var rotations = new Quaternion[3];
+        for (int step = 0; step <= 480; step++)
+        {
+            float tilt = MathF.Min(60, Math.Min(step, 480 - step)) * MathF.PI / 180;
+            float around = Math.Clamp(step - 60, 0, 360) * MathF.PI / 180;
+            var bent = new Vector3(MathF.Sin(tilt) * MathF.Cos(around), MathF.Sin(tilt) * MathF.Sin(around), MathF.Cos(tilt));
+            for (int link = 0; link < 3; link++)
+            {
+                var direction = link == 1 ? bent : Vector3.UnitZ;
+                rotations[link] = state.ResolveRotation(link, Vector3.UnitZ, direction, authored[link]);
+                Assert.True(Vector3.Distance(Vector3.Transform(Vector3.UnitZ, rotations[link]), direction) < .0001f);
+            }
+        }
+        for (int link = 0; link < 3; link++)
+            Assert.True(MathF.Abs(Quaternion.Dot(authored[link], rotations[link])) > .9999f,
+                $"Link {link} retained twist after the span returned to its authored directions.");
+    }
+
+    [Fact]
     public void FoldingPastBackwardsDoesNotFlipTheAuthoredRoll()
     {
         using var state = new BepuIkCollisionState();

@@ -22,7 +22,8 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
     private Vector3? _down;
     private int _handle;
     private Vector3[] _targets = [];
-    private readonly Dictionary<int, (Vector3 Direction, Quaternion Swing)> _rotationFrames = [];
+    private readonly Dictionary<int, RotationFrame> _rotationFrames = [];
+    private readonly record struct RotationFrame(Vector3 Source, Vector3 Direction, Quaternion Authored, Quaternion Swing);
     private const float Dt = 1f / 240;
     private const int Steps = 4;
 
@@ -206,33 +207,53 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
     {
         if (authoredDirection.LengthSquared() < 1e-12f || solvedDirection.LengthSquared() < 1e-12f)
             return authoredRotation;
+        var source = Vector3.Normalize(authoredDirection);
         var direction = Vector3.Normalize(solvedDirection);
-        var prior = _rotationFrames.TryGetValue(link, out var frame)
-            ? frame : (Direction: Vector3.Normalize(authoredDirection), Swing: Quaternion.Identity);
-        var cross = Vector3.Cross(prior.Direction, direction);
-        float dot = Math.Clamp(Vector3.Dot(prior.Direction, direction), -1, 1);
+        Quaternion swing;
+        if (link > 0 && _rotationFrames.TryGetValue(link - 1, out var parent))
+        {
+            // Transport along THIS solved chain, not each link's independent path
+            // through time: separate temporal frames accumulate different axial
+            // rolls after a bend travels around an obstacle (geometric holonomy).
+            // Remove the authored bend before applying the solved bend; the bone's
+            // authored relative roll remains in authoredRotation.
+            var authoredBend = Turn(parent.Source, source, parent.Authored);
+            var solvedBend = Turn(parent.Direction, direction, parent.Swing * parent.Authored);
+            swing = Quaternion.Normalize(solvedBend * parent.Swing * Quaternion.Conjugate(authoredBend));
+        }
+        else
+        {
+            var prior = _rotationFrames.TryGetValue(link, out var frame)
+                ? frame : new RotationFrame(source, source, authoredRotation, Quaternion.Identity);
+            // Only the root frame continues through time so folding past 180 degrees
+            // stays continuous. All following links share that same roll reference.
+            swing = Quaternion.Normalize(Turn(prior.Direction, direction, prior.Swing * authoredRotation) * prior.Swing);
+        }
+        _rotationFrames[link] = new(source, direction, authoredRotation, swing);
+        return Quaternion.Normalize(swing * authoredRotation);
+    }
+
+    private static Quaternion Turn(Vector3 from, Vector3 to, Quaternion basis)
+    {
+        var cross = Vector3.Cross(from, to);
+        float dot = Math.Clamp(Vector3.Dot(from, to), -1, 1);
         Quaternion turn;
         if (dot < 0 && cross.LengthSquared() < 1e-12f)
         {
             // At an exact reversal there is no unique swing axis. Preserve
             // the bone's own frame, not an arbitrary world-axis fallback.
-            var basis = prior.Swing * authoredRotation;
             var axis = Vector3.Transform(Vector3.UnitX, basis);
-            axis -= prior.Direction * Vector3.Dot(axis, prior.Direction);
+            axis -= from * Vector3.Dot(axis, from);
             if (axis.LengthSquared() < 1e-6f)
             {
                 axis = Vector3.Transform(Vector3.UnitY, basis);
-                axis -= prior.Direction * Vector3.Dot(axis, prior.Direction);
+                axis -= from * Vector3.Dot(axis, from);
             }
             turn = Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), MathF.PI);
         }
         else
             turn = Quaternion.Normalize(new Quaternion(cross, 1 + dot));
-        // Parallel-transport the authored frame between solved directions.
-        // A round physics capsule's free axial spin is not an authored bone roll.
-        var swing = Quaternion.Normalize(turn * prior.Swing);
-        _rotationFrames[link] = (direction, swing);
-        return Quaternion.Normalize(swing * authoredRotation);
+        return turn;
     }
 
     public void Reset()
