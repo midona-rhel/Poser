@@ -34,7 +34,9 @@ Never rebuild an existing release from a later main commit.
 Tag the exact verified release head and create the GitHub prerelease targeting
 its release branch. Upload the verified ZIP, checksum, SBOM and release
 manifest. Verify the published asset digests and download.
-Merge or fast-forward that same release commit back into main so its
-`repo.json` advertises the published asset; do not cherry-pick a parallel
-metadata commit. Keep the release branch and tag as immutable identities.
+Squash-merge the release pull request into main using the repository's configured
+policy so `repo.json` advertises the published asset. Main's squash commit is
+expected to differ from the release commit; it does not need to preserve that
+commit's ancestry. The tag, release branch, build and published artifacts retain
+their original release identity. Do not rebuild or retag them from main.
 Record the release URL and checks. Never claim unreported visual tests passed.
