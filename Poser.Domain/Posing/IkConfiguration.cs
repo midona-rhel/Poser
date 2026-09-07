@@ -62,6 +62,9 @@ public sealed record IkChainConfig(
     public int ParentDepth { get; init; } = 3;
     public int ChildDepth { get; init; }
     public FabrikControl? Fabrik { get; init; }
+    public bool Collisions { get; init; }
+    /// <summary>World-space segment radius in yalms, independent of actor scale.</summary>
+    public float CollisionRadius { get; init; } = .02f;
     public const int MinDepth = 1;
     /// <summary>The game's CCD solver writes NaN through the chain past
     /// about twenty bones (measured at 40, 2026-09-02); FABRIK, being
@@ -79,6 +82,8 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
+        if (!float.IsFinite(CollisionRadius) || CollisionRadius is < 0 or > 5)
+            return "Collision radius must be between 0 and 5 yalms.";
         if (ParentDepth < 0 || ChildDepth < 0 || ParentDepth + ChildDepth > MaxDepth)
             return $"FABRIK parent and child depth must total at most {MaxDepth} links.";
         if (Fabrik?.Validate() is { } fabrikError) return fabrikError;

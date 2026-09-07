@@ -629,6 +629,13 @@ public partial class MainWindow
             null,
             ConfirmDestroyAllOverlays,
         };
+        if (node.State.Collider is { } collider)
+        {
+            items = new[] { new ContextMenuItem(collider.Locked ? "Unlock transform" : "Lock transform", TablerIcon.Lock) }
+                .Concat(items).ToArray();
+            actions = new Action?[] { () => _sessions.Overlays.SetCollider(node, collider with { Locked = !collider.Locked }) }
+                .Concat(actions).ToArray();
+        }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_overlayNodeCtxOpenRequested)

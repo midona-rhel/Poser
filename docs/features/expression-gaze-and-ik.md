@@ -101,3 +101,23 @@ no separate root/tip position fields. One drag is one history step.
 Scenes store the span, anchors and portable handle reference, restoring the
 reference after scene entities exist. Previews snapshot it into their own model
 frame. Baking writes the solved pose and disables the chains.
+
+### IK colliders
+
+Colliders are world-space overlay entities, not native game objects or dialogue
+UI nodes. Plane, box, cylinder and cone share the overlay lifecycle, selection,
+history and scene-file storage. Their Overlay page controls shape, collision
+participation, transform locking, visibility and face opacity; the inspector and
+world gizmo edit their transform. Hiding a collider does not disable collision.
+Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
+seams are not outlined; sharp rims and box/plane edges are.
+
+FABRIK and Rope opt into all enabled colliders through the chain's Colliders
+switch. Bone width is the diameter of every segment, in world yalms, independent
+of actor scale; only dragging that slider shows the temporary width overlay.
+Contacts test segment interiors as well as endpoints, after swivel, and alternate
+with distance constraints under a bounded iteration budget. Endpoint pins remain
+fixed. Conflicting pins/obstacles cannot promise clearance; no actor movement or
+dynamics is used to hide an impossible arrangement. Two Joint and CCD are unchanged.
+If collision passes cannot retain link lengths, they leave the ordinary solved
+pose intact instead of publishing stretched bones.

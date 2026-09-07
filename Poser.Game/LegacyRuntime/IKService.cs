@@ -23,6 +23,7 @@ namespace Poser.Game;
 public unsafe class IKService : IIKService
 {
     private readonly IPluginLog _log;
+    private readonly Overlays.OverlayNodeService _overlays;
 
     // Native function pointers
     private delegate* unmanaged<hkaCCDSolver*, int, float, void> _ccdSolverCtr;
@@ -39,8 +40,9 @@ public unsafe class IKService : IIKService
     // Per-solve chain scratch; see GetBonesToDepth for the reuse contract.
     private readonly List<IBone> _chainBuffer = new();
 
-    public IKService(ISigScanner scanner, IPluginLog log)
+    public IKService(ISigScanner scanner, IPluginLog log, Overlays.OverlayNodeService overlays)
     {
+        _overlays = overlays;
         _log = log;
 
         try
@@ -200,6 +202,19 @@ public unsafe class IKService : IIKService
         }
         Swivel(0, control.HandleIndex);
         Swivel(control.HandleIndex, positions.Length - 1);
+        if (request.Config.Collisions && endpoint.Skeleton is Skeleton collisionSkeleton)
+        {
+            var colliders = _overlays.Nodes.Where(n => n.IsValid && n.State.Collider is { Enabled: true })
+                .Select(n => new ColliderGeometry(n.State.Collider!)).ToArray();
+            var model = collisionSkeleton.GetModelMatrix();
+            if (colliders.Length > 0 && Matrix4x4.Invert(model, out var inverse))
+            {
+                var world = positions.Select(p => Vector3.Transform(p, model)).ToArray();
+                IkCollisionSolver.Solve(world, control.HandleIndex, colliders,
+                    request.Config.CollisionRadius, 32);
+                for (int i = 0; i < positions.Length; i++) positions[i] = Vector3.Transform(world[i], inverse);
+            }
+        }
         for (int i = 0; i < positions.Length; i++)
         {
             var rotation = control.Bones[i].Rotation;

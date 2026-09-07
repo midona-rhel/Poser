@@ -379,6 +379,7 @@ public partial class MainWindow
     private static TablerIcon OverlayIcon(
         OverlayNodeKind kind) => kind switch
     {
+        OverlayNodeKind.Collider => TablerIcon.Cube,
         OverlayNodeKind.Balloon =>
             TablerIcon.MessageCircle,
         OverlayNodeKind.Status => TablerIcon.Star,

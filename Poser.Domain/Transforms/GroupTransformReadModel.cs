@@ -12,6 +12,7 @@ public static class GroupTransformIdentity
         TransformTargetKind.Light => target.Light!.Value.LogicalId,
         TransformTargetKind.Prop => target.Prop!.Value.LogicalId,
         TransformTargetKind.WorldObject => target.WorldObject!.Value.LogicalId,
+        TransformTargetKind.Collider => target.Collider!.Value.LogicalId,
         _ => Guid.Empty,
     };
 }

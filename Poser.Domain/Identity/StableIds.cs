@@ -119,9 +119,8 @@ public enum SceneEntityKind
     GazeTarget,
     Prop,
 
-    /// <summary>A staged game-UI overlay node. It is a scene entity like a
-    /// prop, but a FLAT one: it lives in screen space, so it never enters the
-    /// world gizmo or the transform history.</summary>
+    /// <summary>A staged overlay. Native UI panels use screen placement;
+    /// IK colliders use world transforms and the normal transform history.</summary>
     Overlay,
 
     /// <summary>An adopted BG/layout object: the map's own furniture, borrowed
@@ -292,6 +291,7 @@ public enum TransformTargetKind
     Light,
     Prop,
     WorldObject,
+    Collider,
 }
 
 /// <summary>The subset of selection identities that can enter a transform gesture.</summary>
@@ -303,7 +303,8 @@ public readonly record struct TransformTargetId
         BoneId? bone,
         LightId? light = null,
         PropId? prop = null,
-        WorldObjectId? worldObject = null)
+        WorldObjectId? worldObject = null,
+        OverlayId? collider = null)
     {
         Kind = kind;
         Actor = actor;
@@ -311,9 +312,11 @@ public readonly record struct TransformTargetId
         Light = light;
         Prop = prop;
         WorldObject = worldObject;
+        Collider = collider;
     }
 
     public TransformTargetKind Kind { get; }
+    public OverlayId? Collider { get; }
     public ActorId? Actor { get; }
     public BoneId? Bone { get; }
     public LightId? Light { get; }
@@ -326,6 +329,9 @@ public readonly record struct TransformTargetId
 
     public static TransformTargetId ForActor(ActorId actor) =>
         new(TransformTargetKind.Actor, actor, null);
+
+    public static TransformTargetId ForCollider(OverlayId collider) =>
+        new(TransformTargetKind.Collider, null, null, collider: collider);
 
     public static TransformTargetId ForBone(BoneId bone) =>
         new(TransformTargetKind.Bone, null, bone);
@@ -343,6 +349,7 @@ public readonly record struct TransformTargetId
 
     public SelectionId ToSelectionId() => Kind switch
     {
+        TransformTargetKind.Collider => SelectionId.ForOverlay(Collider!.Value),
         TransformTargetKind.Actor => SelectionId.ForActor(Actor!.Value),
         TransformTargetKind.Bone => SelectionId.ForBone(Bone!.Value),
         TransformTargetKind.Light => SelectionId.ForLight(Light!.Value),

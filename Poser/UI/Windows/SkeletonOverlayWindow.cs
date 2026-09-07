@@ -21,7 +21,7 @@ namespace Poser.UI;
 /// Overlay window that draws skeleton bones on screen for bone selection.
 /// Visual style based on Ktisis - simple dots with lines, hover popup for overlapping bones.
 /// </summary>
-public class SkeletonOverlayWindow : Window, IDisposable
+public partial class SkeletonOverlayWindow : Window, IDisposable
 {
     private readonly ICameraService _cameraService;
     private readonly SelectionSession _selection;
@@ -556,6 +556,7 @@ public class SkeletonOverlayWindow : Window, IDisposable
         lights.Clear();
         adopts.Clear();
         var cameraPosition = _cameraService.GetCameraPosition();
+        DrawColliders(viewportPos, cameraPosition, actors);
 
         // Which groups are ENGAGED this frame decides which member handles
         // exist at all, so it resolves before any collection loop runs.

@@ -14,6 +14,48 @@ namespace Poser.Tests.Files;
 public sealed class SceneFileStoreTests
 {
     [Fact]
+    public void Collider_world_state_and_chain_width_round_trip()
+    {
+        using var fixture = new SceneFixture();
+        var scene = ValidScene();
+        var collider = new Poser.Domain.Posing.IkCollider
+        {
+            Shape = Poser.Domain.Posing.IkColliderShape.Cone,
+            Transform = new(new Vector3(2,3,4), Quaternion.CreateFromAxisAngle(Vector3.UnitY,.7f), new Vector3(2,1,3)),
+            Enabled = false, Locked = true,
+        };
+        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid(), Node = new()
+        {
+            Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider,
+            Name = "IK collider 1", Collider = collider, Alpha = .3f, Visible = false,
+        } }];
+        var write = SceneFileStore.Default.Write(scene, fixture.Path);
+        Assert.True(write.Succeeded, write.Failure?.Detail);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var node = Assert.Single(read.Scene!.Overlays!).Node!;
+        Assert.Equal(collider, node.Collider);
+        Assert.False(node.Visible);
+        Assert.Equal(.3f, node.Alpha);
+        var config = Poser.Domain.Posing.IkChainConfig.DefaultsForChain() with { Collisions = true, CollisionRadius = .07f };
+        var json = JsonSerializer.Serialize(config, SceneJsonOptionsAccessor.Options);
+        Assert.Equal(config, JsonSerializer.Deserialize<Poser.Domain.Posing.IkChainConfig>(json, SceneJsonOptionsAccessor.Options));
+    }
+
+    [Fact]
+    public void Collider_moves_with_scene_placement_but_screen_overlay_does_not()
+    {
+        var scene = ValidScene();
+        scene.Origin = Vector3.Zero;
+        scene.Overlays = [new SceneOverlay { Node = new() { Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider,
+            Collider = new() { Transform = Poser.Domain.Transforms.PoseTransform.Identity with { Position = Vector3.UnitX } } } },
+            new SceneOverlay { Node = new() { Position = new Vector2(20,30) } }];
+        Assert.Null(Poser.Scene.SceneRelativePlacement.Rebase(scene, new Vector3(5,0,0)));
+        Assert.Equal(new Vector3(6,0,0), scene.Overlays[0].Node!.Collider!.Transform.Position);
+        Assert.Equal(new Vector2(20,30), scene.Overlays[1].Node!.Position);
+    }
+
+    [Fact]
     public void Native_scene_document_can_be_redacted_without_losing_entities_or_relationships()
     {
         using var fixture = new SceneFixture();

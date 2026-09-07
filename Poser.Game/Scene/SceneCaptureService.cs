@@ -566,11 +566,11 @@ public sealed class SceneCaptureService
             {
                 Key = _bindings.GetOverlayId(overlay)?.LogicalId
                     ?? Guid.NewGuid(),
-                CenterRelative = centred,
+                CenterRelative = centred && overlay.State.Collider == null,
                 Node = overlay.State with
                 {
                     Name = Bounded(overlay.State.Name, "Overlay"),
-                    Position = centred
+                    Position = centred && overlay.State.Collider == null
                         ? overlay.State.Position - center
                         : overlay.State.Position,
                 },

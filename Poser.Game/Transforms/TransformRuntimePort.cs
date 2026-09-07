@@ -41,6 +41,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
 
         return target.Kind switch
         {
+            TransformTargetKind.Collider when target.Collider is { } collider => CaptureCollider(target, collider),
             TransformTargetKind.Actor when target.Actor is { } actor =>
                 CaptureActor(target, actor),
             TransformTargetKind.Bone when target.Bone is { } bone =>
@@ -73,6 +74,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Fail(
                 TransformPortStatus.InvalidTransform,
                 error ?? "Invalid transform.");
+
+        if (baseline.Target.Collider is { } colliderId)
+            return WriteCollider(colliderId, desired);
 
         if (baseline.Target.Kind == TransformTargetKind.Actor &&
             baseline.Target.Actor is { } actorId)
@@ -156,6 +160,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
     {
         if (!OnFrameworkThread())
             return FrameworkThreadFailure();
+
+        if (state.Target.Collider is { } colliderId)
+            return WriteCollider(colliderId, state.Transform);
 
         if (state.Target.Kind == TransformTargetKind.Actor &&
             state.Target.Actor is { } actorId)
@@ -241,6 +248,26 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             converted.Value,
             new BonePose(),
             true));
+    }
+
+    private TransformPortResult CaptureCollider(TransformTargetId target, OverlayId id)
+    {
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success) return FromBinding(resolved.Status, resolved.Detail);
+        return resolved.Value!.State.Collider is { } collider
+            ? TransformPortResult.Ok(new TransformTargetState(target, collider.Transform, new BonePose(), true))
+            : TransformPortResult.Fail(TransformPortStatus.IdentityMismatch, "Not an IK collider.");
+    }
+
+    private TransformPortResult WriteCollider(OverlayId id, DomainTransform desired)
+    {
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success) return FromBinding(resolved.Status, resolved.Detail);
+        var node = resolved.Value!;
+        if (node.State.Collider is not { } collider)
+            return TransformPortResult.Fail(TransformPortStatus.IdentityMismatch, "Not an IK collider.");
+        node.State = node.State with { Collider = collider with { Transform = desired } };
+        return TransformPortResult.Ok();
     }
 
     private TransformPortResult CaptureProp(

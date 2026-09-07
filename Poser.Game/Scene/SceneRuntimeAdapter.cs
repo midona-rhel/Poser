@@ -1082,7 +1082,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         }
         detail = null;
         var display = Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
-        if (data.CenterRelative && display.X > 0f && display.Y > 0f)
+        if (document.Collider == null && data.CenterRelative && display.X > 0f && display.Y > 0f)
         {
             document = document with
             {
@@ -1094,7 +1094,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         // the restore says so instead of leaving the user hunting for it.
         var size = Poser.Domain.Presentation.OverlayNodeGeometry
             .DesignSize(document.Kind) * document.Scale;
-        if (display.X > 0f && display.Y > 0f &&
+        if (document.Collider == null && display.X > 0f && display.Y > 0f &&
             (document.Position.X + size.X < 0f ||
              document.Position.Y + size.Y < 0f ||
              document.Position.X > display.X ||

@@ -1649,6 +1649,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                         new SceneStructureRef { Kind = "prop", Key = prop.LogicalId },
                     { Kind: TransformTargetKind.WorldObject, WorldObject: { } world } =>
                         new SceneStructureRef { Kind = "worldObject", Key = world.LogicalId },
+                    { Kind: TransformTargetKind.Collider, Collider: { } collider } =>
+                        new SceneStructureRef { Kind = "overlay", Key = collider.LogicalId },
                     { Kind: TransformTargetKind.Light, Light: { } light } =>
                         new SceneStructureRef { Kind = "light", Key = light.LogicalId },
                     _ => null,

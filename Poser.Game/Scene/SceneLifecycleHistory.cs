@@ -1218,6 +1218,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     private static string KindName(OverlayNodeKind kind) => kind switch
     {
+        OverlayNodeKind.Collider => "IK collider",
         OverlayNodeKind.Balloon => "balloon",
         OverlayNodeKind.Status => "status",
         _ => "dialog",

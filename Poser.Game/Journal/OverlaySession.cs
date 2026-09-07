@@ -15,6 +15,10 @@ public sealed class OverlaySession
 
     public void Seal() => _journal.Seal();
 
+    public void SetCollider(IOverlayNode n, Domain.Posing.IkCollider value) =>
+        _journal.Set((n, "Collider"), "Edit IK collider", () => n.State.Collider,
+            v => n.State = n.State with { Collider = v }, value, () => n.IsValid);
+
     public void SetName(IOverlayNode n, string value) =>
         _journal.Set((n, "Name"), "Rename overlay", () => n.Name, v => n.Name = v, value, () => n.IsValid);
 

@@ -340,6 +340,10 @@ public static class SceneRelativePlacement
         }
 
         SceneGroupTransformCodec.Rebase(scene, point => point + offset, Quaternion.Identity);
+        foreach (var overlay in scene.Overlays ?? [])
+            if (overlay.Node?.Collider is { } collider)
+                overlay.Node = overlay.Node with { Collider = collider with
+                { Transform = collider.Transform with { Position = collider.Transform.Position + offset } } };
         SceneFabrikChain.Rebase(scene, point => point + offset, Quaternion.Identity);
         return null;
     }
@@ -432,6 +436,11 @@ public static class ScenePlacementRebase
         }
 
         SceneGroupTransformCodec.Rebase(scene, Move, turn);
+        foreach (var overlay in scene.Overlays ?? [])
+            if (overlay.Node?.Collider is { } collider)
+                overlay.Node = overlay.Node with { Collider = collider with
+                { Transform = collider.Transform with { Position = Move(collider.Transform.Position),
+                    Rotation = Quaternion.Normalize(turn * collider.Transform.Rotation) } } };
         SceneFabrikChain.Rebase(scene, Move, turn);
         return null;
     }

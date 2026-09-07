@@ -900,6 +900,10 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// Used only on reconcile, so the scans are not per frame.</summary>
     public TransformTargetId? CurrentTarget(TransformTargetId target)
     {
+        if (target.Collider is { } collider)
+            foreach (var pair in _overlayBindings)
+                if (pair.Key.LogicalId == collider.LogicalId && pair.Value.State.Collider != null)
+                    return TransformTargetId.ForCollider(pair.Key);
         switch (target.Kind)
         {
             case TransformTargetKind.Bone when target.Bone is { } bone:

@@ -16,12 +16,9 @@ namespace Poser.UI;
 /// The selected overlay node's editor — the pane behind the "Overlay" tab
 /// that stands while an OVERLAYS sidebar row is selected.
 ///
-/// <para>An overlay node is the one scene entity with no WORLD transform: it
-/// lives in screen space, so its placement is two pixel numbers, one uniform
-/// scale and an opacity rather than a gizmo, and those rows live HERE rather
-/// than on the inspector rail every other entity's transform uses. Ktisis
-/// makes the same split (<c>Interface/Editor/Properties/OverlayPropertyList.cs:82-119</c>).
-/// </para>
+/// <para>Native UI overlays have screen-space placement. Managed IK colliders
+/// instead use the shared inspector/gizmo for world transforms; their shape
+/// and rendering settings live here.</para>
 ///
 /// <para>The rest of the pane is the node's own vocabulary, which is a
 /// function of its kind: the dialogue panel's speaker and plate, the balloon's
@@ -135,7 +132,7 @@ public sealed class OverlayPane
                 // BETWEEN sections, so the page's first draws neither the rule
                 // nor the margin above it.
                 divider: false);
-            page.Section(
+            if (node.Kind != OverlayNodeKind.Collider) page.Section(
                 ContentTitle(node.Kind),
                 _openContent,
                 next => _openContent = next,
@@ -163,6 +160,19 @@ public sealed class OverlayPane
     private void PlacementRows(
         Crystarium.FormScope form, IOverlayNode node)
     {
+        if (node.State.Collider is { } collider)
+        {
+            form.TextInput("Name", node.Name, next => _values.SetName(node, next));
+            form.Dropdown("Shape", new[] { "Plane", "Box", "Cylinder", "Cone" }, (int)collider.Shape,
+                next => _values.SetCollider(node, collider with { Shape = (Domain.Posing.IkColliderShape)next }));
+            form.Switch("Collision", collider.Enabled,
+                next => _values.SetCollider(node, collider with { Enabled = next }));
+            form.Switch("Lock transform", collider.Locked,
+                next => _values.SetCollider(node, collider with { Locked = next }));
+            form.Switch("Visible", node.Visible, next => _values.SetVisible(node, next));
+            form.Slider("Opacity", node.Alpha, 0f, 1f, next => _values.SetAlpha(node, next), onBegin: _values.Seal);
+            return;
+        }
         string name = node.Name;
         form.TextInput(
             "Name",
