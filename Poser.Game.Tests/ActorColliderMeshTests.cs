@@ -33,7 +33,7 @@ public class ActorColliderMeshTests
     }
 
     [Fact]
-    public void BodyFitUsesBoneLengthAndSkinWidthWithoutAccessoryOutlier()
+    public void BodyFitUsesBoneLengthAndAverageSurfaceWidth()
     {
         var vertices = new List<Vector3>();
         for (int i = 0; i < 100; i++) vertices.Add(new(.2f * MathF.Cos(i), i / 100f, .2f * MathF.Sin(i)));
@@ -45,7 +45,8 @@ public class ActorColliderMeshTests
         var capsule = Assert.Single(fitted);
         Assert.Equal("Left upper arm", capsule.Name);
         Assert.Equal(IkColliderShape.Capsule, capsule.Collider.Shape);
-        Assert.InRange(capsule.Collider.RoundDimensions().Radius, .1999f, .2001f);
+        float averageRadius = (100 * .2f + 10) / 101;
+        Assert.InRange(capsule.Collider.RoundDimensions().Radius, averageRadius - .0001f, averageRadius + .0001f);
         Assert.Equal(new Vector3(0, .5f, 0), capsule.Collider.Transform.Position);
         Assert.Equal(1f, capsule.Collider.Transform.Scale.Y);
         var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(capsule.Collider, global::Poser.Files.SceneFile.JsonOptions),

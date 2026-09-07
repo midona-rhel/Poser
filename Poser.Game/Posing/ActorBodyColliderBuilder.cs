@@ -13,18 +13,20 @@ internal static class ActorBodyColliderBuilder
         IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
     {
         var spans = new List<Span> {
-            new("Lower torso", "j_kosi", "j_sebo_b"), new("Upper torso", "j_sebo_b", "j_kubi"), new("Head", "j_kao", "j_kubi", true) };
+            new("Waist", "j_kosi", "j_kubi"), new("Head", "j_kao", "j_kubi", true, true) };
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
             spans.AddRange([new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
                 new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
-                new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true, true)]);
+                new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
         }
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
             Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f);
         if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
+        if (roots.TryGetValue("j_kosi", out int waist))
+            foreach (var spine in new[] { "n_hara", "j_sebo_a", "j_sebo_b", "j_sebo_c", "j_kubi" }) roots[spine] = waist;
         var samples = spans.Select(_ => new List<Vector3>()).ToArray();
         var owners = new Dictionary<string, int>();
         int Owner(string name)
@@ -35,7 +37,7 @@ internal static class ActorBodyColliderBuilder
             for (int depth = 0; current != null && depth < joints.Count; depth++)
             {
                 // Hair, tails and skirt chains are not body volume. Do not let
-                // a long accessory inflate a head or torso cylinder.
+                // a long accessory inflate the head or waist.
                 if (current.StartsWith("j_kami", StringComparison.Ordinal) || current.StartsWith("j_sippo", StringComparison.Ordinal) ||
                     current.StartsWith("j_sk_", StringComparison.Ordinal)) break;
                 if (roots.TryGetValue(current, out result)) break;
@@ -73,9 +75,10 @@ internal static class ActorBodyColliderBuilder
             var u = Vector3.Normalize(Vector3.Cross(axis, MathF.Abs(axis.Y) < .9f ? Vector3.UnitY : Vector3.UnitX));
             var v = Vector3.Cross(axis, u);
             var center = (start + end) * .5f;
-            if (span.Sphere)
+            if (span.FitEnds)
             {
-                // Hands and feet need their surface center, not the wrist/ankle.
+                // Center head/hands/feet on the surface, not the attachment
+                // joint. Feet keep the ankle-to-toe direction of the posed rig.
                 Vector3 Middle(Vector3 direction)
                 {
                     var values = points.Select(p => Vector3.Dot(p - center, direction)).Order().ToArray();
@@ -86,17 +89,16 @@ internal static class ActorBodyColliderBuilder
             var widths = new List<float>();
             foreach (float t in span.Sphere ? new[] { .5f } : new[] { .25f, .5f, .75f })
             {
-                var origin = span.Sphere ? center : Vector3.Lerp(start, end, t);
+                var origin = center + axis * ((t - .5f) * Vector3.Distance(start, end));
                 var directions = span.Sphere ? new[] { u, -u, v, -v, axis, -axis } : new[] { u, -u, v, -v };
                 var distances = directions.Select(d => NearestSurface(origin, d, triangles[i])).ToArray();
-                if (distances.All(float.IsFinite)) widths.Add(distances.Min());
+                if (distances.All(float.IsFinite)) widths.Add(distances.Average());
             }
-            // Use the nearest surface in both cross-section axes, NOT an outer
-            // hull. Median over three slices avoids one crease sizing a limb.
-            // Open surfaces without complete ray hits use the inner quartile.
-            float radius = widths.Count > 0 ? widths.Order().ElementAt(widths.Count / 2)
+            // Average the sampled surface distances rather than choosing the
+            // narrowest side. Open surfaces use mean vertex distance instead.
+            float radius = widths.Count > 0 ? widths.Average()
                 : points.Select(p => span.Sphere ? Vector3.Distance(p, center)
-                    : (p - start - axis * Vector3.Dot(p - start, axis)).Length()).Order().ElementAt(points.Count / 4);
+                    : (p - center - axis * Vector3.Dot(p - center, axis)).Length()).Average();
             float length = Vector3.Distance(start, end);
             if (!span.Sphere) radius = MathF.Min(radius, length * .5f);
             if (radius < .0001f) continue;
