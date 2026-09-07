@@ -40,8 +40,10 @@
   with the user's actionable test card. An undeployed build is never test-ready.
 - `main` is the development and integration branch. Cut `release/<version>`
   from an accepted `main` commit; build, test, package, tag, and publish the
-  exact release-branch head. Merge release-only fixes and metadata back to
-  `main`; never rebuild a cut release from a later `main` commit.
+  exact release-branch head. Squash-merge release fixes and metadata back to
+  `main` through a pull request, as configured in the repository. Main's squash
+  commit need not preserve the release commit's ancestry; never rebuild a cut
+  release from a later `main` commit.
 - Name work branches and worktrees by purpose: `feature/`, `bug/`, `ui/`,
   `docs/`, `test/`, `perf/`, `release/`, or `chore/` as appropriate. Never
   use a `codex/` branch prefix or a generic Codex work name.
