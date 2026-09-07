@@ -111,6 +111,17 @@ participation, transform locking, visibility and face opacity; the inspector and
 world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
+An actor's **Create collider from current pose** action captures loaded model
+geometry as an independent, concave triangle-mesh overlay. Bone weights and
+current native transforms pose the mesh once; later actor edits, animation or
+removal do not change it. The snapshot contains geometry, not model paths or
+actor references, so ordinary overlay undo, grouping and scene/library storage
+retain it. Captured meshes cannot switch to a primitive shape. Surfaces collide
+from either side; this is surface collision, not a solid-volume inside test.
+The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
+unmapped bones or unsupported vertex formats refuse capture instead of silently
+substituting an unposed model. Native reads precede background file parsing and
+skinning; creation returns to the framework thread.
 Overlay tessellation is independent of collision geometry. Shared translucent
 triangle edges are not anti-aliased individually, which would expose mesh seams.
 

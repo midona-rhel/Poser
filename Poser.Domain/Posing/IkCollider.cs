@@ -3,7 +3,24 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-public enum IkColliderShape { Plane, Box, Cylinder, Cone }
+public enum IkColliderShape { Plane, Box, Cylinder, Cone, Mesh }
+
+/// <summary>Frozen, indexed geometry in collider-local space. Shared by history; never edited in place.</summary>
+public sealed class IkColliderMesh
+{
+    public Vector3[] Vertices { get; }
+    public int[] Indices { get; }
+
+    public IkColliderMesh(Vector3[] vertices, int[] indices)
+    {
+        if (vertices is null || indices is null || vertices.Length == 0 || indices.Length == 0 || indices.Length % 3 != 0 ||
+            vertices.Any(v => !float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Z)) ||
+            indices.Any(i => (uint)i >= (uint)vertices.Length))
+            throw new ArgumentException("The collider mesh has invalid vertices or triangles.");
+        Vertices = vertices;
+        Indices = indices;
+    }
+}
 
 public sealed record IkCollider
 {
@@ -11,19 +28,24 @@ public sealed record IkCollider
     public PoseTransform Transform { get; init; } = PoseTransform.Identity;
     public bool Enabled { get; init; } = true;
     public bool Locked { get; init; }
+    public IkColliderMesh? Mesh { get; init; }
 
     public IkCollider Normalized() => this with
     {
-        Shape = Enum.IsDefined(Shape) ? Shape : IkColliderShape.Box,
+        Shape = Shape == IkColliderShape.Mesh && Mesh is null
+            ? throw new ArgumentException("A captured collider requires its mesh geometry.")
+            : Enum.IsDefined(Shape) ? Shape : IkColliderShape.Box,
         Transform = Transform.IsValid ? Transform : PoseTransform.Identity,
     };
 }
 
-/// <summary>Convex world-space geometry shared by rendering and contact queries.</summary>
+/// <summary>World-space geometry; primitive contact queries are convex, mesh contacts belong to Bepu.</summary>
 public sealed class ColliderGeometry
 {
     public IkCollider Description { get; }
-    public Vector3[] Vertices { get; }
+    private Vector3[]? _vertices;
+    public Vector3[] Vertices => _vertices ??= Description.Mesh!.Vertices.Select(v =>
+        Vector3.Transform(v * Description.Transform.Scale, Description.Transform.Rotation) + Description.Transform.Position).ToArray();
     public int[][] Faces { get; }
     public (int A, int B)[] Edges { get; }
     private readonly Plane[] _planes;
@@ -31,6 +53,15 @@ public sealed class ColliderGeometry
     public ColliderGeometry(IkCollider collider, int sides = 32)
     {
         Description = collider;
+        if (collider.Shape == IkColliderShape.Mesh)
+        {
+            // Physics consumes the local mesh directly. Do not transform all
+            // vertices on every solve just to hand Bepu the same snapshot.
+            Faces = [];
+            Edges = [];
+            _planes = [];
+            return;
+        }
         sides = Math.Clamp(sides, 8, 64);
         var vertices = new List<Vector3>();
         var faces = new List<int[]>();
@@ -76,7 +107,7 @@ public sealed class ColliderGeometry
         }
         var transform = collider.Transform;
         Vector3 World(Vector3 v) => Vector3.Transform(v * transform.Scale, transform.Rotation) + transform.Position;
-        Vertices = vertices.Select(World).ToArray();
+        _vertices = vertices.Select(World).ToArray();
         Faces = faces.ToArray();
         Edges = edges.ToArray();
         var planes = new List<Plane>();

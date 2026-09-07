@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System;
+using System.Runtime.CompilerServices;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -10,6 +12,44 @@ namespace Poser.UI;
 
 public partial class SkeletonOverlayWindow
 {
+    private readonly ConditionalWeakTable<IkCollider, MeshOverlay> _meshOverlays = new();
+
+    private sealed class MeshOverlay(IkCollider collider)
+    {
+        public readonly Vector3[] World = new ColliderGeometry(collider).Vertices;
+        public readonly Vector2[] Screen = new Vector2[collider.Mesh!.Vertices.Length];
+        public readonly bool[] Visible = new bool[collider.Mesh!.Vertices.Length];
+        public readonly int[] Order = Enumerable.Range(0, collider.Mesh!.Indices.Length / 3).ToArray();
+        public readonly float[] Distance = new float[collider.Mesh!.Indices.Length / 3];
+    }
+
+    private void DrawMeshCollider(ImDrawListPtr draw, IkCollider collider, Vector2 viewport, Vector3 camera, uint fill)
+    {
+        if (collider.Mesh is not { } mesh || (fill >> 24) == 0) return;
+        var cache = _meshOverlays.GetValue(collider, static c => new MeshOverlay(c));
+        for (int i = 0; i < cache.World.Length; i++)
+        {
+            cache.Visible[i] = _cameraService.WorldToScreen(cache.World[i], out var screen);
+            cache.Screen[i] = viewport + screen;
+        }
+        for (int t = 0; t < cache.Order.Length; t++)
+        {
+            int i = t * 3;
+            var center = (cache.World[mesh.Indices[i]] + cache.World[mesh.Indices[i + 1]] + cache.World[mesh.Indices[i + 2]]) / 3;
+            cache.Distance[t] = Vector3.DistanceSquared(camera, center);
+        }
+        Array.Sort(cache.Order, (a, b) => cache.Distance[b].CompareTo(cache.Distance[a]));
+        var flags = draw.Flags;
+        draw.Flags &= ~ImDrawListFlags.AntiAliasedFill;
+        foreach (int t in cache.Order)
+        {
+            int i = t * 3, a = mesh.Indices[i], b = mesh.Indices[i + 1], c = mesh.Indices[i + 2];
+            if (cache.Visible[a] && cache.Visible[b] && cache.Visible[c])
+                draw.AddTriangleFilled(cache.Screen[a], cache.Screen[b], cache.Screen[c], fill);
+        }
+        draw.Flags = flags;
+    }
+
     private void DrawColliders(Vector2 viewport, Vector3 camera, List<ActorDisplayData> handles)
     {
         DrawIkWidth(viewport);
@@ -23,6 +63,8 @@ public partial class SkeletonOverlayWindow
             var color = _selection.IsSelected(id) ? new Vector4(.4f, .9f, 1f, 1f) : new Vector4(.65f, .45f, 1f, 1f);
             uint fill = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha });
             uint line = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha > 0 ? .95f : 0 });
+            if (collider.Shape == IkColliderShape.Mesh)
+                DrawMeshCollider(draw, collider, viewport, camera, fill);
             var faces = collider.Shape == IkColliderShape.Plane ? geometry.Faces.Take(1) : geometry.Faces;
             foreach (var face in faces.OrderByDescending(f => Vector3.DistanceSquared(camera,
                 f.Select(i => geometry.Vertices[i]).Aggregate(Vector3.Zero, (a, b) => a + b) / f.Length)))

@@ -144,6 +144,7 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
     {
         bool rebuild = _obstacles.Length != colliders.Count || _obstacles.Where((o, i) =>
             o.Collider.Shape != colliders[i].Description.Shape ||
+            !ReferenceEquals(o.Collider.Mesh, colliders[i].Description.Mesh) ||
             o.Collider.Transform.Scale != colliders[i].Description.Transform.Scale).Any();
         if (!rebuild) return;
         foreach (var obstacle in _obstacles)
@@ -158,7 +159,23 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
             var scale = Vector3.Max(Vector3.Abs(transform.Scale), new Vector3(.0001f));
             Vector3 center = default;
             TypedIndex shape;
-            if (collider.Shape is IkColliderShape.Box or IkColliderShape.Plane)
+            if (collider.Shape == IkColliderShape.Mesh && collider.Mesh is { } captured)
+            {
+                // Mesh is concave, never a ConvexHull. Both windings let thin
+                // clothing surfaces collide from either side; Bepu triangles
+                // otherwise generate contacts on only their front face.
+                _pool.Take<Triangle>(captured.Indices.Length / 3 * 2, out var triangles);
+                for (int i = 0; i < captured.Indices.Length; i += 3)
+                {
+                    var a = captured.Vertices[captured.Indices[i]];
+                    var b = captured.Vertices[captured.Indices[i + 1]];
+                    var c = captured.Vertices[captured.Indices[i + 2]];
+                    triangles[i / 3 * 2] = new Triangle(a, b, c);
+                    triangles[i / 3 * 2 + 1] = new Triangle(a, c, b);
+                }
+                shape = _simulation!.Shapes.Add(new Mesh(triangles, transform.Scale, _pool));
+            }
+            else if (collider.Shape is IkColliderShape.Box or IkColliderShape.Plane)
                 shape = _simulation!.Shapes.Add(new Box(scale.X, collider.Shape == IkColliderShape.Plane ? .0002f : scale.Y, scale.Z));
             else if (collider.Shape == IkColliderShape.Cylinder && MathF.Abs(scale.X - scale.Z) < .0001f)
                 shape = _simulation!.Shapes.Add(new Cylinder(scale.X * .5f, scale.Y));

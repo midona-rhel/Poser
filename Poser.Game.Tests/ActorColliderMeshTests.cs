@@ -1,0 +1,96 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using Lumina.Data.Parsing;
+using Poser.Domain.Posing;
+using Poser.Game.Posing;
+
+namespace Poser.Game.Tests;
+
+public class ActorColliderMeshTests
+{
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CapturesWeightedPoseAndEnabledShapeInBothModelVersions(bool v6)
+    {
+        var bytes = Model(v6);
+        var vertices = new List<Vector3>();
+        var indices = new List<int>();
+        var bones = new Dictionary<string, Matrix4x4>
+        {
+            ["arm"] = Matrix4x4.CreateRotationZ(MathF.PI / 2) * Matrix4x4.CreateTranslation(10, 2, 0),
+        };
+        ActorColliderMeshBuilder.Append(bytes, 1, 1, bones, Matrix4x4.Identity, new(10, 0, 0), vertices, indices);
+        Assert.Equal(new[] { 0, 1, 3 }, indices);
+        Assert.True(Vector3.Distance(vertices[1], new(0, 3, 0)) < .0001f);
+        Assert.True(Vector3.Distance(vertices[3], new(-2, 2, 0)) < .0001f);
+        var captured = new IkCollider { Shape = IkColliderShape.Mesh, Mesh = new(vertices.ToArray(), indices.ToArray()) };
+        bones["arm"] = Matrix4x4.CreateTranslation(100, 0, 0);
+        var options = global::Poser.Files.SceneFile.JsonOptions;
+        var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(captured, options), options)!;
+        Assert.Equal(captured.Mesh.Vertices, restored.Mesh!.Vertices);
+        Assert.Equal(captured.Mesh.Indices, restored.Mesh.Indices);
+        vertices.Clear(); indices.Clear();
+        ActorColliderMeshBuilder.Append(bytes, 0, 0, bones, Matrix4x4.Identity, Vector3.Zero, vertices, indices);
+        Assert.Empty(indices); // Attribute-disabled equipment must not become an invisible obstacle.
+    }
+
+    [Fact]
+    public void UnmappedWeightedBoneRefusesInsteadOfCapturingBindPose()
+    {
+        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(true), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], []));
+    }
+
+    // A complete minimal binary MDL: weighted triangle, attribute-gated submesh,
+    // and one shape replacement. Exercises file parsing, not a mocked parsed model.
+    private static byte[] Model(bool v6)
+    {
+        using var stream = new MemoryStream();
+        using var w = new BinaryWriter(stream);
+        w.Write(new byte[68]); // file header patched after buffers are written
+        void Element(byte offset, byte type, byte usage) => w.Write(new byte[] { 0, offset, type, usage, 0, 0, 0, 0 });
+        Element(0, 2, 0); Element(12, 8, 1); Element(16, 5, 2);
+        w.Write((byte)255); w.Write(new byte[17 * 8 - 25]);
+        var names = Encoding.UTF8.GetBytes("arm\0attr\0shape\0");
+        w.Write((ushort)3); w.Write((ushort)0); w.Write((uint)names.Length); w.Write(names);
+        Write(w, new MdlStructs.ModelHeader
+        {
+            MeshCount = 1, AttributeCount = 1, SubmeshCount = 1, BoneCount = 1, BoneTableCount = 1,
+            ShapeCount = 1, ShapeMeshCount = 1, ShapeValueCount = 1, LodCount = 1, Unknown7 = v6 ? (ushort)2 : (ushort)0,
+        });
+        Write(w, new MdlStructs.LodStruct { MeshCount = 1 });
+        Write(w, new MdlStructs.LodStruct()); Write(w, new MdlStructs.LodStruct());
+        w.Write((ushort)4); w.Write((ushort)0); w.Write((uint)3);
+        w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)0);
+        w.Write((uint)0); w.Write(new byte[12]); w.Write(new byte[] { 20, 0, 0, 1 });
+        w.Write((uint)4); // attribute string offset
+        Write(w, new MdlStructs.SubmeshStruct { IndexCount = 3, AttributeIndexMask = 1, BoneCount = 1 });
+        w.Write((uint)0); // bone name offset
+        if (v6) { w.Write((ushort)1); w.Write((ushort)1); w.Write((ushort)0); w.Write((ushort)0); }
+        else { w.Write(new byte[128]); w.Write((uint)1); }
+        w.Write((uint)9); w.Write(new byte[6]); w.Write((ushort)1); w.Write(new byte[4]);
+        Write(w, new MdlStructs.ShapeMeshStruct { ShapeValueCount = 1 });
+        Write(w, new MdlStructs.ShapeValueStruct { BaseIndicesIndex = 2, ReplacingVertexIndex = 3 });
+        uint vertexOffset = (uint)stream.Position;
+        foreach (var p in new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY, Vector3.UnitY * 2 })
+        {
+            w.Write(p.X); w.Write(p.Y); w.Write(p.Z);
+            w.Write(new byte[] { 255, 0, 0, 0 }); w.Write(new byte[4]);
+        }
+        uint indexOffset = (uint)stream.Position;
+        w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)2);
+        stream.Position = 0;
+        w.Write(v6 ? 0x01000006u : 0x01000005u); w.Write(136u); w.Write(vertexOffset - 68 - 136);
+        w.Write((ushort)1); w.Write((ushort)0);
+        w.Write(vertexOffset); w.Write(new byte[8]); w.Write(indexOffset); w.Write(new byte[8]);
+        w.Write(80u); w.Write(new byte[8]); w.Write(6u); w.Write(new byte[8]);
+        w.Write(new byte[] { 1, 0, 0, 0 });
+        return stream.ToArray();
+    }
+
+    private static void Write<T>(BinaryWriter writer, T value) where T : unmanaged
+        => writer.Write(MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref value, 1)));
+}

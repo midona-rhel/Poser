@@ -122,6 +122,10 @@ public partial class MainWindow
                 name => SaveOwnedActorEntry(actorId, name)));
         }
 
+        items.Add(new ContextMenuItem("Create collider from current pose", TablerIcon.Cube,
+            disabled: !actor.HasSkeleton || _actorColliderCapture.Busy));
+        actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(actorId, actor.Name)));
+
         items.Add(new ContextMenuItem("Tree", TablerIcon.Folder,
             submenuItems: BuildTreeSubmenu("actor:" + actorId, out var treeActions)));
         actions.Add(null);
@@ -262,6 +266,20 @@ public partial class MainWindow
             };
             if (submenu != null && subClicked < submenu.Count)
                 submenu[subClicked]?.Invoke();
+        }
+    }
+
+    private async void CreateActorCollider(ActorId actorId, string name)
+    {
+        try
+        {
+            var node = await _actorColliderCapture.CreateAsync(actorId, name);
+            _overlayPane.SelectWhenBound(node);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Actor collider capture failed");
+            _notices.Refused("Create collider", ex.Message);
         }
     }
 
