@@ -25,6 +25,9 @@ including for groups and capsules, but retains uniform scaling at the centre
 Hidden handles neither draw nor capture input. Numeric inspector scale remains
 unchanged. Native transforms cannot represent the shear that arbitrary
 directional world scaling would require.
+Transform locks disable inspector editing without replacing displayed values
+with identity. This includes colliders, individual locked-group members and
+readable group transforms; group membership and stale-state checks still apply.
 Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay places its pivot in perspective and
 draws nothing for an unprojectable pivot. Inspector rotation stays in place.

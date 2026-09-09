@@ -187,14 +187,18 @@ public sealed class GroupTransformCoordinator : IDisposable
         }
         return true;
     }
-    public bool TryReadSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error)
-        => TryReadPresentation(mode, false, out display, out error);
+    public bool TryReadSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error,
+        bool requireEditable = true)
+        => TryReadPresentation(mode, false, out display, out error, requireEditable);
 
     private bool TryReadPresentation(GroupScaleMode mode, bool world,
-        out GroupTransformDisplay display, out string? error)
+        out GroupTransformDisplay display, out string? error, bool requireEditable = true)
     {
         display = default;
-        if (!Resolve(_scene.Selection.Selected, out var targets, out error)) return false;
+        TransformTargetId[] targets;
+        if (requireEditable
+            ? !Resolve(_scene.Selection.Selected, out targets, out error)
+            : !ResolveMembership(_scene.Selection.Selected, out targets, out error)) return false;
         var named = NamedSelection(targets);
         var presentation = ReadPresentation?.Invoke(named, targets) ?? new(true, null);
         var snapshot = presentation.UseCommitted ? _state.Snapshot(named, targets) : presentation.Snapshot;
@@ -211,9 +215,12 @@ public sealed class GroupTransformCoordinator : IDisposable
         if (world) display = display with { Rotation = snapshot.WorldRotation };
         return true;
     }
-    public GroupTransformFrame? SelectionFrame()
+    public GroupTransformFrame? SelectionFrame(bool requireEditable = true)
     {
-        if (!Resolve(_scene.Selection.Selected, out var targets, out _)) return null;
+        TransformTargetId[] targets;
+        if (requireEditable
+            ? !Resolve(_scene.Selection.Selected, out targets, out _)
+            : !ResolveMembership(_scene.Selection.Selected, out targets, out _)) return null;
         return _state.Snapshot(NamedSelection(targets), targets)?.Baseline.Frame;
     }
     public bool TryReadWorldSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error)
