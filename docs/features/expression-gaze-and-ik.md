@@ -134,6 +134,13 @@ Hair, tail and skirt chains do not inflate the fit. This is a coarse body approx
 clothing collision; unsupported rigs refuse capture. No actor triangles enter
 the physics world. Capsule scale Y is total tip-to-tip length; its round radius
 uses the smallest scale dimension, also used by spheres, never a polygonal hull.
+Capsule editing exposes radius and endcap-center spacing instead of independent
+XYZ scale. Radius edits preserve spacing; the local longitudinal handle changes
+spacing while preserving radius, stopping at a sphere. Uniform scaling (Scale
+center or Universal white outer circle) multiplies radius and spacing equally.
+World translation/rotation remain available; capsule dimension handles are local.
+The inspector uses the same dimensions. Edits retain the existing total-length
+Y / diameter XZ storage, history and collision geometry; old files are unchanged.
 Human capture applies the actor's resolved racial deformer per model before
 posed skinning, so shared-race equipment lines up with its actor skeleton.
 Existing saved triangle-mesh captures remain supported and are not silently

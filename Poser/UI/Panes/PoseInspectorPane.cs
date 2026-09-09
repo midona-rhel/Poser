@@ -1418,6 +1418,8 @@ public partial class PoseInspectorPane
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
         var scale = transform.Scale;
+        bool capsule = !IsMultiEntitySelection && EffectiveSelection()?.Primary.Collider is { } capsuleId &&
+            _bindings.Resolve(capsuleId).Value?.State.Collider?.Shape == IkColliderShape.Capsule;
 
         void Apply(Vector3 next, DomainOperation operation)
         {
@@ -1513,12 +1515,12 @@ public partial class PoseInspectorPane
         var displayEuler = swap ? SwapXY(euler) : euler;
         form.Custom(
             string.Empty,
-            Crystarium.TransformGridHeight,
+            Crystarium.TransformGridHeightFor(capsule ? 2 : 3),
             row => Crystarium.TransformGrid(
                 "rail-transform",
                 row.Origin,
                 row.Width,
-                [
+                capsule ? [(TablerIcon.ArrowsMove, "Translation"), (TablerIcon.Rotate, "Rotation")] : [
                     (TablerIcon.ArrowsMove, "Translation"),
                     (TablerIcon.Rotate, "Rotation"),
                     (TablerIcon.ArrowsMaximize, "Scale"),
@@ -1574,6 +1576,24 @@ public partial class PoseInspectorPane
             _scaleGestureAltApplied = false;
         }
 
+        if (capsule)
+        {
+            var (radius, stem) = new IkCollider
+            {
+                Shape = IkColliderShape.Capsule,
+                Transform = PoseTransform.Identity with { Scale = scale },
+            }.RoundDimensions();
+            void Dimensions(float nextRadius, float nextStem)
+            {
+                if (!canEdit || _gestureRestartSuppressed) return;
+                BeginTransformSession(transform, DomainOperation.Scale);
+                ApplyTransformSession(transform with { Scale = IkCollider.CapsuleScale(nextRadius, nextStem) });
+            }
+            form.Number("Radius", radius, next => Dimensions(next, stem), dragSpeed, "0.000",
+                disabled: !canEdit, onCommit: Commit, fill: true);
+            form.Number("Endcap spacing", stem, next => Dimensions(radius, next), dragSpeed, "0.000",
+                disabled: !canEdit, onCommit: Commit, fill: true);
+        }
         DrawTransformClipboard(form, transform, canEdit);
     }
 
