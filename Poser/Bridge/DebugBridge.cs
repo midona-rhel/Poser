@@ -589,7 +589,11 @@ public sealed class DebugBridge : IDisposable
                         if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
                             var t = bone.LastTransform; var rw = bone.LastRawTransform;
-                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W },
+                            return Json(new { name, partial = bone.PartialId, bone.BoneIndex,
+                                bone.IsPartialRoot, bone.IsSkeletonRoot,
+                                parent = bone.ParentBone is { } parent ? new { parent.BoneName, parent.PartialId } : null,
+                                children = bone.ChildBones.Select(child => new { child.BoneName, child.PartialId }).ToArray(),
+                                scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W },
                                 raw = new { scale = rw.Scale.X, pos = new { rw.Position.X, rw.Position.Y, rw.Position.Z }, rot = new { rw.Rotation.X, rw.Rotation.Y, rw.Rotation.Z, rw.Rotation.W } },
                                 modification = _bonePosing.GetModification(bone) is { } m ? new { scale = m.Scale.X, rotW = m.Rotation.W, pos = m.Position.Y } : null });
                         }
@@ -785,8 +789,17 @@ public sealed class DebugBridge : IDisposable
                             float dx = query.TryGetValue("dx", out var dxs) ? float.Parse(dxs, CultureInfo.InvariantCulture) : 0f;
                             float dy = query.TryGetValue("dy", out var dys) ? float.Parse(dys, CultureInfo.InvariantCulture) : 0f;
                             float dz = query.TryGetValue("dz", out var dzs) ? float.Parse(dzs, CultureInfo.InvariantCulture) : 0f;
-                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale);
-                            _bonePosing.ApplyTransform(bone, wanted, raw);
+                            float scale = query.TryGetValue("scale", out var factor) ? float.Parse(factor, CultureInfo.InvariantCulture) : 1f;
+                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale * scale);
+                            var pose = _bonePosing.GetPoseInfo(skeleton).GetPoseInfo(bone.BoneName, bone.PartialId);
+                            var propagation = pose.DefaultPropagation;
+                            try
+                            {
+                                if (query.TryGetValue("propagation", out var propagate))
+                                    pose.DefaultPropagation = Enum.Parse<global::Poser.Domain.Posing.TransformComponents>(propagate, true);
+                                _bonePosing.ApplyTransform(bone, wanted, raw);
+                            }
+                            finally { pose.DefaultPropagation = propagation; }
                             var m = _bonePosing.GetModification(bone);
                             return Json(new { ok = true, modification = m is { } mod ? new { mod.Rotation.X, mod.Rotation.Y, mod.Rotation.Z, mod.Rotation.W } : null });
                         }
