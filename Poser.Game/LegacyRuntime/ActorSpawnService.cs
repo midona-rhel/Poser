@@ -1066,7 +1066,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return false;
     }
 
-    public IActor? SpawnNewActor(bool reserveCompanionSlot)
+    public IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0)
     {
         if (!OnOwnerThread || !SpawnAuthorityAvailable())
             return null;
@@ -1080,7 +1080,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
         // A new actor is not a copy of the player as far as mods go: it
         // wears the player's collection live, not a snapshot of it.
-        return SpawnCloneFrom(localPlayer, reserveCompanionSlot, inheritSource: false);
+        return SpawnCloneFrom(localPlayer, reserveCompanionSlot, inheritSource: false,
+            modelCharaId: modelCharaId);
     }
 
     public IActor? CloneActor(IActor source)

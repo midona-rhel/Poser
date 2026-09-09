@@ -18,7 +18,7 @@ public interface IActorSpawnService : IDisposable
     /// minions/mounts/ornaments to attach later.
     /// </summary>
     /// <returns>The spawned actor, or null if failed.</returns>
-    IActor? SpawnNewActor(bool reserveCompanionSlot);
+    IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0);
 
     /// <summary>
     /// Spawn a clone of an arbitrary scene actor (appearance + position copy —

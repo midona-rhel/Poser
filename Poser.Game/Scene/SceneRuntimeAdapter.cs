@@ -586,14 +586,14 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public object? SpawnActor(SceneActor data, out string? detail)
     {
-        var actor = _spawns.SpawnNewActor(data.HasCompanionSlot);
+        // Set the model inside the spawn's deferred-draw window. A second
+        // SetModelCharaId redraw races the next-tick collection assignment.
+        var actor = _spawns.SpawnNewActor(data.HasCompanionSlot, data.ModelCharaId);
         if (actor is null)
         {
             detail = "The spawn service returned no actor.";
             return null;
         }
-        if (data.ModelCharaId != 0)
-            _spawns.SetModelCharaId(actor, data.ModelCharaId);
         detail = null;
         return actor;
     }
