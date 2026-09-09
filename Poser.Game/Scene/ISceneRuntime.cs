@@ -179,6 +179,9 @@ internal interface ISceneRuntime
     /// no-op.</summary>
     string? PlaceActor(object actor, SceneActor data);
 
+    /// <summary>Restores the attached body's own model placement after its pose.</summary>
+    string? PlaceCompanion(object actor, SceneActor data);
+
     /// <summary>Stops the actor so its pose lands on a held frame. Scenes
     /// carry no animation — a timeline id means something different on every
     /// client — so a restored actor is always frozen and the picture is always

@@ -1268,7 +1268,11 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                         receipt => _runtime.ArmCompanionPoseImport(
                             token, actor, $"Scene companion pose: {actor.Name}",
                             receipt),
-                        cancellation);
+                            cancellation);
+                    if (companion == null)
+                        companion = await _runtime.OnFramework(() =>
+                            Guard(operation, cancellation)
+                                ?? _runtime.PlaceCompanion(token, actor));
                     if (companion != null)
                         entities.Add(new SceneEntityOutcome(
                             "Companion", actor.Name, false, companion));

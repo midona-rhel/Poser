@@ -59,6 +59,7 @@ public sealed class DebugBridge : IDisposable
     private readonly Game.Scene.SceneLoadPreferences _scenePreferences;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
+    private readonly IPosingService _posing;
     private readonly CancellationTokenSource _stop = new();
 
     public DebugBridge(
@@ -89,7 +90,8 @@ public sealed class DebugBridge : IDisposable
         Game.Scene.SceneWorkflow scenes,
         Game.Scene.SceneLoadPreferences scenePreferences,
         IPlacementAnchorSource anchors,
-        IGPoseService gpose)
+        IGPoseService gpose,
+        IPosingService posing)
     {
         _textures = textures;
         _readback = readback;
@@ -97,6 +99,7 @@ public sealed class DebugBridge : IDisposable
         _scenePreferences = scenePreferences;
         _anchors = anchors;
         _gpose = gpose;
+        _posing = posing;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -952,7 +955,13 @@ public sealed class DebugBridge : IDisposable
             slots.Add(new { slot = cached.Slot.ToString(), cachedBones = cached.Bones.Count,
                 boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials });
         }
-        return new { actor.Name, slots };
+        var transform = _posing.GetEffectiveTransform(actor);
+        return new { actor.Name, slots, transform = new
+        {
+            position = new { transform.Position.X, transform.Position.Y, transform.Position.Z },
+            rotation = new { transform.Rotation.X, transform.Rotation.Y, transform.Rotation.Z, transform.Rotation.W },
+            scale = new { transform.Scale.X, transform.Scale.Y, transform.Scale.Z },
+        } };
     }
 
     private object ListActors()

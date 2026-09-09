@@ -10,6 +10,9 @@ undoing it. Clearing existing scene content before a load remains destructive.
 Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
+Attached companions restore their own captured model placement after their
+bones, not just the owner's placement. Their embedded absolute model transform
+receives the same scene rebase as the owner; bone-local poses are not rebased.
 
 ## Lifecycle history
 

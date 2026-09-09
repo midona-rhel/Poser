@@ -953,7 +953,15 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             : result.Detail ?? "The companion pose import refused.";
     }
 
-    public string? PlaceActor(object actor, SceneActor data)
+    public string? PlaceActor(object actor, SceneActor data) =>
+        PlaceModel((IActor)actor, data.ModelTransform, data.Pose);
+
+    public string? PlaceCompanion(object actor, SceneActor data) =>
+        _spawns.GetCompanionActor((IActor)actor) is { } companion
+            ? PlaceModel(companion, null, data.CompanionPose)
+            : "The companion's body could not be resolved, so its placement was not restored.";
+
+    private string? PlaceModel(IActor target, LightFile.TransformData? model, PoseFile? pose)
     {
         // The scene's OWN placement first. The embedded pose's absolute values
         // remain the fallback for files written before placements were stated,
@@ -962,7 +970,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         System.Numerics.Vector3 position;
         System.Numerics.Quaternion rotation;
         System.Numerics.Vector3 scale;
-        if (data.ModelTransform is { } stated)
+        if (model is { } stated)
         {
             position = stated.Position;
             rotation = stated.Rotation;
@@ -970,7 +978,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         }
         else
         {
-            var absolute = data.Pose!.ModelAbsoluteValues;
+            if (pose is null)
+                return null;
+            var absolute = pose.ModelAbsoluteValues;
             bool unset = absolute.Position == System.Numerics.Vector3.Zero &&
                 absolute.Rotation == System.Numerics.Quaternion.Identity &&
                 absolute.Scale == System.Numerics.Vector3.Zero;
@@ -990,7 +1000,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             scale == System.Numerics.Vector3.Zero
                 ? System.Numerics.Vector3.One
                 : scale);
-        var target = (IActor)actor;
         _posing.SetTransformOverride(target, placement);
 
         // The override setter REFUSES silently — outside GPose, on an actor
