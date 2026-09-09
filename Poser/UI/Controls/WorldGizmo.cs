@@ -269,6 +269,8 @@ public static class WorldGizmo
         public Vector2[] ScaleKnob = new Vector2[3];
         public bool[] ScaleVisible = new bool[3];
         public bool UniformActive;
+        public bool CapsuleScale;
+        public bool UniformRing;
     }
 
     /// <summary>Builds visible and hittable geometry for the selected tool.
@@ -282,12 +284,16 @@ public static class WorldGizmo
         float uiScale,
         float[]? heldTranslateSigns = null,
         float[]? heldScaleSigns = null,
-        bool universalCenterTranslates = false)
+        bool universalCenterTranslates = false,
+        bool capsuleScale = false,
+        bool allowAxisScale = true)
     {
         var layout = new Layout { Projection = projection, UiScale = uiScale };
         layout.TranslateFrame = translateFrame;
         layout.ScaleFrame = scaleFrame;
         bool universal = tool == TransformTool.Universal;
+        layout.CapsuleScale = capsuleScale;
+        layout.UniformRing = capsuleScale && universal;
         float s = projection.WorldScale;
 
         if (tool is TransformTool.Move || universal)
@@ -331,7 +337,9 @@ public static class WorldGizmo
 
         if (tool is TransformTool.Scale || universal)
         {
-            layout.ScaleActive = true;
+            // The dedicated Scale tool always uses local axes. Universal in
+            // World mode keeps uniform scaling, but hides directional scaling.
+            layout.ScaleActive = tool == TransformTool.Scale || allowAxisScale;
             layout.ScaleShafts = !universal;
             layout.UniformActive = !(universal && universalCenterTranslates);
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
@@ -349,6 +357,18 @@ public static class WorldGizmo
                 layout.ScaleKnob[a] = knob;
                 layout.ScaleVisible[a] = ok &&
                     Vector2.Distance(projection.Center, knob) > 8f * uiScale;
+            }
+            // A round capsule has one radial dimension, not independent X/Z scales.
+            // Choose the less foreshortened radial axis, frozen while dragging.
+            if (capsuleScale)
+            {
+                int radial = heldScaleSigns is not null
+                    ? (heldScaleSigns[0] == 0 ? 2 : 0)
+                    : Vector2.DistanceSquared(projection.Center, layout.ScaleKnob[0]) >=
+                      Vector2.DistanceSquared(projection.Center, layout.ScaleKnob[2]) ? 0 : 2;
+                int hidden = radial == 0 ? 2 : 0;
+                layout.ScaleVisible[hidden] = false;
+                layout.ScaleSign[hidden] = 0;
             }
         }
 
@@ -475,7 +495,7 @@ public static class WorldGizmo
             RotationGizmoRings.HitTest(rings, mouse, tolerance + 1.75f * layout.UiScale) is { } ringHit)
             return new WorldHandleHit(
                 ringHit.Axis == RotationGizmoRings.RollAxis
-                    ? new WorldHandle(WorldHandleKind.Roll, 0)
+                    ? new WorldHandle(layout.UniformRing ? WorldHandleKind.ScaleUniform : WorldHandleKind.Roll, 0)
                     : new WorldHandle(WorldHandleKind.RotateRing, ringHit.Axis),
                 ringHit.Distance, ringHit);
 
@@ -495,8 +515,10 @@ public static class WorldGizmo
         {
             RotationGizmoRings.Draw(
                 dl, rings,
-                hover is { } h ? RingEmphasisAxis(h) : -1,
-                active is { } a ? RingEmphasisAxis(a) : -1,
+                layout.UniformRing && hover?.Kind == WorldHandleKind.ScaleUniform ? RotationGizmoRings.RollAxis :
+                    hover is { } h ? RingEmphasisAxis(h) : -1,
+                layout.UniformRing && active?.Kind == WorldHandleKind.ScaleUniform ? RotationGizmoRings.RollAxis :
+                    active is { } a ? RingEmphasisAxis(a) : -1,
                 drawRearArcs: false, uiScale);
         }
 

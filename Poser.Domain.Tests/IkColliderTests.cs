@@ -7,6 +7,24 @@ namespace Poser.Domain.Tests;
 
 public class IkColliderTests
 {
+    [Fact]
+    public void CapsuleDimensionsEditIndependentlyAndUniformScalePreservesProportions()
+    {
+        var start = IkCollider.CapsuleScale(.5f, 2f);
+        (float Radius, float Stem) Dimensions(Vector3 scale) => new IkCollider
+        {
+            Shape = IkColliderShape.Capsule,
+            Transform = PoseTransform.Identity with { Scale = scale },
+        }.RoundDimensions();
+
+        Assert.Equal((1f, 2f), Dimensions(IkCollider.ScaleCapsule(start, 2, 0)));
+        Assert.Equal((.5f, 5f), Dimensions(IkCollider.ScaleCapsule(start, 2, 1)));
+        Assert.Equal((1f, 4f), Dimensions(IkCollider.ScaleCapsule(start, 2, -1)));
+        Assert.Equal((.5f, 0f), Dimensions(IkCollider.ScaleCapsule(start, .1f, 1)));
+        // A zero-length stem is a sphere, but the length handle must still extend it.
+        Assert.Equal((.5f, 1f), Dimensions(IkCollider.ScaleCapsule(Vector3.One, 2, 1)));
+    }
+
     [Theory]
     [InlineData(IkColliderShape.Box)]
     [InlineData(IkColliderShape.Cylinder)]

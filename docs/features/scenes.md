@@ -10,6 +10,9 @@ undoing it. Clearing existing scene content before a load remains destructive.
 Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
+Attached companions restore their own captured model placement after their
+bones, not just the owner's placement. Their embedded absolute model transform
+receives the same scene rebase as the owner; bone-local poses are not rebased.
 
 ## Lifecycle history
 
@@ -69,7 +72,12 @@ An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store
 model id, companion attachment and pose, visibility, absolute transform, gaze,
-and an appearance payload. Other appearance remains external.
+and an appearance payload. Permanent Penumbra collections are local GUID
+references, restored and redrawn before companions and poses, as in Brio's
+`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods.
+Temporary collection IDs are not saved; those require the modded-appearance
+payload. Older files without collection references retain their existing load
+behavior. Other appearance remains external.
 
 An `.xivs` is a CONTAINER, not a JSON file. `scene.json` inside it is the
 document; each appearance payload is its own stored entry under `appearance/`,

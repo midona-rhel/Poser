@@ -44,6 +44,26 @@ public sealed record IkCollider
         float radius = MathF.Min(scale.X, MathF.Min(scale.Y, scale.Z)) * .5f;
         return (radius, Shape == IkColliderShape.Capsule ? MathF.Max(0, scale.Y - radius * 2) : 0);
     }
+
+    public static Vector3 CapsuleScale(float radius, float stem)
+    {
+        float diameter = MathF.Max(.0001f, radius * 2);
+        // Preserve the existing file representation: Y is total length, X/Z diameter.
+        return new(diameter, diameter + MathF.Max(0, stem), diameter);
+    }
+
+    public static Vector3 ScaleCapsule(Vector3 start, float factor, int axis)
+    {
+        if (axis < 0) return start * factor;
+        var (radius, stem) = new IkCollider
+        {
+            Shape = IkColliderShape.Capsule,
+            Transform = PoseTransform.Identity with { Scale = start },
+        }.RoundDimensions();
+        return axis == 1
+            ? CapsuleScale(radius, (stem + 2 * radius) * factor - 2 * radius)
+            : CapsuleScale(radius * factor, stem);
+    }
 }
 
 /// <summary>World-space geometry; primitive contact queries are convex, mesh contacts belong to Bepu.</summary>

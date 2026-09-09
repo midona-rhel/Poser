@@ -276,9 +276,8 @@ public static class SceneFileLimits
 /// <summary>
 /// One saved actor: its stable in-document key, respawn facts, companion
 /// attachment, where it stands, what it is playing, where it is looking, and
-/// the complete embedded pose document. Appearance beyond the Model ID stays
-/// with its external owners (Glamourer/MCDF) and is deliberately not scene
-/// data.
+/// the complete embedded pose document, a local collection reference and an
+/// optional appearance package.
 /// </summary>
 [Serializable]
 public class SceneActor
@@ -291,6 +290,11 @@ public class SceneActor
 
     /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
     public int ModelCharaId { get; set; }
+
+    /// <summary>Local permanent Penumbra collection, restored before posing.
+    /// Temporary collections travel through the appearance package instead.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? PenumbraCollection { get; set; }
 
     public bool Visible { get; set; } = true;
 

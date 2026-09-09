@@ -98,9 +98,11 @@ Actor targets are model-space points; World targets are world points;
 bone/entity targets are world offsets without inherited scale. Missing references
 suspend solving. The ordinary bone controls edit the selected handle—there are
 no separate root/tip position fields. One drag is one history step.
-Scenes store the span, anchors and portable handle reference, restoring the
-reference after scene entities exist. Previews snapshot it into their own model
-frame. Baking writes the solved pose and disables the chains.
+Older scenes may store the span, anchors and portable handle reference; their
+reader still restores these after scene entities exist. New saves follow the
+[baked snapshot contract](files-and-transfer.md#storage-and-library).
+Previews snapshot constraints into their own model frame. The live Bake action
+writes the solved pose and disables the chains.
 
 ### IK colliders
 
@@ -132,6 +134,13 @@ Hair, tail and skirt chains do not inflate the fit. This is a coarse body approx
 clothing collision; unsupported rigs refuse capture. No actor triangles enter
 the physics world. Capsule scale Y is total tip-to-tip length; its round radius
 uses the smallest scale dimension, also used by spheres, never a polygonal hull.
+Capsule editing exposes radius and endcap-center spacing instead of independent
+XYZ scale. Radius edits preserve spacing; the local longitudinal handle changes
+spacing while preserving radius, stopping at a sphere. Uniform scaling (Scale
+center or Universal white outer circle) multiplies radius and spacing equally.
+World translation/rotation remain available; capsule dimension handles are local.
+The inspector uses the same dimensions. Edits retain the existing total-length
+Y / diameter XZ storage, history and collision geometry; old files are unchanged.
 Human capture applies the actor's resolved racial deformer per model before
 posed skinning, so shared-race equipment lines up with its actor skeleton.
 Existing saved triangle-mesh captures remain supported and are not silently

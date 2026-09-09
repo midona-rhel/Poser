@@ -53,6 +53,24 @@ public partial class MainWindow
         }
     }
 
+    private void RestoreReleasedGroupGates(GroupsSnapshot previous)
+    {
+        foreach (var group in previous.Groups)
+        {
+            Restore(group.RememberedVisible, g => g.Hidden, SetEntityVisible);
+            Restore(group.RememberedPlaying, g => g.Paused, SetPlaying);
+            Restore(group.RememberedNight, g => g.Night, SetNight);
+        }
+
+        void Restore(IReadOnlyDictionary<SelectionId, bool> remembered,
+            Func<SceneGroup, bool> closed, Action<SelectionId, bool> write)
+        {
+            foreach (var (member, value) in remembered)
+                if (!UnderClosedGate(member, closed))
+                    write(member, value);
+        }
+    }
+
     private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden) =>
         _groupSteps.Run(hidden ? "Hide group" : "Show group", () => SetGroupHiddenCore(group, hidden));
 

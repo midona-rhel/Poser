@@ -123,6 +123,9 @@ internal interface ISceneRuntime
     /// required before the pose-import admission can succeed.</summary>
     bool ActorReady(object actor);
 
+    Task<string?> RestoreCollection(object actor, SceneActor data, TimeSpan bound,
+        System.Threading.CancellationToken cancellation) => Task.FromResult<string?>(null);
+
     /// <summary>
     /// Re-imports the actor's saved character file through the EXISTING MCDF
     /// transaction — the same admission, phases, redraw barrier, rollback and
@@ -175,6 +178,9 @@ internal interface ISceneRuntime
     /// one; a placement that did not LAND is a named refusal, never a silent
     /// no-op.</summary>
     string? PlaceActor(object actor, SceneActor data);
+
+    /// <summary>Restores the attached body's own model placement after its pose.</summary>
+    string? PlaceCompanion(object actor, SceneActor data);
 
     /// <summary>Stops the actor so its pose lands on a held frame. Scenes
     /// carry no animation — a timeline id means something different on every

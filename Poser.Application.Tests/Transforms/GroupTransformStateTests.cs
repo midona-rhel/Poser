@@ -479,6 +479,11 @@ public sealed class GroupTransformStateTests
         int frameReads = f.FrameReads;
         steps.SetLocked(parent.Id, true);
         Assert.False(f.Coordinator.TryReadSelection(GroupScaleMode.SizesAndSpacing, out _, out _));
+        Assert.True(f.Coordinator.TryReadSelection(GroupScaleMode.SizesAndSpacing,
+            out var lockedDisplay, out _, requireEditable: false));
+        Assert.Equal(authored.Controls.Display(GroupScaleMode.SizesAndSpacing), lockedDisplay);
+        Assert.Equal(authored.Baseline.Frame, f.Coordinator.SelectionFrame(requireEditable: false));
+        Assert.False(f.Coordinator.Admit(targets, GroupScaleMode.SizesAndSpacing, out _, out _));
         // Save reads the same retained named snapshot even while editing is refused.
         Assert.Same(authored, f.State.NamedSnapshot(child.Id));
         Assert.Same(authored, f.State.CaptureNamed()[GroupTransformKey.For(child.Id, targets)]);

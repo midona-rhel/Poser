@@ -14,7 +14,8 @@ public sealed class GroupTransformSource(
     ICameraService camera) : IGroupTransformSource
 {
     public PoseTransform? Read(TransformTargetId target) =>
-        Refusal(target) == null ? viewport.GetModelTransform(target) : null;
+        // Lock/attachment refusal governs editing, not reading existing state.
+        scene.Contains(target) ? viewport.GetModelTransform(target) : null;
 
     public string? Refusal(TransformTargetId target)
     {

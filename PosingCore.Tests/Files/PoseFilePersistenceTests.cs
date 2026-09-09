@@ -9,6 +9,29 @@ namespace Poser.Tests.Files;
 public sealed class PoseFilePersistenceTests
 {
     [Fact]
+    public void Legacy_aliases_and_empty_helpers_work_in_full_and_metadata_reads()
+    {
+        using var fixture = new StoreFixture();
+        const string json = """
+            {"Bones":{
+              "RootHead":{"Position":"1, 2, 3","Rotation":"0, 0, 0, 1","Scale":"1, 1, 1"},
+              "Head":{"Position":"4, 5, 6","Rotation":"0, 0, 0, 1","Scale":"1, 1, 1"},
+              "Met_2":{"Position":"0, 0, 0","Rotation":"1E-45, -1E-45, 0, 0","Scale":"0, 0, 0"}
+            }}
+            """;
+        File.WriteAllText(fixture.Path, json);
+        var read = AtomicPoseFileStore.Default.Read(fixture.Path);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.True(metadata.Succeeded, metadata.Failure?.Detail);
+        read.Pose!.SanitizeBoneNames();
+        Assert.Equal(new Vector3(4, 5, 6), read.Pose.Bones["j_kao"].Position);
+        Assert.True(AtomicPoseFileStore.Default.Write(read.Pose, fixture.Path).Succeeded);
+        Assert.True(AtomicPoseFileStore.Default.Read(fixture.Path).Succeeded);
+        Assert.False(AtomicPoseFileStore.Default.Parse("""{"ModelDifference":{"Rotation":"0, 0, 0, 0"}}""").Succeeded);
+    }
+
+    [Fact]
     public void A_valid_pose_round_trips_through_the_atomic_store()
     {
         using var fixture = new StoreFixture();

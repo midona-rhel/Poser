@@ -96,6 +96,35 @@ public sealed class SceneFileStoreTests
         Assert.Equal(new Vector2(20,30), scene.Overlays[1].Node!.Position);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Companion_placement_rebases_with_owner_without_changing_its_bones(bool rotate)
+    {
+        var scene = ValidScene();
+        scene.Origin = Vector3.Zero;
+        var owner = scene.Actors[0];
+        owner.ModelTransform = new() { Position = new(2, 3, 4), Rotation = Quaternion.Identity, Scale = Vector3.One };
+        var savedRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, .4f);
+        owner.CompanionPose = new PoseFile
+        {
+            ModelAbsoluteValues = new() { Position = new(3, 2, 5), Rotation = savedRotation, Scale = new(.77f) },
+            Bones = new() { ["n_root"] = new() { Position = new(1, 2, 3), Rotation = Quaternion.Identity, Scale = Vector3.One } },
+        };
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rotate ? .9f : 0);
+        var anchor = new Vector3(10, 20, 30);
+        var refusal = rotate
+            ? Poser.Scene.ScenePlacementRebase.Rebase(scene, new() { Position = Vector3.Zero, Yaw = 0 }, anchor, .9f)
+            : Poser.Scene.SceneRelativePlacement.Rebase(scene, anchor);
+        Assert.Null(refusal);
+        var restored = owner.CompanionPose.ModelAbsoluteValues;
+        Assert.True(Vector3.Distance(restored.Position - owner.ModelTransform.Position,
+            Vector3.Transform(new Vector3(1, -1, 1), turn)) < .00001f);
+        Assert.True(MathF.Abs(Quaternion.Dot(restored.Rotation, Quaternion.Normalize(turn * savedRotation))) > .99999f);
+        Assert.Equal(new Vector3(.77f), restored.Scale);
+        Assert.Equal(new Vector3(1, 2, 3), owner.CompanionPose.Bones["n_root"].Position);
+    }
+
     [Fact]
     public void Native_scene_document_can_be_redacted_without_losing_entities_or_relationships()
     {

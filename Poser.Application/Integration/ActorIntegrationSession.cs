@@ -196,6 +196,18 @@ public sealed class ActorIntegrationSession : IDisposable
     }
 
     public IntegrationResult SetCollection(ActorId actor, Guid collection, string name)
+        => SetCollection(actor, collection, name, redraw: true);
+
+    public async Task<IntegrationResult> SetCollectionAndWait(ActorId actor, Guid collection,
+        string name, TimeSpan timeout, CancellationToken cancellation)
+    {
+        var applied = await _port.OnFrameworkThread(() => SetCollection(actor, collection, name, redraw: false));
+        if (!applied.Success) return applied;
+        var redrawn = await _port.RedrawAndWait(actor, timeout, cancellation);
+        return redrawn.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(redrawn.Detail!);
+    }
+
+    private IntegrationResult SetCollection(ActorId actor, Guid collection, string name, bool redraw)
     {
         if (McdfGate(actor) is { } gate)
             return gate;
@@ -223,11 +235,12 @@ public sealed class ActorIntegrationSession : IDisposable
         // Penumbra applies a changed assignment on the next redraw; a
         // failed request is reported, not swallowed — the assignment
         // itself stands and stays owned either way.
-        var redraw = _port.RequestRedraw(actor);
-        return redraw.Success
+        if (!redraw) return IntegrationResult.Ok();
+        var request = _port.RequestRedraw(actor);
+        return request.Success
             ? IntegrationResult.Ok()
             : IntegrationResult.Fail(
-                $"The collection was assigned, but the redraw failed: {redraw.Detail}");
+                $"The collection was assigned, but the redraw failed: {request.Detail}");
     }
 
     public IntegrationResult ResetCollection(ActorId actor)

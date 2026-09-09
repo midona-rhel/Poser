@@ -81,6 +81,7 @@ public class GizmoOverlayWindow : Window
         public required DomainSpace Space { get; init; }
         public global::Poser.Domain.Transforms.GroupScaleMode GroupScale { get; init; }
         public bool IsGroup { get; init; }
+        public bool CapsuleScale { get; init; }
         public required LegacyTransform Start { get; init; }
         public LegacyTransform Current;
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
@@ -736,6 +737,8 @@ public class GizmoOverlayWindow : Window
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
         bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
+        bool capsuleScale = !isGroup && selection.Primary.Collider is { } capsuleId &&
+            _bindings.Resolve(capsuleId).Value?.State.Collider?.Shape == Domain.Posing.IkColliderShape.Capsule;
         if (gesture is { } presented)
         {
             currentTransform = presented.Current;
@@ -849,7 +852,9 @@ public class GizmoOverlayWindow : Window
                 projection, tool, translateFrame, scaleFrame, ringFrame, uiScale,
                 _gesture != null ? _dragTranslateSigns : null,
                 _gesture != null ? _dragScaleSigns : null,
-                universalCenterTranslates: GizmoConfig.UniversalCenterTranslates)
+                universalCenterTranslates: GizmoConfig.UniversalCenterTranslates,
+                capsuleScale: capsuleScale,
+                allowAxisScale: orientation != TransformOrientation.Global)
             : null;
 
         var io = ImGui.GetIO();
@@ -1200,6 +1205,8 @@ public class GizmoOverlayWindow : Window
             : orientation == TransformOrientation.Global
                 ? DomainSpace.World
                 : DomainSpace.Local;
+        if (operation == DomainOperation.Scale && layout.CapsuleScale)
+            space = DomainSpace.Local;
 
         // Parent rotation uses a frozen custom pivot. Multi-entity groups use
         // a centroid pivot.
@@ -1260,6 +1267,7 @@ public class GizmoOverlayWindow : Window
             Space = space,
             GroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale,
             IsGroup = !isBone && targets.Count > 1,
+            CapsuleScale = layout.CapsuleScale,
             Start = currentTransform,
             Current = currentTransform,
             PivotMode = cleanPivotMode,
@@ -1463,6 +1471,21 @@ public class GizmoOverlayWindow : Window
             2 => start with { Z = GizmoSnap.Snap(start.Z * factor, snapStep) },
             _ => WorldGizmo.ApplyUniformScale(start, factor),
         };
+        if (gesture.CapsuleScale)
+        {
+            scale = Domain.Posing.IkCollider.ScaleCapsule(start, MathF.Max(.001f, factor), axis);
+            if (axis >= 0 && snapStep > 0)
+            {
+                var (radius, stem) = new Domain.Posing.IkCollider
+                {
+                    Shape = Domain.Posing.IkColliderShape.Capsule,
+                    Transform = PoseTransform.Identity with { Scale = scale },
+                }.RoundDimensions();
+                scale = Domain.Posing.IkCollider.CapsuleScale(
+                    axis == 1 ? radius : GizmoSnap.Snap(radius, snapStep),
+                    axis == 1 ? GizmoSnap.Snap(stem, snapStep) : stem);
+            }
+        }
         var newTransform = gesture.Start with { Scale = scale };
         if (DispatchUpdate(gesture, newTransform))
             gesture.Current = newTransform;

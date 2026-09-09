@@ -335,6 +335,12 @@ public sealed class SceneWorkflowTests
             return PlacementFailure?.Invoke(data);
         }
 
+        public string? PlaceCompanion(object actor, SceneActor data)
+        {
+            Record($"PlaceCompanion:{data.Name}");
+            return null;
+        }
+
         public string? FreezeActor(object actor)
         {
             Record($"FreezeActor:{((Token)actor).Name["actor:".Length..]}");

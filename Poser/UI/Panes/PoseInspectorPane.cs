@@ -258,6 +258,7 @@ public partial class PoseInspectorPane
     // Cache transform resolution by selection and scene revision.
     private readonly List<SelectionId> _effectiveKey = new();
     private ulong _effectiveRevision;
+    private int _effectiveGroupsRevision;
     private bool _effectivePrimed;
     private EffectiveTransformSelection? _effective;
     private string? _groupTransformUnavailableReason;
@@ -267,11 +268,13 @@ public partial class PoseInspectorPane
         var selected = _selection.Selected;
         if (!selected.Any(x => x.Overlay.HasValue) && _effectivePrimed &&
             _effectiveRevision == _scene.Revision &&
+            _effectiveGroupsRevision == _groups.Revision &&
             SameSelection(_effectiveKey, selected))
             return _effective;
 
         _effectivePrimed = true;
         _effectiveRevision = _scene.Revision;
+        _effectiveGroupsRevision = _groups.Revision;
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
         _effective = TransformTargetResolver.Resolve(
@@ -454,7 +457,7 @@ public partial class PoseInspectorPane
         if (IsMultiEntitySelection)
         {
             var (group, groupCanEdit) = ReadTransform();
-            var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame();
+            var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame(requireEditable: false);
             return groupFrame is { } value
                 ? (value.ToWorldOrientation(group.Rotation), value.Rotation, groupCanEdit)
                 : (Quaternion.Identity, Quaternion.Identity, false);
@@ -1418,6 +1421,8 @@ public partial class PoseInspectorPane
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
         var scale = transform.Scale;
+        bool capsule = !IsMultiEntitySelection && _primary?.Overlay is { } capsuleId &&
+            _bindings.Resolve(capsuleId).Value?.State.Collider?.Shape == IkColliderShape.Capsule;
 
         void Apply(Vector3 next, DomainOperation operation)
         {
@@ -1513,12 +1518,12 @@ public partial class PoseInspectorPane
         var displayEuler = swap ? SwapXY(euler) : euler;
         form.Custom(
             string.Empty,
-            Crystarium.TransformGridHeight,
+            Crystarium.TransformGridHeightFor(capsule ? 2 : 3),
             row => Crystarium.TransformGrid(
                 "rail-transform",
                 row.Origin,
                 row.Width,
-                [
+                capsule ? [(TablerIcon.ArrowsMove, "Translation"), (TablerIcon.Rotate, "Rotation")] : [
                     (TablerIcon.ArrowsMove, "Translation"),
                     (TablerIcon.Rotate, "Rotation"),
                     (TablerIcon.ArrowsMaximize, "Scale"),
@@ -1574,6 +1579,24 @@ public partial class PoseInspectorPane
             _scaleGestureAltApplied = false;
         }
 
+        if (capsule)
+        {
+            var (radius, stem) = new IkCollider
+            {
+                Shape = IkColliderShape.Capsule,
+                Transform = PoseTransform.Identity with { Scale = scale },
+            }.RoundDimensions();
+            void Dimensions(float nextRadius, float nextStem)
+            {
+                if (!canEdit || _gestureRestartSuppressed) return;
+                BeginTransformSession(transform, DomainOperation.Scale);
+                ApplyTransformSession(transform with { Scale = IkCollider.CapsuleScale(nextRadius, nextStem) });
+            }
+            form.Number("Radius", radius, next => Dimensions(next, stem), dragSpeed, "0.000",
+                disabled: !canEdit, onCommit: Commit, fill: true);
+            form.Number("Endcap spacing", stem, next => Dimensions(radius, next), dragSpeed, "0.000",
+                disabled: !canEdit, onCommit: Commit, fill: true);
+        }
         DrawTransformClipboard(form, transform, canEdit);
     }
 
@@ -2864,11 +2887,12 @@ public partial class PoseInspectorPane
         if (IsMultiEntitySelection)
         {
             var scaleMode = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale;
-            if (_groupCoordinator.TryReadSelection(scaleMode, out var group, out var error))
+            if (_groupCoordinator.TryReadSelection(scaleMode, out var group, out var error, requireEditable: false))
             {
-                _groupTransformUnavailableReason = null;
+                bool editable = _groupCoordinator.Resolve(_selection.Selected, out _, out var refusal);
+                _groupTransformUnavailableReason = refusal;
                 return (new Transform { Position = group.Position, Rotation = group.Rotation,
-                    Scale = group.Scale }, true);
+                    Scale = group.Scale }, editable);
             }
             _groupTransformUnavailableReason = error;
             return (Transform.Identity, false);
@@ -2876,30 +2900,34 @@ public partial class PoseInspectorPane
 
         _groupTransformUnavailableReason = null;
 
-        switch (EffectiveSelection()?.Primary)
+        // Read the selected target even when locked; edit admission stays
+        // separate so locked group members cannot become editable here.
+        var primary = TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot)?.Primary;
+        bool canEdit = primary is not null && EffectiveSelection()?.Primary == primary;
+        switch (primary)
         {
             case { Kind: TransformTargetKind.Collider } collider:
                 return _viewport.GetModelTransform(collider) is { } value
-                    ? (Transform.FromPose(value), true) : (Transform.Identity, false);
+                    ? (Transform.FromPose(value), canEdit) : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
                 // Model overrides stabilize actor transforms during animation.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
-                    ? (Transform.FromPose(actorValue), true)
+                    ? (Transform.FromPose(actorValue), canEdit)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
                 // Bones use model-space transform values.
                 return ViewportBoneModel(boneId) is { } model
-                    ? (model, true)
+                    ? (model, canEdit)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Light, Light: { } lightId }:
                 // Attached lights are read-only.
                 return _viewport.GetLightTransform(lightId) is { } lightValue
                     ? (Transform.FromPose(lightValue),
-                        _bindings.Resolve(lightId).Value?.AttachedBone == null)
+                        canEdit && _bindings.Resolve(lightId).Value?.AttachedBone == null)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Prop, Prop: { } propId }:
                 return _viewport.GetPropTransform(propId) is { } propValue
-                    ? (Transform.FromPose(propValue), true)
+                    ? (Transform.FromPose(propValue), canEdit)
                     : (Transform.Identity, false);
             case
             {
@@ -2908,7 +2936,7 @@ public partial class PoseInspectorPane
             }:
                 return _viewport.GetWorldObjectTransform(worldObjectId)
                     is { } worldObjectValue
-                    ? (Transform.FromPose(worldObjectValue), true)
+                    ? (Transform.FromPose(worldObjectValue), canEdit)
                     : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);

@@ -647,6 +647,7 @@ public partial class MainWindow : Window
         _groupSteps = groupSteps;
         _groupTransforms = groupTransforms;
         _groupSteps.ReapplyGates = ReapplyGroupGates;
+        _groupSteps.RestoreReleasedGates = RestoreReleasedGroupGates;
         _gameCamera = gameCamera;
         _viewportProjection = viewportProjection;
         _groupCoordinator = groupCoordinator;

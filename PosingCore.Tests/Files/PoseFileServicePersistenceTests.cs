@@ -15,6 +15,33 @@ namespace Poser.Tests.Files;
 
 public sealed class PoseFileServicePersistenceTests
 {
+    [Fact]
+    public void Legacy_cmp_import_never_applies_positions_even_when_requested()
+    {
+        using var file = new TempFile(".cmp");
+        File.WriteAllText(file.Path, """
+            {"Race":"1","Head":"00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F",
+             "HeadSize":"00 00 80 3F 00 00 80 3F 00 00 80 3F"}
+            """);
+        var plan = Service().BuildImportPlan(new[] { Skeleton(Bone("j_kao", Transform.Identity)) },
+            file.Path, new PoseImportOptions { ApplyPosition = true, ApplyRotation = true, ApplyScale = true, ApplyFace = true });
+        Assert.NotNull(plan);
+        var write = Assert.Single(plan.Writes);
+        Assert.Equal(TransformComponents.Rotation | TransformComponents.Scale, write.Components);
+        Assert.Equal(Quaternion.Identity, write.File.Rotation);
+        Assert.Equal(Vector3.One, write.File.Scale);
+    }
+
+    [Fact]
+    public void Empty_legacy_bone_rotation_never_becomes_a_native_pose_write()
+    {
+        using var file = new TempFile();
+        File.WriteAllText(file.Path, """{"Bones":{"Head":{"Rotation":"1E-45, -1E-45, 0, 0","Scale":"0, 0, 0"}}}""");
+        var plan = Service().BuildImportPlan(new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path);
+        Assert.NotNull(plan);
+        Assert.Empty(plan.Writes);
+    }
+
     [Theory]
     [InlineData(PoseSlot.Character, false)]
     [InlineData(PoseSlot.Character, true)]
@@ -162,8 +189,9 @@ public sealed class PoseFileServicePersistenceTests
 
     private sealed class TempFile : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"poser-service-{Guid.NewGuid():N}.pose");
+        public string Path { get; }
+        public TempFile(string extension = ".pose") => Path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), $"poser-service-{Guid.NewGuid():N}{extension}");
         public void Dispose()
         {
             if (File.Exists(Path))

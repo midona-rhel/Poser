@@ -298,6 +298,7 @@ public static class SceneRelativePlacement
         {
             if (actor.ModelTransform is { } placement)
                 placement.Position += offset;
+            ScenePlacementRebase.RebaseCompanionPlacement(actor, point => point + offset, Quaternion.Identity);
             // The gaze's world points are points in THIS scene: an actor
             // looking at a spot on the floor must keep looking at the same spot
             // on the moved floor. They are moved whatever the mode says,
@@ -358,6 +359,19 @@ public static class SceneRelativePlacement
 /// </summary>
 public static class ScenePlacementRebase
 {
+    internal static void RebaseCompanionPlacement(
+        SceneActor actor, Func<Vector3, Vector3> move, Quaternion turn)
+    {
+        if (actor.CompanionPose?.ModelAbsoluteValues is not { } placement)
+            return;
+        // The pose codec's legacy unset marker is not a world-space origin.
+        if (placement.Position == Vector3.Zero &&
+            placement.Rotation == Quaternion.Identity && placement.Scale == Vector3.Zero)
+            return;
+        placement.Position = move(placement.Position);
+        placement.Rotation = Quaternion.Normalize(turn * placement.Rotation);
+    }
+
     public static string? Rebase(
         SceneFile scene,
         Poser.Files.PlacementAnchorData saved,
@@ -386,6 +400,7 @@ public static class ScenePlacementRebase
                 placement.Rotation = System.Numerics.Quaternion.Normalize(
                     turn * placement.Rotation);
             }
+            RebaseCompanionPlacement(actor, Move, turn);
             if (actor.Gaze is { } gaze)
             {
                 gaze.Position = Move(gaze.Position);
