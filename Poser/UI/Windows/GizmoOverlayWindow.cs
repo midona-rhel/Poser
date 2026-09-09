@@ -853,7 +853,8 @@ public class GizmoOverlayWindow : Window
                 _gesture != null ? _dragTranslateSigns : null,
                 _gesture != null ? _dragScaleSigns : null,
                 universalCenterTranslates: GizmoConfig.UniversalCenterTranslates,
-                capsuleScale: capsuleScale)
+                capsuleScale: capsuleScale,
+                allowAxisScale: orientation != TransformOrientation.Global)
             : null;
 
         var io = ImGui.GetIO();

@@ -18,6 +18,13 @@ keep pointer ownership through release, so ending a drag cannot pick a bone.
 Frame wells edit model-space values. World gizmo axes stay aligned to the world,
 including bones on attached entities; Local axes follow the bone's world orientation.
 World drag deltas convert back into the skeleton's model space before application.
+The dedicated Scale tool always uses local-aligned handles, regardless of the
+World/Local toggle. Universal in World mode hides directional scale handles,
+including for groups and capsules, but retains uniform scaling at the centre
+(unless configured for translation) and the capsule's uniform-scale ring.
+Hidden handles neither draw nor capture input. Numeric inspector scale remains
+unchanged. Native transforms cannot represent the shear that arbitrary
+directional world scaling would require.
 Self rotates in place; Parent orbits around the
 frozen parent position. The world overlay places its pivot in perspective and
 draws nothing for an unprojectable pivot. Inspector rotation stays in place.
@@ -92,7 +99,7 @@ user-authored X/Z rotations can deliberately tilt the group.
 World rotation deltas are conjugated through that frame. The group's world
 orientation is `creationFrame.Rotation * authoredRotation`,
 never a member's rotation. Local overlay handles use that orientation; World
-translation and rotation handles remain world-aligned. Scale handles always
+translation and rotation handles remain world-aligned. Directional scale handles
 use the group orientation. Spacing scale converts centroid offsets into those
 axes frozen at gesture start, multiplies components, then converts back to
 world space. Numeric scale uses the same axes, independent of the World/Local

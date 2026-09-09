@@ -285,7 +285,8 @@ public static class WorldGizmo
         float[]? heldTranslateSigns = null,
         float[]? heldScaleSigns = null,
         bool universalCenterTranslates = false,
-        bool capsuleScale = false)
+        bool capsuleScale = false,
+        bool allowAxisScale = true)
     {
         var layout = new Layout { Projection = projection, UiScale = uiScale };
         layout.TranslateFrame = translateFrame;
@@ -336,7 +337,9 @@ public static class WorldGizmo
 
         if (tool is TransformTool.Scale || universal)
         {
-            layout.ScaleActive = true;
+            // The dedicated Scale tool always uses local axes. Universal in
+            // World mode keeps uniform scaling, but hides directional scaling.
+            layout.ScaleActive = tool == TransformTool.Scale || allowAxisScale;
             layout.ScaleShafts = !universal;
             layout.UniformActive = !(universal && universalCenterTranslates);
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
