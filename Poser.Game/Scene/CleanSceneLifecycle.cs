@@ -36,6 +36,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
+    private readonly Config.ConfigurationService _configuration;
 
     private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
 
@@ -68,6 +69,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Game.Animation.FacialPoseCapture facialCapture,
         IEventBus events,
         IFramework framework,
+        Config.ConfigurationService configuration,
         IPluginLog? log = null,
         GroupTransformCoordinator? groupCoordinator = null,
         IGroupTransformSource? groupSource = null)
@@ -87,6 +89,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _facialCapture = facialCapture;
         _events = events;
         _framework = framework;
+        _configuration = configuration;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Subscribe<CameraListChangedEvent>(OnCameraListChanged);
@@ -384,6 +387,8 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_gestures.ActiveGesture is { } gesture)
                 _gestures.Cancel(gesture);
             _history.Clear();
+            // GPoseService captured the final save before this exit notification.
+            _configuration.ResetSessionNames();
             // Leaving GPose is the last chance to write into the actors
             // Poser overrode, so everything owned is put back here rather
             // than dropped when they disappear. "Last chance" is not

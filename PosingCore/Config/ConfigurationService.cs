@@ -253,6 +253,14 @@ public class ConfigurationService : IDisposable
     public string? GetNickname(Guid actorLineage) =>
         _lineageNicknames.TryGetValue(actorLineage, out var name) ? name : null;
 
+    public void ResetSessionNames()
+    {
+        // Lineages can be reused by unrelated native actors in the next GPose.
+        // Keep them during same-session disappearance/undo, not across sessions.
+        _lineageNicknames.Clear();
+        _lineageAnonymousNames.Clear();
+    }
+
     private static readonly Random _random = new();
 
     private static string GenerateRandomName()

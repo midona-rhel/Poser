@@ -74,3 +74,9 @@ After final capture, `GPoseExitingEvent` restores presentation while actor
 bindings still exist; only then does `GPoseStateChangedEvent(false)` clear
 actors and bindings. Normal exit and plugin unload share this ordering.
 Destroyed native bodies are skipped, not written through retained bindings.
+
+Actor nicknames and anonymous-name masks last for one GPose session. The exit
+notification clears them after final-save capture, since native slot reuse can
+retain a logical lineage for an unrelated actor. Temporary disappearance and
+same-session undo/redo do not clear names. Saved scene names remain in the file
+and are reapplied by normal loading; native actor names are never changed.
