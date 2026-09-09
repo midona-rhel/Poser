@@ -40,3 +40,14 @@ expected to differ from the release commit; it does not need to preserve that
 commit's ancestry. The tag, release branch, build and published artifacts retain
 their original release identity. Do not rebuild or retag them from main.
 Record the release URL and checks. Never claim unreported visual tests passed.
+
+## Download count
+
+The download-count workflow runs daily at 06:00 UTC and can be dispatched manually.
+Like Brio's daily refresh, it sums release download counters; Poser counts only
+plugin ZIP assets across published releases, including prereleases, not checksums
+or SBOMs. This measures downloads, not unique users, and includes verification downloads.
+It updates only `repo.json`'s `DownloadCount` through a squash-merged bot PR, leaving
+release identity, URLs and `LastUpdate` untouched. No rebuild or retag is involved.
+Actions must be allowed to create PRs; branch protection remains in force. If a PR
+cannot merge, the job fails with its link and avoids creating duplicate open PRs.
