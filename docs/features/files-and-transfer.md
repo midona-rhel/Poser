@@ -48,6 +48,12 @@ nonhuman files are refused. It does not write `.chara`.
 
 ## Storage and library
 
+Pose-bearing saves capture the evaluated bone transforms, including solved IK,
+as a baked snapshot in the file only. This covers poses, scenes, saved actors
+and groups, attached companions, and autosaves. Saving never clears live IK,
+rewrites authored stacks, or adds a bake to history. New files do not carry
+solver configurations that would solve the saved pose again on load.
+
 Poser validates a pose or scene before writing it. It writes a temporary file
 beside the destination, checks it again, then replaces the old file. The old
 file stays backed up until the new bytes are confirmed. If it is unclear which

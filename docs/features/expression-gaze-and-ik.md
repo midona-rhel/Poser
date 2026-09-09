@@ -98,9 +98,11 @@ Actor targets are model-space points; World targets are world points;
 bone/entity targets are world offsets without inherited scale. Missing references
 suspend solving. The ordinary bone controls edit the selected handle—there are
 no separate root/tip position fields. One drag is one history step.
-Scenes store the span, anchors and portable handle reference, restoring the
-reference after scene entities exist. Previews snapshot it into their own model
-frame. Baking writes the solved pose and disables the chains.
+Older scenes may store the span, anchors and portable handle reference; their
+reader still restores these after scene entities exist. New saves follow the
+[baked snapshot contract](files-and-transfer.md#storage-and-library).
+Previews snapshot constraints into their own model frame. The live Bake action
+writes the solved pose and disables the chains.
 
 ### IK colliders
 

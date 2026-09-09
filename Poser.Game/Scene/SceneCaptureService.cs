@@ -106,7 +106,6 @@ public sealed class SceneCaptureService
     private readonly IWorldRenderingService _rendering;
     private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
-    private readonly IBonePosingService _bonePosing;
 
     public SceneCaptureService(
         IFramework framework,
@@ -130,10 +129,8 @@ public sealed class SceneCaptureService
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingService rendering,
         World.WorldService worldObjects,
-        PlacementAnchorSource anchors,
-        IBonePosingService bonePosing)
+        PlacementAnchorSource anchors)
     {
-        _bonePosing = bonePosing;
         _anchors = anchors;
         _worldObjects = worldObjects;
         _rendering = rendering;
@@ -349,7 +346,8 @@ public sealed class SceneCaptureService
                     ? null
                     : CaptureCompanionPose(actor, notes),
                 Pose = pose,
-                Fabrik = CaptureFabrik(slots),
+                // Pose already contains the evaluated IK result. Saving must
+                // not restart a solver over these baked transforms on load.
                 ModelTransform = NormalizedTransform(
                     _posing.GetEffectiveTransform(actor),
                     $"Actor '{actor.Name}' placement", notes),
@@ -374,18 +372,6 @@ public sealed class SceneCaptureService
         return _integration.ListCollections() is { Success: true, Value: { } collections }
             && collections.Any(x => x.Id == assignment.EffectiveId)
                 ? assignment.EffectiveId : null;
-    }
-
-    private List<SceneFabrikChain>? CaptureFabrik(IReadOnlyList<ISkeleton> slots)
-    {
-        var result = new List<SceneFabrikChain>();
-        foreach (var skeleton in slots)
-            foreach (var chain in _bonePosing.GetIkChains(skeleton))
-                if (chain.Config.Solver is (Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope)
-                    && _bonePosing.SnapshotFabrik(chain.Endpoint) is { Fabrik: not null } config)
-                    result.Add(SceneFabrikChain.Capture(skeleton.Slot, chain.Endpoint.PartialId,
-                        chain.Endpoint.BoneName, config));
-        return result.Count == 0 ? null : result;
     }
 
     /// <summary>

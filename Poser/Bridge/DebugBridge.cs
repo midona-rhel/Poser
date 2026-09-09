@@ -337,6 +337,23 @@ public sealed class DebugBridge : IDisposable
                         progress = _scenes.Progress });
                 if (!Path.IsPathFullyQualified(scenePath))
                     return Json(new { error = "An absolute scene path is required." });
+                if (query.TryGetValue("save", out var save) && save == "1")
+                {
+                    // Diagnostics never overwrite a user's existing scene.
+                    if (File.Exists(scenePath))
+                        return Json(new { error = "Choose a new file for the diagnostic save." });
+                    var saveOptions = global::Poser.Scene.SceneSaveOptions.Default;
+                    if (query.TryGetValue("onlyActor", out var onlyActor))
+                    {
+                        var target = FindActor(onlyActor);
+                        if (target == null || _bindings.GetActorId(target) is not { } targetId)
+                            return Json(new { error = "No such actor." });
+                        saveOptions = global::Poser.Scene.SceneSaveOptions.ActorEntry(targetId.LogicalId)
+                            with { IncludeModdedAppearance = false };
+                    }
+                    var saved = _scenes.BeginSave(scenePath, options: saveOptions);
+                    return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
+                }
                 var options = _scenePreferences.Options with { ClearExistingScene = false };
                 var placement = query.TryGetValue("placement", out var requestedPlacement)
                     ? Enum.Parse<global::Poser.Files.ObjectPlacementMode>(requestedPlacement, true)
@@ -953,7 +970,11 @@ public sealed class DebugBridge : IDisposable
                             bones = pose->Skeleton->Bones.Length });
                     }
             slots.Add(new { slot = cached.Slot.ToString(), cachedBones = cached.Bones.Count,
-                boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials });
+                boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials,
+                chains = _bonePosing.GetIkChains(cached).Select(c => new
+                {
+                    endpoint = c.Endpoint.BoneName, c.Endpoint.PartialId, config = c.Config,
+                }).ToArray() });
         }
         var transform = _posing.GetEffectiveTransform(actor);
         return new { actor.Name, slots, transform = new
