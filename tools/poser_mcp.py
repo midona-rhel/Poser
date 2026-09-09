@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Poser debug MCP server: a stdio JSON-RPC bridge onto the plugin's local
-debug HTTP surface (Poser/Debug/DebugBridge.cs, Debug builds only).
+debug HTTP surface (Poser/Bridge/DebugBridge.cs, Debug builds only).
 Zero dependencies. Tools map 1:1 onto bridge endpoints."""
 import json, sys, urllib.request, urllib.parse
 
 BASE = "http://127.0.0.1:47999"
 
 TOOLS = [
+    ("poser_uiinput", "Queue mouse, key, scroll, or text input to the plugin UI only (not desktop/game controls). Separate press/release calls; always release held buttons and keys with down=0. Screenshot pixels are relative to the viewport, input x/y are absolute screen coordinates.",
+     {"x": "screen X", "y": "screen Y", "button": "0 left, 1 right, 2 middle", "down": "1 press, 0 release", "key": "ImGui key name, e.g. Enter or Escape", "text": "text input", "wheel": "vertical scroll amount"}),
+    ("poser_screenshot", "Capture the game and plugin UI as a PNG image, without desktop control.", {}),
+    ("poser_scene", "Read scene-load progress. Supply an absolute path to add a saved scene through the production loader; never clears existing entities.",
+     {"path": "optional absolute scene path", "placement": "optional AsSaved, InFrontOfCamera, RelativeToSelectedActor, or RelativeToCamera"}),
+    ("poser_rig", "Read cached bone names and native skeleton bone counts for an actor.", {"actor": "name or index"}),
+    ("poser_resources", "Read the actor's loaded Penumbra resources.", {"actor": "name or index", "full": "1 for resolved and original paths"}),
+    ("poser_undo", "Undo the latest operation through the normal history route.", {}),
+    ("poser_redo", "Redo the latest operation through the normal history route.", {}),
     ("poser_actors", "List scene actors (index, name, id, paused).", {}),
     ("poser_state", "Full animation state of an actor: slots, controls, clocks, owned record.",
      {"actor": "name or index"}),
@@ -62,9 +71,16 @@ def handle(msg):
     if method == "tools/call":
         name = msg["params"]["name"]
         args = msg["params"].get("arguments", {}) or {}
+        if name not in {n for n, _, _ in TOOLS}:
+            return {"jsonrpc": "2.0", "id": mid,
+                    "error": {"code": -32602, "message": f"unknown tool {name}"}}
         path = "/" + name.removeprefix("poser_")
         try:
             text = call(path, args)
+            payload = json.loads(text)
+            if name == "poser_screenshot" and "data" in payload:
+                return {"jsonrpc": "2.0", "id": mid, "result": {"content": [
+                    {"type": "image", "mimeType": payload["mimeType"], "data": payload["data"]}]}}
         except Exception as e:
             text = json.dumps({"error": str(e)})
         return {"jsonrpc": "2.0", "id": mid,

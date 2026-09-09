@@ -53,6 +53,12 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
     private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
     private readonly TcpListener _listener;
+    private readonly ITextureProvider _textures;
+    private readonly ITextureReadbackProvider _readback;
+    private readonly Game.Scene.SceneWorkflow _scenes;
+    private readonly Game.Scene.SceneLoadPreferences _scenePreferences;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly IGPoseService _gpose;
     private readonly CancellationTokenSource _stop = new();
 
     public DebugBridge(
@@ -77,8 +83,20 @@ public sealed class DebugBridge : IDisposable
         ITransformFacade transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
         global::Poser.UI.SkeletonOverlayWindow overlay,
-        global::Poser.UI.SkeletonOverlayPresentation overlayPresentation)
+        global::Poser.UI.SkeletonOverlayPresentation overlayPresentation,
+        ITextureProvider textures,
+        ITextureReadbackProvider readback,
+        Game.Scene.SceneWorkflow scenes,
+        Game.Scene.SceneLoadPreferences scenePreferences,
+        IPlacementAnchorSource anchors,
+        IGPoseService gpose)
     {
+        _textures = textures;
+        _readback = readback;
+        _scenes = scenes;
+        _scenePreferences = scenePreferences;
+        _anchors = anchors;
+        _gpose = gpose;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -214,6 +232,9 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
+                        "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
+                        "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
@@ -233,6 +254,8 @@ public sealed class DebugBridge : IDisposable
                 }));
             case "/log":
                 return Task.FromResult(TailLog(query));
+            case "/screenshot":
+                return Screenshot();
             case "/peek":
                 return Task.FromResult(Peek(query));
             case "/poke":
@@ -250,10 +273,79 @@ public sealed class DebugBridge : IDisposable
         redo = _transforms.RedoDescription,
     };
 
+    private async Task<string> Screenshot()
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        var viewport = await _framework.RunOnFrameworkThread(
+            () => Dalamud.Bindings.ImGui.ImGui.GetMainViewport().ID);
+        using var texture = await _textures.CreateFromImGuiViewportAsync(
+            new Dalamud.Interface.Textures.ImGuiViewportTextureArgs
+            {
+                ViewportId = viewport,
+                AutoUpdate = false,
+                TakeBeforeImGuiRender = false,
+            }, "Poser debug screenshot", timeout.Token);
+        using var stream = new MemoryStream();
+        var png = _readback.GetSupportedImageEncoderInfos()
+            .First(codec => codec.MimeTypes.Contains("image/png"));
+        await _readback.SaveToStreamAsync(texture, png.ContainerGuid, stream,
+            leaveWrapOpen: true, leaveStreamOpen: true, cancellationToken: timeout.Token);
+        return Json(new { mimeType = "image/png", width = texture.Width,
+            height = texture.Height, data = Convert.ToBase64String(stream.ToArray()) });
+    }
+
     private string RouteOnFramework(string path, Dictionary<string, string> query)
     {
         switch (path)
         {
+            case "/uiinput":
+            {
+                // Inject only into ImGui's input queue, never the desktop or
+                // game targeting. Each request is an event; release a held
+                // mouse button/key with down=0 after a drag/key press.
+                var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
+                var down = query.TryGetValue("down", out var pressed) && pressed == "1";
+                if (query.TryGetValue("x", out var x) && query.TryGetValue("y", out var y))
+                    io.AddMousePosEvent(float.Parse(x, CultureInfo.InvariantCulture), float.Parse(y, CultureInfo.InvariantCulture));
+                if (query.TryGetValue("button", out var button))
+                {
+                    int number = int.Parse(button);
+                    if (number < 0 || number > 4)
+                        return Json(new { error = "Mouse button must be 0 through 4." });
+                    io.AddMouseButtonEvent(number, down);
+                }
+                if (query.TryGetValue("key", out var key))
+                    io.AddKeyEvent(Enum.Parse<Dalamud.Bindings.ImGui.ImGuiKey>(key, true), down);
+                if (query.TryGetValue("text", out var text))
+                    io.AddInputCharacters(text);
+                if (query.TryGetValue("wheel", out var wheel))
+                    io.AddMouseWheelEvent(0, float.Parse(wheel, CultureInfo.InvariantCulture));
+                return Json(new { ok = true, viewport = new
+                {
+                    x = Dalamud.Bindings.ImGui.ImGui.GetMainViewport().Pos.X,
+                    y = Dalamud.Bindings.ImGui.ImGui.GetMainViewport().Pos.Y,
+                } });
+            }
+            case "/scene":
+            {
+                if (!query.TryGetValue("path", out var scenePath))
+                    return Json(new { gpose = _gpose.IsGPosing, busy = _scenes.Busy,
+                        progress = _scenes.Progress });
+                if (!Path.IsPathFullyQualified(scenePath))
+                    return Json(new { error = "An absolute scene path is required." });
+                var options = _scenePreferences.Options with { ClearExistingScene = false };
+                var placement = query.TryGetValue("placement", out var requestedPlacement)
+                    ? Enum.Parse<global::Poser.Files.ObjectPlacementMode>(requestedPlacement, true)
+                    : options.Placement;
+                if (!_anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
+                    return Json(new { error = refusal });
+                var result = _scenes.BeginLoad(scenePath, options with
+                {
+                    Placement = placement, PlacementPosition = position, PlacementYaw = yaw,
+                });
+                return Json(new { ok = result.Success, result.Detail, progress = _scenes.Progress });
+            }
             case "/environment":
                 if (query.TryGetValue("weather", out var weatherText)
                     && byte.TryParse(weatherText, out var weather))
@@ -353,6 +445,8 @@ public sealed class DebugBridge : IDisposable
 
         switch (path)
         {
+            case "/rig":
+                return Json(Rig(actor));
             case "/state":
                 return Json(State(id, actor));
             case "/apply":
@@ -836,6 +930,30 @@ public sealed class DebugBridge : IDisposable
     }
 
     // ── Helpers (framework thread) ──────────────────────────────────────
+
+    private unsafe object Rig(IActor actor)
+    {
+        var slots = new List<object>();
+        foreach (var cached in _skeletons.GetSkeletons(actor))
+        {
+            var body = Game.SlotCharacterBases.Resolve(actor.Address, cached.Slot);
+            var native = body == null ? null : body->Skeleton;
+            var partials = new List<object>();
+            if (native != null)
+                for (int p = 0; p < native->PartialSkeletonCount; p++)
+                    for (int poseIndex = 0; poseIndex < 4; poseIndex++)
+                    {
+                        var pose = native->PartialSkeletons[p].GetHavokPose(poseIndex);
+                        if (pose == null || pose->Skeleton == null)
+                            continue;
+                        partials.Add(new { partial = p, pose = poseIndex,
+                            bones = pose->Skeleton->Bones.Length });
+                    }
+            slots.Add(new { slot = cached.Slot.ToString(), cachedBones = cached.Bones.Count,
+                boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials });
+        }
+        return new { actor.Name, slots };
+    }
 
     private object ListActors()
     {

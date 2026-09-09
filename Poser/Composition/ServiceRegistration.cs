@@ -59,6 +59,7 @@ internal static class ServiceRegistration
         IDataManager dataManager,
         IKeyState keyState,
         ITextureProvider textureProvider,
+        ITextureReadbackProvider textureReadback,
         ITargetManager targetManager,
         IChatGui chatGui,
         INotificationManager notificationManager,
@@ -77,6 +78,7 @@ internal static class ServiceRegistration
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);
         services.AddSingleton(textureProvider);
+        services.AddSingleton(textureReadback);
         services.AddSingleton(targetManager);
         services.AddSingleton(chatGui);
         return services;

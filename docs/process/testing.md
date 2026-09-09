@@ -9,6 +9,14 @@
   the framework observes entry may leave only the preceding exit breadcrumbs.
   There is no continuous per-frame logging or change to cleanup behavior.
 
+- The Debug-only loopback bridge and `tools/poser_mcp.py` can add a scene
+  through `SceneWorkflow`, inspect load progress/resources/native rig counts,
+  capture the rendered game via Dalamud's viewport texture API, and queue
+  ImGui input. Scene automation is additive and never clears existing entities.
+  UI input is not OS/game input; button/key presses require a matching release.
+  Screenshots include the main game viewport and its plugin UI, not detached
+  external viewports. These probes are diagnostics, not acceptance verdicts.
+
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,
   `transform.actor-components`, `transform.actor-undo-redo`,
