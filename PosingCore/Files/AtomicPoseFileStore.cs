@@ -948,7 +948,6 @@ public sealed class AtomicPoseFileStore
                 _pose.Tags!.Add(name ?? displayName!);
         }
 
-        private readonly Dictionary<string, string> _boneAliases = new();
 
         private void ParseCollection(string collectionName, int depth)
         {
@@ -986,18 +985,6 @@ public sealed class AtomicPoseFileStore
                 if (property.Text is not null)
                 {
                     ValidateBoneData(collectionName, property.Text, bone);
-                    if (collectionName == nameof(PoseFile.Bones))
-                    {
-                        var target = AnamnesisBoneNameConverter.ToGame(property.Text);
-                        if (_boneAliases.TryGetValue(target, out var previous) &&
-                            !string.Equals(previous, property.Text, StringComparison.Ordinal))
-                        {
-                            throw Validation(
-                                PoseFileValidationFailureKind.AliasCollision,
-                                $"Bones '{previous}' and '{property.Text}' both map to '{target}'.");
-                        }
-                        _boneAliases[target] = property.Text;
-                    }
                 }
             }, depth, before: () => _currentCollectionEntries = 0);
         }
@@ -1038,28 +1025,10 @@ public sealed class AtomicPoseFileStore
             string boneName,
             PoseFile.BoneData bone)
         {
-            if (!float.IsFinite(bone.Position.X) ||
-                !float.IsFinite(bone.Position.Y) ||
-                !float.IsFinite(bone.Position.Z) ||
-                !float.IsFinite(bone.Rotation.X) ||
-                !float.IsFinite(bone.Rotation.Y) ||
-                !float.IsFinite(bone.Rotation.Z) ||
-                !float.IsFinite(bone.Rotation.W) ||
-                !float.IsFinite(bone.Scale.X) ||
-                !float.IsFinite(bone.Scale.Y) ||
-                !float.IsFinite(bone.Scale.Z))
-            {
-                throw Validation(
-                    PoseFileValidationFailureKind.NonFiniteNumeric,
-                    $"{collectionName} '{boneName}' contains NaN or infinity.");
-            }
-
-            if (bone.Rotation.LengthSquared() < PoseFileLimits.MinQuaternionLengthSquared)
-            {
-                throw Validation(
-                    PoseFileValidationFailureKind.DegenerateQuaternion,
-                    $"{collectionName} '{boneName}' rotation is degenerate.");
-            }
+            var result = PoseFileValidation.ValidateTransform(
+                $"{collectionName} '{boneName}'", bone, allowEmptyRotation: true);
+            if (!result.Succeeded)
+                throw new MetadataValidationException(result.Failure!);
         }
 
         private Vector3 ParseVector3()

@@ -218,12 +218,9 @@ public class PoseFile
     /// </summary>
     public void SanitizeBoneNames()
     {
-        var aliases = PoseFileValidation.ValidateAnamnesisAliases(Bones);
-        if (!aliases.Succeeded)
-            throw new InvalidDataException(aliases.Failure!.Detail);
-
         var newBones = new Dictionary<string, BoneData>();
-        foreach (var bone in Bones.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        // Brio preserves document order: the last legacy/canonical alias wins.
+        foreach (var bone in Bones)
         {
             newBones[AnamnesisBoneNameConverter.ToGame(bone.Key)] = bone.Value;
         }

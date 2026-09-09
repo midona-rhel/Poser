@@ -188,15 +188,11 @@ public static class PoseFileValidation
                         $"{name} '{boneName}' has no transform.");
                 }
 
-                var transform = ValidateTransform($"{name} '{boneName}'", bone);
+                var transform = ValidateTransform($"{name} '{boneName}'", bone, allowEmptyRotation: true);
                 if (!transform.Succeeded)
                     return transform;
             }
         }
-
-        var aliases = ValidateAnamnesisAliases(pose.Bones);
-        if (!aliases.Succeeded)
-            return aliases;
 
         var modelDifference = ValidateTransform(
             nameof(PoseFile.ModelDifference), pose.ModelDifference);
@@ -219,25 +215,6 @@ public static class PoseFileValidation
                 "Legacy model values contain NaN or infinity.");
         }
 
-        return PoseFileValidationOutcome.Ok();
-    }
-
-    internal static PoseFileValidationOutcome ValidateAnamnesisAliases(
-        IReadOnlyDictionary<string, PoseFile.BoneData> bones)
-    {
-        var sources = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var source in bones.Keys.OrderBy(name => name, StringComparer.Ordinal))
-        {
-            var target = AnamnesisBoneNameConverter.ToGame(source);
-            if (sources.TryGetValue(target, out var previous) &&
-                !string.Equals(previous, source, StringComparison.Ordinal))
-            {
-                return PoseFileValidationOutcome.Fail(
-                    PoseFileValidationFailureKind.AliasCollision,
-                    $"Bones '{previous}' and '{source}' both map to '{target}'.");
-            }
-            sources[target] = source;
-        }
         return PoseFileValidationOutcome.Ok();
     }
 
@@ -373,9 +350,10 @@ public static class PoseFileValidation
         return reader.GetString()!.Length <= maxCharacters;
     }
 
-    private static PoseFileValidationOutcome ValidateTransform(
+    internal static PoseFileValidationOutcome ValidateTransform(
         string name,
-        PoseFile.BoneData? transform)
+        PoseFile.BoneData? transform,
+        bool allowEmptyRotation = false)
     {
         if (transform is null)
         {
@@ -399,7 +377,9 @@ public static class PoseFileValidation
                 PoseFileValidationFailureKind.NonFiniteNumeric,
                 $"{name} rotation norm is not finite.");
         }
-        if (lengthSquared < PoseFileLimits.MinQuaternionLengthSquared)
+        // Old captures contain zero/uninitialized helper rotations. Planning
+        // skips these entire bone entries; model transforms cannot be skipped.
+        if (!allowEmptyRotation && lengthSquared < PoseFileLimits.MinQuaternionLengthSquared)
         {
             return PoseFileValidationOutcome.Fail(
                 PoseFileValidationFailureKind.DegenerateQuaternion,

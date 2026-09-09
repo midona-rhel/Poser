@@ -6,11 +6,16 @@
 Character uses `Bones`; MainHand, OffHand, Prop, and Ornament use their own
 collections. A missing slot never falls back to Character or a same-named bone.
 
-Imports reject invalid numbers, rotations, oversized files, excessive JSON,
+Imports reject non-finite numbers, invalid model rotations, oversized files, excessive JSON,
 and bad names or tags. Unknown top-level fields are kept when the file is read
 and saved again, but Poser does not use them. Model transforms apply only when
 requested; `.cmp` files never change position. When an Anamnesis alias maps to
-one game name, Poser always chooses that name.
+one game name, the last entry in document order wins, matching Brio's
+`PoseData.SanitizeBoneNames`; old captures commonly contain both Head and RootHead.
+Finite near-zero bone rotations are retained by the file reader but skipped
+entirely by pose planning, never normalized into an invented rotation. This
+keeps old helper entries from rejecting an otherwise usable pose. Metadata and
+full reads use the same checks; modern exports and legacy `.cmp` stay supported.
 
 Requested bone positions remain absolute targets through planning, including
 duplicate-with-pose and reset/reapply. As in Brio's importer, the native apply
