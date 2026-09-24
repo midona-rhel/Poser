@@ -17,6 +17,8 @@ TOOLS = [
     ("poser_undo", "Undo the latest operation through the normal history route.", {}),
     ("poser_redo", "Redo the latest operation through the normal history route.", {}),
     ("poser_actors", "List scene actors (index, name, id, paused).", {}),
+    ("poser_poseedit", "Read or edit an actor pose through the shared application commands and normal undo history.",
+     {"actor": "name or index", "action": "read, reset, mirror, stash, or applystash", "region": "reset region: All, Body, Face, or Hair"}),
     ("poser_gaze", "Read pointer-free gaze settings and the current target.", {"actor": "name or index"}),
     ("poser_gazemode", "Change gaze mode through the normal undoable application command.",
      {"actor": "name or index", "mode": "None, Forward, Camera, Position, Entity, or Detached"}),

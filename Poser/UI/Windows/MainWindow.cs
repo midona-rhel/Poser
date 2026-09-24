@@ -172,7 +172,7 @@ public partial class MainWindow : Window
 
     private readonly ITransformFacade _cleanTransforms;
 
-    private readonly IPoseFacade _cleanPose;
+    private readonly Application.Posing.IPoseCommands _cleanPose;
 
     private readonly IBonePosingService _bonePosingService;
 
@@ -504,7 +504,7 @@ public partial class MainWindow : Window
         IEntityBindings bindings,
         IEditorState editorState,
         ITransformFacade cleanTransforms,
-        IPoseFacade cleanPose,
+        Application.Posing.IPoseCommands cleanPose,
         PoseInspectorPane poseInspector,
         AnimationPane animationPane,
         AppearancePane appearancePane,

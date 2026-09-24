@@ -62,6 +62,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
     private readonly IPosingService _posing;
+    private readonly Application.Posing.IPoseCommands _poseCommands;
     private readonly CancellationTokenSource _stop = new();
 
     public DebugBridge(
@@ -93,7 +94,8 @@ public sealed class DebugBridge : IDisposable
         Application.Scene.SceneLoadPreferences scenePreferences,
         IPlacementAnchorSource anchors,
         IGPoseService gpose,
-        IPosingService posing)
+        IPosingService posing,
+        Application.Posing.IPoseCommands poseCommands)
     {
         _textures = textures;
         _readback = readback;
@@ -102,6 +104,7 @@ public sealed class DebugBridge : IDisposable
         _anchors = anchors;
         _gpose = gpose;
         _posing = posing;
+        _poseCommands = poseCommands;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -254,6 +257,7 @@ public sealed class DebugBridge : IDisposable
                         "/loop?actor&slot=1&on=1|0",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
+                        "/poseedit?actor&action=reset|mirror|stash|applystash&region=All|Body|Face|Hair",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor", "/dupepose?actor",
                         "/log?lines=200&filter=REGEX",
@@ -547,6 +551,22 @@ public sealed class DebugBridge : IDisposable
                 nint a3 = query.TryGetValue("a3", out var x3) ? (nint)long.Parse(x3, CultureInfo.InvariantCulture) : 0;
                 var r = _port.ProbeCancel(id, a2, a3);
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
+            }
+            case "/poseedit":
+            {
+                var action = query.GetValueOrDefault("action", "read").ToLowerInvariant();
+                var result = action switch
+                {
+                    "read" => Domain.Posing.PoseEditResult.Ok(0),
+                    "reset" => _poseCommands.Reset(id,
+                        Enum.Parse<Domain.Posing.PoseRegion>(query.GetValueOrDefault("region", "All"), true)),
+                    "mirror" => _poseCommands.Mirror(id),
+                    "stash" => _poseCommands.Stash(id, actor.Name),
+                    "applystash" => _poseCommands.ApplyStash(id),
+                    _ => Domain.Posing.PoseEditResult.Fail("Unknown pose edit."),
+                };
+                return Json(new { ok = result.Success, result.Affected, result.Detail,
+                    authored = _poseCommands.HasAuthoredEdits(id), stash = _poseCommands.HasStash });
             }
             case "/reset":
             {

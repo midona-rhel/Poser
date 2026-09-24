@@ -40,12 +40,13 @@ public partial class MainWindow
     private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId, out List<Action?> actions)
     {
         var actor = _bindings.Resolve(actorId).Value;
+        var sourceLabel = ActorNames.Display(actorId, actor?.Name ?? "Actor");
         actions =
         [
             () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
             () => { if (actor?.Skeleton is { } skeleton) _poseFileSection.OpenImportFromFile(skeleton); },
             () => _poseFileSection.RequestExportMenu(actorId),
-            () => { if (actor != null) _cleanPose.Stash(actor, ActorNames.Display(actorId, actor.Name)); },
+            () => _cleanPose.Stash(actorId, sourceLabel),
         ];
         var items = new List<ContextMenuItem>
         {
@@ -57,7 +58,7 @@ public partial class MainWindow
         if (_cleanPose.HasStash)
         {
             items.Add(new("Apply stashed", TablerIcon.ArrowBackUp));
-            actions.Add(() => { if (actor != null) _cleanPose.ApplyStash(actor); });
+            actions.Add(() => _cleanPose.ApplyStash(actorId));
         }
         return items.ToArray();
     }

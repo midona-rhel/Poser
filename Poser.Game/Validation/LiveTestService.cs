@@ -46,7 +46,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
     private readonly CleanTransformFacade _cleanTransforms;
-    private readonly CleanPoseFacade _cleanPose;
+    private readonly IPoseCommands _cleanPose;
     private readonly IIkConfigurationPort _ikPort;
     private readonly IkBakeCapture _ikBake;
     private readonly IPoseFileService _poseFiles;
@@ -80,7 +80,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         SelectionSession selection,
         StableBindingRegistry bindings,
         CleanTransformFacade cleanTransforms,
-        CleanPoseFacade cleanPose,
+        IPoseCommands cleanPose,
         IIkConfigurationPort ikPort,
         IkBakeCapture ikBake,
         IPoseFileService poseFiles)
@@ -800,7 +800,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
 
         var setup = await _framework.RunOnFrameworkThread(() =>
         {
-            var reset = _cleanPose.ResetBone(bone);
+            var reset = _cleanPose.ResetBone(TransformTargetId.ForBone(_bindings.GetBoneId(bone) ?? default), bone.Name);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Bone reset failed.");
             _posing.ClearIkConfigurations(bone.Skeleton);
@@ -854,7 +854,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             {
                 if (_bindings.GetActorId(actor) is { } animActor)
                     _animation.ResetActor(animActor);
-                _cleanPose.ResetBone(bone);
+                _cleanPose.ResetBone(TransformTargetId.ForBone(_bindings.GetBoneId(bone) ?? default), bone.Name);
             });
         }
     }
@@ -879,7 +879,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (!applied.Success)
                 return (false, applied.Detail);
             var reset = _cleanPose.Reset(
-                _testSkeleton.Actor,
+                _bindings.GetActorId(_testSkeleton.Actor) ?? default,
                 PoseRegion.All);
             return reset.Success &&
                    _posing.GetModification(bone) == null
@@ -904,17 +904,17 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 TransformDelta.Identity with { Rotation = expected });
             if (!applied.Success)
                 return (false, applied.Detail);
-            var copied = _cleanPose.Copy(_testSkeleton.Actor);
+            var copied = _cleanPose.Copy(_bindings.GetActorId(_testSkeleton.Actor) ?? default);
             if (!copied.Success || copied.Pose == null)
                 return (false, copied.Detail ??
                     "Portable pose capture failed.");
             var reset = _cleanPose.Reset(
-                _testSkeleton.Actor,
+                _bindings.GetActorId(_testSkeleton.Actor) ?? default,
                 PoseRegion.All);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Pose reset failed.");
             var pasted = _cleanPose.Paste(
-                _testSkeleton.Actor,
+                _bindings.GetActorId(_testSkeleton.Actor) ?? default,
                 copied.Pose);
             var actual = _posing.GetModification(bone);
             return pasted.Success &&
@@ -967,7 +967,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         var setup = await _framework.RunOnFrameworkThread(() =>
         {
             _posing.ClearIkConfigurations(skeleton);
-            var reset = _cleanPose.Reset(skeleton.Actor, PoseRegion.All);
+            var reset = _cleanPose.Reset(_bindings.GetActorId(skeleton.Actor) ?? default, PoseRegion.All);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Pose reset failed.");
             var authored = ApplyCleanTransform(
@@ -1130,7 +1130,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             await _framework.RunOnFrameworkThread(() =>
             {
                 _posing.ClearIkConfigurations(skeleton);
-                _cleanPose.Reset(skeleton.Actor, PoseRegion.All);
+                _cleanPose.Reset(_bindings.GetActorId(skeleton.Actor) ?? default, PoseRegion.All);
             });
         }
     }
@@ -1140,7 +1140,7 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         DomainOperation operation,
         TransformDelta delta)
     {
-        var reset = _cleanPose.ResetBone(bone);
+        var reset = _cleanPose.ResetBone(TransformTargetId.ForBone(_bindings.GetBoneId(bone) ?? default), bone.Name);
         if (!reset.Success)
             return (false, reset.Detail ?? "Bone reset failed.");
         return ApplyCleanTransform(

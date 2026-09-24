@@ -14,7 +14,7 @@ using Poser.Scene;
 
 namespace Poser.Services;
 
-/// <summary>The pose verbs a surface issues: import, export, capture, reset, flip, mirror, stash.</summary>
+/// <summary>Legacy native file/whole-actor operations; scene pose edits use IPoseCommands.</summary>
 public interface IPoseFacade
 {
     bool IsImportBusy { get; }
@@ -27,17 +27,4 @@ public interface IPoseFacade
     PoseEditResult ApplyRestPose( IActor actor, RestPose pose, Action<OperationReceipt>? onReceipt = null);
     PoseEditResult ApplyReferencePose( IActor actor, Action<OperationReceipt>? onReceipt = null);
     PoseEditResult ResetAll(IActor actor);
-    bool HasStash { get; }
-    DateTimeOffset? StashedAt { get; }
-    string? StashedFrom { get; }
-    PoseEditResult ResetBone(TransformTargetId target, string boneName);
-    PoseEditResult FlipBone(TransformTargetId target, string boneName);
-    PoseEditResult ResetBone(IBone bone);
-    PoseEditResult ResetBones( IReadOnlyList<TransformTargetId> targets, string description);
-    PoseEditResult Reset( IActor actor, PoseRegion region);
-    PoseEditResult FlipBone(IBone bone);
-    PoseEditResult Mirror(IActor actor);
-    bool HasAuthoredEdits(IActor actor);
-    PoseEditResult Stash(IActor actor, string sourceLabel);
-    PoseEditResult ApplyStash(IActor actor);
 }

@@ -51,7 +51,6 @@ public class GizmoOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly IBonePosingService _bonePosingService;
     private readonly ITransformFacade _cleanTransforms;
-    private readonly IPoseFacade _cleanPose;
     private readonly IGazeControl _gazeValues;
     // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
@@ -184,7 +183,6 @@ public class GizmoOverlayWindow : Window
         ICameraService cameraService,
         IBonePosingService bonePosingService,
         ITransformFacade cleanTransforms,
-        IPoseFacade cleanPose,
         IGazeControl gazeValues,
         IEntityBindings bindings,
         IVirtualCameraService virtualCameras,
@@ -214,7 +212,6 @@ public class GizmoOverlayWindow : Window
         _cameraService = cameraService;
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
-        _cleanPose = cleanPose;
         _gazeValues = gazeValues;
         _bindings = bindings;
         _virtualCameras = virtualCameras;

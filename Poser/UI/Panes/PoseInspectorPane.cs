@@ -35,6 +35,7 @@ public partial class PoseInspectorPane
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IIkBake _ikBake;
     private readonly ITransformFacade _cleanTransforms;
+    private readonly IPoseCommands _poseCommands;
     private readonly IPoseFacade _cleanPose;
     private readonly IGazeControl _gazeValues;
     private readonly IEditorState _editorState;
@@ -182,6 +183,7 @@ public partial class PoseInspectorPane
         IBonePosingService bonePosingService,
         ITransformFacade cleanTransforms,
         IPoseFacade cleanPose,
+        IPoseCommands poseCommands,
         IGazeControl gazeValues,
         IEditorState editorState,
         SceneSession scene,
@@ -217,6 +219,7 @@ public partial class PoseInspectorPane
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
+        _poseCommands = poseCommands;
         _gazeValues = gazeValues;
         _editorState = editorState;
         Reset3DCamera();
@@ -776,7 +779,9 @@ public partial class PoseInspectorPane
     }
 
     public bool HasAuthoredEdits =>
-        OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton.Actor);
+        OwningSkeleton() is { } skeleton &&
+        _bindings.GetActorId(skeleton.Actor) is { } actorId &&
+        _poseCommands.HasAuthoredEdits(actorId);
 
 
     private float DrawPoseSurface(
@@ -2565,43 +2570,49 @@ public partial class PoseInspectorPane
     {
         using var profile = FrameProfiler.Scope(
             wide ? "Surface · POSE" : "Rail · POSE");
+        // Virtual bone groups still have a legacy presentation wrapper; resolve
+        // its exact owner once, never retain that wrapper in a pose command.
+        if (_bindings.GetActorId(skeleton.Actor) is not { } actorId) return;
         var bone = _entity as IBone;
-        bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
+        var concrete = bone is VirtualBone group ? group.PivotBone : bone;
+        var boneId = concrete != null ? _bindings.GetBoneId(concrete) : null;
+        var boneName = bone?.Name ?? string.Empty;
+        var sourceLabel = ActorDisplayName(skeleton.Actor);
+        bool hasAuthoredEdits = _poseCommands.HasAuthoredEdits(actorId);
         form.Actions("Edit", actions =>
         {
-            if (bone != null)
+            if (boneId is { } flipId)
                 actions.Button(
                     "Flip bone",
-                    () => _cleanPose.FlipBone(bone),
+                    () => _poseCommands.FlipBone(TransformTargetId.ForBone(flipId), boneName),
                     help: "Mirror only this bone's own adjustment. Does nothing on a bone you haven't edited.");
             actions.Button(
                 "Mirror edits",
-                () => _cleanPose.Mirror(skeleton.Actor),
+                () => _poseCommands.Mirror(actorId),
                 disabled: !hasAuthoredEdits,
                 help: hasAuthoredEdits
                     ? "Swap your edits between left and right across this actor"
                     : "No edits to mirror");
         });
-        bool hasStash = _cleanPose.HasStash;
+        bool hasStash = _poseCommands.HasStash;
         form.Actions("Transfer", actions =>
         {
             actions.Button(
                 "Stash",
-                () => _cleanPose.Stash(
-                    skeleton.Actor,
-                    ActorDisplayName(skeleton.Actor)),
+                () => _poseCommands.Stash(
+                    actorId, sourceLabel),
                 help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before.");
             actions.Button(
                 "Apply stash",
-                () => _cleanPose.ApplyStash(skeleton.Actor),
+                () => _poseCommands.ApplyStash(actorId),
                 disabled: !hasStash,
                 help: hasStash
-                    ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
+                    ? $"Apply the stashed pose to this actor. Stashed from {_poseCommands.StashedFrom} at {_poseCommands.StashedAt:HH:mm:ss} UTC."
                     : "Nothing stashed yet");
         });
         void Resets(Crystarium.ActionScope actions)
         {
-            if (bone != null)
+            if (boneId is { } resetId)
             {
                 var selectedCount = SelectedBoneIds().Count;
                 actions.Button(
@@ -2611,7 +2622,7 @@ public partial class PoseInspectorPane
                         if (SelectedBoneIds().Count > 0)
                             ResetSelectedBones();
                         else
-                            _cleanPose.ResetBone(bone);
+                            _poseCommands.ResetBone(TransformTargetId.ForBone(resetId), boneName);
                     },
                     help: selectedCount > 1
                         ? $"Reset the pose of all {selectedCount} selected bones"
@@ -2619,13 +2630,13 @@ public partial class PoseInspectorPane
             }
             actions.Button(
                 "Body",
-                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Body));
+                () => _poseCommands.Reset(actorId, PoseRegion.Body));
             actions.Button(
                 "Face",
-                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Face));
+                () => _poseCommands.Reset(actorId, PoseRegion.Face));
             actions.Button(
                 "Hair",
-                () => _cleanPose.Reset(skeleton.Actor, PoseRegion.Hair));
+                () => _poseCommands.Reset(actorId, PoseRegion.Hair));
             actions.Button(
                 "All",
                 () => _cleanPose.ResetAll(skeleton.Actor),
@@ -2832,14 +2843,14 @@ public partial class PoseInspectorPane
     {
         var bones = SelectedBoneIds();
         if (bones.Count > 1)
-            _cleanPose.ResetBones(
+            _poseCommands.ResetBones(
                 bones.Select(TransformTargetId.ForBone).ToList(),
                 $"Reset {bones.Count} bones");
         else if (bones.Count == 1)
-            _cleanPose.ResetBone(
+            _poseCommands.ResetBone(
                 TransformTargetId.ForBone(bones[0]), bones[0].CanonicalName);
         else if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-            _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
+            _poseCommands.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 
     public void SelectChildren()
@@ -3164,17 +3175,7 @@ public partial class PoseInspectorPane
             Divide(numerator.Z, denominator.Z));
     }
 
-    private ActorId? OwningActorId()
-    {
-        if (_primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
-                Actor: { } direct })
-            return direct;
-        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
-            foreach (var candidate in _scene.Snapshot.Actors)
-                if (candidate.Id.LogicalId == bone.Skeleton.Actor.LogicalId)
-                    return candidate.Id;
-        return null;
-    }
+    private ActorId? OwningActorId() => _primary?.OwningActor;
 
     private IActor? OwningActor() => _entity switch
     {

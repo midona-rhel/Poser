@@ -250,6 +250,18 @@ internal static class ServiceRegistration
         services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
+        services.AddSingleton<IPoseEditReads, PoseEditReads>();
+        services.AddSingleton<IPoseCommands>(sp => new PoseCommands(
+            sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<PoseEditService>(),
+            sp.GetRequiredService<PoseTransferService>(), sp.GetRequiredService<IPoseEditReads>(),
+            (description, result) =>
+            {
+                var log = sp.GetRequiredService<IPluginLog>();
+                if (!result.Success)
+                    log.Warning($"Pose edit '{description}' failed: {result.Detail}");
+                else if (!string.IsNullOrEmpty(result.Detail))
+                    log.Information($"Pose edit '{description}': {result.Detail}");
+            }));
         services.AddSingleton<CleanTransformFacade>();
         // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.

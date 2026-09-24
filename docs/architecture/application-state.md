@@ -55,6 +55,15 @@ duplicate-name variants in order, and uses game indices only to find bones.
 Legacy matching and broadcast are explicit compatibility choices. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
+Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
+bone generations. Application selects the participating skeleton slots and owns
+history through the shared pose edit/transfer services. Region resets are
+Character-only; whole-pose reset and transfer span all present bone slots.
+Only mirror includes authored actor facing; transfer never includes placement.
+Game provides the cheap authored-layer read and native transform mechanisms.
+Native file/preview operations and the whole-actor Reset All macro still use
+the legacy facade; they are not part of this completed command boundary.
+
 Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
 actor generations and immutable readings. Application owns gesture coalescing
 and settings history; Game resolves each runtime call and owns native look-at

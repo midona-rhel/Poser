@@ -16,8 +16,7 @@ namespace Poser.Game.Posing;
 public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
-    private readonly PoseEditService _edits;
-    private readonly PoseTransferService _transfers;
+    private readonly IPoseCommands _commands;
     private ImportArm? _importArm;
 
     private sealed class ImportArm
@@ -29,8 +28,7 @@ public sealed class CleanPoseFacade : IPoseFacade
 
     public CleanPoseFacade(
         StableBindingRegistry bindings,
-        PoseEditService edits,
-        PoseTransferService transfers,
+        IPoseCommands commands,
         PoseImportCapture imports,
         PoseExportCapture exports,
         Poser.Config.ConfigurationService configuration,
@@ -53,8 +51,7 @@ public sealed class CleanPoseFacade : IPoseFacade
         _snapshots = snapshots;
         _framework = framework;
         _bindings = bindings;
-        _edits = edits;
-        _transfers = transfers;
+        _commands = commands;
         _imports = imports;
         _exports = exports;
         _configuration = configuration;
@@ -689,7 +686,7 @@ public sealed class CleanPoseFacade : IPoseFacade
             failures.Add($"gaze reset failed: {ex.Message}");
         }
 
-        var pose = Reset(actor, PoseRegion.All);
+        var pose = _commands.Reset(GetActorId(actor) ?? default, PoseRegion.All);
         if (!pose.Success && pose.Detail is { } poseDetail)
             failures.Add(poseDetail);
 
@@ -724,15 +721,6 @@ public sealed class CleanPoseFacade : IPoseFacade
         return PoseEditResult.Fail(detail);
     }
 
-    public bool HasStash => _transfers.HasStash;
-    public DateTimeOffset? StashedAt => _transfers.StashedAt;
-    public string? StashedFrom => _transfers.StashedFrom;
-
-    /// <summary>
-    /// Every UI-facing pose edit reports through here: a failed edit is never
-    /// a silent no-op — the reason ("A transform gesture is active.", stale
-    /// binding, ...) lands in the log with the attempted description.
-    /// </summary>
     private PoseEditResult Report(string description, PoseEditResult result)
     {
         if (!result.Success)
@@ -742,126 +730,4 @@ public sealed class CleanPoseFacade : IPoseFacade
         return result;
     }
 
-    /// <summary>Stable-id bone reset (selection/transform identity path).</summary>
-    public PoseEditResult ResetBone(TransformTargetId target, string boneName) =>
-        Report($"Reset {boneName}", _edits.Reset(
-            new[] { target },
-            PoseRegion.All,
-            $"Reset {boneName}"));
-
-    /// <summary>Stable-id bone flip.</summary>
-    public PoseEditResult FlipBone(TransformTargetId target, string boneName) =>
-        Report($"Flip {boneName}", _edits.Flip(target, $"Flip {boneName}"));
-
-    public PoseEditResult ResetBone(IBone bone)
-    {
-        var concrete = bone is VirtualBone group
-            ? group.PivotBone
-            : bone;
-        if (concrete == null || Target(concrete) is not { } target)
-            return Report($"Reset {bone.Name}", PoseEditResult.Fail(
-                $"Bone {bone.Name} has no stable pose binding."));
-        return Report($"Reset {bone.Name}", _edits.Reset(
-            new[] { target },
-            PoseRegion.All,
-            $"Reset {bone.Name}"));
-    }
-
-    /// <summary>Stable-id reset of every given bone as ONE history entry.</summary>
-    public PoseEditResult ResetBones(
-        IReadOnlyList<TransformTargetId> targets,
-        string description) =>
-        Report(description, _edits.Reset(targets, PoseRegion.All, description));
-
-    public PoseEditResult Reset(
-        IActor actor,
-        PoseRegion region)
-    {
-        // Body/Face/Hair regions are Character-only; only All spans every
-        // present slot.
-        var targets = region == PoseRegion.All
-            ? Targets(actor)
-            : CharacterTargets(actor);
-        var description = region == PoseRegion.All
-            ? "Reset pose"
-            : $"Reset {region.ToString().ToLowerInvariant()}";
-        return Report(description, _edits.Reset(targets, region, description));
-    }
-
-    public PoseEditResult FlipBone(IBone bone)
-    {
-        var concrete = bone is VirtualBone group
-            ? group.PivotBone
-            : bone;
-        if (concrete == null || Target(concrete) is not { } target)
-            return Report($"Flip {bone.Name}", PoseEditResult.Fail(
-                $"Bone {bone.Name} has no stable pose binding."));
-        return Report($"Flip {bone.Name}", _edits.Flip(target, $"Flip {bone.Name}"));
-    }
-
-    /// <summary>Animation-safe "Mirror edits": mirrors only Poser-authored
-    /// layers, across every present slot. Pairing stays within each slot
-    /// except the two weapon hands, which exchange with each other, and the
-    /// ACTOR rides along so its authored facing mirrors with its body — one
-    /// history entry still covers the whole thing.</summary>
-    public PoseEditResult Mirror(IActor actor) =>
-        Report("Mirror edits", _edits.Mirror(MirrorTargets(actor), "Mirror edits"));
-
-    /// <summary>Every bone target plus the actor itself. The actor is appended
-    /// rather than folded into <see cref="Targets"/> because copy, paste and
-    /// stash are bone-only operations and must not gain a model transform.
-    /// </summary>
-    private IReadOnlyList<TransformTargetId> MirrorTargets(IActor actor)
-    {
-        var targets = new List<TransformTargetId>(Targets(actor));
-        if (GetActorId(actor) is { } actorId)
-            targets.Add(TransformTargetId.ForActor(actorId));
-        return targets;
-    }
-
-    /// <summary>Whether any bone of any present slot carries a
-    /// Poser-authored (unnamed) layer — the "Mirror edits" predicate.</summary>
-    public bool HasAuthoredEdits(IActor actor) =>
-        _skeletons.GetSkeletons(actor).Any(skeleton =>
-            _bonePosing.GetPoseInfo(skeleton).AllPoses
-                .Any(pose => pose.Stacks.Any(stack => stack.Layer == null)));
-
-    public PoseCaptureResult Copy(IActor actor) =>
-        _transfers.Capture(Targets(actor));
-
-    public PoseEditResult Paste(
-        IActor actor,
-        PortablePose pose) =>
-        Report("Paste pose", _transfers.Apply(Targets(actor), pose));
-
-    public PoseEditResult Stash(IActor actor, string sourceLabel) =>
-        Report("Stash pose", _transfers.Stash(Targets(actor), sourceLabel));
-
-    public PoseEditResult ApplyStash(IActor actor) =>
-        Report("Apply stash", _transfers.ApplyStash(Targets(actor)));
-
-    /// <summary>Concrete bone targets across every present slot skeleton.</summary>
-    private IReadOnlyList<TransformTargetId> Targets(IActor actor) =>
-        _skeletons.GetSkeletons(actor)
-            .SelectMany(SkeletonTargets)
-            .ToArray();
-
-    private IReadOnlyList<TransformTargetId> CharacterTargets(IActor actor) =>
-        _skeletons.GetSkeleton(actor) is { } character
-            ? SkeletonTargets(character)
-            : Array.Empty<TransformTargetId>();
-
-    private IReadOnlyList<TransformTargetId> SkeletonTargets(
-        ISkeleton skeleton) =>
-        skeleton.Bones
-            .Where(bone => bone is not VirtualBone)
-            .Select(Target)
-            .Where(target => target.HasValue)
-            .Select(target => target!.Value)
-            .ToArray();
-
-    private TransformTargetId? Target(IBone bone) =>
-        _bindings.GetBoneId(bone) is { } id
-            ? TransformTargetId.ForBone(id)
-            : null;
 }
