@@ -401,13 +401,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
     private readonly IWorldObjectLifecycle _worldObjects;
-    private readonly Func<ILight, TransformTargetId?>? _lightTarget;
 
-    /// <summary>Live instance → slot, by reference: the re-binding that makes
-    /// every entry about one entity share one slot. Light aliases are retained
-    /// for property history; they are never exposed as current public IDs.
-    /// </summary>
-    private readonly LifecycleSlotOwner<ILight, LightSlot> _lightOwner;
+    /// <summary>Each family owner maps its instances to slots shared by
+    /// every history entry for that entity.</summary>
+    private readonly LightLifecycleOwner _lightOwner;
     private readonly LifecycleSlotOwner<IVirtualCamera, CameraSlot> _cameraOwner;
     private readonly LifecycleSlotOwner<IActor, ActorSlot> _actorOwner;
     private readonly LifecycleSlotOwner<object, PropSlot> _propOwner;
@@ -444,11 +441,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
                 gaze, integration, bindings, bonePosing, actorManager, presentation, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
-            new WorldObjectServiceLifecycle(worldObjects))
-    {
-        _lightTarget = light => bindings.GetLightId(light) is { } id
-            ? TransformTargetId.ForLight(id) : null;
-    }
+            new WorldObjectServiceLifecycle(worldObjects),
+            light => bindings.GetLightId(light) is { } id
+                ? TransformTargetId.ForLight(id) : null)
+    { }
 
     /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
     /// entry's two directions can be exercised without a native scene object
@@ -470,11 +466,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _props = props;
         _overlayNodes = overlays;
         _worldObjects = worldObjects;
-        _lightTarget = lightTarget;
-        _lightOwner = new(
-            light => new LightSlot { Live = light, Source = _lighting.GetWorldSource(light) },
-            slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveLight, RestoreLight, retainAliases: true);
+        _lightOwner = new(history, lighting, lightTarget);
         _cameraOwner = new(
             camera => new CameraSlot { Live = camera },
             slot => slot.Live, (slot, live) => slot.Live = live,
@@ -514,146 +506,20 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     // ── lights ───────────────────────────────────────────────────────────
 
-    /// <summary>The live light, plus the document that rebuilds it once the
-    /// live one is gone.</summary>
-    private sealed class LightSlot
-    {
-        public ILight? Live;
-        public LightFile Document = new();
-        public IBone? AttachedBone;
-        public WorldLightCandidate? Source;
+    public ILight? SpawnLight(LightKind kind) => _lightOwner.SpawnLight(kind);
 
-        /// <summary>False until a removal has actually read the light. A
-        /// restore without one would spawn a default-valued impostor wearing
-        /// the entry's name, so it fails instead.</summary>
-        public bool HasDocument;
-    }
+    public ILight? CloneLight(ILight source) => _lightOwner.CloneLight(source);
 
-    public ILight? SpawnLight(LightKind kind) =>
-        RecordLightSpawn(
-            $"Add {KindName(kind)} light", () => _lighting.SpawnLight(kind));
-
-    public ILight? CloneLight(ILight source) =>
-        RecordLightSpawn(
-            $"Clone light '{source.Name}'", () => _lighting.CloneLight(source));
-
-    public ILight? AcquireWorldLight(WorldLightCandidate source) =>
-        AppendLightSpawn("Acquire world light", _lighting.CaptureWorldLight(source));
+    public ILight? AcquireWorldLight(WorldLightCandidate source) => _lightOwner.AcquireWorldLight(source);
 
     // History alone may resolve an old wrapper to its successor. Public IDs
     // and acquisition receipts remain expired after release.
-    internal ILight? CurrentLight(ILight light) =>
-        _lightOwner.TryGetSlot(light, out var slot) ? _lightOwner.CurrentInstance(slot) : light;
+    internal ILight? CurrentLight(ILight light) => _lightOwner.CurrentLight(light);
 
-    /// <summary>Records a light that some OTHER path already created — a
-    /// file import, which owns its own spawn — under this seam's discipline.
-    /// </summary>
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
-        AppendLightSpawn(description, light);
+        _lightOwner.RecordSpawnedLight(description, light);
 
-    public void DestroyLight(ILight light)
-    {
-        if (!light.IsValid) return;
-        if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
-        {
-            _lighting.DestroyLight(light);
-            return;
-        }
-        string description = $"{(light.Ownership == LightOwnership.World ? "Release" : "Remove")} light '{light.Name}'";
-        var slot = SlotFor(light);
-        if (!_lightOwner.CaptureAndRemove(slot))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            description,
-            () => _lightOwner.Restore(slot),
-            () => _lightOwner.CaptureAndRemove(slot)));
-    }
-
-    private ILight? RecordLightSpawn(string description, Func<ILight?> spawn) =>
-        AppendLightSpawn(description, spawn());
-
-    private ILight? AppendLightSpawn(string description, ILight? light)
-    {
-        if (light == null)
-            return null;
-        var slot = SlotFor(light);
-        _history.Append(new SceneLifecyclePatch(
-            description,
-            () => _lightOwner.CaptureAndRemove(slot),
-            () => _lightOwner.Restore(slot)));
-        return light;
-    }
-
-    private LightSlot SlotFor(ILight light)
-    {
-        return _lightOwner.SlotFor(light);
-    }
-
-    private bool RemoveLight(LightSlot slot)
-    {
-        if (_lightOwner.CurrentInstance(slot) is not { } light)
-            return false;
-        if (light.IsValid)
-        {
-            // Captured HERE, not at spawn: what redo must restore is the
-            // light as the user last had it.
-            slot.Document = LightFileService.CreateLightFile(light);
-            slot.AttachedBone = light.AttachedBone;
-            slot.HasDocument = true;
-            if (_lightTarget?.Invoke(light) is { } target)
-                _history.RetainLifecycleTarget(target, () =>
-                    _lightOwner.CurrentInstance(slot) is { IsValid: true } current ? _lightTarget(current) : null);
-            _lighting.DestroyLight(light);
-        }
-        _lightOwner.ForgetCurrent(slot);
-        return true;
-    }
-
-    private bool RestoreLight(LightSlot slot)
-    {
-        if (_lightOwner.CurrentInstance(slot) is { IsValid: true })
-            return true;
-        if (!slot.HasDocument)
-            return false;
-        var light = slot.Source is { } source
-            ? _lighting.CaptureWorldLight(source)
-            : _lighting.SpawnLight(slot.Document.Kind);
-        if (light == null)
-            return false;
-        LightFileService.Apply(slot.Document, light);
-        ApplyGobo(slot.Document.Gobo, light);
-        if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
-            light.AttachedBone = bone;
-        _lightOwner.BindCurrent(slot, light);
-        return true;
-    }
-
-    /// <summary>Restores a texture observed in this session, including a
-    /// world light's texture that is not in the preset library.</summary>
-    private void ApplyGobo(string? path, ILight light)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            _lighting.ClearGobo(light);
-            return;
-        }
-        foreach (var gobo in _lighting.Gobos)
-            if (string.Equals(
-                    gobo.Path, path, StringComparison.OrdinalIgnoreCase))
-            {
-                _lighting.ApplyGobo(light, gobo);
-                return;
-            }
-        _lighting.ApplyGobo(light, new GoboEntry(path, path));
-    }
-
-    private static string KindName(LightKind kind) => kind switch
-    {
-        LightKind.Point => "point",
-        LightKind.Area => "area",
-        LightKind.Directional => "directional",
-        _ => "spot",
-    };
+    public void DestroyLight(ILight light) => _lightOwner.DestroyLight(light);
 
     // ── cameras ──────────────────────────────────────────────────────────
 
@@ -1478,7 +1344,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var propSlots = new List<PropSlot>();
         foreach (var prop in props ?? Array.Empty<object>())
             propSlots.Add(SlotFor(prop));
-        var lightSlots = new List<LightSlot>();
+        var lightSlots = new List<LightLifecycleSlot>();
         foreach (var light in lights ?? Array.Empty<ILight>())
         {
             if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
@@ -1487,7 +1353,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
                 removed++;
                 continue;
             }
-            lightSlots.Add(SlotFor(light));
+            lightSlots.Add(_lightOwner.SlotFor(light));
         }
         var cameraSlots = new List<CameraSlot>();
         foreach (var camera in cameras ?? Array.Empty<IVirtualCamera>())
@@ -1508,13 +1374,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
         bool Remove() =>
             RemoveProps(propSlots) &
-            RemoveLights(lightSlots) &
+            _lightOwner.CaptureAndRemove(lightSlots) &
             RemoveCameras(cameraSlots) &
             RemoveOverlays(overlaySlots);
 
         bool Restore() =>
             RestoreProps(propSlots) &
-            RestoreLights(lightSlots) &
+            _lightOwner.Restore(lightSlots) &
             RestoreCameras(cameraSlots) &
             RestoreOverlays(overlaySlots);
 
@@ -1526,22 +1392,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             Restore,
             Remove));
         return removed;
-    }
-
-    private bool RemoveLights(IReadOnlyList<LightSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _lightOwner.CaptureAndRemove(slot);
-        return landed;
-    }
-
-    private bool RestoreLights(IReadOnlyList<LightSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _lightOwner.Restore(slot);
-        return landed;
     }
 
     private bool RemoveCameras(IReadOnlyList<CameraSlot> slots)
