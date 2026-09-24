@@ -106,7 +106,7 @@ public sealed class SceneLifecycleHistoryTests
         var world = new World();
         var address = world.WorldObjects.Place(0x1000, MapStood);
         var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        world.Lifecycle.ReleaseWorldObject(claim);
+        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
         world.WorldObjects.Place(address, UserPut);
         Assert.False(world.Undo());
         Assert.Empty(world.WorldObjects.Live);
@@ -329,7 +329,7 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void World_adoption_undo_redo_releases_and_reclaims_the_same_address()
+    public void World_adoption_undo_releases_but_redo_refuses_without_a_native_lease()
     {
         var world = new World();
         var address = world.WorldObjects.Place(0x1000, MapStood);
@@ -340,17 +340,169 @@ public sealed class SceneLifecycleHistoryTests
         Assert.True(world.Undo());
         Assert.Empty(world.WorldObjects.Live);
         Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
-        Assert.True(world.Redo());
+        Assert.False(world.Redo());
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
+        Assert.Contains("native allocation lease", Assert.Single(world.Notices), StringComparison.OrdinalIgnoreCase);
+    }
 
-        var restored = Assert.Single(world.WorldObjects.Live);
-        Assert.Equal(address, world.WorldObjects.Read(restored).Address);
-        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
-        Assert.False(world.WorldObjects.Read(restored).Visible);
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Borrowed_world_objects_can_be_acquired_but_restore_refuses_before_reclaim(bool isVfx)
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x2000, MapStood, isVfx);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        Assert.NotNull(claim); // Initial BG/VFX borrowing still works.
+        Assert.Equal(isVfx, Assert.IsType<FakeWorldObject>(claim).IsVfx);
+        Assert.Equal(1, world.WorldObjects.AdoptCalls);
 
-        world.Lifecycle.ReleaseWorldObject(restored);
-        Assert.Equal("Remove world object", world.History.UndoDescription);
+        world.Lifecycle.ReleaseWorldObject(claim);
+        var replacementPlacement = new Transform(new System.Numerics.Vector3(9, 8, 7),
+            System.Numerics.Quaternion.Identity, System.Numerics.Vector3.One);
+        world.WorldObjects.Place(address, replacementPlacement, isVfx);
+        var refused = Assert.IsType<SceneLifecyclePatch>(world.History.PeekUndo());
+
+        Assert.False(refused.Undo());
+        Assert.Equal(1, world.WorldObjects.AdoptCalls); // No second adoption after release.
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(replacementPlacement, world.WorldObjects.MapPlacement(address));
+        Assert.Contains("native allocation lease", refused.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Owned_world_object_restore_still_spawns_and_restores()
+    {
+        var world = new World();
+        var spawned = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true)!;
         Assert.True(world.Undo());
-        Assert.Equal(UserPut, world.WorldObjects.Read(Assert.Single(world.WorldObjects.Live)).Placement);
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.True(world.Redo());
+        var restored = Assert.Single(world.WorldObjects.Live);
+        Assert.NotSame(spawned, restored);
+        Assert.Equal("bg/owned.mdl", world.WorldObjects.Read(restored).Path);
+        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
+        Assert.True(world.WorldObjects.Read(restored).Visible);
+    }
+
+    [Fact]
+    public void Released_borrowed_edit_is_invalidated_and_failed_restore_does_not_block_older_history()
+    {
+        var world = new World();
+        world.History.Append(new JournalStep("Earlier unrelated edit", () => true, () => true));
+        var address = world.WorldObjects.Place(0x3000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        var target = world.WorldObjects.Target(claim);
+        var state = new TransformTargetState(target, PoseTransform.Identity, new BonePose(), false);
+        world.History.Append(new TransformPatch("Move borrowed BG", [state], [state]));
+        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
+
+        Assert.Equal("Remove world object", world.History.UndoDescription);
+        Assert.False(world.Undo()); // Fails safely and drops the permanently un-restorable claim.
+        Assert.Equal("Earlier unrelated edit", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.False(world.History.CanUndo);
+        Assert.Equal(1, world.WorldObjects.AdoptCalls);
+    }
+
+    [Fact]
+    public void Failed_live_release_keeps_the_borrowed_object_transform_history()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x3500, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        var target = world.WorldObjects.Target(claim);
+        var state = new TransformTargetState(target, PoseTransform.Identity, new BonePose(), false);
+        world.History.Append(new TransformPatch("Move borrowed BG", [state], [state]));
+        world.WorldObjects.RefuseRelease = true;
+
+        Assert.False(world.Lifecycle.ReleaseWorldObject(claim));
+
+        Assert.Equal("Move borrowed BG", world.History.UndoDescription);
+        Assert.Single(world.WorldObjects.Live);
+    }
+
+    [Fact]
+    public void Mixed_release_group_refuses_before_restoring_owned_members()
+    {
+        var world = new World();
+        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
+        var borrowedAddress = world.WorldObjects.Place(0x4000, MapStood);
+        _ = world.Lifecycle.AdoptWorldObject(borrowedAddress);
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true);
+        Assert.True(world.Lifecycle.ReleaseAllWorldObjects());
+        var group = Assert.IsType<SceneLifecyclePatch>(world.History.PeekUndo());
+        int spawnCallsAfterRelease = world.WorldObjects.SpawnCalls;
+
+        Assert.False(world.Undo());
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(spawnCallsAfterRelease, world.WorldObjects.SpawnCalls);
+        Assert.Equal(1, world.WorldObjects.AdoptCalls);
+        Assert.Contains("group", group.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Earlier edit", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void Owned_only_release_group_still_restores_all_members()
+    {
+        var world = new World();
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned-a.mdl", UserPut, true);
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned-b.mdl", MapStood, false);
+        Assert.True(world.Lifecycle.ReleaseAllWorldObjects());
+        int spawnCallsAfterRelease = world.WorldObjects.SpawnCalls;
+
+        Assert.True(world.Undo());
+        Assert.Equal(2, world.WorldObjects.Live.Count);
+        Assert.Equal(spawnCallsAfterRelease + 2, world.WorldObjects.SpawnCalls);
+        Assert.Contains(world.WorldObjects.Live, item => world.WorldObjects.Read(item).Path == "bg/owned-a.mdl");
+        Assert.Contains(world.WorldObjects.Live, item => world.WorldObjects.Read(item).Path == "bg/owned-b.mdl");
+    }
+
+    [Fact]
+    public void Release_all_records_successes_before_a_later_live_claim_refuses()
+    {
+        var world = new World();
+        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true);
+        var borrowedAddress = world.WorldObjects.Place(0x5000, MapStood);
+        _ = world.Lifecycle.AdoptWorldObject(borrowedAddress);
+        world.WorldObjects.RefuseReleaseAddresses.Add(borrowedAddress);
+
+        Assert.False(world.Lifecycle.ReleaseAllWorldObjects());
+
+        Assert.Equal("Remove world object", world.History.UndoDescription);
+        Assert.Equal("bg/fake.mdl", world.WorldObjects.Read(Assert.Single(world.WorldObjects.Live)).Path);
+        Assert.True(world.Undo()); // The successful owned release has its own restore entry.
+        Assert.Contains(world.WorldObjects.Live,
+            item => world.WorldObjects.Read(item).Path == "bg/owned.mdl");
+        Assert.Equal(2, world.WorldObjects.Live.Count);
+        world.WorldObjects.RefuseReleaseAddresses.Clear();
+        Assert.True(world.Undo()); // The still-live borrowed claim remains undoable.
+        Assert.True(world.Undo()); // The owned acquisition remains undoable too.
+        Assert.True(world.Undo());
+        Assert.False(world.History.CanUndo);
+    }
+
+    [Fact]
+    public void Group_redo_retry_skips_members_already_released_before_a_later_refusal()
+    {
+        var world = new World();
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned-a.mdl", UserPut, true);
+        _ = world.Lifecycle.SpawnWorldObject("bg/owned-b.mdl", MapStood, true);
+        world.Lifecycle.ReleaseAllWorldObjects();
+
+        Assert.True(world.Undo());
+        world.WorldObjects.RefuseReleasePaths.Add("bg/owned-b.mdl");
+        Assert.False(world.Redo()); // A is released before B refuses.
+        Assert.Single(world.WorldObjects.Live);
+        Assert.Equal("bg/owned-b.mdl", world.WorldObjects.Read(Assert.Single(world.WorldObjects.Live)).Path);
+
+        world.WorldObjects.RefuseReleasePaths.Clear();
+        Assert.True(world.Redo()); // A is already complete; retry only releases B.
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.True(world.Undo());
+        Assert.Equal(2, world.WorldObjects.Live.Count);
     }
 
     [Fact]
@@ -430,6 +582,7 @@ public sealed class SceneLifecycleHistoryTests
         public FakeOverlays Overlays { get; } = new();
         public FakeWorldObjects WorldObjects { get; } = new();
         public SceneLifecycleHistory Lifecycle { get; }
+        public List<string> Notices { get; } = new();
 
         /// <param name="capacity">Undo depth; below 1 is undo switched off.
         /// </param>
@@ -438,14 +591,23 @@ public sealed class SceneLifecycleHistoryTests
             History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
                 History, Lighting, Cameras, Actors, Props, Overlays,
-                WorldObjects, Lighting.Target);
+                WorldObjects, Lighting.Target,
+                worldObject => worldObject is FakeWorldObject fake
+                    ? TransformTargetId.ForWorldObject(fake.Id) : null);
         }
 
         public bool Undo()
         {
             var entry = History.PeekUndo()!;
             if (!(entry switch { SceneLifecyclePatch p => p.Undo(), JournalStep p => p.Undo(), _ => false }))
+            {
+                if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop } patch && shouldDrop())
+                {
+                    History.Drop(entry);
+                    Notices.Add(patch.FailureDetail?.Invoke() ?? "Lifecycle restore refused.");
+                }
                 return false;
+            }
             History.CommitUndo(entry);
             return true;
         }
@@ -454,7 +616,14 @@ public sealed class SceneLifecycleHistoryTests
         {
             var entry = History.PeekRedo()!;
             if (!(entry switch { SceneLifecyclePatch p => p.Redo(), JournalStep p => p.Redo(), _ => false }))
+            {
+                if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop } patch && shouldDrop())
+                {
+                    History.Drop(entry);
+                    Notices.Add(patch.FailureDetail?.Invoke() ?? "Lifecycle restore refused.");
+                }
                 return false;
+            }
             History.CommitRedo(entry);
             return true;
         }
@@ -672,11 +841,15 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeWorldObjects : IWorldObjectLifecycle
     {
         private readonly Dictionary<nint, Transform> _map = new();
-        private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
-        private long _generation;
+        private readonly HashSet<nint> _vfxAddresses = new();
         private readonly List<object> _adopted = new();
+        public int AdoptCalls { get; private set; }
+        public int SpawnCalls { get; private set; }
 
         public bool RefuseAdopt { get; set; }
+        public bool RefuseRelease { get; set; }
+        public HashSet<nint> RefuseReleaseAddresses { get; } = new();
+        public HashSet<string> RefuseReleasePaths { get; } = new();
         public IReadOnlyList<object> Live => _adopted;
         public IReadOnlyList<object> WorldObjects => _adopted.ToList();
 
@@ -684,22 +857,28 @@ public sealed class SceneLifecycleHistoryTests
         /// release has to put back.</summary>
         public Transform MapPlacement(nint address) => _map[address];
 
-        public nint Place(nint address, Transform placement)
+        public nint Place(nint address, Transform placement, bool isVfx = false)
         {
             _map[address] = placement;
-            _identities[address] = new(address, ++_generation, 0);
+            if (isVfx) _vfxAddresses.Add(address);
+            else _vfxAddresses.Remove(address);
             return address;
         }
 
+        public TransformTargetId Target(object worldObject) =>
+            TransformTargetId.ForWorldObject(((FakeWorldObject)worldObject).Id);
+
         public object? Adopt(nint address)
         {
+            AdoptCalls++;
             if (RefuseAdopt || !_map.ContainsKey(address))
                 return null;
             var claim = new FakeWorldObject
             {
                 Owner = this,
                 State = new WorldObjectState(
-                    address, "bg/fake.mdl", false, _map[address], true) { Identity = _identities[address] },
+                    address, "bg/fake.mdl", false, _map[address], true),
+                IsVfx = _vfxAddresses.Contains(address),
                 MapPlacement = _map[address],
             };
             _adopted.Add(claim);
@@ -708,6 +887,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public object? Spawn(string path, Transform placement, bool visible)
         {
+            SpawnCalls++;
             var claim = new FakeWorldObject
             {
                 Owner = this,
@@ -719,20 +899,21 @@ public sealed class SceneLifecycleHistoryTests
             return claim;
         }
 
-        public object? Reclaim(WorldObjectIncarnation identity) =>
-            _identities.TryGetValue(identity.Address, out var current) && current == identity
-                ? Adopt(identity.Address) : null;
-
         public bool IsLive(object worldObject) =>
             ((FakeWorldObject)worldObject).IsValid;
 
-        public void Release(object worldObject)
+        public bool Release(object worldObject)
         {
+            var state = ((FakeWorldObject)worldObject).State;
+            if (RefuseRelease || RefuseReleaseAddresses.Contains(state.Address)
+                || RefuseReleasePaths.Contains(state.Path))
+                return false;
             var claim = (FakeWorldObject)worldObject;
             _adopted.Remove(claim);
             if (claim.IsValid)
                 _map[claim.State.Address] = claim.MapPlacement;
             claim.IsValid = false;
+            return true;
         }
 
         public WorldObjectState Read(object worldObject) =>
@@ -741,7 +922,7 @@ public sealed class SceneLifecycleHistoryTests
         public void Apply(object worldObject, WorldObjectState state)
         {
             var claim = (FakeWorldObject)worldObject;
-            claim.State = state with { Identity = claim.State.Identity };
+            claim.State = state;
             _map[state.Address] = state.Placement;
         }
     }
@@ -749,6 +930,8 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeWorldObject
     {
         public FakeWorldObjects Owner { get; set; } = null!;
+        public WorldObjectId Id { get; } = WorldObjectId.New();
+        public bool IsVfx { get; set; }
         public bool IsValid { get; set; } = true;
         public WorldObjectState State { get; set; }
 

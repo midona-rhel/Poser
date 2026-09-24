@@ -35,7 +35,15 @@ public sealed record TransformPatch(
 public sealed record SceneLifecyclePatch(
     string Description,
     Func<bool> Undo,
-    Func<bool> Redo) : HistoryEntry(Description);
+    Func<bool> Redo) : HistoryEntry(Description)
+{
+    /// <summary>Optional reason for a refused direction.</summary>
+    public Func<string?>? FailureDetail { get; init; }
+
+    /// <summary>Some refusals are permanent for this history entry. Drop it
+    /// after reporting the reason so unrelated earlier history can proceed.</summary>
+    public Func<bool>? DropOnFailure { get; init; }
+}
 
 /// <summary>
 /// Bounded before/after patch history. Capacity is read for each append, and
@@ -268,6 +276,18 @@ public sealed class TransformHistory
     {
         _undo.Remove(entry);
         _redo.Remove(entry);
+    }
+
+    /// <summary>Drops transform edits for an entity that a lifecycle release
+    /// leaves absent and cannot safely restore. A grouped edit is removed as
+    /// one action when any member names that entity.</summary>
+    public void DropTransformsFor(TransformTargetId target)
+    {
+        bool Touches(HistoryEntry entry) => entry is TransformPatch patch
+            && (patch.Before.Any(state => state.Target == target)
+                || patch.After.Any(state => state.Target == target));
+        _undo.RemoveAll(Touches);
+        _redo.RemoveAll(Touches);
     }
 
     /// <summary>

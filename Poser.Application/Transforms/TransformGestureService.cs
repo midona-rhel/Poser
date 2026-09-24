@@ -512,7 +512,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 lifecycle.Undo,
                 $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry));
+                () => History.CommitUndo(entry), lifecycle.FailureDetail);
         if (entry is JournalStep step)
             return RunLifecycle(
                 step.Undo,
@@ -560,7 +560,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 lifecycle.Redo,
                 $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry));
+                () => History.CommitRedo(entry), lifecycle.FailureDetail);
         if (entry is JournalStep step)
             return RunLifecycle(
                 step.Redo,

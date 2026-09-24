@@ -196,146 +196,6 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
         ((OverlayNodeHandle)overlay).State;
 }
 
-/// <summary>What a WORLD OBJECT entry has to put back. A BORROWED
-/// object's identity is its native incarnation — the map's own thing,
-/// re-claimed only while that incarnation survives. A SPAWNED one was DESTROYED by its release, so
-/// its undo re-creates the path anew; re-adopting its freed address
-/// dereferenced a dead vtable and crashed (2026-09-01).</summary>
-internal readonly record struct WorldObjectState(
-    nint Address,
-    string Path,
-    bool Spawned,
-    Transform Placement,
-    bool Visible)
-{
-    public WorldObjectIncarnation? Identity { get; init; }
-    public string? Name { get; init; }
-    public float Opacity { get; init; } = 1f;
-    public Vector3? Tint { get; init; }
-    public byte Stain { get; init; }
-    public FurnitureLightState[] FurnitureLights { get; init; } = [];
-    public bool NightState { get; init; }
-    public bool AnimationPaused { get; init; }
-    public bool LoopVfx { get; init; } = true;
-    public float VfxSpeed { get; init; } = 1f;
-    public float VfxIntensity { get; init; } = 1f;
-    public bool VfxPaused { get; init; }
-}
-
-/// <summary>
-/// The adopted-world-object half of <see cref="SceneLifecycleHistory"/>. It is
-/// the one half whose "remove" is a RESTORE rather than a destroy: releasing a
-/// claim gives the map its object back exactly as it stood. Re-adopting must
-/// verify the saved incarnation before claiming it again.
-/// </summary>
-internal interface IWorldObjectLifecycle
-{
-    IReadOnlyList<object> WorldObjects { get; }
-
-    object? Adopt(nint address);
-
-    /// <summary>Re-creates a spawned entry from its recorded path.</summary>
-    object? Spawn(string path, Transform placement, bool visible);
-
-    /// <summary>Reclaims only the exact original object, if still present and unclaimed.</summary>
-    object? Reclaim(WorldObjectIncarnation identity);
-
-    bool IsLive(object worldObject);
-
-    void Release(object worldObject);
-
-    WorldObjectState Read(object worldObject);
-
-    void Apply(object worldObject, WorldObjectState state);
-}
-
-internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
-{
-    private readonly WorldObjectService _worldObjects;
-
-    public WorldObjectServiceLifecycle(WorldObjectService worldObjects) =>
-        _worldObjects = worldObjects;
-
-    public IReadOnlyList<object> WorldObjects
-    {
-        get
-        {
-            var live = new List<object>(_worldObjects.Adopted.Count);
-            foreach (var worldObject in _worldObjects.Adopted)
-                live.Add(worldObject);
-            return live;
-        }
-    }
-
-    public object? Adopt(nint address) => _worldObjects.Adopt(address);
-
-    public object? Spawn(string path, Transform placement, bool visible) =>
-        _worldObjects.Spawn(path, placement, visible, out _);
-
-    public object? Reclaim(WorldObjectIncarnation identity)
-    {
-        // The address alone may now name a different streamed-in object.
-        if (_worldObjects.Find(identity.Address) != null
-            || !_worldObjects.TryObserve(identity.Address, out var current)
-            || !current.SameAllocation(identity))
-            return null;
-        return _worldObjects.Adopt(identity.Address);
-    }
-
-    public bool IsLive(object worldObject) =>
-        ((AdoptedWorldObject)worldObject).IsValid;
-
-    public void Release(object worldObject) =>
-        _worldObjects.Release((AdoptedWorldObject)worldObject);
-
-    public WorldObjectState Read(object worldObject)
-    {
-        var handle = (AdoptedWorldObject)worldObject;
-        return new WorldObjectState(
-            handle.Address, handle.Path, handle.Spawned,
-            handle.Transform, handle.Visible)
-        {
-            Name = handle.Name,
-            Identity = handle.Spawned ? null : handle.Identity,
-            Opacity = handle.Opacity,
-            Tint = handle.Tint,
-            Stain = handle.Stain,
-            FurnitureLights = System.Linq.Enumerable.ToArray(handle.FurnitureLights),
-            NightState = handle.NightState,
-            AnimationPaused = handle.AnimationPaused,
-            LoopVfx = handle.LoopVfx,
-            VfxSpeed = handle.VfxSpeed,
-            VfxIntensity = handle.VfxIntensity,
-            VfxPaused = handle.VfxPaused,
-        };
-    }
-
-    public void Apply(object worldObject, WorldObjectState state)
-    {
-        var handle = (AdoptedWorldObject)worldObject;
-        if (state.Name is { } name)
-            handle.Name = name;
-        handle.Transform = state.Placement;
-        handle.Opacity = state.Opacity;
-        handle.Tint = state.Tint;
-        handle.Stain = state.Stain;
-        handle.FurnitureLights = state.FurnitureLights;
-        if (handle.IsVfx)
-        {
-            handle.LoopVfx = state.LoopVfx;
-            handle.VfxSpeed = state.VfxSpeed;
-            handle.VfxIntensity = state.VfxIntensity;
-            handle.VfxPaused = state.VfxPaused;
-        }
-        else
-        {
-            handle.NightState = state.NightState;
-            handle.AnimationPaused = state.AnimationPaused;
-        }
-        handle.Visible = state.Visible;
-    }
-}
-
 /// <summary>
 /// The ONE seam through which an entity enters or leaves the scene by a user's
 /// act, so that act lands in the SAME history the transforms do.
@@ -400,7 +260,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     internal IActorLifecycle ActorStatePort => _actors;
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
-    private readonly IWorldObjectLifecycle _worldObjects;
 
     /// <summary>Each family owner maps its instances to slots shared by
     /// every history entry for that entity.</summary>
@@ -409,7 +268,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     private readonly LifecycleSlotOwner<IActor, ActorSlot> _actorOwner;
     private readonly LifecycleSlotOwner<object, PropSlot> _propOwner;
     private readonly LifecycleSlotOwner<object, OverlaySlot> _overlayOwner;
-    private readonly LifecycleSlotOwner<object, WorldObjectSlot> _worldObjectOwner;
+    private readonly WorldObjectLifecycleOwner _worldObjectOwner;
 
     public SceneLifecycleHistory(
         TransformHistory history,
@@ -443,7 +302,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects),
             light => bindings.GetLightId(light) is { } id
-                ? TransformTargetId.ForLight(id) : null)
+                ? TransformTargetId.ForLight(id) : null,
+            worldObject => bindings.GetWorldObjectId((AdoptedWorldObject)worldObject) is { } id
+                ? TransformTargetId.ForWorldObject(id) : null)
     { }
 
     /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
@@ -457,7 +318,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IPropLifecycle props,
         IOverlayLifecycle overlays,
         IWorldObjectLifecycle worldObjects,
-        Func<ILight, TransformTargetId?>? lightTarget = null)
+        Func<ILight, TransformTargetId?>? lightTarget = null,
+        Func<object, TransformTargetId?>? worldObjectTarget = null)
     {
         _history = history;
         _lighting = lighting;
@@ -465,7 +327,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _actors = actors;
         _props = props;
         _overlayNodes = overlays;
-        _worldObjects = worldObjects;
+        _worldObjectOwner = new(history, worldObjects, worldObjectTarget);
         _lightOwner = new(history, lighting, lightTarget);
         _cameraOwner = new(
             camera => new CameraSlot { Live = camera },
@@ -483,10 +345,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             overlay => new OverlaySlot { Live = overlay },
             slot => slot.Live, (slot, live) => slot.Live = live,
             RemoveOverlay, RestoreOverlay);
-        _worldObjectOwner = new(
-            worldObject => new WorldObjectSlot { Live = worldObject },
-            slot => slot.Live, (slot, live) => slot.Live = live,
-            ReleaseWorldObjectSlot, RestoreWorldObject);
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -1138,164 +996,29 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     // ── adopted world objects ────────────────────────────────────────────
 
-    /// <summary>The live claim and authored state for undo/redo. The world
-    /// runtime retains and revalidates the native incarnation when reclaiming.</summary>
-    private sealed class WorldObjectSlot
-    {
-        public object? Live;
-        public WorldObjectState Document;
-        public bool HasDocument;
-    }
-
     /// <summary>Takes one BG object into the scene, journalled. Undoing it
     /// RELEASES the claim, which puts the object back exactly where the map
     /// stood it — an adoption's inverse is never a destroy.</summary>
     internal object? AdoptWorldObject(nint address)
-    {
-        var worldObject = _worldObjects.Adopt(address);
-        if (worldObject == null)
-            return null;
-        var slot = WorldObjectSlotFor(worldObject);
-        _history.Append(new SceneLifecyclePatch(
-            "Add world object",
-            () => _worldObjectOwner.CaptureAndRemove(slot),
-            () => _worldObjectOwner.Restore(slot)));
-        return worldObject;
-    }
+        => _worldObjectOwner.Adopt(address);
 
     /// <summary>Copies a world asset's authored properties with the next display name.</summary>
-    public IWorldObject? CloneWorldObject(IWorldObject source)
-    {
-        var name = EntityNames.Next(source.Name,
-            _worldObjects.WorldObjects.OfType<IWorldObject>().Select(x => x.Name));
-        if (SpawnWorldObject(source.Path, source.Transform, source.Visible) is not IWorldObject copy)
-            return null;
-        copy.Name = name;
-        copy.Opacity = source.Opacity;
-        copy.Tint = source.Tint;
-        copy.Stain = source.Stain;
-        copy.FurnitureLights = System.Linq.Enumerable.ToArray(source.FurnitureLights);
-        if (source.IsVfx)
-        {
-            copy.LoopVfx = source.LoopVfx;
-            copy.VfxSpeed = source.VfxSpeed;
-            copy.VfxIntensity = source.VfxIntensity;
-            copy.VfxPaused = source.VfxPaused;
-        }
-        else
-            copy.NightState = source.NightState;
-        return copy;
-    }
+    public IWorldObject? CloneWorldObject(IWorldObject source) =>
+        _worldObjectOwner.Clone(source);
 
     /// <summary>Spawns one object from a model path; undo removes the created object.</summary>
-    public object? SpawnWorldObject(string path, Transform placement, bool visible)
-    {
-        var worldObject = _worldObjects.Spawn(path, placement, visible);
-        if (worldObject == null)
-            return null;
-        var slot = WorldObjectSlotFor(worldObject);
-        _history.Append(new SceneLifecyclePatch(
-            "Add world object",
-            () => _worldObjectOwner.CaptureAndRemove(slot),
-            () => _worldObjectOwner.Restore(slot)));
-        return worldObject;
-    }
+    public object? SpawnWorldObject(string path, Transform placement, bool visible) =>
+        _worldObjectOwner.Spawn(path, placement, visible);
 
-    /// <summary>Gives one adopted object back to the map, journalled. Undoing
-    /// it re-adopts the same address and puts back the placement the user had
-    /// given it.</summary>
-    internal void ReleaseWorldObject(object worldObject)
-    {
-        var slot = WorldObjectSlotFor(worldObject);
-        if (!_worldObjectOwner.CaptureAndRemove(slot))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            "Remove world object",
-            () => _worldObjectOwner.Restore(slot),
-            () => _worldObjectOwner.CaptureAndRemove(slot)));
-    }
+    /// <summary>Gives one adopted object back to the map, journalled. The
+    /// lifecycle owner captures a confirmed release before appending its entry.</summary>
+    internal bool ReleaseWorldObject(object worldObject) =>
+        _worldObjectOwner.Release(worldObject);
 
     /// <summary>Giving the whole list back is ONE act of the user's, so it is
-    /// ONE entry over every slot it took — the prop list's own rule.</summary>
-    internal void ReleaseAllWorldObjects()
-    {
-        var worldObjects = _worldObjects.WorldObjects;
-        if (worldObjects.Count == 0)
-            return;
-        var slots = new List<WorldObjectSlot>(worldObjects.Count);
-        foreach (var worldObject in worldObjects)
-            slots.Add(WorldObjectSlotFor(worldObject));
-        if (!ReleaseWorldObjectSlots(slots))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            worldObjects.Count == 1
-                ? "Remove world object"
-                : $"Remove {worldObjects.Count} world objects",
-            () => RestoreWorldObjects(slots),
-            () => ReleaseWorldObjectSlots(slots)));
-    }
-
-    private WorldObjectSlot WorldObjectSlotFor(object worldObject)
-    {
-        return _worldObjectOwner.SlotFor(worldObject);
-    }
-
-    private bool ReleaseWorldObjectSlot(WorldObjectSlot slot)
-    {
-        if (_worldObjectOwner.CurrentInstance(slot) is not { } worldObject)
-            return false;
-        if (_worldObjects.IsLive(worldObject))
-        {
-            // Captured HERE, not at adoption: an object the user moved comes
-            // back where they left it. What the RELEASE writes to the game is
-            // the map's own placement — the service captured that at adoption
-            // and this document never touches it.
-            slot.Document = _worldObjects.Read(worldObject);
-            slot.HasDocument = true;
-        }
-        _worldObjects.Release(worldObject);
-        return true;
-    }
-
-    private bool RestoreWorldObject(WorldObjectSlot slot)
-    {
-        if (_worldObjectOwner.CurrentInstance(slot) != null)
-            return true;
-        if (!slot.HasDocument)
-            return false;
-        // A spawned entry was destroyed — its undo re-creates the path.
-        // A borrowed one reclaims the exact saved incarnation, never a new
-        // object that happens to occupy the old address.
-        var worldObject = slot.Document.Spawned
-            ? _worldObjects.Spawn(
-                slot.Document.Path,
-                slot.Document.Placement,
-                slot.Document.Visible)
-            : slot.Document.Identity is { } identity
-                ? _worldObjects.Reclaim(identity)
-                : null;
-        if (worldObject == null)
-            return false;
-        _worldObjects.Apply(worldObject, slot.Document);
-        slot.Live = worldObject;
-        return true;
-    }
-
-    private bool ReleaseWorldObjectSlots(IReadOnlyList<WorldObjectSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _worldObjectOwner.CaptureAndRemove(slot);
-        return landed;
-    }
-
-    private bool RestoreWorldObjects(IReadOnlyList<WorldObjectSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _worldObjectOwner.Restore(slot);
-        return landed;
-    }
+    /// ONE entry over the slots whose release succeeded; refused live claims
+    /// remain in the scene and keep their own acquisition history.</summary>
+    internal bool ReleaseAllWorldObjects() => _worldObjectOwner.ReleaseAll();
 
     // ── group removal ────────────────────────────────────────────────────
 
