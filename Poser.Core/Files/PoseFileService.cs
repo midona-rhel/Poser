@@ -864,27 +864,6 @@ public class PoseFileService : IPoseFileService
     public static bool IsDawntrailSkeleton(ISkeleton skeleton) =>
         skeleton.GetBone(DawntrailFaceMarkerBone) != null;
 
-    /// <summary>Which way a file's face and a skeleton's face diverge.</summary>
-    public enum FaceGenerationMatch
-    {
-        /// <summary>Same generation, or the file carries no face at all.</summary>
-        Same,
-
-        /// <summary>A pre-Dawntrail face landing on a Dawntrail skeleton. The
-        /// engine already repairs this by withholding face POSITIONS while
-        /// keeping their rotations (see the plan builder's preDtFace gate);
-        /// this value exists so the repair can be stated rather than only
-        /// logged.</summary>
-        PreDawntrailFileOnDawntrailSkeleton,
-
-        /// <summary>A Dawntrail face landing on a skeleton without one — a
-        /// creature or NPC rig. Ktisis catches this direction too
-        /// (PoseImportDialog.cs:168-173 compares the two, it does not test one
-        /// side); Poser's own protection is one-directional, so this case can
-        /// only be warned about, not repaired.</summary>
-        DawntrailFileOnOlderSkeleton,
-    }
-
     /// <summary>
     /// Ktisis' bidirectional face-compat test (PoseImportDialog.cs:168-173),
     /// over Poser's own markers. A file with no face bones is

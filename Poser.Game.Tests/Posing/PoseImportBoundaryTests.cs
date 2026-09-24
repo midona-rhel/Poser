@@ -35,6 +35,7 @@ public sealed class PoseImportBoundaryTests
         IPoseImportCommands imports = new NativePoseImportService(
             bindings, null!, null!, null!, null!, framework);
         Assert.False(imports.HasPosableSkeleton(id));
+        Assert.Null(imports.InspectPose(id, new PoseFile()));
         var results = new[]
         {
             imports.ImportPose(id, "not-read.pose", new()),

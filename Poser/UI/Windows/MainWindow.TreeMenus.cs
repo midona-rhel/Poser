@@ -39,12 +39,12 @@ public partial class MainWindow
 
     private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId, out List<Action?> actions)
     {
-        var actor = _bindings.Resolve(actorId).Value;
-        var sourceLabel = ActorNames.Display(actorId, actor?.Name ?? "Actor");
+        var sourceLabel = ActorNames.Display(actorId,
+            _scene.Snapshot.FindActor(actorId)?.Name ?? "Actor");
         actions =
         [
             () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
-            () => { if (actor?.Skeleton is { } skeleton) _poseFileSection.OpenImportFromFile(skeleton); },
+            () => _poseFileSection.OpenImportFromFile(actorId),
             () => _poseFileSection.RequestExportMenu(actorId),
             () => _cleanPose.Stash(actorId, sourceLabel),
         ];

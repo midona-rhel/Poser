@@ -37,6 +37,19 @@ public sealed class NativePoseImportService : IPoseImportCommands
     public bool HasPosableSkeleton(ActorId actor) =>
         ResolveTarget(actor, out var current) is null && HasPosableSkeleton(current);
 
+    public PoseImportInspection? InspectPose(ActorId actor, PoseFile pose)
+    {
+        if (ResolveTarget(actor, out var current) is not null
+            || _skeletons.GetSkeleton(current) is not { } skeleton)
+            return null;
+        return new(
+            PoseFileService.IsExpressionOnlyPose(pose),
+            PoseFileService.IsBodyOnlyPose(pose),
+            PoseFileService.IsDawntrailSkeleton(skeleton)
+                && PoseFileService.IsLikelyDawntrailPose(pose),
+            PoseFileService.CompareFaceGeneration(pose, skeleton));
+    }
+
     public PoseEditResult ImportPose(ActorId actor, string path, PoseImportOptions options,
         IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null) =>
         ResolveTarget(actor, out var current) is { } refusal ? refusal :

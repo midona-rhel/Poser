@@ -1086,7 +1086,11 @@ public partial class PoseInspectorPane
                         "Files",
                         _openSurfaceFiles,
                         next => _openSurfaceFiles = next,
-                        form => _poseFileSection.Draw(form, skeleton),
+                        form =>
+                        {
+                            if (_bindings.GetActorId(skeleton.Actor) is { } actorId)
+                                _poseFileSection.Draw(form, actorId);
+                        },
                         divider: stack.Any);
                 }
                 return stack.Bottom - origin.Y;

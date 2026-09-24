@@ -77,6 +77,9 @@ Game retains scope planning and in-pass writes/rollback behind the import runtim
 All import callers use `IPoseImportCommands` with exact actor IDs. Game resolves
 those IDs before planning on the framework thread; stale targets refuse without
 reading skeletons. The native facade contract has been removed from Core.
+Pose-file dialogs retain exact actor IDs, including deferred browser callbacks,
+not native actors or skeletons. Compatibility inspection returns detached facts;
+Game resolves the current rig, while UI owns option drafts and warning wording.
 A completed import's delayed speed restore is settled before its successor
 captures a baseline, so it cannot resume the newer import's actor.
 

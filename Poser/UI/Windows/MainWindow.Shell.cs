@@ -187,7 +187,7 @@ public partial class MainWindow
         switch (parent)
         {
             case ShellCommand.Pose:
-                if (SelectedSkeleton() is not { } skeleton)
+                if (_selection.PrimaryActor is not { } actorId)
                     return;
                 switch (index)
                 {
@@ -198,7 +198,7 @@ public partial class MainWindow
                         _poseFileSection.RequestExportMenu();
                         break;
                     case 2:
-                        _poseFileSection.OpenAutoSaves(skeleton);
+                        _poseFileSection.OpenAutoSaves(actorId);
                         break;
                 }
                 break;

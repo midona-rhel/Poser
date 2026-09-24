@@ -6,7 +6,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
-using Poser.Entities;
+using Poser.Application.Scene;
 using Poser.Files;
 using Poser.Domain.Operations;
 using Poser.Application.Selection;
@@ -30,7 +30,7 @@ public sealed class PoseFileInspectorSection
     private bool _typeExpression;
 
     private readonly IPoseImportCommands _imports;
-    private readonly IEntityBindings _bindings;
+    private readonly SceneSession _scene;
     private readonly SelectionSession _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
@@ -90,7 +90,7 @@ public sealed class PoseFileInspectorSection
 
     public PoseFileInspectorSection(
         IPoseImportCommands imports,
-        IEntityBindings bindings,
+        SceneSession scene,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         SelectionSession selection,
@@ -103,7 +103,7 @@ public sealed class PoseFileInspectorSection
     {
         _notices = notices;
         _imports = imports;
-        _bindings = bindings;
+        _scene = scene;
         _capture = capture;
         _selection = selection;
         _config = config;
@@ -207,58 +207,41 @@ public sealed class PoseFileInspectorSection
         Files.ImportBoneCategories.ApplyDisabledCategories(
             options, _disabledCategories);
 
-    // Resolve actor selection (actor or bone) first; use the live host target
-    // when the library mount has no scene actor.
-    private ISkeleton? SelectedSkeleton() => SelectedSkeleton(out _);
-
-    private ISkeleton? SelectedSkeleton(out Domain.Identity.ActorId? actorId)
+    // Context menus target the clicked actor; dialogs freeze that exact generation.
+    // Ordinary controls follow selection, with the library's live host as fallback.
+    private ActorId? SelectedActor()
     {
-        // Context-menu actions belong to the clicked actor, not the inspector
-        // selection. Only menu dispatch uses this target; ordinary pane actions
-        // continue to follow selection, and dialogs capture their own target.
-        if (_drawingMenu && _menuActor is { } clickedActor)
-        {
-            actorId = clickedActor;
-            return _resolveActor?.Invoke(clickedActor) is { HasSkeleton: true } clicked
-                ? clicked.Skeleton : null;
-        }
+        if (_drawingMenu && _menuActor is { } clicked)
+            return _imports.HasPosableSkeleton(clicked) ? clicked : null;
         foreach (var id in _selection.Selected)
         {
             var candidate = id switch
             {
-                { Kind: SceneEntityKind.Actor, Actor: { } selected } => selected,
+                { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
                 { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
-                _ => (Domain.Identity.ActorId?)null,
+                _ => (ActorId?)null,
             };
-            if (candidate is { } resolvedId &&
-                _resolveActor?.Invoke(resolvedId) is { HasSkeleton: true } actor)
-            {
-                actorId = resolvedId;
-                return actor.Skeleton;
-            }
+            if (candidate is { } actorId && _imports.HasPosableSkeleton(actorId))
+                return actorId;
         }
-        actorId = null;
-        if (HostPushLive && _hostTarget is { HasSkeleton: true } fallback)
-            return fallback.Skeleton;
-        return null;
+        return HostPushLive && _hostTarget is { } fallback
+            && _imports.HasPosableSkeleton(fallback) ? fallback : null;
     }
 
-    public void SetHostImportTarget(IActor? target, bool inLibrary)
+    public void SetHostImportTarget(ActorId? target, bool inLibrary)
     {
         _hostTarget = target;
         _hostIsLibrary = inLibrary;
         _hostPushFrame = ImGui.GetFrameCount();
     }
 
-    private IActor? _hostTarget;
+    private ActorId? _hostTarget;
     private bool _hostIsLibrary;
     private int _hostPushFrame = int.MinValue;
 
     private bool HostPushLive => ImGui.GetFrameCount() - _hostPushFrame <= 1;
 
     private bool InLibrary => HostPushLive && _hostIsLibrary;
-
-    public Func<Domain.Identity.ActorId, IActor?>? _resolveActor;
 
     private const float MenuPadding = 8f;
 
@@ -395,8 +378,8 @@ public sealed class PoseFileInspectorSection
         switch (exportClicked)
         {
             case 0:
-                if (SelectedSkeleton() is { } exportSkeleton)
-                    OpenExport(exportSkeleton);
+                if (SelectedActor() is { } exportActor)
+                    OpenExport(exportActor);
                 else
                     _notices.Refused(NoActorText);
                 break;
@@ -486,9 +469,7 @@ public sealed class PoseFileInspectorSection
 
     private const string ImportPreviewRebaseText = "Reading the actor's pose…";
 
-    private IActor? _importTarget;
-
-    private ISkeleton? _importSkeleton;
+    private ActorId? _importTarget;
 
     private bool _importPreviewOwned;
 
@@ -604,7 +585,7 @@ public sealed class PoseFileInspectorSection
         _faceWarning = null;
         if (highlighted is null
             || !IsPoseFile(highlighted)
-            || _importSkeleton is not { } skeleton)
+            || _importTarget is not { } actorId)
             return;
 
         bool isCmp = highlighted.EndsWith(
@@ -612,14 +593,14 @@ public sealed class PoseFileInspectorSection
         if (LoadForSmartRouting(highlighted, isCmp) is not { } file)
             return;
         _faceWarning =
-            PoseFileService.CompareFaceGeneration(file, skeleton) switch
+            _imports.InspectPose(actorId, file)?.FaceGeneration switch
             {
-                PoseFileService.FaceGenerationMatch
+                FaceGenerationMatch
                         .PreDawntrailFileOnDawntrailSkeleton =>
                     "This pose predates the Dawntrail face. Its face rotations "
                         + "will apply; its face positions will not, because "
                         + "they would deform this face.",
-                PoseFileService.FaceGenerationMatch
+                FaceGenerationMatch
                         .DawntrailFileOnOlderSkeleton =>
                     "This pose carries a Dawntrail face and this model does "
                         + "not have one. Its face bones may land badly or not "
@@ -658,8 +639,8 @@ public sealed class PoseFileInspectorSection
                 highlighted, _appliedOnSelectPath, StringComparison.Ordinal))
             return;
         _appliedOnSelectPath = highlighted;
-        if (_importSkeleton is { } skeleton)
-            ImportFromPath(skeleton, highlighted, fromDialog: true);
+        if (_importTarget is { } actorId)
+            ImportFromPath(actorId, highlighted, fromDialog: true);
     }
 
     private void SyncImportPreview(string? highlighted)
@@ -673,8 +654,7 @@ public sealed class PoseFileInspectorSection
         if (blocked)
             return;
         var candidate = PosePreviewController.Trim(built ?? BuildOptions());
-        if (_bindings.GetActorId(source) is { } previewActor
-            && _importPreview.Begin(previewActor, highlighted, candidate, ImGui.GetFrameCount()))
+        if (_importPreview.Begin(source, highlighted, candidate, ImGui.GetFrameCount()))
         {
             _importPreview.Pose(
                 highlighted,
@@ -704,7 +684,6 @@ public sealed class PoseFileInspectorSection
         _faceWarning = null;
         _faceWarningPath = null;
         _importTarget = null;
-        _importSkeleton = null;
         if (PreviewClaimed)
             _importPreview.StandDown();
         else
@@ -971,8 +950,8 @@ public sealed class PoseFileInspectorSection
                 {
                     actions.Button("From file", () =>
                     {
-                        if (SelectedSkeleton() is { } skeleton)
-                            OpenImport(skeleton);
+                        if (SelectedActor() is { } actorId)
+                            OpenImport(actorId);
                         else
                             _notices.Refused(NoActorText);
                     });
@@ -1751,8 +1730,7 @@ public sealed class PoseFileInspectorSection
             return;
         }
         _referenceArmed = false;
-        if (SelectedSkeleton() is not { } skeleton
-            || _bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
+        if (SelectedActor() is not { } expectedActor)
         {
             _notices.Refused(NoActorText);
             return;
@@ -1767,13 +1745,8 @@ public sealed class PoseFileInspectorSection
     private void ApplyRestPreset(RestPose pose)
     {
         _referenceArmed = false;
-        if (SelectedSkeleton() is { } skeleton)
+        if (SelectedActor() is { } expectedActor)
         {
-            if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
-            {
-                _notices.Refused(NoActorText);
-                return;
-            }
             NotePoseApplied();
             if (_imports.ApplyRestPose(
                     expectedActor,
@@ -1889,9 +1862,9 @@ public sealed class PoseFileInspectorSection
             });
     }
 
-    public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
+    public void Draw(Crystarium.FormScope form, ActorId actorId)
     {
-        SetHostImportTarget(skeleton.Actor, inLibrary: false);
+        SetHostImportTarget(actorId, inLibrary: false);
 
         form.Actions("Pose", actions =>
         {
@@ -1901,7 +1874,7 @@ public sealed class PoseFileInspectorSection
         });
     }
 
-    public void OpenImport(ISkeleton skeleton)
+    public void OpenImport(ActorId actorId)
     {
         if (_config.Config.Library.UseLibraryWhenImporting)
         {
@@ -1909,44 +1882,43 @@ public sealed class PoseFileInspectorSection
             return;
         }
 
-        BrowseAndImport(skeleton, _folder.Path, rememberPath: true);
+        BrowseAndImport(actorId, _folder.Path, rememberPath: true);
     }
 
     /// <summary>The context menu's "Import from file": straight to the
     /// browser regardless of the library-first preference — the row names
     /// its destination.</summary>
-    public void OpenImportFromFile(ISkeleton skeleton) =>
-        BrowseAndImport(skeleton, _folder.Path, rememberPath: true);
+    public void OpenImportFromFile(ActorId actorId) =>
+        BrowseAndImport(actorId, _folder.Path, rememberPath: true);
 
-    public void OpenAutoSaves(ISkeleton skeleton)
+    public void OpenAutoSaves(ActorId actorId)
     {
-        BrowseAndImport(skeleton, _autoSave.RootDirectory, rememberPath: false);
+        BrowseAndImport(actorId, _autoSave.RootDirectory, rememberPath: false);
     }
 
     private void BrowseAndImport(
-        ISkeleton skeleton,
+        ActorId actorId,
         string initialPath,
         bool rememberPath)
     {
         ConfigureImportBand();
-        _importTarget = skeleton.Actor;
-        _importSkeleton = skeleton;
+        _importTarget = actorId;
         _importPreviewPosed = false;
         _dialogFadeRamp = 0f;
         OpenBrowser(() => _importBrowser.Open(initialPath, path =>
         {
             if (rememberPath)
                 _folder.Remember(path);
-            ImportFromPath(skeleton, path, fromDialog: true);
+            ImportFromPath(actorId, path, fromDialog: true);
         }));
     }
 
-    private void ImportFromPath(ISkeleton skeleton, string path, bool fromDialog = false)
+    private void ImportFromPath(ActorId actorId, string path, bool fromDialog = false)
     {
         bool isCmp = path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
         string notice = string.Empty;
         if (_smartImport && LoadForSmartRouting(path, isCmp) is { } smartFile)
-            notice = SmartRoute(skeleton, smartFile);
+            notice = SmartRoute(actorId, smartFile);
 
         _lastImportPath = path;
         _lastImportPose = null;
@@ -1961,11 +1933,7 @@ public sealed class PoseFileInspectorSection
         }
 
         NotePoseApplied();
-        if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
-        {
-            _notices.Failed("Import: the actor could not be resolved.");
-            return;
-        }
+        var expectedActor = actorId;
         IReadOnlyList<BoneId>? frozenSelection = null;
         var options = cmp ?? BuildOptions();
         if (fromDialog && _selectiveImport)
@@ -1990,8 +1958,7 @@ public sealed class PoseFileInspectorSection
 
     private bool HasSelectedBonesForImportTarget()
     {
-        if (_importTarget is not { } target
-            || _bindings.GetActorId(target) is not { } actor)
+        if (_importTarget is not { } actor)
             return false;
         foreach (var id in _selection.Selected)
         {
@@ -2036,21 +2003,17 @@ public sealed class PoseFileInspectorSection
     }
 
     private void ImportLoadedPose(
-        ISkeleton skeleton, PoseFile pose, string description, string statusPrefix)
+        ActorId actorId, PoseFile pose, string description, string statusPrefix)
     {
         string notice = string.Empty;
         if (_smartImport)
-            notice = SmartRoute(skeleton, pose);
+            notice = SmartRoute(actorId, pose);
 
         _lastImportPose = pose;
         _lastImportPath = null;
 
         NotePoseApplied();
-        if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
-        {
-            _notices.Failed($"{statusPrefix}: the actor could not be resolved.");
-            return;
-        }
+        var expectedActor = actorId;
         var imported = _imports.ImportPose(
             expectedActor,
             pose,
@@ -2095,22 +2058,22 @@ public sealed class PoseFileInspectorSection
 
     private void ReapplyLastPose()
     {
-        if (SelectedSkeleton() is not { } skeleton)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
         }
         if (_lastImportPath is { } path)
-            ImportFromPath(skeleton, path);
+            ImportFromPath(actorId, path);
         else if (_lastImportPose is { } pose)
-            ImportLoadedPose(skeleton, pose, "Reapply last pose", "Reapply");
+            ImportLoadedPose(actorId, pose, "Reapply last pose", "Reapply");
         else
             _notices.Refused("Nothing has been imported yet.");
     }
 
     private void ImportFromStash()
     {
-        if (SelectedSkeleton() is not { } skeleton)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
@@ -2120,12 +2083,12 @@ public sealed class PoseFileInspectorSection
             _notices.Refused("Nothing is stashed.");
             return;
         }
-        ImportLoadedPose(skeleton, pose, "Import stashed pose", "Stash");
+        ImportLoadedPose(actorId, pose, "Import stashed pose", "Stash");
     }
 
     private void StashPose()
     {
-        if (SelectedSkeleton(out var selectedActor) is null || selectedActor is not { } actorId)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
@@ -2145,13 +2108,8 @@ public sealed class PoseFileInspectorSection
             _notices.Failed($"Stash: {armed.Detail}");
     }
 
-    public void OpenExport(ISkeleton skeleton)
+    public void OpenExport(ActorId actorId)
     {
-        if (_bindings.GetActorId(skeleton.Actor) is not { } actorId)
-        {
-            _notices.Refused(NoActorText);
-            return;
-        }
         OpenBrowser(() => _folder.Open(_exportBrowser, path =>
         {
             var armed = _capture.ExportPose(
@@ -2195,7 +2153,7 @@ public sealed class PoseFileInspectorSection
 
     private void OpenExportToLibrary()
     {
-        if (SelectedSkeleton(out var actorId) is not { } skeleton || actorId is null)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
@@ -2227,8 +2185,8 @@ public sealed class PoseFileInspectorSection
         }
 
         _libraryExportName = SanitizeFileName(
-            (actorId is { } id ? _config.GetNickname(id.LogicalId) : null)
-                ?? DisplayName(skeleton.Actor.Name)).Trim();
+            _config.GetNickname(actorId.LogicalId)
+                ?? DisplayName(_scene.Snapshot.FindActor(actorId)?.Name ?? "Actor")).Trim();
         _libraryExportCandidate = string.Empty;
         _libraryExportTaken = false;
         _libraryExportOpen = true;
@@ -2419,14 +2377,16 @@ public sealed class PoseFileInspectorSection
             _rotation, _position, _scale,
             presetComponents: _smartImport).ApplyPosition;
 
-    private string SmartRoute(ISkeleton skeleton, PoseFile file)
+    private string SmartRoute(ActorId actorId, PoseFile file)
     {
-        if (PoseFileService.IsExpressionOnlyPose(file))
+        if (_imports.InspectPose(actorId, file) is not { } inspection)
+            return string.Empty;
+        if (inspection.IsExpressionOnly)
         {
             _typeExpression = true;
             _typeBody = false;
         }
-        else if (PoseFileService.IsBodyOnlyPose(file))
+        else if (inspection.IsBodyOnly)
         {
             _typeBody = true;
             _typeExpression = false;
@@ -2434,8 +2394,7 @@ public sealed class PoseFileInspectorSection
 
         if (!_typeExpression)
             return string.Empty;
-        if (PoseFileService.IsDawntrailSkeleton(skeleton) &&
-            PoseFileService.IsLikelyDawntrailPose(file))
+        if (inspection.CanImportExpression)
             return string.Empty;
 
         _typeExpression = false;
@@ -2445,7 +2404,7 @@ public sealed class PoseFileInspectorSection
 
     private void ImportFromClipboard()
     {
-        if (SelectedSkeleton() is not { } skeleton)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
@@ -2466,12 +2425,12 @@ public sealed class PoseFileInspectorSection
             return;
         }
         ImportLoadedPose(
-            skeleton, pose, "Import pose from clipboard", "Clipboard");
+            actorId, pose, "Import pose from clipboard", "Clipboard");
     }
 
     private void CopyToClipboard()
     {
-        if (SelectedSkeleton(out var selectedActor) is null || selectedActor is not { } actorId)
+        if (SelectedActor() is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;

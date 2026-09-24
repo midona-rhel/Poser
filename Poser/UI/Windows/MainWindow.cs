@@ -627,12 +627,6 @@ public partial class MainWindow : Window
         // choice — never the file-dialog detour.
         _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestLibrarySave();
         _poseFileSection = poseFileSection;
-        // The import menus resolve their target actor through the same
-        // binding registry the context menus use.
-        _poseFileSection._resolveActor = id =>
-            _bindings.Resolve(id) is { Success: true } resolved
-                ? resolved.Value
-                : null;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _bonePresets = bonePresets;

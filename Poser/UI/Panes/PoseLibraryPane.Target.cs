@@ -54,10 +54,10 @@ public sealed partial class PoseLibraryPane
         // is pushed, so "From file", the presets and the export commands act
         // on the actor the tiles would apply to instead of silently eating
         // the click.
+        var host = TargetActor() is { HasSkeleton: true } selected
+            ? selected : FirstApplyTarget();
         _files.SetHostImportTarget(
-            TargetActor() is { HasSkeleton: true } selected
-                ? selected
-                : FirstApplyTarget(),
+            host is not null ? _bindings.GetActorId(host) : null,
             inLibrary: true);
 
         // A character file is applied to an actor that already exists; there is

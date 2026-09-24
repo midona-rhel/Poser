@@ -10,6 +10,7 @@ public interface IPoseImportCommands
 {
     bool IsImportBusy { get; }
     bool HasPosableSkeleton(ActorId actor);
+    PoseImportInspection? InspectPose(ActorId actor, PoseFile pose);
     PoseEditResult ImportPose(ActorId actor, string path, PoseImportOptions options,
         IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null);
     PoseEditResult ImportPose(ActorId actor, PoseFile poseFile, PoseImportOptions options,
