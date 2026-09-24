@@ -614,7 +614,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _cameras.DestroyCamera(camera);
         }
-        _cameraOwner.ForgetCurrent(slot);
         return true;
     }
 
@@ -640,7 +639,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         camera.IsTracking = slot.Tracking;
         camera.IsLocked = slot.Locked;
         if (slot.WasLive) _cameras.SetLive(camera);
-        _cameraOwner.BindCurrent(slot, camera);
+        slot.Live = camera;
         return true;
     }
 
@@ -794,7 +793,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             if (!_actors.Destroy(actor))
                 return false;
         }
-        _actorOwner.ForgetCurrent(slot);
         return true;
     }
 
@@ -810,7 +808,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             : slot.Respawn();
         if (actor == null)
             return false;
-        _actorOwner.BindCurrent(slot, actor);
+        slot.Live = actor;
         if (slot.Name is { } name)
             _actors.SetName(actor, name);
         // The body is back; the placement and the pose land on it over the
@@ -925,7 +923,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _props.Destroy(prop);
         }
-        _propOwner.ForgetCurrent(slot);
         return true;
     }
 
@@ -939,7 +936,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (prop == null)
             return false;
         _props.Apply(prop, slot.Document);
-        _propOwner.BindCurrent(slot, prop);
+        slot.Live = prop;
         return true;
     }
 
@@ -1099,7 +1096,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _overlayNodes.Destroy(overlay);
         }
-        _overlayOwner.ForgetCurrent(slot);
         return true;
     }
 
@@ -1112,7 +1108,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var overlay = _overlayNodes.Create(slot.Document);
         if (overlay == null)
             return false;
-        _overlayOwner.BindCurrent(slot, overlay);
+        slot.Live = overlay;
         return true;
     }
 
@@ -1258,7 +1254,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
         }
         _worldObjects.Release(worldObject);
-        _worldObjectOwner.ForgetCurrent(slot);
         return true;
     }
 
@@ -1282,7 +1277,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (worldObject == null)
             return false;
         _worldObjects.Apply(worldObject, slot.Document);
-        _worldObjectOwner.BindCurrent(slot, worldObject);
+        slot.Live = worldObject;
         return true;
     }
 

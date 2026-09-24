@@ -138,7 +138,6 @@ internal sealed class LightLifecycleOwner
                     CurrentInstance(slot) is { IsValid: true } current ? _lightTarget(current) : null);
             _lighting.DestroyLight(light);
         }
-        _slots.ForgetCurrent(slot);
         return true;
     }
 
@@ -157,7 +156,7 @@ internal sealed class LightLifecycleOwner
         ApplyGobo(slot.Document.Gobo, light);
         if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
             light.AttachedBone = bone;
-        _slots.BindCurrent(slot, light);
+        slot.Live = light;
         return true;
     }
 
