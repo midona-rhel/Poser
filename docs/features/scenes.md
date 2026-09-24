@@ -16,6 +16,13 @@ receives the same scene rebase as the owner; bone-local poses are not rebased.
 
 ## Lifecycle history
 
+Each entity family has a typed lifecycle owner over the same transform
+history. A slot is the identity shared by every history entry for one entity:
+removal captures the latest state into that slot, and restoration rebinds the
+slot to the newly created instance before later entries or actor readiness
+callbacks use it. Clearing transform history clears every owner's instance
+mapping with it.
+
 Removal captures the entity as last edited, not its original spawn arguments.
 Actor restoration creates a fresh body, applies captured appearance/equipment,
 collection and Poser body-profile values, then waits for its skeleton and bone
