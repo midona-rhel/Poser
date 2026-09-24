@@ -295,6 +295,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
         services.AddSingleton<CleanPoseFacade>();
+        services.AddSingleton<PoseImportCoordinator>();
+        services.AddSingleton<IPoseImportRuntime, PoseImportRuntime>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
         return services;
     }

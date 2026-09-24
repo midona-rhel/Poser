@@ -14,45 +14,23 @@ namespace Poser.Game.Posing;
 public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
-    private ImportArm? _importArm;
-
-    private sealed class ImportArm
-    {
-        public required PoseImportOperation Operation;
-        public required ActorId TargetActorId;
-        public required Action Restore;
-    }
+    private readonly PoseImportCoordinator _imports;
 
     public CleanPoseFacade(
         StableBindingRegistry bindings,
-        PoseImportCapture imports,
-        Poser.Config.ConfigurationService configuration,
+        PoseImportCoordinator imports,
         IPoseFileService poseFiles,
         ISkeletonService skeletons,
-        Poser.Application.Animation.AnimationSession animation,
-        IFramework framework,
         IPluginLog log)
     {
-        _framework = framework;
         _bindings = bindings;
         _imports = imports;
-        _configuration = configuration;
         _poseFiles = poseFiles;
         _skeletons = skeletons;
-        _animation = animation;
         _log = log;
     }
 
-    private readonly IFramework _framework;
-    /// <summary>True from arming (the synchronous Ok) until the settle
-    /// tick hands the plan to <see cref="PoseImportCapture"/>, whose own
-    /// IsPending takes over. One import in flight at a time, across the
-    /// 4-tick window included.</summary>
-    /// <summary>Whether an import is armed or still applying. The engine takes
-    /// ONE at a time (see <see cref="BeginImport"/>), so a caller that would
-    /// only be refused — the pose preview's staged sequence — waits on this
-    /// instead of spending its stage against a failure.</summary>
-    public bool IsImportBusy => _importArm != null || _imports.IsPending;
+    public bool IsImportBusy => _imports.IsImportBusy;
 
     /// <summary>
     /// Whether an import could reach this actor's posable skeleton at all.
@@ -67,8 +45,6 @@ public sealed class CleanPoseFacade : IPoseFacade
     public bool HasPosableSkeleton(IActor actor) =>
         _skeletons.GetSkeleton(actor) is not null;
 
-    private readonly PoseImportCapture _imports;
-    private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseFileService _poseFiles;
 
     public ActorId? GetActorId(IActor actor) => _bindings.GetActorId(actor);
@@ -236,248 +212,19 @@ public sealed class CleanPoseFacade : IPoseFacade
             ImportPose(actor, poseFile, options, description, onReceipt));
     }
 
-    /// <summary>The import tail shared by every source of a plan: the pause
-    /// bracket around the apply window, freeze-on-import, and the in-pass
-    /// application itself.
-    ///
-    /// <para>The plan is name-keyed (issue #78): it carries (slot, partial,
-    /// bone name) and file values, never skeleton or bone instances, so the
-    /// four ticks between arming and the settle tick cannot stale it. The
-    /// capture resolves each name against the live skeletons at the settle
-    /// tick — the write moment — and a redraw inside the window is simply
-    /// not observable by the armed import.</para>
-    /// </summary>
     private PoseEditResult BeginImport(
-        IActor actor,
-        PoseImportPlan plan,
-        PoseImportOptions options,
-        string description,
-        Action<OperationReceipt>? onReceipt = null,
-        string? asset = null)
+        IActor actor, PoseImportPlan plan, PoseImportOptions options,
+        string description, Action<OperationReceipt>? onReceipt = null, string? asset = null)
     {
-        // Synchronous validation BEFORE the pause side effect: both
-        // ImportPose overloads build the plan before calling here (a bad
-        // file already returned above), and the Begin preconditions the
-        // facade can see — an empty plan, an import already in flight —
-        // are checked now, so a rejected import never pauses the actor.
-        // Begin's remaining gates (IK bake pending, live gesture) only
-        // surface on the settle tick; that path restores the speed below.
-        if (plan.IsEmpty)
-            return PoseEditResult.Fail(
-                "Nothing in this file applies to the chosen scope.");
-        if (_importArm != null || _imports.IsPending)
-        {
-            if (!_framework.IsInFrameworkUpdateThread)
-                return PoseEditResult.Fail("A pose import is already applying.");
-            var priorArm = _importArm;
-            var cancelled = _imports.CancelActive(
-                "Pose import superseded by a newer request.");
-            // Restore the old owner before a replacement can pause. Its own
-            // delayed completion restore is idempotent and cannot touch the
-            // replacement's state.
-            priorArm?.Restore();
-            if (ReferenceEquals(_importArm, priorArm))
-                _importArm = null;
-            if (cancelled.OperationReceipt is not { State: OperationReceiptState.Cancelled })
-                return PoseEditResult.Fail(cancelled.Detail ??
-                    "The previous pose import could not be cancelled safely.") with
-                {
-                    Recovery = cancelled.Recovery,
-                    OperationReceipt = cancelled.OperationReceipt,
-                };
-        }
-
-        // The apply window runs paused, in Brio's exact sequence (every
-        // Brio ImportPose goes through ActionTimelineCapability.
-        // StopSpeedAndResetTimeline, ATC:110-176, driven by
-        // PosingCapability.ImportPose:147-165): pause NOW, wait 4 ticks
-        // for the pause to land (ATC:165, delayTicks: 4), rewind every
-        // paused control to LocalTime 0 — the face partial's blink/lip
-        // timelines included (ATC:136-162) — and only THEN register the
-        // import. Registering on the click tick made the deltas diff
-        // against whatever mid-blink frame the pause caught, a permanent
-        // face offset relative to Brio applying the same file.
-        //
-        // Restoration stays completion-driven (the pass has run, the pose
-        // has rendered against the held frame) rather than Brio's fixed
-        // post-apply guess, but lands +2 ticks after completion — Brio's
-        // own settle delay before handing speed back (ATC:169-175).
-        //
-        // Freeze-on-import (the FILES checkbox riding the options, OR'd with
-        // the config default exactly as Brio ORs freezeOnLoad with
-        // Posing.FreezeActorOnPoseImport) skips the restore and simply keeps
-        // the override — but never on a failed import: a rollback that left
-        // the actor frozen would look like a result when there is none.
-        // An actor the user already paused restores nothing and stays paused
-        // regardless of the option.
-        var animationTarget = _bindings.GetActorId(actor);
-        bool freeze = options.FreezeOnImport ||
-            _configuration.Config.FreezeActorOnPoseImport;
-        float? priorSpeed = null;
-        bool pausedForImport = false;
-        if (animationTarget is { } pauseId && _animation.IsSupported(pauseId))
-        {
-            priorSpeed = _animation.OverridesFor(pauseId).OverallSpeed;
-            // Best-effort: an actor whose speed hook is unavailable imports
-            // exactly as before this bracket existed.
-            if (priorSpeed is not 0f)
-                pausedForImport = _animation.Pause(pauseId).Success;
-        }
-
-        var restored = false;
-        void RestorePriorSpeed()
-        {
-            if (restored)
-                return;
-            restored = true;
-            if (!pausedForImport || animationTarget is not { } restoreId)
-                return;
-            // The pause is only Poser's to undo while it still holds: a
-            // user who resumed or re-paused inside the window owns the
-            // state now.
-            if (!_animation.IsPaused(restoreId))
-                return;
-            if (priorSpeed is { } speed)
-                _animation.SetSpeed(restoreId, speed);
-            else
-                _animation.Resume(restoreId);
-        }
-
-        void ScheduleRestore()
-        {
-            try
-            {
-                _framework.RunOnTick(RestorePriorSpeed, delayTicks: 2);
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"Pose edit '{description}' restore scheduling failed: {ex.Message}");
-                RestorePriorSpeed();
-            }
-        }
-
-        ImportArm? arm = null;
-        void PublishReceipt(OperationReceipt receipt)
-        {
-            if (receipt.State != OperationReceiptState.Pending &&
-                ReferenceEquals(_importArm, arm))
-                _importArm = null;
-            try
-            {
-                onReceipt?.Invoke(receipt);
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"Pose edit '{description}' receipt callback threw: {ex.Message}");
-            }
-        }
-
-        var reserved = _imports.Reserve(
-            actor,
-            description,
-            out var operation,
-            onFinished: success =>
-            {
-                if (!freeze || !success)
-                    ScheduleRestore();
-            },
-            onReceipt: PublishReceipt);
-        if (!reserved.Success || operation == null ||
-            reserved.OperationReceipt is not { } pending)
-        {
-            RestorePriorSpeed();
-            return PoseEditResult.Fail(
-                reserved.Detail ?? "The pose import could not be admitted.") with
-            {
-                Recovery = reserved.Recovery,
-                OperationReceipt = reserved.OperationReceipt,
-            };
-        }
-        arm = new ImportArm
-        {
-            Operation = operation,
-            TargetActorId = pending.TargetActorId,
-            Restore = RestorePriorSpeed,
-        };
-        _importArm = arm;
-        PublishReceipt(pending);
-
-        // The settle tick (Brio ATC:120-165): the rewind and the
-        // registration both run on the framework thread 4 ticks after the
-        // pause, the same RunOnTick idiom the capture itself uses for its
-        // completion and timeout hops. Ok below therefore means ARMED —
-        // the plan is validated and scheduled; a failure on the settle
-        // tick (IK bake landed meanwhile, gesture started) logs through
-        // the same channel as Report and restores the speed.
-        try
-        {
-            _framework.RunOnTick(() =>
-            {
-                // First instruction: a stale arm cannot rewind, begin, or restore
-                // any newer request's animation owner.
-                if (!ReferenceEquals(_importArm, arm) ||
-                    !_imports.IsCurrent(arm.Operation))
-                    return;
-                try
-                {
-                    // Unconditional, as Brio's is: every control at speed 0
-                    // rewinds, whether this import paused it or the user had.
-                    if (animationTarget is { } rewindId)
-                    {
-                        var rewound = _animation.RewindPausedControls(rewindId);
-                        if (!rewound.Success)
-                            _log.Warning(
-                                $"Pose edit '{description}': settle rewind failed: {rewound.Detail}");
-                    }
-
-                    var begun = _imports.Begin(
-                        arm.Operation,
-                        plan,
-                        expression: options.AsExpression,
-                        suppressHistory: options.SuppressHistory,
-                        asset: asset);
-                    if (!begun.Success)
-                    {
-                        _log.Warning(
-                            $"Pose edit '{description}' failed: {begun.Detail ?? "The pose import failed."}");
-                        ScheduleRestore();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // The pause must not outlive a throwing arm; restore
-                    // immediately rather than leaving the actor frozen.
-                    _log.Error(
-                        $"Pose edit '{description}' failed while arming: {ex.Message}");
-                    RestorePriorSpeed();
-                }
-            }, delayTicks: 4);
-        }
-        catch (Exception ex)
-        {
-            var cancelled = _imports.CancelActive(
-                $"Pose import arm scheduling failed: {ex.Message}");
-            RestorePriorSpeed();
-            if (ReferenceEquals(_importArm, arm))
-                _importArm = null;
-            return PoseEditResult.Fail(
-                cancelled.Detail ?? "The pose import could not be scheduled.") with
-            {
-                Recovery = cancelled.Recovery,
-                OperationReceipt = cancelled.OperationReceipt,
-            };
-        }
-        return PoseEditResult.Ok(plan.FileBoneCount) with
-        {
-            OperationReceipt = pending,
-        };
+        if (_bindings.GetActorId(actor) is not { } id ||
+            _bindings.Resolve(id) is not { Success: true, Value: { } current } ||
+            !ReferenceEquals(actor, current))
+            return PoseEditResult.Fail("The actor could not be resolved.");
+        return _imports.Begin(id, new PreparedPoseImport(plan), options, description, onReceipt, asset);
     }
 
     private readonly ISkeletonService _skeletons;
 
-    private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IPluginLog _log;
 
     private PoseEditResult Report(string description, PoseEditResult result)

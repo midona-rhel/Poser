@@ -72,7 +72,11 @@ Application owns preview baseline capture, retries, and rebase-then-file
 sequencing through `PosePreviewController`. UI supplies options and a frame
 clock; Game owns the hidden body, native application and rendered surface.
 Late captures from a replaced source cannot overwrite its successor's baseline.
-Native file import still uses the legacy facade.
+Application also owns import pause, supersession, settle and speed restoration.
+Game retains scope planning and in-pass writes/rollback behind the import runtime;
+legacy import entry points remain adapters to this single workflow.
+A completed import's delayed speed restore is settled before its successor
+captures a baseline, so it cannot resume the newer import's actor.
 
 Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
 actor generations and immutable readings. Application owns gesture coalescing

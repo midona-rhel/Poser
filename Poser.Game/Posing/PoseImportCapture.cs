@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Threading;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
+using Poser.Application.Posing;
 using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
@@ -18,16 +19,6 @@ using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.Game.Posing;
-
-/// <summary>One admitted pose-import request. The pending receipt is minted
-/// before any reset/model mutation and the opaque instance is the arm token
-/// checked by every delayed callback.</summary>
-public sealed class PoseImportOperation
-{
-    internal PoseImportOperation(OperationReceipt pending) => Pending = pending;
-
-    public OperationReceipt Pending { get; }
-}
 
 /// <summary>Lazy GPose-exit seam for draining an admitted import before the
 /// scene and native providers begin teardown.</summary>
@@ -242,7 +233,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         /// which is the last settled frame BEFORE the rewind: the facade's
         /// bracket pauses the actor and the settle tick rewinds every
         /// paused control to LocalTime 0 on the very tick it calls Begin
-        /// (CleanPoseFacade.BeginImport), so no pass has evaluated the
+        /// (PoseImportCoordinator.Begin), so no pass has evaluated the
         /// rewound animation yet. Every other write in this chain diffs
         /// against the REWOUND in-pass basis, and the final flatten bakes
         /// its stacks against that same rewound basis — so restoring the
