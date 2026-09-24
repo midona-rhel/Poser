@@ -213,6 +213,21 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+Borrowing a live BG/VFX object remains supported. Until a native allocation
+lease can protect a released borrowed object's address, undo refuses to
+reclaim that object before probing the saved address, reports the reason, and
+discards that lifecycle entry so earlier history can continue. Transform
+history for the borrowed object is invalidated only after release succeeds.
+Group restoration preflights all members, so a borrowed refusal cannot leave
+owned members partially restored. Bulk release records only confirmed
+removals; claims that refuse release remain live with their acquisition
+history. A partial redo keeps successful removals recorded and retries only
+members still present. In a mixed group, the owned members remain released
+when the group restore is refused, and that group's related history is
+discarded; recreate those owned objects manually. Owned-only groups and
+Poser-owned world-object spawns keep their existing restore behavior, as does
+borrowed world-light restoration.
+
 Respawning a world object keeps its old native and stable handle while the
 replacement loads hidden. Completion includes model readiness and applicable
 settings (placement, visibility, opacity, stain/night state or VFX playback/colour).

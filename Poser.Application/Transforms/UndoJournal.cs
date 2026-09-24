@@ -98,7 +98,23 @@ public sealed class UndoJournal
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
     {
-        if (result.Success || entry is not JournalStep step || step.RetainOnFailure
+        if (result.Success)
+        {
+            _refused = null;
+            return result;
+        }
+        if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop }
+            && shouldDrop())
+        {
+            _refused = null;
+            _history.Drop(entry);
+            var reason = entry is SceneLifecyclePatch lifecycle
+                ? lifecycle.FailureDetail?.Invoke() ?? result.Detail
+                : result.Detail;
+            _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
+            return result;
+        }
+        if (entry is not JournalStep step || step.RetainOnFailure
             || step.HasDeferredGroupCapture?.Invoke() == true)
         {
             _refused = null;

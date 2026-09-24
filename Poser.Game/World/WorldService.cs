@@ -52,8 +52,11 @@ public sealed class WorldService : IWorldService, IDisposable
 
     public Task<WorldRelease> ReleaseSceneObjects() => _framework.RunOnFrameworkThread(() =>
     {
-        _history.ReleaseAllWorldObjects();
-        return new WorldRelease(WorldCommandStatus.Applied);
+        bool allReleased = _history.ReleaseAllWorldObjects();
+        return allReleased
+            ? new WorldRelease(WorldCommandStatus.Applied)
+            : new WorldRelease(WorldCommandStatus.Refused,
+                "Some world objects could not be released; successful removals were recorded.");
     });
 
     public WorldService(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
@@ -187,8 +190,9 @@ public sealed class WorldService : IWorldService, IDisposable
         {
             var obj = _bindings.Resolve(objectId).Value;
             if (obj == null || !obj.IsValid) return new(WorldCommandStatus.AlreadyReleased);
-            _history.ReleaseWorldObject(obj);
-            return new(WorldCommandStatus.Applied);
+            return _history.ReleaseWorldObject(obj)
+                ? new(WorldCommandStatus.Applied)
+                : new(WorldCommandStatus.Refused, "The world object could not be released safely.");
         }
         if (entity.Light is { } lightId)
         {
