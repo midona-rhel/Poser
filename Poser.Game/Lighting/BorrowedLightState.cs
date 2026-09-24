@@ -4,7 +4,7 @@ using NativeTransform = FFXIVClientStructs.FFXIV.Client.Graphics.Transform;
 
 namespace Poser.Game.Lighting;
 
-/// <summary>The original values of a directly borrowed light, not a copy of its native object.</summary>
+/// <summary>Source values for an editable replacement; only visibility is changed on the original.</summary>
 internal sealed unsafe class BorrowedLightState : IDisposable
 {
     private readonly NativeTransform _transform;
@@ -19,6 +19,7 @@ internal sealed unsafe class BorrowedLightState : IDisposable
     private readonly Action<nint> _releaseTexture;
     private nint _texture;
     private bool _released;
+    private bool _copied;
 
     internal BorrowedLightState(GameLight* native, Action<nint>? retainTexture = null, Action<nint>? releaseTexture = null)
     {
@@ -36,9 +37,8 @@ internal sealed unsafe class BorrowedLightState : IDisposable
         _renderTexture = (nint)render->Texture;
         _releaseTexture = releaseTexture ?? (p => ((TextureResourceHandle*)p)->DecRef());
         var texture = (nint)native->ProjectedCubemapTexture;
-        // Keep the original resource alive if the user replaces/clears its
-        // gobo. Restore transfers this reference back to the native light;
-        // native destruction instead drops only our retained reference.
+        // The replacement receives its own texture reference. Never copy the
+        // native object's ownership/vtable or its render transform pointer.
         if (texture != 0)
         {
             (retainTexture ?? (p => ((TextureResourceHandle*)p)->IncRef()))(texture);
@@ -46,9 +46,10 @@ internal sealed unsafe class BorrowedLightState : IDisposable
         }
     }
 
-    internal bool Restore(GameLight* native)
+    internal void CopyTo(GameLight* native)
     {
-        if (_released || native == null) return false;
+        if (_released || _copied || native == null || native->LightRenderObject == null)
+            throw new InvalidOperationException("The world light replacement is not ready.");
         native->Transform = _transform;
         native->VisibilityFlags = _visibility;
         if (native->ProjectedCubemapTexture != null)
@@ -58,6 +59,7 @@ internal sealed unsafe class BorrowedLightState : IDisposable
         var render = native->LightRenderObject;
         if (render != null)
         {
+            render->Transform = &native->Transform;
             render->LightFlags = _flags; render->EmissionType = _type;
             render->ColorIntensity = _color;
             render->ShadowPlaneNear = _near; render->ShadowPlaneFar = _far;
@@ -67,7 +69,20 @@ internal sealed unsafe class BorrowedLightState : IDisposable
             render->CharacterShadowRange = _shadowRange;
             render->Texture = (void*)_renderTexture;
         }
-        _released = true;
+        _copied = true;
+    }
+
+    internal void Suppress(GameLight* original)
+    {
+        if (!_released && original != null)
+            original->IsVisible = false;
+    }
+
+    internal bool Restore(GameLight* original)
+    {
+        if (_released || original == null) return false;
+        original->VisibilityFlags = _visibility;
+        Dispose();
         return true;
     }
 

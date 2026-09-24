@@ -97,7 +97,7 @@ public sealed class WorldService : IWorldService, IDisposable
             foreach (var row in _lights.GetWorldLightCandidates())
                 entries.Add(new((row.Handle, row.Generation), WorldKinds.Light, "World light", row.Position,
                     () => _lights.GetWorldLightCandidates().Any(l => l.Handle == row.Handle && l.Generation == row.Generation),
-                    () => _lights.CaptureWorldLight(row) is { } light
+                    () => _history.AcquireWorldLight(row) is { } light
                         ? () => _bindings.GetLightId(light) is { } id ? SelectionId.ForLight(id) : null : null));
         if ((due & WorldKinds.Object) != 0) AddObjects(false);
         if ((due & WorldKinds.Effect) != 0) AddObjects(true);
@@ -195,7 +195,7 @@ public sealed class WorldService : IWorldService, IDisposable
             var light = _bindings.Resolve(lightId).Value;
             if (light == null || !light.IsValid) return new(WorldCommandStatus.AlreadyReleased);
             if (light.Ownership == LightOwnership.Spawned) return new(WorldCommandStatus.Refused, "That light is not borrowed.");
-            _lights.ReleaseLight(light);
+            _history.DestroyLight(light);
             return new(WorldCommandStatus.Applied);
         }
         return new(WorldCommandStatus.Refused, "That entity is not a borrowed world asset.");

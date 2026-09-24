@@ -1,4 +1,5 @@
 using Poser.Domain.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
@@ -51,6 +52,31 @@ public sealed class TransformHistory
     private readonly Func<int> _capacity;
     private readonly List<HistoryEntry> _undo = new();
     private readonly List<HistoryEntry> _redo = new();
+    private readonly Dictionary<TransformTargetId, Func<TransformTargetId?>> _lifecycleTargets = new();
+
+    /// <summary>Keep edits while their entity is deliberately absent. This is
+    /// history-only rebinding, never permission to reuse a stale public ID.</summary>
+    public void RetainLifecycleTarget(TransformTargetId target, Func<TransformTargetId?> current) =>
+        _lifecycleTargets[target] = current;
+
+    private void RefreshLifecycleTargets(List<HistoryEntry> stack)
+    {
+        if (_lifecycleTargets.Count == 0) return;
+        TransformTargetId? Resolve(TransformTargetId target) =>
+            _lifecycleTargets.TryGetValue(target, out var current) ? current() ?? target : target;
+        for (int i = 0; i < stack.Count; i++)
+        {
+            if (stack[i] is not TransformPatch patch) continue;
+            if (!patch.Before.Concat(patch.After).Any(state => Resolve(state.Target) != state.Target))
+                continue;
+            stack[i] = patch with
+            {
+                Before = patch.Before.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
+                After = patch.After.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
+                GroupState = patch.GroupState?.Remap(Resolve),
+            };
+        }
+    }
 
     public event Action? PatchAppended;
     internal event Action? BeforeAppend;
@@ -116,8 +142,11 @@ public sealed class TransformHistory
                 }
     }
 
-    public HistoryEntry? PeekUndo() =>
-        CanUndo ? _undo[^1] : null;
+    public HistoryEntry? PeekUndo()
+    {
+        RefreshLifecycleTargets(_undo);
+        return CanUndo ? _undo[^1] : null;
+    }
 
     public void CommitUndo(HistoryEntry patch)
     {
@@ -129,8 +158,11 @@ public sealed class TransformHistory
         _redo.Add(patch);
     }
 
-    public HistoryEntry? PeekRedo() =>
-        CanRedo ? _redo[^1] : null;
+    public HistoryEntry? PeekRedo()
+    {
+        RefreshLifecycleTargets(_redo);
+        return CanRedo ? _redo[^1] : null;
+    }
 
     public void CommitRedo(HistoryEntry patch)
     {
@@ -166,6 +198,8 @@ public sealed class TransformHistory
         Func<Guid, bool> lineagePresent,
         Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
     {
+        RefreshLifecycleTargets(_undo);
+        RefreshLifecycleTargets(_redo);
         bool ActorsGone(HistoryEntry entry) =>
             entry.Context is { } context &&
             context.Keys.Any(key => !lineagePresent(key.Lineage));
@@ -216,8 +250,8 @@ public sealed class TransformHistory
             if (entry is not TransformPatch patch)
                 return false;
             bool staleTarget =
-                patch.Before.Any(state => !isCurrent(state.Target)) ||
-                patch.After.Any(state => !isCurrent(state.Target));
+                patch.Before.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target)) ||
+                patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target));
             if (!staleTarget)
                 return false;
             return patch.Context is not { Before.Count: > 0 };
@@ -260,6 +294,7 @@ public sealed class TransformHistory
 
     private void RaiseCleared()
     {
+        _lifecycleTargets.Clear();
         if (Cleared is { } observers)
             foreach (Action observer in observers.GetInvocationList())
                 try

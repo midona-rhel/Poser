@@ -7,6 +7,9 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
+using Poser.Domain.Posing;
+using Poser.Game.Journal;
 using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Game.Scene;
@@ -22,6 +25,94 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Light_edits_survive_release_and_repeated_restoration(bool borrowed)
+    {
+        var world = new World();
+        var values = new LightSession(new ValueJournal(world.History), world.Lighting, world.Lifecycle);
+        var light = borrowed
+            ? world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!
+            : world.Lifecycle.SpawnLight(LightKind.Point)!;
+        values.SetIntensity(light, 7);
+        values.SetIsOn(light, false);
+        world.Lifecycle.DestroyLight(light);
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.True(world.Undo()); // release
+            var restored = Assert.Single(world.Lighting.Lights);
+            Assert.NotSame(light, restored);
+            Assert.Equal(borrowed ? LightOwnership.World : LightOwnership.Spawned, restored.Ownership);
+            Assert.Equal(7, restored.Intensity);
+            Assert.False(restored.IsOn);
+            Assert.True(world.Undo()); // off
+            Assert.True(restored.IsOn);
+            Assert.True(world.Undo()); // intensity
+            Assert.Equal(1, restored.Intensity);
+            Assert.True(world.Undo()); // acquire/spawn
+            Assert.Empty(world.Lighting.Lights);
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            restored = Assert.Single(world.Lighting.Lights);
+            Assert.Equal(7, restored.Intensity);
+            Assert.False(restored.IsOn);
+            Assert.True(world.Redo());
+            Assert.Empty(world.Lighting.Lights);
+        }
+    }
+
+    [Fact]
+    public void Light_transform_history_survives_absence_and_rekeys_only_inside_history()
+    {
+        var world = new World();
+        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        var oldTarget = world.Lighting.Target(light)!.Value;
+        var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
+        world.History.Append(new TransformPatch("Move light", [state], [state]));
+        world.Lifecycle.DestroyLight(light);
+        world.History.Reconcile(_ => false, _ => true);
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.Lighting.Lights);
+        var newTarget = world.Lighting.Target(restored)!.Value;
+        Assert.NotEqual(oldTarget, newTarget);
+        Assert.Null(world.Lighting.Target(light)); // old public identity remains dead
+        var patch = Assert.IsType<TransformPatch>(world.History.PeekUndo());
+        Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
+        world.History.CommitUndo(patch);
+        Assert.True(world.Undo()); // undo acquisition, removes second native copy
+        world.History.Reconcile(_ => false, _ => true);
+        Assert.True(world.Redo());
+        var thirdTarget = world.Lighting.Target(Assert.Single(world.Lighting.Lights));
+        Assert.NotEqual(newTarget, thirdTarget);
+        Assert.Equal(thirdTarget, Assert.Single(Assert.IsType<TransformPatch>(world.History.PeekRedo()).After).Target);
+    }
+
+    [Fact]
+    public void Released_light_cannot_reclaim_a_different_incarnation_at_the_same_address()
+    {
+        var world = new World();
+        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        world.Lifecycle.DestroyLight(light);
+        world.Lighting.Source = world.Lighting.Source with { Generation = 2 };
+        Assert.False(world.Undo());
+        Assert.Empty(world.Lighting.Lights);
+        Assert.StartsWith("Release light", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void Released_scenery_cannot_reclaim_an_address_reused_by_another_object()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.Lifecycle.ReleaseWorldObject(claim);
+        world.WorldObjects.Place(address, UserPut);
+        Assert.False(world.Undo());
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(UserPut, world.WorldObjects.MapPlacement(address));
+    }
     [Fact]
     public void Actor_removal_restores_latest_runtime_snapshot_without_replaying_the_clone_source()
     {
@@ -346,13 +437,13 @@ public sealed class SceneLifecycleHistoryTests
             History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
                 History, Lighting, Cameras, Actors, Props, Overlays,
-                WorldObjects);
+                WorldObjects, Lighting.Target);
         }
 
         public bool Undo()
         {
-            var entry = (SceneLifecyclePatch)History.PeekUndo()!;
-            if (!entry.Undo())
+            var entry = History.PeekUndo()!;
+            if (!(entry switch { SceneLifecyclePatch p => p.Undo(), JournalStep p => p.Undo(), _ => false }))
                 return false;
             History.CommitUndo(entry);
             return true;
@@ -360,8 +451,8 @@ public sealed class SceneLifecycleHistoryTests
 
         public bool Redo()
         {
-            var entry = (SceneLifecyclePatch)History.PeekRedo()!;
-            if (!entry.Redo())
+            var entry = History.PeekRedo()!;
+            if (!(entry switch { SceneLifecyclePatch p => p.Redo(), JournalStep p => p.Redo(), _ => false }))
                 return false;
             History.CommitRedo(entry);
             return true;
@@ -371,6 +462,15 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeLighting : ILightingService
     {
         private readonly List<ILight> _lights = new();
+        private readonly Dictionary<ILight, LightId> _ids = new();
+        private readonly Dictionary<ILight, WorldLightCandidate> _sources = new();
+        public WorldLightCandidate Source = new(0x1234, 0, Generation: 1);
+        public TransformTargetId? Target(ILight light)
+        {
+            if (!light.IsValid || !_lights.Contains(light)) return null;
+            if (!_ids.TryGetValue(light, out var id)) _ids[light] = id = LightId.New();
+            return TransformTargetId.ForLight(id);
+        }
 
         public bool RefuseSpawn { get; set; }
         public IReadOnlyList<ILight> Live => _lights;
@@ -418,7 +518,15 @@ public sealed class SceneLifecycleHistoryTests
         public void ClearGobo(ILight light) { }
         public IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates() =>
             Array.Empty<WorldLightCandidate>();
-        public ILight? CaptureWorldLight(WorldLightCandidate candidate) => null;
+        public ILight? CaptureWorldLight(WorldLightCandidate candidate)
+        {
+            if (candidate != Source || _lights.Any(l => l.Ownership == LightOwnership.World)) return null;
+            var light = AddBorrowed();
+            _sources[light] = candidate;
+            return light;
+        }
+        public WorldLightCandidate? GetWorldSource(ILight light) =>
+            _sources.TryGetValue(light, out var source) ? source : null;
     }
 
     private sealed class FakeLight : ILight
@@ -563,6 +671,8 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeWorldObjects : IWorldObjectLifecycle
     {
         private readonly Dictionary<nint, Transform> _map = new();
+        private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
+        private long _generation;
         private readonly List<object> _adopted = new();
 
         public bool RefuseAdopt { get; set; }
@@ -576,6 +686,7 @@ public sealed class SceneLifecycleHistoryTests
         public nint Place(nint address, Transform placement)
         {
             _map[address] = placement;
+            _identities[address] = new(address, ++_generation, 0);
             return address;
         }
 
@@ -587,7 +698,7 @@ public sealed class SceneLifecycleHistoryTests
             {
                 Owner = this,
                 State = new WorldObjectState(
-                    address, "bg/fake.mdl", false, _map[address], true),
+                    address, "bg/fake.mdl", false, _map[address], true) { Identity = _identities[address] },
                 MapPlacement = _map[address],
             };
             _adopted.Add(claim);
@@ -607,7 +718,9 @@ public sealed class SceneLifecycleHistoryTests
             return claim;
         }
 
-        public bool AddressLive(nint address) => _map.ContainsKey(address);
+        public object? Reclaim(WorldObjectIncarnation identity) =>
+            _identities.TryGetValue(identity.Address, out var current) && current == identity
+                ? Adopt(identity.Address) : null;
 
         public bool IsLive(object worldObject) =>
             ((FakeWorldObject)worldObject).IsValid;
@@ -627,7 +740,7 @@ public sealed class SceneLifecycleHistoryTests
         public void Apply(object worldObject, WorldObjectState state)
         {
             var claim = (FakeWorldObject)worldObject;
-            claim.State = state;
+            claim.State = state with { Identity = claim.State.Identity };
             _map[state.Address] = state.Placement;
         }
     }

@@ -4,6 +4,7 @@ using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Domain.Identity;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
 using Poser.Entities;
@@ -196,8 +197,8 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
 }
 
 /// <summary>What a WORLD OBJECT entry has to put back. A BORROWED
-/// object's identity is the address the claim was taken at — the map's
-/// own thing, re-claimed. A SPAWNED one was DESTROYED by its release, so
+/// object's identity is its native incarnation — the map's own thing,
+/// re-claimed only while that incarnation survives. A SPAWNED one was DESTROYED by its release, so
 /// its undo re-creates the path anew; re-adopting its freed address
 /// dereferenced a dead vtable and crashed (2026-09-01).</summary>
 internal readonly record struct WorldObjectState(
@@ -207,6 +208,7 @@ internal readonly record struct WorldObjectState(
     Transform Placement,
     bool Visible)
 {
+    public WorldObjectIncarnation? Identity { get; init; }
     public string? Name { get; init; }
     public float Opacity { get; init; } = 1f;
     public Vector3? Tint { get; init; }
@@ -223,10 +225,8 @@ internal readonly record struct WorldObjectState(
 /// <summary>
 /// The adopted-world-object half of <see cref="SceneLifecycleHistory"/>. It is
 /// the one half whose "remove" is a RESTORE rather than a destroy: releasing a
-/// claim gives the map its object back exactly as it stood, and re-adopting is
-/// taking the same address again. Both directions are therefore exactly
-/// statable, which is why an adoption takes an entry where a captured world
-/// LIGHT does not — that one has no address-stable inverse to state.
+/// claim gives the map its object back exactly as it stood. Re-adopting must
+/// verify the saved incarnation before claiming it again.
 /// </summary>
 internal interface IWorldObjectLifecycle
 {
@@ -237,10 +237,8 @@ internal interface IWorldObjectLifecycle
     /// <summary>Re-creates a spawned entry from its recorded path.</summary>
     object? Spawn(string path, Transform placement, bool visible);
 
-    /// <summary>Whether the world graph still stands this address — the
-    /// deref guard before any re-adopt: a streamed-out or destroyed
-    /// object's memory is not readable.</summary>
-    bool AddressLive(nint address);
+    /// <summary>Reclaims only the exact original object, if still present and unclaimed.</summary>
+    object? Reclaim(WorldObjectIncarnation identity);
 
     bool IsLive(object worldObject);
 
@@ -274,12 +272,14 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
     public object? Spawn(string path, Transform placement, bool visible) =>
         _worldObjects.Spawn(path, placement, visible, out _);
 
-    public bool AddressLive(nint address)
+    public object? Reclaim(WorldObjectIncarnation identity)
     {
-        foreach (var row in _worldObjects.EnumerateWorld())
-            if (row.Address == address)
-                return true;
-        return false;
+        // The address alone may now name a different streamed-in object.
+        if (_worldObjects.Find(identity.Address) != null
+            || !_worldObjects.TryObserve(identity.Address, out var current)
+            || !current.SameAllocation(identity))
+            return null;
+        return _worldObjects.Adopt(identity.Address);
     }
 
     public bool IsLive(object worldObject) =>
@@ -296,6 +296,7 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
             handle.Transform, handle.Visible)
         {
             Name = handle.Name,
+            Identity = handle.Spawned ? null : handle.Identity,
             Opacity = handle.Opacity,
             Tint = handle.Tint,
             Stain = handle.Stain,
@@ -377,10 +378,9 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
 /// where it did not, the despawn is refused BY NAME rather than passing for
 /// an undoable one.</para>
 ///
-/// <para>Only OWNED entities are recorded. A captured world light is borrowed,
-/// not spawned, and its release is a restoration of the game's own object; the
-/// default GPose camera cannot be destroyed at all. Neither has an inverse
-/// this seam can state, so neither takes an entry.</para>
+/// <para>Borrowed world lights are re-acquired only from the same original
+/// native incarnation. Built-in GPose cameras/lights do not have a recreatable
+/// lifecycle here.</para>
 ///
 /// <para>An entity that leaves by some path this seam does not own — a scene
 /// import, the game itself — leaves its slot holding a dead handle. Every
@@ -401,10 +401,11 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
     private readonly IWorldObjectLifecycle _worldObjects;
+    private readonly Func<ILight, TransformTargetId?>? _lightTarget;
 
     /// <summary>Live instance → slot, by reference: the re-binding that makes
-    /// every entry about one entity share one slot. Keys are dropped as the
-    /// entity is removed and re-added as a restore mints its successor.
+    /// every entry about one entity share one slot. Light aliases are retained
+    /// for property history; they are never exposed as current public IDs.
     /// </summary>
     private readonly Dictionary<object, LightSlot> _lightSlots =
         new(ReferenceEqualityComparer.Instance);
@@ -456,6 +457,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
     {
+        _lightTarget = light => bindings.GetLightId(light) is { } id
+            ? TransformTargetId.ForLight(id) : null;
     }
 
     /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
@@ -468,7 +471,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IActorLifecycle actors,
         IPropLifecycle props,
         IOverlayLifecycle overlays,
-        IWorldObjectLifecycle worldObjects)
+        IWorldObjectLifecycle worldObjects,
+        Func<ILight, TransformTargetId?>? lightTarget = null)
     {
         _history = history;
         _lighting = lighting;
@@ -477,6 +481,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _props = props;
         _overlayNodes = overlays;
         _worldObjects = worldObjects;
+        _lightTarget = lightTarget;
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -503,6 +508,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         public ILight? Live;
         public LightFile Document = new();
         public IBone? AttachedBone;
+        public WorldLightCandidate? Source;
 
         /// <summary>False until a removal has actually read the light. A
         /// restore without one would spawn a default-valued impostor wearing
@@ -518,6 +524,14 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         RecordLightSpawn(
             $"Clone light '{source.Name}'", () => _lighting.CloneLight(source));
 
+    public ILight? AcquireWorldLight(WorldLightCandidate source) =>
+        AppendLightSpawn("Acquire world light", _lighting.CaptureWorldLight(source));
+
+    // History alone may resolve an old wrapper to its successor. Public IDs
+    // and acquisition receipts remain expired after release.
+    internal ILight? CurrentLight(ILight light) =>
+        _lightSlots.TryGetValue(light, out var slot) ? slot.Live : light;
+
     /// <summary>Records a light that some OTHER path already created — a
     /// file import, which owns its own spawn — under this seam's discipline.
     /// </summary>
@@ -526,15 +540,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     public void DestroyLight(ILight light)
     {
-        // A borrowed light is released, not destroyed; there is no spawn that
-        // inverts a release, so the act stands unrecorded rather than
-        // pretending to be undoable.
-        if (!_lighting.IsSpawnedLight(light))
+        if (!light.IsValid) return;
+        if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
         {
             _lighting.DestroyLight(light);
             return;
         }
-        string description = $"Remove light '{light.Name}'";
+        string description = $"{(light.Ownership == LightOwnership.World ? "Release" : "Remove")} light '{light.Name}'";
         var slot = SlotFor(light);
         if (!RemoveLight(slot))
             return;
@@ -563,7 +575,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         if (_lightSlots.TryGetValue(light, out var existing))
             return existing;
-        var slot = new LightSlot { Live = light };
+        var slot = new LightSlot { Live = light, Source = _lighting.GetWorldSource(light) };
         _lightSlots[light] = slot;
         return slot;
     }
@@ -579,20 +591,24 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.Document = LightFileService.CreateLightFile(light);
             slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
+            if (_lightTarget?.Invoke(light) is { } target)
+                _history.RetainLifecycleTarget(target, () =>
+                    slot.Live is { IsValid: true } current ? _lightTarget(current) : null);
             _lighting.DestroyLight(light);
         }
-        _lightSlots.Remove(light);
         slot.Live = null;
         return true;
     }
 
     private bool RestoreLight(LightSlot slot)
     {
-        if (slot.Live != null)
+        if (slot.Live is { IsValid: true })
             return true;
         if (!slot.HasDocument)
             return false;
-        var light = _lighting.SpawnLight(slot.Document.Kind);
+        var light = slot.Source is { } source
+            ? _lighting.CaptureWorldLight(source)
+            : _lighting.SpawnLight(slot.Document.Kind);
         if (light == null)
             return false;
         LightFileService.Apply(slot.Document, light);
@@ -604,13 +620,15 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         return true;
     }
 
-    /// <summary>Re-projects a saved gobo through the live library. A path the
-    /// running client no longer ships is dropped rather than pushed at the
-    /// game — the import path's own rule.</summary>
+    /// <summary>Restores a texture observed in this session, including a
+    /// world light's texture that is not in the preset library.</summary>
     private void ApplyGobo(string? path, ILight light)
     {
         if (string.IsNullOrEmpty(path))
+        {
+            _lighting.ClearGobo(light);
             return;
+        }
         foreach (var gobo in _lighting.Gobos)
             if (string.Equals(
                     gobo.Path, path, StringComparison.OrdinalIgnoreCase))
@@ -618,6 +636,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
                 _lighting.ApplyGobo(light, gobo);
                 return;
             }
+        _lighting.ApplyGobo(light, new GoboEntry(path, path));
     }
 
     private static string KindName(LightKind kind) => kind switch
@@ -1405,16 +1424,15 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (!slot.HasDocument)
             return false;
         // A spawned entry was destroyed — its undo re-creates the path.
-        // A borrowed one re-claims its address, but only after the world
-        // walk confirms the object still stands: dereferencing a
-        // streamed-out address is the crash, not a refusal.
+        // A borrowed one reclaims the exact saved incarnation, never a new
+        // object that happens to occupy the old address.
         var worldObject = slot.Document.Spawned
             ? _worldObjects.Spawn(
                 slot.Document.Path,
                 slot.Document.Placement,
                 slot.Document.Visible)
-            : _worldObjects.AddressLive(slot.Document.Address)
-                ? _worldObjects.Adopt(slot.Document.Address)
+            : slot.Document.Identity is { } identity
+                ? _worldObjects.Reclaim(identity)
                 : null;
         if (worldObject == null)
             return false;
@@ -1485,9 +1503,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var lightSlots = new List<LightSlot>();
         foreach (var light in lights ?? Array.Empty<ILight>())
         {
-            // A borrowed light is released, not destroyed, and a release has no
-            // spawn that inverts it — the single-light rule, applied per member.
-            if (!_lighting.IsSpawnedLight(light))
+            if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
             {
                 _lighting.DestroyLight(light);
                 removed++;

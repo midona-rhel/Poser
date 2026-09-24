@@ -30,6 +30,11 @@ below. A repeated removal captures the latest edits again.
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.
 External targets that no longer exist are not replaced by unrelated entities.
+World-light acquisition/release preserves the edited copy separately from the
+original world's baseline. Undo reacquires only the same native incarnation;
+scenery/VFX reclaim uses the same identity rule, never address presence alone.
+Light property and transform history follows the restored copy, but expired
+public selection IDs and acquisition receipts never redirect to that copy.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
 MCDF history reuses its package reference; it is not a portable appearance export.
@@ -214,13 +219,15 @@ An initial BG model-resource attachment belongs to the same allocation generatio
 
 ## Borrowed world lights
 
-Borrowing wraps the original native light and captures its editable values;
-it neither spawns a substitute nor suppresses the original. Release and GPose
-exit restore those values on that same light, including its projected texture.
-If the native light disappears, its wrapper is dropped without restoring into
-a replacement at the same address. Spawned lights remain owned and destroyed
-by Poser. This follows Brio's `LightingService.AddWorldLight` /
-`RemoveWroldLight` borrowing model.
+Acquiring a world light creates an editable native copy and suppresses the
+original, following Ktisis's `LightModule.AddFromOverworld`. Game-authored
+updates therefore do not overwrite the user's emission settings. The copy
+retains its own projected-texture reference; toggling it off/on preserves
+intensity. It remains a Light in the sidebar regardless of ownership.
+Release, GPose exit and unload restore the original visibility and destroy
+only the copy. Other source properties are untouched. Source destruction
+removes the copy without restoring into a replacement at the same address;
+the original's observed generation remains the authority for restoration.
 
 ## Light controls and outlines
 

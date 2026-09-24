@@ -640,15 +640,8 @@ public partial class MainWindow
         // user's to move.
         Draggable = light.AttachedBone == null,
         Count = "",
-        // Ownership outranks kind in the mark: a borrowed light is
-        // released rather than destroyed, and the row has to say so
-        // before the light is ever selected.
-        Icon = light.Ownership switch
-        {
-            LightOwnership.GPose => TablerIcon.Camera,
-            LightOwnership.World => TablerIcon.BuildingStore,
-            _ => KindIcon(light.Kind),
-        },
+        Icon = light.Ownership == LightOwnership.GPose
+            ? TablerIcon.Camera : KindIcon(light.Kind),
         Depth = depth,
         ForceIcon = depth > 0,
         Tag = SelectionId.ForLight(light.Id),

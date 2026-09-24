@@ -9,7 +9,7 @@ namespace Poser.Game.Tests.Lighting;
 public unsafe class BorrowedLightStateTests
 {
     [Fact]
-    public void Borrowing_keeps_the_original_and_restores_all_editable_native_values()
+    public void Replacement_edits_leave_source_properties_alone_and_toggle_preserves_intensity()
     {
         LightRenderObject render = default;
         GameLight native = default;
@@ -28,8 +28,16 @@ public unsafe class BorrowedLightStateTests
         var originalTransform = native.Transform;
         var originalRender = render;
         using var state = new BorrowedLightState(&native);
-        var light = new Light(&native, "Borrowed", LightOwnership.World);
-        Assert.True(light.NativePtr == &native);
+        LightRenderObject copyRender = default;
+        GameLight copy = default;
+        copy.LightRenderObject = &copyRender;
+        state.CopyTo(&copy);
+        var light = new Light(&copy, "Borrowed", LightOwnership.World);
+        Assert.True(light.NativePtr == &copy);
+        Assert.True(copyRender.Transform == &copy.Transform);
+        Assert.Equal(originalRender.ColorIntensity, copyRender.ColorIntensity);
+        Assert.Equal(originalRender.AreaAngle, copyRender.AreaAngle);
+        Assert.Equal(originalRender.LightFlags, copyRender.LightFlags);
         Assert.Equal(originalRender.ColorIntensity, render.ColorIntensity);
         Assert.Equal((byte)17, native.VisibilityFlags);
         light.Transform = Poser.Transform.Identity;
@@ -47,12 +55,17 @@ public unsafe class BorrowedLightStateTests
         light.ShadowPlaneFar = 5;
         light.HasReflection = false;
         light.CastsObjectShadow = true;
+        state.Suppress(&native);
+        Assert.False(native.IsVisible);
         light.IsOn = false;
-        Assert.Equal(0f, render.Intensity);
-        Assert.Equal((byte)17, native.VisibilityFlags);
+        Assert.False(light.IsOn);
+        Assert.Equal(10f, copyRender.Intensity);
+        Assert.Equal(7f, render.Intensity);
+        light.Intensity = 12;
         light.IsOn = true;
-        Assert.Equal(1f, render.Intensity);
-        Assert.Equal((byte)17, native.VisibilityFlags);
+        Assert.True(light.IsOn);
+        Assert.Equal(12f, copyRender.Intensity);
+        Assert.Equal(7f, render.Intensity);
         Assert.True(state.Restore(&native));
         Assert.Equal(originalTransform.Position, native.Transform.Position);
         Assert.Equal(originalTransform.Rotation, native.Transform.Rotation);
@@ -74,11 +87,8 @@ public unsafe class BorrowedLightStateTests
         Assert.Equal(new Vector3(9, 8, 7), (Vector3)native.Transform.Position);
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public void Original_gobo_reference_is_retained_and_transferred_back_once(int edit)
+    [Fact]
+    public void Replacement_gets_its_own_gobo_reference_without_taking_the_originals()
     {
         LightRenderObject render = default;
         GameLight native = default;
@@ -89,21 +99,42 @@ public unsafe class BorrowedLightStateTests
         var released = new List<nint>();
         var state = new BorrowedLightState(&native, retained.Add, released.Add);
         Assert.Equal(new nint[] { 123 }, retained);
-        if (edit != 0)
-        {
-            // Native replacement already relinquished its original reference.
-            native.ProjectedCubemapTexture = (FFXIVClientStructs.FFXIV.Client.System.Resource.Handle.TextureResourceHandle*)(edit == 1 ? 789 : 0);
-            render.Texture = (void*)(edit == 1 ? 987 : 0);
-        }
+        LightRenderObject copyRender = default;
+        GameLight copy = default;
+        copy.LightRenderObject = &copyRender;
+        state.CopyTo(&copy);
+        Assert.Equal((nint)123, (nint)copy.ProjectedCubemapTexture);
+        Assert.Equal((nint)456, (nint)copyRender.Texture);
         Assert.True(state.Restore(&native));
         state.Dispose();
-        Assert.Equal(edit == 2 ? Array.Empty<nint>() : new nint[] { edit == 1 ? 789 : 123 }, released);
+        // The copy owns the retained reference now; its normal native cleanup
+        // releases it. Restoring the source must not take that reference back.
+        Assert.Empty(released);
         Assert.Equal((nint)123, (nint)native.ProjectedCubemapTexture);
         Assert.Equal((nint)456, (nint)render.Texture);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(17)]
+    public void Release_restores_original_visibility_without_rewinding_game_updates(byte visibility)
+    {
+        LightRenderObject render = default;
+        GameLight native = default;
+        native.LightRenderObject = &render;
+        native.VisibilityFlags = visibility;
+        using var state = new BorrowedLightState(&native);
+        state.Suppress(&native);
+        render.Intensity = 4;
+        native.Transform.Position = new(9, 8, 7);
+        Assert.True(state.Restore(&native));
+        Assert.Equal(visibility, native.VisibilityFlags);
+        Assert.Equal(4, render.Intensity);
+        Assert.Equal(new Vector3(9, 8, 7), (Vector3)native.Transform.Position);
+    }
+
     [Fact]
-    public void Native_departure_drops_only_the_retained_resource_and_disables_the_old_wrapper()
+    public void Failed_capture_releases_the_pending_texture_reference_once_without_touching_source()
     {
         LightRenderObject render = default;
         GameLight native = default;
@@ -112,16 +143,10 @@ public unsafe class BorrowedLightStateTests
         native.ProjectedCubemapTexture = (FFXIVClientStructs.FFXIV.Client.System.Resource.Handle.TextureResourceHandle*)123;
         var released = new List<nint>();
         var state = new BorrowedLightState(&native, _ => { }, released.Add);
-        bool sameLifetime = true;
-        var light = new Light(&native, "Borrowed", LightOwnership.World, () => sameLifetime);
-        sameLifetime = false;
-        Assert.False(light.IsValid);
-        Assert.True(light.NativePtr == null);
-        light.Color = Vector3.Zero;
-        light.Transform = Poser.Transform.Identity;
+        state.Dispose();
+        state.Dispose();
         Assert.Equal(new Vector3(2, 3, 4), render.Color);
-        state.Dispose();
-        state.Dispose();
+        Assert.Equal((nint)123, (nint)native.ProjectedCubemapTexture);
         Assert.Equal(new nint[] { 123 }, released);
         Assert.False(state.Restore(&native));
     }
