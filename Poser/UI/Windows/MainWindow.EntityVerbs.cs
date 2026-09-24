@@ -112,27 +112,13 @@ public partial class MainWindow
         await RemoveEntitiesSafely(selected);
     }
 
-    private Task<global::Poser.Application.Selection.SelectionRemovalResult> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
-        _entityCommands.Remove(ids);
-
     private async Task<int?> RemoveEntitiesSafely(
         IReadOnlyList<SelectionId> ids,
         Action? onRemoved = null)
     {
-        try
-        {
-            var result = await DestroyEntities(ids);
-            _notices.Removal(result);
-            int removed = result.AppliedCount;
-            if (removed > 0)
-                onRemoved?.Invoke();
-            return removed;
-        }
-        catch (Exception exception)
-        {
-            _notices.Failed("Remove", exception.Message);
-            return null;
-        }
+        var removed = await _entityActions.Remove(ids);
+        if (removed > 0) onRemoved?.Invoke();
+        return removed;
     }
 
     /// <summary>The selection's actor, if any — the recenter seat's

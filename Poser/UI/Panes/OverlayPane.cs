@@ -36,6 +36,7 @@ public sealed class OverlayPane
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
     /// both land in the shell's undo history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly EntityActions _entityActions;
 
     private readonly GameIconResolver _icons;
 
@@ -75,6 +76,7 @@ public sealed class OverlayPane
         IEntityBindings bindings,
         StatusIconCatalog statusIcons,
         ISceneLifecycleHistory lifecycle,
+        EntityActions entityActions,
         ITextureProvider textures,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -85,6 +87,7 @@ public sealed class OverlayPane
         _bindings = bindings;
         _statusIcons = statusIcons;
         _lifecycle = lifecycle;
+        _entityActions = entityActions;
         _icons = new GameIconResolver(textures);
         _scenePane = scenePane;
         _names = names;
@@ -482,10 +485,10 @@ public sealed class OverlayPane
                 help: "Duplicate this overlay");
             actions.Button(
                 "Delete",
-                () => _pending = () =>
+                () =>
                 {
-                    _lifecycle.DestroyOverlay(node);
-                    _scene.Selection.Clear();
+                    if (_bindings.GetOverlayId(node) is { } id)
+                        _pending = () => _ = _entityActions.Remove(SelectionId.ForOverlay(id));
                 },
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");

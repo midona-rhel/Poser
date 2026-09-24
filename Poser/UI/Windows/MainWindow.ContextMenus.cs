@@ -120,7 +120,7 @@ public partial class MainWindow
                 name => SaveOwnedActorEntry(actorId, name)));
         }
 
-        items.Add(new ContextMenuItem("Create collider from current pose", TablerIcon.Cube,
+        items.Add(new ContextMenuItem("Create collider", TablerIcon.Cube,
             disabled: !actor.HasSkeleton || _actorColliderCapture.Busy));
         actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(actorId, actor.Name)));
 
@@ -979,10 +979,12 @@ public partial class MainWindow
             new("Duplicate", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Save to library", TablerIcon.Library),
-            new("Reset transform", TablerIcon.Refresh,
-                disabled: camera.IsLocked || !_cameraService.IsAvailable),
-            new("Reset properties", TablerIcon.Refresh,
-                disabled: camera.IsLocked),
+            new("Reset", TablerIcon.Refresh, submenuItems:
+            [
+                new("Transform", TablerIcon.Refresh,
+                    disabled: camera.IsLocked || !_cameraService.IsAvailable),
+                new("Properties", TablerIcon.Refresh, disabled: camera.IsLocked),
+            ]),
         };
         var actions = new List<Action?>
         {
@@ -1015,8 +1017,7 @@ public partial class MainWindow
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
                 name => _scenePane.SaveCameraEntry(cameraId.LogicalId, name)),
-            () => _cameraPane.ResetCameraTransform(cameraId),
-            () => camera.ResetProperties(),
+            null,
         };
         if (!camera.IsDefault)
         {
@@ -1049,7 +1050,17 @@ public partial class MainWindow
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
-        DrawMoreAction(items, moreActions);
+        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
+        if (parent >= 0 && parent < items.Count)
+        {
+            if (items[parent].Label == "More" && sub >= 0 && sub < moreActions.Count)
+                moreActions[sub]?.Invoke();
+            else if (items[parent].Label == "Reset")
+            {
+                if (sub == 0) _cameraPane.ResetCameraTransform(cameraId);
+                else if (sub == 1) _sessions.Cameras.ResetProperties(camera);
+            }
+        }
     }
 
     // ── world-object / group / selection context menus ──────────────────

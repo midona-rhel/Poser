@@ -77,7 +77,7 @@ public sealed partial class AppearancePane
     private readonly Game.Journal.ActorValueSession _values;
     private readonly Game.Journal.DisruptiveSteps _disruptive;
     private readonly Game.Integration.CharaImport _chara;
-    private readonly WorldActions _worldActions;
+    private readonly EntityActions _entityActions;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -162,7 +162,7 @@ public sealed partial class AppearancePane
         UserNotices notices,
         Game.Journal.ActorValueSession values,
         Game.Journal.DisruptiveSteps disruptive,
-        WorldActions worldActions,
+        EntityActions entityActions,
         IWardrobeCatalog wardrobe,
         IPropCatalog props,
         Game.Journal.WardrobeSession wardrobeSession,
@@ -199,7 +199,7 @@ public sealed partial class AppearancePane
         _facewearTexture = entry => ResolveIcon(entry.Icon);
         _values = values;
         _disruptive = disruptive;
-        _worldActions = worldActions;
+        _entityActions = entityActions;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -474,7 +474,7 @@ public sealed partial class AppearancePane
 
     private void ReleaseAdopted(ActorId id)
     {
-        _ = _worldActions.Release(SelectionId.ForActor(id));
+        _ = _entityActions.Remove(SelectionId.ForActor(id));
     }
 
     /// <summary>Edits the actor's model id and supports named model search.</summary>

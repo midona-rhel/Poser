@@ -26,12 +26,13 @@ each entity's destroy or release owner and lifecycle history. Adopted actors,
 borrowed lights and world objects, default cameras, and locked-group members
 retain their separate ownership rules.
 
-Multi-selection and category removal capture exact IDs at confirmation and
+Inspector, multi-selection and category removal capture exact IDs at confirmation and
 dispatch one batch through the same application command. The Game adapter
 rechecks ownership, membership and group locks on the framework thread; world
 releases retain claim bookkeeping. Only confirmed removals leave selection.
 Per-item outcomes distinguish removed, already absent, refused and failed.
 The UI reports refusals through existing notices, not inline state text.
+Single-entity inspectors use this same route and never clear unrelated selection.
 Successful removal inverses form one history entry, even if another member
 refuses. Earlier unfinished value edits are sealed separately. This batch is
 synchronous: it never stays open across an await or captures unrelated edits.

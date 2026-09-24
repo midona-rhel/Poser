@@ -33,7 +33,7 @@ public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
     private readonly SelectionEntityCommands _entityCommands;
-    private readonly UserNotices _notices;
+    private readonly EntityActions _entityActions;
 
     /// <summary>The selection the removal was armed against. The arm is only
     /// live while the selection is still that exact ordered set.</summary>
@@ -44,11 +44,11 @@ public sealed class SelectionSection
     public SelectionSection(
         SceneSession scene,
         SelectionEntityCommands entityCommands,
-        UserNotices notices)
+        EntityActions entityActions)
     {
         _entityCommands = entityCommands;
         _scene = scene;
-        _notices = notices;
+        _entityActions = entityActions;
     }
 
     /// <summary>Draws the section and answers the height it took; zero when
@@ -158,17 +158,10 @@ public sealed class SelectionSection
         _pending = () => _entityCommands.SetVisibility(ids, visible);
     }
 
-    private async void Remove(IReadOnlyList<SelectionId> ids)
+    private void Remove(IReadOnlyList<SelectionId> ids)
     {
         _armed = Array.Empty<SelectionId>();
-        try
-        {
-            _notices.Removal(await _entityCommands.Remove(ids));
-        }
-        catch (Exception exception)
-        {
-            _notices.Failed("Remove", exception.Message);
-        }
+        _ = _entityActions.Remove(ids);
     }
 
     /// <summary>Current pointer-free facts for the selected entities. Commands

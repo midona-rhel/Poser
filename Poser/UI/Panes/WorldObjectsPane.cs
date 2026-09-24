@@ -43,7 +43,7 @@ public sealed class WorldObjectsPane
     /// apart by their glyphs — minted on first browse.</summary>
     private List<WorldAsset>? _assetChoices;
 
-    private readonly WorldActions _worldActions;
+    private readonly EntityActions _entityActions;
 
     private bool _openObject = true;
 
@@ -59,7 +59,7 @@ public sealed class WorldObjectsPane
     public WorldObjectsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        WorldActions worldActions,
+        EntityActions entityActions,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
@@ -70,7 +70,7 @@ public sealed class WorldObjectsPane
         _names = names;
         _scene = scene;
         _bindings = bindings;
-        _worldActions = worldActions;
+        _entityActions = entityActions;
         _scenePane = scenePane;
         _assets = assets;
         _wardrobe = wardrobe;
@@ -445,22 +445,20 @@ public sealed class WorldObjectsPane
             if (worldObject.Spawned)
                 actions.Button(
                     "Destroy",
-                    () => _pending = () =>
+                    () =>
                     {
                         if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
-                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
-                        _scene.Selection.Clear();
+                            _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(borrowedId));
                     },
                     variant: ButtonVariant.Danger,
                     help: "Destroy this spawned object");
             else
                 actions.Button(
                     "Release",
-                    () => _pending = () =>
+                    () =>
                     {
                         if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
-                            _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
-                        _scene.Selection.Clear();
+                            _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(borrowedId));
                     },
                     help: "Give this object back to the map, where it stood");
         });

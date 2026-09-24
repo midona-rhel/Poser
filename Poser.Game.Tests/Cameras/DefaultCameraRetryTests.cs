@@ -114,6 +114,45 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Same(main, Assert.Single(service.Cameras));
     }
 
+    [Fact]
+    public void Property_reset_is_one_undoable_edit_and_respects_lock()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        using var service = setup.Service;
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
+        var history = new Poser.Application.Transforms.TransformHistory();
+        var session = new Poser.Game.Journal.CameraSession(
+            new Poser.Application.Transforms.ValueJournal(history), service, null!);
+        camera.FoV = 0.4f;
+        camera.Zoom = 7f;
+        camera.FixedPosition = new Vector3(1, 2, 3);
+        camera.TogglePortraitMode();
+        var roll = camera.Roll;
+        camera.IsLocked = true;
+        Assert.False(session.ResetProperties(camera));
+        Assert.False(history.CanUndo);
+        camera.IsLocked = false;
+        Assert.True(session.ResetProperties(camera));
+        Assert.Null(camera.FixedPosition);
+        Assert.False(camera.IsPortraitMode);
+        var reset = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
+        Assert.True(reset.Undo());
+        history.CommitUndo(reset);
+        Assert.False(history.CanUndo);
+        Assert.Equal(0.4f, camera.FoV);
+        Assert.Equal(7f, camera.Zoom);
+        Assert.Equal(new Vector3(1, 2, 3), camera.FixedPosition);
+        Assert.True(camera.IsPortraitMode);
+        Assert.Equal(roll, camera.Roll);
+        Assert.Same(camera, service.LiveCamera);
+        Assert.True(reset.Redo());
+        Assert.Null(camera.FixedPosition);
+        Assert.False(camera.IsPortraitMode);
+        Assert.Equal(0f, camera.FoV);
+    }
+
 [Fact]
     public void Ready_native_entry_creates_the_default_live_camera()
     {

@@ -80,6 +80,59 @@ public sealed class CameraSession
             ? SetPosition(c, c.SpawnPosition)
             : SetPositionOffset(c, Vector3.Zero);
 
+    public bool ResetProperties(IVirtualCamera original)
+    {
+        if (_values.Current(original) is not { IsLocked: false } camera) return false;
+        _journal.Seal();
+        var before = ResetState.Read(camera);
+        camera.ResetProperties();
+        var after = ResetState.Read(camera);
+        _journal.Record("Reset camera properties", before, after, state =>
+        {
+            if (_values.Current(original) is not { } live) return;
+            PutTarget(live, state.Target);
+            state.Apply(live);
+        }, () => _values.Current(original) is not null);
+        return true;
+    }
+
+    // Only fields changed by the native reset belong to this edit. Do not use
+    // file import here: it changes the owned reset baseline and other settings.
+    private sealed record ResetState(
+        Vector3 PositionOffset, Vector3? FixedPosition, Vector3 TargetOffset,
+        ActorId? Target, string TargetName, bool TargetLocked,
+        bool Collision, bool Delimit, bool Portrait, float Roll, float Zoom,
+        float FoV, Vector2 Angle, Vector2 Pan, bool Orthographic,
+        float OrthoZoom, float Speed, float Sensitivity)
+    {
+        public static ResetState Read(IVirtualCamera c) => new(
+            c.PositionOffset, c.FixedPosition, c.TargetOffset, c.TargetActorId,
+            c.TargetActorName, c.IsTargetLocked, c.DisableCollision, c.DelimitCamera,
+            c.IsPortraitMode, c.Roll, c.Zoom, c.FoV, c.Angle, c.Pan, c.Orthographic,
+            c.OrthographicZoom, c.MovementSpeed, c.MouseSensitivity);
+
+        public void Apply(IVirtualCamera c)
+        {
+            c.PositionOffset = PositionOffset;
+            c.FixedPosition = FixedPosition;
+            c.TargetOffset = TargetOffset;
+            c.TargetActorName = TargetName;
+            c.IsTargetLocked = TargetLocked;
+            c.DisableCollision = Collision;
+            c.DelimitCamera = Delimit;
+            if (c.IsPortraitMode != Portrait) c.TogglePortraitMode();
+            c.Roll = Roll;
+            c.Zoom = Zoom;
+            c.FoV = FoV;
+            c.Angle = Angle;
+            c.Pan = Pan;
+            c.OrthographicZoom = OrthoZoom;
+            c.Orthographic = Orthographic;
+            c.MovementSpeed = Speed;
+            c.MouseSensitivity = Sensitivity;
+        }
+    }
+
     /// <summary>Makes the camera live; the step's undo makes the previous
     /// live camera live again.</summary>
     public void SetLive(IVirtualCamera c)

@@ -509,7 +509,11 @@ public partial class MainWindow
             else if (id.Overlay is { } overlayId &&
                 _bindings.Resolve(overlayId) is
                     { Success: true, Value: { } liveOverlay })
+            {
                 row.LightOn = liveOverlay.Visible;
+                row.CollisionEnabled = liveOverlay.State.Collider?.Enabled ?? false;
+                row.ColliderLocked = liveOverlay.State.Collider?.Locked ?? false;
+            }
             else if (id.Prop is { } propId &&
                 _bindings.Resolve(propId) is { Success: true, Value: { } prop })
                 row.LightOn = prop.Visible;

@@ -34,11 +34,7 @@ public sealed class PropsPane
     private IPropHandle? _animDraftFor;
     private float _animDraft;
 
-    /// <summary>Destroying a prop is a scene-lifecycle act, so it goes through
-    /// the seam that files one in the same history the transforms use — not
-    /// through the spawn service, which owns the native object and no
-    /// history.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly EntityActions _entityActions;
 
     private bool _openProp = true;
 
@@ -50,7 +46,7 @@ public sealed class PropsPane
     public PropsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        ISceneLifecycleHistory lifecycle,
+        EntityActions entityActions,
         StainCatalog stains,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -58,7 +54,7 @@ public sealed class PropsPane
     {
         _scene = scene;
         _bindings = bindings;
-        _lifecycle = lifecycle;
+        _entityActions = entityActions;
         _stains = stains;
         _values = values;
         _scenePane = scenePane;
@@ -206,10 +202,10 @@ public sealed class PropsPane
             // invented synonyms for the same act.
             actions.Button(
                 "Destroy",
-                () => _pending = () =>
+                () =>
                 {
-                    _lifecycle.DestroyProp(prop);
-                    _scene.Selection.Clear();
+                    if (_bindings.GetPropId(prop) is { } id)
+                        _pending = () => _ = _entityActions.Remove(SelectionId.ForProp(id));
                 },
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");

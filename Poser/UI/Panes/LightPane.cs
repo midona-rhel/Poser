@@ -44,7 +44,7 @@ public sealed class LightPane
     /// <summary>Adding and removing a light goes through the lifecycle seam,
     /// so both land in the shell's undo history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
-    private readonly WorldActions _worldActions;
+    private readonly EntityActions _entityActions;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
     private readonly IPlacementAnchorSource _anchors;
@@ -126,7 +126,7 @@ public sealed class LightPane
         IEntityBindings bindings,
         ILightingService lighting,
         ISceneLifecycleHistory lifecycle,
-        WorldActions worldActions,
+        EntityActions entityActions,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
         IPlacementAnchorSource anchors,
@@ -147,7 +147,7 @@ public sealed class LightPane
         _scenePane = scenePane;
         _lighting = lighting;
         _lifecycle = lifecycle;
-        _worldActions = worldActions;
+        _entityActions = entityActions;
         _lightFiles = lightFiles;
         _placement = placement;
         _anchors = anchors;
@@ -761,7 +761,8 @@ public sealed class LightPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        _lifecycle.DestroyLight(light);
+                        if (_bindings.GetLightId(light) is { } id)
+                            _ = _entityActions.Remove(SelectionId.ForLight(id));
                     },
                     help: "Remove this light from the scene",
                     variant: ButtonVariant.Danger);
@@ -770,7 +771,7 @@ public sealed class LightPane
                     () =>
                     {
                         if (_bindings.GetLightId(light) is { } borrowedId)
-                            _ = _worldActions.Release(SelectionId.ForLight(borrowedId));
+                            _ = _entityActions.Remove(SelectionId.ForLight(borrowedId));
                     },
                     help: "Hand it back to the game");
         });

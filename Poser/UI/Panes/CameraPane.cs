@@ -37,6 +37,7 @@ public sealed class CameraPane
 
     /// <summary>Camera creation and removal use the lifecycle history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly EntityActions _entityActions;
     private readonly ICameraFileService _cameraFiles;
     private readonly IPlacementAnchorSource _anchors;
     private readonly global::Poser.Files.ObjectPlacementPreferences _placement;
@@ -85,6 +86,7 @@ public sealed class CameraPane
         IVirtualCameraService cameras,
         IActorSpawnService spawnService,
         ISceneLifecycleHistory lifecycle,
+        EntityActions entityActions,
         ICameraFileService cameraFiles,
         IPlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,
@@ -103,6 +105,7 @@ public sealed class CameraPane
         _cameras = cameras;
         _spawnService = spawnService;
         _lifecycle = lifecycle;
+        _entityActions = entityActions;
         _cameraFiles = cameraFiles;
         _notices = notices;
     }
@@ -757,7 +760,8 @@ public sealed class CameraPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        _lifecycle.DestroyCamera(camera);
+                        if (_bindings.GetCameraId(camera) is { } id)
+                            _ = _entityActions.Remove(SelectionId.ForCamera(id));
                     },
                     help: "Remove this camera from the scene",
                     variant: ButtonVariant.Danger);

@@ -577,7 +577,7 @@ internal static class ServiceRegistration
                 configuration.Save);
         });
         services.AddSingleton<WorldAdoptionSource>();
-        services.AddSingleton<WorldActions>();
+        services.AddSingleton<EntityActions>();
         services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
         services.AddSingleton<Game.World.WorldService>();
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
