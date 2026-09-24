@@ -52,9 +52,16 @@ The document store owns native/Stagehand format routing and conversion notes;
 the workflow owns admission, ordered execution, cancellation, and rollback.
 Game-side composition owns the runtime lifetime and disposes the workflow
 before its runtime. The workflow does not construct or dispose its dependencies.
-This is an incremental boundary: scene policy still lives in Game and its
-runtime still carries opaque native tokens; moving it to Application requires
-typed identities and removing its legacy Core dependencies first.
+This is an incremental boundary: scene policy still lives in Game; moving it
+to Application still requires removing its legacy Core file/service dependencies.
+Runtime calls exchange session-scoped `SceneEntityHandle` receipts, not native
+instances. Game retains the exact instance while workflow/history holds its
+receipt, drops it after confirmed removal, and invalidates all receipts on
+session change or disposal. Receipts use reference identity, are not serialized,
+and never rebind by name, address or a newly published selection generation.
+Native owners still validate native lifetime; a receipt alone is not proof that
+an entity remains alive. Native reference storage uses weak keys so abandoned
+operations and discarded history cannot keep entities alive through the adapter.
 
 The public `ISceneWorkflow` save/load contract, options and progress/results
 live in Application and depend only on Domain. Placement modes are shared

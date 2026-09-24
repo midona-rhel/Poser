@@ -1,0 +1,48 @@
+using System.Runtime.CompilerServices;
+using Poser.Application.Scene;
+using Poser.Domain.Operations;
+using Poser.Domain.Identity;
+
+namespace Poser.Game.Scene;
+
+/// <summary>Native references stay here; workflow/history retain only receipts.
+/// Weak keys release entries when their last workflow/history owner goes away.</summary>
+internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession)
+{
+    private readonly ConditionalWeakTable<SceneEntityHandle, object> _entities = new();
+    private SessionGeneration? _session;
+
+    public void Synchronize()
+    {
+        var current = activeSession();
+        if (current == _session) return;
+        _entities.Clear();
+        _session = current;
+    }
+
+    public SceneEntityHandle Track(SceneEntityKind kind, object entity)
+    {
+        Synchronize();
+        var session = _session ?? throw new InvalidOperationException("No active scene session.");
+        var handle = new SceneEntityHandle(session, kind);
+        _entities.Add(handle, entity);
+        return handle;
+    }
+
+    public object? Resolve(SceneEntityHandle? handle)
+    {
+        Synchronize();
+        return handle != null && handle.Session == _session
+            && _entities.TryGetValue(handle, out var entity) ? entity : null;
+    }
+
+    public T? Resolve<T>(SceneEntityHandle? handle, SceneEntityKind kind) where T : class =>
+        handle?.Kind == kind ? Resolve(handle) as T : null;
+
+    public T Require<T>(SceneEntityHandle handle, SceneEntityKind kind) where T : class =>
+        Resolve<T>(handle, kind) ?? throw new InvalidOperationException(
+            $"The scene {kind} is no longer available in this runtime/session.");
+
+    public void Forget(SceneEntityHandle handle) => _entities.Remove(handle);
+    public void Clear() => _entities.Clear();
+}

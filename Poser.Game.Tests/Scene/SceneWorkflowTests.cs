@@ -258,7 +258,7 @@ public sealed class SceneWorkflowTests
 
         /// <summary>The token each actor's gaze was handed, by actor name —
         /// the assertion surface for Entity-target resolution.</summary>
-        public readonly Dictionary<string, object?> GazeTargets = new();
+        public readonly Dictionary<string, SceneEntityHandle?> GazeTargets = new();
 
         public int DisposeCount;
         public void Dispose() => DisposeCount++;
@@ -274,9 +274,24 @@ public sealed class SceneWorkflowTests
 
         public Task<T> OnFramework<T>(Func<T> func) => Task.FromResult(func());
 
+        private readonly Dictionary<SceneEntityHandle, string> _names = new();
+        private SceneEntityHandle Token(string name)
+        {
+            var kind = name.Split(':')[0] switch
+            {
+                "actor" => SceneEntityKind.Actor, "prop" => SceneEntityKind.Prop,
+                "overlay" => SceneEntityKind.Overlay, "world" => SceneEntityKind.WorldObject,
+                "light" => SceneEntityKind.Light, _ => SceneEntityKind.Camera,
+            };
+            var token = new SceneEntityHandle(Session!.Value, kind);
+            _names.Add(token, name);
+            return token;
+        }
+        private string TokenName(SceneEntityHandle token) => _names[token];
+
         public bool BindStructure = true;
-        private readonly Dictionary<object, SelectionId> _structureIds = new(ReferenceEqualityComparer.Instance);
-        public SelectionId? ResolveSceneEntity(object token)
+        private readonly Dictionary<SceneEntityHandle, SelectionId> _structureIds = new();
+        public SelectionId? ResolveSceneEntity(SceneEntityHandle token)
         {
             if (!BindStructure) return null;
             if (!_structureIds.TryGetValue(token, out var id))
@@ -387,7 +402,7 @@ public sealed class SceneWorkflowTests
 
         public Task<SceneMcdfOutcome> ImportMcdf(
             string scenePath,
-            object actor,
+            SceneEntityHandle actor,
             SceneActor data,
             TimeSpan bound,
             CancellationToken cancellation)
@@ -397,11 +412,11 @@ public sealed class SceneWorkflowTests
                 McdfImport?.Invoke(data) ?? SceneMcdfOutcome.Ok());
         }
 
-        public object? SpawnActor(SceneActor data, out string? detail)
+        public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
         {
             Record($"SpawnActor:{data.Name}");
             detail = ActorSpawnFailure?.Invoke(data);
-            return detail is null ? new Token($"actor:{data.Name}") : null;
+            return detail is null ? Token($"actor:{data.Name}") : null;
         }
 
         /// <summary>Polls the barrier must absorb before the actor reports
@@ -412,13 +427,13 @@ public sealed class SceneWorkflowTests
 
         public int ActorReadyPolls;
 
-        public bool ActorReady(object actor)
+        public bool ActorReady(SceneEntityHandle actor)
         {
             Record("ActorReady");
             return ++ActorReadyPolls > ActorReadyAfterPolls;
         }
 
-        public string? AttachCompanion(object actor, SceneActor data)
+        public string? AttachCompanion(SceneEntityHandle actor, SceneActor data)
         {
             Record($"AttachCompanion:{data.Name}");
             return CompanionFailure?.Invoke(data);
@@ -453,7 +468,7 @@ public sealed class SceneWorkflowTests
         }
 
         public string? ArmPoseImport(
-            object actor,
+            SceneEntityHandle actor,
             SceneActor data,
             string description,
             Action<OperationReceipt> onReceipt)
@@ -475,14 +490,14 @@ public sealed class SceneWorkflowTests
 
         public Func<SceneActor, string?>? CompanionPoseFailure;
 
-        public bool CompanionReady(object actor)
+        public bool CompanionReady(SceneEntityHandle actor)
         {
             Record("CompanionReady");
             return ++CompanionReadyPolls > CompanionReadyAfterPolls;
         }
 
         public string? ArmCompanionPoseImport(
-            object actor,
+            SceneEntityHandle actor,
             SceneActor data,
             string description,
             Action<OperationReceipt> onReceipt)
@@ -494,28 +509,28 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
-        public string? PlaceActor(object actor, SceneActor data)
+        public string? PlaceActor(SceneEntityHandle actor, SceneActor data)
         {
             Record($"PlaceActor:{data.Name}");
             return PlacementFailure?.Invoke(data);
         }
 
-        public string? PlaceCompanion(object actor, SceneActor data)
+        public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data)
         {
             Record($"PlaceCompanion:{data.Name}");
             return null;
         }
 
-        public string? FreezeActor(object actor)
+        public string? FreezeActor(SceneEntityHandle actor)
         {
-            Record($"FreezeActor:{((Token)actor).Name["actor:".Length..]}");
-            return FreezeFailure?.Invoke(((Token)actor).Name["actor:".Length..]);
+            Record($"FreezeActor:{TokenName(actor)["actor:".Length..]}");
+            return FreezeFailure?.Invoke(TokenName(actor)["actor:".Length..]);
         }
 
         /// <summary>A freeze the runtime refuses, by actor name.</summary>
         public Func<string, string?>? FreezeFailure;
 
-        public string? ApplyActorGaze(object actor, SceneActor data, object? target)
+        public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
         {
             Record($"ApplyActorGaze:{data.Name}");
             GazeTargets[data.Name] = target;
@@ -527,25 +542,25 @@ public sealed class SceneWorkflowTests
         /// is the other half.</summary>
         public readonly Dictionary<string, bool> VisibleSet = new();
 
-        public void SetActorVisibility(object actor, bool visible)
+        public void SetActorVisibility(SceneEntityHandle actor, bool visible)
         {
-            VisibleSet[((Token)actor).Name["actor:".Length..]] = visible;
+            VisibleSet[TokenName(actor)["actor:".Length..]] = visible;
             Record("SetActorVisibility");
         }
 
-        public object? SpawnProp(SceneProp data, out string? detail)
+        public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)
         {
             Record($"SpawnProp:{data.Name}");
             detail = PropSpawnFailure?.Invoke(data);
-            return detail is null ? new Token($"prop:{data.Name}") : null;
+            return detail is null ? Token($"prop:{data.Name}") : null;
         }
 
-        public object? SpawnOverlay(SceneOverlay data, out string? detail)
+        public SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail)
         {
             string name = data.Node?.Name ?? "Overlay";
             Record($"SpawnOverlay:{name}");
             detail = OverlayStageFailure?.Invoke(data);
-            return detail is null ? new Token($"overlay:{name}") : null;
+            return detail is null ? Token($"overlay:{name}") : null;
         }
 
         /// <summary>Which zone the fake session is standing in. It matches the
@@ -560,35 +575,35 @@ public sealed class SceneWorkflowTests
             return Territory;
         }
 
-        public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
+        public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
         {
             Record($"AdoptWorldObject:{data.Path}");
             detail = WorldObjectAdoptFailure?.Invoke(data);
-            return detail is null ? new Token($"world:{data.Path}") : null;
+            return detail is null ? Token($"world:{data.Path}") : null;
         }
 
         /// <summary>Recorded as a RELEASE and queued apart from
         /// <see cref="Destroyed"/>: the fake keeps the same distinction the
         /// restore contract makes, so a test cannot pass by destroying
         /// something the map owns.</summary>
-        public void ReleaseWorldObject(object token)
+        public void ReleaseWorldObject(SceneEntityHandle token)
         {
-            Record($"ReleaseWorldObject:{((Token)token).Name}");
-            Released.Enqueue(((Token)token).Name);
+            Record($"ReleaseWorldObject:{TokenName(token)}");
+            Released.Enqueue(TokenName(token));
         }
 
         public readonly ConcurrentQueue<string> Released = new();
 
-        public readonly List<object> SpawnedLightTokens = new();
-        public readonly List<object> DestroyedLightTokens = new();
+        public readonly List<SceneEntityHandle> SpawnedLightTokens = new();
+        public readonly List<SceneEntityHandle> DestroyedLightTokens = new();
 
-        public object? SpawnLight(
-            SceneLight data, object? attachmentOwner, out string? detail)
+        public SceneEntityHandle? SpawnLight(
+            SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail)
         {
             Record("SpawnLight");
             detail = LightSpawnFailure?.Invoke(data);
             if (detail is not null) return null;
-            var token = new Token("light");
+            var token = Token("light");
             SpawnedLightTokens.Add(token);
             return token;
         }
@@ -605,24 +620,24 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
-        public object? DefaultCameraToken() => null;
+        public SceneEntityHandle? DefaultCameraToken() => null;
 
-        public object? CreateCamera(SceneCamera data, out string? detail)
+        public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
         {
             Record("CreateCamera");
             detail = null;
-            return new Token("camera");
+            return Token("camera");
         }
 
         public string? SetCameraTarget(
-            object? camera, object targetActor, string displayName,
+            SceneEntityHandle? camera, SceneEntityHandle targetActor, string displayName,
             bool targetLocked)
         {
             Record("SetCameraTarget");
             return null;
         }
 
-        public string? SetLiveCamera(object? camera)
+        public string? SetLiveCamera(SceneEntityHandle? camera)
         {
             Record("SetLiveCamera");
             return null;
@@ -675,27 +690,27 @@ public sealed class SceneWorkflowTests
             return ClearResult;
         }
 
-        public void DestroyActor(object actor) => Destroy(actor);
-        public void DestroyProp(object prop) => Destroy(prop);
-        public void DestroyOverlay(object overlay) => Destroy(overlay);
-        public void DestroyLight(object light)
+        public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
+        public void DestroyProp(SceneEntityHandle prop) => Destroy(prop);
+        public void DestroyOverlay(SceneEntityHandle overlay) => Destroy(overlay);
+        public void DestroyLight(SceneEntityHandle light)
         {
             DestroyedLightTokens.Add(light);
             Destroy(light);
         }
-        public void DestroyCamera(object camera) => Destroy(camera);
+        public void DestroyCamera(SceneEntityHandle camera) => Destroy(camera);
 
-        private void Destroy(object token)
+        private void Destroy(SceneEntityHandle token)
         {
-            Record($"Destroy:{((Token)token).Name}");
-            Destroyed.Enqueue(((Token)token).Name);
+            Record($"Destroy:{TokenName(token)}");
+            Destroyed.Enqueue(TokenName(token));
         }
 
         public void RestoreDefaultCamera(CameraFile baseline) =>
             Record("RestoreDefaultCamera");
     }
 
-    private sealed record Token(string Name);
+
 
     // ── document building ────────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ namespace Poser.Game.Scene;
 /// </summary>
 internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
+    private readonly SceneRuntimeHandles _handles;
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
     private readonly ISceneDocumentStore _documents;
@@ -112,6 +113,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _framework = framework;
         _documents = documents;
         _sessions = sessions;
+        _handles = new(() => ActiveSession);
         _capture = capture;
         _poses = poses;
         _spawns = spawns;
@@ -125,12 +127,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _framework.Update += SweepHistoryAppearance;
     }
 
-    private void SweepHistoryAppearance(IFramework _) => _historyAppearanceFiles.Sweep(ActiveSession);
+    private void SweepHistoryAppearance(IFramework _)
+    {
+        _historyAppearanceFiles.Sweep(ActiveSession);
+        _handles.Synchronize();
+    }
 
     public void Dispose()
     {
         _framework.Update -= SweepHistoryAppearance;
         _historyAppearanceFiles.Dispose();
+        _handles.Clear();
     }
 
     public SessionGeneration? ActiveSession => _sessions.ActiveSessionGeneration;
@@ -138,10 +145,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
 
-    public SelectionId? ResolveSceneEntity(object token)
+    public SelectionId? ResolveSceneEntity(SceneEntityHandle token)
     {
         IEntityBindings bindings = _bindings;
-        return token switch
+        return _handles.Resolve(token) switch
         {
             IActor actor when bindings.GetActorId(actor) is { } id => SelectionId.ForActor(id),
             IPropHandle prop when bindings.GetPropId(prop) is { } id => SelectionId.ForProp(id),
@@ -597,7 +604,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     // ── actors ───────────────────────────────────────────────────────────
 
-    public object? SpawnActor(SceneActor data, out string? detail)
+    public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
     {
         // Set the model inside the spawn's deferred-draw window. A second
         // SetModelCharaId redraw races the next-tick collection assignment.
@@ -608,7 +615,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return null;
         }
         detail = null;
-        return actor;
+        return _handles.Track(SceneEntityKind.Actor, actor);
     }
 
     /// <summary>
@@ -663,9 +670,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         skeletons.Any(skeleton => skeleton.Slot == Poser.Domain.Identity.PoseSlot.Character
             && skeleton.RootBone is not null && skeleton.Bones.Count > 0);
 
-    public bool ActorReady(object actor)
+    public bool ActorReady(SceneEntityHandle actor)
     {
-        var candidate = (IActor)actor;
+        var candidate = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(candidate);
         if (!HasCharacterSkeleton(skeletons) ||
             _bindings.GetActorId(candidate) is not { } id)
@@ -705,12 +712,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return true;
     }
 
-    public async Task<string?> RestoreCollection(object actor, SceneActor data, TimeSpan bound,
+    public async Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
         if (data.PenumbraCollection is not { } collection || data.Mcdf is not null)
             return null;
-        var target = await OnFramework(() => _bindings.GetActorId((IActor)actor));
+        var target = await OnFramework(() => _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
         if (target is not { } id) return "The actor is no longer bound.";
         var available = await OnFramework(() => _integration.ListCollections());
         var name = collection == Guid.Empty ? "None"
@@ -747,7 +754,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
         string scenePath,
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         TimeSpan bound,
         System.Threading.CancellationToken cancellation)
@@ -823,10 +830,11 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 source = found;
             }
 
-            var target = (IActor)actor;
             Guid? operationId = null;
             var refusal = await _framework.RunOnFrameworkThread(() =>
             {
+                var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
+                if (target == null) return "The actor is no longer available.";
                 if (_bindings.GetActorId(target) is not { } id)
                     return "The actor has no stable identity to import a character file onto.";
                 if (_integration.McdfBusy)
@@ -883,9 +891,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     // Only called for an actor whose attachment is present: the workflow skips
     // an absent kind rather than asking the runtime to detach.
-    public string? AttachCompanion(object actor, SceneActor data) =>
+    public string? AttachCompanion(SceneEntityHandle actor, SceneActor data) =>
         _spawns.SetCompanion(
-            (IActor)actor,
+            _handles.Require<IActor>(actor, SceneEntityKind.Actor),
             new CompanionAttachment(data.CompanionKind!.Value, data.CompanionId))
             ? null
             : "The companion could not be attached.";
@@ -907,7 +915,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     };
 
     public string? ArmPoseImport(
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         string description,
         Action<OperationReceipt> onReceipt)
@@ -917,7 +925,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         // being built against a skeleton the registry never bound — which is
         // exactly the shape that reports "Import target n_root could not be
         // resolved" for every bone at once.
-        var target = (IActor)actor;
+        var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(target);
         int resolvable = 0;
         int total = 0;
@@ -945,17 +953,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return result.Success ? null : result.Detail ?? "The pose import refused.";
     }
 
-    public bool CompanionReady(object actor) =>
-        _spawns.GetCompanionActor((IActor)actor) is { } companion &&
+    public bool CompanionReady(SceneEntityHandle actor) =>
+        _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion &&
         _skeletons.GetSkeletons(companion).Count > 0;
 
     public string? ArmCompanionPoseImport(
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         string description,
         Action<OperationReceipt> onReceipt)
     {
-        if (_spawns.GetCompanionActor((IActor)actor) is not { } companion)
+        if (_spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } companion)
             return "The companion's body could not be resolved, so its pose was not restored.";
         if (_skeletons.GetSkeletons(companion).Count == 0)
             return "The companion's skeleton had not built, so its pose was not restored.";
@@ -966,11 +974,11 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             : result.Detail ?? "The companion pose import refused.";
     }
 
-    public string? PlaceActor(object actor, SceneActor data) =>
-        PlaceModel((IActor)actor, data.ModelTransform, data.Pose);
+    public string? PlaceActor(SceneEntityHandle actor, SceneActor data) =>
+        PlaceModel(_handles.Require<IActor>(actor, SceneEntityKind.Actor), data.ModelTransform, data.Pose);
 
-    public string? PlaceCompanion(object actor, SceneActor data) =>
-        _spawns.GetCompanionActor((IActor)actor) is { } companion
+    public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data) =>
+        _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion
             ? PlaceModel(companion, null, data.CompanionPose)
             : "The companion's body could not be resolved, so its placement was not restored.";
 
@@ -1037,9 +1045,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// picture every time, on every client. Expressions come back as part of
     /// the pose, on the frozen face.</para>
     /// </summary>
-    public string? FreezeActor(object actor)
+    public string? FreezeActor(SceneEntityHandle actor)
     {
-        if (_bindings.GetActorId((IActor)actor) is not { } id)
+        if (_bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } id)
             return "The actor has no stable identity to freeze.";
         var paused = _animation.Pause(id);
         return paused.Success
@@ -1054,14 +1062,14 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// part's own point, then the locks — a lock freezes a part at the target
     /// it currently holds, so it must land after that target is written.
     /// </summary>
-    public string? ApplyActorGaze(object actor, SceneActor data, object? target)
+    public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
     {
         if (data.Gaze is not { } saved || saved.Mode == GazeTargetMode.None)
             return null;
         if (!_gaze.IsAvailable)
             return _gaze.UnavailableDetail ?? "Gaze control is unavailable.";
 
-        var source = (IActor)actor;
+        var source = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
 
         // Entity mode IS its target: SetGazeTarget both chooses the actor and
         // enters the mode. A saved Entity gaze whose target the file does not
@@ -1069,7 +1077,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         // pointing at whatever the mode transition would pick.
         if (saved.Mode == GazeTargetMode.Entity)
         {
-            if (target is not IActor followed)
+            if (_handles.Resolve<IActor>(target, SceneEntityKind.Actor) is not { } followed)
                 return "The saved gaze followed an actor the scene does not carry.";
             var chosen = _gaze.SetGazeTarget(source, followed);
             if (!chosen.Success)
@@ -1105,12 +1113,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return null;
     }
 
-    public void SetActorVisibility(object actor, bool visible) =>
-        _spawns.SetVisibility((IActor)actor, visible);
+    public void SetActorVisibility(SceneEntityHandle actor, bool visible) =>
+        _spawns.SetVisibility(_handles.Require<IActor>(actor, SceneEntityKind.Actor), visible);
 
     // ── props ────────────────────────────────────────────────────────────
 
-    public object? SpawnOverlay(SceneOverlay data, out string? detail)
+    public SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail)
     {
         if (data.Node is not { } document)
         {
@@ -1146,7 +1154,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             detail = "The overlay node could not be staged.";
             return null;
         }
-        return handle;
+        return _handles.Track(SceneEntityKind.Overlay, handle);
     }
 
     /// <summary>
@@ -1155,7 +1163,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// 2026-09-01): borrowing is a live-session act, and the load owes
     /// nothing to whatever the map may or may not be standing.
     /// </summary>
-    public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
+    public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
     {
         var handle = _worldObjects.Spawn(
             data.Path, data.Transform, data.Visible, out detail);
@@ -1180,13 +1188,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             if (data.AnimPaused)
                 handle.AnimationPaused = true;
         }
-        return handle;
+        return handle == null ? null : _handles.Track(SceneEntityKind.WorldObject, handle);
     }
 
-    public void ReleaseWorldObject(object token) =>
-        _worldObjects.Release((WorldObjects.AdoptedWorldObject)token);
+    public void ReleaseWorldObject(SceneEntityHandle token) =>
+        Remove<WorldObjects.AdoptedWorldObject>(token, SceneEntityKind.WorldObject, entity =>
+        {
+            if (!_worldObjects.Release(entity) && _worldObjects.Adopted.Contains(entity))
+                throw new InvalidOperationException("The scene world object could not be released.");
+        });
 
-    public object? SpawnProp(SceneProp data, out string? detail)
+    public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)
     {
         var handle = _props.SpawnProp(new PropModel(
             data.Name, data.Model, data.Submodel, data.Variant, string.Empty,
@@ -1199,13 +1211,13 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         handle.Transform = data.Transform;
         handle.Visible = data.Visible;
         detail = null;
-        return handle;
+        return _handles.Track(SceneEntityKind.Prop, handle);
     }
 
     // ── lights ───────────────────────────────────────────────────────────
 
-    public object? SpawnLight(
-        SceneLight data, object? attachmentOwner, out string? detail)
+    public SceneEntityHandle? SpawnLight(
+        SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail)
     {
         var document = data.Light!;
 
@@ -1215,7 +1227,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         IBone? bone = null;
         if (data.Attachment is { } attachment)
         {
-            if (attachmentOwner is not IActor owner)
+            if (_handles.Resolve<IActor>(attachmentOwner, SceneEntityKind.Actor) is not { } owner)
             {
                 detail = "The attachment owner was not restored.";
                 return null;
@@ -1261,7 +1273,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             else if (!_lighting.ApplyGobo(light, gobo))
                 detail = $"The gobo '{gobo.Name}' could not be applied.";
         }
-        return light;
+        return _handles.Track(SceneEntityKind.Light, light);
     }
 
     // ── cameras ──────────────────────────────────────────────────────────
@@ -1269,7 +1281,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private IVirtualCamera? DefaultCamera =>
         _cameras.Cameras.FirstOrDefault(camera => camera.IsDefault);
 
-    public object? DefaultCameraToken() => DefaultCamera;
+    public SceneEntityHandle? DefaultCameraToken() => DefaultCamera is { } camera
+        ? _handles.Track(SceneEntityKind.Camera, camera) : null;
 
     public CameraFile CaptureDefaultCameraState() =>
         DefaultCamera is { } camera
@@ -1284,7 +1297,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return null;
     }
 
-    public object? CreateCamera(SceneCamera data, out string? detail)
+    public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
     {
         var camera = _cameras.CreateCamera(data.Camera!.Kind);
         if (camera is null)
@@ -1294,17 +1307,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         }
         CameraFileService.Apply(data.Camera!, camera);
         detail = null;
-        return camera;
+        return _handles.Track(SceneEntityKind.Camera, camera);
     }
 
     public string? SetCameraTarget(
-        object? camera, object targetActor, string displayName,
+        SceneEntityHandle? camera, SceneEntityHandle targetActor, string displayName,
         bool targetLocked)
     {
-        var target = camera as IVirtualCamera ?? DefaultCamera;
+        var target = camera == null ? DefaultCamera : _handles.Resolve<IVirtualCamera>(camera, SceneEntityKind.Camera);
         if (target is null)
             return "The session has no default camera.";
-        var exactActor = (IActor)targetActor;
+        var exactActor = _handles.Require<IActor>(targetActor, SceneEntityKind.Actor);
         // Validate the exact generation before SetTargetActor can touch any
         // native target state; a replacement occupant is never rebound.
         if (_bindings.GetActorId(exactActor) is not { } targetId ||
@@ -1318,9 +1331,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return null;
     }
 
-    public string? SetLiveCamera(object? camera)
+    public string? SetLiveCamera(SceneEntityHandle? camera)
     {
-        var target = camera as IVirtualCamera ?? DefaultCamera;
+        var target = camera == null ? DefaultCamera : _handles.Resolve<IVirtualCamera>(camera, SceneEntityKind.Camera);
         if (target is null)
             return "The session has no default camera.";
         _cameras.SetLive(target);
@@ -1423,15 +1436,27 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     // ── rollback ─────────────────────────────────────────────────────────
 
-    public void DestroyActor(object actor) => _spawns.DestroyActor((IActor)actor);
+    public void DestroyActor(SceneEntityHandle actor) => Remove<IActor>(actor, SceneEntityKind.Actor, entity =>
+    {
+        if (!_spawns.DestroyActor(entity) && _actors.Actors.Contains(entity))
+            throw new InvalidOperationException("The scene actor could not be destroyed.");
+    });
 
-    public void DestroyProp(object prop) => _props.Destroy((PropHandle)prop);
+    public void DestroyProp(SceneEntityHandle prop) => Remove<PropHandle>(prop, SceneEntityKind.Prop, _props.Destroy);
 
-    public void DestroyOverlay(object overlay) =>
-        _overlays.Destroy((Poser.Game.Overlays.OverlayNodeHandle)overlay);
+    public void DestroyOverlay(SceneEntityHandle overlay) =>
+        Remove<Poser.Game.Overlays.OverlayNodeHandle>(overlay, SceneEntityKind.Overlay, _overlays.Destroy);
 
-    public void DestroyLight(object light) => _lighting.DestroyLight((ILight)light);
+    public void DestroyLight(SceneEntityHandle light) => Remove<ILight>(light, SceneEntityKind.Light, _lighting.DestroyLight);
 
-    public void DestroyCamera(object camera) =>
-        _cameras.DestroyCamera((IVirtualCamera)camera);
+    public void DestroyCamera(SceneEntityHandle camera) =>
+        Remove<IVirtualCamera>(camera, SceneEntityKind.Camera, _cameras.DestroyCamera);
+
+    private void Remove<T>(SceneEntityHandle handle, SceneEntityKind kind, Action<T> remove) where T : class
+    {
+        // Session teardown may already have removed it; never resolve into a new session.
+        if (_handles.Resolve<T>(handle, kind) is not { } entity) return;
+        remove(entity);
+        _handles.Forget(handle);
+    }
 }

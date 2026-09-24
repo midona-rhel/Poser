@@ -10,10 +10,10 @@ public sealed partial class SceneWorkflow
 {
     internal TimeSpan StructureBindingBound { get; init; } = TimeSpan.FromSeconds(2);
 
-    private static Dictionary<(string Kind, Guid Key), object> StructureTokens(
-        params (string Kind, IReadOnlyDictionary<Guid, object> Entities)[] maps)
+    private static Dictionary<(string Kind, Guid Key), SceneEntityHandle> StructureTokens(
+        params (string Kind, IReadOnlyDictionary<Guid, SceneEntityHandle> Entities)[] maps)
     {
-        var result = new Dictionary<(string, Guid), object>();
+        var result = new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
         foreach (var (kind, entities) in maps)
             foreach (var (key, token) in entities) result.Add((kind, key), token);
         return result;
@@ -23,7 +23,7 @@ public sealed partial class SceneWorkflow
         scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 };
 
     private async Task<string?> WaitForStructure(Operation operation, SceneFile scene,
-        IReadOnlyDictionary<(string Kind, Guid Key), object> tokens, CancellationToken cancellation)
+        IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, CancellationToken cancellation)
     {
         if (!HasStructure(scene)) return null;
         if (_structure == null) return "Scene structure restoration is unavailable.";
@@ -48,7 +48,7 @@ public sealed partial class SceneWorkflow
     }
 
     private void RestoreStructure(Operation operation, SceneFile scene,
-        IReadOnlyDictionary<(string Kind, Guid Key), object> tokens)
+        IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens)
     {
         if (!HasStructure(scene)) return;
         SelectionId? Resolve(SceneStructureRef reference)

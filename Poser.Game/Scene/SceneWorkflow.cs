@@ -172,16 +172,16 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         public ActorId Target => new(SceneScopeId, 0);
 
         // What THIS operation created, in creation order; rollback walks
-        // these in reverse. Tokens are opaque runtime handles.
-        public readonly List<object> SpawnedActors = new();
-        public readonly List<object> SpawnedProps = new();
-        public readonly List<object> StagedOverlays = new();
-        public readonly List<object> SpawnedLights = new();
-        public readonly List<object> CreatedCameras = new();
+        // these in reverse. Receipts contain no native references.
+        public readonly List<SceneEntityHandle> SpawnedActors = new();
+        public readonly List<SceneEntityHandle> SpawnedProps = new();
+        public readonly List<SceneEntityHandle> StagedOverlays = new();
+        public readonly List<SceneEntityHandle> SpawnedLights = new();
+        public readonly List<SceneEntityHandle> CreatedCameras = new();
 
         // Borrowed, not created — but rollback still has to undo the claim, and
         // releasing one is the exact inverse of taking it.
-        public readonly List<object> BorrowedWorldObjects = new();
+        public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
         public readonly List<Guid> ImportedGroups = new();
         public CameraFile? DefaultCameraBaseline;
         public SceneEnvironment? EnvironmentBaseline;
@@ -944,14 +944,14 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             // rollback ledger: rollback undoes what this operation CREATED, and
             // no ledger can resurrect an actor the user asked to be rid of —
             // which is why the clear reports what it cost.
-            var actorTokens = new Dictionary<Guid, object>();
+            var actorTokens = new Dictionary<Guid, SceneEntityHandle>();
             // Per-kind key→token maps feed the structure restore: groups
             // and the root order reference entities by these keys.
-            var propTokens = new Dictionary<Guid, object>();
-            var overlayTokens = new Dictionary<Guid, object>();
-            var worldObjectTokens = new Dictionary<Guid, object>();
-            var lightTokens = new Dictionary<Guid, object>();
-            var cameraTokens = new Dictionary<Guid, object>();
+            var propTokens = new Dictionary<Guid, SceneEntityHandle>();
+            var overlayTokens = new Dictionary<Guid, SceneEntityHandle>();
+            var worldObjectTokens = new Dictionary<Guid, SceneEntityHandle>();
+            var lightTokens = new Dictionary<Guid, SceneEntityHandle>();
+            var cameraTokens = new Dictionary<Guid, SceneEntityHandle>();
             Step(ScenePhase.SpawningEntities);
             var spawnFailure = await _runtime.OnFramework(() =>
             {
@@ -1273,11 +1273,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
 
-                object? liveCamera = null;
+                SceneEntityHandle? liveCamera = null;
                 bool liveIsDefault = false;
                 foreach (var camera in cameras)
                 {
-                    object? token = null;
+                    SceneEntityHandle? token = null;
                     string? detail;
                     if (camera.IsDefault)
                     {
@@ -1386,7 +1386,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         done++;
                         continue;
                     }
-                    object? owner = light.Attachment is { } attachment
+                    SceneEntityHandle? owner = light.Attachment is { } attachment
                         ? actorTokens[attachment.ActorKey]
                         : null;
                     var token = _runtime.SpawnLight(light, owner, out var detail);
@@ -1689,7 +1689,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private async Task WaitForCompanions(
         Operation operation,
         IReadOnlyList<SceneActor> actors,
-        Dictionary<Guid, object> actorTokens,
+        Dictionary<Guid, SceneEntityHandle> actorTokens,
         CancellationToken cancellation)
     {
         var deadline = DateTime.UtcNow + CompanionReadyTimeout;
@@ -1829,8 +1829,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     }
 
     private static void RollbackList(
-        List<object> tokens,
-        Action<object> destroy,
+        List<SceneEntityHandle> tokens,
+        Action<SceneEntityHandle> destroy,
         string kind,
         List<string> failures)
     {

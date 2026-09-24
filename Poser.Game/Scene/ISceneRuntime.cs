@@ -17,7 +17,7 @@ internal interface ISceneRuntime
     Task<T> OnFramework<T>(Func<T> func);
 
     /// <summary>Resolve an exact spawned instance after binding publication; never by name.</summary>
-    SelectionId? ResolveSceneEntity(object token);
+    SelectionId? ResolveSceneEntity(SceneEntityHandle token);
 
     /// <summary>
     /// Stamps every stated character-file reference with its package's content
@@ -115,14 +115,14 @@ internal interface ISceneRuntime
 
     /// <summary>Spawns one actor and applies its model id. Null with a detail
     /// on failure.</summary>
-    object? SpawnActor(SceneActor data, out string? detail);
+    SceneEntityHandle? SpawnActor(SceneActor data, out string? detail);
 
     /// <summary>Whether the spawned actor has slot skeletons AND its exact
     /// current generation is published to the binding registry. Both are
     /// required before the pose-import admission can succeed.</summary>
-    bool ActorReady(object actor);
+    bool ActorReady(SceneEntityHandle actor);
 
-    Task<string?> RestoreCollection(object actor, SceneActor data, TimeSpan bound,
+    Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation) => Task.FromResult<string?>(null);
 
     /// <summary>
@@ -140,24 +140,24 @@ internal interface ISceneRuntime
     /// </summary>
     Task<SceneMcdfOutcome> ImportMcdf(
         string scenePath,
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         TimeSpan bound,
         System.Threading.CancellationToken cancellation);
 
     /// <summary>Attaches the saved companion; null on success.</summary>
-    string? AttachCompanion(object actor, SceneActor data);
+    string? AttachCompanion(SceneEntityHandle actor, SceneActor data);
 
     /// <summary>Whether the attached companion's own skeleton exists yet — a
     /// companion body builds several frames after the attachment lands, and a
     /// companion pose cannot be imported before it does.</summary>
-    bool CompanionReady(object actor);
+    bool CompanionReady(SceneEntityHandle actor);
 
     /// <summary>Arms the pose import for the actor's attached COMPANION,
     /// through the same single-flight engine an actor pose uses. Returns the
     /// refusal detail, or null when armed.</summary>
     string? ArmCompanionPoseImport(
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         string description,
         Action<OperationReceipt> onReceipt);
@@ -166,7 +166,7 @@ internal interface ISceneRuntime
     /// refusal detail, or null when armed — the terminal
     /// <see cref="OperationReceipt"/> arrives through the callback.</summary>
     string? ArmPoseImport(
-        object actor,
+        SceneEntityHandle actor,
         SceneActor data,
         string description,
         Action<OperationReceipt> onReceipt);
@@ -176,33 +176,33 @@ internal interface ISceneRuntime
     /// before placements were stated. Null on success or when neither carries
     /// one; a placement that did not LAND is a named refusal, never a silent
     /// no-op.</summary>
-    string? PlaceActor(object actor, SceneActor data);
+    string? PlaceActor(SceneEntityHandle actor, SceneActor data);
 
     /// <summary>Restores the attached body's own model placement after its pose.</summary>
-    string? PlaceCompanion(object actor, SceneActor data);
+    string? PlaceCompanion(SceneEntityHandle actor, SceneActor data);
 
     /// <summary>Stops the actor so its pose lands on a held frame. Scenes
     /// carry no animation — a timeline id means something different on every
     /// client — so a restored actor is always frozen and the picture is always
     /// the same one. Null on success, else the refusal detail.</summary>
-    string? FreezeActor(object actor);
+    string? FreezeActor(SceneEntityHandle actor);
 
     /// <summary>Restores the actor's saved gaze. <paramref name="target"/> is
     /// the restored actor the saved Entity key resolved to, or null when the
     /// file names none. Null on success, else the refusal detail.</summary>
-    string? ApplyActorGaze(object actor, SceneActor data, object? target);
-    IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, object> actors,
-        IReadOnlyDictionary<Guid, object> props, IReadOnlyDictionary<Guid, object> worlds,
-        IReadOnlyDictionary<Guid, object> lights) => Array.Empty<string>();
-    Task WaitForFabrikBindings(IEnumerable<object> entities, System.Threading.CancellationToken cancellation) => Task.CompletedTask;
+    string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target);
+    IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
+        IReadOnlyDictionary<Guid, SceneEntityHandle> props, IReadOnlyDictionary<Guid, SceneEntityHandle> worlds,
+        IReadOnlyDictionary<Guid, SceneEntityHandle> lights) => Array.Empty<string>();
+    Task WaitForFabrikBindings(IEnumerable<SceneEntityHandle> entities, System.Threading.CancellationToken cancellation) => Task.CompletedTask;
 
-    void SetActorVisibility(object actor, bool visible);
+    void SetActorVisibility(SceneEntityHandle actor, bool visible);
 
     /// <summary>Spawns one prop with its transform and visibility.</summary>
-    object? SpawnProp(SceneProp data, out string? detail);
+    SceneEntityHandle? SpawnProp(SceneProp data, out string? detail);
 
     /// <summary>Stages one overlay node from its saved document.</summary>
-    object? SpawnOverlay(SceneOverlay data, out string? detail);
+    SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail);
 
     /// <summary>
     /// Takes back one of the map's own objects that the scene had borrowed,
@@ -214,19 +214,19 @@ internal interface ISceneRuntime
     /// says — a borrowed entry is refused BY NAME rather than applied to
     /// whatever else happens to share its path.</para>
     /// </summary>
-    object? AdoptWorldObject(SceneWorldObject data, out string? detail);
+    SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail);
 
     /// <summary>Gives one borrowed map object back — the rollback verb, and the
     /// exact inverse of <see cref="AdoptWorldObject"/>. It RESTORES rather than
     /// destroys, which is why it is not named with the others.</summary>
-    void ReleaseWorldObject(object token);
+    void ReleaseWorldObject(SceneEntityHandle token);
 
     /// <summary>Spawns one light with its complete document, gobo, and — when
     /// an attachment is stated — the exact resolved bone on the restored
     /// owner. An unresolvable attachment returns null with a detail and
     /// spawns NOTHING: a light is never silently detached into world space.
     /// </summary>
-    object? SpawnLight(SceneLight data, object? attachmentOwner, out string? detail);
+    SceneEntityHandle? SpawnLight(SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail);
 
     /// <summary>Snapshot of the session default camera for rollback.</summary>
     CameraFile CaptureDefaultCameraState();
@@ -237,19 +237,19 @@ internal interface ISceneRuntime
 
     /// <summary>The session default camera as a structure token, so a
     /// saved group that held the Main Camera re-seats it on load.</summary>
-    object? DefaultCameraToken();
+    SceneEntityHandle? DefaultCameraToken();
 
     /// <summary>Creates one additional camera from its document.</summary>
-    object? CreateCamera(SceneCamera data, out string? detail);
+    SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail);
 
     /// <summary>Sets a camera's followed actor and saved identity-lock state
     /// (null camera = the default camera); null on success.</summary>
     string? SetCameraTarget(
-        object? camera, object targetActor, string displayName,
+        SceneEntityHandle? camera, SceneEntityHandle targetActor, string displayName,
         bool targetLocked);
 
     /// <summary>Makes a camera live (null = the default camera).</summary>
-    string? SetLiveCamera(object? camera);
+    string? SetLiveCamera(SceneEntityHandle? camera);
 
     /// <summary>Snapshot of the current environment for rollback.</summary>
     SceneEnvironment CaptureEnvironmentState();
@@ -269,10 +269,10 @@ internal interface ISceneRuntime
 
     // ── rollback (framework thread) ──────────────────────────────────────
 
-    void DestroyActor(object actor);
-    void DestroyProp(object prop);
-    void DestroyOverlay(object overlay);
-    void DestroyLight(object light);
-    void DestroyCamera(object camera);
+    void DestroyActor(SceneEntityHandle actor);
+    void DestroyProp(SceneEntityHandle prop);
+    void DestroyOverlay(SceneEntityHandle overlay);
+    void DestroyLight(SceneEntityHandle light);
+    void DestroyCamera(SceneEntityHandle camera);
     void RestoreDefaultCamera(CameraFile baseline);
 }
