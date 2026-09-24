@@ -35,8 +35,14 @@ public interface ILightingService : IDisposable
 
     bool IsSpawnedLight(ILight light);
 
-    /// <summary>Releases a captured light: delists a GPose light, restores
-    /// the captured settings on the original world light. No-op for spawned.</summary>
+    /// <summary>Captures only this observed native incarnation, never an address-reused replacement.</summary>
+    ILight? CaptureWorldLight(WorldLightCandidate candidate) => null;
+
+    /// <summary>Original world identity behind an editable borrowed copy.</summary>
+    WorldLightCandidate? GetWorldSource(ILight light) => null;
+
+    /// <summary>Releases a captured light: delists a GPose light, or destroys
+    /// the edited world copy and restores its source visibility. No-op for spawned.</summary>
     void ReleaseLight(ILight light);
 
     /// <summary>The embedded gobo library (88 housing-window textures).</summary>

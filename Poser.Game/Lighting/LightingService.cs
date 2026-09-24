@@ -997,7 +997,12 @@ public sealed unsafe class LightingService : ILightingService
         return candidates;
     }
 
-    internal ILight? CaptureWorldLight(WorldLightCandidate candidate)
+    public WorldLightCandidate? GetWorldSource(ILight light) =>
+        light is Light { Ownership: LightOwnership.World } native && native.IsValid
+            ? new WorldLightCandidate(native.WorldAddress, 0, Generation: native.WorldGeneration)
+            : null;
+
+    public ILight? CaptureWorldLight(WorldLightCandidate candidate)
     {
         if (!CanSpawn() || _lightDtorHook == null)
             return null;
