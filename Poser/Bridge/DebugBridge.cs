@@ -344,13 +344,13 @@ public sealed class DebugBridge : IDisposable
                     // Diagnostics never overwrite a user's existing scene.
                     if (File.Exists(scenePath))
                         return Json(new { error = "Choose a new file for the diagnostic save." });
-                    var saveOptions = global::Poser.Scene.SceneSaveOptions.Default;
+                    var saveOptions = SceneSaveOptions.Default;
                     if (query.TryGetValue("onlyActor", out var onlyActor))
                     {
                         var target = FindActor(onlyActor);
                         if (target == null || _bindings.GetActorId(target) is not { } targetId)
                             return Json(new { error = "No such actor." });
-                        saveOptions = global::Poser.Scene.SceneSaveOptions.ActorEntry(targetId.LogicalId)
+                        saveOptions = SceneSaveOptions.ActorEntry(targetId.LogicalId)
                             with { IncludeModdedAppearance = false };
                     }
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
