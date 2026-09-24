@@ -246,7 +246,7 @@ public sealed class DebugBridge : IDisposable
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
-                        "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body&commit=1  (journaled)",
+                        "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
                         "/pauseall?actor", "/resumeall?actor",
@@ -840,7 +840,8 @@ public sealed class DebugBridge : IDisposable
                 var r = part == GazeTargetType.None
                     ? _gaze.SetGazePosition(id, point)
                     : _gaze.SetPartPosition(id, part, point);
-                if (query.ContainsKey("commit")) _gaze.Seal();
+                // HTTP calls are discrete controls, not a held ImGui gesture.
+                _gaze.Seal();
                 return Json(new { ok = r.Success, r.Detail });
             }
             case "/gaze":
