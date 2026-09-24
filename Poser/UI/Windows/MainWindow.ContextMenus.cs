@@ -209,13 +209,17 @@ public partial class MainWindow
                 string name = ActorNames.Clean(actor.Name);
                 if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
                 {
-                    await DestroyEntities([SelectionId.ForActor(actorId)]);
+                    await RemoveEntitiesSafely([SelectionId.ForActor(actorId)]);
                     return;
                 }
                 // Through the seam, exactly as Clone is: spawning an actor
                 // is a history step; destroying is undoable only when Poser
                 // spawned it and can respawn it.
-                if (await DestroyEntities([SelectionId.ForActor(actorId)]) == 1)
+                var removed = await RemoveEntitiesSafely(
+                    [SelectionId.ForActor(actorId)]);
+                if (removed is null)
+                    return;
+                if (removed == 1)
                 {
                     // Drop the whole selection lineage — the actor, its
                     // bones, its bone groups — not every selection the user
@@ -641,8 +645,9 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                DestroyEntities([SelectionId.ForOverlay(overlayId)]);
-                _selection.Remove(SelectionId.ForOverlay(overlayId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForOverlay(overlayId)],
+                    () => _selection.Remove(SelectionId.ForOverlay(overlayId)));
             },
             null,
             ConfirmDestroyAllOverlays,
@@ -828,8 +833,9 @@ public partial class MainWindow
                 "Destroy", TablerIcon.Trash, danger: true));
             actions.Add(() =>
             {
-                DestroyEntities([SelectionId.ForLight(lightId)]);
-                _selection.Remove(SelectionId.ForLight(lightId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForLight(lightId)],
+                    () => _selection.Remove(SelectionId.ForLight(lightId)));
             });
         }
         else
@@ -837,8 +843,9 @@ public partial class MainWindow
             items.Add(new ContextMenuItem("Release", TablerIcon.X));
             actions.Add(() =>
             {
-                DestroyEntities([SelectionId.ForLight(lightId)]);
-                _selection.Remove(SelectionId.ForLight(lightId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForLight(lightId)],
+                    () => _selection.Remove(SelectionId.ForLight(lightId)));
             });
         }
 
@@ -916,8 +923,9 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                DestroyEntities([SelectionId.ForProp(propId)]);
-                _selection.Remove(SelectionId.ForProp(propId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForProp(propId)],
+                    () => _selection.Remove(SelectionId.ForProp(propId)));
             },
             null,
             ConfirmDestroyAllProps,
@@ -1018,8 +1026,9 @@ public partial class MainWindow
             actions.Add(null);
             actions.Add(() =>
             {
-                DestroyEntities([SelectionId.ForCamera(cameraId)]);
-                _selection.Remove(SelectionId.ForCamera(cameraId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForCamera(cameraId)],
+                    () => _selection.Remove(SelectionId.ForCamera(cameraId)));
             });
         }
 
@@ -1104,8 +1113,10 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                DestroyEntities([SelectionId.ForWorldObject(worldObjectId)]);
-                _selection.Remove(SelectionId.ForWorldObject(worldObjectId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForWorldObject(worldObjectId)],
+                    () => _selection.Remove(
+                        SelectionId.ForWorldObject(worldObjectId)));
             },
         };
         var stateItems = new List<ContextMenuItem>();
@@ -1225,7 +1236,7 @@ public partial class MainWindow
             null, // separator
             // The members go through each kind's own lifetime seam; the
             // emptied group dissolves through the scene prune.
-            () => DestroyEntities(group.Members.ToArray()),
+            () => _ = RemoveEntitiesSafely(group.Members.ToArray()),
         };
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_groupCtxOpenRequested)

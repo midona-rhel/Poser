@@ -110,11 +110,29 @@ public partial class MainWindow
     {
         var selected = _selection.Selected.ToArray();
         _selection.Clear();
-        await DestroyEntities(selected);
+        await RemoveEntitiesSafely(selected);
     }
 
     private Task<int> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
         _entityCommands.Remove(ids);
+
+    private async Task<int?> RemoveEntitiesSafely(
+        IReadOnlyList<SelectionId> ids,
+        Action? onRemoved = null)
+    {
+        try
+        {
+            int removed = await DestroyEntities(ids);
+            if (removed > 0)
+                onRemoved?.Invoke();
+            return removed;
+        }
+        catch (Exception exception)
+        {
+            _notices.Failed("Remove", exception.Message);
+            return null;
+        }
+    }
 
     /// <summary>The selection's actor, if any — the recenter seat's
     /// target.</summary>
