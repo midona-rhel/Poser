@@ -20,8 +20,8 @@ namespace Poser.Game.Lighting;
 /// <summary>
 /// Spawns and owns plugin-created scene lights through the game's own light
 /// factory, and adopts the two kinds of light the plugin does not own: the
-/// GPose camera lights (delisted, never destroyed) and original overworld
-/// lights (their captured settings are restored on release, as in Brio).
+/// GPose camera lights (delisted, never destroyed) and overworld lights
+/// (an owned editable replacement suppresses the original, as in Ktisis).
 /// GPose-scoped: leaving GPose destroys every spawned light and releases
 /// every adopted one.
 /// </summary>
@@ -258,8 +258,8 @@ public sealed unsafe class LightingService : ILightingService
         if (!OnOwnerThread(nameof(DestroyLight)))
             return;
 
-        // A borrowed native is never destructed: a GPose camera light belongs
-        // to the game and an overworld light belongs to the world.
+        // Release understands the original/replacement pair for world lights;
+        // the original and GPose camera lights are never destroyed by Poser.
         if (typed.Ownership != LightOwnership.Spawned)
         {
             ReleaseLight(light);
@@ -335,18 +335,15 @@ public sealed unsafe class LightingService : ILightingService
         light.Invalidate();
     }
 
-    /// <summary>Restore the original world light and drop its wrapper; never
-    /// destroy a borrowed native. GPose lights are only delisted.</summary>
+    /// <summary>Restore source visibility and destroy only our replacement.
+    /// GPose lights are only delisted.</summary>
     private void ReleaseInternal(Light light)
     {
         try
         {
-            var native = light.NativePtr;
-            if (light.WorldState is { } state && native != null && state.Restore(native))
-            {
-                native->UpdateRender();
-                native->Update();
-            }
+            if (light.WorldState is { } state &&
+                IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
+                state.Restore((GameLight*)light.WorldAddress);
         }
         catch (Exception ex)
         {
@@ -356,7 +353,10 @@ public sealed unsafe class LightingService : ILightingService
         {
             light.WorldState?.Dispose();
             light.WorldState = null;
-            light.Invalidate();
+            if (light.Ownership == LightOwnership.World)
+                DestroyNative(light);
+            else
+                light.Invalidate();
         }
     }
 
@@ -864,12 +864,10 @@ public sealed unsafe class LightingService : ILightingService
             if (light.Ownership == LightOwnership.World &&
                 light.WorldAddress == handle && light.WorldGeneration == generation)
             {
-                // The wrapper's generation guard stopped reads immediately
-                // at destruction. Only our retained texture reference remains.
-                light.WorldState?.Dispose();
-                light.WorldState = null;
                 _lights.Remove(light);
-                light.Invalidate();
+                // Release checks the original generation before restoring;
+                // our separately allocated replacement is still ours to free.
+                ReleaseInternal(light);
                 changed = true;
                 continue;
             }
@@ -1024,17 +1022,26 @@ public sealed unsafe class LightingService : ILightingService
         Light? light = null;
         try
         {
-            // Brio AddWorldLight: wrap the original and snapshot values.
-            // Acquisition does not allocate a native light or alter the world.
+            // Ktisis AddFromOverworld: game-authored lights keep updating, so
+            // edit a separate allocation and suppress only the original's draw.
             var name = UniqueName("World Light");
             state = new BorrowedLightState(original);
-            light = new Light(original, name, LightOwnership.World,
-                () => IsCurrentWorldLight(candidate.Handle, candidate.Generation))
+            light = SpawnNative(Light.ToKind(original->LightRenderObject->EmissionType),
+                new PoserTransform(original->Transform.Position, original->Transform.Rotation,
+                    original->Transform.Scale), LightOwnership.World, name);
+            if (light == null)
             {
-                WorldAddress = candidate.Handle, WorldGeneration = candidate.Generation, WorldState = state,
-            };
+                state.Dispose();
+                return null;
+            }
+            light.WorldAddress = candidate.Handle;
+            light.WorldGeneration = candidate.Generation;
+            light.WorldState = state;
+            state.CopyTo(light.NativePtr);
             AdoptGobo(light, original);
-            _lights.Add(light);
+            light.NativePtr->UpdateRender();
+            light.NativePtr->Update();
+            state.Suppress(original);
 
             _log.Debug(
                 $"LightingService: captured world light {candidate.Handle:X} as '{light.Name}'");
@@ -1046,7 +1053,7 @@ public sealed unsafe class LightingService : ILightingService
             if (light != null)
             {
                 _lights.Remove(light);
-                light.Invalidate();
+                ReleaseInternal(light);
             }
             state?.Dispose();
             _log.Error($"LightingService: failed to capture a world light: {ex}");
@@ -1143,8 +1150,22 @@ public sealed unsafe class LightingService : ILightingService
         _attachRefreshed.Clear();
         var detached = false;
 
-        foreach (var light in _lights)
+        for (var i = _lights.Count - 1; i >= 0; i--)
         {
+            var light = _lights[i];
+            if (light.Ownership == LightOwnership.World)
+            {
+                if (!IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
+                {
+                    _lights.RemoveAt(i);
+                    ReleaseInternal(light);
+                    detached = true;
+                    continue;
+                }
+                // Keep the source suppressed even while the editable copy is
+                // switched off. The game's own updates may show it again.
+                light.WorldState?.Suppress((GameLight*)light.WorldAddress);
+            }
             if (!light.IsValid)
                 continue;
 

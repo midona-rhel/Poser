@@ -35,8 +35,8 @@ internal sealed unsafe class Light : ILight
 
     public IBone? AttachedBone { get; set; }
 
-    internal nint WorldAddress { get; init; }
-    internal long WorldGeneration { get; init; }
+    internal nint WorldAddress { get; set; }
+    internal long WorldGeneration { get; set; }
     internal BorrowedLightState? WorldState { get; set; }
 
     /// <summary>GPose camera-light slot; -1 when not a GPose light.</summary>
@@ -67,16 +67,12 @@ internal sealed unsafe class Light : ILight
 
     public bool IsOn
     {
-        get => Ownership == LightOwnership.World
-            ? HasRender && _native->LightRenderObject->Intensity > 0f
-            : IsValid && _native->VisibilityFlags != 0;
+        get => IsValid && _native->IsVisible;
         set
         {
-            // Brio IGameLight.ToggleLight: world lights toggle emission,
-            // while GPose/spawned lights use the game's visibility byte.
-            if (Ownership == LightOwnership.World && HasRender)
-                _native->LightRenderObject->Intensity = value ? 1f : 0f;
-            else if (IsValid)
+            // World lights now edit an owned replacement. On/off must not
+            // destroy the authored intensity (including while hidden).
+            if (IsValid)
                 _native->VisibilityFlags = (byte)(value ? 79 : 0);
         }
     }
