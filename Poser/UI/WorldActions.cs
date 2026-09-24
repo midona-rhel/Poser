@@ -8,14 +8,19 @@ namespace Poser.UI;
 /// <summary>Reports release results for the inspector and context menus; no native knowledge.</summary>
 public sealed class WorldActions(IWorldService world, UserNotices notices)
 {
-    public async Task Release(SelectionId entity)
+    public async Task<bool> Release(SelectionId entity)
     {
         try
         {
             var result = await world.Release(entity);
             if (!result.Success) notices.Refused(result.Detail ?? "That world asset could not be released.");
+            return result.Success;
         }
-        catch (Exception ex) { notices.Failed("Release", ex.Message); }
+        catch (Exception ex)
+        {
+            notices.Failed("Release", ex.Message);
+            return false;
+        }
     }
 
     public async Task ReleaseSceneObjects()

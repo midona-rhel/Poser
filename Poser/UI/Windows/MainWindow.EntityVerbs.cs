@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
@@ -86,91 +87,13 @@ public partial class MainWindow
     }
 
     private bool? IsEntityVisible(SelectionId id)
-    {
-        switch (id)
-        {
-            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
-                    ? _spawnService.IsVisible(actor) : null;
-            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
-                    ? light.IsOn : null;
-            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
-                    ? prop.Visible : null;
-            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
-                return _bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed }
-                    ? borrowed.Visible : null;
-            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
-                    ? node.Visible : null;
-            default:
-                return null;
-        }
-    }
+        => _scene.ReadCurrent(id)?.IsVisible;
 
-    private void SetEntityVisible(SelectionId id, bool visible)
-    {
-        switch (id)
-        {
-            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                if (_bindings.Resolve(actorId) is { Success: true, Value: { } actor })
-                    _sessions.Actors.SetVisibility(actor, visible);
-                break;
-            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                if (_bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light })
-                    _sessions.Lights.SetIsOn(light, visible);
-                break;
-            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                if (_bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop })
-                    _sessions.Props.SetVisible(prop, visible);
-                break;
-            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
-                if (_bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed })
-                    _sessions.WorldObjects.SetVisible(borrowed, visible);
-                break;
-            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                if (_bindings.Resolve(overlayId) is { Success: true, Value: { } node })
-                    _sessions.Overlays.SetVisible(node, visible);
-                break;
-        }
-    }
+    private int SetEntityVisible(SelectionId id, bool visible) =>
+        _entityCommands.SetVisibility([id], visible);
 
-    private void SetSelectionVisible(bool visible)
-    {
-        foreach (var id in _selection.Selected)
-        {
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    if (_bindings.Resolve(actorId) is
-                            { Success: true, Value: { } actor })
-                        _sessions.Actors.SetVisibility(actor, visible);
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                    if (_bindings.Resolve(lightId) is
-                            { Success: true, Value: { IsValid: true } light })
-                        _sessions.Lights.SetIsOn(light, visible);
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                    if (_bindings.Resolve(propId) is
-                            { Success: true, Value: { IsValid: true } prop })
-                        _sessions.Props.SetVisible(prop, visible);
-                    break;
-                case { Kind: SceneEntityKind.WorldObject,
-                        WorldObject: { } borrowedId }:
-                    if (_bindings.Resolve(borrowedId) is
-                            { Success: true, Value: { IsValid: true } borrowed })
-                        _sessions.WorldObjects.SetVisible(borrowed, visible);
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                    if (_bindings.Resolve(overlayId) is
-                            { Success: true, Value: { } node })
-                        _sessions.Overlays.SetVisible(node, visible);
-                    break;
-            }
-        }
-    }
+    private void SetSelectionVisible(bool visible) =>
+        _entityCommands.SetVisibility(_selection.Selected.ToArray(), visible);
 
     /// <summary>One animation state for every selected actor.</summary>
     private void SetSelectionPaused(bool paused)
@@ -183,68 +106,14 @@ public partial class MainWindow
     /// lifetime seam: actors despawn where the service admits it, spawned
     /// lights destroy while borrowed ones release, the default camera
     /// stays, borrowed objects go back to the map.</summary>
-    private void DestroySelection()
+    private async void DestroySelection()
     {
-        DestroyEntities(_selection.Selected.ToArray());
+        await DestroyEntities(_selection.Selected.ToArray());
         _selection.Clear();
     }
 
-    private void DestroyEntities(IReadOnlyList<SelectionId> ids)
-    {
-        foreach (var id in ids)
-        {
-            // A locked group keeps its members standing.
-            if (_groups.IsLockedMember(id))
-                continue;
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    if (_bindings.Resolve(actorId) is
-                            { Success: true, Value: { } actor }
-                        && (_spawnService.IsSpawnedActor(actor)
-                            || _spawnService.RemovalRefusal(actor) is null))
-                    {
-                        if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
-                            _ = _worldActions.Release(SelectionId.ForActor(actorId));
-                        else if (_lifecycle.DespawnActor(actor))
-                            _selection.RemoveActorLineage(actorId.LogicalId);
-                    }
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                    if (_bindings.Resolve(lightId) is
-                            { Success: true, Value: { IsValid: true } light })
-                    {
-                        if (light.Ownership == LightOwnership.Spawned)
-                            _lifecycle.DestroyLight(light);
-                        else
-                            _ = _worldActions.Release(SelectionId.ForLight(lightId));
-                    }
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                    if (_bindings.Resolve(propId) is
-                            { Success: true, Value: { IsValid: true } prop })
-                        _lifecycle.DestroyProp(prop);
-                    break;
-                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
-                    if (_bindings.Resolve(cameraId) is
-                            { Success: true, Value: { IsValid: true } camera }
-                        && !camera.IsDefault)
-                        _lifecycle.DestroyCamera(camera);
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                    if (_bindings.Resolve(overlayId) is
-                            { Success: true, Value: { } node })
-                        _lifecycle.DestroyOverlay(node);
-                    break;
-                case { Kind: SceneEntityKind.WorldObject,
-                        WorldObject: { } borrowedId }:
-                    if (_bindings.Resolve(borrowedId) is
-                            { Success: true, Value: { IsValid: true } borrowed })
-                        _ = _worldActions.Release(SelectionId.ForWorldObject(borrowedId));
-                    break;
-            }
-        }
-    }
+    private Task<int> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
+        _entityCommands.Remove(ids);
 
     /// <summary>The selection's actor, if any — the recenter seat's
     /// target.</summary>
