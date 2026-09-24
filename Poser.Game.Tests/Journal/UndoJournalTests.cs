@@ -98,6 +98,35 @@ public sealed class UndoJournalTests
         Assert.Equal(500, new Poser.Config.PoserConfiguration().UndoDepth);
     }
 
+    [Fact]
+    public void Nonretryable_lifecycle_refusal_is_reported_and_dropped_so_older_history_runs()
+    {
+        var history = new TransformHistory();
+        var earlier = new JournalStep("Earlier edit", () => true, () => true);
+        var refused = new SceneLifecyclePatch("Remove world object", () => false, () => true)
+        {
+            FailureDetail = () => "Cannot restore borrowed BG/VFX without a native allocation lease.",
+            DropOnFailure = () => true,
+        };
+        history.Append(earlier);
+        history.Append(refused);
+        var notices = new List<string>();
+        var journal = new UndoJournal(
+            history,
+            new LifecycleRefusalRunner(history),
+            new FakeKeys(Key(1)),
+            new Lazy<IPoseSnapshotPort>(() => new FakeSnapshots()),
+            _ => true,
+            notices.Add);
+
+        Assert.False(journal.Undo().Success);
+        Assert.Same(earlier, history.PeekUndo());
+        Assert.Equal("Cannot restore borrowed BG/VFX without a native allocation lease.",
+            Assert.Single(notices));
+        Assert.True(journal.Undo().Success);
+        Assert.False(history.CanUndo);
+    }
+
     private sealed class World
     {
         public TransformHistory History { get; } = new();
@@ -129,6 +158,25 @@ public sealed class UndoJournalTests
         public int Redos;
         public GestureResult Undo() { Undos++; return GestureResult.Ok(); }
         public GestureResult Redo() { Redos++; return GestureResult.Ok(); }
+    }
+
+    private sealed class LifecycleRefusalRunner(TransformHistory history) : IUndoRunner
+    {
+        private bool _refused;
+
+        public GestureResult Undo()
+        {
+            if (!_refused)
+            {
+                _refused = true;
+                return GestureResult.Fail("The lifecycle action was refused.");
+            }
+            var entry = history.PeekUndo()!;
+            history.CommitUndo(entry);
+            return GestureResult.Ok();
+        }
+
+        public GestureResult Redo() => GestureResult.Fail("No redo expected.");
     }
 
     private sealed class FakeKeys(ActorStateKey? current) : IActorStateKeySource
