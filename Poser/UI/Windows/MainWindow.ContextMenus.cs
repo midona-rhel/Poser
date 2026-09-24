@@ -76,12 +76,10 @@ public partial class MainWindow
             () => _cameraPane.CenterOnActor(actorId),
             () =>
             {
-                var changed = _sessions.Actors.SetVisibility(
-                    actor, !_spawnService.IsVisible(actor));
-                if (!changed.Success)
+                if (SetEntityVisible(SelectionId.ForActor(actorId),
+                        !_spawnService.IsVisible(actor)) == 0)
                     _notices.Refused(
-                        "Visibility",
-                        changed.Detail ?? "The change was refused.");
+                        "Visibility", "The change was refused.");
             },
             () =>
             {
@@ -206,18 +204,22 @@ public partial class MainWindow
             items.Add(ContextMenuItem.Separator);
             items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true));
             actions.Add(null);
-            actions.Add(() =>
+            actions.Add(async () =>
             {
                 string name = ActorNames.Clean(actor.Name);
                 if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
                 {
-                    _ = _worldActions.Release(SelectionId.ForActor(actorId));
+                    await RemoveEntitiesSafely([SelectionId.ForActor(actorId)]);
                     return;
                 }
                 // Through the seam, exactly as Clone is: spawning an actor
                 // is a history step; destroying is undoable only when Poser
                 // spawned it and can respawn it.
-                if (_lifecycle.DespawnActor(actor))
+                var removed = await RemoveEntitiesSafely(
+                    [SelectionId.ForActor(actorId)]);
+                if (removed is null)
+                    return;
+                if (removed == 1)
                 {
                     // Drop the whole selection lineage — the actor, its
                     // bones, its bone groups — not every selection the user
@@ -632,7 +634,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => _sessions.Overlays.SetVisible(node, !node.Visible),
+            () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.Visible),
             () => OpenEntityRename(
                 "Rename overlay", node.Name, next => node.Name = next),
             () => _overlayPane.Duplicate(node),
@@ -643,8 +645,9 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                _lifecycle.DestroyOverlay(node);
-                _selection.Remove(SelectionId.ForOverlay(overlayId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForOverlay(overlayId)],
+                    () => _selection.Remove(SelectionId.ForOverlay(overlayId)));
             },
             null,
             ConfirmDestroyAllOverlays,
@@ -811,7 +814,7 @@ public partial class MainWindow
         };
         var actions = new List<Action?>
         {
-            () => _sessions.Lights.SetIsOn(light, !light.IsOn),
+            () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
             () => OpenEntityRename(
                 "Rename light", light.Name, next => light.Name = next),
             () => _lightPane.MoveToCamera(lightId),
@@ -830,8 +833,9 @@ public partial class MainWindow
                 "Destroy", TablerIcon.Trash, danger: true));
             actions.Add(() =>
             {
-                _lifecycle.DestroyLight(light);
-                _selection.Remove(SelectionId.ForLight(lightId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForLight(lightId)],
+                    () => _selection.Remove(SelectionId.ForLight(lightId)));
             });
         }
         else
@@ -839,8 +843,9 @@ public partial class MainWindow
             items.Add(new ContextMenuItem("Release", TablerIcon.X));
             actions.Add(() =>
             {
-                _ = _worldActions.Release(SelectionId.ForLight(lightId));
-                _selection.Remove(SelectionId.ForLight(lightId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForLight(lightId)],
+                    () => _selection.Remove(SelectionId.ForLight(lightId)));
             });
         }
 
@@ -903,7 +908,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => _sessions.Props.SetVisible(prop, !prop.Visible),
+            () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
             () => OpenEntityRename(
                 "Rename object", prop.Name, next => prop.Name = next),
             () =>
@@ -918,8 +923,9 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                _lifecycle.DestroyProp(prop);
-                _selection.Remove(SelectionId.ForProp(propId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForProp(propId)],
+                    () => _selection.Remove(SelectionId.ForProp(propId)));
             },
             null,
             ConfirmDestroyAllProps,
@@ -1020,8 +1026,9 @@ public partial class MainWindow
             actions.Add(null);
             actions.Add(() =>
             {
-                _lifecycle.DestroyCamera(camera);
-                _selection.Remove(SelectionId.ForCamera(cameraId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForCamera(cameraId)],
+                    () => _selection.Remove(SelectionId.ForCamera(cameraId)));
             });
         }
 
@@ -1089,7 +1096,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => _sessions.WorldObjects.SetVisible(worldObject, !worldObject.Visible),
+            () => SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), !worldObject.Visible),
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
@@ -1106,8 +1113,10 @@ public partial class MainWindow
             null, // separator
             () =>
             {
-                _ = _worldActions.Release(SelectionId.ForWorldObject(worldObjectId));
-                _selection.Remove(SelectionId.ForWorldObject(worldObjectId));
+                _ = RemoveEntitiesSafely(
+                    [SelectionId.ForWorldObject(worldObjectId)],
+                    () => _selection.Remove(
+                        SelectionId.ForWorldObject(worldObjectId)));
             },
         };
         var stateItems = new List<ContextMenuItem>();
@@ -1227,7 +1236,7 @@ public partial class MainWindow
             null, // separator
             // The members go through each kind's own lifetime seam; the
             // emptied group dissolves through the scene prune.
-            () => DestroyEntities(group.Members.ToArray()),
+            () => _ = RemoveEntitiesSafely(group.Members.ToArray()),
         };
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_groupCtxOpenRequested)

@@ -86,7 +86,7 @@ public sealed record SceneRefreshResult
 /// required to stay on the owning application/framework thread; this class
 /// does not guess that host affinity without a host dependency.
 /// </summary>
-public sealed class SceneSession
+public sealed class SceneSession : ICurrentSelectionEntityReads
 {
     private SceneSnapshot _snapshot = SceneSnapshot.Empty;
     private Dictionary<ActorId, ActorDescriptor> _actors = new();
@@ -120,6 +120,12 @@ public sealed class SceneSession
     public SelectionSession Selection { get; }
     public SceneSnapshot Snapshot => _snapshot;
     public ulong Revision => _snapshot.Revision;
+
+    /// <summary>Reads current verb capabilities for an exact selection id.
+    /// Old generations remain stale here even where ordinary selection
+    /// reconciliation can promote them to a current lineage.</summary>
+    public CurrentSelectionEntity? ReadCurrent(SelectionId id) =>
+        SelectionEntityCapabilities.Read(_snapshot, id);
 
     /// <summary>
     /// Compatibility entry point for existing producers. It intentionally

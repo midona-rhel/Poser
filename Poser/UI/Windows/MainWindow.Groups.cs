@@ -45,7 +45,8 @@ public partial class MainWindow
         foreach (var group in _groups.All)
         {
             SetGate(group, group.Hidden, group.RememberedVisible, g => g.Hidden,
-                IsEntityVisible, SetEntityVisible, imposed: false);
+                IsEntityVisible, (id, visible) => SetEntityVisible(id, visible),
+                imposed: false);
             SetGate(group, group.Paused, group.RememberedPlaying, g => g.Paused,
                 PlayingOf, SetPlaying, imposed: false);
             SetGate(group, group.Night, group.RememberedNight, g => g.Night,
@@ -57,7 +58,8 @@ public partial class MainWindow
     {
         foreach (var group in previous.Groups)
         {
-            Restore(group.RememberedVisible, g => g.Hidden, SetEntityVisible);
+            Restore(group.RememberedVisible, g => g.Hidden,
+                (id, visible) => SetEntityVisible(id, visible));
             Restore(group.RememberedPlaying, g => g.Paused, SetPlaying);
             Restore(group.RememberedNight, g => g.Night, SetNight);
         }
@@ -132,7 +134,8 @@ public partial class MainWindow
             return;
         group.Hidden = hidden;
         SetGate(group, hidden, group.RememberedVisible, g => g.Hidden,
-            IsEntityVisible, SetEntityVisible, imposed: false);
+            IsEntityVisible, (id, visible) => SetEntityVisible(id, visible),
+            imposed: false);
     }
 
     private void SetGroupPausedCore(global::Poser.Application.Scene.SceneGroup group, bool paused)
