@@ -1,4 +1,4 @@
-﻿using Dalamud.Plugin.Services;
+using Dalamud.Plugin.Services;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
@@ -10,7 +10,7 @@ using Poser.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Native pose-file capture and import compatibility bridge.</summary>
+/// <summary>Native pose-file import compatibility bridge.</summary>
 public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
@@ -26,10 +26,8 @@ public sealed class CleanPoseFacade : IPoseFacade
     public CleanPoseFacade(
         StableBindingRegistry bindings,
         PoseImportCapture imports,
-        PoseExportCapture exports,
         Poser.Config.ConfigurationService configuration,
         IPoseFileService poseFiles,
-        IBonePosingService bonePosing,
         ISkeletonService skeletons,
         Poser.Application.Animation.AnimationSession animation,
         IFramework framework,
@@ -38,10 +36,8 @@ public sealed class CleanPoseFacade : IPoseFacade
         _framework = framework;
         _bindings = bindings;
         _imports = imports;
-        _exports = exports;
         _configuration = configuration;
         _poseFiles = poseFiles;
-        _bonePosing = bonePosing;
         _skeletons = skeletons;
         _animation = animation;
         _log = log;
@@ -72,119 +68,10 @@ public sealed class CleanPoseFacade : IPoseFacade
         _skeletons.GetSkeleton(actor) is not null;
 
     private readonly PoseImportCapture _imports;
-    private readonly PoseExportCapture _exports;
     private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseFileService _poseFiles;
 
     public ActorId? GetActorId(IActor actor) => _bindings.GetActorId(actor);
-
-    /// <summary>
-    /// File export dispatch through <see cref="PoseExportCapture"/> rather
-    /// than straight into <c>IPoseFileService.ExportPose</c>. Ok means the
-    /// export is ARMED, not written: the file lands after the next update-phase
-    /// apply pass has refreshed every bone's raw transform cache, because a
-    /// never-posed skeleton's cache otherwise still holds its build-time
-    /// snapshot and the file would record a pose the actor left long ago.
-    /// <paramref name="onFinished"/> carries the actual write result.
-    /// </summary>
-    public PoseEditResult ExportPose(
-        IActor actor,
-        string path,
-        Action<bool>? onFinished = null)
-    {
-        var description = $"Export {System.IO.Path.GetFileName(path)}";
-        // The export capture insists on the framework thread
-        // (PoseExportCapture.Begin), and the ONE caller — the save dialog's
-        // confirm — arms from the draw thread. Self-marshal exactly like
-        // CapturePoseFile below: Ok means armed, and a refusal on the far
-        // side still answers through the callback. Without this the arm
-        // failed with "must run on the framework thread" and no file ever
-        // landed (user 2026-08-10: "exporting just dies").
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            _ = _framework.RunOnFrameworkThread(() =>
-            {
-                if (!ExportPose(actor, path, onFinished).Success)
-                    onFinished?.Invoke(false);
-            });
-            return PoseEditResult.Ok(0);
-        }
-        var slots = _skeletons.GetSkeletons(actor);
-        if (slots.Count == 0)
-            return Report(description,
-                PoseEditResult.Fail("The actor has no skeleton."));
-
-        var begun = _exports.Begin(slots, path, onFinished);
-        if (!begun.Success)
-            return Report(description, PoseEditResult.Fail(
-                begun.Detail ?? "The pose export failed."));
-        return PoseEditResult.Ok(slots.Count);
-    }
-
-    /// <summary>
-    /// The same armed export with no file at the end of it: the pose file is
-    /// handed to <paramref name="onCaptured"/> once the refresh pass has made
-    /// the raw caches current, which is what the clipboard copy needs for the
-    /// same reason a file export does (see <see cref="PoseExportCapture"/>).
-    /// Ok means ARMED; the capture arrives a few ticks later, and a null there
-    /// means the pose could not be built.
-    /// </summary>
-    public PoseEditResult CapturePoseFile(
-        IActor actor,
-        Action<PoseFile?> onCaptured,
-        bool authoredOnly = false)
-    {
-        const string description = "Copy pose";
-        // The export capture insists on the framework thread; the callers
-        // (preview baseline, stash, clipboard copy) arm from the draw
-        // thread. Self-marshal like the scene capture: Ok means armed, and a
-        // failure on the far side still answers through the callback.
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            _ = _framework.RunOnFrameworkThread(() =>
-            {
-                if (!CapturePoseFile(actor, onCaptured, authoredOnly).Success)
-                    onCaptured(null);
-            });
-            return PoseEditResult.Ok(0);
-        }
-        // Never read the caches while an import owns them: the apply window
-        // pauses and REWINDS the animation before writing, so a capture that
-        // lands inside it snapshots a half-transitioned pose — the deformed
-        // baseline the preview then rebases onto. The caller's retry window
-        // re-arms once the import is done.
-        if (IsImportBusy)
-            return Report(description, PoseEditResult.Fail(
-                "A pose import is applying."));
-        var slots = _skeletons.GetSkeletons(actor);
-        if (slots.Count == 0)
-            return Report(description,
-                PoseEditResult.Fail("The actor has no skeleton."));
-
-        // Authored-only: the bones the user actually posed, nothing the
-        // ANIMATION owns — a live snapshot catches blinks mid-frame and eye
-        // state is transient, not stance. The skeleton root always rides
-        // along: a file with no character bones fires no reset, and the
-        // rebase baseline NEEDS its full-scope reset even for an unposed
-        // target. Root is never animation-driven, so it contaminates nothing.
-        Func<Entities.IBone, bool>? include = authoredOnly
-            ? bone => bone.IsSkeletonRoot || _bonePosing.HasModifications(bone)
-            : null;
-
-        PoseFile? captured = null;
-        var begun = _exports.Begin(
-            slots,
-            skeletons =>
-            {
-                captured = _poseFiles.CreatePoseFile(skeletons, include);
-                return captured != null;
-            },
-            ok => onCaptured(ok ? captured : null));
-        if (!begun.Success)
-            return Report(description, PoseEditResult.Fail(
-                begun.Detail ?? "The pose could not be captured."));
-        return PoseEditResult.Ok(slots.Count);
-    }
 
     /// <summary>
     /// File import dispatch through the in-pass application engine: the plan
@@ -590,7 +477,6 @@ public sealed class CleanPoseFacade : IPoseFacade
 
     private readonly ISkeletonService _skeletons;
 
-    private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IPluginLog _log;
 

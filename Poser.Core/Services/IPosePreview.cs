@@ -22,10 +22,6 @@ public interface IPosePreview
     string? RefusalText { get; }
     nint TextureHandle { get; }
     Vector2 TextureSize { get; }
-    void Open(IActor appearanceSource);
-    void ShowPose(string path, PoseImportOptions options);
-    void ShowPose(PoseFile pose, string key, PoseImportOptions options);
-    void ShowSequence(PosePreviewRequest first, PosePreviewRequest second);
     void Rotate(float yawDelta, float pitchDelta = 0f);
     void Zoom(float distanceDelta);
     void Pan(float viewDelta);

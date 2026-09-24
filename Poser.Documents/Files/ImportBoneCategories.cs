@@ -18,7 +18,7 @@ public sealed record ImportBoneCategoryGroup(string Name, ImportBoneCategory[] C
 /// Brio's bone-filter catalog, read from its own
 /// Resources/Embedded/Data/BoneCategories.json shipped byte-identical as
 /// <c>Data/BoneCategories/BoneCategories.json</c> — the same treatment the
-/// embedded rest poses get (<see cref="RestPoses"/>), so the two plugins
+/// embedded rest poses get (<c>RestPoses</c>), so the two plugins
 /// agree bone-for-bone on what every category claims instead of on a
 /// hand-compressed approximation of it.
 ///

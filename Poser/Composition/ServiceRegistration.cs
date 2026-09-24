@@ -276,6 +276,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         // The surfaces' ports over the runtime classes registered elsewhere.
         services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
+        services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
+        services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
         services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());

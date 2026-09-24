@@ -66,7 +66,13 @@ reset order and the single history entry; replay retains only the exact actor ID
 Expression/gaze release precedes pose/IK, animation and presentation follow,
 and external integrations run last because their restoration may redraw.
 Its existing inverse restores pose/IK, not animation or external appearance.
-Native file/preview operations still use the legacy facade.
+Pose capture/export takes exact actor IDs through `IPoseFileCapture`; Game
+resolves on the framework thread and refreshes every slot before reading.
+Application owns preview baseline capture, retries, and rebase-then-file
+sequencing through `PosePreviewController`. UI supplies options and a frame
+clock; Game owns the hidden body, native application and rendered surface.
+Late captures from a replaced source cannot overwrite its successor's baseline.
+Native file import still uses the legacy facade.
 
 Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
 actor generations and immutable readings. Application owns gesture coalescing

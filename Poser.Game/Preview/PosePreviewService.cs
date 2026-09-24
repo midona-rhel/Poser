@@ -13,9 +13,12 @@ using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
 
+using Poser.Application.Posing;
+using Poser.Domain.Identity;
+
 namespace Poser.Game.Preview;
 
-public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
+public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPosePreviewRuntime
 {
     /// <summary>The slot the CharaView spawns its hidden body into. Outside
     /// the GPose scan range (201-439) on purpose: the preview must never
@@ -63,12 +66,10 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
 
     // Draw-thread requests, framework-thread consumption.
     private readonly object _gate = new();
-    private nint _requestedSource;
 
-    /// <summary>The identity of the actor whose address <see cref="Open"/>
-    /// named, read off the IActor itself. Paired with the address so a proof
-    /// can say "still the same actor", not merely "still someone".</summary>
-    private EntityId? _requestedSourceId;
+    /// <summary>The exact actor generation requested by the UI. Only the
+    /// framework thread resolves this to a native appearance source.</summary>
+    private ActorId? _requestedSourceId;
 
     /// <summary>Why the standing request could not be shown, or null. A refused
     /// import leaves the body exactly where the last successful stage left it,
@@ -212,40 +213,19 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
     /// appearance onto the preview body. Idempotent; calling it again with a
     /// different source re-copies on the next framework tick.
     /// </summary>
-    public void Open(IActor appearanceSource)
+    public void Open(ActorId appearanceSource)
     {
         if (_disposed)
             return;
-        if (appearanceSource.Address == nint.Zero)
-        {
-            _statusText = "Select an actor to preview.";
-            return;
-        }
         if (!_gpose.IsGPosing)
         {
             _statusText = "Enter GPose to preview.";
             return;
         }
 
-        // The address AND THE IDENTITY are recorded here and proven in
-        // CopyAppearance. Both are reads of the IActor the caller already
-        // holds — no table access — because this runs on the draw thread every
-        // frame while the object table is coherent only on the framework tick:
-        // a resolve here would read the table off its own phase, and a null
-        // from that unsynchronised read would veto the whole lifecycle below —
-        // no _open, no auxiliary registration, no framework subscription — for
-        // a preview that is perfectly alive. Naming a source is a draw-thread
-        // statement; dereferencing one is not.
-        //
-        // The ID is what makes the address a claim about a PARTICULAR actor.
-        // Without it a recycled address is refused once and then simply proven
-        // again as whoever now occupies it, and the preview quietly wears a
-        // stranger's appearance — the same hole, one tick later.
+        // Draw only names the actor. Resolve its current native binding on the framework tick.
         lock (_gate)
-        {
-            _requestedSource = appearanceSource.Address;
-            _requestedSourceId = appearanceSource.Id;
-        }
+            _requestedSourceId = appearanceSource;
 
         if (_open)
             return;
@@ -401,7 +381,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
         _refusalText = null;
         lock (_gate)
         {
-            _requestedSource = nint.Zero;
             _requestedSourceId = null;
             _requestedFirst = null;
             _requestedSecond = null;
@@ -466,20 +445,18 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
 
     private void CopyAppearance(AgentInspect* agent)
     {
-        nint source;
-        EntityId? sourceId;
+        ActorId? sourceId;
         lock (_gate)
-        {
-            source = _requestedSource;
             sourceId = _requestedSourceId;
-        }
-        if (source == nint.Zero || sourceId is not { } named)
+        if (sourceId is not { } id
+            || _bindings.Resolve(id) is not { Success: true, Value: { } sourceActor })
             return;
+        var source = sourceActor.Address;
+        var named = sourceActor.Id;
 
         // PROVE ONCE, then REVALIDATE EVERY TICK — both on this thread, where
-        // the object table is coherent. The request only NAMES an address and
-        // was stated ticks ago; a source that despawned since would leave it
-        // pointing at freed or recycled memory.
+        // the object table is coherent. Stable identity resolution precedes
+        // the existing native slot proof; no draw-thread address is retained.
         //
         // Refusal is for THIS TICK ONLY and never touches the request: the
         // standing request belongs to the draw thread, which restates it every
@@ -764,9 +741,11 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview
 
         // Rebase without stale constraints, then snapshot the source IK for
         // the file stage. The copied targets are preview-model values only.
-        EntityId? sourceId;
+        ActorId? sourceId;
         lock (_gate) sourceId = _requestedSourceId;
-        var ikSource = _actors.Actors.FirstOrDefault(candidate => candidate.Id == sourceId);
+        var ikSource = sourceId is { } id
+            && _bindings.Resolve(id) is { Success: true, Value: { } sourceActor }
+            ? sourceActor : null;
         _posing.CopyPreviewIk(_appliedStage == 0 && second != null ? null : ikSource, actor);
 
         var result = request.Pose is { } pose

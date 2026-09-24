@@ -15,4 +15,7 @@
     <InternalsVisibleTo Include="Poser.Game.Tests" />
     <InternalsVisibleTo Include="Poser.Application.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Data\BoneCategories\*.json" LogicalName="Poser.Data.BoneCategories.BoneCategories.json" />
+  </ItemGroup>
 </Project>

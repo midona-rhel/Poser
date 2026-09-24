@@ -176,7 +176,7 @@ public class PoseImportOptions
     /// Rest-pose preset — Brio's LoadResourcesPose(asBody: true): Character
     /// slot only, rotation-only, face and model transform untouched. Brio's
     /// category-level exclusions (head, ears, hair, ex, legacy) are baked
-    /// into the <see cref="RestPoses"/> files at load, not expressed here.
+    /// into the <c>RestPoses</c> files at load, not expressed here.
     /// </summary>
     public static PoseImportOptions RestPose => new()
     {

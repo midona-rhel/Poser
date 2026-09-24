@@ -15,6 +15,8 @@ using Poser.Domain.Integration;
 using Poser.Library;
 using Poser.Services;
 
+using Poser.Application.Posing;
+
 namespace Poser.UI;
 
 public sealed class PoseFileInspectorSection
@@ -34,7 +36,8 @@ public sealed class PoseFileInspectorSection
     private readonly ITextureProvider _textures;
     private readonly IPoseLibraryService _library;
 
-    private readonly PosePreviewBinder _importPreview;
+    private readonly IPoseFileCapture _capture;
+    private readonly PosePreviewController _importPreview;
 
     private readonly UserNotices _notices;
     private readonly Crystarium.FileDialog _importBrowser =
@@ -85,6 +88,8 @@ public sealed class PoseFileInspectorSection
 
     public PoseFileInspectorSection(
         IPoseFacade poseFacade,
+        IPoseFileCapture capture,
+        IPosePreviewRuntime previewRuntime,
         SelectionSession selection,
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
@@ -95,13 +100,14 @@ public sealed class PoseFileInspectorSection
     {
         _notices = notices;
         _poseFacade = poseFacade;
+        _capture = capture;
         _selection = selection;
         _config = config;
         _autoSave = autoSave;
         _preview = preview;
         _textures = textures;
         _library = library;
-        _importPreview = new PosePreviewBinder(preview, poseFacade);
+        _importPreview = new PosePreviewController(previewRuntime, capture);
         _freeze = config.Config.FreezeActorOnPoseImport;
         _folder = new(config.Config.Library.EnsurePoseRootExists());
 
@@ -662,12 +668,13 @@ public sealed class PoseFileInspectorSection
         var built = CmpImportOverride(highlighted, out bool blocked, out _);
         if (blocked)
             return;
-        var candidate = PosePreviewBinder.Trim(built ?? BuildOptions());
-        if (_importPreview.Begin(source, highlighted, candidate))
+        var candidate = PosePreviewController.Trim(built ?? BuildOptions());
+        if (_poseFacade.GetActorId(source) is { } previewActor
+            && _importPreview.Begin(previewActor, highlighted, candidate, ImGui.GetFrameCount()))
         {
             _importPreview.Pose(
                 highlighted,
-                PosePreviewBinder.Trim(
+                PosePreviewController.Trim(
                     CmpImportOverride(highlighted, out _, out _)
                         ?? BuildOptions()));
             _importPreviewPosed = true;
@@ -2114,12 +2121,12 @@ public sealed class PoseFileInspectorSection
 
     private void StashPose()
     {
-        if (SelectedSkeleton() is not { } skeleton)
+        if (SelectedSkeleton(out var selectedActor) is null || selectedActor is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
         }
-        var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
+        var armed = _capture.CapturePoseFile(actorId, pose =>
         {
             if (pose == null)
             {
@@ -2136,10 +2143,15 @@ public sealed class PoseFileInspectorSection
 
     public void OpenExport(ISkeleton skeleton)
     {
+        if (_poseFacade.GetActorId(skeleton.Actor) is not { } actorId)
+        {
+            _notices.Refused(NoActorText);
+            return;
+        }
         OpenBrowser(() => _folder.Open(_exportBrowser, path =>
         {
-            var armed = _poseFacade.ExportPose(
-                skeleton.Actor,
+            var armed = _capture.ExportPose(
+                actorId,
                 path,
                 exported =>
                 {
@@ -2155,7 +2167,7 @@ public sealed class PoseFileInspectorSection
     }
 
     private bool _libraryExportOpen;
-    private ISkeleton? _libraryExportSkeleton;
+    private ActorId? _libraryExportActor;
     private string _libraryExportName = string.Empty;
     private int _libraryExportSource;
     private List<LibrarySourceConfig> _libraryExportSources = [];
@@ -2179,7 +2191,7 @@ public sealed class PoseFileInspectorSection
 
     private void OpenExportToLibrary()
     {
-        if (SelectedSkeleton(out var actorId) is not { } skeleton)
+        if (SelectedSkeleton(out var actorId) is not { } skeleton || actorId is null)
         {
             _notices.Refused(NoActorText);
             return;
@@ -2188,7 +2200,7 @@ public sealed class PoseFileInspectorSection
         if (sources.Count == 0)
             return;
 
-        _libraryExportSkeleton = skeleton;
+        _libraryExportActor = actorId;
         _libraryExportSources = sources;
         _libraryExportLabels = new string[sources.Count];
         for (int i = 0; i < sources.Count; i++)
@@ -2220,7 +2232,7 @@ public sealed class PoseFileInspectorSection
 
     private void DrawExportLibraryModal()
     {
-        if (!_libraryExportOpen || _libraryExportSkeleton is not { } skeleton)
+        if (!_libraryExportOpen || _libraryExportActor is not { } actorId)
             return;
         Crystarium.Modal(
             "##export-to-library",
@@ -2318,7 +2330,7 @@ public sealed class PoseFileInspectorSection
                     help: problem,
                     id: "library-export-confirm"))
             {
-                if (ConfirmExportToLibrary(skeleton, sources[selected], trimmed))
+                if (ConfirmExportToLibrary(actorId, sources[selected], trimmed))
                     _libraryExportOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -2329,7 +2341,7 @@ public sealed class PoseFileInspectorSection
     }
 
     private bool ConfirmExportToLibrary(
-        ISkeleton skeleton,
+        ActorId actorId,
         LibrarySourceConfig source,
         string name)
     {
@@ -2340,7 +2352,7 @@ public sealed class PoseFileInspectorSection
         }
 
         string path = System.IO.Path.Combine(source.Path, name + ".pose");
-        var armed = _poseFacade.ExportPose(skeleton.Actor, path, exported =>
+        var armed = _capture.ExportPose(actorId, path, exported =>
         {
             if (exported)
             {
@@ -2455,12 +2467,12 @@ public sealed class PoseFileInspectorSection
 
     private void CopyToClipboard()
     {
-        if (SelectedSkeleton() is not { } skeleton)
+        if (SelectedSkeleton(out var selectedActor) is null || selectedActor is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;
         }
-        var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
+        var armed = _capture.CapturePoseFile(actorId, pose =>
         {
             if (pose == null || PoseClipboard.Encode(pose) is not { } payload)
             {

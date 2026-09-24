@@ -103,10 +103,10 @@ public sealed partial class PoseLibraryPane
         // costs no read per frame; the real build happens only when the binder
         // says something moved — the file load, the expression routing and the
         // filter governance all stay in the one place.
-        if (_previewBinder.Begin(
-                source, path, PosePreviewBinder.Trim(BuildImportOptionsCore())))
+        if (_poseFacade.GetActorId(source) is { } actorId && _previewBinder.Begin(
+                actorId, path, PosePreviewController.Trim(BuildImportOptionsCore()), ImGui.GetFrameCount()))
             _previewBinder.Pose(
-                path, PosePreviewBinder.Trim(BuildImportOptions(path)));
+                path, PosePreviewController.Trim(BuildImportOptions(path)));
 
         // The seat is the inspector rail's, so the section is told to show it;
         // the render and its status are read there, straight off the service.

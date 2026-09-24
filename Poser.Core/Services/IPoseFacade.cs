@@ -20,8 +20,6 @@ public interface IPoseFacade
     bool IsImportBusy { get; }
     bool HasPosableSkeleton(IActor actor);
     ActorId? GetActorId(IActor actor);
-    PoseEditResult ExportPose( IActor actor, string path, Action<bool>? onFinished = null);
-    PoseEditResult CapturePoseFile( IActor actor, Action<PoseFile?> onCaptured, bool authoredOnly = false);
     PoseEditResult ImportPose( IActor actor, string path, PoseImportOptions options, IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null);
     PoseEditResult ImportPose( IActor actor, PoseFile poseFile, PoseImportOptions options, string description, Action<OperationReceipt>? onReceipt = null, IReadOnlyList<BoneId>? selectedBones = null);
     PoseEditResult ApplyRestPose( IActor actor, RestPose pose, Action<OperationReceipt>? onReceipt = null);

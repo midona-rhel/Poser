@@ -409,7 +409,7 @@ public sealed partial class PoseLibraryPane
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of
     /// the three moves.</summary>
-    private readonly PosePreviewBinder _previewBinder;
+    private readonly PosePreviewController _previewBinder;
 
     /// <summary>The last value of <see cref="PoseFileInspectorSection.
     /// TargetPoseRevision"/> this pane acted on — the edge on which the
@@ -442,6 +442,8 @@ public sealed partial class PoseLibraryPane
         IPoseLibraryService library,
         PoseThumbnailCache thumbs,
         IPoseFacade poseFacade,
+        IPoseFileCapture capture,
+        IPosePreviewRuntime previewRuntime,
         IActorSpawnService spawnService,
         SelectionSession selection,
         IEntityBindings bindings,
@@ -486,7 +488,7 @@ public sealed partial class PoseLibraryPane
         _files = files;
         _actors = actors;
         _notices = notices;
-        _previewBinder = new PosePreviewBinder(preview, poseFacade);
+        _previewBinder = new PosePreviewController(previewRuntime, capture);
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnSelectFolder = SelectFolder;
