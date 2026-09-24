@@ -52,9 +52,10 @@ public interface IVirtualCameraService : IDisposable
     /// flying puts nothing on screen.</summary>
     FreeCameraSpeedNotice? SpeedNotice { get; }
 
-    /// <summary>Creates a camera seeded from the current view and makes it
-    /// live. Framework thread only. Returns null on failure.</summary>
-    IVirtualCamera? CreateCamera(CameraKind kind);
+    /// <summary>Creates a camera seeded from the current view. Explicit spawns
+    /// make it live; history passes false to preserve the current view.
+    /// Framework thread only. Returns null on failure.</summary>
+    IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true);
 
     /// <summary>Creates a copy of an existing camera, every setting included,
     /// and makes it live. Framework thread only.</summary>

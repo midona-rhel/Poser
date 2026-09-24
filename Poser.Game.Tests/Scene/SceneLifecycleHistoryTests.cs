@@ -24,6 +24,40 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Camera_lifecycle_replay_preserves_the_surviving_view(bool lookThroughMain)
+    {
+        var world = new World();
+        var main = world.Cameras.AddDefault();
+        var survivor = world.Cameras.CreateCamera(CameraKind.Game)!;
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        camera.Position = new(1, 2, 3);
+        camera.FoV = 0.8f;
+        var view = lookThroughMain ? main : survivor;
+        world.Cameras.SetLive(view);
+        Assert.True(world.Undo()); // Undo spawn.
+        Assert.Same(view, world.Cameras.LiveCamera);
+        Assert.True(world.Redo());
+        var restored = world.Cameras.Live.Single(c => c.Kind == CameraKind.Free);
+        Assert.Same(view, world.Cameras.LiveCamera);
+        Assert.Equal(new Vector3(1, 2, 3), restored.Position);
+        Assert.Equal(0.8f, restored.FoV);
+
+        var other = world.Lifecycle.CreateCamera(CameraKind.Game)!;
+        world.Cameras.SetLive(restored);
+        world.Lifecycle.DestroySelection(cameras: [restored, other]);
+        Assert.Same(main, world.Cameras.LiveCamera); // Removing live still needs a fallback.
+        world.Cameras.SetLive(view);
+        Assert.True(world.Undo()); // Undo the whole removal batch.
+        Assert.Same(view, world.Cameras.LiveCamera);
+        Assert.Equal(4, world.Cameras.Live.Count);
+        Assert.True(world.Redo());
+        Assert.Same(view, world.Cameras.LiveCamera);
+        Assert.Equal(2, world.Cameras.Live.Count);
+    }
+
     [Fact]
     public void Camera_switch_redo_uses_the_restored_camera()
     {
@@ -32,6 +66,7 @@ public sealed class SceneLifecycleHistoryTests
         var previous = world.Cameras.AddDefault();
         world.Cameras.SetLive(previous);
         var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        world.Cameras.SetLive(previous);
         values.SetLive(camera);
         world.Lifecycle.DestroyCamera(camera);
         Assert.True(world.Undo());
@@ -979,10 +1014,11 @@ public sealed class SceneLifecycleHistoryTests
         public FreeCameraSpeedNotice? SpeedNotice => null;
         public void Dispose() { }
 
-        public IVirtualCamera? CreateCamera(CameraKind kind)
+        public IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true)
         {
             var camera = new FakeCamera(kind) { Position = SpawnPosition };
             _cameras.Add(camera);
+            if (makeLive) SetLive(camera);
             return camera;
         }
 
@@ -999,11 +1035,23 @@ public sealed class SceneLifecycleHistoryTests
         public void DestroyCamera(IVirtualCamera camera)
         {
             _cameras.Remove(camera);
+            if (ReferenceEquals(LiveCamera, camera))
+            {
+                ((FakeCamera)camera).IsLive = false;
+                LiveCamera = null;
+                if (_cameras.FirstOrDefault(candidate => candidate.IsDefault) is { } fallback)
+                    SetLive(fallback);
+            }
             ((FakeCamera)camera).IsValid = false;
         }
 
         public void DestroyAllCameras() => _cameras.Clear();
-        public void SetLive(IVirtualCamera camera) => LiveCamera = camera;
+        public void SetLive(IVirtualCamera camera)
+        {
+            if (LiveCamera is FakeCamera previous) previous.IsLive = false;
+            LiveCamera = camera;
+            ((FakeCamera)camera).IsLive = true;
+        }
         public bool SetTargetActor(
             IVirtualCamera camera, IActor actor, ActorId actorId,
             string displayName) => false;
@@ -1030,7 +1078,7 @@ public sealed class SceneLifecycleHistoryTests
         public bool IsValid { get; set; } = true;
         public string Name { get; set; } = "Camera";
         public CameraKind Kind { get; } = kind;
-        public bool IsLive => false;
+        public bool IsLive { get; set; }
         public bool IsDefault { get; set; }
         public bool IsLocked { get; set; }
         public Vector2 Angle { get; set; }

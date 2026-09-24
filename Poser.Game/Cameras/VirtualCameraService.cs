@@ -279,7 +279,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     // ── camera management ────────────────────────────────────────────────
 
-    public IVirtualCamera? CreateCamera(CameraKind kind)
+    public IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true)
     {
         if (!IsAvailable || !_gPose.IsGPosing || Native == null)
             return null;
@@ -302,7 +302,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         camera.CaptureOwnedDefaults();
 
         _cameras.Add(camera);
-        SetLive(camera);
+        if (makeLive)
+            SetLive(camera);
+        else
+            Publish();
         return camera;
     }
 

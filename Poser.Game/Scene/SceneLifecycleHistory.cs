@@ -404,7 +404,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     {
         public IVirtualCamera? Live;
         public CameraFile Document = new();
-        public bool Locked, WasLive, TargetLocked, Tracking;
+        public bool Locked, TargetLocked, Tracking;
         public IActor? Target;
         public Poser.Domain.Identity.ActorId? TargetId;
         public string TargetName = "";
@@ -479,7 +479,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         {
             slot.Document = CameraFileService.CreateCameraFile(camera);
             slot.Locked = camera.IsLocked;
-            slot.WasLive = camera.IsLive;
             slot.Target = camera.TargetActor;
             slot.TargetId = camera.TargetActorId;
             slot.TargetName = camera.TargetActorName;
@@ -500,7 +499,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             return true;
         if (!slot.HasDocument)
             return false;
-        var camera = _cameras.CreateCamera(slot.Document.Kind);
+        var camera = _cameras.CreateCamera(slot.Document.Kind, makeLive: false);
         if (camera == null)
             return false;
         CameraFileService.Apply(slot.Document, camera);
@@ -515,7 +514,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         camera.TrackingMode = slot.TrackingMode;
         camera.IsTracking = slot.Tracking;
         camera.IsLocked = slot.Locked;
-        if (slot.WasLive) _cameras.SetLive(camera);
         slot.Live = camera;
         return true;
     }

@@ -92,6 +92,28 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Equal("Main Camera", setup.Service.Cameras.Single(x => x.IsDefault).Name);
     }
 
+    [Fact]
+    public void Inactive_creation_preserves_view_and_publishes_without_activation()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        using var service = setup.Service;
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var main = service.LiveCamera!;
+        var active = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
+        Assert.Same(active, service.LiveCamera);
+        int changes = setup.Bus.CameraListChanges;
+        var parked = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game, makeLive: false)!;
+        Assert.Same(active, service.LiveCamera);
+        Assert.True(active.IsLive);
+        Assert.False(parked.IsLive);
+        Assert.Contains(parked, service.Cameras);
+        Assert.Equal(changes + 1, setup.Bus.CameraListChanges);
+        service.DestroyAllCameras();
+        Assert.Same(main, service.LiveCamera);
+        Assert.Same(main, Assert.Single(service.Cameras));
+    }
+
 [Fact]
     public void Ready_native_entry_creates_the_default_live_camera()
     {
