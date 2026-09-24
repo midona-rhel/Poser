@@ -14,7 +14,7 @@ using Poser.Scene;
 
 namespace Poser.Services;
 
-/// <summary>Legacy native file/whole-actor operations; scene pose edits use IPoseCommands.</summary>
+/// <summary>Legacy native pose-file operations; scene commands live in Application.</summary>
 public interface IPoseFacade
 {
     bool IsImportBusy { get; }
@@ -26,5 +26,4 @@ public interface IPoseFacade
     PoseEditResult ImportPose( IActor actor, PoseFile poseFile, PoseImportOptions options, string description, Action<OperationReceipt>? onReceipt = null, IReadOnlyList<BoneId>? selectedBones = null);
     PoseEditResult ApplyRestPose( IActor actor, RestPose pose, Action<OperationReceipt>? onReceipt = null);
     PoseEditResult ApplyReferencePose( IActor actor, Action<OperationReceipt>? onReceipt = null);
-    PoseEditResult ResetAll(IActor actor);
 }

@@ -36,7 +36,7 @@ public partial class PoseInspectorPane
     private readonly IIkBake _ikBake;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IPoseCommands _poseCommands;
-    private readonly IPoseFacade _cleanPose;
+    private readonly IActorResetControl _actorReset;
     private readonly IGazeControl _gazeValues;
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
@@ -182,7 +182,7 @@ public partial class PoseInspectorPane
     public PoseInspectorPane(
         IBonePosingService bonePosingService,
         ITransformFacade cleanTransforms,
-        IPoseFacade cleanPose,
+        IActorResetControl actorReset,
         IPoseCommands poseCommands,
         IGazeControl gazeValues,
         IEditorState editorState,
@@ -218,7 +218,7 @@ public partial class PoseInspectorPane
         _poseFileSection = poseFileSection;
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
-        _cleanPose = cleanPose;
+        _actorReset = actorReset;
         _poseCommands = poseCommands;
         _gazeValues = gazeValues;
         _editorState = editorState;
@@ -2639,7 +2639,12 @@ public partial class PoseInspectorPane
                 () => _poseCommands.Reset(actorId, PoseRegion.Hair));
             actions.Button(
                 "All",
-                () => _cleanPose.ResetAll(skeleton.Actor),
+                () =>
+                {
+                    var result = _actorReset.ResetAll(actorId);
+                    if (!result.Success)
+                        _notices.Failed("Reset all", result.Detail ?? "The actor could not be reset.");
+                },
                 help: "Reset this actor's pose, expression, gaze, IK, animation, appearance, and mod integrations. Its placement in the world and the stashed pose are kept.",
                 variant: ButtonVariant.Danger);
         }

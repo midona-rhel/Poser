@@ -1,10 +1,8 @@
 ﻿using Dalamud.Plugin.Services;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
-using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
@@ -12,11 +10,10 @@ using Poser.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Legacy IEntity presentation bridge into stable-id pose commands.</summary>
+/// <summary>Native pose-file capture and import compatibility bridge.</summary>
 public sealed class CleanPoseFacade : IPoseFacade
 {
     private readonly StableBindingRegistry _bindings;
-    private readonly IPoseCommands _commands;
     private ImportArm? _importArm;
 
     private sealed class ImportArm
@@ -28,45 +25,27 @@ public sealed class CleanPoseFacade : IPoseFacade
 
     public CleanPoseFacade(
         StableBindingRegistry bindings,
-        IPoseCommands commands,
         PoseImportCapture imports,
         PoseExportCapture exports,
         Poser.Config.ConfigurationService configuration,
         IPoseFileService poseFiles,
         IBonePosingService bonePosing,
         ISkeletonService skeletons,
-        IExpressionService expressions,
-        IGazeService gaze,
         Poser.Application.Animation.AnimationSession animation,
-        Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Integration.ActorIntegrationSession integration,
         IFramework framework,
-        TransformHistory history,
-        JournalContexts journal,
-        Lazy<IPoseSnapshotPort> snapshots,
         IPluginLog log)
     {
-        _history = history;
-        _journal = journal;
-        _snapshots = snapshots;
         _framework = framework;
         _bindings = bindings;
-        _commands = commands;
         _imports = imports;
         _exports = exports;
         _configuration = configuration;
         _poseFiles = poseFiles;
         _bonePosing = bonePosing;
         _skeletons = skeletons;
-        _expressions = expressions;
-        _gaze = gaze;
         _animation = animation;
-        _presentation = presentation;
-        _integration = integration;
         _log = log;
     }
-
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
     private readonly IFramework _framework;
     /// <summary>True from arming (the synchronous Ok) until the settle
@@ -612,114 +591,8 @@ public sealed class CleanPoseFacade : IPoseFacade
     private readonly ISkeletonService _skeletons;
 
     private readonly IBonePosingService _bonePosing;
-    private readonly IExpressionService _expressions;
-    private readonly IGazeService _gaze;
     private readonly Poser.Application.Animation.AnimationSession _animation;
-    private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly IPluginLog _log;
-
-    /// <summary>
-    /// The one actor-level reset operation behind the Pose section's
-    /// **Reset All**: clears manual pose transforms for all regions,
-    /// expression weights and their layer, every Poser gaze mode / part /
-    /// target / lock (restoring the captured native look-at), and actor-local
-    /// IK arming including the Live IK session switch. It deliberately
-    /// preserves the actor's world/model placement, the pose stash, tool and
-    /// Local/World choices, and tree disclosure. Steps run in an order that
-    /// cannot leave managed expression/gaze state claiming a layer that its
-    /// native pose no longer has: expression weights clear before the pose
-    /// stacks, gaze releases through its native restore path, and every step
-    /// runs even when an earlier one fails. A partial failure is aggregated
-    /// into one reported result and logged.
-    /// </summary>
-    private readonly TransformHistory _history;
-    private readonly JournalContexts _journal;
-    private readonly Lazy<IPoseSnapshotPort> _snapshots;
-
-    /// <summary>Everything back to the game's own: ONE step. The inverse is
-    /// the actor's snapshot from before the reset; the entries the inner
-    /// resets append are folded into it.</summary>
-    public PoseEditResult ResetAll(IActor actor)
-    {
-        // The snapshot comes straight from the port, as the disruptive
-        // steps take it: the keyed scope is empty while the state keys are
-        // disconnected, and an inverse with nothing to restore was a dead
-        // entry that blocked every later undo (audited 2026-09-03).
-        var lineage = _bindings.GetActorId(actor)?.LogicalId;
-        var before = lineage is { } l ? _snapshots.Value.Capture(l) : null;
-        var top = _history.PeekUndo();
-        var result = ResetAllCore(actor);
-        if (before is null)
-            return result;
-        while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
-            _history.Drop(inner);
-        _history.Append(new JournalStep(
-            "Reset all",
-            () => _snapshots.Value.Restore(before, _ => { }),
-            () => ResetAllCore(actor).Success)
-        {
-            Context = new StepContext(
-                Array.Empty<ActorStateKey>(), new[] { before }, Array.Empty<ActorSnapshot>(), null),
-        });
-        return result;
-    }
-
-    private PoseEditResult ResetAllCore(IActor actor)
-    {
-        var failures = new List<string>();
-
-        try
-        {
-            _expressions.ResetExpression(actor);
-        }
-        catch (Exception ex)
-        {
-            failures.Add($"expression reset failed: {ex.Message}");
-        }
-
-        try
-        {
-            _gaze.ResetGaze(actor);
-        }
-        catch (Exception ex)
-        {
-            failures.Add($"gaze reset failed: {ex.Message}");
-        }
-
-        var pose = _commands.Reset(GetActorId(actor) ?? default, PoseRegion.All);
-        if (!pose.Success && pose.Detail is { } poseDetail)
-            failures.Add(poseDetail);
-
-        foreach (var slotSkeleton in _skeletons.GetSkeletons(actor))
-            _bonePosing.ClearIkConfigurations(slotSkeleton);
-
-        // Animation and physics restore LAST: the steps above move bones,
-        // and an actor left frozen would hide the result of its own reset.
-        if (_bindings.GetActorId(actor) is { } animationActor)
-        {
-            var animation = _animation.ResetActor(animationActor);
-            if (!animation.Success && animation.Detail is { } animationDetail)
-                failures.Add($"animation reset failed: {animationDetail}");
-
-            var presentation = _presentation.ResetActor(animationActor);
-            if (!presentation.Success && presentation.Detail is { } presentationDetail)
-                failures.Add($"appearance reset failed: {presentationDetail}");
-
-            // External integrations LAST: restoring collections/MCDF can
-            // trigger a redraw, which would discard everything the steps
-            // above just put back if it ran earlier. Failures aggregate
-            // without skipping later cleanup.
-            var external = _integration.ResetActor(animationActor);
-            if (!external.Success && external.Detail is { } externalDetail)
-                failures.Add($"external appearance reset failed: {externalDetail}");
-        }
-
-        if (failures.Count == 0)
-            return pose;
-        var detail = string.Join(" | ", failures);
-        _log.Warning($"Reset All completed partially: {detail}");
-        return PoseEditResult.Fail(detail);
-    }
 
     private PoseEditResult Report(string description, PoseEditResult result)
     {

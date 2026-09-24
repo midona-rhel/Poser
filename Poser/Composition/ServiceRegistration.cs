@@ -251,6 +251,8 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
         services.AddSingleton<IPoseEditReads, PoseEditReads>();
+        services.AddSingleton<IActorPoseResetRuntime, ActorPoseResetRuntime>();
+        services.AddSingleton<IActorResetControl, ActorResetControl>();
         services.AddSingleton<IPoseCommands>(sp => new PoseCommands(
             sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<PoseEditService>(),
             sp.GetRequiredService<PoseTransferService>(), sp.GetRequiredService<IPoseEditReads>(),

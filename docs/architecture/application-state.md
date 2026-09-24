@@ -61,8 +61,12 @@ history through the shared pose edit/transfer services. Region resets are
 Character-only; whole-pose reset and transfer span all present bone slots.
 Only mirror includes authored actor facing; transfer never includes placement.
 Game provides the cheap authored-layer read and native transform mechanisms.
-Native file/preview operations and the whole-actor Reset All macro still use
-the legacy facade; they are not part of this completed command boundary.
+Whole-actor Reset All uses `IActorResetControl`: Application owns admission,
+reset order and the single history entry; replay retains only the exact actor ID.
+Expression/gaze release precedes pose/IK, animation and presentation follow,
+and external integrations run last because their restoration may redraw.
+Its existing inverse restores pose/IK, not animation or external appearance.
+Native file/preview operations still use the legacy facade.
 
 Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
 actor generations and immutable readings. Application owns gesture coalescing

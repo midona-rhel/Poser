@@ -1,4 +1,10 @@
 using System.Numerics;
+using System.Reflection;
+using Poser.Application.Animation;
+using Poser.Application.Gaze;
+using Poser.Application.Integration;
+using Poser.Application.Lifecycle;
+using Poser.Application.Presentation;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -12,6 +18,50 @@ namespace Poser.Application.Tests.Transforms;
 
 public sealed class PoseCommandTests
 {
+    [Fact]
+    public void Whole_actor_reset_is_one_step_and_redo_resets_pose_inside_the_history_transition()
+    {
+        using var f = new Fixture();
+        var original = f.Live.ToDictionary();
+        var older = new JournalStep("earlier edit", () => true, () => true);
+        f.History.Append(older);
+        Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
+        Assert.Empty(f.Live[f.Character].Pose.Layers);
+        Assert.Empty(f.Live[f.Weapon].Pose.Layers);
+        Assert.Equal(original[f.Model], f.Live[f.Model]);
+        Assert.True(f.Gestures.Undo().Success);
+        Assert.Equal(original[f.Character], f.Live[f.Character]);
+        Assert.Same(older, f.History.PeekUndo());
+        Assert.True(f.Gestures.Redo().Success);
+        Assert.Empty(f.Live[f.Character].Pose.Layers);
+        Assert.Empty(f.Live[f.Weapon].Pose.Layers);
+        Assert.Equal(2, f.IkClears);
+        Assert.True(f.Gestures.Undo().Success);
+        Assert.Same(older, f.History.PeekUndo());
+    }
+
+    [Fact]
+    public void Whole_actor_reset_reports_partial_failure_but_cleans_remaining_state_and_never_replays_on_replacement()
+    {
+        using var f = new Fixture { FailExpression = true };
+        var original = f.Live[f.Character];
+        var result = f.ResetAll.ResetAll(f.Actor);
+        Assert.False(result.Success);
+        Assert.Contains("Expression", result.Detail);
+        Assert.Empty(f.Live[f.Character].Pose.Layers);
+        Assert.Equal(1, f.IkClears);
+        Assert.True(f.Gestures.Undo().Success);
+        Assert.Equal(original, f.Live[f.Character]);
+        var replacement = f.Actor with { Generation = f.Actor.Generation + 1 };
+        Assert.True(f.Scene.TryRefresh(new SceneSnapshot(2,
+            [new ActorDescriptor(replacement, "replacement", [])], [], [], [])).Accepted);
+        f.Captures = 0;
+        Assert.False(f.Gestures.Redo().Success);
+        Assert.False(f.ResetAll.ResetAll(f.Actor).Success);
+        Assert.Equal(0, f.Captures);
+        Assert.Equal(1, f.IkClears);
+    }
+
     [Fact]
     public void Region_reset_leaves_auxiliary_pose_and_actor_placement_alone_and_undo_restores_edits()
     {
@@ -68,7 +118,8 @@ public sealed class PoseCommandTests
         Assert.False(f.History.CanUndo);
     }
 
-    private sealed class Fixture : ITransformRuntimePort, IPoseEditReads, IDisposable
+    private sealed class Fixture : ITransformRuntimePort, IPoseEditReads,
+        IActorPoseResetRuntime, IPoseSnapshotPort, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
@@ -77,7 +128,11 @@ public sealed class PoseCommandTests
         public readonly TransformTargetId Character, Weapon, Model;
         public readonly TransformGestureService Gestures;
         public readonly IPoseCommands Commands;
+        public readonly IActorResetControl ResetAll;
+        private readonly ActorIntegrationSession _integration;
         public int Captures;
+        public int IkClears;
+        public bool FailExpression;
 
         public Fixture()
         {
@@ -98,6 +153,25 @@ public sealed class PoseCommandTests
             Gestures = new(Scene, this, History);
             var edits = new PoseEditService(Scene, this, History, Gestures);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
+            _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),
+                Idle<ISessionGenerationSource>());
+            ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
+                Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationRuntimePort>()),
+                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration,
+                History, new ValueJournal(History), new Lazy<IPoseSnapshotPort>(() => this));
+        }
+
+        public PoseEditResult CanReset(ActorId actor) => PoseEditResult.Ok(0);
+        public PoseEditResult ResetExpression(ActorId actor) => FailExpression
+            ? throw new InvalidOperationException("native reset failed") : PoseEditResult.Ok(1);
+        public PoseEditResult ClearIk(ActorId actor) { IkClears++; return PoseEditResult.Ok(1); }
+        public ActorSnapshot? Capture(Guid lineage) => new(lineage,
+            Live.Values.Where(s => s.Target.Bone != null).ToArray(), []);
+        public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
+        {
+            foreach (var state in (TransformTargetState[])snapshot.Pose) Live[state.Target] = state;
+            finished(true);
+            return true;
         }
 
         public bool HasAuthoredEdits(ActorId actor) => true;
@@ -113,6 +187,20 @@ public sealed class PoseCommandTests
         }
         public TransformPortResult ApplyAbsolute(TransformTargetState baseline, PoseTransform desired,
             bool rawBaseline = false) => throw new NotSupportedException();
-        public void Dispose() => Gestures.Dispose();
+        public void Dispose() { Gestures.Dispose(); _integration.Dispose(); }
+    }
+
+    private static T Idle<T>() where T : class => DispatchProxy.Create<T, IdleResetPort>();
+
+    // These sessions own no overrides in this fixture. Only their no-op reset
+    // mechanisms may run; an unexpected read or mutation fails the test.
+    public class IdleResetPort : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
+        {
+            "Reset" => GazeResult.Ok(),
+            "ClearLoops" or "SuspendColors" or "ClearOwned" => null,
+            _ => throw new InvalidOperationException($"Unexpected reset mechanism: {method.Name}"),
+        };
     }
 }
