@@ -1,4 +1,3 @@
-﻿using System.Collections;
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Transforms;
@@ -369,7 +368,7 @@ public sealed class SceneLifecycleHistoryTests
         var disabled = new World(capacity: 0);
         Assert.NotNull(disabled.Lifecycle.SpawnLight(LightKind.Spot));
         Assert.False(disabled.History.CanUndo);
-        Assert.Empty(Slots(disabled.Lifecycle, "_lightSlots"));
+        Assert.Equal(0, SlotCount(disabled.Lifecycle, "_lightOwner"));
     }
 
     [Fact]
@@ -408,11 +407,13 @@ public sealed class SceneLifecycleHistoryTests
     private static readonly Transform UserPut = new(
         new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
 
-    private static IDictionary Slots(
-        SceneLifecycleHistory lifecycle, string field) =>
-        (IDictionary)typeof(SceneLifecycleHistory)
+    private static int SlotCount(SceneLifecycleHistory lifecycle, string field)
+    {
+        var owner = typeof(SceneLifecycleHistory)
             .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(lifecycle)!;
+        return (int)owner.GetType().GetProperty("Count")!.GetValue(owner)!;
+    }
 
     // ── harness ──────────────────────────────────────────────────────────
 

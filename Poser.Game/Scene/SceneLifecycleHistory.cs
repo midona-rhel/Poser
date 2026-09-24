@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Application.Transforms;
@@ -354,9 +354,9 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
 /// names ONE entity must name the SAME slot: "add light" and the later "remove
 /// light" are two entries about one light, and undoing past the removal has to
 /// destroy the light the removal's own undo just re-created, not the corpse the
-/// add was born holding. <see cref="_lightSlots"/> and its siblings are that
-/// re-binding, keyed by the live instance and re-keyed every time a restore
-/// mints a new one.</para>
+/// add was born holding. The typed slot owners provide that re-binding,
+/// keyed by the live instance and re-keyed every time a restore mints a new
+/// one.</para>
 ///
 /// <para>A slot carries the live instance when there is one, plus the entity's
 /// own document (the same <c>.poserlight</c> / <c>.posercam</c> mapping export
@@ -401,29 +401,15 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
     private readonly IWorldObjectLifecycle _worldObjects;
-    private readonly Func<ILight, TransformTargetId?>? _lightTarget;
 
-    /// <summary>Live instance → slot, by reference: the re-binding that makes
-    /// every entry about one entity share one slot. Light aliases are retained
-    /// for property history; they are never exposed as current public IDs.
-    /// </summary>
-    private readonly Dictionary<object, LightSlot> _lightSlots =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly Dictionary<object, CameraSlot> _cameraSlots =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly Dictionary<object, ActorSlot> _actorSlots =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly Dictionary<object, PropSlot> _propSlots =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly Dictionary<object, OverlaySlot> _overlaySlots =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly Dictionary<object, WorldObjectSlot> _worldObjectSlots =
-        new(ReferenceEqualityComparer.Instance);
+    /// <summary>Each family owner maps its instances to slots shared by
+    /// every history entry for that entity.</summary>
+    private readonly LightLifecycleOwner _lightOwner;
+    private readonly LifecycleSlotOwner<IVirtualCamera, CameraSlot> _cameraOwner;
+    private readonly LifecycleSlotOwner<IActor, ActorSlot> _actorOwner;
+    private readonly LifecycleSlotOwner<object, PropSlot> _propOwner;
+    private readonly LifecycleSlotOwner<object, OverlaySlot> _overlayOwner;
+    private readonly LifecycleSlotOwner<object, WorldObjectSlot> _worldObjectOwner;
 
     public SceneLifecycleHistory(
         TransformHistory history,
@@ -455,11 +441,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
                 gaze, integration, bindings, bonePosing, actorManager, presentation, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
-            new WorldObjectServiceLifecycle(worldObjects))
-    {
-        _lightTarget = light => bindings.GetLightId(light) is { } id
-            ? TransformTargetId.ForLight(id) : null;
-    }
+            new WorldObjectServiceLifecycle(worldObjects),
+            light => bindings.GetLightId(light) is { } id
+                ? TransformTargetId.ForLight(id) : null)
+    { }
 
     /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
     /// entry's two directions can be exercised without a native scene object
@@ -481,7 +466,27 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _props = props;
         _overlayNodes = overlays;
         _worldObjects = worldObjects;
-        _lightTarget = lightTarget;
+        _lightOwner = new(history, lighting, lightTarget);
+        _cameraOwner = new(
+            camera => new CameraSlot { Live = camera },
+            slot => slot.Live, (slot, live) => slot.Live = live,
+            RemoveCamera, RestoreCamera);
+        _actorOwner = new(
+            actor => new ActorSlot { Live = actor },
+            slot => slot.Live, (slot, live) => slot.Live = live,
+            RemoveActor, RestoreActor);
+        _propOwner = new(
+            prop => new PropSlot { Live = prop },
+            slot => slot.Live, (slot, live) => slot.Live = live,
+            RemoveProp, RestoreProp);
+        _overlayOwner = new(
+            overlay => new OverlaySlot { Live = overlay },
+            slot => slot.Live, (slot, live) => slot.Live = live,
+            RemoveOverlay, RestoreOverlay);
+        _worldObjectOwner = new(
+            worldObject => new WorldObjectSlot { Live = worldObject },
+            slot => slot.Live, (slot, live) => slot.Live = live,
+            ReleaseWorldObjectSlot, RestoreWorldObject);
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -491,161 +496,30 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     private void ForgetSlots()
     {
-        _lightSlots.Clear();
-        _cameraSlots.Clear();
-        _actorSlots.Clear();
-        _propSlots.Clear();
-        _overlaySlots.Clear();
-        _worldObjectSlots.Clear();
+        _lightOwner.Clear();
+        _cameraOwner.Clear();
+        _actorOwner.Clear();
+        _propOwner.Clear();
+        _overlayOwner.Clear();
+        _worldObjectOwner.Clear();
     }
 
     // ── lights ───────────────────────────────────────────────────────────
 
-    /// <summary>The live light, plus the document that rebuilds it once the
-    /// live one is gone.</summary>
-    private sealed class LightSlot
-    {
-        public ILight? Live;
-        public LightFile Document = new();
-        public IBone? AttachedBone;
-        public WorldLightCandidate? Source;
+    public ILight? SpawnLight(LightKind kind) => _lightOwner.SpawnLight(kind);
 
-        /// <summary>False until a removal has actually read the light. A
-        /// restore without one would spawn a default-valued impostor wearing
-        /// the entry's name, so it fails instead.</summary>
-        public bool HasDocument;
-    }
+    public ILight? CloneLight(ILight source) => _lightOwner.CloneLight(source);
 
-    public ILight? SpawnLight(LightKind kind) =>
-        RecordLightSpawn(
-            $"Add {KindName(kind)} light", () => _lighting.SpawnLight(kind));
-
-    public ILight? CloneLight(ILight source) =>
-        RecordLightSpawn(
-            $"Clone light '{source.Name}'", () => _lighting.CloneLight(source));
-
-    public ILight? AcquireWorldLight(WorldLightCandidate source) =>
-        AppendLightSpawn("Acquire world light", _lighting.CaptureWorldLight(source));
+    public ILight? AcquireWorldLight(WorldLightCandidate source) => _lightOwner.AcquireWorldLight(source);
 
     // History alone may resolve an old wrapper to its successor. Public IDs
     // and acquisition receipts remain expired after release.
-    internal ILight? CurrentLight(ILight light) =>
-        _lightSlots.TryGetValue(light, out var slot) ? slot.Live : light;
+    internal ILight? CurrentLight(ILight light) => _lightOwner.CurrentLight(light);
 
-    /// <summary>Records a light that some OTHER path already created — a
-    /// file import, which owns its own spawn — under this seam's discipline.
-    /// </summary>
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
-        AppendLightSpawn(description, light);
+        _lightOwner.RecordSpawnedLight(description, light);
 
-    public void DestroyLight(ILight light)
-    {
-        if (!light.IsValid) return;
-        if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
-        {
-            _lighting.DestroyLight(light);
-            return;
-        }
-        string description = $"{(light.Ownership == LightOwnership.World ? "Release" : "Remove")} light '{light.Name}'";
-        var slot = SlotFor(light);
-        if (!RemoveLight(slot))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            description,
-            () => RestoreLight(slot),
-            () => RemoveLight(slot)));
-    }
-
-    private ILight? RecordLightSpawn(string description, Func<ILight?> spawn) =>
-        AppendLightSpawn(description, spawn());
-
-    private ILight? AppendLightSpawn(string description, ILight? light)
-    {
-        if (light == null)
-            return null;
-        var slot = SlotFor(light);
-        _history.Append(new SceneLifecyclePatch(
-            description,
-            () => RemoveLight(slot),
-            () => RestoreLight(slot)));
-        return light;
-    }
-
-    private LightSlot SlotFor(ILight light)
-    {
-        if (_lightSlots.TryGetValue(light, out var existing))
-            return existing;
-        var slot = new LightSlot { Live = light, Source = _lighting.GetWorldSource(light) };
-        _lightSlots[light] = slot;
-        return slot;
-    }
-
-    private bool RemoveLight(LightSlot slot)
-    {
-        if (slot.Live is not { } light)
-            return false;
-        if (light.IsValid)
-        {
-            // Captured HERE, not at spawn: what redo must restore is the
-            // light as the user last had it.
-            slot.Document = LightFileService.CreateLightFile(light);
-            slot.AttachedBone = light.AttachedBone;
-            slot.HasDocument = true;
-            if (_lightTarget?.Invoke(light) is { } target)
-                _history.RetainLifecycleTarget(target, () =>
-                    slot.Live is { IsValid: true } current ? _lightTarget(current) : null);
-            _lighting.DestroyLight(light);
-        }
-        slot.Live = null;
-        return true;
-    }
-
-    private bool RestoreLight(LightSlot slot)
-    {
-        if (slot.Live is { IsValid: true })
-            return true;
-        if (!slot.HasDocument)
-            return false;
-        var light = slot.Source is { } source
-            ? _lighting.CaptureWorldLight(source)
-            : _lighting.SpawnLight(slot.Document.Kind);
-        if (light == null)
-            return false;
-        LightFileService.Apply(slot.Document, light);
-        ApplyGobo(slot.Document.Gobo, light);
-        if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
-            light.AttachedBone = bone;
-        slot.Live = light;
-        _lightSlots[light] = slot;
-        return true;
-    }
-
-    /// <summary>Restores a texture observed in this session, including a
-    /// world light's texture that is not in the preset library.</summary>
-    private void ApplyGobo(string? path, ILight light)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            _lighting.ClearGobo(light);
-            return;
-        }
-        foreach (var gobo in _lighting.Gobos)
-            if (string.Equals(
-                    gobo.Path, path, StringComparison.OrdinalIgnoreCase))
-            {
-                _lighting.ApplyGobo(light, gobo);
-                return;
-            }
-        _lighting.ApplyGobo(light, new GoboEntry(path, path));
-    }
-
-    private static string KindName(LightKind kind) => kind switch
-    {
-        LightKind.Point => "point",
-        LightKind.Area => "area",
-        LightKind.Directional => "directional",
-        _ => "spot",
-    };
+    public void DestroyLight(ILight light) => _lightOwner.DestroyLight(light);
 
     // ── cameras ──────────────────────────────────────────────────────────
 
@@ -690,12 +564,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         }
         string description = $"Remove camera '{camera.Name}'";
         var slot = SlotFor(camera);
-        if (!RemoveCamera(slot))
+        if (!_cameraOwner.CaptureAndRemove(slot))
             return;
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RestoreCamera(slot),
-            () => RemoveCamera(slot)));
+            () => _cameraOwner.Restore(slot),
+            () => _cameraOwner.CaptureAndRemove(slot)));
     }
 
     private IVirtualCamera? RecordCameraSpawn(
@@ -710,23 +584,19 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = SlotFor(camera);
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RemoveCamera(slot),
-            () => RestoreCamera(slot)));
+            () => _cameraOwner.CaptureAndRemove(slot),
+            () => _cameraOwner.Restore(slot)));
         return camera;
     }
 
     private CameraSlot SlotFor(IVirtualCamera camera)
     {
-        if (_cameraSlots.TryGetValue(camera, out var existing))
-            return existing;
-        var slot = new CameraSlot { Live = camera };
-        _cameraSlots[camera] = slot;
-        return slot;
+        return _cameraOwner.SlotFor(camera);
     }
 
     private bool RemoveCamera(CameraSlot slot)
     {
-        if (slot.Live is not { } camera)
+        if (_cameraOwner.CurrentInstance(slot) is not { } camera)
             return false;
         if (camera.IsValid)
         {
@@ -744,14 +614,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _cameras.DestroyCamera(camera);
         }
-        _cameraSlots.Remove(camera);
-        slot.Live = null;
         return true;
     }
 
     private bool RestoreCamera(CameraSlot slot)
     {
-        if (slot.Live != null)
+        if (_cameraOwner.CurrentInstance(slot) != null)
             return true;
         if (!slot.HasDocument)
             return false;
@@ -772,7 +640,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         camera.IsLocked = slot.Locked;
         if (slot.WasLive) _cameras.SetLive(camera);
         slot.Live = camera;
-        _cameraSlots[camera] = slot;
         return true;
     }
 
@@ -809,8 +676,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             _actors.CopyBodyProfile(source, actor);
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RemoveActor(slot),
-            () => RestoreActor(slot)));
+            () => _actorOwner.CaptureAndRemove(slot),
+            () => _actorOwner.Restore(slot)));
         return actor;
     }
 
@@ -868,8 +735,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         slot.HasRespawn = true;
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RemoveActor(slot),
-            () => RestoreActor(slot)));
+            () => _actorOwner.CaptureAndRemove(slot),
+            () => _actorOwner.Restore(slot)));
         return actor;
     }
 
@@ -887,34 +754,30 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     /// </summary>
     public bool DespawnActor(IActor actor)
     {
-        if (!_actorSlots.TryGetValue(actor, out var slot) || !slot.HasRespawn)
+        if (!_actorOwner.TryGetSlot(actor, out var slot) || !slot.HasRespawn)
         {
             _actors.Note(
                 $"Despawning '{actor.Name}' cannot be undone: Poser has no record of spawning this actor, so it has no call to run again and no way to reproduce the appearance it is wearing.");
             return _actors.Destroy(actor);
         }
         string description = $"Despawn actor '{actor.Name}'";
-        if (!RemoveActor(slot))
+        if (!_actorOwner.CaptureAndRemove(slot))
             return false;
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RestoreActor(slot),
-            () => RemoveActor(slot)));
+            () => _actorOwner.Restore(slot),
+            () => _actorOwner.CaptureAndRemove(slot)));
         return true;
     }
 
     private ActorSlot SlotFor(IActor actor)
     {
-        if (_actorSlots.TryGetValue(actor, out var existing))
-            return existing;
-        var slot = new ActorSlot { Live = actor };
-        _actorSlots[actor] = slot;
-        return slot;
+        return _actorOwner.SlotFor(actor);
     }
 
     private bool RemoveActor(ActorSlot slot)
     {
-        if (slot.Live is not { } actor)
+        if (_actorOwner.CurrentInstance(slot) is not { } actor)
             return false;
         // Despawned by the actor menu already: the removal this undo names
         // has happened, so it reports the truth rather than failing on a
@@ -930,14 +793,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             if (!_actors.Destroy(actor))
                 return false;
         }
-        _actorSlots.Remove(actor);
-        slot.Live = null;
         return true;
     }
 
     private bool RestoreActor(ActorSlot slot)
     {
-        if (slot.Live != null)
+        if (_actorOwner.CurrentInstance(slot) != null)
             return true;
         if (!slot.HasRespawn)
             return false;
@@ -948,7 +809,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (actor == null)
             return false;
         slot.Live = actor;
-        _actorSlots[actor] = slot;
         if (slot.Name is { } name)
             _actors.SetName(actor, name);
         // The body is back; the placement and the pose land on it over the
@@ -957,7 +817,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         // way: the actor IS restored, and a pose that cannot follow says so
         // rather than leaving the step un-consumed and unrepeatable.
         if (slot.HasDocument)
-            _actors.Restore(actor, slot.Document, () => ReferenceEquals(slot.Live, actor));
+            _actors.Restore(actor, slot.Document, () => ReferenceEquals(_actorOwner.CurrentInstance(slot), actor));
         return true;
     }
 
@@ -985,8 +845,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
             $"Add object '{_props.Read(prop).Name}'",
-            () => RemoveProp(slot),
-            () => RestoreProp(slot)));
+            () => _propOwner.CaptureAndRemove(slot),
+            () => _propOwner.Restore(slot)));
         return prop;
     }
 
@@ -1006,8 +866,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
             $"Clone object '{state.Name}'",
-            () => RemoveProp(slot),
-            () => RestoreProp(slot)));
+            () => _propOwner.CaptureAndRemove(slot),
+            () => _propOwner.Restore(slot)));
         return prop;
     }
 
@@ -1015,12 +875,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         string description = $"Remove object '{_props.Read(prop).Name}'";
         var slot = SlotFor(prop);
-        if (!RemoveProp(slot))
+        if (!_propOwner.CaptureAndRemove(slot))
             return;
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RestoreProp(slot),
-            () => RemoveProp(slot)));
+            () => _propOwner.Restore(slot),
+            () => _propOwner.CaptureAndRemove(slot)));
     }
 
     /// <summary>
@@ -1048,16 +908,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     private PropSlot SlotFor(object prop)
     {
-        if (_propSlots.TryGetValue(prop, out var existing))
-            return existing;
-        var slot = new PropSlot { Live = prop };
-        _propSlots[prop] = slot;
-        return slot;
+        return _propOwner.SlotFor(prop);
     }
 
     private bool RemoveProp(PropSlot slot)
     {
-        if (slot.Live is not { } prop)
+        if (_propOwner.CurrentInstance(slot) is not { } prop)
             return false;
         if (_props.IsLive(prop))
         {
@@ -1067,14 +923,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _props.Destroy(prop);
         }
-        _propSlots.Remove(prop);
-        slot.Live = null;
         return true;
     }
 
     private bool RestoreProp(PropSlot slot)
     {
-        if (slot.Live != null)
+        if (_propOwner.CurrentInstance(slot) != null)
             return true;
         if (!slot.HasDocument)
             return false;
@@ -1083,7 +937,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             return false;
         _props.Apply(prop, slot.Document);
         slot.Live = prop;
-        _propSlots[prop] = slot;
         return true;
     }
 
@@ -1091,7 +944,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RemoveProp(slot);
+            landed &= _propOwner.CaptureAndRemove(slot);
         return landed;
     }
 
@@ -1099,7 +952,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RestoreProp(slot);
+            landed &= _propOwner.Restore(slot);
         return landed;
     }
 
@@ -1135,7 +988,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         var before = groups.Capture();
         var slots = new List<OverlaySlot>();
-        Poser.Domain.Identity.SelectionId[] Members() => slots.Select(s => selection(s.Live!)
+        Poser.Domain.Identity.SelectionId[] Members() => slots.Select(s => selection(_overlayOwner.CurrentInstance(s)!)
             ?? throw new InvalidOperationException("A collider has not joined the scene.")).ToArray();
         Poser.Application.Scene.SceneGroup group;
         try
@@ -1187,8 +1040,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = OverlaySlotFor(overlay);
         _history.Append(new SceneLifecyclePatch(
             $"Add {KindName(state.Kind)} '{_overlayNodes.Read(overlay).Name}'",
-            () => RemoveOverlay(slot),
-            () => RestoreOverlay(slot)));
+            () => _overlayOwner.CaptureAndRemove(slot),
+            () => _overlayOwner.Restore(slot)));
         return overlay;
     }
 
@@ -1198,12 +1051,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         string description =
             $"Remove {KindName(document.Kind)} '{document.Name}'";
         var slot = OverlaySlotFor(overlay);
-        if (!RemoveOverlay(slot))
+        if (!_overlayOwner.CaptureAndRemove(slot))
             return;
         _history.Append(new SceneLifecyclePatch(
             description,
-            () => RestoreOverlay(slot),
-            () => RemoveOverlay(slot)));
+            () => _overlayOwner.Restore(slot),
+            () => _overlayOwner.CaptureAndRemove(slot)));
     }
 
     /// <summary>Clearing the overlay list is ONE act of the user's, so it is
@@ -1228,16 +1081,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     private OverlaySlot OverlaySlotFor(object overlay)
     {
-        if (_overlaySlots.TryGetValue(overlay, out var existing))
-            return existing;
-        var slot = new OverlaySlot { Live = overlay };
-        _overlaySlots[overlay] = slot;
-        return slot;
+        return _overlayOwner.SlotFor(overlay);
     }
 
     private bool RemoveOverlay(OverlaySlot slot)
     {
-        if (slot.Live is not { } overlay)
+        if (_overlayOwner.CurrentInstance(slot) is not { } overlay)
             return false;
         if (_overlayNodes.IsLive(overlay))
         {
@@ -1247,14 +1096,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
             _overlayNodes.Destroy(overlay);
         }
-        _overlaySlots.Remove(overlay);
-        slot.Live = null;
         return true;
     }
 
     private bool RestoreOverlay(OverlaySlot slot)
     {
-        if (slot.Live != null)
+        if (_overlayOwner.CurrentInstance(slot) != null)
             return true;
         if (!slot.HasDocument)
             return false;
@@ -1262,7 +1109,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         if (overlay == null)
             return false;
         slot.Live = overlay;
-        _overlaySlots[overlay] = slot;
         return true;
     }
 
@@ -1270,7 +1116,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RemoveOverlay(slot);
+            landed &= _overlayOwner.CaptureAndRemove(slot);
         return landed;
     }
 
@@ -1278,7 +1124,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RestoreOverlay(slot);
+            landed &= _overlayOwner.Restore(slot);
         return landed;
     }
 
@@ -1312,8 +1158,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = WorldObjectSlotFor(worldObject);
         _history.Append(new SceneLifecyclePatch(
             "Add world object",
-            () => ReleaseWorldObjectSlot(slot),
-            () => RestoreWorldObject(slot)));
+            () => _worldObjectOwner.CaptureAndRemove(slot),
+            () => _worldObjectOwner.Restore(slot)));
         return worldObject;
     }
 
@@ -1350,8 +1196,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var slot = WorldObjectSlotFor(worldObject);
         _history.Append(new SceneLifecyclePatch(
             "Add world object",
-            () => ReleaseWorldObjectSlot(slot),
-            () => RestoreWorldObject(slot)));
+            () => _worldObjectOwner.CaptureAndRemove(slot),
+            () => _worldObjectOwner.Restore(slot)));
         return worldObject;
     }
 
@@ -1361,12 +1207,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     internal void ReleaseWorldObject(object worldObject)
     {
         var slot = WorldObjectSlotFor(worldObject);
-        if (!ReleaseWorldObjectSlot(slot))
+        if (!_worldObjectOwner.CaptureAndRemove(slot))
             return;
         _history.Append(new SceneLifecyclePatch(
             "Remove world object",
-            () => RestoreWorldObject(slot),
-            () => ReleaseWorldObjectSlot(slot)));
+            () => _worldObjectOwner.Restore(slot),
+            () => _worldObjectOwner.CaptureAndRemove(slot)));
     }
 
     /// <summary>Giving the whole list back is ONE act of the user's, so it is
@@ -1391,16 +1237,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     private WorldObjectSlot WorldObjectSlotFor(object worldObject)
     {
-        if (_worldObjectSlots.TryGetValue(worldObject, out var existing))
-            return existing;
-        var slot = new WorldObjectSlot { Live = worldObject };
-        _worldObjectSlots[worldObject] = slot;
-        return slot;
+        return _worldObjectOwner.SlotFor(worldObject);
     }
 
     private bool ReleaseWorldObjectSlot(WorldObjectSlot slot)
     {
-        if (slot.Live is not { } worldObject)
+        if (_worldObjectOwner.CurrentInstance(slot) is not { } worldObject)
             return false;
         if (_worldObjects.IsLive(worldObject))
         {
@@ -1412,14 +1254,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             slot.HasDocument = true;
         }
         _worldObjects.Release(worldObject);
-        _worldObjectSlots.Remove(worldObject);
-        slot.Live = null;
         return true;
     }
 
     private bool RestoreWorldObject(WorldObjectSlot slot)
     {
-        if (slot.Live != null)
+        if (_worldObjectOwner.CurrentInstance(slot) != null)
             return true;
         if (!slot.HasDocument)
             return false;
@@ -1438,7 +1278,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             return false;
         _worldObjects.Apply(worldObject, slot.Document);
         slot.Live = worldObject;
-        _worldObjectSlots[worldObject] = slot;
         return true;
     }
 
@@ -1446,7 +1285,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= ReleaseWorldObjectSlot(slot);
+            landed &= _worldObjectOwner.CaptureAndRemove(slot);
         return landed;
     }
 
@@ -1454,7 +1293,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RestoreWorldObject(slot);
+            landed &= _worldObjectOwner.Restore(slot);
         return landed;
     }
 
@@ -1500,7 +1339,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         var propSlots = new List<PropSlot>();
         foreach (var prop in props ?? Array.Empty<object>())
             propSlots.Add(SlotFor(prop));
-        var lightSlots = new List<LightSlot>();
+        var lightSlots = new List<LightLifecycleSlot>();
         foreach (var light in lights ?? Array.Empty<ILight>())
         {
             if (!_lighting.IsSpawnedLight(light) && _lighting.GetWorldSource(light) is null)
@@ -1509,7 +1348,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
                 removed++;
                 continue;
             }
-            lightSlots.Add(SlotFor(light));
+            lightSlots.Add(_lightOwner.SlotFor(light));
         }
         var cameraSlots = new List<CameraSlot>();
         foreach (var camera in cameras ?? Array.Empty<IVirtualCamera>())
@@ -1530,13 +1369,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
         bool Remove() =>
             RemoveProps(propSlots) &
-            RemoveLights(lightSlots) &
+            _lightOwner.CaptureAndRemove(lightSlots) &
             RemoveCameras(cameraSlots) &
             RemoveOverlays(overlaySlots);
 
         bool Restore() =>
             RestoreProps(propSlots) &
-            RestoreLights(lightSlots) &
+            _lightOwner.Restore(lightSlots) &
             RestoreCameras(cameraSlots) &
             RestoreOverlays(overlaySlots);
 
@@ -1550,27 +1389,11 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         return removed;
     }
 
-    private bool RemoveLights(IReadOnlyList<LightSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= RemoveLight(slot);
-        return landed;
-    }
-
-    private bool RestoreLights(IReadOnlyList<LightSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= RestoreLight(slot);
-        return landed;
-    }
-
     private bool RemoveCameras(IReadOnlyList<CameraSlot> slots)
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RemoveCamera(slot);
+            landed &= _cameraOwner.CaptureAndRemove(slot);
         return landed;
     }
 
@@ -1578,7 +1401,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     {
         bool landed = true;
         foreach (var slot in slots)
-            landed &= RestoreCamera(slot);
+            landed &= _cameraOwner.Restore(slot);
         return landed;
     }
 }
