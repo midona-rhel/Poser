@@ -81,6 +81,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
+    private readonly ISceneDocumentStore _documents;
 
     /// <summary>Where the operation record goes. Null only under the contract
     /// tests, which assert the published read models rather than the log.
@@ -98,55 +99,11 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private OperationEpoch _epoch;
     private bool _disposed;
 
-    /// <summary>
-    /// Composition entry point. The native/persistence seam is an
-    /// implementation detail of this assembly, so the host wires the OWNERS
-    /// and the workflow binds them — nothing outside Poser.Game ever names
-    /// <see cref="ISceneRuntime"/>.
-    /// </summary>
     private readonly TransformHistory? _history;
-
-    public SceneWorkflow(
-        TransformHistory history,
-        Dalamud.Plugin.Services.IFramework framework,
-        Poser.Application.Lifecycle.ISessionGenerationSource sessions,
-        SceneCaptureService capture,
-        Posing.CleanPoseFacade poses,
-        Poser.Services.IActorSpawnService spawns,
-        Poser.Services.ISkeletonService skeletons,
-        Poser.Services.IPosingService posing,
-        PropSpawnService props,
-        Overlays.OverlayNodeService overlays,
-        Poser.Services.ILightingService lighting,
-        Poser.Services.IVirtualCameraService cameras,
-        Poser.Services.IEnvironmentService environment,
-        Bindings.StableBindingRegistry bindings,
-        Poser.Application.Animation.AnimationSession animation,
-        Poser.Services.IGazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration,
-        Poser.Services.IWorldRenderingService rendering,
-        Poser.Services.IActorManager actors,
-        Dalamud.Plugin.Services.IObjectTable objects,
-        World.WorldService worldObjects,
-        Poser.Services.IPlaceService place,
-        Poser.Library.IMcdfHashIndex mcdfHashes,
-        Poser.Application.Selection.SelectionSession selection,
-        Poser.Application.Scene.SceneGroups sceneGroups,
-        Poser.Library.IPoseLibraryService library,
-        Dalamud.Plugin.Services.IPluginLog log,
-        Poser.Services.IBonePosingService bonePosing,
-        Poser.Application.Transforms.GroupTransformState? groupTransforms = null)
-        : this(new SceneRuntimeAdapter(
-            framework, sessions, capture, poses, spawns, skeletons, posing,
-            props, overlays, lighting, cameras, environment, bindings,
-            animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection, bonePosing, log), log, sceneGroups,
-            library, groupTransforms, history)
-    {
-    }
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
+        ISceneDocumentStore documents,
         Dalamud.Plugin.Services.IPluginLog? log = null,
         Poser.Application.Scene.SceneGroups? groups = null,
         Poser.Library.IPoseLibraryService? library = null,
@@ -154,6 +111,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         TransformHistory? history = null)
     {
         _runtime = runtime;
+        _documents = documents;
         _log = log;
         _groups = groups;
         _library = library;
@@ -688,11 +646,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return;
             }
 
-            // A .json path exports a Stagehand Stage; what a Stage cannot
-            // carry lands in the notes.
-            var written = Poser.Files.StageFile.IsStagePath(path)
-                ? Poser.Files.StageFile.Write(scene, path, notes)
-                : _runtime.WriteScene(scene, path);
+            // Format conversion losses belong to the operation's result.
+            var stored = _documents.Write(scene, path);
+            notes.AddRange(stored.Notes);
+            var written = stored.Outcome;
             // The writer has streamed every payload into the container, so the
             // packages sealing created are the caller's to drop now — and only
             // now: deleting them earlier would delete the bytes being saved.
@@ -817,11 +774,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             // Phase 1 — read and validate the WHOLE document off-thread.
             // Nothing native has happened yet; a corrupt, oversized, or
             // future file is a pure typed refusal.
-            // A .json path is a Stagehand Stage: the read translates it
-            // into a scene document and the rest of the load never knows.
-            var read = Poser.Files.StageFile.IsStagePath(path)
-                ? Poser.Files.StageFile.Read(path, notes)
-                : _runtime.ReadScene(path);
+            // Storage translates supported formats to the same scene document.
+            var stored = _documents.Read(path);
+            notes.AddRange(stored.Notes);
+            var read = stored.Outcome;
             if (!read.Succeeded || read.Scene is not { } scene)
             {
                 // Nothing native has run, so there is nothing to roll back:
@@ -2182,6 +2138,5 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
         _cancellation?.Dispose();
         _disposal.Dispose();
-        (_runtime as IDisposable)?.Dispose();
     }
 }

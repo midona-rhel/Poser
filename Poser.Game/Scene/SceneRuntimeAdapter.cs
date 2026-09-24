@@ -21,16 +21,16 @@ namespace Poser.Game.Scene;
 /// The production <see cref="ISceneRuntime"/>: thin bindings from the scene
 /// transaction's phase vocabulary onto the real owners — the accepted spawn
 /// service, the ONE atomic pose import, the lighting/camera/environment
-/// services, and the scene codec/store. It owns no transaction state; every
+/// services. It owns no transaction state; every
 /// method is one materialization step.
 /// </summary>
 internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
+    private readonly ISceneDocumentStore _documents;
     private readonly ISessionGenerationSource _sessions;
     private readonly SceneCaptureService _capture;
-    private readonly SceneFileStore _store;
     private readonly CleanPoseFacade _poses;
     private readonly IActorSpawnService _spawns;
     private readonly ISkeletonService _skeletons;
@@ -68,6 +68,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public SceneRuntimeAdapter(
         IFramework framework,
+        ISceneDocumentStore documents,
         ISessionGenerationSource sessions,
         SceneCaptureService capture,
         CleanPoseFacade poses,
@@ -107,9 +108,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _animation = animation;
         _gaze = gaze;
         _framework = framework;
+        _documents = documents;
         _sessions = sessions;
         _capture = capture;
-        _store = SceneFileStore.Default;
         _poses = poses;
         _spawns = spawns;
         _skeletons = skeletons;
@@ -134,11 +135,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
-
-    public SceneReadOutcome ReadScene(string path) => _store.Read(path);
-
-    public SceneWriteOutcome WriteScene(SceneFile scene, string path) =>
-        _store.Write(scene, path);
 
     public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
     {
@@ -760,7 +756,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 {
                     // Container entry to disk, as a STREAM. A real package is
                     // hundreds of megabytes; nothing here holds it.
-                    using var payload = _store.OpenAppearance(
+                    using var payload = _documents.OpenAppearance(
                         scenePath, saved.PackageEntry!)
                         ?? throw new System.IO.IOException(
                             "the scene holds no such payload.");

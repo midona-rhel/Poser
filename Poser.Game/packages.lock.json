@@ -32,6 +32,12 @@
         "resolved": "2.2.27",
         "contentHash": "+xJxmutfgcVRb+G+20wWMRoRuMUul85FkC0FckHLxfhvLf7yTXbm5HRJGZei+Ir9idMqkJTrbptKQcb9TBigvw=="
       },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Direct",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "z/2xXlFw2aLGjHyEm6E0tQ+In6VfzQzTrtArbQ2c0TQE16ZbyDCMGPvaUT9I0s8rgy9sRWlU2P9waW37qV04qA=="
+      },
       "BepuUtilities": {
         "type": "Transitive",
         "resolved": "2.4.0",

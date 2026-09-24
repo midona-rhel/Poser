@@ -46,3 +46,12 @@ so file catalogs and pose resources remain compatible.
 See [posing-runtime.md](posing-runtime.md) for native ordering and
 [application-state.md](application-state.md) for identity, gestures, and
 lifecycle.
+
+Scene save/load coordinates an injected native runtime and document store.
+The document store owns native/Stagehand format routing and conversion notes;
+the workflow owns admission, ordered execution, cancellation, and rollback.
+Game-side composition owns the runtime lifetime and disposes the workflow
+before its runtime. The workflow does not construct or dispose its dependencies.
+This is an incremental boundary: scene policy still lives in Game and its
+runtime still carries opaque native tokens; moving it to Application requires
+typed identities and removing its legacy Core dependencies first.

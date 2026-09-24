@@ -15,11 +15,6 @@ internal interface ISceneRuntime
 
     Task<T> OnFramework<T>(Func<T> func);
 
-    // ── files (any thread) ───────────────────────────────────────────────
-
-    SceneReadOutcome ReadScene(string path);
-    SceneWriteOutcome WriteScene(SceneFile scene, string path);
-
     /// <summary>
     /// Stamps every stated character-file reference with its package's content
     /// hash, in place, and answers the notes for the ones it could not read.

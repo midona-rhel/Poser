@@ -521,7 +521,7 @@ internal static class ServiceRegistration
         // SceneWorkflow owns the scene transaction; autosave reuses its
         // capture and store through SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
-        services.AddSingleton<SceneWorkflow>();
+        services.AddSceneWorkflow();
         services.AddSingleton(sp => new SceneAutoSaveService(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<IFramework>(),
