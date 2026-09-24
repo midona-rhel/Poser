@@ -59,7 +59,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     private readonly IObjectTable _objectTable;
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly BonePosingService _posing;
     private readonly IGPoseService _gpose;
     private readonly IPluginLog _log;
@@ -144,7 +144,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         IObjectTable objectTable,
         IActorManager actors,
         StableBindingRegistry bindings,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         BonePosingService posing,
         IGPoseService gpose,
         IPluginLog log)
@@ -649,7 +649,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     /// stage it had reached.
     ///
     /// <para>ONE STAGE PER ARM: the engine takes a single import at a time, so
-    /// the second stage waits on the first through <see cref="CleanPoseFacade.
+    /// the second stage waits on the first through <see cref="IPoseImportCommands.
     /// IsImportBusy"/> rather than failing against it. A stage that is REFUSED
     /// (an unreadable file, nothing in scope) is spent all the same — retrying
     /// it would re-read the file every tick forever — and the sequence moves
@@ -710,7 +710,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         // perfectly good render. The publication is fixed at its source
         // (StableBindingRegistry.AuxiliaryBindingsChanged); this makes the WAIT
         // audible, so the next variant of it cannot hide.
-        if (actor == null || _bindings.GetActorId(actor) == null)
+        if (actor == null || _bindings.GetActorId(actor) is not { } previewId)
         {
             if (++_skeletonWaitTicks > SkeletonWaitTicks)
                 _statusText = "Waiting for the preview body…";
@@ -731,7 +731,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         // preview that sits there saying nothing is the same failure in a new
         // costume. The user is told it is WAITING — the standing render, if
         // any, keeps showing meanwhile.
-        if (!_poses.HasPosableSkeleton(actor))
+        if (!_poses.HasPosableSkeleton(previewId))
         {
             if (++_skeletonWaitTicks > SkeletonWaitTicks)
                 _statusText = "Waiting for the preview body…";
@@ -749,8 +749,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         _posing.CopyPreviewIk(_appliedStage == 0 && second != null ? null : ikSource, actor);
 
         var result = request.Pose is { } pose
-            ? _poses.ImportPose(actor, pose, request.Options, "Preview pose")
-            : _poses.ImportPose(actor, request.Path!, request.Options);
+            ? _poses.ImportPose(previewId, pose, request.Options, "Preview pose")
+            : _poses.ImportPose(previewId, request.Path!, request.Options);
         if (!result.Success)
             _log.Debug(
                 $"Pose preview could not show '{request.Key}': {result.Detail}");

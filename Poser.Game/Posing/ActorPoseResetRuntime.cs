@@ -8,7 +8,7 @@ namespace Poser.Game.Posing;
 
 public sealed class ActorPoseResetRuntime(
     IEntityBindings bindings, ISkeletonService skeletons, IBonePosingService posing,
-    IExpressionService expressions, CleanPoseFacade imports) : IActorPoseResetRuntime
+    IExpressionService expressions, IPoseImportCommands imports) : IActorPoseResetRuntime
 {
     public PoseEditResult CanReset(ActorId actor) => imports.IsImportBusy
         ? PoseEditResult.Fail("A pose import is applying.")

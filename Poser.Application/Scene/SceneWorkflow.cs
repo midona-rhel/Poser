@@ -1580,7 +1580,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// <para>Pending receipts are DROPPED rather than latched. The import
     /// engine acknowledges an admitted import by publishing a Pending receipt
     /// synchronously from inside <paramref name="arm"/>
-    /// (<c>PoseImportCapture.Reserve</c> → <c>CleanPoseFacade.BeginImport</c>),
+    /// through the shared import coordinator,
     /// and that receipt's Detail is the import's DESCRIPTION. Completing on it
     /// made every scene pose import report itself failed with its own label —
     /// the reported "1 of 4 entities could not be restored" whose only stated

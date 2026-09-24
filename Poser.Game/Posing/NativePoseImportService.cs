@@ -5,32 +5,70 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Bindings;
 using Poser.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Native pose-file import compatibility bridge.</summary>
-public sealed class CleanPoseFacade : IPoseFacade
+/// <summary>Resolves exact actor IDs before native pose planning and application.</summary>
+public sealed class NativePoseImportService : IPoseImportCommands
 {
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly PoseImportCoordinator _imports;
+    private readonly IFramework _framework;
 
-    public CleanPoseFacade(
-        StableBindingRegistry bindings,
+    public NativePoseImportService(
+        IEntityBindings bindings,
         PoseImportCoordinator imports,
         IPoseFileService poseFiles,
         ISkeletonService skeletons,
-        IPluginLog log)
+        IPluginLog log,
+        IFramework framework)
     {
         _bindings = bindings;
         _imports = imports;
         _poseFiles = poseFiles;
         _skeletons = skeletons;
         _log = log;
+        _framework = framework;
     }
 
     public bool IsImportBusy => _imports.IsImportBusy;
+
+    public bool HasPosableSkeleton(ActorId actor) =>
+        ResolveTarget(actor, out var current) is null && HasPosableSkeleton(current);
+
+    public PoseEditResult ImportPose(ActorId actor, string path, PoseImportOptions options,
+        IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null) =>
+        ResolveTarget(actor, out var current) is { } refusal ? refusal :
+        ImportPose(current, path, options, selectedBones, onReceipt);
+
+    public PoseEditResult ImportPose(ActorId actor, PoseFile poseFile, PoseImportOptions options,
+        string description, Action<OperationReceipt>? onReceipt = null,
+        IReadOnlyList<BoneId>? selectedBones = null) =>
+        ResolveTarget(actor, out var current) is { } refusal ? refusal :
+        ImportPose(current, poseFile, options, description, onReceipt, selectedBones);
+
+    public PoseEditResult ApplyRestPose(ActorId actor, RestPose pose,
+        Action<OperationReceipt>? onReceipt = null) =>
+        ResolveTarget(actor, out var current) is { } refusal ? refusal :
+        ApplyRestPose(current, pose, onReceipt);
+
+    public PoseEditResult ApplyReferencePose(ActorId actor, Action<OperationReceipt>? onReceipt = null) =>
+        ResolveTarget(actor, out var current) is { } refusal ? refusal :
+        ApplyReferencePose(current, onReceipt);
+
+    private PoseEditResult? ResolveTarget(ActorId id, out IActor actor)
+    {
+        actor = null!;
+        // Planning reads native skeleton caches too, not just the later apply pass.
+        if (!_framework.IsInFrameworkUpdateThread)
+            return PoseEditResult.Fail("Pose import must run on the framework thread.");
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success || resolved.Value is not { } current)
+            return PoseEditResult.Fail(resolved.Detail ?? "The actor is no longer available.");
+        actor = current;
+        return null;
+    }
 
     /// <summary>
     /// Whether an import could reach this actor's posable skeleton at all.
@@ -42,12 +80,10 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// preview asks first and waits (the CharaView body is bound several ticks
     /// after its actor is, so EVERY first statement races it).
     /// </summary>
-    public bool HasPosableSkeleton(IActor actor) =>
+    private bool HasPosableSkeleton(IActor actor) =>
         _skeletons.GetSkeleton(actor) is not null;
 
     private readonly IPoseFileService _poseFiles;
-
-    public ActorId? GetActorId(IActor actor) => _bindings.GetActorId(actor);
 
     /// <summary>
     /// File import dispatch through the in-pass application engine: the plan
@@ -58,7 +94,7 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// warning. Success lands as one undo/redo item including the model
     /// transform when enabled.
     /// </summary>
-    public PoseEditResult ImportPose(
+    private PoseEditResult ImportPose(
         IActor actor,
         string path,
         PoseImportOptions options,
@@ -79,7 +115,7 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// same pause bracket, same in-pass application, one history entry named
     /// <paramref name="description"/>. The rest-pose presets and the
     /// reference-pose action apply through here without a disk path.</summary>
-    public PoseEditResult ImportPose(
+    private PoseEditResult ImportPose(
         IActor actor,
         PoseFile poseFile,
         PoseImportOptions options,
@@ -150,7 +186,7 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// file does not carry — j_kao, Viera ears, hair — which the bare
     /// ResetBeforeImport body scope would wipe (IsFaceBone misses them).
     /// </summary>
-    public PoseEditResult ApplyRestPose(
+    private PoseEditResult ApplyRestPose(
         IActor actor,
         RestPose pose,
         Action<OperationReceipt>? onReceipt = null)
@@ -176,7 +212,7 @@ public sealed class CleanPoseFacade : IPoseFacade
     /// Ktisis memento's transform mask; auxiliary slots keep their animation,
     /// matching Ktisis' per-skeleton scope.
     /// </summary>
-    public PoseEditResult ApplyReferencePose(
+    private PoseEditResult ApplyReferencePose(
         IActor actor, Action<OperationReceipt>? onReceipt = null)
     {
         const string description = "Reference pose";

@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -283,7 +284,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         IPosingService posing,
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
-        Posing.CleanPoseFacade poses,
+        IPoseImportCommands poses,
         Dalamud.Plugin.Services.IFramework framework,
         Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,

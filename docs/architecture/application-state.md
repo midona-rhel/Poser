@@ -73,8 +73,10 @@ sequencing through `PosePreviewController`. UI supplies options and a frame
 clock; Game owns the hidden body, native application and rendered surface.
 Late captures from a replaced source cannot overwrite its successor's baseline.
 Application also owns import pause, supersession, settle and speed restoration.
-Game retains scope planning and in-pass writes/rollback behind the import runtime;
-legacy import entry points remain adapters to this single workflow.
+Game retains scope planning and in-pass writes/rollback behind the import runtime.
+All import callers use `IPoseImportCommands` with exact actor IDs. Game resolves
+those IDs before planning on the framework thread; stale targets refuse without
+reading skeletons. The native facade contract has been removed from Core.
 A completed import's delayed speed restore is settled before its successor
 captures a baseline, so it cannot resume the newer import's actor.
 

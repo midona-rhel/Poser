@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Operations;
 using Poser.Application.Scene;
@@ -23,7 +24,7 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
     private readonly IBonePosingService _posing;
-    private readonly CleanPoseFacade _poseFacade;
+    private readonly IPoseImportCommands _imports;
     private readonly IPluginLog _log;
 
     public PoseSnapshotPort(
@@ -32,7 +33,7 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
         IBonePosingService posing,
-        CleanPoseFacade poseFacade,
+        IPoseImportCommands imports,
         IPluginLog log)
     {
         _scene = scene;
@@ -40,7 +41,7 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
         _skeletons = skeletons;
         _poseFiles = poseFiles;
         _posing = posing;
-        _poseFacade = poseFacade;
+        _imports = imports;
         _log = log;
     }
 
@@ -85,7 +86,8 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
 
     public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
     {
-        if (Live(snapshot.Lineage) is not { } actor || snapshot.Pose is not PoseFile pose)
+        if (Live(snapshot.Lineage) is not { } actor || _bindings.GetActorId(actor) is not { } actorId
+            || snapshot.Pose is not PoseFile pose)
             return false;
         var options = new PoseImportOptions
         {
@@ -103,8 +105,8 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort
             SuppressHistory = true,
         };
         bool done = false;
-        var begun = _poseFacade.ImportPose(
-            actor, pose, options, "Restore pose",
+        var begun = _imports.ImportPose(
+            actorId, pose, options, "Restore pose",
             onReceipt: receipt =>
             {
                 if (done || receipt.State == OperationReceiptState.Pending)

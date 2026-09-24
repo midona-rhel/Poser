@@ -11,6 +11,7 @@ using Poser.Files;
 using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Integration;
 using Poser.Library;
 using Poser.Services;
@@ -28,7 +29,8 @@ public sealed class PoseFileInspectorSection
     private bool _typeBody;
     private bool _typeExpression;
 
-    private readonly IPoseFacade _poseFacade;
+    private readonly IPoseImportCommands _imports;
+    private readonly IEntityBindings _bindings;
     private readonly SelectionSession _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
@@ -87,7 +89,8 @@ public sealed class PoseFileInspectorSection
     public event Action? OnLibraryRequested;
 
     public PoseFileInspectorSection(
-        IPoseFacade poseFacade,
+        IPoseImportCommands imports,
+        IEntityBindings bindings,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         SelectionSession selection,
@@ -99,7 +102,8 @@ public sealed class PoseFileInspectorSection
         UserNotices notices)
     {
         _notices = notices;
-        _poseFacade = poseFacade;
+        _imports = imports;
+        _bindings = bindings;
         _capture = capture;
         _selection = selection;
         _config = config;
@@ -669,7 +673,7 @@ public sealed class PoseFileInspectorSection
         if (blocked)
             return;
         var candidate = PosePreviewController.Trim(built ?? BuildOptions());
-        if (_poseFacade.GetActorId(source) is { } previewActor
+        if (_bindings.GetActorId(source) is { } previewActor
             && _importPreview.Begin(previewActor, highlighted, candidate, ImGui.GetFrameCount()))
         {
             _importPreview.Pose(
@@ -1748,14 +1752,14 @@ public sealed class PoseFileInspectorSection
         }
         _referenceArmed = false;
         if (SelectedSkeleton() is not { } skeleton
-            || _poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
+            || _bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
             _notices.Refused(NoActorText);
             return;
         }
         NotePoseApplied();
-        if (_poseFacade.ApplyReferencePose(
-                skeleton.Actor, TrackImport(expectedActor)) is
+        if (_imports.ApplyReferencePose(
+                expectedActor, TrackImport(expectedActor)) is
             { Success: false } failed)
             _notices.Failed($"Reference: {failed.Detail}");
     }
@@ -1765,14 +1769,14 @@ public sealed class PoseFileInspectorSection
         _referenceArmed = false;
         if (SelectedSkeleton() is { } skeleton)
         {
-            if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
+            if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
             {
                 _notices.Refused(NoActorText);
                 return;
             }
             NotePoseApplied();
-            if (_poseFacade.ApplyRestPose(
-                    skeleton.Actor,
+            if (_imports.ApplyRestPose(
+                    expectedActor,
                     pose,
                     TrackImport(expectedActor)) is
                 { Success: false } failed)
@@ -1957,7 +1961,7 @@ public sealed class PoseFileInspectorSection
         }
 
         NotePoseApplied();
-        if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
+        if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
             _notices.Failed("Import: the actor could not be resolved.");
             return;
@@ -1972,8 +1976,8 @@ public sealed class PoseFileInspectorSection
             options.FilterIncludesDescendants = _selectiveDescendants;
             options.AnchorSelectedPositions = _selectiveAnchor;
         }
-        var imported = _poseFacade.ImportPose(
-            skeleton.Actor,
+        var imported = _imports.ImportPose(
+            expectedActor,
             path,
             options,
             frozenSelection,
@@ -1987,7 +1991,7 @@ public sealed class PoseFileInspectorSection
     private bool HasSelectedBonesForImportTarget()
     {
         if (_importTarget is not { } target
-            || _poseFacade.GetActorId(target) is not { } actor)
+            || _bindings.GetActorId(target) is not { } actor)
             return false;
         foreach (var id in _selection.Selected)
         {
@@ -2042,13 +2046,13 @@ public sealed class PoseFileInspectorSection
         _lastImportPath = null;
 
         NotePoseApplied();
-        if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
+        if (_bindings.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
             _notices.Failed($"{statusPrefix}: the actor could not be resolved.");
             return;
         }
-        var imported = _poseFacade.ImportPose(
-            skeleton.Actor,
+        var imported = _imports.ImportPose(
+            expectedActor,
             pose,
             BuildOptions(),
             description,
@@ -2143,7 +2147,7 @@ public sealed class PoseFileInspectorSection
 
     public void OpenExport(ISkeleton skeleton)
     {
-        if (_poseFacade.GetActorId(skeleton.Actor) is not { } actorId)
+        if (_bindings.GetActorId(skeleton.Actor) is not { } actorId)
         {
             _notices.Refused(NoActorText);
             return;

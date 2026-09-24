@@ -195,8 +195,8 @@ public sealed partial class PoseLibraryPane
             _notices.Failed("Apply: the actor could not be resolved.");
             return;
         }
-        var result = _poseFacade.ImportPose(
-            actor,
+        var result = _imports.ImportPose(
+            expectedActor,
             path,
             BuildImportOptions(path),
             onReceipt: TrackImport(expectedActor));
@@ -290,8 +290,8 @@ public sealed partial class PoseLibraryPane
         ClearPendingSpawn();
 
         _selection.Select(SelectionId.ForActor(id));
-        var result = _poseFacade.ImportPose(
-            spawned,
+        var result = _imports.ImportPose(
+            id,
             path,
             options,
             onReceipt: TrackImport(id));

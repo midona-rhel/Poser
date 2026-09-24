@@ -275,7 +275,6 @@ internal static class ServiceRegistration
         services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         // The surfaces' ports over the runtime classes registered elsewhere.
-        services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
         services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
         services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
@@ -294,7 +293,7 @@ internal static class ServiceRegistration
         services.AddSingleton<IModelCatalogLoader>(sp => sp.GetRequiredService<Game.Appearance.ModelCatalogLoader>());
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
-        services.AddSingleton<CleanPoseFacade>();
+        services.AddSingleton<IPoseImportCommands, NativePoseImportService>();
         services.AddSingleton<PoseImportCoordinator>();
         services.AddSingleton<IPoseImportRuntime, PoseImportRuntime>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();

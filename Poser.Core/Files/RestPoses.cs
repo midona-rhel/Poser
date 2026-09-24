@@ -2,15 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Poser.Domain.Posing;
 
 namespace Poser.Files;
-
-/// <summary>The two shipped rest poses.</summary>
-public enum RestPose
-{
-    APose,
-    TPose,
-}
 
 /// <summary>
 /// Brio's embedded rest poses (Resources/Embedded/Data/BrioAPose.pose and

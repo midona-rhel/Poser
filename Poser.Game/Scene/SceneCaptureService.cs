@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,7 +25,7 @@ namespace Poser.Game.Scene;
 /// file are independent of any native binding generation.
 ///
 /// Capture refuses while a pose import owns the caches for the same reason
-/// <see cref="CleanPoseFacade"/>'s copy capture does: the apply window pauses
+/// <see cref="IPoseImportCommands"/>'s copy capture does: the apply window pauses
 /// and rewinds the animation, and a snapshot landing inside it would persist
 /// a half-transitioned pose.
 ///
@@ -49,7 +50,7 @@ public sealed class SceneCaptureService
     private readonly IVirtualCameraService _cameras;
     private readonly IEnvironmentService _environment;
     private readonly StableBindingRegistry _bindings;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
@@ -73,7 +74,7 @@ public sealed class SceneCaptureService
         IVirtualCameraService cameras,
         IEnvironmentService environment,
         StableBindingRegistry bindings,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         IPlaceService place,
         IObjectTable objects,
         IPosingService posing,

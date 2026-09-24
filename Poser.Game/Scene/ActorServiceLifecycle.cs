@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
@@ -59,7 +60,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly IPosingService _posing;
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGazeService _gaze;
@@ -82,7 +83,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IPosingService posing,
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         IFramework framework,
         IPluginLog log,
         IGazeService gaze,
@@ -409,7 +410,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             {
                 if (actor.Address == nint.Zero)
                     return;
-                if (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy)
+                if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id) || _poses.IsImportBusy)
                 {
                     ScheduleReady(actor, act, attempts - 1);
                     return;
@@ -471,7 +472,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
             return;
         if ((state.Pose is not null || state.Runtime is not null) &&
-            (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy))
+            (_bindings.GetActorId(actor) is not { } readyId || !_poses.HasPosableSkeleton(readyId) || _poses.IsImportBusy))
         {
             Schedule(actor, state, attempts - 1, stillCurrent);
             return;
@@ -498,8 +499,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         if (state.PartialRootScales is { } rootScales && DebugRootScales)
             ApplyPartialRootScales(actor, rootScales);
         var options = RestoreOptions;
+        if (_bindings.GetActorId(actor) is not { } actorId)
+            return;
         var restored = _poses.ImportPose(
-            actor, pose, options, $"Restore pose for {actor.Name}",
+            actorId, pose, options, $"Restore pose for {actor.Name}",
             onReceipt: receipt =>
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)

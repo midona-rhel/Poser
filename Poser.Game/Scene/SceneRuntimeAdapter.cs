@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Scene;
 using System;
@@ -35,7 +36,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly ISceneDocumentStore _documents;
     private readonly ISessionGenerationSource _sessions;
     private readonly SceneCaptureService _capture;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly IActorSpawnService _spawns;
     private readonly ISkeletonService _skeletons;
     private readonly IPosingService _posing;
@@ -75,7 +76,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         ISceneDocumentStore documents,
         ISessionGenerationSource sessions,
         SceneCaptureService capture,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         IActorSpawnService spawns,
         ISkeletonService skeletons,
         IPosingService posing,
@@ -949,8 +950,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 $"root {Ord(skeleton.RootBone)}]")) +
             $" — {resolvable} of {total} bones resolve through the registry");
 
+        if (_bindings.GetActorId(target) is not { } actorId)
+            return "The actor is no longer available.";
         var result = _poses.ImportPose(
-            target, data.Pose!, SceneImportOptions, description, onReceipt);
+            actorId, data.Pose!, SceneImportOptions, description, onReceipt);
         if (!result.Success)
             Trace($"import refused for {target.Name}: {result.Detail}");
         return result.Success ? null : result.Detail ?? "The pose import refused.";
@@ -970,8 +973,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return "The companion's body could not be resolved, so its pose was not restored.";
         if (_skeletons.GetSkeletons(companion).Count == 0)
             return "The companion's skeleton had not built, so its pose was not restored.";
+        if (_bindings.GetActorId(companion) is not { } companionId)
+            return "The companion is no longer available.";
         var result = _poses.ImportPose(
-            companion, data.CompanionPose!, SceneImportOptions, description, onReceipt);
+            companionId, data.CompanionPose!, SceneImportOptions, description, onReceipt);
         return result.Success
             ? null
             : result.Detail ?? "The companion pose import refused.";

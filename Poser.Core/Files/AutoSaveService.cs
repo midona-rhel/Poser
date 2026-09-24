@@ -1240,8 +1240,8 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Mirrors <c>CleanPoseFacade.HasAuthoredEdits</c>: any bone of any present
-    /// slot carrying an unnamed (user-authored, not service-owned) layer.
+    /// Any bone of any present slot carrying an unnamed
+    /// (user-authored, not service-owned) layer.
     /// </summary>
     private bool HasAuthoredEdits(IActor actor)
     {

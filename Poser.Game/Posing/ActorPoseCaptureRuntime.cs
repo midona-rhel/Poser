@@ -16,7 +16,7 @@ public sealed class ActorPoseCaptureRuntime(
     PoseExportCapture exports,
     IPoseFileService files,
     IBonePosingService posing,
-    CleanPoseFacade imports,
+    IPoseImportCommands imports,
     IFramework framework) : IPoseFileCapture
 {
     public PoseEditResult ExportPose(ActorId actor, string path, Action<bool>? onFinished = null) =>

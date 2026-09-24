@@ -143,7 +143,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly PoseThumbnailCache _thumbs;
 
-    private readonly IPoseFacade _poseFacade;
+    private readonly IPoseImportCommands _imports;
 
     private readonly IActorSpawnService _spawnService;
 
@@ -441,7 +441,7 @@ public sealed partial class PoseLibraryPane
         ConfigurationService config,
         IPoseLibraryService library,
         PoseThumbnailCache thumbs,
-        IPoseFacade poseFacade,
+        IPoseImportCommands imports,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         IActorSpawnService spawnService,
@@ -471,7 +471,7 @@ public sealed partial class PoseLibraryPane
         _config = config;
         _library = library;
         _thumbs = thumbs;
-        _poseFacade = poseFacade;
+        _imports = imports;
         _spawnService = spawnService;
         _scenes = scenes;
         _lightPane = lightPane;
