@@ -402,8 +402,11 @@ public partial class MainWindow
                 { Kind: SceneEntityKind.Prop, Prop: { } propId })
             {
                 bool next = !(IsEntityVisible(SelectionId.ForProp(propId)) ?? false);
-                SetEntityVisible(SelectionId.ForProp(propId), next);
-                row.LightOn = next;
+                if (SetEntityVisible(SelectionId.ForProp(propId), next) > 0)
+                {
+                    row.LightOn = IsEntityVisible(SelectionId.ForProp(propId))
+                        ?? row.LightOn;
+                }
                 return;
             }
             // An overlay row wears the same eye seat as a prop's: its toggle
@@ -412,8 +415,11 @@ public partial class MainWindow
                 { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
             {
                 bool next = !(IsEntityVisible(SelectionId.ForOverlay(overlayId)) ?? false);
-                SetEntityVisible(SelectionId.ForOverlay(overlayId), next);
-                row.LightOn = next;
+                if (SetEntityVisible(SelectionId.ForOverlay(overlayId), next) > 0)
+                {
+                    row.LightOn = IsEntityVisible(SelectionId.ForOverlay(overlayId))
+                        ?? row.LightOn;
+                }
                 return;
             }
             // A borrowed map object wears the same eye seat as a prop's: its
@@ -423,16 +429,22 @@ public partial class MainWindow
                 { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldObjectId })
             {
                 bool next = !(IsEntityVisible(SelectionId.ForWorldObject(worldObjectId)) ?? false);
-                SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), next);
-                row.LightOn = next;
+                if (SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), next) > 0)
+                {
+                    row.LightOn = IsEntityVisible(SelectionId.ForWorldObject(worldObjectId))
+                        ?? row.LightOn;
+                }
                 return;
             }
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Light, Light: { } lightId })
                 return;
             bool visible = IsEntityVisible(SelectionId.ForLight(lightId)) ?? false;
-            SetEntityVisible(SelectionId.ForLight(lightId), !visible);
-            row.LightOn = !visible;
+            if (SetEntityVisible(SelectionId.ForLight(lightId), !visible) > 0)
+            {
+                row.LightOn = IsEntityVisible(SelectionId.ForLight(lightId))
+                    ?? row.LightOn;
+            }
         };
         // The camera's inline verb, reachable without selecting it first:
         // make this the live camera, or step the live one back to the main

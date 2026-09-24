@@ -108,8 +108,9 @@ public partial class MainWindow
     /// stays, borrowed objects go back to the map.</summary>
     private async void DestroySelection()
     {
-        await DestroyEntities(_selection.Selected.ToArray());
+        var selected = _selection.Selected.ToArray();
         _selection.Clear();
+        await DestroyEntities(selected);
     }
 
     private Task<int> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
