@@ -1,4 +1,5 @@
-﻿using Poser.Scene;
+using Poser.Application.Scene;
+using Poser.Scene;
 using Poser.Files;
 using Poser.Game.Scene;
 

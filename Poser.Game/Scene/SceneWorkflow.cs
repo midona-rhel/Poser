@@ -1,4 +1,6 @@
-﻿using Poser.Scene;
+using Poser.Domain.Scene;
+using Poser.Application.Scene;
+using Poser.Scene;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
@@ -100,38 +102,28 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private bool _disposed;
 
     private readonly TransformHistory? _history;
-    private readonly Poser.Application.Scene.ISceneStructureImport? _structure;
+    private readonly Poser.Application.Scene.ISceneStructure? _structure;
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
         ISceneDocumentStore documents,
         Dalamud.Plugin.Services.IPluginLog? log = null,
-        Poser.Application.Scene.SceneGroups? groups = null,
         Poser.Library.IPoseLibraryService? library = null,
-        Poser.Application.Transforms.GroupTransformState? groupTransforms = null,
         TransformHistory? history = null,
-        Poser.Application.Scene.ISceneStructureImport? structure = null)
+        Poser.Application.Scene.ISceneStructure? structure = null)
     {
         _runtime = runtime;
         _documents = documents;
         _log = log;
-        _groups = groups;
         _library = library;
-        _groupTransforms = groupTransforms;
         _history = history;
         _structure = structure;
     }
-
-    /// <summary>The sidebar's structure store — null only under the test
-    /// runtime, where saves simply carry no structure.</summary>
-    private readonly Poser.Application.Scene.SceneGroups? _groups;
 
     /// <summary>The library index — a completed save tells it, so a fresh
     /// entry lists without anyone rescanning by hand. Null under the test
     /// runtime.</summary>
     private readonly Poser.Library.IPoseLibraryService? _library;
-
-    private readonly Poser.Application.Transforms.GroupTransformState? _groupTransforms;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -431,8 +423,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                                 try
                                 {
                                     if (outcome.Success && outcome.Scene is { } document
-                                        && options.IncludeStructure && _groups != null)
-                                        WriteStructure(document, outcome.ActorIdentities);
+                                        && options.IncludeStructure && _structure != null)
+                                        SceneStructureCodec.Write(document, _structure.Capture(), outcome.ActorIdentities);
                                 }
                                 catch (Exception exception)
                                 {
@@ -863,11 +855,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             // anchor; the document carries the SAVED one. A mode whose saved
             // anchor the file does not record refuses before anything is
             // touched.
-            if (options.Placement != Poser.Files.ObjectPlacementMode.AsSaved)
+            if (options.Placement != Poser.Domain.Scene.ObjectPlacementMode.AsSaved)
             {
                 Poser.Files.PlacementAnchorData? savedAnchor;
                 if (options.Placement ==
-                    Poser.Files.ObjectPlacementMode.InFrontOfCamera)
+                    Poser.Domain.Scene.ObjectPlacementMode.InFrontOfCamera)
                 {
                     // The anchor is the content ITSELF: its centroid moves
                     // to the point in front of the camera, no turn — the
@@ -888,7 +880,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 else
                 {
                     savedAnchor = options.Placement ==
-                        Poser.Files.ObjectPlacementMode.RelativeToCamera
+                        Poser.Domain.Scene.ObjectPlacementMode.RelativeToCamera
                             ? scene.CameraAnchor
                             : scene.ActorAnchor;
                     // No saved anchor is no longer a refusal (ruled
@@ -928,9 +920,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     }
                     notes.Add(options.Placement switch
                     {
-                        Poser.Files.ObjectPlacementMode.RelativeToCamera =>
+                        Poser.Domain.Scene.ObjectPlacementMode.RelativeToCamera =>
                             "Placed relative to the camera.",
-                        Poser.Files.ObjectPlacementMode.InFrontOfCamera =>
+                        Poser.Domain.Scene.ObjectPlacementMode.InFrontOfCamera =>
                             "Placed in front of the camera.",
                         _ => "Placed relative to the actor.",
                     });
@@ -1529,141 +1521,6 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     ? OperationReceiptState.Failed
                     : OperationReceiptState.RolledBack,
                 detail);
-        }
-    }
-
-    // ── structure capture ───────────────────────────────────────────────
-    /// <summary>Writes the sidebar's structure into the document. Actor
-    /// members translate LOGICAL id → capture key through the identities
-    /// the capture reported; every other kind's key IS its logical id.
-    /// The store is read live off the save's worker thread, so a rare
-    /// concurrent structural edit skips the structure rather than failing
-    /// the save.</summary>
-    private void WriteStructure(
-        SceneFile scene,
-        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> actorIdentities)
-    {
-        try
-        {
-            var actorKeys = new Dictionary<Guid, Guid>();
-            foreach (var pair in actorIdentities)
-                actorKeys[pair.Value.LogicalId] = pair.Key;
-
-            SceneStructureRef? RefOf(
-                global::Poser.Domain.Identity.SelectionId member)
-            {
-                string? kind = member.Kind switch
-                {
-                    global::Poser.Domain.Identity.SceneEntityKind.Actor => "actor",
-                    global::Poser.Domain.Identity.SceneEntityKind.Prop => "prop",
-                    global::Poser.Domain.Identity.SceneEntityKind.WorldObject =>
-                        "worldObject",
-                    global::Poser.Domain.Identity.SceneEntityKind.Light => "light",
-                    global::Poser.Domain.Identity.SceneEntityKind.Camera => "camera",
-                    global::Poser.Domain.Identity.SceneEntityKind.Overlay =>
-                        "overlay",
-                    _ => null,
-                };
-                if (kind == null)
-                    return null;
-                Guid? logical = member switch
-                {
-                    { Actor: { } actor } => actor.LogicalId,
-                    { Prop: { } prop } => prop.LogicalId,
-                    { WorldObject: { } worldObject } => worldObject.LogicalId,
-                    { Light: { } light } => light.LogicalId,
-                    { Camera: { } camera } => camera.LogicalId,
-                    { Overlay: { } overlay } => overlay.LogicalId,
-                    _ => null,
-                };
-                if (logical is not { } key)
-                    return null;
-                if (kind == "actor"
-                    && !actorKeys.TryGetValue(key, out key))
-                    return null;
-                return new SceneStructureRef { Kind = kind, Key = key };
-            }
-
-            SceneStructureRef? TransformRefOf(
-                global::Poser.Domain.Identity.TransformTargetId target)
-            {
-                return target switch
-                {
-                    { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                        when actorKeys.TryGetValue(actor.LogicalId, out var key) =>
-                        new SceneStructureRef { Kind = "actor", Key = key },
-                    { Kind: TransformTargetKind.Prop, Prop: { } prop } =>
-                        new SceneStructureRef { Kind = "prop", Key = prop.LogicalId },
-                    { Kind: TransformTargetKind.WorldObject, WorldObject: { } world } =>
-                        new SceneStructureRef { Kind = "worldObject", Key = world.LogicalId },
-                    { Kind: TransformTargetKind.Collider, Collider: { } collider } =>
-                        new SceneStructureRef { Kind = "overlay", Key = collider.LogicalId },
-                    { Kind: TransformTargetKind.Light, Light: { } light } =>
-                        new SceneStructureRef { Kind = "light", Key = light.LogicalId },
-                    _ => null,
-                };
-            }
-
-            var groups = new List<SceneGroupEntry>();
-            foreach (var group in _groups!.All)
-            {
-                var entry = new SceneGroupEntry
-                {
-                    Key = group.Id,
-                    Name = group.Name,
-                    Parent = group.ParentId,
-                };
-                if (_groupTransforms?.NamedSnapshot(group.Id) is { } groupState)
-                {
-                    var transform = new SceneGroupTransformEntry
-                    {
-                        FrameOrigin = groupState.Baseline.Frame.Origin,
-                        FrameRotation = groupState.Baseline.Frame.Rotation,
-                        Position = groupState.Controls.Position,
-                        Rotation = groupState.Controls.Rotation,
-                        SpacingScale = groupState.Controls.SpacingScale,
-                        OwnScale = groupState.Controls.OwnScale,
-                    };
-                    foreach (var (target, initial) in groupState.Baseline.InitialTransforms)
-                        if (TransformRefOf(target) is { } reference
-                            && groupState.Expected.TryGetValue(target, out var expected))
-                            transform.Members.Add(new SceneGroupTransformMember
-                            {
-                                Member = reference,
-                                Initial = initial,
-                                Expected = expected,
-                            });
-                    if (transform.Members.Count == groupState.Baseline.InitialTransforms.Count)
-                        entry.Transform = transform;
-                }
-                foreach (var member in group.Members)
-                    if (RefOf(member) is { } reference)
-                        entry.Members.Add(reference);
-                if (_groups.Descendants(group).Count() >= 2)
-                    groups.Add(entry);
-            }
-            if (groups.Count > 0)
-                scene.Groups = groups;
-
-            var order = new List<SceneStructureRef>();
-            foreach (var slot in _groups.RootOrder)
-            {
-                if (slot.IsGroup)
-                    order.Add(new SceneStructureRef
-                    {
-                        Kind = "group",
-                        Key = slot.GroupId,
-                    });
-                else if (slot.Entity is { } entity
-                    && RefOf(entity) is { } reference)
-                    order.Add(reference);
-            }
-            if (order.Count > 0)
-                scene.RootOrder = order;
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new InvalidOperationException("Could not capture scene group state.", exception);
         }
     }
 

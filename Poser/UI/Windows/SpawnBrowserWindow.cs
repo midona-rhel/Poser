@@ -1,4 +1,5 @@
-﻿using Poser.Scene;
+using Poser.Application.Scene;
+using Poser.Scene;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -856,7 +857,7 @@ public sealed class SpawnBrowserWindow : Window
         // placement dropdown of its own.
         var mode = _configuration.Config.DefaultSpawnPlacement;
         var options = new SceneLoadOptions();
-        if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
+        if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
             && _anchors.TryCurrentFor(
                 mode, out var anchorPosition, out var anchorYaw, out _))
             options = new SceneLoadOptions

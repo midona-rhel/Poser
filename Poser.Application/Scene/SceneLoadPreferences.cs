@@ -1,11 +1,9 @@
-using Poser.Scene;
-
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>
 /// What the user has told the next scene load to do, held ONCE for the whole
 /// session. It is a preference and not state of any operation, which is why it
-/// does not live on <see cref="SceneWorkflow"/>; it is shared and not per-pane,
+/// does not live on <see cref="ISceneWorkflow"/>; it is shared and not per-pane,
 /// because Poser starts a load from more than one surface — the scene
 /// workspace's dialogs and the library's scene tiles — and a preference the
 /// user set on one of them that the other quietly ignored would be worse than

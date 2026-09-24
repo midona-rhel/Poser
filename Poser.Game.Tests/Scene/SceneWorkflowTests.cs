@@ -48,7 +48,7 @@ public sealed class SceneWorkflowTests
         var existing = groups.Create("Existing", [], allowThin: true)!;
         var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        var structure = new SceneStructureImport(groups, coordinator, state);
+        var structure = new SceneStructure(groups, coordinator, state);
         var history = new TransformHistory();
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history, structure: structure);
         for (int cycle = 0; cycle < 2; cycle++)
@@ -69,6 +69,23 @@ public sealed class SceneWorkflowTests
             var baseline = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(importedChild.Id));
             Assert.All(baseline.Expected.Values, value => Assert.Equal(pose, value));
             Assert.Equal(importedParent.Id, groups.RootOrder[^1].GroupId);
+            runtime.CapturedScene = () =>
+            {
+                var captured = SceneWith();
+                foreach (var token in runtime.SpawnedLightTokens.TakeLast(3))
+                    captured.Lights.Add(new() { Key = runtime.ResolveSceneEntity(token)!.Value.Light!.Value.LogicalId,
+                        Light = new() { Name = "Captured light" } });
+                return captured;
+            };
+            Assert.True(load.BeginSave("captured.xivs").Success);
+            await load.Drain;
+            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            var savedChild = Assert.Single(runtime.Captured!.Groups!, group => group.Name == "Child");
+            var savedParent = Assert.Single(runtime.Captured.Groups!, group => group.Name == "Parent");
+            Assert.Equal(savedParent.Key, savedChild.Parent);
+            Assert.Equal(2, savedChild.Transform!.Members.Count);
+            Assert.All(savedChild.Transform.Members, member => Assert.Equal(pose, member.Expected));
+            Assert.Null(SceneGroupTransformCodec.Validate(runtime.Captured));
             var step = Assert.IsType<JournalStep>(history.PeekUndo());
             Assert.True(step.Undo());
             Assert.Same(existing, Assert.Single(groups.All));
@@ -89,7 +106,7 @@ public sealed class SceneWorkflowTests
         var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime),
-            structure: new SceneStructureImport(groups, coordinator, state)) { StructureBindingBound = TimeSpan.Zero };
+            structure: new SceneStructure(groups, coordinator, state)) { StructureBindingBound = TimeSpan.Zero };
         Assert.True(load.BeginLoad("groups.xivs").Success);
         await load.Drain;
         Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);

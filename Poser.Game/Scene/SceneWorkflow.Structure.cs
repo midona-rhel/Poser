@@ -60,7 +60,7 @@ public sealed partial class SceneWorkflow
         }
         TransformTargetId? Target(SceneStructureRef reference) => Resolve(reference) is { } id
             ? GroupTransformCoordinator.Target(id) : null;
-        var entries = new List<LoadedSceneGroup>();
+        var entries = new List<SceneStructureGroup>();
         foreach (var entry in scene.Groups ?? [])
         {
             GroupTransformSnapshot? transform = null;

@@ -1,3 +1,4 @@
+using Poser.Domain.Scene;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -34,7 +35,7 @@ public interface ILightFileService
     /// when the file records no anchor for it.</summary>
     ILight? ImportLight(
         string path,
-        Files.ObjectPlacementMode mode,
+        Poser.Domain.Scene.ObjectPlacementMode mode,
         System.Numerics.Vector3 currentPosition,
         float currentYaw,
         out string? refusal);

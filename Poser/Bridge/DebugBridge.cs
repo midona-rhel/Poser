@@ -1,3 +1,5 @@
+using Poser.Domain.Scene;
+using Poser.Application.Scene;
 using System.Linq;
 #if DEBUG
 using System;
@@ -55,8 +57,8 @@ public sealed class DebugBridge : IDisposable
     private readonly TcpListener _listener;
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
-    private readonly Game.Scene.SceneWorkflow _scenes;
-    private readonly Game.Scene.SceneLoadPreferences _scenePreferences;
+    private readonly ISceneWorkflow _scenes;
+    private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
     private readonly IPosingService _posing;
@@ -87,8 +89,8 @@ public sealed class DebugBridge : IDisposable
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation,
         ITextureProvider textures,
         ITextureReadbackProvider readback,
-        Game.Scene.SceneWorkflow scenes,
-        Game.Scene.SceneLoadPreferences scenePreferences,
+        ISceneWorkflow scenes,
+        Application.Scene.SceneLoadPreferences scenePreferences,
         IPlacementAnchorSource anchors,
         IGPoseService gpose,
         IPosingService posing)
@@ -356,7 +358,7 @@ public sealed class DebugBridge : IDisposable
                 }
                 var options = _scenePreferences.Options with { ClearExistingScene = false };
                 var placement = query.TryGetValue("placement", out var requestedPlacement)
-                    ? Enum.Parse<global::Poser.Files.ObjectPlacementMode>(requestedPlacement, true)
+                    ? Enum.Parse<global::Poser.Domain.Scene.ObjectPlacementMode>(requestedPlacement, true)
                     : options.Placement;
                 if (!_anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
                     return Json(new { error = refusal });

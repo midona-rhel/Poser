@@ -1,4 +1,6 @@
-﻿using Poser.Scene;
+using Poser.Domain.Scene;
+using Poser.Application.Scene;
+using Poser.Scene;
 using Poser.Game.Scene;
 using System;
 using System.Collections.Concurrent;
@@ -337,7 +339,7 @@ public sealed class ScenePane
         {
             var options = new SceneLoadOptions();
             var mode = _config.Config.DefaultSpawnPlacement;
-            if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
+            if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
                 && _anchors.TryCurrentFor(
                     mode, out var position, out var yaw, out _))
                 options = options with

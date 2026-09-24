@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using Poser.Domain.Identity;
 using Poser.Domain.Operations;
-using Poser.Files;
 
-namespace Poser.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>Which whole-scene operation a progress/receipt pair describes.</summary>
 public enum SceneOperationKind
@@ -19,8 +17,8 @@ public enum ScenePhase
     /// <summary>The save's FIRST phase: the raw bone-transform caches every
     /// actor's pose is read out of are re-armed and given the update pass they
     /// need. It exists because the caches are only current for skeletons the
-    /// per-frame rebuild qualified — see
-    /// <see cref="Posing.PoseExportCapture"/>.</summary>
+    /// per-frame rebuild qualified — refreshed by the
+    /// native capture adapter.</summary>
     RefreshingPoses,
     Capturing,
     Writing,
@@ -213,13 +211,3 @@ public readonly record struct SceneClearOutcome(
             " through GPose before loading, or the scene will load on top.";
     }
 }
-
-/// <summary>
-/// The native/persistence seam under <see cref="SceneWorkflow"/>. The
-/// workflow owns the transaction — admission, phases, guards, rollback,
-/// publication — while this seam owns every native materialization and file
-/// operation. Entity tokens are opaque to the workflow: it holds them only to
-/// hand back for later phases and rollback, never to dereference. Members
-/// documented as framework-thread run inside the workflow's
-/// <see cref="OnFramework{T}"/> dispatch.
-/// </summary>

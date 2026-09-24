@@ -1,3 +1,4 @@
+using Poser.Domain.Scene;
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Entities;

@@ -1,4 +1,6 @@
-﻿using System;
+using Poser.Domain.Scene;
+using Poser.Application.Scene;
+using System;
 using Poser.Game.Posing;
 using Poser.Game.Preview;
 using Poser.Game.Scene;

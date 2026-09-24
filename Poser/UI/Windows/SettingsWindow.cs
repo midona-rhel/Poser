@@ -1,4 +1,5 @@
-﻿using System;
+using Poser.Domain.Scene;
+using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -522,7 +523,7 @@ public class SettingsWindow : Window
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
         c.Camera.UpdateOrbitWithActorPosition = _vm.CameraUpdateOrbitWithActorPosition;
         c.DefaultSpawnPlacement =
-            (global::Poser.Files.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
+            (global::Poser.Domain.Scene.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.HideHandlesByDefault = _vm.HideHandlesByDefault;

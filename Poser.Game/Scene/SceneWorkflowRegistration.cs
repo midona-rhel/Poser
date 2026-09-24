@@ -14,18 +14,16 @@ public static class SceneWorkflowRegistration
     {
         services.AddSingleton<ISceneDocumentStore, SceneDocumentStore>();
         services.AddSingleton<ISceneRuntime, SceneRuntimeAdapter>();
-        services.AddSingleton<ISceneStructureImport, SceneStructureImport>();
+        services.AddSingleton<ISceneStructure, SceneStructure>();
         // Resolve the runtime before the workflow: container disposal drains the
         // workflow first, then tears down the runtime's subscriptions and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
             sp.GetRequiredService<ISceneRuntime>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
             sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<SceneGroups>(),
             sp.GetRequiredService<IPoseLibraryService>(),
-            sp.GetRequiredService<GroupTransformState>(),
             sp.GetRequiredService<TransformHistory>(),
-            sp.GetRequiredService<ISceneStructureImport>()));
+            sp.GetRequiredService<ISceneStructure>()));
         return services;
     }
 }

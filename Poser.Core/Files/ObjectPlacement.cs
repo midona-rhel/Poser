@@ -1,32 +1,8 @@
+using Poser.Domain.Scene;
 using System;
 using System.Numerics;
 
 namespace Poser.Files;
-
-/// <summary>
-/// Where a loaded object entry lands.
-/// </summary>
-public enum ObjectPlacementMode
-{
-    /// <summary>The absolute transform the file states.</summary>
-    AsSaved,
-
-    /// <summary>Keep the saved offset from the camera: the full 3D offset —
-    /// height included — carried onto the CURRENT camera, turned by the yaw
-    /// difference only. Pitch and roll never bend the placement, so a light
-    /// saved at head height beside the camera comes back at head height
-    /// beside today's camera.</summary>
-    RelativeToCamera,
-
-    /// <summary>The same rule anchored on the selected actor.</summary>
-    RelativeToSelectedActor,
-
-    /// <summary>The content's CENTROID lands a short reach in front of the
-    /// current camera, no turn — the light spawn's own behavior,
-    /// generalized to every entry and made THE default (ruled 2026-08-31).
-    /// Needs no saved anchor, so it is never unavailable.</summary>
-    InFrontOfCamera,
-}
 
 /// <summary>
 /// One placement anchor as a file records it: where the anchor stood and

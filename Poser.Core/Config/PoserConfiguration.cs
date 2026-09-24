@@ -1,4 +1,5 @@
-﻿using Dalamud.Configuration;
+using Poser.Domain.Scene;
+using Dalamud.Configuration;
 using Poser.Library;
 
 namespace Poser.Config;
@@ -124,8 +125,8 @@ public class PoserConfiguration : IPluginConfiguration
     /// <summary>Where spawned entries land by default — the rule every
     /// saved thing obeys. In front of the camera unless the user says
     /// otherwise.</summary>
-    public Poser.Files.ObjectPlacementMode DefaultSpawnPlacement { get; set; }
-        = Poser.Files.ObjectPlacementMode.InFrontOfCamera;
+    public Poser.Domain.Scene.ObjectPlacementMode DefaultSpawnPlacement { get; set; }
+        = Poser.Domain.Scene.ObjectPlacementMode.InFrontOfCamera;
 
     /// <summary>
     /// The revision of the first-run notice this config has accepted (see

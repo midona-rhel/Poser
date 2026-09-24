@@ -5,21 +5,37 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Scene;
 
-public sealed record LoadedSceneGroup(Guid Key, string Name, Guid? Parent,
+public sealed record SceneStructureGroup(Guid Key, string Name, Guid? Parent,
     IReadOnlyList<SelectionId> Members, GroupTransformSnapshot? Transform,
     bool HasTransform, Quaternion? LegacyFrame);
 
-public interface ISceneStructureImport
+public sealed record SceneStructureSnapshot(IReadOnlyList<SceneStructureGroup> Groups,
+    IReadOnlyList<RootSlot> RootOrder);
+
+public interface ISceneStructure
 {
-    IReadOnlyList<Guid> Import(IReadOnlyList<LoadedSceneGroup> groups, IReadOnlyList<RootSlot> order);
+    SceneStructureSnapshot Capture();
+    IReadOnlyList<Guid> Import(IReadOnlyList<SceneStructureGroup> groups, IReadOnlyList<RootSlot> order);
     void Remove(IReadOnlyList<Guid> groups);
 }
 
-/// <summary>Applies resolved scene structure without file formats, native handles or a UI.</summary>
-public sealed class SceneStructureImport(SceneGroups groups, GroupTransformCoordinator transforms,
-    GroupTransformState state) : ISceneStructureImport
+/// <summary>Captures and restores scene structure without file formats, native handles or a UI.</summary>
+public sealed class SceneStructure(SceneGroups groups, GroupTransformCoordinator transforms,
+    GroupTransformState state) : ISceneStructure
 {
-    public IReadOnlyList<Guid> Import(IReadOnlyList<LoadedSceneGroup> entries, IReadOnlyList<RootSlot> order)
+    public SceneStructureSnapshot Capture()
+    {
+        var captured = groups.All.Where(group => groups.Descendants(group).Count() >= 2)
+            .Select(group =>
+            {
+                var transform = state.NamedSnapshot(group.Id);
+                return new SceneStructureGroup(group.Id, group.Name, group.ParentId,
+                    group.Members.ToArray(), transform, transform != null, null);
+            }).ToArray();
+        return new(captured, groups.RootOrder.ToArray());
+    }
+
+    public IReadOnlyList<Guid> Import(IReadOnlyList<SceneStructureGroup> entries, IReadOnlyList<RootSlot> order)
     {
         var before = groups.Capture();
         var previousTransforms = state.CaptureNamed();

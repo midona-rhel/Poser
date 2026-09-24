@@ -1,4 +1,5 @@
-﻿using Poser.Scene;
+using Poser.Application.Scene;
+using Poser.Scene;
 using System;
 using Poser.Domain.Identity;
 using System.Collections.Generic;

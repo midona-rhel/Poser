@@ -12,6 +12,34 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class GroupTransformStateTests
 {
     [Fact]
+    public void Captured_structure_survives_live_edits_and_restores_its_nested_baseline()
+    {
+        using var f = new Fixture(count: 3);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
+        var child = steps.Create("Child", f.Selected.Take(2).ToArray())!;
+        var parent = f.Groups.Create("Parent", [f.Selected[2]], allowThin: true)!;
+        f.Groups.Nest(child.Id, parent.Id);
+        f.Groups.RestoreOrder([RootSlot.ForGroup(parent.Id)]);
+        ISceneStructure structure = new SceneStructure(f.Groups, f.Coordinator, f.State);
+        var baseline = f.State.NamedSnapshot(child.Id)!;
+        var snapshot = structure.Capture();
+
+        child.Name = "Changed after capture";
+        child.Members.Clear();
+        f.Groups.Clear();
+        f.State.Clear();
+        structure.Import(snapshot.Groups, snapshot.RootOrder);
+
+        var restoredChild = Assert.Single(f.Groups.All, group => group.Name == "Child");
+        var restoredParent = Assert.Single(f.Groups.All, group => group.Name == "Parent");
+        Assert.Equal(restoredParent.Id, restoredChild.ParentId);
+        Assert.Equal(f.Selected.Take(2), restoredChild.Members);
+        Assert.Same(baseline, f.State.NamedSnapshot(restoredChild.Id));
+        Assert.Equal(RootSlot.ForGroup(restoredParent.Id), Assert.Single(f.Groups.RootOrder));
+        Assert.Equal(0, f.Writes);
+    }
+
+    [Fact]
     public void Binding_publication_reconciles_groups_and_root_order_without_a_view()
     {
         using var f = new Fixture(count: 3);

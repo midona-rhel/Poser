@@ -1,3 +1,4 @@
+using Poser.Domain.Scene;
 using Poser.Entities;
 
 namespace Poser.Services;
@@ -34,7 +35,7 @@ public interface ICameraFileService
     /// an orbit camera follows its target, not a placement.</summary>
     IVirtualCamera? ImportCamera(
         string path,
-        Files.ObjectPlacementMode mode,
+        Poser.Domain.Scene.ObjectPlacementMode mode,
         System.Numerics.Vector3 currentPosition,
         float currentYaw,
         out string? refusal);

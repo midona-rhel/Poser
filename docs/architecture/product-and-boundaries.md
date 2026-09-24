@@ -56,9 +56,15 @@ This is an incremental boundary: scene policy still lives in Game and its
 runtime still carries opaque native tokens; moving it to Application requires
 typed identities and removing its legacy Core dependencies first.
 
-Loaded group membership, nesting, order and transform-baseline policy live in
-Application behind `ISceneStructureImport`, using stable selection IDs only.
-Game resolves native identities and converts file data before that command.
+The public `ISceneWorkflow` save/load contract, options and progress/results
+live in Application and depend only on Domain. Placement modes are shared
+Domain values; file DTOs and native workflow mechanisms still live outside it.
+
+Group capture, membership, nesting, order and transform-baseline policy live
+in Application behind `ISceneStructure`, using stable selection IDs only.
+Save captures a detached structure snapshot at the framework capture boundary;
+Game maps those values to file references without reading mutable group stores.
+On load, Game resolves native identities and converts file data before import.
 The load waits for bindings and restores structure before terminal publication;
 its rollback owns the imported groups. No pending native tokens reach the UI.
 Group pruning/root eligibility run after binding publication and generation
