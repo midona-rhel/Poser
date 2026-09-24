@@ -403,10 +403,7 @@ public partial class MainWindow
             {
                 bool next = !(IsEntityVisible(SelectionId.ForProp(propId)) ?? false);
                 if (SetEntityVisible(SelectionId.ForProp(propId), next) > 0)
-                {
-                    row.LightOn = IsEntityVisible(SelectionId.ForProp(propId))
-                        ?? row.LightOn;
-                }
+                    row.LightOn = next;
                 return;
             }
             // An overlay row wears the same eye seat as a prop's: its toggle
@@ -416,10 +413,7 @@ public partial class MainWindow
             {
                 bool next = !(IsEntityVisible(SelectionId.ForOverlay(overlayId)) ?? false);
                 if (SetEntityVisible(SelectionId.ForOverlay(overlayId), next) > 0)
-                {
-                    row.LightOn = IsEntityVisible(SelectionId.ForOverlay(overlayId))
-                        ?? row.LightOn;
-                }
+                    row.LightOn = next;
                 return;
             }
             // A borrowed map object wears the same eye seat as a prop's: its
@@ -430,10 +424,7 @@ public partial class MainWindow
             {
                 bool next = !(IsEntityVisible(SelectionId.ForWorldObject(worldObjectId)) ?? false);
                 if (SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), next) > 0)
-                {
-                    row.LightOn = IsEntityVisible(SelectionId.ForWorldObject(worldObjectId))
-                        ?? row.LightOn;
-                }
+                    row.LightOn = next;
                 return;
             }
             if (row.Tag is not SelectionId
@@ -441,10 +432,7 @@ public partial class MainWindow
                 return;
             bool visible = IsEntityVisible(SelectionId.ForLight(lightId)) ?? false;
             if (SetEntityVisible(SelectionId.ForLight(lightId), !visible) > 0)
-            {
-                row.LightOn = IsEntityVisible(SelectionId.ForLight(lightId))
-                    ?? row.LightOn;
-            }
+                row.LightOn = !visible;
         };
         // The camera's inline verb, reachable without selecting it first:
         // make this the live camera, or step the live one back to the main
