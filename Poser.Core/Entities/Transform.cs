@@ -12,6 +12,37 @@ public struct Transform
     public Quaternion Rotation;
     public Vector3 Scale;
 
+    public static implicit operator Transform(Files.PoseFile.BoneData bone)
+    {
+        return new Transform(bone.Position, bone.Rotation, bone.Scale);
+    }
+
+    public static implicit operator Files.PoseFile.BoneData(Transform transform)
+    {
+        return new Files.PoseFile.BoneData
+        {
+            Position = transform.Position,
+            Rotation = transform.Rotation,
+            Scale = transform.Scale
+        };
+    }
+
+    public static implicit operator Transform(Files.LightFile.TransformData data)
+    {
+        return new Transform(data.Position, data.Rotation, data.Scale);
+    }
+
+    public static implicit operator Files.LightFile.TransformData(Transform transform)
+    {
+        return new Files.LightFile.TransformData
+        {
+            Position = transform.Position,
+            Rotation = transform.Rotation,
+            Scale = transform.Scale
+        };
+    }
+
+
     /// <summary>
     /// Zero transform for additive deltas.
     /// Scale is Zero because deltas are ADDED to existing scale.

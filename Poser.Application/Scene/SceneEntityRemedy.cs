@@ -1,6 +1,6 @@
 using Poser.Scene;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>
 /// The ONE next step a refused entity offers, keyed on the entity kind. A

@@ -12,6 +12,8 @@ using Poser.Entities;
 using Poser.Game;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class GazeCapabilityTests

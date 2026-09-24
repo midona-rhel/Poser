@@ -111,7 +111,7 @@ public class BonePoseInfo
             return null;
 
         _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform,
-            IkTransform: drivesIk ? null : Transform.Zero);
+            IkTransform: drivesIk ? (Transform?)null : Transform.Zero);
         return finalTransform;
     }
 

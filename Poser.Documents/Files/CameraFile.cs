@@ -8,8 +8,8 @@ using Poser.Domain.Scene;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser camera file format (.xivc). Carries EVERY property an
-/// <see cref="Poser.Entities.IVirtualCamera"/> owns except the live flag and
+/// Poser camera file format (.xivc). Carries every virtual camera property
+/// except the live flag and
 /// the tracked bones — liveness belongs to the session and bone references
 /// belong to the scene they were picked in. Angular values are stored in the
 /// native radians the entity itself carries.

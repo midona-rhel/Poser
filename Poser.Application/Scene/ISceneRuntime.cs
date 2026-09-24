@@ -7,9 +7,9 @@ using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
-internal interface ISceneRuntime
+public interface ISceneRuntime
 {
     /// <summary>The exact active GPose session identity; null outside one.</summary>
     SessionGeneration? ActiveSession { get; }
@@ -98,6 +98,9 @@ internal interface ISceneRuntime
     /// borrowed entry rather than guessing. Framework thread.
     /// </summary>
     uint CurrentTerritoryId();
+
+    /// <summary>Resolve the catalog label without exposing the native catalog to workflow policy.</summary>
+    string WorldObjectName(string path);
 
     /// <summary>
     /// Destroys everything the session is holding — spawned actors, props,

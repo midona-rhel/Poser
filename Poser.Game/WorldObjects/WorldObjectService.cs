@@ -7,6 +7,8 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.WorldObjects;
 
 /// <summary>

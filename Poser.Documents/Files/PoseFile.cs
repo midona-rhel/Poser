@@ -31,7 +31,7 @@ public class PoseFile
     /// NOTHING reads it back on either side; it exists so a file can say which
     /// build it came from. Empty is the honest answer when no build is
     /// resolvable, which is why the default is not a guess — the export path
-    /// stamps it (<see cref="PoseFileService.CreatePoseFile"/>).</summary>
+    /// stamps it by the runtime capture service.</summary>
     public string GameVersion { get; set; } = string.Empty;
 
     /// <summary>Brio's <c>CurrentVersion</c> for a .pose document.</summary>
@@ -140,20 +140,7 @@ public class PoseFile
             Scale = Vector3.Zero
         };
 
-        public static implicit operator Transform(BoneData bone)
-        {
-            return new Transform(bone.Position, bone.Rotation, bone.Scale);
-        }
 
-        public static implicit operator BoneData(Transform transform)
-        {
-            return new BoneData
-            {
-                Position = transform.Position,
-                Rotation = transform.Rotation,
-                Scale = transform.Scale
-            };
-        }
     }
 
     // Accepts and emits Brio-compatible wire conventions: invariant comma-space

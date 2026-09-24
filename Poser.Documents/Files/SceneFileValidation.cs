@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -8,8 +8,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Services;
 
 namespace Poser.Files;
 

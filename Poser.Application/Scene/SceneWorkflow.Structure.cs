@@ -4,7 +4,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 public sealed partial class SceneWorkflow
 {

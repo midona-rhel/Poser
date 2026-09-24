@@ -298,10 +298,10 @@ public partial class PoseInspectorPane
     }
 
     private Transform? ViewportBoneModel(BoneId id) =>
-        _viewport.GetBoneModelTransform(id) is { } value ? Transform.FromPose(value) : null;
+        _viewport.GetBoneModelTransform(id) is { } value ? Transform.FromPose(value) : (Transform?)null;
 
     private Transform? ViewportParentModel(BoneId id) =>
-        _viewport.GetParentModelTransform(id) is { } value ? Transform.FromPose(value) : null;
+        _viewport.GetParentModelTransform(id) is { } value ? Transform.FromPose(value) : (Transform?)null;
 
     private List<BoneId> SelectedBoneIds()
     {

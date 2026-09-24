@@ -15,6 +15,7 @@ using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Services;
+using Poser.Application.Scene;
 using Poser.UI;
 
 namespace Poser;

@@ -1,5 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Services;
+using Poser.Domain.Scene;
 
 namespace Poser.Game.Journal;
 

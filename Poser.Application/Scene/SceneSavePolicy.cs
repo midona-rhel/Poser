@@ -3,7 +3,7 @@ using Poser.Scene;
 using System.Collections.Generic;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>
 /// What the save OPTIONS do to a captured document, applied once between the

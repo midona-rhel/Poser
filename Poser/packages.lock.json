@@ -67,14 +67,22 @@
       "poser.application": {
         "type": "Project",
         "dependencies": {
+          "Poser.Documents": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )"
         }
       },
       "poser.core": {
         "type": "Project",
         "dependencies": {
+          "Poser.Documents": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )",
           "Stagehand.Definitions": "[0.4.10, )"
+        }
+      },
+      "poser.documents": {
+        "type": "Project",
+        "dependencies": {
+          "Poser.Domain": "[1.0.0, )"
         }
       },
       "poser.domain": {

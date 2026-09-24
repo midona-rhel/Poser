@@ -15,6 +15,8 @@ using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game;
 
 internal unsafe delegate nint GazeLoopDelegate(ContainerInterface* args);

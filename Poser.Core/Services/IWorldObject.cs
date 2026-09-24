@@ -2,12 +2,12 @@ using System.Numerics;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain.Presentation;
+using Poser.Domain.Scene;
 
 namespace Poser.Services;
 
 public readonly record struct WorldObjectRespawnResult(bool Succeeded, string? Detail = null);
 
-public readonly record struct FurnitureLightState(string Key, bool Enabled);
 
 /// <summary>A world object the scene holds: a spawned or adopted map object or effect with its placement, look and animation state.</summary>
 public interface IWorldObject

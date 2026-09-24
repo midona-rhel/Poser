@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel;
 using Poser.Core;
 using Poser.Services;
+using Poser.Domain.Scene;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 using WeatherRow = Lumina.Excel.Sheets.Weather;

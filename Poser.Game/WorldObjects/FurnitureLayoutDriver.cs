@@ -10,6 +10,8 @@ using Poser.Services;
 using Transform = Poser.Transform;
 using LayoutTransform = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Transform;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.WorldObjects;
 
 // A layout is NOT a Graphics.Scene.Object. Only this driver dereferences

@@ -16,6 +16,7 @@ using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Domain.Scene;
 
 namespace Poser.Game.Scene;
 
@@ -510,6 +511,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     // (SceneCaptureService.CaptureTerritory), so "the same territory" means one
     // thing on both sides of the file.
     public uint CurrentTerritoryId() => _place.Current.TerritoryId;
+
+    public string WorldObjectName(string path) => WorldObjects.WorldObjectService.DisplayName(path);
 
     /// <summary>
     /// The destroy-first clear. Actors go through the spawn service one at a

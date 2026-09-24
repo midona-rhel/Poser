@@ -1,9 +1,8 @@
 using Poser.Application.Scene;
 using Poser.Scene;
 using Poser.Files;
-using Poser.Game.Scene;
 
-namespace Poser.Game.Tests.Scene;
+namespace Poser.Application.Tests.Scene;
 
 /// <summary>
 /// The consent switch and the portability rule. A scene is either saved

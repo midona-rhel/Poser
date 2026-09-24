@@ -17,6 +17,6 @@ public static class BoneWorld
             bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
         return TransformMath.IsFinite(world.Position) && TransformMath.IsFinite(world.Rotation)
             ? world
-            : null;
+            : (Transform?)null;
     }
 }

@@ -1,7 +1,6 @@
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Scene;
-using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +11,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>
 /// The single-flight owner of the whole-scene workflow: admission
@@ -85,10 +84,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly ISceneRuntime _runtime;
     private readonly ISceneDocumentStore _documents;
 
-    /// <summary>Where the operation record goes. Null only under the contract
-    /// tests, which assert the published read models rather than the log.
-    /// </summary>
-    private readonly Dalamud.Plugin.Services.IPluginLog? _log;
+    private readonly ISceneWorkflowObserver? _observer;
 
     private readonly object _publishGate = new();
     private readonly CancellationTokenSource _disposal = new();
@@ -104,26 +100,20 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly TransformHistory? _history;
     private readonly Poser.Application.Scene.ISceneStructure? _structure;
 
-    internal SceneWorkflow(
+    public SceneWorkflow(
         ISceneRuntime runtime,
         ISceneDocumentStore documents,
-        Dalamud.Plugin.Services.IPluginLog? log = null,
-        Poser.Library.IPoseLibraryService? library = null,
+        ISceneWorkflowObserver? observer = null,
         TransformHistory? history = null,
         Poser.Application.Scene.ISceneStructure? structure = null)
     {
         _runtime = runtime;
         _documents = documents;
-        _log = log;
-        _library = library;
+        _observer = observer;
         _history = history;
         _structure = structure;
     }
 
-    /// <summary>The library index — a completed save tells it, so a fresh
-    /// entry lists without anyone rescanning by hand. Null under the test
-    /// runtime.</summary>
-    private readonly Poser.Library.IPoseLibraryService? _library;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -695,7 +685,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             Finish(true, summary, notes);
             // The file exists NOW: tell the index, so the entry lists in
             // the library and the portal without a hand-driven refresh.
-            _library?.RequestScan();
+            _observer?.Saved();
         }
         catch (Exception ex)
         {
@@ -1026,8 +1016,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 // a scene without it.
                 foreach (var worldObject in worldObjects)
                 {
-                    string name = WorldObjects.WorldObjectService.DisplayName(
-                        worldObject.Path);
+                    string name = _runtime.WorldObjectName(worldObject.Path);
                     var token = _runtime.AdoptWorldObject(
                         worldObject, out var detail);
                     if (token is null)
@@ -1901,66 +1890,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 operation.OperationId, operation.Epoch, operation.Session,
                 operation.Target, detail),
         };
-        LogTerminal(operation, kind, state, detail, entities, notes, evidence);
+        _observer?.Completed(operation.OperationId, progress);
         PublishTerminal(operation, progress, receipt);
     }
 
-    /// <summary>
-    /// The scene operation's own record, and the answer to issue #41's
-    /// headline diagnostic defect: the log showed the SIDE EFFECTS of a load
-    /// (a spawned clone, a built skeleton, a spawned light) and never the
-    /// operation that caused them, so a partial restore could not be
-    /// attributed to anything at all.
-    ///
-    /// <para>Every line is prefixed with the same correlated
-    /// <c>Scene {kind} {operationId}</c>, so one grep gathers a whole
-    /// operation out of an interleaved Dalamud log: one terminal line, then
-    /// one line PER ENTITY carrying its kind, its stable scene name, its
-    /// outcome, its refusal reason and its next step, then the notes and every
-    /// recovery file left on disk.</para>
-    /// </summary>
-    private void LogTerminal(
-        Operation operation,
-        SceneOperationKind kind,
-        OperationReceiptState state,
-        string detail,
-        IReadOnlyList<SceneEntityOutcome> entities,
-        IReadOnlyList<string> notes,
-        IReadOnlyList<string> evidence)
-    {
-        if (_log is null)
-            return;
-
-        string prefix = $"Scene {kind} {operation.OperationId:D}";
-        string terminal =
-            $"{prefix}: {state}: {operation.FileName}: {detail}";
-        if (state == OperationReceiptState.Applied)
-            _log.Information(terminal);
-        else if (state is OperationReceiptState.Cancelled
-                 or OperationReceiptState.RolledBack)
-            _log.Warning(terminal);
-        else
-            _log.Error(terminal);
-
-        foreach (var entity in entities)
-        {
-            string line = $"{prefix}: {entity.Kind} '{entity.Name}': " +
-                (entity.Restored ? "restored" : "refused");
-            if (!string.IsNullOrWhiteSpace(entity.Detail))
-                line += $": {entity.Detail}";
-            if (!entity.Restored && !string.IsNullOrWhiteSpace(entity.Remedy))
-                line += $" Next: {entity.Remedy}";
-            if (entity.Restored)
-                _log.Debug(line);
-            else
-                _log.Warning(line);
-        }
-
-        foreach (var note in notes)
-            _log.Information($"{prefix}: {note}");
-        foreach (var path in evidence)
-            _log.Warning($"{prefix}: recovery file: {path}");
-    }
 
     /// <summary>Bounded cancel/drain before disposal: admission closes
     /// permanently, tokens cancel, and the active task is joined inside the

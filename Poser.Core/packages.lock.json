@@ -14,6 +14,12 @@
         "resolved": "0.4.10",
         "contentHash": "6IkxoTPrR7vshA8BQAme82wpkXAuf+lIDaNvvbuAWozRShHZr0utdZXSaYl/SVaDQEWh5poK5XBEov0yKA2oBA=="
       },
+      "poser.documents": {
+        "type": "Project",
+        "dependencies": {
+          "Poser.Domain": "[1.0.0, )"
+        }
+      },
       "poser.domain": {
         "type": "Project"
       }

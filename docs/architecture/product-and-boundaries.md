@@ -23,8 +23,10 @@ APIs are not product features.
 At this revision:
 
 - `Poser.Domain` has no project references.
-- `Poser.Application` references `Poser.Domain`.
-- `Poser.Core` references `Poser.Domain`.
+- `Poser.Documents` references only `Poser.Domain`; it owns portable file
+  models, codecs, validation, storage and document-placement math.
+- `Poser.Application` references `Poser.Domain` and `Poser.Documents`.
+- `Poser.Core` references `Poser.Domain` and `Poser.Documents`.
 - `Poser.Game` references `Poser.Domain`, `Poser.Application`, and
   `Poser.Core`.
 - The host `Poser` references `Poser.Domain`, `Poser.Application`,
@@ -34,7 +36,7 @@ At this revision:
 
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
 the game and runs its hooks on the framework thread. `Poser.Core` still holds
-legacy entities, services, file formats, configuration, and some game code.
+legacy entities, services, format adapters, configuration, and some game code.
 The host wires the assemblies; UI shows application state.
 
 Project directories and assembly names agree (`Poser.Core` and
@@ -52,8 +54,11 @@ The document store owns native/Stagehand format routing and conversion notes;
 the workflow owns admission, ordered execution, cancellation, and rollback.
 Game-side composition owns the runtime lifetime and disposes the workflow
 before its runtime. The workflow does not construct or dispose its dependencies.
-This is an incremental boundary: scene policy still lives in Game; moving it
-to Application still requires removing its legacy Core file/service dependencies.
+Scene workflow policy lives in Application, without a Core or Game reference.
+Game implements the runtime interface and outward logging/library notifications.
+Portable documents depend on domain values, never native entities or services;
+legacy transform conversions stay on the Core transform rather than the DTOs.
+Serialized fields, enum values and format rules are unchanged.
 Runtime calls exchange session-scoped `SceneEntityHandle` receipts, not native
 instances. Game retains the exact instance while workflow/history holds its
 receipt, drops it after confirmed removal, and invalidates all receipts on
@@ -64,14 +69,14 @@ an entity remains alive. Native reference storage uses weak keys so abandoned
 operations and discarded history cannot keep entities alive through the adapter.
 
 The public `ISceneWorkflow` save/load contract, options and progress/results
-live in Application and depend only on Domain. Placement modes are shared
-Domain values; file DTOs and native workflow mechanisms still live outside it.
+live in Application. Placement modes are shared Domain values; file DTOs live
+in Documents and native workflow mechanisms stay in Game.
 
 Group capture, membership, nesting, order and transform-baseline policy live
 in Application behind `ISceneStructure`, using stable selection IDs only.
 Save captures a detached structure snapshot at the framework capture boundary;
-Game maps those values to file references without reading mutable group stores.
-On load, Game resolves native identities and converts file data before import.
+Application maps those values to file references without reading mutable group stores.
+On load, Game resolves native identities; Application converts file data before import.
 The load waits for bindings and restores structure before terminal publication;
 its rollback owns the imported groups. No pending native tokens reach the UI.
 Group pruning/root eligibility run after binding publication and generation

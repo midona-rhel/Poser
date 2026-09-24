@@ -3,6 +3,8 @@ using Poser.Application.Transforms;
 using Poser.Entities;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.Journal;
 
 /// <summary>

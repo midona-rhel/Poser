@@ -8,6 +8,7 @@ using Dalamud.Plugin.Services;
 using Poser.Config;
 using Poser.Files;
 using Poser.Services;
+using Poser.Application.Scene;
 
 namespace Poser.Game.Scene;
 

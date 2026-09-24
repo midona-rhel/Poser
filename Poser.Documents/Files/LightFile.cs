@@ -4,13 +4,12 @@ using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Poser.Domain.Scene;
-using Poser.Entities;
 
 namespace Poser.Files;
 
 /// <summary>
-/// Poser light file format (.xivl). Carries EVERY property an
-/// <see cref="ILight"/> owns, including the absolute transform and the flag
+/// Poser light file format (.xivl). Carries every light property,
+/// including the absolute transform and the flag
 /// set — Ktisis' .ktlight and Brio's light DTO each drop part of that, and a
 /// light that comes back missing its shadow flags or its falloff type is not
 /// the light that was saved.
@@ -84,20 +83,7 @@ public class LightFile
             Scale = Vector3.One
         };
 
-        public static implicit operator Transform(TransformData data)
-        {
-            return new Transform(data.Position, data.Rotation, data.Scale);
-        }
 
-        public static implicit operator TransformData(Transform transform)
-        {
-            return new TransformData
-            {
-                Position = transform.Position,
-                Rotation = transform.Rotation,
-                Scale = transform.Scale
-            };
-        }
     }
 
     // The same wire style .pose files use — numerics as "X, Y, Z" strings,

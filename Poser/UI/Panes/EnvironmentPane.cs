@@ -8,6 +8,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using Poser.Files;
 using Poser.Services;
+using Poser.Domain.Scene;
 
 namespace Poser.UI;
 

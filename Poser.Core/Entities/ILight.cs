@@ -60,10 +60,3 @@ public interface ILight
     /// when free-standing. Cleared automatically when the bone dies.</summary>
     IBone? AttachedBone { get; set; }
 }
-
-public enum LightFalloffType
-{
-    Linear,
-    Quadratic,
-    Cubic,
-}

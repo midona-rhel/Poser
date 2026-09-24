@@ -14,6 +14,8 @@ using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.Tests.WorldObjects;
 
 /// <summary>

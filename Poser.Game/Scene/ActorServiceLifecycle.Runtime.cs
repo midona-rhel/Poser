@@ -8,6 +8,8 @@ using Poser.Domain.Presentation;
 using Poser.Entities;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.Scene;
 
 internal sealed record ActorRuntimeState(

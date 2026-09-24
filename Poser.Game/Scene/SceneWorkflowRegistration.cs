@@ -1,9 +1,7 @@
-using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Files;
-using Poser.Library;
 using Poser.Scene;
 
 namespace Poser.Game.Scene;
@@ -15,13 +13,13 @@ public static class SceneWorkflowRegistration
         services.AddSingleton<ISceneDocumentStore, SceneDocumentStore>();
         services.AddSingleton<ISceneRuntime, SceneRuntimeAdapter>();
         services.AddSingleton<ISceneStructure, SceneStructure>();
+        services.AddSingleton<ISceneWorkflowObserver, SceneWorkflowObserver>();
         // Resolve the runtime before the workflow: container disposal drains the
         // workflow first, then tears down the runtime's subscriptions and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
             sp.GetRequiredService<ISceneRuntime>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
-            sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IPoseLibraryService>(),
+            sp.GetRequiredService<ISceneWorkflowObserver>(),
             sp.GetRequiredService<TransformHistory>(),
             sp.GetRequiredService<ISceneStructure>()));
         return services;

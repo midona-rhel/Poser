@@ -199,7 +199,7 @@ public unsafe class PosingService : IPosingService
 
     public Transform? GetTransformOverride(IActor actor)
     {
-        return _transformOverrides.TryGetValue(actor.Address, out var transform) ? transform : null;
+        return _transformOverrides.TryGetValue(actor.Address, out var transform) ? transform : (Transform?)null;
     }
 
     public void SetTransformOverride(IActor actor, Transform transform)

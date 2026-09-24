@@ -1348,11 +1348,11 @@ public unsafe partial class BonePosingService : IBonePosingService
         Transform? transform = target switch
         {
             { Prop: { } prop } => bindings.Resolve(prop) is { Success: true, Value: { } live }
-                ? live.Transform : null,
+                ? live.Transform : (Transform?)null,
             { WorldObject: { } world } => bindings.Resolve(world) is { Success: true, Value: { } live }
-                ? live.Transform : null,
+                ? live.Transform : (Transform?)null,
             { Light: { } light } => bindings.Resolve(light) is { Success: true, Value: { } live }
-                ? live.Transform : null,
+                ? live.Transform : (Transform?)null,
             _ => null,
         };
         // Resolve the exact stable generation each time; never retain a native handle.
@@ -1360,7 +1360,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             && Domain.Transforms.TransformMath.IsFinite(value.Position)
             && Domain.Transforms.TransformMath.IsFinite(value.Rotation)
             && value.Rotation.LengthSquared() > 1e-6f
-                ? value : null;
+                ? value : (Transform?)null;
     }
 
     private HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target)
@@ -1483,7 +1483,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     private Transform? GetIkModification(IBone bone) =>
         _poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var pose)
             ? pose.GetPoseInfo(bone.BoneName, bone.PartialId).IkModification()
-            : null;
+            : (Transform?)null;
 
     /// <summary>Snapshot enabled constraints into the preview's own model frame.
     /// No native bones or live scene targets are retained by the copied state.</summary>

@@ -2,7 +2,7 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Files;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>Maps captured application values to legacy scene-file references.</summary>
 internal static class SceneStructureCodec

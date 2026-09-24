@@ -4,14 +4,13 @@ using System.Numerics;
 using Poser.Domain.Operations;
 using Poser.Domain.Companions;
 using Poser.Files;
-using Poser.Game.Scene;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Game.Tests.Scene;
+namespace Poser.Application.Tests.Scene;
 
 /// <summary>
 /// The scene transaction's behavior contract, driven through the
@@ -233,6 +232,8 @@ public sealed class SceneWorkflowTests
 
     private sealed class FakeRuntime : ISceneRuntime, IDisposable
     {
+        public string WorldObjectName(string path) => Path.GetFileNameWithoutExtension(path);
+
         public readonly List<string> Calls = new();
         public readonly ConcurrentQueue<string> Destroyed = new();
 
