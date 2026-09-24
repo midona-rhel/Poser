@@ -374,6 +374,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
     // and acquisition receipts remain expired after release.
     internal ILight? CurrentLight(ILight light) => _lightOwner.CurrentLight(light);
 
+    internal IWorldObject? CurrentWorldObject(IWorldObject worldObject) =>
+        _worldObjectOwner.CurrentWorldObject(worldObject);
+
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
         _lightOwner.RecordSpawnedLight(description, light);
 

@@ -168,12 +168,16 @@ internal sealed class WorldObjectLifecycleOwner
         _slots = new(
             worldObject => new Slot { Live = worldObject },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            CaptureAndRemove, Restore);
+            CaptureAndRemove, Restore, retainAliases: true,
+            history: history, transformTarget: target);
     }
 
     public int Count => _slots.Count;
     public IReadOnlyList<object> WorldObjects => _worldObjects.WorldObjects;
     public void Clear() => _slots.Clear();
+
+    public IWorldObject? CurrentWorldObject(IWorldObject worldObject) =>
+        _slots.Resolve(worldObject) as IWorldObject;
 
     public object? Adopt(nint address)
     {
@@ -291,8 +295,6 @@ internal sealed class WorldObjectLifecycleOwner
             slot.Document = document;
             slot.HasDocument = true;
             slot.Target = target;
-            if (!document.Spawned && target is { } targetId)
-                _history.DropTransformsFor(targetId);
         }
         return true;
     }

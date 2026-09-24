@@ -12,26 +12,22 @@ public sealed class LightSession
 {
     private readonly ValueJournal _journal;
     private readonly ILightingService _lighting;
-    private readonly Scene.SceneLifecycleHistory? _lifecycle;
+    private readonly EntityValueJournal<ILight> _values;
 
     public LightSession(ValueJournal journal, ILightingService lighting, Scene.SceneLifecycleHistory? lifecycle = null)
     {
         _journal = journal;
         _lighting = lighting;
-        _lifecycle = lifecycle;
+        _values = new(journal, light => light.IsValid,
+            lifecycle is null ? null : lifecycle.CurrentLight);
     }
 
     public void Seal() => _journal.Seal();
 
-    private ILight? Live(ILight light) => _lifecycle is null ? light : _lifecycle.CurrentLight(light);
+    private ILight? Live(ILight light) => _values.Current(light);
 
     private void Set<T>(ILight l, string property, string description, Func<ILight, T> read, Action<ILight, T> write, T value)
-    {
-        if (!l.IsValid) return;
-        _journal.Set((l, property), description, () => read(l),
-            next => { if (Live(l) is { IsValid: true } current) write(current, next); },
-            value, () => Live(l) is { IsValid: true });
-    }
+        => _values.Set(l, property, description, read, write, value);
 
     public void SetName(ILight l, string v) => Set(l, "Name", "Rename light", x => x.Name, (x, value) => x.Name = value, v);
     public void SetKind(ILight l, LightKind v) => Set(l, "Kind", "Set light type", x => x.Kind, (x, value) => x.Kind = value, v);

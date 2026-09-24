@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Game.Scene;
 
@@ -18,6 +20,8 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
     private readonly Func<TSlot, bool> _captureAndRemove;
     private readonly Func<TSlot, bool> _restore;
     private readonly bool _retainAliases;
+    private readonly TransformHistory? _history;
+    private readonly Func<TInstance, TransformTargetId?>? _transformTarget;
 
     public LifecycleSlotOwner(
         Func<TInstance, TSlot> create,
@@ -25,7 +29,9 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
         Action<TSlot, TInstance?> setCurrent,
         Func<TSlot, bool> captureAndRemove,
         Func<TSlot, bool> restore,
-        bool retainAliases = false)
+        bool retainAliases = false,
+        TransformHistory? history = null,
+        Func<TInstance, TransformTargetId?>? transformTarget = null)
     {
         _create = create;
         _current = current;
@@ -33,6 +39,8 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
         _captureAndRemove = captureAndRemove;
         _restore = restore;
         _retainAliases = retainAliases;
+        _history = history;
+        _transformTarget = transformTarget;
     }
 
     public int Count => _slots.Count;
@@ -51,9 +59,17 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
 
     public TInstance? CurrentInstance(TSlot slot) => _current(slot);
 
+    public TInstance? Resolve(TInstance original) =>
+        _slots.TryGetValue(original, out var slot) ? _current(slot) : original;
+
     public bool CaptureAndRemove(TSlot slot)
     {
         var previous = _current(slot);
+        // Removal can publish a scene refresh immediately. Preserve the old
+        // target before that refresh reconciles history against live bindings.
+        if (previous is not null && _transformTarget?.Invoke(previous) is { } target)
+            _history?.RetainLifecycleTarget(target, () =>
+                _current(slot) is { } live ? _transformTarget(live) : null);
         if (!_captureAndRemove(slot))
             return false;
         if (previous is not null && !_retainAliases)

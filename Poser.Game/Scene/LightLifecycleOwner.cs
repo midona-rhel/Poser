@@ -25,7 +25,6 @@ internal sealed class LightLifecycleOwner
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
-    private readonly Func<ILight, TransformTargetId?>? _lightTarget;
     private readonly LifecycleSlotOwner<ILight, LightLifecycleSlot> _slots;
 
     public LightLifecycleOwner(
@@ -35,11 +34,11 @@ internal sealed class LightLifecycleOwner
     {
         _history = history;
         _lighting = lighting;
-        _lightTarget = lightTarget;
         _slots = new(
             light => new LightLifecycleSlot { Live = light, Source = _lighting.GetWorldSource(light) },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            CaptureAndRemoveCore, RestoreCore, retainAliases: true);
+            CaptureAndRemoveCore, RestoreCore, retainAliases: true,
+            history: history, transformTarget: lightTarget);
     }
 
     public LightLifecycleSlot SlotFor(ILight light) => _slots.SlotFor(light);
@@ -56,7 +55,7 @@ internal sealed class LightLifecycleOwner
     public bool Restore(LightLifecycleSlot slot) => _slots.Restore(slot);
 
     public ILight? CurrentLight(ILight light) =>
-        _slots.TryGetSlot(light, out var slot) ? _slots.CurrentInstance(slot) : light;
+        _slots.Resolve(light);
 
     public void Clear() => _slots.Clear();
 
@@ -133,9 +132,6 @@ internal sealed class LightLifecycleOwner
             slot.Document = LightFileService.CreateLightFile(light);
             slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
-            if (_lightTarget?.Invoke(light) is { } target)
-                _history.RetainLifecycleTarget(target, () =>
-                    CurrentInstance(slot) is { IsValid: true } current ? _lightTarget(current) : null);
             _lighting.DestroyLight(light);
         }
         return true;

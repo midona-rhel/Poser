@@ -1,9 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
+using Poser.Game.Journal;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Services;
@@ -22,6 +28,100 @@ namespace Poser.Game.Tests.WorldObjects;
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
+    [Theory]
+    [InlineData("bg/tree.mdl", true)]
+    [InlineData("vfx/fire.avfx", true)]
+    [InlineData("bg/tree.mdl", false)]
+    [InlineData("bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb", false)]
+    public void Edits_replay_after_acquisition_and_release_restore_new_wrappers(string path, bool borrowed)
+    {
+        var world = new World();
+        var history = new TransformHistory();
+        var ids = new Dictionary<AdoptedWorldObject, TransformTargetId>();
+        TransformTargetId? Target(object instance)
+        {
+            var handle = (AdoptedWorldObject)instance;
+            if (!handle.IsValid) return null;
+            if (!ids.TryGetValue(handle, out var id))
+                ids[handle] = id = TransformTargetId.ForWorldObject(WorldObjectId.New());
+            return id;
+        }
+        // Exercise the real service, lifecycle owner and value journal. Scene
+        // refresh occurs synchronously during native release/adoption.
+        var lifecycle = new SceneLifecycleHistory(history, null!, null!, null!, null!, null!,
+            new WorldObjectServiceLifecycle(world.Service), worldObjectTarget: Target);
+        var values = new WorldObjectSession(new ValueJournal(history), lifecycle);
+        world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
+            history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid), _ => true));
+        var original = (AdoptedWorldObject)(borrowed
+            ? lifecycle.AdoptWorldObject(world.Port.Add(path, Placed, isVfx: path.EndsWith(".avfx")))!
+            : lifecycle.SpawnWorldObject(path, Placed, true)!);
+        var target = Target(original)!.Value;
+        original.Transform = Moved;
+        TransformTargetState State(Transform value) =>
+            new(target, new PoseTransform(value.Position, value.Rotation, value.Scale), new BonePose(), true);
+        history.Append(new TransformPatch("Move object", [State(Placed)], [State(Moved)]));
+        values.SetVisible(original, false);
+
+        void Step(bool undo)
+        {
+            var entry = (undo ? history.PeekUndo() : history.PeekRedo())!;
+            Assert.NotNull(entry);
+            switch (entry)
+            {
+                case SceneLifecyclePatch patch:
+                    Assert.True(undo ? patch.Undo() : patch.Redo());
+                    break;
+                case JournalStep patch:
+                    Assert.True(undo ? patch.Undo() : patch.Redo());
+                    break;
+                case TransformPatch patch:
+                    foreach (var state in undo ? patch.Before : patch.After)
+                    {
+                        var current = Assert.Single(ids, pair => pair.Value == state.Target && pair.Key.IsValid).Key;
+                        current.Transform = Transform.FromPose(state.Transform);
+                    }
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected history entry.");
+            }
+            if (undo) history.CommitUndo(entry);
+            else history.CommitRedo(entry);
+        }
+
+        for (int cycle = 0; cycle < 2; cycle++)
+        {
+            Step(true);
+            Assert.True(Assert.Single(world.Service.Adopted).Visible);
+            Step(true);
+            Assert.Equal(Placed, Assert.Single(world.Service.Adopted).Transform);
+            Step(true);
+            Assert.Empty(world.Service.Adopted);
+            Step(false);
+            Assert.NotSame(original, Assert.Single(world.Service.Adopted));
+            Step(false);
+            Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+            Step(false);
+            Assert.False(Assert.Single(world.Service.Adopted).Visible);
+        }
+
+        Assert.True(lifecycle.ReleaseWorldObject(Assert.Single(world.Service.Adopted)));
+        Step(true);
+        Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+        Assert.False(Assert.Single(world.Service.Adopted).Visible);
+        Step(true);
+        Assert.True(Assert.Single(world.Service.Adopted).Visible);
+        Step(true);
+        Assert.Equal(Placed, Assert.Single(world.Service.Adopted).Transform);
+        Step(false);
+        Step(false);
+        Step(false);
+        Assert.Empty(world.Service.Adopted);
+        Step(true);
+        Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+        Assert.False(Assert.Single(world.Service.Adopted).Visible);
+    }
+
     [Fact]
     public void Furniture_light_switch_preserves_peers_and_restores_through_history_and_respawn()
     {

@@ -40,8 +40,11 @@ External targets that no longer exist are not replaced by unrelated entities.
 World-light acquisition/release preserves the edited copy separately from the
 original world's baseline. Undo reacquires only the same native incarnation;
 scenery/VFX reclaim uses the same identity rule, never address presence alone.
-Light property and transform history follows the restored copy, but expired
-public selection IDs and acquisition receipts never redirect to that copy.
+Light and world-object history use shared lifecycle-slot target retention and
+property replay: retain transform targets before removal publishes a scene
+refresh, and resolve the slot's current instance when replaying a property edit.
+Earlier edits survive acquisition undo/redo and removal undo/redo. Expired public
+selection IDs and acquisition receipts never redirect to the restored instance.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
 MCDF history reuses its package reference; it is not a portable appearance export.
@@ -220,8 +223,9 @@ the graph confirms that address is live. A missing or mismatched candidate
 skips that history entry with a reason, allowing older history to continue.
 BG identity uses the observed allocation generation and cannot distinguish a
 same-address, same-resource replacement if the native resource pointer is
-reused unchanged. Transform history for a borrowed object is invalidated only
-after release succeeds. Group restoration preflights all members, so a
+reused unchanged. Earlier edits remain available across release and restoration;
+transform history is discarded only when restoring that source fails permanently.
+Group restoration preflights all members, so a
 borrowed refusal cannot leave owned members partially restored. Bulk release
 records only confirmed removals; claims that refuse release remain live with
 their acquisition history. A partial redo keeps successful removals recorded
