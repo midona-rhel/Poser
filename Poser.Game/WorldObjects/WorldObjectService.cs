@@ -1230,15 +1230,34 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     }
 
     public AdoptedWorldObject? Adopt(nint address)
+        => Adopt(address, null, out _);
+
+    private AdoptedWorldObject? Adopt(
+        nint address, WorldObjectIncarnation? expected, out string detail)
     {
-        if (_disposed || _teardownOnly)
+        detail = string.Empty;
+        if (expected is { } expectedIdentity
+            && !CanReclaimBorrow(address, expectedIdentity, out detail))
             return null;
+        if (_disposed || _teardownOnly)
+        {
+            detail = "Unable to undo: the world is unavailable.";
+            return null;
+        }
         if (Find(address) is { } existing)
+        {
+            if (expected is not null)
+            {
+                detail = "Unable to undo: this world object is already borrowed by a newer action.";
+                return null;
+            }
             return existing;
+        }
         if (!_port.TryRead(address, out var placement))
         {
             _log.Warning(
                 "WorldObjectService: that world object no longer exists.");
+            detail = "Unable to undo: the current world object could not be read.";
             return null;
         }
         if (!_port.TryReadFlags(address, out var flags))
@@ -1252,7 +1271,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         WorldObjectIncarnation identity;
         VfxStateSnapshot snapshot = default;
         if (!_port.TryReadIncarnation(address, out identity))
+        {
+            detail = "Unable to undo: the current world object identity could not be read.";
             return null;
+        }
         // The graph's object type is authoritative even when its resource
         // filename was unreadable; never route an observed VFX through BG
         // restore merely because RowOf could not supply a path.
@@ -1262,11 +1284,21 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         {
             _log.Warning(
                 $"WorldObjectService: refusing VFX {address:X}; its playback state is unavailable.");
+            detail = "Unable to undo: the current VFX state could not be read.";
+            return null;
+        }
+        if (expected is { } expectedAfterCapture
+            && !MatchesBorrowedIdentity(expectedAfterCapture, identity))
+        {
+            detail = "Unable to undo: the world object at this address no longer matches the captured identity.";
             return null;
         }
         float opacity = snapshot.Color.W;
         if (!isVfx && !_port.TryReadOpacity(address, out opacity))
+        {
+            detail = "Unable to undo: the current world object opacity could not be read.";
             return null;
+        }
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
@@ -1293,8 +1325,59 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             handle.SeedNightState(adoptedState);
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
+        detail = string.Empty;
         return handle;
     }
+
+    /// <summary>Checks a released borrowed identity only after the current
+    /// graph enumeration proves its address is live. The saved address itself
+    /// is never resolved before that membership check.</summary>
+    internal bool CanReclaimBorrow(
+        nint address, WorldObjectIncarnation expected, out string detail)
+    {
+        detail = "Unable to undo: the world is unavailable.";
+        if (_disposed || _teardownOnly || !_port.IsAvailable)
+            return false;
+
+        bool listed = _port.Enumerate().Any(row => row.Address == address);
+        if (!listed)
+        {
+            detail = "Unable to undo: the original world object is no longer in the current world graph.";
+            return false;
+        }
+
+        // This read is safe only after enumeration found the address in the
+        // live graph. It still compares a best-effort observed incarnation;
+        // same-address/same-resource BG reuse is not distinguishable here.
+        if (!_port.TryReadIncarnation(address, out var current))
+        {
+            detail = "Unable to undo: the current world object identity could not be read.";
+            return false;
+        }
+        bool matches = MatchesBorrowedIdentity(expected, current);
+        if (!matches)
+        {
+            detail = "Unable to undo: the world object at this address no longer matches the captured identity.";
+            return false;
+        }
+
+        detail = string.Empty;
+        return true;
+    }
+
+    /// <summary>Re-adopts a released borrowed object after live graph
+    /// membership and the captured incarnation both match.</summary>
+    internal AdoptedWorldObject? ReclaimBorrow(
+        nint address, WorldObjectIncarnation expected, out string detail)
+    {
+        return Adopt(address, expected, out detail);
+    }
+
+    private static bool MatchesBorrowedIdentity(
+        WorldObjectIncarnation expected, WorldObjectIncarnation current) =>
+        expected.IsVfx
+            ? current == expected
+            : current.SameAllocation(expected);
 
     /// <summary>
     /// Adopts one object and puts it back where a saved scene had it. The scene

@@ -22,6 +22,7 @@ internal readonly record struct WorldObjectState(
     Transform Placement,
     bool Visible)
 {
+    public WorldObjectIncarnation Identity { get; init; }
     public string? Name { get; init; }
     public float Opacity { get; init; } = 1f;
     public Vector3? Tint { get; init; }
@@ -40,6 +41,8 @@ internal interface IWorldObjectLifecycle
 {
     IReadOnlyList<object> WorldObjects { get; }
     object? Adopt(nint address);
+    bool CanReclaim(WorldObjectState state, out string detail);
+    object? Reclaim(WorldObjectState state, out string detail);
     object? Spawn(string path, Transform placement, bool visible);
     bool IsLive(object worldObject);
     bool Release(object worldObject);
@@ -52,6 +55,12 @@ internal sealed class WorldObjectServiceLifecycle(WorldObjectService worldObject
     public IReadOnlyList<object> WorldObjects => worldObjects.Adopted;
 
     public object? Adopt(nint address) => worldObjects.Adopt(address);
+
+    public bool CanReclaim(WorldObjectState state, out string detail) =>
+        worldObjects.CanReclaimBorrow(state.Address, state.Identity, out detail);
+
+    public object? Reclaim(WorldObjectState state, out string detail) =>
+        worldObjects.ReclaimBorrow(state.Address, state.Identity, out detail);
 
     public object? Spawn(string path, Transform placement, bool visible) =>
         worldObjects.Spawn(path, placement, visible, out _);
@@ -66,6 +75,7 @@ internal sealed class WorldObjectServiceLifecycle(WorldObjectService worldObject
         return new WorldObjectState(
             handle.Address, handle.Path, handle.Spawned, handle.Transform, handle.Visible)
         {
+            Identity = handle.Spawned ? default : handle.Identity,
             Name = handle.Name,
             Opacity = handle.Opacity,
             Tint = handle.Tint,
@@ -117,6 +127,7 @@ internal sealed class WorldObjectLifecycleOwner
         public bool HasDocument;
         public TransformTargetId? Target;
         public HistoryEntry? AcquisitionEntry;
+        public string? RestoreFailure;
     }
 
     /// <summary>Tracks the successful members of a group action. Members
@@ -137,7 +148,7 @@ internal sealed class WorldObjectLifecycleOwner
         }
 
         public bool Restore() => owner.Restore(slots);
-        public string? FailureDetail => BorrowedRestoreRefused(slots);
+        public string? FailureDetail => RestoreFailure(slots);
         public bool DropOnFailure() => owner.DiscardUnrestorable(slots);
     }
 
@@ -242,7 +253,7 @@ internal sealed class WorldObjectLifecycleOwner
             () => _slots.CaptureAndRemove(slot),
             () => _slots.Restore(slot))
         {
-            FailureDetail = () => BorrowedRestoreRefused(slot),
+            FailureDetail = () => slot.RestoreFailure,
             DropOnFailure = () => DiscardUnrestorable(slot),
         };
         slot.AcquisitionEntry = entry;
@@ -288,9 +299,15 @@ internal sealed class WorldObjectLifecycleOwner
 
     private bool Restore(IReadOnlyList<Slot> slots)
     {
-        // Refuse a borrowed member before any owned member is recreated.
-        if (BorrowedRestoreRefused(slots) != null)
-            return false;
+        foreach (var slot in slots)
+            slot.RestoreFailure = null;
+        // Validate every borrowed member before restoring any owned member,
+        // so a mixed group cannot partially land when one identity is stale.
+        foreach (var slot in slots)
+            if (_slots.CurrentInstance(slot) == null
+                && slot.HasDocument && !slot.Document.Spawned
+                && !_worldObjects.CanReclaim(slot.Document, out slot.RestoreFailure))
+                return false;
         bool landed = true;
         foreach (var slot in slots)
             landed &= _slots.Restore(slot);
@@ -299,14 +316,21 @@ internal sealed class WorldObjectLifecycleOwner
 
     private bool Restore(Slot slot)
     {
+        slot.RestoreFailure = null;
         if (_slots.CurrentInstance(slot) != null)
             return true;
-        if (BorrowedRestoreRefused(slot) != null || !slot.HasDocument)
+        if (!slot.HasDocument)
             return false;
-        // Borrowed restore is refused above; only Poser-owned objects reach
-        // this creation path, which never probes a saved native address.
-        var worldObject = _worldObjects.Spawn(
-            slot.Document.Path, slot.Document.Placement, slot.Document.Visible);
+        object? worldObject;
+        if (slot.Document.Spawned)
+        {
+            worldObject = _worldObjects.Spawn(
+                slot.Document.Path, slot.Document.Placement, slot.Document.Visible);
+        }
+        else
+        {
+            worldObject = _worldObjects.Reclaim(slot.Document, out slot.RestoreFailure);
+        }
         if (worldObject == null)
             return false;
         _worldObjects.Apply(worldObject, slot.Document);
@@ -314,19 +338,14 @@ internal sealed class WorldObjectLifecycleOwner
         return true;
     }
 
-    private static string? BorrowedRestoreRefused(Slot slot) =>
-        slot.HasDocument && !slot.Document.Spawned
-            ? "Cannot restore a released borrowed BG/VFX object without a native allocation lease. The history entry was discarded."
-            : null;
-
-    private static string? BorrowedRestoreRefused(IReadOnlyList<Slot> slots) =>
-        slots.Any(slot => BorrowedRestoreRefused(slot) != null)
-            ? "Cannot restore a released borrowed BG/VFX object in this group without a native allocation lease. The history entry was discarded."
-            : null;
+    private static string? RestoreFailure(IReadOnlyList<Slot> slots) =>
+        slots.Select(slot => slot.RestoreFailure)
+            .FirstOrDefault(detail => !string.IsNullOrWhiteSpace(detail));
 
     private bool DiscardUnrestorable(Slot slot)
     {
-        if (BorrowedRestoreRefused(slot) == null)
+        if (!slot.HasDocument || slot.Document.Spawned
+            || string.IsNullOrWhiteSpace(slot.RestoreFailure))
             return false;
         if (slot.AcquisitionEntry is { } acquisition)
             _history.Drop(acquisition);
@@ -337,7 +356,7 @@ internal sealed class WorldObjectLifecycleOwner
 
     private bool DiscardUnrestorable(IReadOnlyList<Slot> slots)
     {
-        if (BorrowedRestoreRefused(slots) == null)
+        if (RestoreFailure(slots) == null)
             return false;
         foreach (var slot in slots)
         {

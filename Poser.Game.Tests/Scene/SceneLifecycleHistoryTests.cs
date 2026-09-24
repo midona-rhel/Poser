@@ -329,27 +329,55 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void World_adoption_undo_releases_but_redo_refuses_without_a_native_lease()
+    public void World_adoption_undo_releases_and_redo_reclaims_the_same_incarnation()
     {
         var world = new World();
         var address = world.WorldObjects.Place(0x1000, MapStood);
         var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        world.WorldObjects.Apply(claim, new WorldObjectState(
-            address, "bg/fake.mdl", false, UserPut, false));
+        world.WorldObjects.Apply(claim, world.WorldObjects.Read(claim) with
+        {
+            Placement = UserPut,
+            Visible = false,
+        });
 
         Assert.True(world.Undo());
         Assert.Empty(world.WorldObjects.Live);
         Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
-        Assert.False(world.Redo());
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
-        Assert.Contains("native allocation lease", Assert.Single(world.Notices), StringComparison.OrdinalIgnoreCase);
+        Assert.True(world.Redo());
+        var restored = Assert.Single(world.WorldObjects.Live);
+        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
+        Assert.False(world.WorldObjects.Read(restored).Visible);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Borrowed_world_objects_can_be_acquired_but_restore_refuses_before_reclaim(bool isVfx)
+    public void Releasing_borrowed_world_object_then_undo_reclaims_authored_state(bool isVfx)
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1800, MapStood, isVfx);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.WorldObjects.Apply(claim, world.WorldObjects.Read(claim) with
+        {
+            Placement = UserPut,
+            Visible = false,
+        });
+
+        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.True(world.Undo());
+
+        var restored = Assert.Single(world.WorldObjects.Live);
+        Assert.Equal(isVfx, Assert.IsType<FakeWorldObject>(restored).IsVfx);
+        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
+        Assert.False(world.WorldObjects.Read(restored).Visible);
+        Assert.Equal(2, world.WorldObjects.AdoptCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Borrowed_world_objects_can_be_acquired_but_replacement_identity_is_refused(bool isVfx)
     {
         var world = new World();
         var address = world.WorldObjects.Place(0x2000, MapStood, isVfx);
@@ -368,7 +396,25 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal(1, world.WorldObjects.AdoptCalls); // No second adoption after release.
         Assert.Empty(world.WorldObjects.Live);
         Assert.Equal(replacementPlacement, world.WorldObjects.MapPlacement(address));
-        Assert.Contains("native allocation lease", refused.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("identity", refused.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Missing_borrowed_candidate_is_skipped_and_older_history_continues()
+    {
+        var world = new World();
+        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
+        var address = world.WorldObjects.Place(0x2400, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
+        world.WorldObjects.Remove(address);
+
+        Assert.False(world.Undo());
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(1, world.WorldObjects.AdoptCalls);
+        Assert.Contains("no longer in the current world graph", Assert.Single(world.Notices), StringComparison.OrdinalIgnoreCase);
+        Assert.True(world.Undo());
+        Assert.False(world.History.CanUndo);
     }
 
     [Fact]
@@ -397,6 +443,7 @@ public sealed class SceneLifecycleHistoryTests
         var state = new TransformTargetState(target, PoseTransform.Identity, new BonePose(), false);
         world.History.Append(new TransformPatch("Move borrowed BG", [state], [state]));
         Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
+        world.WorldObjects.Place(address, MapStood); // Same address, new incarnation.
 
         Assert.Equal("Remove world object", world.History.UndoDescription);
         Assert.False(world.Undo()); // Fails safely and drops the permanently un-restorable claim.
@@ -432,6 +479,7 @@ public sealed class SceneLifecycleHistoryTests
         _ = world.Lifecycle.AdoptWorldObject(borrowedAddress);
         _ = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true);
         Assert.True(world.Lifecycle.ReleaseAllWorldObjects());
+        world.WorldObjects.Place(borrowedAddress, MapStood); // Reused address invalidates borrowed history.
         var group = Assert.IsType<SceneLifecyclePatch>(world.History.PeekUndo());
         int spawnCallsAfterRelease = world.WorldObjects.SpawnCalls;
 
@@ -439,7 +487,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Empty(world.WorldObjects.Live);
         Assert.Equal(spawnCallsAfterRelease, world.WorldObjects.SpawnCalls);
         Assert.Equal(1, world.WorldObjects.AdoptCalls);
-        Assert.Contains("group", group.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("identity", group.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Earlier edit", world.History.UndoDescription);
     }
 
@@ -841,8 +889,10 @@ public sealed class SceneLifecycleHistoryTests
     private sealed class FakeWorldObjects : IWorldObjectLifecycle
     {
         private readonly Dictionary<nint, Transform> _map = new();
+        private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
         private readonly HashSet<nint> _vfxAddresses = new();
         private readonly List<object> _adopted = new();
+        private long _nextGeneration;
         public int AdoptCalls { get; private set; }
         public int SpawnCalls { get; private set; }
 
@@ -862,7 +912,17 @@ public sealed class SceneLifecycleHistoryTests
             _map[address] = placement;
             if (isVfx) _vfxAddresses.Add(address);
             else _vfxAddresses.Remove(address);
+            long generation = ++_nextGeneration;
+            _identities[address] = new WorldObjectIncarnation(
+                address, generation, isVfx ? (nint)generation : nint.Zero, isVfx);
             return address;
+        }
+
+        public void Remove(nint address)
+        {
+            _map.Remove(address);
+            _identities.Remove(address);
+            _vfxAddresses.Remove(address);
         }
 
         public TransformTargetId Target(object worldObject) =>
@@ -877,12 +937,39 @@ public sealed class SceneLifecycleHistoryTests
             {
                 Owner = this,
                 State = new WorldObjectState(
-                    address, "bg/fake.mdl", false, _map[address], true),
+                    address, "bg/fake.mdl", false, _map[address], true)
+                {
+                    Identity = _identities[address],
+                },
                 IsVfx = _vfxAddresses.Contains(address),
                 MapPlacement = _map[address],
             };
             _adopted.Add(claim);
             return claim;
+        }
+
+        public bool CanReclaim(WorldObjectState state, out string detail)
+        {
+            if (!_map.ContainsKey(state.Address))
+            {
+                detail = "Unable to undo: the original world object is no longer in the current world graph.";
+                return false;
+            }
+            var current = _identities[state.Address];
+            bool matches = state.Identity.IsVfx
+                ? current == state.Identity
+                : current.SameAllocation(state.Identity);
+            detail = matches
+                ? string.Empty
+                : "Unable to undo: the world object at this address no longer matches the captured identity.";
+            return matches;
+        }
+
+        public object? Reclaim(WorldObjectState state, out string detail)
+        {
+            if (!CanReclaim(state, out detail))
+                return null;
+            return Adopt(state.Address);
         }
 
         public object? Spawn(string path, Transform placement, bool visible)
