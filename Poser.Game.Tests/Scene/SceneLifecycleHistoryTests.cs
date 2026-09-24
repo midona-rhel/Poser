@@ -458,29 +458,60 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void Selection_removal_is_one_undoable_entry_and_actors_keep_their_nonjournaled_rule()
+    public void Selection_removal_restores_actors_and_other_entities_in_one_entry()
     {
         var world = new World();
         var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
         var prop = world.Lifecycle.SpawnProp(Apple)!;
         var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-
-        Assert.Equal(3, world.Lifecycle.DestroySelection(
-            props: new[] { prop }, lights: new[] { light },
-            cameras: new[] { camera }));
-        Assert.Equal("Remove 3 entities", world.History.UndoDescription);
+        var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
+        world.History.RecordLifecycleBatch("Remove selection", () =>
+        {
+            Assert.True(world.Lifecycle.DespawnActor(actor));
+            world.Lifecycle.DestroyProp(prop);
+            world.Lifecycle.DestroyLight(light);
+            world.Lifecycle.DestroyCamera(camera);
+        });
+        Assert.Empty(world.Actors.Live);
+        Assert.Empty(world.Props.Live);
+        Assert.Empty(world.Lighting.Live);
+        Assert.Empty(world.Cameras.Live);
+        Assert.Equal("Remove selection", world.History.UndoDescription);
         Assert.True(world.Undo());
+        Assert.Single(world.Actors.Live);
         Assert.Single(world.Lighting.Live);
         Assert.Single(world.Props.Live);
         Assert.Single(world.Cameras.Live);
-
-        var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
-        prop = world.Lifecycle.SpawnProp(Apple)!;
-        Assert.Equal(2, world.Lifecycle.DestroySelection(new[] { actor }, new[] { prop }));
-        Assert.Equal("Remove 1 entity", world.History.UndoDescription);
-        Assert.True(world.Undo());
+        Assert.Equal("Add actor", world.History.UndoDescription);
+        Assert.True(world.Redo());
         Assert.Empty(world.Actors.Live);
-        Assert.Equal(2, world.Props.Live.Count);
+        Assert.Empty(world.Props.Live);
+        Assert.Empty(world.Lighting.Live);
+        Assert.Empty(world.Cameras.Live);
+    }
+
+    [Fact]
+    public void Refused_actor_removal_does_not_lose_successful_sibling_inverses()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+        world.Actors.RefuseDestroy = true;
+        Assert.Equal(2, world.Lifecycle.DestroySelection(
+            actors: [actor], props: [prop], lights: [light]));
+        Assert.Same(actor, Assert.Single(world.Actors.Live));
+        Assert.Empty(world.Props.Live);
+        Assert.Empty(world.Lighting.Live);
+        Assert.True(world.Undo());
+        Assert.Same(actor, Assert.Single(world.Actors.Live));
+        Assert.Single(world.Props.Live);
+        Assert.Single(world.Lighting.Live);
+        Assert.NotEqual("Remove selection", world.History.UndoDescription);
+        Assert.True(world.Redo());
+        Assert.Same(actor, Assert.Single(world.Actors.Live));
+        Assert.Empty(world.Props.Live);
+        Assert.Empty(world.Lighting.Live);
     }
 
     [Fact]

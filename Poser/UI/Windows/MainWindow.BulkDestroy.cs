@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
 namespace Poser.UI;
@@ -15,65 +16,49 @@ public partial class MainWindow
 
     private void ConfirmDestroyAllLights()
     {
-        var lights = _lightingService.Lights.ToArray();
+        var lights = _scene.Snapshot.Lights.ToArray();
         if (lights.Length == 0)
             return;
         int spawned = lights.Count(light => light.Ownership == LightOwnership.Spawned);
         _bulkDestroyTitle = "Destroy all lights?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {spawned} spawned lights.\n"
             + $"Release {lights.Length - spawned} captured lights back to the game.";
-        _bulkDestroy = () =>
-        {
-            // Confirm only the set counted above. The lifecycle route retains
-            // normal undo and releases captured lights instead of destroying them.
-            foreach (var light in lights)
-                if (light.IsValid && _lightingService.Lights.Contains(light))
-                    _lifecycle.DestroyLight(light);
-        };
+        var ids = lights.Select(light => SelectionId.ForLight(light.Id)).ToArray();
+        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
         _bulkDestroyOpen = true;
     }
 
     private void ConfirmDestroyAllCameras()
     {
-        var cameras = _cameraService.Cameras.Where(camera => !camera.IsDefault).ToArray();
+        var cameras = _scene.Snapshot.Cameras.Where(camera => !camera.IsDefault).ToArray();
         if (cameras.Length == 0)
             return;
         _bulkDestroyTitle = "Destroy all cameras?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {cameras.Length} cameras.\nThe main camera will be kept.";
-        _bulkDestroy = () =>
-        {
-            foreach (var camera in cameras)
-                if (camera.IsValid && !camera.IsDefault && _cameraService.Cameras.Contains(camera))
-                    _lifecycle.DestroyCamera(camera);
-        };
+        var ids = cameras.Select(camera => SelectionId.ForCamera(camera.Id)).ToArray();
+        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
         _bulkDestroyOpen = true;
     }
 
     private void ConfirmDestroyAllProps()
     {
-        var ids = _scene.Snapshot.Props.Select(prop => prop.Id).ToArray();
+        var ids = _scene.Snapshot.Props.Select(prop => SelectionId.ForProp(prop.Id)).ToArray();
         if (ids.Length == 0)
             return;
         _bulkDestroyTitle = "Destroy all objects?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {ids.Length} spawned objects.\nBorrowed world scenery will be kept.";
-        _bulkDestroy = () => _lifecycle.DestroySelection(props: ids
-            .Select(id => _bindings.Resolve(id))
-            .Where(result => result.Success && result.Value is { IsValid: true })
-            .Select(result => (object)result.Value!).ToArray());
+        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
         _bulkDestroyOpen = true;
     }
 
     private void ConfirmDestroyAllOverlays()
     {
-        var ids = _scene.Snapshot.Overlays.Select(overlay => overlay.Id).ToArray();
+        var ids = _scene.Snapshot.Overlays.Select(overlay => SelectionId.ForOverlay(overlay.Id)).ToArray();
         if (ids.Length == 0)
             return;
         _bulkDestroyTitle = "Destroy all overlays?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {ids.Length} overlays.\nReference images will be kept.";
-        _bulkDestroy = () => _lifecycle.DestroySelection(overlays: ids
-            .Select(id => _bindings.Resolve(id))
-            .Where(result => result.Success && result.Value is not null)
-            .Select(result => (object)result.Value!).ToArray());
+        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
         _bulkDestroyOpen = true;
     }
 

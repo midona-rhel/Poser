@@ -17,7 +17,14 @@ using Poser.Services;
 
 namespace Poser.Game.World;
 
-public sealed class WorldService : IWorldService, IDisposable
+/// <summary>Immediate release on the framework thread, preserving claim bookkeeping.
+/// Used when a larger synchronous entity command owns the dispatch boundary.</summary>
+public interface IWorldReleasePort
+{
+    WorldRelease ReleaseCurrent(SelectionId entity);
+}
+
+public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
 {
     private readonly IFramework _framework;
     private readonly IGPoseService _gpose;
@@ -173,7 +180,14 @@ public sealed class WorldService : IWorldService, IDisposable
     }
 
     public Task<WorldRelease> Release(SelectionId entity) =>
-        _framework.RunOnFrameworkThread(() => _claims.Release(entity, ReleaseCore));
+        _framework.RunOnFrameworkThread(() => ((IWorldReleasePort)this).ReleaseCurrent(entity));
+
+    WorldRelease IWorldReleasePort.ReleaseCurrent(SelectionId entity)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            throw new InvalidOperationException("World release must run on the framework thread.");
+        return _claims.Release(entity, ReleaseCore);
+    }
     public Task<WorldRelease> Release(WorldClaimId claim) =>
         _framework.RunOnFrameworkThread(() => _claims.Release(claim, ReleaseCore));
 

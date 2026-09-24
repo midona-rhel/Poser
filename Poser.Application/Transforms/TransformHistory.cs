@@ -61,6 +61,32 @@ public sealed class TransformHistory
     private readonly List<HistoryEntry> _undo = new();
     private readonly List<HistoryEntry> _redo = new();
     private readonly Dictionary<TransformTargetId, Func<TransformTargetId?>> _lifecycleTargets = new();
+    private LifecycleHistoryBatch? _batch;
+
+    /// <summary>Records one synchronous removal command. Earlier value edits
+    /// are sealed first; only context-free lifecycle and journal entries belong
+    /// to the batch. The callback must not schedule work or cross an await.</summary>
+    public void RecordLifecycleBatch(string description, Action removals)
+    {
+        ArgumentNullException.ThrowIfNull(removals);
+        if (_batch is not null)
+            throw new InvalidOperationException("A lifecycle batch is already recording.");
+        BeforeAppend?.Invoke();
+        var batch = new LifecycleHistoryBatch(description);
+        _batch = batch;
+        try { removals(); }
+        finally
+        {
+            if (ReferenceEquals(_batch, batch)) FlushBatch();
+        }
+    }
+
+    private void FlushBatch()
+    {
+        var batch = _batch;
+        _batch = null;
+        if (batch?.Build() is { } entry) Append(entry);
+    }
 
     /// <summary>Keep edits while their entity is deliberately absent. This is
     /// history-only rebinding, never permission to reuse a stale public ID.</summary>
@@ -112,6 +138,13 @@ public sealed class TransformHistory
     public void Append(HistoryEntry patch)
     {
         BeforeAppend?.Invoke();
+        if (_batch is { } batch)
+        {
+            if (batch.TryAdd(patch)) return;
+            // An unexpected contextual/transform edit keeps its own replay
+            // semantics and ends collection, rather than hiding its context.
+            FlushBatch();
+        }
         int capacity = _capacity();
         if (capacity < 1)
         {
@@ -307,6 +340,7 @@ public sealed class TransformHistory
 
     public void Clear()
     {
+        _batch = null;
         _undo.Clear();
         _redo.Clear();
         RaiseCleared();

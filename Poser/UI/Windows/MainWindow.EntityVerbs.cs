@@ -112,7 +112,7 @@ public partial class MainWindow
         await RemoveEntitiesSafely(selected);
     }
 
-    private Task<int> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
+    private Task<global::Poser.Application.Selection.SelectionRemovalResult> DestroyEntities(IReadOnlyList<SelectionId> ids) =>
         _entityCommands.Remove(ids);
 
     private async Task<int?> RemoveEntitiesSafely(
@@ -121,7 +121,9 @@ public partial class MainWindow
     {
         try
         {
-            int removed = await DestroyEntities(ids);
+            var result = await DestroyEntities(ids);
+            _notices.Removal(result);
+            int removed = result.AppliedCount;
             if (removed > 0)
                 onRemoved?.Invoke();
             return removed;

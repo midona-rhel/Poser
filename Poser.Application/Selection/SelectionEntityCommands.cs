@@ -18,6 +18,24 @@ public enum SelectionRemoval
     Release,
 }
 
+public sealed record SelectionRemovalRequest(SelectionId Id, SelectionRemoval Removal);
+
+public enum SelectionRemovalStatus
+{
+    Removed,
+    AlreadyAbsent,
+    Refused,
+    Failed,
+}
+
+public sealed record SelectionRemovalItem(
+    SelectionId Id, SelectionRemovalStatus Status, string? Detail = null);
+
+public sealed record SelectionRemovalResult(IReadOnlyList<SelectionRemovalItem> Items)
+{
+    public int AppliedCount => Items.Count(item => item.Status == SelectionRemovalStatus.Removed);
+}
+
 /// <summary>Reads capabilities only for the exact current SelectionId. It
 /// never repairs an old generation into its successor.</summary>
 public interface ICurrentSelectionEntityReads
@@ -31,7 +49,7 @@ public interface ISelectionEntityCommandPort
 {
     bool? ReadVisibility(SelectionId id);
     bool SetVisibility(SelectionId id, bool visible);
-    Task<bool> Remove(SelectionId id, SelectionRemoval removal);
+    Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests);
 }
 
 /// <summary>Shared selection commands for sidebar and context-menu routes.
@@ -63,21 +81,22 @@ public sealed class SelectionEntityCommands(
         return applied;
     }
 
-    public async Task<int> Remove(IEnumerable<SelectionId> ids)
+    public Task<SelectionRemovalResult> Remove(IEnumerable<SelectionId> ids)
     {
-        var pending = new List<Task<bool>>();
+        var requests = new List<SelectionRemovalRequest>();
         foreach (var id in ids.Distinct())
         {
             var current = reads.ReadCurrent(id);
             if (current is not { Removal: not SelectionRemoval.None } entity
                 || entity.Id != id)
                 continue;
-            // Start each host operation on the caller's owning thread before
-            // awaiting asynchronous borrowed-asset release results.
-            pending.Add(port.Remove(id, entity.Removal));
+            requests.Add(new(id, entity.Removal));
         }
-        var results = await Task.WhenAll(pending);
-        return results.Count(applied => applied);
+        // Capture the complete intent before dispatch so the runtime can
+        // revalidate and journal one batch on its owning thread.
+        return requests.Count == 0
+            ? Task.FromResult(new SelectionRemovalResult(Array.Empty<SelectionRemovalItem>()))
+            : port.Remove(requests.ToArray());
     }
 }
 

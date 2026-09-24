@@ -59,7 +59,7 @@ public sealed class SelectionEntityCommandsTests
         var commands = new SelectionEntityCommands(reads, port);
 
         Assert.Equal(0, commands.SetVisibility([id, id], visible: false));
-        Assert.Equal(0, await commands.Remove([id, id]));
+        Assert.Equal(0, (await commands.Remove([id, id])).AppliedCount);
         Assert.Equal(2, reads.Count);
         Assert.Empty(port.Calls);
     }
@@ -75,7 +75,8 @@ public sealed class SelectionEntityCommandsTests
         var commands = new SelectionEntityCommands(reads, port);
 
         Assert.Equal(1, commands.SetVisibility([id, id], visible: false));
-        Assert.Equal(1, await commands.Remove([id, id]));
+        Assert.Equal(1, (await commands.Remove([id, id])).AppliedCount);
+        Assert.Equal(1, port.RemovalBatchCount);
         Assert.Equal(2, port.Calls.Count);
         Assert.Equal((id, false), port.Calls[0]);
         Assert.Equal((id, SelectionRemoval.Destroy), port.Calls[1]);
@@ -91,7 +92,7 @@ public sealed class SelectionEntityCommandsTests
         var port = new RecordingPort { RemovalResult = false };
         var commands = new SelectionEntityCommands(reads, port);
 
-        Assert.Equal(0, await commands.Remove([id]));
+        Assert.Equal(0, (await commands.Remove([id])).AppliedCount);
         Assert.Single(port.Calls);
     }
 
@@ -109,7 +110,8 @@ public sealed class SelectionEntityCommandsTests
 
         Assert.Null(commands.ReadVisibility(id));
         Assert.Equal(0, commands.SetVisibility([id], visible: false));
-        Assert.Equal(0, await commands.Remove([id]));
+        Assert.Equal(0, (await commands.Remove([id])).AppliedCount);
+        Assert.Equal(0, port.RemovalBatchCount);
         Assert.Empty(port.Calls);
         Assert.True(port.Visibility);
     }
@@ -133,6 +135,35 @@ public sealed class SelectionEntityCommandsTests
         Assert.False(commands.ReadVisibility(id));
         Assert.Equal((id, true), port.Calls[0]);
         Assert.Equal((id, false), port.Calls[1]);
+    }
+
+    [Fact]
+    public async Task Removal_dispatches_one_deduplicated_batch_and_preserves_per_item_outcomes()
+    {
+        var ids = Enumerable.Range(0, 4).Select(_ => SelectionId.ForProp(PropId.New())).ToArray();
+        var statuses = new[]
+        {
+            SelectionRemovalStatus.Removed, SelectionRemovalStatus.AlreadyAbsent,
+            SelectionRemovalStatus.Refused, SelectionRemovalStatus.Failed,
+        };
+        var expected = new SelectionRemovalResult(ids.Select((id, index) =>
+            new SelectionRemovalItem(id, statuses[index], $"Detail {index}")).ToArray());
+        var port = new RecordingPort { BatchResult = expected };
+        var commands = new SelectionEntityCommands(new RemovableReads(), port);
+
+        var result = await commands.Remove([ids[0], ids[1], ids[0], ids[2], ids[3]]);
+
+        Assert.Same(expected, result);
+        Assert.Equal(1, result.AppliedCount);
+        Assert.Equal(1, port.RemovalBatchCount);
+        Assert.Equal(ids, port.Calls.Select(call => call.Id));
+        Assert.All(port.Calls, call => Assert.Equal(SelectionRemoval.Destroy, call.Command));
+    }
+
+    private sealed class RemovableReads : ICurrentSelectionEntityReads
+    {
+        public CurrentSelectionEntity ReadCurrent(SelectionId id) =>
+            new(id, true, true, SelectionRemoval.Destroy);
     }
 
     private sealed class SubstitutingReads(CurrentSelectionEntity value)
@@ -166,6 +197,8 @@ public sealed class SelectionEntityCommandsTests
     {
         public List<(SelectionId Id, object Command)> Calls { get; } = [];
         public bool RemovalResult { get; init; } = true;
+        public int RemovalBatchCount { get; private set; }
+        public SelectionRemovalResult? BatchResult { get; init; }
         public bool? Visibility { get; set; } = true;
 
         public bool? ReadVisibility(SelectionId id) => Visibility;
@@ -177,10 +210,14 @@ public sealed class SelectionEntityCommandsTests
             return true;
         }
 
-        public Task<bool> Remove(SelectionId id, SelectionRemoval removal)
+        public Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests)
         {
-            Calls.Add((id, removal));
-            return Task.FromResult(RemovalResult);
+            RemovalBatchCount++;
+            foreach (var request in requests)
+                Calls.Add((request.Id, request.Removal));
+            return Task.FromResult(BatchResult ?? new SelectionRemovalResult(
+                requests.Select(request => new SelectionRemovalItem(request.Id,
+                    RemovalResult ? SelectionRemovalStatus.Removed : SelectionRemovalStatus.Refused)).ToArray()));
         }
     }
 }

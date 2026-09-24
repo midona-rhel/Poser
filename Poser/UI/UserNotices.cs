@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using Poser.Application.Selection;
 using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Plugin.Services;
 
@@ -51,6 +53,20 @@ public sealed class UserNotices
     public void Failed(string verb, string detail) => Failed(verb + ": " + detail);
 
     public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
+
+    public void Removal(SelectionRemovalResult result)
+    {
+        foreach (var failure in result.Items
+            .Where(item => item.Status is SelectionRemovalStatus.Refused or SelectionRemovalStatus.Failed)
+            .Select(item => (item.Status, Detail: item.Detail ?? "The entity could not be removed."))
+            .Distinct())
+        {
+            if (failure.Status == SelectionRemovalStatus.Failed)
+                Failed("Remove", failure.Detail);
+            else
+                Refused("Remove", failure.Detail);
+        }
+    }
 
     /// <summary>Every notice as it is posted: its kind and its text, for
     /// the action recorder.</summary>

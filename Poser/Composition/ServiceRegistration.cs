@@ -578,9 +578,10 @@ internal static class ServiceRegistration
         });
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<WorldActions>();
-        services.AddSingleton<ISelectionEntityCommandPort, SelectionEntityCommandPort>();
+        services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
         services.AddSingleton<Game.World.WorldService>();
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
+        services.AddSingleton<Game.World.IWorldReleasePort>(sp => sp.GetRequiredService<Game.World.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
         // Owns every reference picture's texture, so the container's own
         // dispose is what releases them at plugin teardown.

@@ -5,8 +5,6 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
 
 namespace Poser.UI;
 
@@ -34,10 +32,8 @@ namespace Poser.UI;
 public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
     private readonly SelectionEntityCommands _entityCommands;
-    private readonly ISceneLifecycleHistory _lifecycle;
-    private readonly IActorSpawnService _spawns;
+    private readonly UserNotices _notices;
 
     /// <summary>The selection the removal was armed against. The arm is only
     /// live while the selection is still that exact ordered set.</summary>
@@ -47,16 +43,12 @@ public sealed class SelectionSection
 
     public SelectionSection(
         SceneSession scene,
-        IEntityBindings bindings,
-        ISceneLifecycleHistory lifecycle,
-        IActorSpawnService spawns,
-        SelectionEntityCommands entityCommands)
+        SelectionEntityCommands entityCommands,
+        UserNotices notices)
     {
         _entityCommands = entityCommands;
         _scene = scene;
-        _bindings = bindings;
-        _lifecycle = lifecycle;
-        _spawns = spawns;
+        _notices = notices;
     }
 
     /// <summary>Draws the section and answers the height it took; zero when
@@ -130,10 +122,11 @@ public sealed class SelectionSection
             {
                 if (!armed)
                 {
-                    _armed = System.Linq.Enumerable.ToArray(selected);
+                    _armed = selected.ToArray();
                     return;
                 }
-                _pending = () => Remove(group);
+                var ids = selected.ToArray();
+                _pending = () => Remove(ids);
             },
             variant: ButtonVariant.Danger,
             help: armed
@@ -141,12 +134,9 @@ public sealed class SelectionSection
                 : $"Destroy all {group.Count} selected {group.Noun}. "
                     + "Press once to arm, again to confirm."));
 
-        if (armed)
+        if (armed && !group.HasActors)
         {
-            form.Status(
-                group.Actors.Count > 0
-                    ? "Removing actors cannot be undone."
-                    : "Undo restores everything this removes in one step.");
+            form.Status("Undo restores everything this removes in one step.");
         }
     }
 
@@ -168,87 +158,55 @@ public sealed class SelectionSection
         _pending = () => _entityCommands.SetVisibility(ids, visible);
     }
 
-    private void Remove(ResolvedGroup group)
+    private async void Remove(IReadOnlyList<SelectionId> ids)
     {
-        _lifecycle.DestroySelection(
-            group.Actors,
-            System.Linq.Enumerable.ToList<object>(group.Props),
-            group.Lights,
-            group.Cameras,
-            System.Linq.Enumerable.ToList<object>(group.Overlays));
         _armed = Array.Empty<SelectionId>();
-        _scene.Selection.Clear();
+        try
+        {
+            _notices.Removal(await _entityCommands.Remove(ids));
+        }
+        catch (Exception exception)
+        {
+            _notices.Failed("Remove", exception.Message);
+        }
     }
 
-    /// <summary>Every LIVE entity behind the selection, by kind. A selection is
-    /// homogeneous by construction, so at most one list is ever populated; the
-    /// shape carries them all because the group verbs must not depend on that
-    /// staying true. Ids that no longer resolve are dropped — a set the scene
-    /// has moved past is smaller, not a refusal.</summary>
+    /// <summary>Current pointer-free facts for the selected entities. Commands
+    /// recheck these capabilities after drawing, against the captured ids.</summary>
     private readonly record struct ResolvedGroup(
-        IReadOnlyList<IActor> Actors,
-        IReadOnlyList<IPropHandle> Props,
-        IReadOnlyList<ILight> Lights,
-        IReadOnlyList<IVirtualCamera> Cameras,
-        IReadOnlyList<IOverlayNode> Overlays)
+        IReadOnlyList<CurrentSelectionEntity> Entities)
     {
-        public int Count =>
-            Actors.Count + Props.Count + Lights.Count +
-            Cameras.Count + Overlays.Count;
+        public int Count => Entities.Count;
 
-        /// <summary>Cameras are the one kind with nothing to show or hide.
-        /// </summary>
-        public bool CanChangeVisibility => Cameras.Count == 0;
+        public bool CanChangeVisibility => Entities.Any(entity => entity.CanChangeVisibility);
+
+        public bool HasActors => Entities.Any(entity => entity.Id.Kind == SceneEntityKind.Actor);
 
         public string Noun =>
-            Actors.Count > 0 ? "actors"
-            : Props.Count > 0 ? "objects"
-            : Lights.Count > 0 ? "lights"
-            : Cameras.Count > 0 ? "cameras"
-            : Overlays.Count > 0 ? "overlay nodes"
-            : "entities";
+            Entities.Select(entity => entity.Id.Kind).Distinct().Count() != 1
+                ? "entities"
+                : Entities[0].Id.Kind switch
+                {
+                    SceneEntityKind.Actor => "actors",
+                    SceneEntityKind.Prop => "objects",
+                    SceneEntityKind.Light => "lights",
+                    SceneEntityKind.Camera => "cameras",
+                    SceneEntityKind.Overlay => "overlay nodes",
+                    SceneEntityKind.WorldObject => "objects",
+                    _ => "entities",
+                };
     }
 
     private ResolvedGroup Resolve(IReadOnlyList<SelectionId> selected)
     {
-        var actors = new List<IActor>();
-        var props = new List<IPropHandle>();
-        var lights = new List<ILight>();
-        var cameras = new List<IVirtualCamera>();
-        var overlays = new List<IOverlayNode>();
+        var entities = new List<CurrentSelectionEntity>();
 
         foreach (var id in selected)
         {
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }
-                    when _bindings.Resolve(actorId) is
-                        { Success: true, Value: { } actor }:
-                    actors.Add(actor);
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }
-                    when _bindings.Resolve(propId) is
-                        { Success: true, Value: { IsValid: true } prop }:
-                    props.Add(prop);
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }
-                    when _bindings.Resolve(lightId) is
-                        { Success: true, Value: { IsValid: true } light }:
-                    lights.Add(light);
-                    break;
-                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }
-                    when _bindings.Resolve(cameraId) is
-                        { Success: true, Value: { IsValid: true } camera }:
-                    cameras.Add(camera);
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }
-                    when _bindings.Resolve(overlayId) is
-                        { Success: true, Value: { IsValid: true } overlay }:
-                    overlays.Add(overlay);
-                    break;
-            }
+            if (_scene.ReadCurrent(id) is { } entity && entity.Id == id)
+                entities.Add(entity);
         }
 
-        return new ResolvedGroup(actors, props, lights, cameras, overlays);
+        return new ResolvedGroup(entities);
     }
 }
