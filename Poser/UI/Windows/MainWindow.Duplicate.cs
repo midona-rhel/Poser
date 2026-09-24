@@ -272,10 +272,6 @@ public partial class MainWindow
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
             return clone;
         _animation.Pause(cloneId);
-        // Before the first draw: a copy that once engaged the camera look-at
-        // and was then paused froze mid blend-out, head off its neck
-        // (2026-09-02). Detached from the start, nothing ever engages.
-        FreezeGaze(clone);
         return clone;
     }
 

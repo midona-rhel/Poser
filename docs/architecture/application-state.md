@@ -55,6 +55,17 @@ duplicate-name variants in order, and uses game indices only to find bones.
 Legacy matching and broadcast are explicit compatibility choices. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
+Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
+actor generations and immutable readings. Application owns gesture coalescing
+and settings history; Game resolves each runtime call and owns native look-at
+state. Neither UI target matching nor history retains native addresses/wrappers.
+Changing selection during a gaze drag seals that gesture; it cannot transfer
+to the newly selected actor. Gaze settings history preserves its existing scope:
+mode, parts, locks and points, not entity retargeting. Native transition refusals
+remain refusals during history replay, rather than reported successes.
+Posed-copy gaze initialization belongs to actor lifecycle, not each spawn UI;
+it runs before the first draw and creates no separate gaze history entry.
+
 ## World borrowing control
 
 `IWorldService` is the application-facing entry for discovery, highlighting,

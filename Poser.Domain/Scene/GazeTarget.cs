@@ -1,5 +1,11 @@
 namespace Poser.Domain.Scene;
 
+public readonly record struct GazeResult(bool Success, string? Detail = null)
+{
+    public static GazeResult Ok() => new(true);
+    public static GazeResult Refused(string detail) => new(false, detail);
+}
+
 /// <summary>
 /// Target mode for gaze control.
 /// </summary>

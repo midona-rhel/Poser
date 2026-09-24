@@ -1,6 +1,7 @@
 ﻿using Poser.Domain.Transforms;
 using System;
 using Poser.Application.Viewport;
+using Poser.Application.Gaze;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -35,8 +36,7 @@ public partial class PoseInspectorPane
     private readonly IIkBake _ikBake;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IPoseFacade _cleanPose;
-    private readonly IGazeService _gazeService;
-    private readonly Game.Journal.GazeSession _gazeValues;
+    private readonly IGazeControl _gazeValues;
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
@@ -182,8 +182,7 @@ public partial class PoseInspectorPane
         IBonePosingService bonePosingService,
         ITransformFacade cleanTransforms,
         IPoseFacade cleanPose,
-        IGazeService gazeService,
-        Game.Journal.GazeSession gazeValues,
+        IGazeControl gazeValues,
         IEditorState editorState,
         SceneSession scene,
         IEntityBindings bindings,
@@ -218,7 +217,6 @@ public partial class PoseInspectorPane
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
-        _gazeService = gazeService;
         _gazeValues = gazeValues;
         _editorState = editorState;
         Reset3DCamera();
@@ -1645,33 +1643,35 @@ public partial class PoseInspectorPane
     private bool _gazeActorUnavailableNote;
 
     // Refusals are scoped to their target actor.
-    private (nint Actor, string Text)? _gazeRefusal;
+    private (ActorId Actor, string Text)? _gazeRefusal;
 
-    private void DrawGaze(Crystarium.FormScope form, IActor actor, bool wide)
+    private void DrawGaze(Crystarium.FormScope form, IActor sourceActor, bool wide)
     {
         using var profile = FrameProfiler.Scope(
             wide ? "Surface · GAZE" : "Rail · GAZE");
-        if (!_gazeService.IsAvailable)
+        if (!_gazeValues.IsAvailable)
         {
-            form.Status($"Gaze unavailable: {_gazeService.UnavailableDetail ?? "native capability unavailable."}");
+            form.Status($"Gaze unavailable: {_gazeValues.UnavailableDetail ?? "native capability unavailable."}");
             return;
         }
 
-        var state = _gazeService.GetGazeState(actor);
+        if (_bindings.GetActorId(sourceActor) is not { } actor ||
+            _gazeValues.Read(actor) is not { } state)
+            return;
 
-        var sourceLineage = _bindings.GetActorId(actor)?.LogicalId;
+        var sourceLineage = actor.LogicalId;
         var others = _gazeOthers;
         others.Clear();
         foreach (var candidate in _scene.Snapshot.Actors)
-            if (sourceLineage is not { } source || candidate.Id.LogicalId != source)
+            if (candidate.Id.LogicalId != sourceLineage)
                 others.Add(candidate);
 
         void Record(GazeResult result) =>
             _gazeRefusal = result.Success
                 ? null
-                : (actor.Address, result.Detail ?? "Gaze change refused.");
+                : (actor, result.Detail ?? "Gaze change refused.");
 
-        int ModeIndex() => state.Mode switch
+        int ModeIndex() => state.Settings.Mode switch
         {
             GazeTargetMode.None => 0,
             GazeTargetMode.Forward => 1,
@@ -1682,7 +1682,7 @@ public partial class PoseInspectorPane
 
         void PickMode(int selected)
         {
-            var previousMode = state.Mode;
+            var previousMode = state.Settings.Mode;
             if (selected == 4 && others.Count == 0)
             {
                 _gazeActorUnavailableNote = true;
@@ -1699,22 +1699,22 @@ public partial class PoseInspectorPane
                     _ => GazeTargetMode.Entity,
                 }));
             }
-            state = _gazeService.GetGazeState(actor);
-            SyncPointSelection(previousMode, state.Mode);
+            state = _gazeValues.Read(actor) ?? state;
+            SyncPointSelection(previousMode, state.Settings.Mode);
         }
 
         // Position mode selects its gaze point.
         void SyncPointSelection(GazeTargetMode previous, GazeTargetMode current)
         {
-            if (previous == current || _bindings.GetActorId(actor) is not { } actorId)
+            if (previous == current)
                 return;
             if (current == GazeTargetMode.Position)
-                _selection.Select(SelectionId.ForGazeTarget(actorId));
+                _selection.Select(SelectionId.ForGazeTarget(actor));
             else if (previous == GazeTargetMode.Position &&
                      _selection.Primary is
                          { Kind: SceneEntityKind.GazeTarget } stranded &&
-                     stranded.ActorLineage == actorId.LogicalId)
-                _selection.Select(SelectionId.ForActor(actorId));
+                     stranded.ActorLineage == actor.LogicalId)
+                _selection.Select(SelectionId.ForActor(actor));
         }
 
         (string[] Items, int Selected) TargetItems()
@@ -1723,15 +1723,11 @@ public partial class PoseInspectorPane
                 return (NoOtherActors, -1);
             if (_gazeNames.Length != others.Count)
                 _gazeNames = new string[others.Count];
-            var targetAddress = _gazeService.GetGazeTargetAddress(actor);
             int current = -1;
             for (int i = 0; i < others.Count; i++)
             {
                 _gazeNames[i] = ActorNames.Display(others[i]);
-                if (targetAddress != 0
-                    && _bindings.Resolve(others[i].Id) is
-                        { Success: true, Value: { } resolved }
-                    && resolved.Address == targetAddress)
+                if (state.Target == others[i].Id)
                     current = i;
             }
             return (_gazeNames, current);
@@ -1739,13 +1735,10 @@ public partial class PoseInspectorPane
 
         void PickTarget(int next)
         {
-            if (next >= 0
-                && next < others.Count
-                && _bindings.Resolve(others[next].Id) is
-                    { Success: true, Value: { } live })
+            if (next >= 0 && next < others.Count)
             {
-                Record(_gazeValues.SetTarget(actor, live));
-                state = _gazeService.GetGazeState(actor);
+                Record(_gazeValues.SetTarget(actor, others[next].Id));
+                state = _gazeValues.Read(actor) ?? state;
             }
         }
 
@@ -1778,7 +1771,7 @@ public partial class PoseInspectorPane
                         selected,
                         PickTarget,
                         cell.Constrain(ControlStyle.Workspace),
-                        disabled: state.Mode != GazeTargetMode.Entity
+                        disabled: state.Settings.Mode != GazeTargetMode.Entity
                             || others.Count == 0,
                         help: atHelp);
                 });
@@ -1793,9 +1786,9 @@ public partial class PoseInspectorPane
         else
             _gazeActorUnavailableNote = false;
 
-        if (state.TargetStale && state.Mode == GazeTargetMode.Entity)
+        if (state.TargetStale && state.Settings.Mode == GazeTargetMode.Entity)
             form.Status("The remembered gaze target has left the scene. Choose another actor.");
-        if (_gazeRefusal is { } refusal && refusal.Actor == actor.Address)
+        if (_gazeRefusal is { } refusal && refusal.Actor == actor)
             form.Status(refusal.Text);
 
         DrawGazeParts(form, actor, state, wide, Record);
@@ -1809,29 +1802,29 @@ public partial class PoseInspectorPane
                 selected,
                 PickTarget,
                 help: atHelp,
-                disabled: state.Mode != GazeTargetMode.Entity
+                disabled: state.Settings.Mode != GazeTargetMode.Entity
                     || others.Count == 0);
         }
     }
 
     private void DrawGazeParts(
         Crystarium.FormScope form,
-        IActor actor,
-        GazeState state,
+        ActorId actor,
+        GazeReading state,
         bool wide,
         Action<GazeResult> record)
     {
-        bool off = state.Mode == GazeTargetMode.None;
-        bool point = state.Mode == GazeTargetMode.Position;
+        bool off = state.Settings.Mode == GazeTargetMode.None;
+        bool point = state.Settings.Mode == GazeTargetMode.Position;
 
         void SetPart(GazeTargetType part, bool next)
         {
             record(_gazeValues.SetParts(
                 actor,
                 next
-                    ? state.TargetType | part
-                    : state.TargetType & ~part));
-            state = _gazeService.GetGazeState(actor);
+                    ? state.Settings.TargetType | part
+                    : state.Settings.TargetType & ~part));
+            state = _gazeValues.Read(actor) ?? state;
         }
 
         void LockIcon(
@@ -1840,10 +1833,10 @@ public partial class PoseInspectorPane
             GazeTargetType part,
             bool enabled)
         {
-            bool locked = _gazeService.IsPartLocked(actor, part);
+            bool locked = state.Settings.IsPartLocked(part);
             actions.IconButton(
                 locked ? TablerIcon.Lock : TablerIcon.LockOpen,
-                () => _gazeValues.SetPartLock(actor, part, !locked),
+                () => record(_gazeValues.SetPartLock(actor, part, !locked)),
                 disabled: !enabled,
                 help: locked
                     ? "Unfreeze this part so it follows the gaze target again"
@@ -1861,8 +1854,8 @@ public partial class PoseInspectorPane
                 TablerIcon.CameraSnap,
                 () =>
                 {
-                    _gazeValues.SnapPartToCamera(actor, part);
-                    state = _gazeService.GetGazeState(actor);
+                    record(_gazeValues.SnapPartToCamera(actor, part));
+                    state = _gazeValues.Read(actor) ?? state;
                 },
                 disabled: !enabled,
                 help: "Move this part's point to the camera",
@@ -1879,9 +1872,7 @@ public partial class PoseInspectorPane
                 TablerIcon.GazePoint,
                 () =>
                 {
-                    if (_bindings.GetActorId(actor) is not { } actorId)
-                        return;
-                    _selection.Select(SelectionId.ForGazeTarget(actorId, part switch
+                    _selection.Select(SelectionId.ForGazeTarget(actor, part switch
                     {
                         GazeTargetType.Eyes => GazePart.Eyes,
                         GazeTargetType.Head => GazePart.Head,
@@ -1896,9 +1887,9 @@ public partial class PoseInspectorPane
         // Each gaze part keeps its own point.
         Vector3 PartPoint(GazeTargetType part) => part switch
         {
-            GazeTargetType.Eyes => state.EyesPosition,
-            GazeTargetType.Head => state.HeadPosition,
-            _ => state.BodyPosition,
+            GazeTargetType.Eyes => state.Settings.EyesPosition,
+            GazeTargetType.Head => state.Settings.HeadPosition,
+            _ => state.Settings.BodyPosition,
         };
 
         static string PointLabel(GazeTargetType part) => part switch
@@ -1914,8 +1905,8 @@ public partial class PoseInspectorPane
                 PartPoint(part),
                 next =>
                 {
-                    _gazeValues.SetPartPosition(actor, part, next);
-                    state = _gazeService.GetGazeState(actor);
+                    record(_gazeValues.SetPartPosition(actor, part, next));
+                    state = _gazeValues.Read(actor) ?? state;
                 },
                 _gazeValues.Seal,
                 0.005f,
@@ -1936,7 +1927,7 @@ public partial class PoseInspectorPane
                 foreach (var (label, part) in GazePartChips)
                 {
                     var flag = part;
-                    bool enabled = !off && state.TargetType.HasFlag(flag);
+                    bool enabled = !off && state.Settings.TargetType.HasFlag(flag);
                     // Free controls on one row spread EQUALLY — no label
                     // column to align to, so the spacing is the alignment.
                     actions.Button(
@@ -1956,14 +1947,14 @@ public partial class PoseInspectorPane
             });
             if (point)
                 foreach (var (label, part) in GazePartChips)
-                    PointRow(label, part, state.TargetType.HasFlag(part));
+                    PointRow(label, part, state.Settings.TargetType.HasFlag(part));
             return;
         }
 
         foreach (var (label, part) in GazePartChips)
         {
             var flag = part;
-            bool enabled = !off && state.TargetType.HasFlag(flag);
+            bool enabled = !off && state.Settings.TargetType.HasFlag(flag);
             form.SwitchActions(
                 label,
                 enabled,

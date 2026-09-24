@@ -224,7 +224,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.EnvironmentSession>();
         services.AddSingleton<Game.Journal.ActorValueSession>();
         services.AddSingleton<Game.Journal.ExpressionSession>();
-        services.AddSingleton<Game.Journal.GazeSession>();
+        services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
+        services.AddSingleton<Application.Gaze.IGazeControl, Application.Gaze.GazeSession>();
         services.AddSingleton<AnimationSteps>();
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<Game.Journal.DisruptiveSteps>();

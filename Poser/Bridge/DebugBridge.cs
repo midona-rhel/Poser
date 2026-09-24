@@ -44,7 +44,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
-    private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Library.IPoseLibraryService _library;
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
@@ -77,7 +77,7 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
-        global::Poser.Services.IGazeService gaze,
+        global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Services.IBonePosingService bonePosing,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
@@ -245,6 +245,8 @@ public sealed class DebugBridge : IDisposable
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
+                        "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
+                        "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body&commit=1  (journaled)",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
                         "/pauseall?actor", "/resumeall?actor",
@@ -824,13 +826,36 @@ public sealed class DebugBridge : IDisposable
             case "/gazemode":
             {
                 var mode = Enum.Parse<GazeTargetMode>(query["mode"], true);
-                var r = _gaze.SetGazeMode(actor, mode);
-                return Json(new { ok = r.Success, r.Detail, mode = _gaze.GetGazeState(actor).Mode.ToString() });
+                var r = _gaze.SetMode(id, mode);
+                return Json(new { ok = r.Success, r.Detail, mode = _gaze.Read(id)?.Settings.Mode.ToString() });
+            }
+            case "/gazepoint":
+            {
+                var point = new System.Numerics.Vector3(
+                    float.Parse(query["x"], CultureInfo.InvariantCulture),
+                    float.Parse(query["y"], CultureInfo.InvariantCulture),
+                    float.Parse(query["z"], CultureInfo.InvariantCulture));
+                var part = query.TryGetValue("part", out var partName)
+                    ? Enum.Parse<GazeTargetType>(partName, true) : GazeTargetType.None;
+                var r = part == GazeTargetType.None
+                    ? _gaze.SetGazePosition(id, point)
+                    : _gaze.SetPartPosition(id, part, point);
+                if (query.ContainsKey("commit")) _gaze.Seal();
+                return Json(new { ok = r.Success, r.Detail });
             }
             case "/gaze":
             {
-                var g = _gaze.GetGazeState(actor);
-                return Json(new { mode = g.Mode.ToString() });
+                var g = _gaze.Read(id);
+                if (g is null) return Json(new { error = "actor is no longer bound" });
+                static object Point(System.Numerics.Vector3 p) => new { x = p.X, y = p.Y, z = p.Z };
+                return Json(new
+                {
+                    mode = g.Settings.Mode.ToString(), parts = g.Settings.TargetType.ToString(),
+                    target = g.Target?.ToString(), active = g.Active, stale = g.TargetStale,
+                    anchor = Point(g.Settings.Position), eyes = Point(g.Settings.EyesPosition),
+                    head = Point(g.Settings.HeadPosition), body = Point(g.Settings.BodyPosition),
+                    locks = new { eyes = g.Settings.EyesLocked, head = g.Settings.HeadLocked, body = g.Settings.BodyLocked },
+                });
             }
             case "/equip":
             {
@@ -956,7 +981,6 @@ public sealed class DebugBridge : IDisposable
                 if (posed && copyId is { } pid)
                 {
                     _animation.Pause(pid);
-                    _gaze.SetGazeMode(copy!, GazeTargetMode.Detached);
                 }
                 return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
             }

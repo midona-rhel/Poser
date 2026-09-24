@@ -163,6 +163,7 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class StatePort : IActorLifecycle
     {
+        public void DetachGaze(object actor) => throw new NotSupportedException();
         public ActorState Current;
         private readonly Queue<Action> _pending = new();
         public void Pump() { while (_pending.TryDequeue(out var action)) action(); }

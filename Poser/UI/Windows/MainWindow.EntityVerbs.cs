@@ -164,16 +164,6 @@ public partial class MainWindow
         _cameraPane.CenterOnActor(actor.Id);
     }
 
-    /// <summary>No gaze at all: the copy's eyes, head and body stay on
-    /// the pose. Freezing the parts only pinned where they looked, and the
-    /// game's loop kept turning the head after the camera.</summary>
-    private void FreezeGaze(IActor copy)
-    {
-        var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Detached);
-        if (!mode.Success)
-            _log.Warning($"Duplicate: the gaze could not be detached: {mode.Detail}");
-    }
-
     /// <summary>Whether the current selection is empty or every selected
     /// entity has <paramref name="parent"/> as its group (null = root).</summary>
     private bool SelectionParentIs(Guid? parent)

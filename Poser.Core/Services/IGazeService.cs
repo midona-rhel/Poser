@@ -6,17 +6,6 @@ namespace Poser.Services;
 
 
 /// <summary>
-/// Outcome of a gaze transition that is allowed to be refused. A refusal is
-/// always typed and always names its reason: the UI states it instead of the
-/// click appearing to do nothing.
-/// </summary>
-public readonly record struct GazeResult(bool Success, string? Detail = null)
-{
-    public static GazeResult Ok() => new(true);
-    public static GazeResult Refused(string detail) => new(false, detail);
-}
-
-/// <summary>
 /// Read snapshot of an actor's managed gaze state. Durable identity is never
 /// an <see cref="IActor"/> reference: the service keys state by the native
 /// GameObjectId and the Entity target is a GameObjectId, both of which

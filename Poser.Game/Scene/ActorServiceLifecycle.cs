@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
+using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.Game.Posing;
 using Poser.Services;
@@ -382,6 +383,14 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     }
 
     public void Note(string detail) => _log.Warning(detail);
+
+    public void DetachGaze(object actor)
+    {
+        // Before the first draw, so a posed duplicate never begins a look-at blend.
+        var result = _gaze.SetGazeMode((IActor)actor, GazeTargetMode.Detached);
+        if (!result.Success)
+            Note($"Duplicate: the gaze could not be detached: {result.Detail}");
+    }
 
     public void WhenPosable(object actor, Action<object> act) =>
         ScheduleReady((IActor)actor, act, ReadyAttempts);

@@ -764,8 +764,7 @@ public partial class MainWindow
 
         // A fixed-position gaze anchor is an actor child and is shown only
         // while its actor binding resolves.
-        if (_bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
-            _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
+        if (_gazeService.Read(actor.Id) is { Settings.Mode: GazeTargetMode.Position })
         {
             bool gazeLast = !companionsFollow && !categoriesFollow && !auxFollows;
             // Gaze rows start expanded; explicit disclosure clicks persist in

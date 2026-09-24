@@ -1,5 +1,6 @@
 ﻿using System;
 using Poser.Application.Viewport;
+using Poser.Application.Gaze;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -60,7 +61,7 @@ public partial class MainWindow : Window
 
     private readonly WorldAdoptionSource _worldAdoption;
 
-    private readonly IGazeService _gazeService;
+    private readonly IGazeControl _gazeService;
 
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
 
@@ -531,7 +532,7 @@ public partial class MainWindow : Window
         BoneVisibilityPresetService bonePresets,
         ReferenceImageSession referenceImages,
         WorldAdoptionSource worldAdoption,
-        IGazeService gazeService,
+        IGazeControl gazeService,
         ISceneLifecycleHistory lifecycle,
         EntityActions entityActions,
         global::Poser.Application.Integration.ActorIntegrationSession integration,

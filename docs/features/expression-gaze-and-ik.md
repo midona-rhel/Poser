@@ -28,16 +28,18 @@ blends against the authored base face, without redraw or reference-pose reset.
 Gaze has Off, Forward, Camera, Point, and Actor modes. Eyes, Head, and Body can
 be controlled separately, and each can lock its current target. Point mode has
 one shared anchor plus per-part points, numeric editing, and camera snap. It
-uses the world gizmo, not the bone gizmo. Gaze writes never enter transform
-history.
+uses the world gizmo, not the bone gizmo. Native look-at updates are not edits;
+user gaze edits use the shared value journal, with one step per point drag.
+History scope and ownership are in [application-state.md](../architecture/application-state.md).
 
 Actor mode needs a live scene target. Poser finds that actor in the GPose range
 immediately before writing. Finding a matching game object id alone does not
 prove it is the right target. Writes outside indices 201–439 are refused.
 
 Releasing a part stops Poser writes and lets the game control that part again.
-Mode, target, points, and locks remain after an empty mask or Off;
-`ResetGaze` clears them. Leaving Actor mode also clears the game's target id.
+An empty mask remembers the configured mode, target and points; disabling a
+part clears its lock. Off remembers the target and points but clears locks;
+`ResetGaze` clears the remembered state. Leaving Actor mode also clears the game's target id.
 
 A missing target stays recorded and is marked stale. Poser stops enforcing it,
 does not resume on id reuse, and clears it only when a live target is chosen.

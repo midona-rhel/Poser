@@ -115,7 +115,6 @@ public sealed class SpawnBrowserWindow : Window
     /// <summary>Every entity this browser adds goes through the lifecycle
     /// seam, so the add lands in the shell's undo history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
-    private readonly IGazeService _gaze;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
@@ -178,7 +177,6 @@ public sealed class SpawnBrowserWindow : Window
         AnimationSession animation,
         ConfigurationService configuration,
         ISceneLifecycleHistory lifecycle,
-        IGazeService gaze,
         global::Poser.Application.Integration.ActorIntegrationSession integration,
         ITextureProvider textures,
         UserNotices notices,
@@ -213,7 +211,6 @@ public sealed class SpawnBrowserWindow : Window
         _animation = animation;
         _configuration = configuration;
         _lifecycle = lifecycle;
-        _gaze = gaze;
         _integration = integration;
         _notices = notices;
         _referenceImages = referenceImages;
@@ -1092,7 +1089,6 @@ public sealed class SpawnBrowserWindow : Window
                     if (copy != null && _bindings.GetActorId(copy) is { } copyId)
                     {
                         _animation.Pause(copyId);
-                        _gaze.SetGazeMode(copy, GazeTargetMode.Detached);
                     }
                     SelectSpawned(copy);
                 }

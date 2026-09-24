@@ -1,5 +1,6 @@
 ﻿using System;
 using Poser.Application.Viewport;
+using Poser.Application.Gaze;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -51,8 +52,7 @@ public class GizmoOverlayWindow : Window
     private readonly IBonePosingService _bonePosingService;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IPoseFacade _cleanPose;
-    private readonly IGazeService _gazeService;
-    private readonly Game.Journal.GazeSession _gazeValues;
+    private readonly IGazeControl _gazeValues;
     // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
     // Resolves stable selections to live actors.
@@ -127,6 +127,7 @@ public class GizmoOverlayWindow : Window
         public required WorldHandle Handle { get; init; }
         /// <summary>Selected gaze part.</summary>
         public required GazePart Part { get; init; }
+        public required ActorId Actor { get; init; }
         // Projection and plane are fixed for the drag.
         public required WorldGizmoProjection Projection { get; init; }
         public required Vector3 AxisWorld { get; init; }
@@ -184,8 +185,7 @@ public class GizmoOverlayWindow : Window
         IBonePosingService bonePosingService,
         ITransformFacade cleanTransforms,
         IPoseFacade cleanPose,
-        IGazeService gazeService,
-        Game.Journal.GazeSession gazeValues,
+        IGazeControl gazeValues,
         IEntityBindings bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
@@ -215,7 +215,6 @@ public class GizmoOverlayWindow : Window
         _bonePosingService = bonePosingService;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
-        _gazeService = gazeService;
         _gazeValues = gazeValues;
         _bindings = bindings;
         _virtualCameras = virtualCameras;
@@ -277,6 +276,7 @@ public class GizmoOverlayWindow : Window
         if (_gazeGesture != null)
         {
             _gazeGesture = null;
+            _gazeValues.Seal();
             _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
 
@@ -306,7 +306,7 @@ public class GizmoOverlayWindow : Window
     }
 
     /// <summary>Returns the active gaze point and its current state.</summary>
-    private (IActor Actor, GazePart Part, Vector3 Position, GazeState State)? GazeContext()
+    private (ActorId Actor, GazePart Part, Vector3 Position, GazeSettings State)? GazeContext()
     {
         if (_selection.Primary is not
             {
@@ -315,17 +315,16 @@ public class GizmoOverlayWindow : Window
                 Gaze: var selectedPart,
             })
             return null;
-        if (_bindings.Resolve(actorId) is not { Success: true, Value: { } actor })
+        if (_gazeValues.Read(actorId) is not { Settings: var state })
             return null;
-        var state = _gazeService.GetGazeState(actor);
         if (state.Mode != GazeTargetMode.Position)
             return null;
         var part = selectedPart ?? GazePart.Anchor;
-        return (actor, part, PartPosition(state, part), state);
+        return (actorId, part, PartPosition(state, part), state);
     }
 
     /// <summary>Returns the world position for one gaze part.</summary>
-    private static Vector3 PartPosition(GazeState state, GazePart part) => part switch
+    private static Vector3 PartPosition(GazeSettings state, GazePart part) => part switch
     {
         GazePart.Eyes => state.EyesPosition,
         GazePart.Head => state.HeadPosition,
@@ -343,9 +342,15 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>Draws and updates the active gaze-point Move gizmo.</summary>
     private void DrawGazeGizmo(
-        IActor actor, GazePart part, Vector3 anchor, GazeState state,
+        ActorId actor, GazePart part, Vector3 anchor, GazeSettings state,
         bool occluded)
     {
+        if (_gazeGesture is { } held && (held.Actor != actor || held.Part != part))
+        {
+            _gazeGesture = null;
+            _gazeValues.Seal();
+            _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        }
         float uiScale = ImGuiHelpers.GlobalScale;
         var projection = WorldGizmoProjection.Create(
             _cameraService, ImGui.GetIO().DisplaySize, anchor,
@@ -396,12 +401,12 @@ public class GizmoOverlayWindow : Window
         if (_gazeGesture == null && hover is { } grab && projection != null &&
             layout != null &&
             ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
-            BeginGazeGesture(grab, layout, projection, part, anchor, mouse);
+            BeginGazeGesture(grab, layout, projection, actor, part, anchor, mouse);
 
         if (_gazeGesture is not { } active)
             return;
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            UpdateGazeGesture(active, actor, io, mouse);
+            UpdateGazeGesture(active, io, mouse);
         else
         {
             // Release ends the drag, and the drag is one step.
@@ -421,7 +426,7 @@ public class GizmoOverlayWindow : Window
     /// <summary>Draws the selected gaze glyph and diverged part markers.</summary>
     private static void DrawGazeIdentity(
         WorldGizmoProjection projection,
-        GazeState state,
+        GazeSettings state,
         GazePart part,
         float uiScale,
         bool chromeHidden)
@@ -490,6 +495,7 @@ public class GizmoOverlayWindow : Window
         WorldHandleHit grab,
         WorldGizmo.Layout layout,
         WorldGizmoProjection projection,
+        ActorId actor,
         GazePart part,
         Vector3 anchor,
         Vector2 mouse)
@@ -525,6 +531,7 @@ public class GizmoOverlayWindow : Window
         _gazeGesture = new GazeGesture
         {
             Handle = grab.Handle,
+            Actor = actor,
             Part = part,
             Projection = projection,
             AxisWorld = axisWorld,
@@ -541,7 +548,6 @@ public class GizmoOverlayWindow : Window
     /// <summary>Updates a gaze drag from its frozen plane.</summary>
     private void UpdateGazeGesture(
         GazeGesture gesture,
-        IActor actor,
         ImGuiIOPtr io,
         Vector2 mouse)
     {
@@ -558,9 +564,9 @@ public class GizmoOverlayWindow : Window
         gesture.Accum += step;
         var target = gesture.Start + gesture.Accum;
         if (gesture.Part == GazePart.Anchor)
-            _gazeValues.SetGazePosition(actor, target);
+            _gazeValues.SetGazePosition(gesture.Actor, target);
         else
-            _gazeValues.SetPartPosition(actor, ToTargetType(gesture.Part), target);
+            _gazeValues.SetPartPosition(gesture.Actor, ToTargetType(gesture.Part), target);
     }
 
     /// <summary>Returns whether another interface owns the pointer —

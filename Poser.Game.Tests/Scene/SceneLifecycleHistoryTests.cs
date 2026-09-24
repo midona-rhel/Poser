@@ -1396,12 +1396,15 @@ public sealed class SceneLifecycleHistoryTests
         var world = new World();
         var source = world.Actors.Spawn("Source")!;
         var plain = world.Lifecycle.SpawnActor("Copy", () => world.Actors.Spawn("Copy"), source)!;
-        world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Posed"), source);
+        var posed = world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Posed"), source);
+        Assert.Same(posed, Assert.Single(world.Actors.DetachedGaze));
         Assert.Equal((source, plain), Assert.Single(world.Actors.BodyProfileCopies));
     }
 
     private sealed class FakeActors : IActorLifecycle
     {
+        public List<object> DetachedGaze { get; } = new();
+        public void DetachGaze(object actor) => DetachedGaze.Add(actor);
         public List<(IActor Source, IActor Target)> BodyProfileCopies { get; } = new();
         public void CopyBodyProfile(IActor source, IActor target) => BodyProfileCopies.Add((source, target));
         public string GetName(object actor) => ((IActor)actor).Name;
