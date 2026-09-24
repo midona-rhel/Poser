@@ -21,6 +21,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly EntitySessions _sessions;
+    private readonly IActorManager _actorManager;
     private readonly IActorSpawnService _actors;
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ILightingService _lighting;
@@ -36,6 +37,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         SceneSession scene,
         IEntityBindings bindings,
         EntitySessions sessions,
+        IActorManager actorManager,
         IActorSpawnService actors,
         ISceneLifecycleHistory lifecycle,
         ILightingService lighting,
@@ -49,6 +51,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         _scene = scene;
         _bindings = bindings;
         _sessions = sessions;
+        _actorManager = actorManager;
         _actors = actors;
         _lifecycle = lifecycle;
         _lighting = lighting;
@@ -61,17 +64,53 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         _selection = scene.Selection;
     }
 
+    public bool? ReadVisibility(SelectionId id)
+    {
+        var current = _scene.ReadCurrent(id);
+        if (current is not { CanChangeVisibility: true } || current.Id != id)
+            return null;
+
+        switch (id)
+        {
+            case { Actor: { } actorId }:
+                if (!CurrentActor(actorId, out var actor)
+                    || !ActorOwnershipMatches(actorId, actor))
+                    return null;
+                return _actors.IsVisible(actor);
+            case { Light: { } lightId }:
+                if (!CurrentLight(lightId, out var light)
+                    || (current.Removal == SelectionRemoval.Release)
+                        != (light.Ownership != LightOwnership.Spawned))
+                    return null;
+                return light.IsOn;
+            case { Prop: { } propId }:
+                return CurrentProp(propId, out var prop) ? prop.Visible : null;
+            case { Overlay: { } overlayId }:
+                return CurrentOverlay(overlayId, out var overlay)
+                    ? overlay.Visible : null;
+            case { WorldObject: { } worldId }:
+                return CurrentWorldObject(worldId, out var world)
+                    ? world.Visible : null;
+            default:
+                return null;
+        }
+    }
+
     public bool SetVisibility(SelectionId id, bool visible)
     {
-        if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true })
+        if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current
+            || current.Id != id)
             return false;
         switch (id)
         {
             case { Actor: { } actorId }:
-                if (!CurrentActor(actorId, out var actor)) return false;
+                if (!CurrentActor(actorId, out var actor)
+                    || !ActorOwnershipMatches(actorId, actor)) return false;
                 return _sessions.Actors.SetVisibility(actor, visible).Success;
             case { Light: { } lightId }:
-                if (!CurrentLight(lightId, out var light)) return false;
+                if (!CurrentLight(lightId, out var light)
+                    || (current.Removal == SelectionRemoval.Release)
+                        != (light.Ownership != LightOwnership.Spawned)) return false;
                 _sessions.Lights.SetIsOn(light, visible);
                 return true;
             case { Prop: { } propId }:
@@ -158,8 +197,13 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         actor = result.Value!;
         return result.Success && actor != null
-            && _bindings.GetActorId(actor) == id;
+            && _bindings.GetActorId(actor) == id
+            && _actorManager.Actors.Contains(actor);
     }
+
+    private bool ActorOwnershipMatches(ActorId id, IActor actor) =>
+        _scene.Snapshot.FindActor(id) is { } descriptor
+        && descriptor.IsAdopted == _actorManager.IsAdopted(actor);
 
     private bool CurrentLight(LightId id, out ILight light)
     {

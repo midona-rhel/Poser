@@ -87,7 +87,7 @@ public partial class MainWindow
     }
 
     private bool? IsEntityVisible(SelectionId id)
-        => _scene.ReadCurrent(id)?.IsVisible;
+        => _entityCommands.ReadVisibility(id);
 
     private int SetEntityVisible(SelectionId id, bool visible) =>
         _entityCommands.SetVisibility([id], visible);

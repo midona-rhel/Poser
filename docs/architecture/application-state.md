@@ -17,10 +17,12 @@ and picker lifetime stay in the UI.
 Shared entity verbs read capabilities for the exact current `SelectionId`;
 they never promote a stale generation. The application read exposes only
 pointer-free visibility and removal capability, while the host resolves the id
-again before acting. Sidebar and context-menu visibility use the same value
-journal; removal keeps each entity's destroy or release owner and lifecycle
-history. Adopted actors, borrowed lights and world objects, default cameras,
-and locked-group members retain their separate ownership rules.
+again for live visibility and before acting. Sidebar toggles and group baseline
+capture use that live value so repeated input cannot wait on snapshot refresh.
+Sidebar and context-menu visibility use the same value journal; removal keeps
+each entity's destroy or release owner and lifecycle history. Adopted actors,
+borrowed lights and world objects, default cameras, and locked-group members
+retain their separate ownership rules.
 
 Native discovery runs on the framework thread. Notifications during refresh
 coalesce into one immediate follow-up; notifications during that pass remain

@@ -95,6 +95,27 @@ public sealed class SelectionEntityCommandsTests
         Assert.Single(port.Calls);
     }
 
+    [Fact]
+    public void Rapid_visibility_toggles_read_live_state_when_snapshot_is_stale()
+    {
+        var id = SelectionId.ForProp(PropId.New());
+        var reads = new StableReads(new CurrentSelectionEntity(
+            id, CanChangeVisibility: true, IsVisible: true,
+            SelectionRemoval.Destroy));
+        var port = new RecordingPort { Visibility = false };
+        var commands = new SelectionEntityCommands(reads, port);
+
+        Assert.False(commands.ReadVisibility(id));
+        Assert.Equal(1, commands.SetVisibility(
+            [id], !commands.ReadVisibility(id)!.Value));
+        Assert.True(commands.ReadVisibility(id));
+        Assert.Equal(1, commands.SetVisibility(
+            [id], !commands.ReadVisibility(id)!.Value));
+        Assert.False(commands.ReadVisibility(id));
+        Assert.Equal((id, true), port.Calls[0]);
+        Assert.Equal((id, false), port.Calls[1]);
+    }
+
     private sealed class StableReads(CurrentSelectionEntity value)
         : ICurrentSelectionEntityReads
     {
@@ -120,10 +141,14 @@ public sealed class SelectionEntityCommandsTests
     {
         public List<(SelectionId Id, object Command)> Calls { get; } = [];
         public bool RemovalResult { get; init; } = true;
+        public bool? Visibility { get; set; } = true;
+
+        public bool? ReadVisibility(SelectionId id) => Visibility;
 
         public bool SetVisibility(SelectionId id, bool visible)
         {
             Calls.Add((id, visible));
+            Visibility = visible;
             return true;
         }
 

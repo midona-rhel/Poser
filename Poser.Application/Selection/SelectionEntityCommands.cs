@@ -29,6 +29,7 @@ public interface ICurrentSelectionEntityReads
 /// the live host object again.</summary>
 public interface ISelectionEntityCommandPort
 {
+    bool? ReadVisibility(SelectionId id);
     bool SetVisibility(SelectionId id, bool visible);
     Task<bool> Remove(SelectionId id, SelectionRemoval removal);
 }
@@ -40,6 +41,14 @@ public sealed class SelectionEntityCommands(
     ICurrentSelectionEntityReads reads,
     ISelectionEntityCommandPort port)
 {
+    public bool? ReadVisibility(SelectionId id)
+    {
+        var current = reads.ReadCurrent(id);
+        if (current is not { CanChangeVisibility: true } || current.Id != id)
+            return null;
+        return port.ReadVisibility(id);
+    }
+
     public int SetVisibility(IEnumerable<SelectionId> ids, bool visible)
     {
         int applied = 0;
