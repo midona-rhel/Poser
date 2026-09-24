@@ -251,7 +251,10 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
 /// slots go with it (<see cref="TransformHistory.Cleared"/>), so a slot never
 /// outlives the session that made it.</para>
 /// </summary>
-public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
+public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
+    IEntityHistoryResolver<ILight>, IEntityHistoryResolver<IWorldObject>,
+    IEntityHistoryResolver<IVirtualCamera>, IEntityHistoryResolver<IPropHandle>,
+    IEntityHistoryResolver<IOverlayNode>
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
@@ -304,7 +307,12 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
             light => bindings.GetLightId(light) is { } id
                 ? TransformTargetId.ForLight(id) : null,
             worldObject => bindings.GetWorldObjectId((AdoptedWorldObject)worldObject) is { } id
-                ? TransformTargetId.ForWorldObject(id) : null)
+                ? TransformTargetId.ForWorldObject(id) : null,
+            prop => bindings.GetPropId((PropHandle)prop) is { } id
+                ? TransformTargetId.ForProp(id) : null,
+            overlay => overlay is OverlayNodeHandle { Kind: OverlayNodeKind.Collider } node
+                && bindings.GetOverlayId(node) is { } id
+                ? TransformTargetId.ForCollider(id) : null)
     { }
 
     /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
@@ -319,7 +327,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         IOverlayLifecycle overlays,
         IWorldObjectLifecycle worldObjects,
         Func<ILight, TransformTargetId?>? lightTarget = null,
-        Func<object, TransformTargetId?>? worldObjectTarget = null)
+        Func<object, TransformTargetId?>? worldObjectTarget = null,
+        Func<object, TransformTargetId?>? propTarget = null,
+        Func<object, TransformTargetId?>? overlayTarget = null)
     {
         _history = history;
         _lighting = lighting;
@@ -332,7 +342,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _cameraOwner = new(
             camera => new CameraSlot { Live = camera },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveCamera, RestoreCamera);
+            RemoveCamera, RestoreCamera, retainAliases: true);
         _actorOwner = new(
             actor => new ActorSlot { Live = actor },
             slot => slot.Live, (slot, live) => slot.Live = live,
@@ -340,11 +350,11 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
         _propOwner = new(
             prop => new PropSlot { Live = prop },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveProp, RestoreProp);
+            RemoveProp, RestoreProp, retainAliases: true, history: history, transformTarget: propTarget);
         _overlayOwner = new(
             overlay => new OverlaySlot { Live = overlay },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveOverlay, RestoreOverlay);
+            RemoveOverlay, RestoreOverlay, retainAliases: true, history: history, transformTarget: overlayTarget);
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -372,10 +382,16 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 
     // History alone may resolve an old wrapper to its successor. Public IDs
     // and acquisition receipts remain expired after release.
-    internal ILight? CurrentLight(ILight light) => _lightOwner.CurrentLight(light);
+    ILight? IEntityHistoryResolver<ILight>.Resolve(ILight light) => _lightOwner.CurrentLight(light);
 
-    internal IWorldObject? CurrentWorldObject(IWorldObject worldObject) =>
+    IWorldObject? IEntityHistoryResolver<IWorldObject>.Resolve(IWorldObject worldObject) =>
         _worldObjectOwner.CurrentWorldObject(worldObject);
+
+    IVirtualCamera? IEntityHistoryResolver<IVirtualCamera>.Resolve(IVirtualCamera camera) => _cameraOwner.Resolve(camera);
+
+    IPropHandle? IEntityHistoryResolver<IPropHandle>.Resolve(IPropHandle prop) => _propOwner.Resolve(prop) as IPropHandle;
+
+    IOverlayNode? IEntityHistoryResolver<IOverlayNode>.Resolve(IOverlayNode overlay) => _overlayOwner.Resolve(overlay) as IOverlayNode;
 
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
         _lightOwner.RecordSpawnedLight(description, light);

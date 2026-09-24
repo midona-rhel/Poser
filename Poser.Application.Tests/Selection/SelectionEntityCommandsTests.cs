@@ -96,6 +96,25 @@ public sealed class SelectionEntityCommandsTests
     }
 
     [Fact]
+    public async Task Commands_refuse_a_read_that_substitutes_a_successor_identity()
+    {
+        var original = PropId.New();
+        var id = SelectionId.ForProp(original);
+        var reads = new SubstitutingReads(new CurrentSelectionEntity(
+            SelectionId.ForProp(original.NextGeneration()),
+            CanChangeVisibility: true, IsVisible: true,
+            SelectionRemoval.Destroy));
+        var port = new RecordingPort();
+        var commands = new SelectionEntityCommands(reads, port);
+
+        Assert.Null(commands.ReadVisibility(id));
+        Assert.Equal(0, commands.SetVisibility([id], visible: false));
+        Assert.Equal(0, await commands.Remove([id]));
+        Assert.Empty(port.Calls);
+        Assert.True(port.Visibility);
+    }
+
+    [Fact]
     public void Rapid_visibility_toggles_read_live_state_when_snapshot_is_stale()
     {
         var id = SelectionId.ForProp(PropId.New());
@@ -114,6 +133,12 @@ public sealed class SelectionEntityCommandsTests
         Assert.False(commands.ReadVisibility(id));
         Assert.Equal((id, true), port.Calls[0]);
         Assert.Equal((id, false), port.Calls[1]);
+    }
+
+    private sealed class SubstitutingReads(CurrentSelectionEntity value)
+        : ICurrentSelectionEntityReads
+    {
+        public CurrentSelectionEntity? ReadCurrent(SelectionId id) => value;
     }
 
     private sealed class StableReads(CurrentSelectionEntity value)

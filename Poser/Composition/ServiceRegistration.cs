@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
@@ -254,6 +254,11 @@ internal static class ServiceRegistration
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         // The surfaces' ports over the runtime classes registered elsewhere.
         services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
         services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
@@ -406,7 +411,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
-        services.AddSingleton<global::PosingCore.Services.IKeyEvents>(
+        services.AddSingleton<global::Poser.Services.IKeyEvents>(
             sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
         services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
         services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();

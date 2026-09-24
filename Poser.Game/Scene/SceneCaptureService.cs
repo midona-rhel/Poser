@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -201,9 +201,8 @@ public sealed class SceneCaptureService
         }
 
         // The outcome is built inside the refresh's own write step, which runs
-        // on the framework thread once the pass has ended (or once the export
-        // capture's tick bound gives up, in which case the caches are exactly
-        // as fresh as a synchronous capture would have found them).
+        // on the framework thread after every slot refreshed. An interrupted
+        // or timed-out refresh refuses capture instead of saving stale caches.
         SceneCaptureOutcome? outcome = null;
         var begun = _exports.Begin(
             slots,
@@ -213,7 +212,7 @@ public sealed class SceneCaptureService
                 return outcome.Success;
             },
             _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
-                "The scene capture produced no result.")));
+                "The scene pose refresh did not complete; no snapshot was captured.")));
         return begun.Success
             ? null
             : begun.Detail ?? "The scene capture could not be armed.";
@@ -276,7 +275,7 @@ public sealed class SceneCaptureService
     /// <summary>
     /// Where the capture ran. The id is the durable machine fact; the NAME is
     /// persisted beside it, because the listing that groups scenes by place
-    /// runs in PosingCore, which has no game data to resolve an id with. The
+    /// runs in Poser.Core, which has no game data to resolve an id with. The
     /// resolution itself lives in <see cref="IPlaceService"/>, which pose
     /// auto-save stamps from too — a place must mean the same thing in both
     /// documents.

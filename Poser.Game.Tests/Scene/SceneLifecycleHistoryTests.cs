@@ -24,6 +24,161 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
+    [Fact]
+    public void Camera_switch_redo_uses_the_restored_camera()
+    {
+        var world = new World();
+        var values = new CameraSession(new ValueJournal(world.History), world.Cameras, null!, world.Lifecycle);
+        var previous = world.Cameras.AddDefault();
+        world.Cameras.SetLive(previous);
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        values.SetLive(camera);
+        world.Lifecycle.DestroyCamera(camera);
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.Cameras.Live.Where(c => !c.IsDefault));
+        Assert.True(world.Undo());
+        Assert.Same(previous, world.Cameras.LiveCamera);
+        Assert.True(world.Redo());
+        Assert.Same(restored, world.Cameras.LiveCamera);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Prop_and_collider_transform_history_rebinds_after_removal(bool collider)
+    {
+        var world = new World();
+        object entity = collider
+            ? world.Lifecycle.SpawnOverlay(new OverlayNodeState { Kind = OverlayNodeKind.Collider })!
+            : world.Lifecycle.SpawnProp(Apple)!;
+        TransformTargetId Target(object instance) => instance switch
+        {
+            FakeProp prop => TransformTargetId.ForProp(prop.StableId),
+            FakeOverlay overlay => TransformTargetId.ForCollider(overlay.StableId),
+            _ => throw new InvalidOperationException(),
+        };
+        object Current() => collider ? Assert.Single(world.Overlays.Live) : Assert.Single(world.Props.Live);
+        var oldTarget = Target(entity);
+        var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
+        world.History.Append(new TransformPatch("Move entity", [state], [state]));
+        if (collider) world.Lifecycle.DestroyOverlay(entity);
+        else world.Lifecycle.DestroyProp(entity);
+        world.History.Reconcile(_ => false, _ => true);
+        Assert.True(world.Undo());
+        var newTarget = Target(Current());
+        Assert.NotEqual(oldTarget, newTarget);
+        var patch = Assert.IsType<TransformPatch>(world.History.PeekUndo());
+        Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
+        world.History.CommitUndo(patch);
+        Assert.True(world.Undo());
+        world.History.Reconcile(_ => false, _ => true);
+        Assert.True(world.Redo());
+        var thirdTarget = Target(Current());
+        Assert.NotEqual(newTarget, thirdTarget);
+        Assert.Equal(thirdTarget, Assert.Single(Assert.IsType<TransformPatch>(world.History.PeekRedo()).After).Target);
+    }
+
+    [Fact]
+    public void Camera_values_and_lock_survive_repeated_removal_and_creation()
+    {
+        var world = new World();
+        var values = new CameraSession(new ValueJournal(world.History), world.Cameras, null!, world.Lifecycle);
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        Assert.True(values.SetZoom(camera, 7));
+        values.SetLocked(camera, true);
+        world.Lifecycle.DestroyCamera(camera);
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.True(world.Undo());
+            var restored = Assert.Single(world.Cameras.Live);
+            Assert.NotSame(camera, restored);
+            Assert.Equal(7, restored.Zoom);
+            Assert.True(restored.IsLocked);
+            Assert.True(world.Undo());
+            Assert.False(restored.IsLocked);
+            Assert.True(world.Undo());
+            Assert.Equal(0, restored.Zoom);
+            Assert.True(world.Undo());
+            Assert.Empty(world.Cameras.Live);
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            restored = Assert.Single(world.Cameras.Live);
+            Assert.Equal(7, restored.Zoom);
+            Assert.True(restored.IsLocked);
+            Assert.True(world.Redo());
+            Assert.Empty(world.Cameras.Live);
+        }
+    }
+
+    [Fact]
+    public void Prop_values_and_model_survive_repeated_removal_and_creation()
+    {
+        var world = new World();
+        var values = new PropSession(new ValueJournal(world.History), world.Lifecycle);
+        var prop = (IPropHandle)world.Lifecycle.SpawnProp(Apple)!;
+        var originalName = prop.Name;
+        var changed = Apple with { Name = "Dyed" };
+        values.SetName(prop, "Fruit");
+        Assert.True(values.SetModel(prop, changed, out _));
+        world.Lifecycle.DestroyProp(prop);
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.True(world.Undo());
+            var restored = (IPropHandle)Assert.Single(world.Props.Live);
+            Assert.NotSame(prop, restored);
+            Assert.Equal("Fruit", restored.Name);
+            Assert.Equal(changed, restored.Model);
+            Assert.True(world.Undo());
+            Assert.Equal(Apple, restored.Model);
+            Assert.True(world.Undo());
+            Assert.Equal(originalName, restored.Name);
+            Assert.True(world.Undo());
+            Assert.Empty(world.Props.Live);
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            restored = (IPropHandle)Assert.Single(world.Props.Live);
+            Assert.Equal("Fruit", restored.Name);
+            Assert.Equal(changed, restored.Model);
+            Assert.True(world.Redo());
+            Assert.Empty(world.Props.Live);
+        }
+    }
+
+    [Fact]
+    public void Overlay_values_and_compound_size_survive_repeated_removal_and_creation()
+    {
+        var world = new World();
+        var values = new OverlaySession(new ValueJournal(world.History), world.Lifecycle);
+        var overlay = (IOverlayNode)world.Lifecycle.SpawnOverlay(new OverlayNodeState { Text = "Before", Scale = 2, Alpha = .5f })!;
+        values.SetText(overlay, "After");
+        values.ResetSize(overlay);
+        world.Lifecycle.DestroyOverlay(overlay);
+        for (int i = 0; i < 3; i++)
+        {
+            Assert.True(world.Undo());
+            var restored = (IOverlayNode)Assert.Single(world.Overlays.Live);
+            Assert.NotSame(overlay, restored);
+            Assert.Equal("After", restored.Text);
+            Assert.Equal((1f, 1f), (restored.Scale, restored.Alpha));
+            Assert.True(world.Undo());
+            Assert.Equal((2f, .5f), (restored.Scale, restored.Alpha));
+            Assert.True(world.Undo());
+            Assert.Equal("Before", restored.Text);
+            Assert.True(world.Undo());
+            Assert.Empty(world.Overlays.Live);
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            Assert.True(world.Redo());
+            restored = (IOverlayNode)Assert.Single(world.Overlays.Live);
+            Assert.Equal("After", restored.Text);
+            Assert.Equal((1f, 1f), (restored.Scale, restored.Alpha));
+            Assert.True(world.Redo());
+            Assert.Empty(world.Overlays.Live);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -641,7 +796,10 @@ public sealed class SceneLifecycleHistoryTests
                 History, Lighting, Cameras, Actors, Props, Overlays,
                 WorldObjects, Lighting.Target,
                 worldObject => worldObject is FakeWorldObject fake
-                    ? TransformTargetId.ForWorldObject(fake.Id) : null);
+                    ? TransformTargetId.ForWorldObject(fake.Id) : null,
+                prop => prop is FakeProp { IsValid: true } fake ? TransformTargetId.ForProp(fake.StableId) : null,
+                overlay => overlay is FakeOverlay { IsValid: true, Kind: OverlayNodeKind.Collider } fake
+                    ? TransformTargetId.ForCollider(fake.StableId) : null);
         }
 
         public bool Undo()
@@ -785,7 +943,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public bool IsAvailable => true;
         public IReadOnlyList<IVirtualCamera> Cameras => _cameras;
-        public IVirtualCamera? LiveCamera => null;
+        public IVirtualCamera? LiveCamera { get; private set; }
 
         public FreeCameraSpeedNotice? SpeedNotice => null;
         public void Dispose() { }
@@ -814,7 +972,7 @@ public sealed class SceneLifecycleHistoryTests
         }
 
         public void DestroyAllCameras() => _cameras.Clear();
-        public void SetLive(IVirtualCamera camera) { }
+        public void SetLive(IVirtualCamera camera) => LiveCamera = camera;
         public bool SetTargetActor(
             IVirtualCamera camera, IActor actor, ActorId actorId,
             string displayName) => false;
@@ -1071,10 +1229,27 @@ public sealed class SceneLifecycleHistoryTests
             };
     }
 
-    private sealed class FakeProp
+    private sealed class FakeProp : IPropHandle
     {
+        public PropId StableId { get; } = new(Guid.NewGuid(), 1);
         public bool IsValid { get; set; } = true;
         public PropState State { get; set; }
+        public int Id => 0;
+        public nint Address => 0;
+        public string Name { get => State.Name; set => State = State with { Name = value }; }
+        public PropModel Model => State.Model;
+        public bool Visible { get => State.Visible; set => State = State with { Visible = value }; }
+        public Transform Transform { get => State.Transform; set => State = State with { Transform = value }; }
+        public Vector3 Position { get => Transform.Position; set { var t = Transform; t.Position = value; Transform = t; } }
+        public Quaternion Rotation { get => Transform.Rotation; set { var t = Transform; t.Rotation = value; Transform = t; } }
+        public Vector3 Scale { get => Transform.Scale; set { var t = Transform; t.Scale = value; Transform = t; } }
+        public bool Respawn(PropModel model, out string? detail)
+        {
+            State = State with { Model = model };
+            detail = null;
+            return IsValid;
+        }
+        public void Destroy() => IsValid = false;
     }
 
     private sealed class FakeOverlays : IOverlayLifecycle
@@ -1109,10 +1284,31 @@ public sealed class SceneLifecycleHistoryTests
 
     }
 
-    private sealed class FakeOverlay
+    private sealed class FakeOverlay : IOverlayNode
     {
+        public OverlayId StableId { get; } = new(Guid.NewGuid(), 1);
         public bool IsValid { get; set; } = true;
         public OverlayNodeState State { get; set; } = new();
+        public int Id => 0;
+        public OverlayNodeKind Kind => State.Kind;
+        public string Name { get => State.Name; set => State = State with { Name = value }; }
+        public Vector2 Position { get => State.Position; set => State = State with { Position = value }; }
+        public float Scale { get => State.Scale; set => State = State with { Scale = value }; }
+        public float Alpha { get => State.Alpha; set => State = State with { Alpha = value }; }
+        public bool Visible { get => State.Visible; set => State = State with { Visible = value }; }
+        public bool Draggable { get => State.Draggable; set => State = State with { Draggable = value }; }
+        public string Text { get => State.Text; set => State = State with { Text = value }; }
+        public string Speaker { get => State.Speaker; set => State = State with { Speaker = value }; }
+        public uint FontSize { get => State.FontSize; set => State = State with { FontSize = value }; }
+        public TalkBackground TalkBackground { get => State.TalkBackground; set => State = State with { TalkBackground = value }; }
+        public TalkCursor TalkCursor { get => State.TalkCursor; set => State = State with { TalkCursor = value }; }
+        public BalloonChannel BalloonChannel { get => State.BalloonChannel; set => State = State with { BalloonChannel = value }; }
+        public BalloonGradient BalloonGradient { get => State.BalloonGradient; set => State = State with { BalloonGradient = value }; }
+        public bool ArrowVisible { get => State.ArrowVisible; set => State = State with { ArrowVisible = value }; }
+        public float ArrowX { get => State.ArrowX; set => State = State with { ArrowX = value }; }
+        public StatusKind StatusKind { get => State.StatusKind; set => State = State with { StatusKind = value }; }
+        public uint StatusIconId { get => State.StatusIconId; set => State = State with { StatusIconId = value }; }
+        public void Destroy() => IsValid = false;
     }
 
     [Fact]

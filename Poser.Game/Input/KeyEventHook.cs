@@ -4,16 +4,14 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using PosingCore.Services;
+using Poser.Services;
 
 namespace Poser.Game.Input;
 
 /// <summary>
-/// Ktisis's input hook, whole: the game's window-message handler for key
-/// down and key up, detoured so a handler can take the message before the
-/// game's keybinds read it. Returning zero from the handler is what keeps
-/// the key from the game; clearing a key state later in the frame does
-/// not, because the keybind dispatch has already run.
+/// Detours the game's keyboard-message processor so a handler can take a
+/// message before the game's keybinds read it. A handled message skips the
+/// original processor; clearing a key state later in the frame is too late.
 /// </summary>
 public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
 {
@@ -22,7 +20,9 @@ public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
     private const uint WmKeyDown = 0x100;
     private const uint WmKeyUp = 0x101;
 
-    private delegate nint InputNotificationDelegate(nint hWnd, uint message, nint wParam, uint lParam);
+    // KeyboardDevice.ProcessKeyboardInputMessage is void with pointer-sized
+    // WPARAM/LPARAM, not the return-value ABI of a Windows window procedure.
+    private delegate void InputNotificationDelegate(nint hWnd, uint message, nint wParam, nint lParam);
 
     private readonly Hook<InputNotificationDelegate>? _hook;
     private readonly IPluginLog _log;
@@ -51,7 +51,7 @@ public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
         _hook?.Dispose();
     }
 
-    private nint InputNotificationDetour(nint hWnd, uint message, nint wParam, uint lParam)
+    private void InputNotificationDetour(nint hWnd, uint message, nint wParam, nint lParam)
     {
         try
         {
@@ -62,19 +62,19 @@ public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
                 var key = (VirtualKey)(int)wParam;
                 var kind = message == WmKeyUp
                     ? KeyEventKind.Released
-                    : (lParam >> 30) != 0 ? KeyEventKind.Held : KeyEventKind.Down;
+                    : (lParam & ((nint)1 << 30)) != 0 ? KeyEventKind.Held : KeyEventKind.Down;
                 bool handled = false;
                 foreach (KeyEventHandler handler in handlers.GetInvocationList())
                     handled |= handler(key, kind);
                 if (handled)
-                    return 0;
+                    return;
             }
         }
         catch (Exception ex)
         {
             _log.Error($"KeyEventHook: handler failed: {ex}");
         }
-        return _hook!.Original(hWnd, message, wParam, lParam);
+        _hook!.Original(hWnd, message, wParam, lParam);
     }
 
     /// <summary>The game's own text input (chat, a name field) owns every

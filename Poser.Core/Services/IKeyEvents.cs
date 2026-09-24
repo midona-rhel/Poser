@@ -1,6 +1,6 @@
 using Dalamud.Game.ClientState.Keys;
 
-namespace PosingCore.Services;
+namespace Poser.Services;
 
 public enum KeyEventKind
 {

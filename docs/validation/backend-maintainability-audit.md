@@ -1,7 +1,7 @@
 # Backend Maintainability Audit
 
 Branch: `feature/imperative-rebuild` (452 commits ahead of main). Date: 2026-08-03.
-Scope: the posing/scene backend — PosingCore, Poser.Domain, Poser.Application, Poser.Game (incl. LegacyRuntime), host composition. UI rendering excluded.
+Scope: the posing/scene backend — Poser.Core, Poser.Domain, Poser.Application, Poser.Game (incl. LegacyRuntime), host composition. UI rendering excluded.
 Method: six parallel evidence-gathering passes (module boundaries, discoverability, contracts/lifetimes/threading, testability, sig/offset risk, structural comparison vs Brio and Ktisis 0.4). Every claim below carries a file:line citation; scores are honest, not graded on a curve.
 
 > **Snapshot warning (2026-08-12):** This is a dated, non-normative and
@@ -19,7 +19,7 @@ Framing question: *how would we write this if we weren't the sole developer — 
 | Module boundaries | 6/10 | Acyclic project graph, uniform port pattern — but the two biggest classes are grab-bags and the legacy quarantine is folder-deep only |
 | Discoverability | 4/10 | Behavior docs are accurate; *where code lives and which path is live* is tribal knowledge; the migration itself is undocumented |
 | Contracts / lifetimes / threading | 6/10 | New ports enforce threading in the type; legacy layer runs on vigilance and a shared-thread coincidence |
-| Testability | **4/10** | `Poser.slnx` contains `PosingCore.Tests`; the live harness has eight scenarios, but clean-layer and native lifecycle coverage remains sparse |
+| Testability | **4/10** | `Poser.slnx` contains `Poser.Core.Tests`; the live harness has eight scenarios, but clean-layer and native lifecycle coverage remains sparse |
 | Sig/offset risk | 6.5/10 | Small, mostly well-degraded surface — with one deliberate whole-plugin landmine (GazeService) |
 | vs Brio / Ktisis | — | Ktisis 0.4 is structurally the closer cousin (confirmed); Poser wins on failure model, identity, history, portability; loses on session lifetime and feature legibility |
 
@@ -31,7 +31,7 @@ The rebuild's *direction* is right. The gap is enforcement: the rules that make 
 
 ### What holds
 
-- **The project graph is genuinely acyclic and compile-enforced.** `Poser.Domain` references nothing; `Poser.Application` references Domain only (verified at the `using` level too — every import is System/Domain/Application); `Poser.Game` references Domain + Application + PosingCore; the host references all. No Domain→Game, no Application→LegacyRuntime, no cycles. Brio and Ktisis are single-assembly — their layering is directory convention; ours physically cannot see Dalamud from Domain.
+- **The project graph is genuinely acyclic and compile-enforced.** `Poser.Domain` references nothing; `Poser.Application` references Domain only (verified at the `using` level too — every import is System/Domain/Application); `Poser.Game` references Domain + Application + Poser.Core; the host references all. No Domain→Game, no Application→LegacyRuntime, no cycles. Brio and Ktisis are single-assembly — their layering is directory convention; ours physically cannot see Dalamud from Domain.
 - **The port pattern is uniform, not ad hoc.** Every Application port interface has exactly one Game implementation wired in `Poser/Composition/ServiceRegistration.cs` (`ITransformRuntimePort` :86, `IIkConfigurationPort` :95, `IAnimationRuntimePort` :99, `IPresentationRuntimePort` :104, `IMcdfFileBoundary` :108, `IIntegrationRuntimePort` :109). Ports uniformly translate stable ids via `StableBindingRegistry` and wrap legacy services.
 - No partial-class sprawl anywhere (zero `partial class` in backend projects).
 - Exemplary single-job classes exist and prove the target shape works: `CleanSceneLifecycle` (277 lines, documented contract), `StableBindingRegistry` (287), `EditorState` (23), the four-file `Poser.Application/Transforms` split.
@@ -43,9 +43,9 @@ The rebuild's *direction* is right. The gap is enforcement: the rules that make 
 - **`Poser.Game/Validation/LiveTestService.cs` — 1616 lines** of test harness compiled into the production Game assembly, importing both legacy and clean worlds. Deliberate (live-smoke gate), but it is the largest class in Poser.Game and it is not product code.
 - **`LegacyRuntime/BonePosingService.cs` — 1107 unsafe lines** holding transform application, the IK configuration store, pose-stack capture, region resets, mirroring, animated-baseline cache, and linked-bone toggling. "Parked" is cosmetic: it is the live registered write engine (ServiceRegistration.cs:79).
 - **Native knowledge leaks above Poser.Game** (the de-facto interop home):
-  - `PosingCore/Entities/Skeleton.cs` — the *entity* imports FFXIVClientStructs, exposes `GameSkeleton*` (:117, :132), walks `AccessBoneModelSpace` (:269), and hardcodes raw offsets `0x2A0`/`0x2A4` (:23).
-  - `PosingCore/Entities/ActorBase.cs` — unsafe `GameObject*` reads (:108, :123).
-  - `PosingCore/Game/ExpressionService.cs` — unsafe `Character*` reads (:139); also the only legacy runtime service *not* moved to LegacyRuntime.
+  - `Poser.Core/Entities/Skeleton.cs` — the *entity* imports FFXIVClientStructs, exposes `GameSkeleton*` (:117, :132), walks `AccessBoneModelSpace` (:269), and hardcodes raw offsets `0x2A0`/`0x2A4` (:23).
+  - `Poser.Core/Entities/ActorBase.cs` — unsafe `GameObject*` reads (:108, :123).
+  - `Poser.Core/Game/ExpressionService.cs` — unsafe `Character*` reads (:139); also the only legacy runtime service *not* moved to LegacyRuntime.
   - `Poser/UI/Panes/GraphicalBonePane.cs` — **host UI** importing FFXIVClientStructs (:9) with `unsafe GetHeadSectionForActor` dereferencing the actor address (:267). The clearest wrong-layer leak in the repo.
 - **Clean classes bypass their own ports**: `CleanSceneLifecycle` injects concrete `AnimationRuntimePort` (:32, :57) for `SyncEnforcementIndex`; `TransformRuntimePort` takes concrete `PosingService` + `BonePosingService` (:30) for internals beyond the interfaces; ServiceRegistration registers concrete+interface for the same singleton (:99–:101), institutionalizing it.
 - **`CleanPoseFacade` is a 13-dependency bridge** (:19–:32) mixing five legacy interfaces with six clean services. Honest as a transitional adapter — but see §7: it should die with the migration, not be "fixed".
@@ -64,16 +64,16 @@ Findable by name alone: **spawn actor, gaze, undo, MCDF** (MCDF is the model tra
 
 ### Namespace landmines (the worst category)
 
-- `PosingCore.csproj:9` sets `RootNamespace=Poser` — `using Poser.Services;` points you at a project named PosingCore.
-- `namespace Poser.Game` spans **two projects** (PosingCore/Game and Poser.Game), and `LegacyRuntime/*.cs` declares plain `Poser.Game` — the *only* legacy marker is the folder path, invisible in code, imports, and stack traces. At a call site, legacy `SkeletonService` and clean `CleanSceneLifecycle` are indistinguishable.
+- `Poser.Core.csproj:9` sets `RootNamespace=Poser` — `using Poser.Services;` points you at a project named Poser.Core.
+- `namespace Poser.Game` spans **two projects** (Poser.Core/Game and Poser.Game), and `LegacyRuntime/*.cs` declares plain `Poser.Game` — the *only* legacy marker is the folder path, invisible in code, imports, and stack traces. At a call site, legacy `SkeletonService` and clean `CleanSceneLifecycle` are indistinguishable.
 - `namespace Poser.UI` also spans two projects (Crystarium library vs product UI).
-- Six empty decoy directories sit exactly where a contributor would search: `PosingCore/{History,IPC,Library,Validation}`, `Poser.Game/{History,Selection}`.
+- Six empty decoy directories sit exactly where a contributor would search: `Poser.Core/{History,IPC,Library,Validation}`, `Poser.Game/{History,Selection}`.
 
 ### Docs
 
 The four architecture docs are dense, current, and name real classes — rare and worth saying. But:
 
-1. **The backend migration is undocumented.** Grep for "LegacyRuntime" in `docs/` → zero hits. Nothing records which features run on legacy vs clean paths (answer, recoverable only from code: *all native writes terminate in LegacyRuntime; the clean layer is orchestration on top*), what PosingCore is today, or what qualifies a service to leave LegacyRuntime. `ServiceRegistration.cs` is the de-facto migration document.
+1. **The backend migration is undocumented.** Grep for "LegacyRuntime" in `docs/` → zero hits. Nothing records which features run on legacy vs clean paths (answer, recoverable only from code: *all native writes terminate in LegacyRuntime; the clean layer is orchestration on top*), what Poser.Core is today, or what qualifies a service to leave LegacyRuntime. `ServiceRegistration.cs` is the de-facto migration document.
 2. **The old testing claim was false.** The current canonical testing doc records
    manual in-game visual acceptance for the real Poser UI and keeps it distinct
    from the live native gate; Release is the non-deployment validation
@@ -93,7 +93,7 @@ The four architecture docs are dense, current, and name real classes — rare an
 - **Ports have better rationale** (stable ids, no pointer leakage, threading contract in the doc — `IAnimationRuntimePort.cs:14–27`) but fatter surfaces: `IAnimationRuntimePort` ≈28 members, `IIntegrationRuntimePort` ≈30 (three vendors behind one interface). `ITransformRuntimePort` (3) and `IIkConfigurationPort` (5) show what right-sized looks like.
 - The implicit policy — *interfaces only at the native boundary; Application sessions are concrete* — is consistent and defensible. It is stated nowhere.
 
-### EventBus (`PosingCore/Core/EventBus.cs`)
+### EventBus (`Poser.Core/Core/EventBus.cs`)
 
 Handler-list copy under lock, synchronous delivery on the publisher's thread, per-handler catch. Findings:
 
@@ -116,7 +116,7 @@ All ~79 registrations are singletons; container-owned disposal in reverse-creati
 
 The original zero-coverage premise is superseded by the current tree:
 
-- `PosingCore.Tests/PosingCore.Tests.csproj` is in `Poser.slnx` and currently
+- `Poser.Core.Tests/Poser.Core.Tests.csproj` is in `Poser.slnx` and currently
   has 14 C# sources covering pose math, import/clipboard, expression, rest-pose,
   reference-pose, and AutoSave behavior.
 - `/poser test` (with the retained `/poser selftest` alias) routes to
@@ -196,11 +196,11 @@ Ordered. Each item is one focused session, sized for the working system — no r
 | # | Item | Risk | Payoff |
 |---|---|---|---|
 | R1 | **Put tests back in git.** Create `Poser.Domain.Tests` + `Poser.Application.Tests` (xunit, in `Poser.slnx`, committed first thing). Seed with the highest-value pure targets: `TransformHistory` incl. `Reconcile` staleness, `SelectionSession`, `PoseLayers`/`PortablePose` invariants, `TransformGestureService` begin/update/commit/cancel against a fake `ITransformRuntimePort`. | pure-add | Ends the zero-coverage state; first-ever tests for the new layers; a fake port proves the seams are real |
-| R2 | **Re-cover PosingCore's pure core.** New `PosingCore.Tests` project: PoseMath, BonePoseInfo delta/stack/propagation, LinkedBones, all file converters (Anamnesis/CMTool/legacy names/expression import), EventBus. The old 216-test list (recoverable from the stale Jul 23 binary via `-list tests`) is the checklist. | pure-add | Restores the regression net over the file formats and math the whole plugin stands on |
+| R2 | **Re-cover Poser.Core's pure core.** New `Poser.Core.Tests` project: PoseMath, BonePoseInfo delta/stack/propagation, LinkedBones, all file converters (Anamnesis/CMTool/legacy names/expression import), EventBus. The old 216-test list (recoverable from the stale Jul 23 binary via `-list tests`) is the checklist. | pure-add | Restores the regression net over the file formats and math the whole plugin stands on |
 | R3 | **Defuse GazeService.** Wrap the two `ScanText`s + hook enable in the same try/catch + capability-flag pattern as `AnimationRuntimePort`; gaze operations refuse explicitly when dead. | behavior-touching (failure path only) | Removes the one whole-plugin-death landmine; policy becomes consistent: zero ctor-throw sites |
 | R4 | **Surface silent capability loss.** Expose per-capability health (bone-posing hooks, IK chains, gaze, stance/emote/speed natives — the flags already exist internally) via one status surface: a `/poser status`-style readout **and** a visible indicator in the UI (no command-gated-only features). | behavior-touching (additive) | "Loads fine, bones don't move, no message" becomes diagnosable in seconds on patch day |
-| R5 | **Namespace honesty.** Move `LegacyRuntime/*` to `namespace Poser.Game.LegacyRuntime`; move `ExpressionService` from PosingCore into LegacyRuntime; delete the six empty decoy directories. (Leave `RootNamespace=Poser` — churn outweighs payoff mid-migration; document it in R6 instead.) | pure-move | Legacy becomes visible at call sites, in imports, and in stack traces; the quarantine becomes compiler-real |
-| R6 | **Write `docs/architecture/backend-migration-state.md`** — the missing story: what PosingCore is today, what LegacyRuntime is, which features run on which path (all native writes → legacy engines; clean layer orchestrates), the naming rules (three meanings of "Service", the "Clean" prefix, interface policy), LegacyRuntime exit criteria per service, and the namespace quirks. Fix `testing.md`'s false "no harness exists" claim and the PBI-016 status line; delete the empty `docs/brio` + `docs/ipc` dirs or mark them superseded. | docs-only | The single highest-leverage onboarding artifact; kills the two normative-doc contradictions |
+| R5 | **Namespace honesty.** Move `LegacyRuntime/*` to `namespace Poser.Game.LegacyRuntime`; move `ExpressionService` from Poser.Core into LegacyRuntime; delete the six empty decoy directories. (Leave `RootNamespace=Poser` — churn outweighs payoff mid-migration; document it in R6 instead.) | pure-move | Legacy becomes visible at call sites, in imports, and in stack traces; the quarantine becomes compiler-real |
+| R6 | **Write `docs/architecture/backend-migration-state.md`** — the missing story: what Poser.Core is today, what LegacyRuntime is, which features run on which path (all native writes → legacy engines; clean layer orchestrates), the naming rules (three meanings of "Service", the "Clean" prefix, interface policy), LegacyRuntime exit criteria per service, and the namespace quirks. Fix `testing.md`'s false "no harness exists" claim and the PBI-016 status line; delete the empty `docs/brio` + `docs/ipc` dirs or mark them superseded. | docs-only | The single highest-leverage onboarding artifact; kills the two normative-doc contradictions |
 | R7 | **`ISessionScoped` enrollment** (the minimal Ktisis steal): one interface (`OnSessionEnd`/`Reconcile`); `CleanSceneLifecycle` takes `IEnumerable<ISessionScoped>` instead of six hand-listed constructor deps; session services register as both themselves and `ISessionScoped`. | behavior-neutral refactor | Forgetting to enroll a new stateful service becomes impossible instead of a latent GPose-exit state-leak |
 | R8 | **Feature-manifest registration** (the minimal Brio steal): split `AddPoserCore`/`AddPoserFeatures` into per-feature methods (`AddTransformFeature`, `AddAnimationFeature`, `AddIntegrationFeature`, …), each holding exactly that feature's port+session+facade+pane lines. Same registrations, zero behavior change. | pure-move | "What features exist and which files make one" becomes one screen; the de-facto migration doc becomes a real manifest |
 | R9 | **Split `ActorIntegrationSession`** (two sessions if needed): first route all direct `System.IO` through `IMcdfFileBoundary` (closing the port leak); then extract the MCDF import/export state machine into its own class, leaving the session as vendor orchestration + reconcile. | behavior-touching | The worst class in the disciplined layer becomes three testable pieces; R1's fakes extend to MCDF |

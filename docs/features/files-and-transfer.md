@@ -59,6 +59,9 @@ and groups, attached companions, and autosaves. Saving never clears live IK,
 rewrites authored stacks, or adds a bake to history. New files do not carry
 solver configurations that would solve the saved pose again on load.
 
+Armed pose and scene captures require every requested skeleton cache to refresh.
+An interrupted or timed-out refresh refuses the capture without writing a file.
+
 Poser validates a pose or scene before writing it. It writes a temporary file
 beside the destination, checks it again, then replaces the old file. The old
 file stays backed up until the new bytes are confirmed. If it is unclear which

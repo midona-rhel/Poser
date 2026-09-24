@@ -11,11 +11,10 @@ public sealed class WorldObjectSession
     private readonly ValueJournal _journal;
     private readonly EntityValueJournal<IWorldObject> _values;
 
-    public WorldObjectSession(ValueJournal journal, Scene.SceneLifecycleHistory? lifecycle = null)
+    public WorldObjectSession(ValueJournal journal, IEntityHistoryResolver<IWorldObject>? historyResolver = null)
     {
         _journal = journal;
-        _values = new(journal, o => o.IsValid,
-            lifecycle is null ? null : lifecycle.CurrentWorldObject);
+        _values = new(journal, o => o.IsValid, historyResolver);
     }
 
     /// <summary>Closes the open step; a new drag starts a new one.</summary>

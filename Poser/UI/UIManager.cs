@@ -21,7 +21,7 @@ public sealed class UIManager : IUIManager
     private readonly IEventBus _eventBus;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IKeyState _keyState;
-    private readonly global::PosingCore.Services.IKeyEvents _keyEvents;
+    private readonly global::Poser.Services.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
     private readonly IEditorState _editorState;
     private readonly ConfigurationService _configService;
@@ -46,7 +46,7 @@ public sealed class UIManager : IUIManager
         IEventBus eventBus,
         ITransformFacade cleanTransforms,
         IKeyState keyState,
-        global::PosingCore.Services.IKeyEvents keyEvents,
+        global::Poser.Services.IKeyEvents keyEvents,
         global::Poser.Application.Transforms.ValueJournal values,
         IEditorState editorState,
         ConfigurationService configService,
@@ -394,7 +394,7 @@ public sealed class UIManager : IUIManager
     /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
-    private bool OnKeyEvent(VirtualKey key, global::PosingCore.Services.KeyEventKind kind)
+    private bool OnKeyEvent(VirtualKey key, global::Poser.Services.KeyEventKind kind)
     {
         if (Views.FirstRunNoticeView.Pending
             || !_gPoseService.IsGPosing
@@ -413,7 +413,7 @@ public sealed class UIManager : IUIManager
                 continue;
             switch (kind)
             {
-                case global::PosingCore.Services.KeyEventKind.Down:
+                case global::Poser.Services.KeyEventKind.Down:
                     if (!bind.Down)
                     {
                         bind.Down = true;
@@ -421,10 +421,10 @@ public sealed class UIManager : IUIManager
                     }
                     handled = true;
                     break;
-                case global::PosingCore.Services.KeyEventKind.Held:
+                case global::Poser.Services.KeyEventKind.Held:
                     handled = true;
                     break;
-                case global::PosingCore.Services.KeyEventKind.Released:
+                case global::Poser.Services.KeyEventKind.Released:
                     if (bind.Down)
                     {
                         bind.Down = false;

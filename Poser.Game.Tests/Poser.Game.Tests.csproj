@@ -7,13 +7,13 @@
     <LangVersion>preview</LangVersion>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- Poser.Game and PosingCore receive Dalamud/native assemblies from the
+    <!-- Poser.Game and Poser.Core receive Dalamud/native assemblies from the
          game with Private=false. The standalone test host must copy the
          reviewed dependency graph beside its own assembly. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
-  <!-- Match the proven PosingCore.Tests resolution order without introducing
+  <!-- Match the proven Poser.Core.Tests resolution order without introducing
        shared build infrastructure for one native-facing test assembly. -->
   <PropertyGroup>
     <DalamudLibPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(appdata)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>

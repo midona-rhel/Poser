@@ -40,9 +40,12 @@ External targets that no longer exist are not replaced by unrelated entities.
 World-light acquisition/release preserves the edited copy separately from the
 original world's baseline. Undo reacquires only the same native incarnation;
 scenery/VFX reclaim uses the same identity rule, never address presence alone.
-Light and world-object history use shared lifecycle-slot target retention and
-property replay: retain transform targets before removal publishes a scene
-refresh, and resolve the slot's current instance when replaying a property edit.
+Light, camera, prop, overlay and world-object history share lifecycle-slot
+property replay: resolve the slot's current instance when replaying an edit.
+Property sessions request only the typed history-resolver interface, not the
+whole lifecycle controller; the shared value journal owns the replay policy.
+Lights, props, collider overlays and world objects retain their transform
+targets before removal publishes a scene refresh.
 Earlier edits survive acquisition undo/redo and removal undo/redo. Expired public
 selection IDs and acquisition receipts never redirect to the restored instance.
 Duplicate collections retain their resolved resource paths and meta values;

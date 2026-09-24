@@ -55,7 +55,7 @@ public sealed class SelectionEntityCommands(
         foreach (var id in ids.Distinct())
         {
             var current = reads.ReadCurrent(id);
-            if (current is not { CanChangeVisibility: true })
+            if (current is not { CanChangeVisibility: true } || current.Id != id)
                 continue;
             if (port.SetVisibility(id, visible))
                 applied++;
@@ -69,7 +69,8 @@ public sealed class SelectionEntityCommands(
         foreach (var id in ids.Distinct())
         {
             var current = reads.ReadCurrent(id);
-            if (current is not { Removal: not SelectionRemoval.None } entity)
+            if (current is not { Removal: not SelectionRemoval.None } entity
+                || entity.Id != id)
                 continue;
             // Start each host operation on the caller's owning thread before
             // awaiting asynchronous borrowed-asset release results.

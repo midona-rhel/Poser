@@ -14,12 +14,11 @@ public sealed class LightSession
     private readonly ILightingService _lighting;
     private readonly EntityValueJournal<ILight> _values;
 
-    public LightSession(ValueJournal journal, ILightingService lighting, Scene.SceneLifecycleHistory? lifecycle = null)
+    public LightSession(ValueJournal journal, ILightingService lighting, IEntityHistoryResolver<ILight>? historyResolver = null)
     {
         _journal = journal;
         _lighting = lighting;
-        _values = new(journal, light => light.IsValid,
-            lifecycle is null ? null : lifecycle.CurrentLight);
+        _values = new(journal, light => light.IsValid, historyResolver);
     }
 
     public void Seal() => _journal.Seal();

@@ -14,9 +14,9 @@ not delete files or replace the final package scan.
 | `.claude/`, `claude/`, `CLAUDE.md`, `AGENTS.local.md` | Local agent/session material. |
 | `imgui.ini`, `*.user`, `.vs/`, `.idea/` | Local editor and window state. |
 | `tools/__pycache__/`, `tools/uiverify/`, captured validation media | Verification scratch and live-test evidence. |
-| `PosingCore/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
+| `Poser.Core/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
 
-`PosingCore/` is an active source project. Only its `Data/GameData/` subtree is
+`Poser.Core/` is an active source project. Only its `Data/GameData/` subtree is
 excluded.
 
 ## Keep and inspect

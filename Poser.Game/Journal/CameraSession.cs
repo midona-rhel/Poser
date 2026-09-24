@@ -14,62 +14,64 @@ namespace Poser.Game.Journal;
 public sealed class CameraSession
 {
     private readonly ValueJournal _journal;
+    private readonly EntityValueJournal<IVirtualCamera> _values;
     private readonly IVirtualCameraService _cameras;
     private readonly IEntityBindings _bindings;
 
-    public CameraSession(ValueJournal journal, IVirtualCameraService cameras, IEntityBindings bindings)
+    public CameraSession(ValueJournal journal, IVirtualCameraService cameras, IEntityBindings bindings, IEntityHistoryResolver<IVirtualCamera>? historyResolver = null)
     {
         _journal = journal;
         _cameras = cameras;
         _bindings = bindings;
+        _values = new(journal, camera => camera.IsValid, historyResolver);
     }
 
     public void Seal() => _journal.Seal();
 
     /// <summary>True when the camera took the value. A locked camera
     /// refuses and nothing is written or journaled.</summary>
-    private bool Set<T>(IVirtualCamera c, string property, string description, Func<T> read, Action<T> write, T value)
+    private bool Set<T>(IVirtualCamera c, string property, string description, Func<IVirtualCamera, T> read, Action<IVirtualCamera, T> write, T value)
     {
-        if (c.IsLocked)
+        if (_values.Current(c) is not { IsLocked: false })
             return false;
-        _journal.Set((c, property), description, read, write, value, () => c.IsValid);
+        _values.Set(c, property, description, read, write, value);
         return true;
     }
 
     public void SetLocked(IVirtualCamera c, bool v) =>
-        _journal.Set((c, "IsLocked"), v ? "Lock camera" : "Unlock camera", () => c.IsLocked, x => c.IsLocked = x, v, () => c.IsValid);
+        _values.Set(c, "IsLocked", v ? "Lock camera" : "Unlock camera", camera => camera.IsLocked, (camera, x) => camera.IsLocked = x, v);
 
-    public bool SetName(IVirtualCamera c, string v) => Set(c, "Name", "Rename camera", () => c.Name, x => c.Name = x, v);
-    public bool SetZoom(IVirtualCamera c, float v) => Set(c, "Zoom", "Set camera zoom", () => c.Zoom, x => c.Zoom = x, v);
-    public bool SetFoV(IVirtualCamera c, float v) => Set(c, "FoV", "Set camera FoV", () => c.FoV, x => c.FoV = x, v);
-    public bool SetRoll(IVirtualCamera c, float v) => Set(c, "Roll", "Set camera roll", () => c.Roll, x => c.Roll = x, v);
-    public bool SetAngle(IVirtualCamera c, Vector2 v) => Set(c, "Angle", "Turn camera", () => c.Angle, x => c.Angle = x, v);
-    public bool SetPan(IVirtualCamera c, Vector2 v) => Set(c, "Pan", "Pan camera", () => c.Pan, x => c.Pan = x, v);
-    public bool SetPositionOffset(IVirtualCamera c, Vector3 v) => Set(c, "PositionOffset", "Move camera", () => c.PositionOffset, x => c.PositionOffset = x, v);
-    public bool SetTargetOffset(IVirtualCamera c, Vector3 v) => Set(c, "TargetOffset", "Move camera target", () => c.TargetOffset, x => c.TargetOffset = x, v);
-    public bool SetFixedPosition(IVirtualCamera c, Vector3? v) => Set(c, "FixedPosition", v is null ? "Unpin camera" : "Pin camera", () => c.FixedPosition, x => c.FixedPosition = x, v);
-    public bool SetPosition(IVirtualCamera c, Vector3 v) => Set(c, "Position", "Move camera", () => c.Position, x => c.Position = x, v);
-    public bool SetRotation(IVirtualCamera c, Vector3 v) => Set(c, "Rotation", "Turn camera", () => c.Rotation, x => c.Rotation = x, v);
-    public bool SetDisableCollision(IVirtualCamera c, bool v) => Set(c, "DisableCollision", "Set camera collision", () => c.DisableCollision, x => c.DisableCollision = x, v);
-    public bool SetDelimitCamera(IVirtualCamera c, bool v) => Set(c, "DelimitCamera", "Set camera limits", () => c.DelimitCamera, x => c.DelimitCamera = x, v);
-    public bool SetMovementEnabled(IVirtualCamera c, bool v) => Set(c, "MovementEnabled", "Set camera movement", () => c.MovementEnabled, x => c.MovementEnabled = x, v);
-    public bool SetMove2D(IVirtualCamera c, bool v) => Set(c, "Move2D", "Set lateral movement", () => c.Move2D, x => c.Move2D = x, v);
-    public bool SetMovementSpeed(IVirtualCamera c, float v) => Set(c, "MovementSpeed", "Set flight speed", () => c.MovementSpeed, x => c.MovementSpeed = x, v);
-    public bool SetMouseSensitivity(IVirtualCamera c, float v) => Set(c, "MouseSensitivity", "Set mouse sensitivity", () => c.MouseSensitivity, x => c.MouseSensitivity = x, v);
-    public bool SetDelimitAngle(IVirtualCamera c, bool v) => Set(c, "DelimitAngle", "Set angle limit", () => c.DelimitAngle, x => c.DelimitAngle = x, v);
-    public bool SetOrthographic(IVirtualCamera c, bool v) => Set(c, "Orthographic", v ? "Orthographic on" : "Orthographic off", () => c.Orthographic, x => c.Orthographic = x, v);
-    public bool SetTracking(IVirtualCamera c, bool v) => Set(c, "IsTracking", v ? "Track on" : "Track off", () => c.IsTracking, x => c.IsTracking = x, v);
-    public bool SetTrackingMode(IVirtualCamera c, CameraTrackingMode v) => Set(c, "TrackingMode", "Set tracking mode", () => c.TrackingMode, x => c.TrackingMode = x, v);
-    public bool SetTargetLocked(IVirtualCamera c, bool v) => Set(c, "IsTargetLocked", v ? "Lock target" : "Unlock target", () => c.IsTargetLocked, x => c.IsTargetLocked = x, v);
+    public bool SetName(IVirtualCamera c, string v) => Set(c, "Name", "Rename camera", camera => camera.Name, (camera, x) => camera.Name = x, v);
+    public bool SetZoom(IVirtualCamera c, float v) => Set(c, "Zoom", "Set camera zoom", camera => camera.Zoom, (camera, x) => camera.Zoom = x, v);
+    public bool SetFoV(IVirtualCamera c, float v) => Set(c, "FoV", "Set camera FoV", camera => camera.FoV, (camera, x) => camera.FoV = x, v);
+    public bool SetRoll(IVirtualCamera c, float v) => Set(c, "Roll", "Set camera roll", camera => camera.Roll, (camera, x) => camera.Roll = x, v);
+    public bool SetAngle(IVirtualCamera c, Vector2 v) => Set(c, "Angle", "Turn camera", camera => camera.Angle, (camera, x) => camera.Angle = x, v);
+    public bool SetPan(IVirtualCamera c, Vector2 v) => Set(c, "Pan", "Pan camera", camera => camera.Pan, (camera, x) => camera.Pan = x, v);
+    public bool SetPositionOffset(IVirtualCamera c, Vector3 v) => Set(c, "PositionOffset", "Move camera", camera => camera.PositionOffset, (camera, x) => camera.PositionOffset = x, v);
+    public bool SetTargetOffset(IVirtualCamera c, Vector3 v) => Set(c, "TargetOffset", "Move camera target", camera => camera.TargetOffset, (camera, x) => camera.TargetOffset = x, v);
+    public bool SetFixedPosition(IVirtualCamera c, Vector3? v) => Set(c, "FixedPosition", v is null ? "Unpin camera" : "Pin camera", camera => camera.FixedPosition, (camera, x) => camera.FixedPosition = x, v);
+    public bool SetPosition(IVirtualCamera c, Vector3 v) => Set(c, "Position", "Move camera", camera => camera.Position, (camera, x) => camera.Position = x, v);
+    public bool SetRotation(IVirtualCamera c, Vector3 v) => Set(c, "Rotation", "Turn camera", camera => camera.Rotation, (camera, x) => camera.Rotation = x, v);
+    public bool SetDisableCollision(IVirtualCamera c, bool v) => Set(c, "DisableCollision", "Set camera collision", camera => camera.DisableCollision, (camera, x) => camera.DisableCollision = x, v);
+    public bool SetDelimitCamera(IVirtualCamera c, bool v) => Set(c, "DelimitCamera", "Set camera limits", camera => camera.DelimitCamera, (camera, x) => camera.DelimitCamera = x, v);
+    public bool SetMovementEnabled(IVirtualCamera c, bool v) => Set(c, "MovementEnabled", "Set camera movement", camera => camera.MovementEnabled, (camera, x) => camera.MovementEnabled = x, v);
+    public bool SetMove2D(IVirtualCamera c, bool v) => Set(c, "Move2D", "Set lateral movement", camera => camera.Move2D, (camera, x) => camera.Move2D = x, v);
+    public bool SetMovementSpeed(IVirtualCamera c, float v) => Set(c, "MovementSpeed", "Set flight speed", camera => camera.MovementSpeed, (camera, x) => camera.MovementSpeed = x, v);
+    public bool SetMouseSensitivity(IVirtualCamera c, float v) => Set(c, "MouseSensitivity", "Set mouse sensitivity", camera => camera.MouseSensitivity, (camera, x) => camera.MouseSensitivity = x, v);
+    public bool SetDelimitAngle(IVirtualCamera c, bool v) => Set(c, "DelimitAngle", "Set angle limit", camera => camera.DelimitAngle, (camera, x) => camera.DelimitAngle = x, v);
+    public bool SetOrthographic(IVirtualCamera c, bool v) => Set(c, "Orthographic", v ? "Orthographic on" : "Orthographic off", camera => camera.Orthographic, (camera, x) => camera.Orthographic = x, v);
+    public bool SetTracking(IVirtualCamera c, bool v) => Set(c, "IsTracking", v ? "Track on" : "Track off", camera => camera.IsTracking, (camera, x) => camera.IsTracking = x, v);
+    public bool SetTrackingMode(IVirtualCamera c, CameraTrackingMode v) => Set(c, "TrackingMode", "Set tracking mode", camera => camera.TrackingMode, (camera, x) => camera.TrackingMode = x, v);
+    public bool SetTargetLocked(IVirtualCamera c, bool v) => Set(c, "IsTargetLocked", v ? "Lock target" : "Unlock target", camera => camera.IsTargetLocked, (camera, x) => camera.IsTargetLocked = x, v);
 
     /// <summary>The ortho zoom re-asserts the projection so the width takes
     /// effect at once, as the page always did.</summary>
     public bool SetOrthographicZoom(IVirtualCamera c, float v) =>
-        Set(c, "OrthographicZoom", "Set ortho zoom", () => c.OrthographicZoom, x =>
+        Set(c, "OrthographicZoom", "Set ortho zoom", camera => camera.OrthographicZoom, (camera, x) =>
         {
-            c.OrthographicZoom = x;
-            if (c.Orthographic)
-                c.Orthographic = true;
+            camera.OrthographicZoom = x;
+            if (camera.Orthographic)
+                camera.Orthographic = true;
         }, v);
 
     /// <summary>Back to the spawn position (free) or a zero offset (game).</summary>
@@ -88,8 +90,8 @@ public sealed class CameraSession
         _cameras.SetLive(c);
         _journal.Record("Switch camera", before, c, next =>
         {
-            if (next is { IsValid: true })
-                _cameras.SetLive(next);
+            if (next is not null && _values.Current(next) is { } live)
+                _cameras.SetLive(live);
         });
     }
 
@@ -107,8 +109,8 @@ public sealed class CameraSession
             return result;
         _journal.Record(
             "Centre camera", before, (camera.PositionOffset, camera.Zoom),
-            next => { camera.PositionOffset = next.Item1; camera.Zoom = next.Item2; },
-            () => camera.IsValid);
+            next => { if (_values.Current(camera) is { } live) { live.PositionOffset = next.Item1; live.Zoom = next.Item2; } },
+            () => _values.Current(camera) is not null);
         return result;
     }
 
@@ -121,7 +123,7 @@ public sealed class CameraSession
         var before = c.TargetActorId;
         if (!_cameras.SetTargetActor(c, actor, actorId, displayName))
             return false;
-        _journal.Record("Follow actor", before, (ActorId?)actorId, next => PutTarget(c, next), () => c.IsValid);
+        _journal.Record("Follow actor", before, (ActorId?)actorId, next => PutTarget(c, next), () => _values.Current(c) is not null);
         return true;
     }
 
@@ -129,11 +131,12 @@ public sealed class CameraSession
     {
         var before = c.TargetActorId;
         _cameras.ClearTargetActor(c);
-        _journal.Record("Stop following", before, (ActorId?)null, next => PutTarget(c, next), () => c.IsValid);
+        _journal.Record("Stop following", before, (ActorId?)null, next => PutTarget(c, next), () => _values.Current(c) is not null);
     }
 
-    private void PutTarget(IVirtualCamera c, ActorId? target)
+    private void PutTarget(IVirtualCamera original, ActorId? target)
     {
+        if (_values.Current(original) is not { } c) return;
         if (target is not { } id)
         {
             _cameras.ClearTargetActor(c);

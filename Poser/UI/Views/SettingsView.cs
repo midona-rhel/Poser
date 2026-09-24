@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -1400,7 +1400,7 @@ public static partial class SettingsView
         page.Section("About", form =>
         {
             form.ReadOnly("Poser", vm.Version);
-            form.ReadOnly("Stack", "Crystarium · PosingCore");
+            form.ReadOnly("Stack", "Crystarium · Poser.Core");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));

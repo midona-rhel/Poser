@@ -10,13 +10,13 @@ namespace Poser.Game.Posing;
 
 /// <summary>
 /// Requests a transitive-action pass to refresh raw transform caches before an
-/// export writes them. The refresh is best effort: if no pass runs before the
-/// timeout, the export still writes the current caches. File and clipboard
-/// exports use the same lifecycle.
+/// export writes them. Every requested slot must refresh before a capture can
+/// succeed; an interrupted or timed-out pass refuses the write. File and
+/// clipboard exports use the same lifecycle.
 /// </summary>
 public sealed class PoseExportCapture : IDisposable
 {
-    /// <summary>Maximum ticks to wait before writing current caches.</summary>
+    /// <summary>Maximum ticks to wait for refreshed caches.</summary>
     private const int CompletionTimeoutTicks = 60;
 
     private readonly IFramework _framework;
@@ -146,20 +146,22 @@ public sealed class PoseExportCapture : IDisposable
             return;
         _pending = null;
 
+        var refreshed = true;
         foreach (var slot in export.Slots)
         {
             if (slot.Executed)
                 continue;
-            _log.Debug(
+            refreshed = false;
+            _log.Warning(
                 "Pose export: the refresh pass never ran for a slot skeleton; " +
-                "exporting the current transform caches.");
+                "capture refused because its transform caches are not current.");
             break;
         }
 
         bool ok;
         try
         {
-            ok = export.Write(export.Skeletons);
+            ok = refreshed && export.Write(export.Skeletons);
         }
         catch (Exception ex)
         {

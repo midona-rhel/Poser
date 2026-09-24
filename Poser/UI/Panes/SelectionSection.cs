@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
@@ -33,7 +35,7 @@ public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
-    private readonly Game.Journal.EntitySessions _sessions;
+    private readonly SelectionEntityCommands _entityCommands;
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawns;
 
@@ -48,9 +50,9 @@ public sealed class SelectionSection
         IEntityBindings bindings,
         ISceneLifecycleHistory lifecycle,
         IActorSpawnService spawns,
-        Game.Journal.EntitySessions sessions)
+        SelectionEntityCommands entityCommands)
     {
-        _sessions = sessions;
+        _entityCommands = entityCommands;
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
@@ -111,11 +113,11 @@ public sealed class SelectionSection
             {
                 actions.Button(
                     "Show all",
-                    () => _pending = () => SetVisible(group, true),
+                    () => QueueVisibility(selected, true),
                     help: $"Show every one of the {group.Count} selected {group.Noun}");
                 actions.Button(
                     "Hide all",
-                    () => _pending = () => SetVisible(group, false),
+                    () => QueueVisibility(selected, false),
                     help: $"Hide every one of the {group.Count} selected {group.Noun} "
                         + "without destroying them");
             });
@@ -160,16 +162,10 @@ public sealed class SelectionSection
         return true;
     }
 
-    private void SetVisible(ResolvedGroup group, bool visible)
+    private void QueueVisibility(IReadOnlyList<SelectionId> selected, bool visible)
     {
-        foreach (var actor in group.Actors)
-            _sessions.Actors.SetVisibility(actor, visible);
-        foreach (var prop in group.Props)
-            _sessions.Props.SetVisible(prop, visible);
-        foreach (var light in group.Lights)
-            _sessions.Lights.SetIsOn(light, visible);
-        foreach (var overlay in group.Overlays)
-            _sessions.Overlays.SetVisible(overlay, visible);
+        var ids = selected.ToArray();
+        _pending = () => _entityCommands.SetVisibility(ids, visible);
     }
 
     private void Remove(ResolvedGroup group)

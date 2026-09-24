@@ -37,6 +37,12 @@ the game and runs its hooks on the framework thread. `Poser.Core` still holds
 legacy entities, services, file formats, configuration, and some game code.
 The host wires the assemblies; UI shows application state.
 
+Project directories and assembly names agree (`Poser.Core` and
+`Poser.Core.Tests` included). The Core rename does not remove its legacy
+native dependencies; those remain explicit migration work, not a clean
+application boundary. Its embedded resources retain the `Poser` root namespace
+so file catalogs and pose resources remain compatible.
+
 See [posing-runtime.md](posing-runtime.md) for native ordering and
 [application-state.md](application-state.md) for identity, gestures, and
 lifecycle.

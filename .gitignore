@@ -64,7 +64,7 @@ CLAUDE.md
 /tools/__pycache__/
 /tools/uiverify/
 /docs/validation/**/*.png
-/PosingCore/Data/GameData/
+/Poser.Core/Data/GameData/
 
 # Release archives and diagnostic output
 *.zip
@@ -73,6 +73,7 @@ CLAUDE.md
 *.dmp
 *.mdmp
 *.core
+!/Poser.Core/
 *.etl
 
 # The build-output rule `[Rr]elease/` above matches a directory of that name at

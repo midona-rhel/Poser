@@ -1290,37 +1290,8 @@ public partial class MainWindow
                 anyAnimated = true;
                 anyRunning |= playing;
             }
-            switch (id)
-            {
-                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                    anyActor = true;
-                    if (_bindings.Resolve(actorId) is
-                            { Success: true, Value: { } actor }
-                        && _spawnService.IsVisible(actor))
-                        anyVisible = true;
-                    break;
-                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                    if (_bindings.Resolve(lightId) is
-                            { Success: true, Value: { IsOn: true } })
-                        anyVisible = true;
-                    break;
-                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                    if (_bindings.Resolve(propId) is
-                            { Success: true, Value: { Visible: true } })
-                        anyVisible = true;
-                    break;
-                case { Kind: SceneEntityKind.WorldObject,
-                        WorldObject: { } borrowedId }:
-                    if (_bindings.Resolve(borrowedId) is
-                            { Success: true, Value: { Visible: true } })
-                        anyVisible = true;
-                    break;
-                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                    if (_bindings.Resolve(overlayId) is
-                            { Success: true, Value: { Visible: true } })
-                        anyVisible = true;
-                    break;
-            }
+            anyActor |= id.Kind == SceneEntityKind.Actor;
+            anyVisible |= IsEntityVisible(id) == true;
         }
 
         var matched = _groups.ActiveSelection(_selection.Selected);

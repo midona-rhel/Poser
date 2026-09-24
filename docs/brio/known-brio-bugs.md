@@ -30,7 +30,7 @@ stage skipped as near-identity gained no stack and loses none
 (`Poser.Game/Posing/PoseImportCapture.cs:692-704`). Import writes are `forceNewStack: true`
 (`:414-422`), so the popped entry is the import's phase-1 write and nothing else, and
 `RemoveLastInteractiveStack` steps over named service layers
-(`PosingCore/Core/BonePoseInfo.cs:149-163`). The pre-import absolute is then re-applied as a
+(`Poser.Core/Core/BonePoseInfo.cs:149-163`). The pre-import absolute is then re-applied as a
 position-only restore rather than trusted to the pop alone.
 
 ### 2. `UndoStackSize = 0` skips expression phase 2 entirely
@@ -92,7 +92,7 @@ component override, which leaves `DefaultCMPImporterOptions`' rotation-only mask
 for the typed path).
 
 **Poser:** `CMToolPoseFile.StringToBone` seeds `Rotation = Quaternion.Identity`
-(`PosingCore/Files/CMToolPoseFile.cs:490-511`), and `PoseFileService.BuildImportPlan` clamps the
+(`Poser.Core/Files/CMToolPoseFile.cs:490-511`), and `PoseFileService.BuildImportPlan` clamps the
 component mask to `Rotation | Scale` for the whole `.cmp` path regardless of options
-(`PosingCore/Files/PoseFileService.cs:120-134`), so a `.cmp` can never teleport a bone to the
-origin. Both are pinned by `PosingCore.Tests/Files/CmpImportDeviationTests.cs`.
+(`Poser.Core/Files/PoseFileService.cs:120-134`), so a `.cmp` can never teleport a bone to the
+origin. Both are pinned by `Poser.Core.Tests/Files/CmpImportDeviationTests.cs`.

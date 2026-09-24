@@ -109,7 +109,6 @@ public partial class MainWindow
     private async void DestroySelection()
     {
         var selected = _selection.Selected.ToArray();
-        _selection.Clear();
         await RemoveEntitiesSafely(selected);
     }
 
