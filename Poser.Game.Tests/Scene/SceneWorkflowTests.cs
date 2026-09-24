@@ -6,6 +6,10 @@ using Poser.Domain.Companions;
 using Poser.Files;
 using Poser.Game.Scene;
 using Poser.Application.Transforms;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
+using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Tests.Scene;
 
@@ -18,6 +22,89 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    [Fact]
+    public async Task Headless_load_restores_nested_groups_before_completion_and_undo_removes_only_its_groups()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var third = Guid.NewGuid();
+        var parent = Guid.NewGuid();
+        var child = Guid.NewGuid();
+        var document = SceneWith();
+        document.Lights.Add(new() { Key = first, Light = new() { Name = "A" } });
+        document.Lights.Add(new() { Key = second, Light = new() { Name = "B" } });
+        document.Lights.Add(new() { Key = third, Light = new() { Name = "C" } });
+        var pose = new PoseTransform(Vector3.One, Quaternion.Identity, Vector3.One);
+        document.Groups = [new() { Key = parent, Name = "Parent",
+                Members = [new() { Kind = "light", Key = third }] },
+            new() { Key = child, Name = "Child", Parent = parent,
+                Members = [new() { Kind = "light", Key = first }, new() { Kind = "light", Key = second }],
+                Transform = new() { Members = [
+                    new() { Member = new() { Kind = "light", Key = first }, Initial = pose, Expected = pose },
+                    new() { Member = new() { Kind = "light", Key = second }, Initial = pose, Expected = pose }] } }];
+        document.RootOrder = [new() { Kind = "group", Key = parent }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        var groups = new SceneGroups();
+        var existing = groups.Create("Existing", [], allowThin: true)!;
+        var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        var structure = new SceneStructureImport(groups, coordinator, state);
+        var history = new TransformHistory();
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history, structure: structure);
+        for (int cycle = 0; cycle < 2; cycle++)
+        {
+            if (cycle == 0) Assert.True(load.BeginLoad("groups.xivs").Success);
+            else
+            {
+                var redo = Assert.IsType<JournalStep>(history.PeekRedo());
+                Assert.True(redo.Redo());
+                history.CommitRedo(redo);
+            }
+            await load.Drain;
+            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            var importedParent = Assert.Single(groups.All, group => group.Name == "Parent");
+            var importedChild = Assert.Single(groups.All, group => group.Name == "Child");
+            Assert.Equal(importedParent.Id, importedChild.ParentId);
+            Assert.Equal(2, importedChild.Members.Count);
+            var baseline = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(importedChild.Id));
+            Assert.All(baseline.Expected.Values, value => Assert.Equal(pose, value));
+            Assert.Equal(importedParent.Id, groups.RootOrder[^1].GroupId);
+            var step = Assert.IsType<JournalStep>(history.PeekUndo());
+            Assert.True(step.Undo());
+            Assert.Same(existing, Assert.Single(groups.All));
+            Assert.Null(state.NamedSnapshot(importedChild.Id));
+            history.CommitUndo(step);
+        }
+    }
+
+    [Fact]
+    public async Task Unbound_structure_rolls_back_without_publishing_success_or_leaving_pending_UI_work()
+    {
+        var key = Guid.NewGuid();
+        var document = SceneWith();
+        document.Lights.Add(new() { Key = key, Light = new() { Name = "Waiting" } });
+        document.RootOrder = [new() { Kind = "light", Key = key }];
+        var runtime = new FakeRuntime { ReadResult = document, BindStructure = false };
+        var groups = new SceneGroups();
+        var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime),
+            structure: new SceneStructureImport(groups, coordinator, state)) { StructureBindingBound = TimeSpan.Zero };
+        Assert.True(load.BeginLoad("groups.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
+        Assert.Single(runtime.DestroyedLightTokens);
+        Assert.Empty(groups.All);
+    }
+
+    private sealed class EmptyGroupSource : IGroupTransformSource
+    {
+        public PoseTransform? Read(TransformTargetId target) => null;
+        public string? Refusal(TransformTargetId target) => null;
+        public bool TryFrame(Vector3 origin, out GroupTransformFrame frame) { frame = default; return false; }
+        public TransformTargetId? CurrentTarget(TransformTargetId target) => target;
+    }
+
     [Theory]
     [InlineData("scene.xivs")]
     [InlineData("stage.json")]
@@ -169,6 +256,16 @@ public sealed class SceneWorkflowTests
         public SessionGeneration? ActiveSession => Session;
 
         public Task<T> OnFramework<T>(Func<T> func) => Task.FromResult(func());
+
+        public bool BindStructure = true;
+        private readonly Dictionary<object, SelectionId> _structureIds = new(ReferenceEqualityComparer.Instance);
+        public SelectionId? ResolveSceneEntity(object token)
+        {
+            if (!BindStructure) return null;
+            if (!_structureIds.TryGetValue(token, out var id))
+                _structureIds[token] = id = SelectionId.ForLight(new(Guid.NewGuid(), 1));
+            return id;
+        }
 
         /// <summary>Refuses the ARM — the save never reaches a capture.</summary>
         public string? CaptureArmRefusal;

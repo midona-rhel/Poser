@@ -39,7 +39,7 @@ namespace Poser.Game.Scene;
 /// publish a Failed receipt whose outcome names every refusal — typed
 /// partial recovery, never a silent detach and never a silent skip.
 /// </summary>
-public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
+public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 {
     /// <summary>Bound for the spawned actors' skeleton readiness barrier —
     /// same bound the MCDF redraw barrier uses.</summary>
@@ -100,6 +100,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private bool _disposed;
 
     private readonly TransformHistory? _history;
+    private readonly Poser.Application.Scene.ISceneStructureImport? _structure;
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
@@ -108,7 +109,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         Poser.Application.Scene.SceneGroups? groups = null,
         Poser.Library.IPoseLibraryService? library = null,
         Poser.Application.Transforms.GroupTransformState? groupTransforms = null,
-        TransformHistory? history = null)
+        TransformHistory? history = null,
+        Poser.Application.Scene.ISceneStructureImport? structure = null)
     {
         _runtime = runtime;
         _documents = documents;
@@ -117,6 +119,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         _library = library;
         _groupTransforms = groupTransforms;
         _history = history;
+        _structure = structure;
     }
 
     /// <summary>The sidebar's structure store — null only under the test
@@ -187,6 +190,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         // Borrowed, not created — but rollback still has to undo the claim, and
         // releasing one is the exact inverse of taking it.
         public readonly List<object> BorrowedWorldObjects = new();
+        public readonly List<Guid> ImportedGroups = new();
         public CameraFile? DefaultCameraBaseline;
         public SceneEnvironment? EnvironmentBaseline;
         public SceneWorld? WorldBaseline;
@@ -1464,6 +1468,14 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             if (scene.Actors.Any(actor => actor.Fabrik?.Count > 0))
                 await _runtime.WaitForFabrikBindings(actorTokens.Values.Concat(propTokens.Values)
                     .Concat(worldObjectTokens.Values).Concat(lightTokens.Values), cancellation);
+            var structureTokens = StructureTokens(("actor", actorTokens), ("prop", propTokens),
+                ("overlay", overlayTokens), ("worldObject", worldObjectTokens),
+                ("light", lightTokens), ("camera", cameraTokens));
+            if (await WaitForStructure(operation, scene, structureTokens, cancellation) is { } structureFailure)
+            {
+                await Abort(structureFailure);
+                return;
+            }
             Step(ScenePhase.Committing, cancellable: false);
             var committed = await _runtime.OnFramework(() =>
             {
@@ -1471,6 +1483,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                     return stop;
                 foreach (var error in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
                     entities.Add(new SceneEntityOutcome("IK", "FABRIK", false, error));
+                RestoreStructure(operation, scene, structureTokens);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
                     ? $"Loaded {operation.FileName}: " +
@@ -1484,14 +1497,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                       "restored (everything that did restore was kept): " +
                       string.Join("; ", failures.Select(failure =>
                           $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
-                // The document's structure is STAGED, not applied: the
-                // freshly spawned entities bind on the next snapshot
-                // publish, so the sidebar resolves the tokens and rebuilds
-                // groups and order then.
-                StageStructure(
-                    scene, actorTokens, propTokens, overlayTokens,
-                    worldObjectTokens, lightTokens, cameraTokens);
-
                 // Publishing inside the framework action orders the terminal
                 // before any subsequent framework-thread invalidation. Named
                 // refusals beside restored entities are typed partial
@@ -1527,31 +1532,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
     }
 
-    // ── sidebar structure: save-side write, load-side staging ───────────
-
-    public ScenePendingStructure? PendingSceneStructure { get; private set; }
-
-    public void ClearPendingStructure() => PendingSceneStructure = null;
-
-    private void StageStructure(
-        SceneFile scene, params Dictionary<Guid, object>[] tokenMaps)
-    {
-        if ((scene.Groups?.Count ?? 0) == 0
-            && (scene.RootOrder?.Count ?? 0) == 0)
-            return;
-        var tokens = new Dictionary<Guid, object>();
-        foreach (var map in tokenMaps)
-            foreach (var pair in map)
-                tokens.TryAdd(pair.Key, pair.Value);
-        PendingSceneStructure = new ScenePendingStructure
-        {
-            Groups = scene.Groups
-                ?? (IReadOnlyList<SceneGroupEntry>)Array.Empty<SceneGroupEntry>(),
-            RootOrder = scene.RootOrder,
-            Tokens = tokens,
-        };
-    }
-
+    // ── structure capture ───────────────────────────────────────────────
     /// <summary>Writes the sidebar's structure into the document. Actor
     /// members translate LOGICAL id → capture key through the identities
     /// the capture reported; every other kind's key IS its logical id.
@@ -1921,6 +1902,16 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private string? Rollback(Operation operation)
     {
         var failures = new List<string>();
+
+        try
+        {
+            _structure?.Remove(operation.ImportedGroups);
+            operation.ImportedGroups.Clear();
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"group removal: {ex.Message}");
+        }
 
         if (operation.EnvironmentBaseline is { } environment)
         {

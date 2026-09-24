@@ -12,6 +12,27 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class GroupTransformStateTests
 {
     [Fact]
+    public void Binding_publication_reconciles_groups_and_root_order_without_a_view()
+    {
+        using var f = new Fixture(count: 3);
+        var selected = f.Selected;
+        var group = f.Groups.Create("Pair", selected.Take(2).ToArray())!;
+        f.Coordinator.BindingsPublished();
+        Assert.Contains(RootSlot.ForGroup(group.Id), f.Groups.RootOrder);
+        Assert.Contains(RootSlot.For(selected[2]), f.Groups.RootOrder);
+        Assert.DoesNotContain(RootSlot.For(selected[0]), f.Groups.RootOrder);
+
+        // Native publication, not opening/rebuilding a panel, dissolves a group that lost a member.
+        f.Targets = f.Targets.Skip(1).ToArray();
+        f.Publish();
+        f.Coordinator.BindingsPublished();
+        Assert.Null(f.Groups.Find(group.Id));
+        Assert.Contains(RootSlot.For(selected[1]), f.Groups.RootOrder);
+        Assert.DoesNotContain(RootSlot.For(selected[0]), f.Groups.RootOrder);
+        Assert.Null(f.State.NamedSnapshot(group.Id));
+    }
+
+    [Fact]
     public void New_and_absent_frame_captures_are_y_up_but_explicit_frames_are_preserved()
     {
         using var f = new Fixture(cameraRotation: Quaternion.CreateFromYawPitchRoll(.7f, -.5f, .8f));

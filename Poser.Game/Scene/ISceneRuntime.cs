@@ -15,6 +15,9 @@ internal interface ISceneRuntime
 
     Task<T> OnFramework<T>(Func<T> func);
 
+    /// <summary>Resolve an exact spawned instance after binding publication; never by name.</summary>
+    SelectionId? ResolveSceneEntity(object token);
+
     /// <summary>
     /// Stamps every stated character-file reference with its package's content
     /// hash, in place, and answers the notes for the ones it could not read.

@@ -1,5 +1,6 @@
 ﻿using Poser.Scene;
 using System;
+using Poser.Domain.Identity;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -135,6 +136,21 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
+
+    public SelectionId? ResolveSceneEntity(object token)
+    {
+        IEntityBindings bindings = _bindings;
+        return token switch
+        {
+            IActor actor when bindings.GetActorId(actor) is { } id => SelectionId.ForActor(id),
+            IPropHandle prop when bindings.GetPropId(prop) is { } id => SelectionId.ForProp(id),
+            IOverlayNode overlay when bindings.GetOverlayId(overlay) is { } id => SelectionId.ForOverlay(id),
+            IWorldObject world when bindings.GetWorldObjectId(world) is { } id => SelectionId.ForWorldObject(id),
+            ILight light when bindings.GetLightId(light) is { } id => SelectionId.ForLight(id),
+            IVirtualCamera camera when bindings.GetCameraId(camera) is { } id => SelectionId.ForCamera(id),
+            _ => null,
+        };
+    }
 
     public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
     {

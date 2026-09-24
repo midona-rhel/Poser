@@ -7,6 +7,9 @@ created entities and restores its captured baselines; redo reads the file
 again and retargets the same step to the new load. Repeated undo never uses
 an earlier load's emptied cleanup lists. Wait for loading to finish before
 undoing it. Clearing existing scene content before a load remains destructive.
+Loaded groups and their transform baselines are restored before completion,
+even with the sidebar closed. Missing bindings time out through load rollback;
+undo removes only that load's groups alongside its created entities.
 Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.

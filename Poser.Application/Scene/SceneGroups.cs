@@ -384,6 +384,24 @@ public sealed class SceneGroups
 
     // ── the root order ───────────────────────────────────────────────────
 
+    /// <summary>Reconcile only after native bindings have published and member generations were remapped.</summary>
+    public void Reconcile(SceneSession scene)
+    {
+        Prune(id => scene.ReadCurrent(id) != null);
+        var snapshot = scene.Snapshot;
+        var roots = new List<SelectionId>();
+        void Add(SelectionId id) { if (GroupOf(id) == null) roots.Add(id); }
+        foreach (var camera in snapshot.Cameras) Add(SelectionId.ForCamera(camera.Id));
+        foreach (var actor in snapshot.Actors)
+            if (actor.OwnerActor is not { } owner || snapshot.FindActor(owner) == null)
+                Add(SelectionId.ForActor(actor.Id));
+        foreach (var prop in snapshot.Props) Add(SelectionId.ForProp(prop.Id));
+        foreach (var world in snapshot.WorldObjects) Add(SelectionId.ForWorldObject(world.Id));
+        foreach (var light in snapshot.Lights) Add(SelectionId.ForLight(light.Id));
+        foreach (var overlay in snapshot.Overlays) Add(SelectionId.ForOverlay(overlay.Id));
+        SyncRoot(roots);
+    }
+
     public IReadOnlyList<RootSlot> SyncRoot(
         IReadOnlyList<SelectionId> rootEntities)
     {

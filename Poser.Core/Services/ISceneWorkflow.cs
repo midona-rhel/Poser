@@ -24,6 +24,4 @@ public interface ISceneWorkflow
     void Cancel();
     SceneActionResult BeginSave( string path, string? description = null, SceneSaveOptions? options = null);
     SceneActionResult BeginLoad( string path, SceneLoadOptions? options = null);
-    ScenePendingStructure? PendingSceneStructure { get; }
-    void ClearPendingStructure();
 }

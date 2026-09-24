@@ -104,14 +104,12 @@ public partial class MainWindow : Window
 
     /// <summary>Rebuild scratch: the root-eligible entities handed to the
     /// order sync, retained to keep the cold path allocation-flat.</summary>
-    private readonly List<SelectionId> _rootEntities = new();
 
     private readonly ISceneWorkflow _sceneWorkflow;
 
     /// <summary>Rebuilds this pending structure has waited through: the
     /// spawned entities bind within a publish or two, so a stage nothing
     /// ever resolves against is dropped rather than held forever.</summary>
-    private int _pendingStructureAttempts;
 
     private readonly global::Poser.Services.ICameraService _gameCamera;
 

@@ -11,20 +11,12 @@ internal sealed partial class SceneRuntimeAdapter
     public async Task WaitForFabrikBindings(IEnumerable<object> entities, CancellationToken cancellation)
     {
         var tokens = entities.ToArray();
-        IEntityBindings bindings = _bindings;
         // Spawning precedes scene publication. Wait for actual binding admission,
         // not a guessed delay, before remapping portable target keys.
         for (int attempt = 0; attempt < 40; attempt++)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (await OnFramework(() => tokens.All(token => token switch
-            {
-                IActor actor => bindings.GetActorId(actor) != null,
-                ILight light => bindings.GetLightId(light) != null,
-                IPropHandle prop => bindings.GetPropId(prop) != null,
-                IWorldObject world => bindings.GetWorldObjectId(world) != null,
-                _ => true,
-            }))) return;
+            if (await OnFramework(() => tokens.All(token => ResolveSceneEntity(token) != null))) return;
             await Task.Delay(50, cancellation);
         }
         // Unavailable references are reported by RestoreFabrik, not rebound by name.

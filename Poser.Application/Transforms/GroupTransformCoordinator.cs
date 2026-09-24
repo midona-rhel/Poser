@@ -142,6 +142,7 @@ public sealed class GroupTransformCoordinator : IDisposable
     {
         _state.Rekey(_source.CurrentTarget);
         _groups.RemapTransformMembers(_source.CurrentTarget);
+        _groups.Reconcile(_scene);
         SynchronizeNamed();
         InitializeSelection();
     }
