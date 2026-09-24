@@ -298,8 +298,10 @@ public partial class MainWindow
         };
         _vm.OnActorVisibility = row =>
         {
-            if (ResolveActorRow(row) is { } actor)
-                _sessions.Actors.SetVisibility(actor, !_spawnService.IsVisible(actor));
+            if (row.Tag is SelectionId { Actor: { } actorId }
+                && ResolveActorRow(row) is { } actor)
+                SetEntityVisible(SelectionId.ForActor(actorId),
+                    !_spawnService.IsVisible(actor));
         };
         _vm.OnActorPause = row =>
         {
@@ -399,11 +401,9 @@ public partial class MainWindow
             if (row.Tag is SelectionId
                 { Kind: SceneEntityKind.Prop, Prop: { } propId })
             {
-                var prop = _bindings.Resolve(propId);
-                if (!prop.Success || prop.Value is not { IsValid: true } handle)
-                    return;
-                _sessions.Props.SetVisible(handle, !handle.Visible);
-                row.LightOn = handle.Visible;
+                bool next = !(IsEntityVisible(SelectionId.ForProp(propId)) ?? false);
+                if (SetEntityVisible(SelectionId.ForProp(propId), next) > 0)
+                    row.LightOn = next;
                 return;
             }
             // An overlay row wears the same eye seat as a prop's: its toggle
@@ -411,12 +411,9 @@ public partial class MainWindow
             if (row.Tag is SelectionId
                 { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
             {
-                var overlay = _bindings.Resolve(overlayId);
-                if (!overlay.Success ||
-                    overlay.Value is not { IsValid: true } node)
-                    return;
-                _sessions.Overlays.SetVisible(node, !node.Visible);
-                row.LightOn = node.Visible;
+                bool next = !(IsEntityVisible(SelectionId.ForOverlay(overlayId)) ?? false);
+                if (SetEntityVisible(SelectionId.ForOverlay(overlayId), next) > 0)
+                    row.LightOn = next;
                 return;
             }
             // A borrowed map object wears the same eye seat as a prop's: its
@@ -425,22 +422,17 @@ public partial class MainWindow
             if (row.Tag is SelectionId
                 { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldObjectId })
             {
-                var worldObject = _bindings.Resolve(worldObjectId);
-                if (!worldObject.Success ||
-                    worldObject.Value is not { IsValid: true } claim)
-                    return;
-                _sessions.WorldObjects.SetVisible(claim, !claim.Visible);
-                row.LightOn = claim.Visible;
+                bool next = !(IsEntityVisible(SelectionId.ForWorldObject(worldObjectId)) ?? false);
+                if (SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), next) > 0)
+                    row.LightOn = next;
                 return;
             }
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Light, Light: { } lightId })
                 return;
-            var resolved = _bindings.Resolve(lightId);
-            if (!resolved.Success || resolved.Value is not { IsValid: true } light)
-                return;
-            _sessions.Lights.SetIsOn(light, !light.IsOn);
-            row.LightOn = light.IsOn;
+            bool visible = IsEntityVisible(SelectionId.ForLight(lightId)) ?? false;
+            if (SetEntityVisible(SelectionId.ForLight(lightId), !visible) > 0)
+                row.LightOn = !visible;
         };
         // The camera's inline verb, reachable without selecting it first:
         // make this the live camera, or step the live one back to the main

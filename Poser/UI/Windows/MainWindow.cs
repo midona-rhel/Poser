@@ -75,6 +75,7 @@ public partial class MainWindow : Window
     /// the act lands in the same history the transforms do.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly WorldActions _worldActions;
+    private readonly Application.Selection.SelectionEntityCommands _entityCommands;
 
     private readonly UserNotices _notices;
 
@@ -548,6 +549,7 @@ public partial class MainWindow : Window
         global::Poser.Services.ICameraService gameCamera,
         IViewportReads viewportProjection,
         Game.Journal.EntitySessions sessions,
+        Application.Selection.SelectionEntityCommands entityCommands,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -641,6 +643,7 @@ public partial class MainWindow : Window
         _integration = integration;
         _lifecycle = lifecycle;
         _worldActions = worldActions;
+        _entityCommands = entityCommands;
         _notices = notices;
         _log = log;
         _groups = groups;

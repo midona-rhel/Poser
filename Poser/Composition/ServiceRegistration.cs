@@ -171,10 +171,13 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<SelectionSession>();
         services.AddSingleton<SceneSession>();
+        services.AddSingleton<ICurrentSelectionEntityReads>(sp =>
+            sp.GetRequiredService<SceneSession>());
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());
         services.AddSingleton<Application.Scene.SceneGroups>();
         services.AddSingleton<Game.Scene.SceneGroupsLifetime>();
+        services.AddSingleton<SelectionEntityCommands>();
         return services;
     }
 
@@ -570,6 +573,7 @@ internal static class ServiceRegistration
         });
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<WorldActions>();
+        services.AddSingleton<ISelectionEntityCommandPort, SelectionEntityCommandPort>();
         services.AddSingleton<Game.World.WorldService>();
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
