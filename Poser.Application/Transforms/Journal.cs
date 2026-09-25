@@ -1,5 +1,6 @@
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
@@ -69,6 +70,10 @@ public sealed record JournalStep(
     /// snapshots before moving this entry to the other history stack.</summary>
     public bool RestoreSnapshotsAfterReplay { get; init; }
 
+    /// <summary>Completion of a multi-frame replay, after its synchronous verb.
+    /// Invokes the callback on the application thread; history stays put until then.</summary>
+    public Action<bool, Func<bool>, CancellationToken, Action<GestureResult>>? CompleteReplay { get; init; }
+
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }
@@ -86,6 +91,9 @@ public interface IActorStateKeySource
 public interface IPoseSnapshotPort
 {
     ActorSnapshot? Capture(Guid lineage);
+
+    /// <summary>Owned pose layers only, excluding evaluated animation and expression layers.</summary>
+    ActorSnapshot? CaptureAuthored(Guid lineage) => Capture(lineage);
 
     /// <summary>Starts the restore. False when it could not start; the
     /// callback then never fires.</summary>

@@ -43,6 +43,7 @@ public sealed class UndoJournal
     private readonly Func<string, bool> _assetExists;
     private readonly Action<string> _notice;
     private HistoryEntry? _restoring;
+    private CancellationTokenSource? _replayCancellation;
 
     public UndoJournal(
         TransformHistory history,
@@ -58,7 +59,11 @@ public sealed class UndoJournal
         _snapshots = snapshots;
         _assetExists = assetExists;
         _notice = notice;
-        _history.Cleared += () => _restoring = null;
+        _history.Cleared += () =>
+        {
+            _restoring = null;
+            _replayCancellation?.Cancel();
+        };
     }
 
     /// <summary>True while a snapshot restore is in flight; undo and redo
@@ -79,6 +84,8 @@ public sealed class UndoJournal
         var entry = _history.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
+        if (entry is JournalStep { CompleteReplay: not null } pendingStep)
+            return ReplayUntilComplete(pendingStep, true);
         if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } step)
             return ReplayWithSnapshots(step, true);
         if (entry.Context is { } context)
@@ -144,6 +151,8 @@ public sealed class UndoJournal
         var entry = _history.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
+        if (entry is JournalStep { CompleteReplay: not null } pendingStep)
+            return ReplayUntilComplete(pendingStep, false);
         if (entry.Context is { } context)
         {
             if (context.Asset is { } asset && !_assetExists(asset))
@@ -160,6 +169,33 @@ public sealed class UndoJournal
                     () => _history.CommitRedo(entry));
         }
         return GiveUpOnRepeat(entry, _runner.Redo());
+    }
+
+    private GestureResult ReplayUntilComplete(JournalStep step, bool before)
+    {
+        var started = _runner.Replay(step, before);
+        if (!started.Success) return GiveUpOnRepeat(step, started);
+        _restoring = step;
+        var cancellation = new CancellationTokenSource();
+        _replayCancellation = cancellation;
+        GestureResult? completed = null;
+        bool Current() => _restoring == step
+            && (before ? _history.PeekUndo() : _history.PeekRedo())?.Id == step.Id;
+        void Finish(GestureResult result)
+        {
+            if (_restoring != step) { cancellation.Dispose(); return; }
+            bool current = Current();
+            _restoring = null;
+            _replayCancellation = null;
+            cancellation.Dispose();
+            if (!current) { completed = Refuse(Dropped); return; }
+            if (!result.Success) { completed = Refuse(result.Detail ?? RestoreFailed); return; }
+            if (before) _history.CommitUndo(step); else _history.CommitRedo(step);
+            completed = result;
+        }
+        try { step.CompleteReplay!(before, Current, cancellation.Token, Finish); }
+        catch (Exception ex) { Finish(GestureResult.Fail(ex.Message)); }
+        return completed ?? GestureResult.Ok();
     }
 
     private GestureResult ReplayWithSnapshots(JournalStep step, bool before)

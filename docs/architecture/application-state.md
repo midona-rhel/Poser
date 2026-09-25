@@ -128,7 +128,7 @@ The shared journal moves the entry only after the pose import completes, not
 when it is admitted. Game waits for the current body's skeleton and published
 bone bindings, bounded to ten seconds; waiting work retains the exact actor and
 session and is cancelled when its history operation no longer applies. This
-also governs Reset All's pose inverse; it does not expand the captured state.
+also governs whole-actor restoration.
 
 Actor visibility/presentation and companion changes also journal in Application.
 UI holds exact IDs and detached slot readings; Game resolves native bodies on
@@ -155,7 +155,13 @@ Whole-actor Reset All uses `IActorResetControl`: Application owns admission,
 reset order and the single history entry; replay retains only the exact actor ID.
 Expression/gaze release precedes pose/IK, animation and presentation follow,
 and external integrations run last because their restoration may redraw.
-Its existing inverse restores pose/IK, not animation or external appearance.
+Its inverse captures authored pose/IK plus supported appearance, model,
+presentation, gaze, expression and Customize+ state before mutation; failed
+capture refuses the reset. Lifecycle restoration shares those state owners.
+Appearance and collection restoration completes before pose-dependent writes,
+using the Game redraw barrier. MCDF resources remain under the existing
+transaction/session ownership. The single history entry advances only after
+completion; failures remain retryable. Animation playback is never recovered.
 Pose capture/export takes exact actor IDs through `IPoseFileCapture`; Game
 resolves on the framework thread and refreshes every slot before reading.
 Application owns preview baseline capture, retries, and rebase-then-file

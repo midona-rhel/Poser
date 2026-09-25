@@ -95,6 +95,8 @@ public sealed class McdfTransaction
     /// time.</summary>
     public bool Busy => _task is { IsCompleted: false };
 
+    internal Task CurrentCompletion => _task ?? Task.CompletedTask;
+
     /// <summary>Cooperative cancellation of the running operation.</summary>
     public void Cancel() => _cancellation?.Cancel();
 

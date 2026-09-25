@@ -19,13 +19,13 @@ public sealed class GlamourerAccessTests
         const string json = "{\"Bones\":{\"j_ude_a_l\":{\"Scale\":1.2}}}";
         port.BodyProbe = actor => new(actor == source ? profileId : null, actor == source);
         port.BodyJson = json;
-        var captured = session.CaptureHistory(source);
+        var captured = session.TryCaptureHistory(source).Value!;
         Assert.Equal(json, captured.BodyProfileJson);
         port.BodyJson = "changed source";
         Assert.True(session.ApplyBodyProfileJson(copy, captured.BodyProfileJson!, "Copied profile").Success);
         Assert.Equal(copy, port.AppliedBodyActor);
         Assert.Equal(json, port.AppliedBodyJson);
-        Assert.Equal(json, session.CaptureHistory(copy).BodyProfileJson);
+        Assert.Equal(json, session.TryCaptureHistory(copy).Value!.BodyProfileJson);
         Assert.False(session.OverridesFor(source).HasAny);
         Assert.True(session.ResetBodyProfile(copy).Success);
         Assert.Contains(nameof(IIntegrationRuntimePort.DeleteTemporaryBodyProfileById), port.Calls);
@@ -38,7 +38,7 @@ public sealed class GlamourerAccessTests
         var actor = ActorId.New();
         const string authored = "{\"Customize\":{\"Hair\":17},\"Equipment\":{\"Head\":{\"ItemId\":42,\"Stain\":3}}}";
         port.StateResult = IntegrationValue<string>.Ok(authored);
-        var saved = session.CaptureHistory(actor);
+        var saved = session.TryCaptureHistory(actor).Value!;
         port.StateResult = IntegrationValue<string>.Ok("{}");
         var replacement = ActorId.New();
         Assert.True(session.RestoreHistory(replacement, saved).Success);
@@ -228,7 +228,7 @@ public sealed class GlamourerAccessTests
         {
             string name = method!.Name;
             Calls.Add(name);
-            if (name == "get_CustomizePlus")
+            if (name is "get_CustomizePlus" or "get_Penumbra" or "get_Glamourer")
                 return new IntegrationAvailability(true, "Available");
             if (name == nameof(IIntegrationRuntimePort.ProbeBodyProfile))
                 return IntegrationValue<BodyProfileProbe>.Ok(BodyProbe((ActorId)args![0]!));

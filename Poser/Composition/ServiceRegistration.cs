@@ -248,7 +248,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
         services.AddSingleton<IExpressionControl, ExpressionSession>();
         services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
-        services.AddSingleton<Application.Gaze.IGazeControl, Application.Gaze.GazeSession>();
+        services.AddSingleton<Application.Gaze.GazeSession>();
+        services.AddSingleton<Application.Gaze.IGazeControl>(sp => sp.GetRequiredService<Application.Gaze.GazeSession>());
         services.AddSingleton<AnimationSteps>();
         services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<AnimationSteps>());
         services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<AnimationSession>());
@@ -289,6 +290,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IPoseEditReads, PoseEditReads>();
         services.AddSingleton<IActorPoseResetRuntime, ActorPoseResetRuntime>();
         services.AddSingleton<IActorResetControl, ActorResetControl>();
+        services.AddSingleton<ActorStateSnapshots>();
+        services.AddSingleton<IActorStateSnapshots>(sp => sp.GetRequiredService<ActorStateSnapshots>());
         services.AddSingleton<IPoseCommands>(sp => new PoseCommands(
             sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<PoseEditService>(),
             sp.GetRequiredService<PoseTransferService>(), sp.GetRequiredService<IPoseEditReads>(),

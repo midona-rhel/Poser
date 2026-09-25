@@ -14,7 +14,7 @@ public sealed class ActorResetControl(
     SceneSession scene, TransformGestureService gestures, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
     ActorPresentationSession presentation, ActorIntegrationSession integration,
-    TransformHistory history, ValueJournal values, Lazy<IPoseSnapshotPort> snapshots)
+    TransformHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl
 {
     public PoseEditResult ResetAll(ActorId actor)
@@ -27,20 +27,21 @@ public sealed class ActorResetControl(
             return PoseEditResult.Fail("Another pose operation is running.");
         var admission = CanReset(actor);
         if (!admission.Success) return admission;
-        var before = snapshots.Value.Capture(actor.LogicalId);
-        if (before == null)
-            return PoseEditResult.Fail("The actor's pose could not be captured before resetting.");
+        var capture = snapshots.Capture(actor);
+        if (!capture.Success || capture.Value is not { } before)
+            return PoseEditResult.Fail(capture.Detail ?? "The actor's state could not be captured before resetting.");
 
         var result = ResetCore(actor);
-        // Preserve the existing pose/IK inverse. This is not an animation or
-        // external-appearance snapshot, and must not pretend to be one.
         history.Append(new JournalStep("Reset all",
             () => CanReset(actor).Success,
             () => ResetCore(actor).Success)
         {
-            RestoreSnapshotsAfterReplay = true,
             RetainOnFailure = true,
-            Context = new StepContext([], [before], [], null),
+            CompleteReplay = (undo, current, cancellation, completed) =>
+            {
+                if (undo) snapshots.Restore(before, current, cancellation, completed);
+                else snapshots.WaitForReset(actor, current, cancellation, completed);
+            },
         });
         return result;
     }

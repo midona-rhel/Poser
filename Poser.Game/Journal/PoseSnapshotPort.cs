@@ -69,6 +69,12 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
     }
 
     public ActorSnapshot? Capture(Guid lineage)
+        => Capture(lineage, authoredOnly: false);
+
+    public ActorSnapshot? CaptureAuthored(Guid lineage)
+        => Capture(lineage, authoredOnly: true);
+
+    private ActorSnapshot? Capture(Guid lineage, bool authoredOnly)
     {
         if (Live(lineage) is not { } actor)
             return null;
@@ -79,11 +85,11 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
         // every layer and re-authors these alone, so a bone the animation
         // was driving goes back to the animation instead of freezing at the
         // pose it happened to hold when the snapshot was taken.
-        PoseFile pose;
+        object pose;
         try
         {
-            pose = _poseFiles.CreatePoseFile(
-                slots, bone => bone.IsSkeletonRoot || _posing.HasModifications(bone));
+            pose = authoredOnly ? AuthoredPoseState.Capture(slots, _posing)
+                : _poseFiles.CreatePoseFile(slots, bone => bone.IsSkeletonRoot || _posing.HasModifications(bone));
         }
         catch (Exception ex)
         {
@@ -107,7 +113,7 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
         if (_disposed || !_framework.IsInFrameworkUpdateThread || _pending != null || !stillCurrent()
             || _sessions.ActiveSessionGeneration is not { IsValid: true } session
             || Live(snapshot.Lineage) is not { } actor || _bindings.GetActorId(actor) is not { } actorId
-            || snapshot.Pose is not PoseFile)
+            || snapshot.Pose is not (PoseFile or AuthoredPoseState))
             return false;
 
         // Model changes tear down draw objects synchronously, but replacement
@@ -135,7 +141,15 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
                 Complete(false);
                 return;
             }
-            if (!ActorPoseReadiness.IsReady(_skeletons.GetSkeletons(actor), _bindings)) return;
+            var skeletons = _skeletons.GetSkeletons(actor);
+            if (!ActorPoseReadiness.IsReady(skeletons, _bindings)) return;
+            if (pending.Snapshot.Pose is AuthoredPoseState authored)
+            {
+                if (!authored.CanRestore(skeletons)) { Complete(false); return; }
+                authored.Restore(skeletons, _posing);
+                Complete(Rearm(pending.Actor, pending.Snapshot));
+                return;
+            }
             _pending = null;
             BeginImport(pending);
         }

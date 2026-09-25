@@ -508,7 +508,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
-        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true })
+        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } or JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
@@ -573,7 +573,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
-        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true })
+        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } or JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(

@@ -314,10 +314,9 @@ public sealed class SceneLifecycleHistoryTests
             originalSpawns++;
             return world.Actors.Spawn("Source appearance");
         })!;
-        var runtime = new ActorRuntimeState(null, 0,
+        var runtime = new ActorRuntimeState(null, new Poser.Application.Posing.ActorPropertiesSnapshot(0,
             new Poser.Application.Integration.ActorAppearanceSnapshot("authored appearance", null, null, null, null),
-            PresentationOverrides.None,
-            null, null, new GazeState(), null, false, false, false, []);
+            PresentationOverrides.None, null, null), null, null, []);
         var authored = new ActorState(MapStood, false, null) { Runtime = runtime };
         world.Actors.Edit(actor, authored);
         world.Lifecycle.DespawnActor(actor);

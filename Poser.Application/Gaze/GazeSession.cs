@@ -42,6 +42,16 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
     private static readonly GazeTargetType[] Parts =
         [GazeTargetType.Eyes, GazeTargetType.Head, GazeTargetType.Body];
 
+    /// <summary>Shared full-state restore, without creating another history entry.</summary>
+    public GazeResult RestoreState(ActorId actor, GazeReading reading)
+    {
+        var result = Restore(actor, reading.Settings);
+        if (!result.Success) return new(false, result.Detail);
+        return reading.Settings.Mode == GazeTargetMode.Entity && reading.Target is { } target
+            ? runtime.SetTarget(actor, target)
+            : GazeResult.Ok();
+    }
+
     private GazeResult Step(ActorId actor, string description, Func<GazeResult> change)
     {
         if (Read(actor) is not { } before) return Missing();

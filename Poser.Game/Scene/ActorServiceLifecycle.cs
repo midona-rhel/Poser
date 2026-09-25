@@ -94,12 +94,12 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         IActorManager actorManager,
-        Poser.Application.Presentation.ActorPresentationSession presentation,
+        ActorStateSnapshots actorStates,
         Integration.ISpawnCollectionPort collections)
     {
         _configuration = configuration;
         _collections = collections;
-        _presentation = presentation;
+        _actorStates = actorStates;
         _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;

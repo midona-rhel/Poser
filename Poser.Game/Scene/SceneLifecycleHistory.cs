@@ -296,7 +296,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         IActorManager actorManager,
-        Poser.Application.Presentation.ActorPresentationSession presentation,
+        ActorStateSnapshots actorStates,
         Integration.ISpawnCollectionPort collections)
         : this(
             history,
@@ -305,7 +305,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             new ActorServiceLifecycle(
                 configuration,
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings, bonePosing, actorManager, presentation, collections),
+                gaze, integration, bindings, bonePosing, actorManager, actorStates, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects),
