@@ -819,7 +819,7 @@ public partial class MainWindow
                 "Rename light", light.Name, next => light.Name = next),
             () => _lightPane.MoveToCamera(lightId),
             () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
-            () => _lightPane.OpenSave(light),
+            () => _lightPane.OpenSave(lightId),
             // The library save asks for the entry's NAME first — the same
             // modal renames use, with the light's name as the start.
             () => OpenEntityRename(

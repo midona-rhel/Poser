@@ -226,6 +226,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
+        services.AddSingleton<Application.Presentation.ILightControl, Game.Lights.LightControl>();
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.ICameraTargetControl, Game.Cameras.CameraTargetControl>();
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
@@ -521,7 +522,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
-        services.AddSingleton<ILightFileService, LightFileService>();
+        services.AddSingleton<ILightFiles, Game.Lights.LightFiles>();
         services.AddSingleton<ICameraFiles, Game.Cameras.CameraFiles>();
         // One territory-to-place resolution is shared by whole-scene capture
         // and pose auto-save so a recorded place means the same thing in both

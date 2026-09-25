@@ -594,7 +594,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = LightFileService.CreateLightFile(light);
+            var document = Lights.LightDocument.Capture(light);
             document.Name = Bounded(document.Name, "Light");
             document.Transform = NormalizedTransform(
                 (Transform)document.Transform, $"Light '{light.Name}'", notes);

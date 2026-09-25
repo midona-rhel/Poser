@@ -30,10 +30,11 @@ public sealed class SceneCreation : ISceneCreation
     private readonly SceneRuntimeHandles _handles;
     private readonly ICameraProjection _camera;
     private readonly IVirtualCameraService _cameras;
+    private readonly ILightingService _lighting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras)
+        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting)
     {
         _framework = framework;
         _sessions = sessions;
@@ -45,6 +46,7 @@ public sealed class SceneCreation : ISceneCreation
         _animation = animation;
         _camera = camera;
         _cameras = cameras;
+        _lighting = lighting;
         _handles = new(() => sessions.ActiveSessionGeneration);
     }
 
@@ -65,6 +67,29 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreationResult CreateLight(LightKind kind) =>
         Create(SceneEntityKind.Light, () => _lifecycle.SpawnLight(kind));
+
+    public SceneCreationResult CreateLight(Poser.Files.LightFile document, string description) =>
+        Create(SceneEntityKind.Light, () =>
+        {
+            var light = _lighting.SpawnLight(document.Kind);
+            if (light is null) return null;
+            try
+            {
+                Lights.LightDocument.Apply(document, light);
+                if (!string.IsNullOrEmpty(document.Gobo))
+                {
+                    var gobo = _lighting.Gobos.FirstOrDefault(g =>
+                        string.Equals(g.Path, document.Gobo, StringComparison.OrdinalIgnoreCase));
+                    if (gobo is not null) _lighting.ApplyGobo(light, gobo);
+                }
+                return _lifecycle.RecordSpawnedLight(description, light);
+            }
+            catch
+            {
+                _lighting.DestroyLight(light);
+                throw;
+            }
+        });
 
     public SceneCreationResult CreateCamera(CameraKind kind) =>
         Create(SceneEntityKind.Camera, () => _lifecycle.CreateCamera(kind));

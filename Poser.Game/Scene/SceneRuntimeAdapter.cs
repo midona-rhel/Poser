@@ -1263,7 +1263,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return null;
         }
 
-        LightFileService.Apply(document, light);
+        Lights.LightDocument.Apply(document, light);
         if (bone is not null)
             light.AttachedBone = bone;
 

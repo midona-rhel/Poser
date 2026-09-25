@@ -12,42 +12,22 @@ using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
+using Poser.Application.Presentation;
 using Poser.Files;
 using Poser.Services;
-using DomainDelta = Poser.Domain.Transforms.TransformDelta;
-using DomainOperation = Poser.Domain.Transforms.TransformOperation;
-using DomainPivot = Poser.Domain.Transforms.PivotMode;
-using DomainSpace = Poser.Domain.Transforms.TransformSpace;
-using GestureId = Poser.Domain.Transforms.TransformGestureId;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Light-scoped editor: emission, shadow casting, and the light's own
-/// transform. The pane owns state and callbacks; Crystarium owns every row
-/// and placement.
-///
-/// <para>Every property row writes the live <see cref="ILight"/> directly —
-/// the lighting service re-runs the native update each tick, so a write is
-/// the flush. The TRANSFORM rows are the exception: they drive the same
-/// stable-id gesture lifecycle the pose inspector uses, so light moves join
-/// undo history and the in-world gizmo.</para>
-/// </summary>
+/// <summary>Light presentation uses detached readings and exact-generation backend commands.</summary>
 public sealed class LightPane
 {
     public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
-    private readonly ILightingService _lighting;
+    private readonly ISceneCreation _creation;
 
-    /// <summary>Adding and removing a light goes through the lifecycle seam,
-    /// so both land in the shell's undo history.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly EntityActions _entityActions;
-    private readonly ILightFileService _lightFiles;
+    private readonly ILightFiles _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
-    private readonly IPlacementAnchorSource _anchors;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
     private readonly ICameraProjection _camera;
@@ -71,6 +51,8 @@ public sealed class LightPane
     /// <summary>The gobo library's visual surface: the shared texture grid,
     /// walking the library by index with each tile captioned by NAME.</summary>
     private readonly Crystarium.TexturePicker _goboGrid;
+    private LightId? _goboTarget;
+    private LightId? _attachTarget;
 
     /// <summary>Every bone of every actor, flat and searchable — the attach
     /// target is one bone anywhere in the scene, not one bone of one actor.
@@ -105,7 +87,7 @@ public sealed class LightPane
 
     // An imported light is only selectable once the scene refresh has bound
     // it, exactly like a spawned one.
-    private readonly global::Poser.UI.Composition.PendingSelection<ILight> _pendingSelect = new();
+    private readonly global::Poser.UI.Composition.PendingSelection<SceneEntityHandle> _pendingSelect = new();
 
     /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
     /// the log track, so the tiers read before dragging.</summary>
@@ -119,17 +101,14 @@ public sealed class LightPane
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     private readonly ScenePane _scenePane;
-    private readonly Game.Journal.LightSession _values;
+    private readonly ILightControl _values;
 
     public LightPane(
         SceneSession scene,
-        IEntityBindings bindings,
-        ILightingService lighting,
-        ISceneLifecycleHistory lifecycle,
+        ISceneCreation creation,
         EntityActions entityActions,
-        ILightFileService lightFiles,
+        ILightFiles lightFiles,
         ObjectPlacementPreferences placement,
-        IPlacementAnchorSource anchors,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
         ICameraProjection camera,
@@ -137,20 +116,17 @@ public sealed class LightPane
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         ScenePane scenePane,
-        Game.Journal.LightSession values)
+        ILightControl values)
     {
         _values = values;
         _names = names;
         _notices = notices;
         _scene = scene;
-        _bindings = bindings;
+        _creation = creation;
         _scenePane = scenePane;
-        _lighting = lighting;
-        _lifecycle = lifecycle;
         _entityActions = entityActions;
         _lightFiles = lightFiles;
         _placement = placement;
-        _anchors = anchors;
         _cleanTransforms = cleanTransforms;
         // The load dialog carries the ONE choice that changes where the
         // light lands, decided beside the file it applies to.
@@ -164,7 +140,7 @@ public sealed class LightPane
         _goboGrid = new Crystarium.TexturePicker(
             "light-gobo",
             GoboPreview,
-            (uint)lighting.Gobos.Count,
+            (uint)values.Gobos.Count,
             caption: GoboCaption);
     }
 
@@ -180,11 +156,7 @@ public sealed class LightPane
         _loadBrowser.Draw();
         DrawPickers();
 
-        _pendingSelect.Reconcile(
-            imported => _bindings.GetLightId(imported) is { } id
-                ? SelectionId.ForLight(id)
-                : null,
-            _scene.Selection);
+        _pendingSelect.Reconcile(handle => _creation.Resolve(handle), _scene.Selection);
     }
 
     /// <summary>The placement band's labels, positional against
@@ -213,37 +185,19 @@ public sealed class LightPane
             });
     }
 
-    /// <summary>One placed import: resolves the current anchor the shared
-    /// placement mode asks for, refusing by name when it cannot.</summary>
-    private ILight? ImportPlaced(
-        string path, ObjectPlacementMode mode, out string? refusal)
-    {
-        if (!_anchors.TryCurrentFor(
-                mode, out var position, out var yaw, out refusal))
-            return null;
-        return _lightFiles.ImportLight(
-            path, mode, position, yaw, out refusal);
-    }
-
     /// <summary>Opens the load dialog from outside the pane — the add-entity
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
     {
         _folder.Open(_loadBrowser, path =>
         {
-            // The file service owns the spawn, so the add is RECORDED rather
-            // than issued here: a light that arrives from a file is still a
-            // light the user added, and undo has to know it.
-            var imported = _lifecycle.RecordSpawnedLight(
-                $"Add light from {System.IO.Path.GetFileNameWithoutExtension(path)}",
-                ImportPlaced(path, _placement.Mode, out var refusal));
-            if (imported == null)
+            var imported = _lightFiles.Import(path, _placement.Mode);
+            if (imported.Handle is null)
             {
-                _notices.Failed(
-                    refusal ?? "Load: the light file could not be read.");
+                _notices.Failed(imported.Detail ?? "The light could not be loaded.");
                 return;
             }
-            _pendingSelect.Arm(imported);
+            _pendingSelect.Arm(imported.Handle);
         });
     }
 
@@ -280,7 +234,7 @@ public sealed class LightPane
         string id,
         Vector2 origin,
         Vector2 size,
-        Action<Crystarium.PageScope, LightId, ILight> sections)
+        Action<Crystarium.PageScope, LightId, LightReading> sections)
     {
         Crystarium.Page(id, origin, size, page =>
         {
@@ -301,28 +255,28 @@ public sealed class LightPane
     private void DrawPickers()
     {
         if (_goboGrid.Draw() is { } picked)
-            ApplyGoboIndex(picked);
+            ApplyGoboIndex(_goboTarget, picked);
         if (_attachPicker.Draw() is { } bone)
             AttachTo(bone.Item);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void GeneralRows(Crystarium.FormScope form, ILight light)
+    private void GeneralRows(Crystarium.FormScope form, LightReading light)
     {
-        if (!_lighting.IsAvailable)
+        if (!light.Available)
             form.Status("Lighting is unavailable: game signatures not found.");
         form.Cells(cells =>
         {
             cells.Cell(
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
-                    value => _values.SetIsOn(light, value)),
+                    value => _values.SetIsOn(light.Id, value)),
                 help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
-                    value => _values.SetHasReflection(light, value)),
+                    value => _values.SetHasReflection(light.Id, value)),
                 help: "Let this light appear in reflective surfaces");
         });
         form.Cells(cells =>
@@ -330,23 +284,23 @@ public sealed class LightPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##light-name", light.Name,
-                    value => _values.SetName(light, value)),
+                    value => _values.SetName(light.Id, value)),
                 help: "The name this light carries in the sidebar");
             cells.Cell(
                 "Type",
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
-                    selected => _values.SetKind(light, (LightKind)selected)),
+                    selected => _values.SetKind(light.Id, (LightKind)selected)),
                 help: "Sun, bulb, cone, or panel");
         });
     }
 
-    private void LightRows(Crystarium.FormScope form, ILight light)
+    private void LightRows(Crystarium.FormScope form, LightReading light)
     {
         form.ColorWells("Color", wells =>
         {
             wells.Well("Color", ToDisplayColor(light.Color),
-                value => _values.SetColor(light, ToRawColor(value)),
+                value => _values.SetColor(light.Id, ToRawColor(value)),
                 hdr: true);
         }, help: "HDR color; reaches past white");
 
@@ -359,7 +313,7 @@ public sealed class LightPane
             cells.Cell(
                 "Intensity",
                 cell => cell.Slider("##light-intensity", light.Intensity,
-                    0f, 100f, value => _values.SetIntensity(light, value),
+                    0f, 100f, value => _values.SetIntensity(light.Id, value),
                     scale: SliderScale.Log,
                     marks: IntensityMarks,
                     logCurvature: 9999f, onBegin: _values.Seal),
@@ -367,7 +321,7 @@ public sealed class LightPane
             cells.Cell(
                 "Range",
                 cell => cell.Slider("##light-range", light.Range, 0f, 999f,
-                    value => _values.SetRange(light, value),
+                    value => _values.SetRange(light.Id, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "How far the light reaches");
         });
@@ -377,12 +331,12 @@ public sealed class LightPane
                 "Falloff type",
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
-                    selected => _values.SetFalloffType(light, (LightFalloffType)selected)),
+                    selected => _values.SetFalloffType(light.Id, (LightFalloffType)selected)),
                 help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
-                    0f, 1000f, value => _values.SetFalloff(light, value),
+                    0f, 1000f, value => _values.SetFalloff(light.Id, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "Dimming toward the cone edge");
         });
@@ -395,13 +349,13 @@ public sealed class LightPane
                     cells.Cell(
                         "Cone angle",
                         cell => cell.Slider("##light-cone", light.SpotAngle,
-                            0f, 180f, value => _values.SetSpotAngle(light, value), onBegin: _values.Seal),
+                            0f, 180f, value => _values.SetSpotAngle(light.Id, value), onBegin: _values.Seal),
                         help: "How wide the cone opens, in degrees");
                     cells.Cell(
                         "Falloff angle",
                         cell => cell.Slider("##light-cone-falloff",
                             light.FalloffAngle, 0f, 180f,
-                            value => _values.SetFalloffAngle(light, value), onBegin: _values.Seal),
+                            value => _values.SetFalloffAngle(light.Id, value), onBegin: _values.Seal),
                         help: "How soft the cone's edge is, in degrees");
                 });
                 break;
@@ -413,19 +367,17 @@ public sealed class LightPane
                         "Skew X",
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
-                            value => _values.SetAreaAngle(
-                                light, light.AreaAngle with { X = value }), onBegin: _values.Seal),
+                            value => _values.SetAreaAngleX(light.Id, value), onBegin: _values.Seal),
                         help: "Tilt the throw around local X (vertical), in degrees; the emitter itself does not rotate");
                     cells.Cell(
                         "Skew Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
-                            value => _values.SetAreaAngle(
-                                light, light.AreaAngle with { Y = value }), onBegin: _values.Seal),
+                            value => _values.SetAreaAngleY(light.Id, value), onBegin: _values.Seal),
                         help: "Tilt the throw around local Y (horizontal), in degrees; the emitter itself does not rotate");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => _values.SetFalloffAngle(light, value),
+                    value => _values.SetFalloffAngle(light.Id, value),
                     help: "How soft the panel's edge is, in degrees", onBegin: _values.Seal);
                 break;
         }
@@ -438,11 +390,12 @@ public sealed class LightPane
         {
             cells.Cell(
                 "Gobo",
-                cell => _goboGrid.Field(
-                    in cell,
-                    GoboIndex(light),
-                    next => ApplyGoboIndex(next),
-                    disabled: !goboSupported),
+                cell =>
+                {
+                    if (!_goboGrid.IsOpen) _goboTarget = light.Id;
+                    _goboGrid.Field(in cell, GoboIndex(light),
+                        next => ApplyGoboIndex(light.Id, next), disabled: !goboSupported);
+                },
                 help: goboSupported
                     ? "Project a texture through the light"
                     : "Spot and area lights only.");
@@ -451,7 +404,7 @@ public sealed class LightPane
                 cell => cell.Button("##light-gobo-clear", "Clear",
                     () =>
                     {
-                        _values.ClearGobo(light);
+                        _values.ClearGobo(light.Id);
                     },
                     disabled: light.GoboPath is null),
                 help: "Project no mask at all");
@@ -461,11 +414,11 @@ public sealed class LightPane
     /// <summary>The library index of the applied gobo — or one PAST the
     /// library when none is applied, so the field's tile previews nothing
     /// and stepping lands back inside the catalog.</summary>
-    private uint GoboIndex(ILight light)
+    private uint GoboIndex(LightReading light)
     {
         if (light.GoboPath is { } path)
         {
-            var gobos = _lighting.Gobos;
+            var gobos = _values.Gobos;
             for (int i = 0; i < gobos.Count; i++)
             {
                 if (string.Equals(
@@ -473,24 +426,20 @@ public sealed class LightPane
                     return (uint)i;
             }
         }
-        return (uint)_lighting.Gobos.Count;
+        return (uint)_values.Gobos.Count;
     }
 
     private string GoboCaption(uint index)
     {
-        var gobos = _lighting.Gobos;
+        var gobos = _values.Gobos;
         return index < gobos.Count ? gobos[(int)index].Name : "None";
     }
 
-    private void ApplyGoboIndex(uint index)
+    private void ApplyGoboIndex(LightId? target, uint index)
     {
-        var (_, light) = TargetLight();
-        var gobos = _lighting.Gobos;
-        if (light == null || gobos.Count == 0)
-            return;
-        int clamped = (int)Math.Min(index, (uint)(gobos.Count - 1));
-        if (!_values.ApplyGobo(light, gobos[clamped]))
-            _notices.Failed("Gobo: the texture could not be applied.");
+        if (target is not { } id || _values.Gobos.Count == 0) return;
+        var result = _values.ApplyGobo(id, Math.Min(index, (uint)(_values.Gobos.Count - 1)));
+        if (!result.Success) _notices.Failed($"Gobo: {result.Detail}");
     }
 
     /// <summary>
@@ -504,7 +453,7 @@ public sealed class LightPane
     {
         handle = 0;
         pixels = Vector2.Zero;
-        var gobos = _lighting.Gobos;
+        var gobos = _values.Gobos;
         if (index >= gobos.Count)
             return TextureProbe.Missing;
         string path = gobos[(int)index].Path;
@@ -535,7 +484,7 @@ public sealed class LightPane
             : TextureProbe.Ready;
     }
 
-    private void ShadowRows(Crystarium.FormScope form, ILight light)
+    private void ShadowRows(Crystarium.FormScope form, LightReading light)
     {
         form.Cells(cells =>
         {
@@ -543,23 +492,23 @@ public sealed class LightPane
                 "Dynamic",
                 cell => cell.Switch("##light-shadow-dynamic",
                     light.CastsDynamicShadows,
-                    value => _values.SetCastsDynamicShadows(light, value)),
+                    value => _values.SetCastsDynamicShadows(light.Id, value)),
                 help: "Cast shadows that update as the scene moves");
             cells.Cell(
                 "Characters",
                 cell => cell.Switch("##light-shadow-chara",
                     light.CastsCharacterShadow,
-                    value => _values.SetCastsCharacterShadow(light, value)),
+                    value => _values.SetCastsCharacterShadow(light.Id, value)),
                 help: "Let characters cast shadows from this light");
             cells.Cell(
                 "Objects",
                 cell => cell.Switch("##light-shadow-object",
                     light.CastsObjectShadow,
-                    value => _values.SetCastsObjectShadow(light, value)),
+                    value => _values.SetCastsObjectShadow(light.Id, value)),
                 help: "Let scenery cast shadows from this light");
         });
         form.Slider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => _values.SetCharacterShadowRange(light, value),
+            0f, 1000f, value => _values.SetCharacterShadowRange(light.Id, value),
             help: "How far character shadows are still drawn",
             scale: SliderScale.Log, onBegin: _values.Seal);
         form.Cells(cells =>
@@ -568,14 +517,14 @@ public sealed class LightPane
                 "Shadow near",
                 cell => cell.Slider("##light-shadow-near",
                     light.ShadowPlaneNear, 0f, 10f,
-                    value => _values.SetShadowPlaneNear(light, value),
+                    value => _values.SetShadowPlaneNear(light.Id, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "The closest distance shadows begin at");
             cells.Cell(
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
                     light.ShadowPlaneFar, 0f, 1000f,
-                    value => _values.SetShadowPlaneFar(light, value),
+                    value => _values.SetShadowPlaneFar(light.Id, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "The furthest distance shadows reach");
         });
@@ -584,12 +533,12 @@ public sealed class LightPane
     /// <summary>The follow target. Attaching is a per-frame copy of the bone's
     /// position and rotation, so it OWNS the light's transform — the TRANSFORM
     /// section and the in-world gizmo both stand down while it is set.</summary>
-    private void AttachRows(Crystarium.FormScope form, ILight light)
+    private void AttachRows(Crystarium.FormScope form, LightReading light)
     {
         var attached = light.AttachedBone;
         form.Picker(
             "Attach to",
-            AttachLabel(attached),
+            light.IsAttached ? AttachLabel(attached) : "None",
             () => OpenAttachPicker(light),
             actions =>
             {
@@ -597,10 +546,10 @@ public sealed class LightPane
                     "Detach",
                     () =>
                     {
-                        _values.SetAttachedBone(light, null);
+                        _values.SetAttachedBone(light.Id, null);
                         _attachLabel = null;
                     },
-                    disabled: attached is null,
+                    disabled: !light.IsAttached,
                     help: "Stop following");
             },
             help: "Follow a bone");
@@ -609,11 +558,9 @@ public sealed class LightPane
     /// <summary>"Actor · bone" for the attached bone, memoized on the scene
     /// revision. A bone the snapshot no longer lists still reads as attached —
     /// the service, not this pane, decides when a stale bone detaches.</summary>
-    private string AttachLabel(IBone? bone)
+    private string AttachLabel(BoneId? bone)
     {
-        if (bone is null)
-            return "None";
-        if (_bindings.GetBoneId(bone) is not { } boneId)
+        if (bone is not { } boneId)
             return "Attached";
 
         ulong revision = _scene.Snapshot.Revision;
@@ -640,8 +587,9 @@ public sealed class LightPane
         return "Attached";
     }
 
-    private void OpenAttachPicker(ILight light)
+    private void OpenAttachPicker(LightReading light)
     {
+        _attachTarget = light.Id;
         _boneChoices.Clear();
         foreach (var actor in _scene.Snapshot.Actors)
         {
@@ -654,10 +602,7 @@ public sealed class LightPane
             }
         }
 
-        string? selected = light.AttachedBone is { } attached &&
-            _bindings.GetBoneId(attached) is { } attachedId
-            ? attachedId.ToString()
-            : null;
+        string? selected = light.AttachedBone?.ToString();
         _attachPicker.Open(
             "attach",
             _boneChoices,
@@ -675,29 +620,22 @@ public sealed class LightPane
 
     private void AttachTo(BoneChoice choice)
     {
-        var (_, light) = TargetLight();
-        if (light == null)
-            return;
-        var resolved = _bindings.Resolve(choice.Id);
-        if (!resolved.Success || resolved.Value is not { } bone)
-        {
-            _notices.Failed($"Attach: {resolved.Detail}");
-            return;
-        }
-        _values.SetAttachedBone(light, bone);
+        if (_attachTarget is not { } id) return;
+        var result = _values.SetAttachedBone(id, choice.Id);
+        if (!result.Success) _notices.Failed($"Attach: {result.Detail}");
         _attachLabel = null;
     }
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
     /// bound it.</summary>
-    private void FileRows(Crystarium.FormScope form, ILight light)
+    private void FileRows(Crystarium.FormScope form, LightReading light)
     {
         form.ActionDropdown("More", ["Save to file…", "Save to library", "Destroy all lights…"], -1, "More",
             choice =>
             {
                 if (choice == 0)
-                    OpenSave(light);
+                    OpenSave(light.Id);
                 else if (choice == 2)
                     RequestDestroyAll?.Invoke();
                 else
@@ -705,9 +643,9 @@ public sealed class LightPane
                         "Save light to library", light.Name,
                         name =>
                         {
-                            if (_bindings.GetLightId(light) is { } entryId)
+                            if (_values.Read(light.Id) is not null)
                                 _scenePane.SaveLightEntry(
-                                    entryId.LogicalId, name);
+                                    light.Id.LogicalId, name);
                         });
             }, icon: TablerIcon.Dots);
         form.Actions("Light file", actions =>
@@ -717,29 +655,20 @@ public sealed class LightPane
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
     /// </summary>
-    public void OpenSave(ILight light)
+    public void OpenSave(LightId id)
     {
         _folder.Open(_saveBrowser, path =>
         {
-            // The light is frozen at dialog open and can be destroyed while
-            // the dialog is up; an invalid handle reads as spawn defaults.
-            if (!light.IsValid)
-            {
-                _notices.Refused("Export: the light no longer exists.");
-                return;
-            }
-            if (_lightFiles.ExportLight(
-                    light, path,
-                    _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
+            var result = _lightFiles.Export(id, path);
+            if (result.Success)
                 _notices.Done($"Light saved to {path}.");
             else
-                _notices.Failed(
-                    "Export: the light file could not be written.");
+                _notices.Failed(result.Detail ?? "The light file could not be written.");
         });
     }
 
     private void ActionRows(
-        Crystarium.FormScope form, LightId lightId, ILight light)
+        Crystarium.FormScope form, LightId lightId, LightReading light)
     {
         form.Actions("Light", actions =>
         {
@@ -749,7 +678,7 @@ public sealed class LightPane
             actions.Button("Clone",
                 () =>
                 {
-                    if (_lifecycle.CloneLight(light) == null)
+                    if (_creation.Duplicate(SelectionId.ForLight(lightId)).Handle is null)
                         _notices.Failed(
                             "Clone: the light could not be created.");
                 },
@@ -761,8 +690,7 @@ public sealed class LightPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        if (_bindings.GetLightId(light) is { } id)
-                            _ = _entityActions.Remove(SelectionId.ForLight(id));
+                        _ = _entityActions.Remove(SelectionId.ForLight(lightId));
                     },
                     help: "Remove this light from the scene",
                     variant: ButtonVariant.Danger);
@@ -770,8 +698,7 @@ public sealed class LightPane
                 actions.Button("Release",
                     () =>
                     {
-                        if (_bindings.GetLightId(light) is { } borrowedId)
-                            _ = _entityActions.Remove(SelectionId.ForLight(borrowedId));
+                        _ = _entityActions.Remove(SelectionId.ForLight(lightId));
                     },
                     help: "Hand it back to the game");
         });
@@ -832,15 +759,12 @@ public sealed class LightPane
 
     /// <summary>The selected light and its id, or a null light when the
     /// selection is absent, stale, or already destroyed.</summary>
-    private (LightId Id, ILight? Light) TargetLight()
+    private (LightId Id, LightReading? Light) TargetLight()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Light, Light: { } lightId })
             return (default, null);
-        var resolved = _bindings.Resolve(lightId);
-        if (!resolved.Success || resolved.Value is not { IsValid: true } light)
-            return (lightId, null);
-        return (lightId, light);
+        return (lightId, _values.Read(lightId));
     }
 
     // ── transform presentation adapter ──────────────────────────────────

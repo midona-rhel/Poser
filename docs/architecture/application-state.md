@@ -102,6 +102,12 @@ Pad gestures and deferred icon picks keep their original target; a changed
 selection or replacement generation cannot redirect the edit. Collider property
 commands update the current backend value, not an older UI snapshot.
 
+Light properties, gobo picks and bone attachments also use detached readings
+and exact IDs. Retained pickers edit their opening target, never the current
+selection. Light file dialogs use creation receipts; Game owns native capture,
+placement and application, sharing the document mapping with scene/history.
+Import applies the file before recording the shared creation history step.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

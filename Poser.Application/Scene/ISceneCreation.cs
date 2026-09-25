@@ -19,6 +19,7 @@ public interface ISceneCreation
 {
     SceneCreationResult CreateActor(ActorCreationRequest request);
     SceneCreationResult CreateLight(LightKind kind);
+    SceneCreationResult CreateLight(Poser.Files.LightFile document, string description);
     SceneCreationResult CreateCamera(CameraKind kind);
     SceneCreationResult CreateCamera(Poser.Files.CameraFile document, string description);
     SceneCreationResult CreateProp(PropModel? model = null);
