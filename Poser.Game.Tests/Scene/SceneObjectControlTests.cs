@@ -38,9 +38,6 @@ public sealed class SceneObjectControlTests
         Assert.False(control.SetModel(prop, default).Success);
         Assert.False(control.SetOpacity(world, 0.5f).Success);
         Assert.False((await control.Respawn(world, "unused.mdl")).Success);
-        Assert.Null(control.ReadDebug(world));
-        Assert.False(control.ToggleObjectFlag(world, 1).Success);
-        Assert.False(control.ToggleDrawFlag(world, 1).Success);
     }
 
     [Fact]

@@ -481,71 +481,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         return touched;
     }
 
-    /// <summary>Single tail-byte access (0xC0..0xE0), for the
-    /// animation-gate hunt: transform-animated scenery is driven by
-    /// something in the undocumented tail, found empirically like the
-    /// night byte was.</summary>
-    /// <summary>Offsets the byte diagnostics may touch: the DrawObject
-    /// flag bytes (0x88..0x90, except 0x89 — its low nibble is the load
-    /// state) and the undocumented tail.</summary>
-    private static bool ByteOffsetAllowed(int offset) =>
-        (offset >= 0x88 && offset < 0x90 && offset != 0x89)
-        || (offset >= 0xC0 && offset < 0xE0);
-
-    public byte? ReadBgTailByte(nint address, int offset)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || !ByteOffsetAllowed(offset))
-            return null;
-        return *((byte*)node + offset);
-    }
-
-    public void WriteBgTailByte(nint address, int offset, byte value)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || !ByteOffsetAllowed(offset))
-            return;
-        *((byte*)node + offset) = value;
-    }
-
-    /// <summary>The animation topology, for the pause investigation:
-    /// whether animation data, a render skeleton and Havok controls
-    /// exist at all on this instance.</summary>
-    public string DescribeBgAnimation(nint address)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return "(not a BG object)";
-        var bg = (BgObject*)node;
-        var animation = bg->LoadedAnimationData;
-        if (animation == null)
-            return "no animation data";
-        var parts = new System.Text.StringBuilder("animation data");
-        if (animation->AsyncSkeletonResourceHandle != null)
-            parts.Append(", sklb handle");
-        if (animation->AsyncPapResourceHandle != null)
-            parts.Append(", pap handle");
-        var skeleton = animation->RenderSkeleton;
-        if (skeleton == null)
-            return parts.Append(", no render skeleton").ToString();
-        parts.Append($", skeleton with {skeleton->PartialSkeletonCount} partials");
-        int controls = 0;
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-        {
-            var animated =
-                skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-            if (animated == null)
-                continue;
-            for (int c = 0; c < animated->AnimationControls.Length; c++)
-                if (animated->AnimationControls[c].Value != null)
-                    controls++;
-        }
-        parts.Append($", {controls} controls");
-        return parts.ToString();
-    }
-
     /// <summary>The whole undocumented tail (0xC0..0xE0) in one read —
     /// the pause hold freezes it beside the transform, because part of
     /// it is the instance's own animation clock (it visibly counts up)
@@ -586,24 +521,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 continue;
             *((byte*)node + offset) = values[i];
         }
-    }
-
-    /// <summary>The base Object's 64-bit flag word at 0x38 — the widest
-    /// undocumented lever the instance carries.</summary>
-    public ulong? ReadBgObjectFlags(nint address)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return null;
-        return node->ObjectFlags;
-    }
-
-    public void WriteBgObjectFlags(nint address, ulong flags)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return;
-        node->ObjectFlags = flags;
     }
 
     public bool? ReadBgNightState(nint address)

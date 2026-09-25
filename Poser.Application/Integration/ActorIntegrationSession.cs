@@ -94,6 +94,7 @@ public sealed class ActorIntegrationSession : IDisposable
         }
         string? state = null;
         CollectionAssignment? collection = null;
+        SpawnCollectionSnapshot? inherited = null;
         if (owned.Mcdf == null)
         {
             if (Glamourer.Available || owned.DesignOwned)
@@ -109,14 +110,19 @@ public sealed class ActorIntegrationSession : IDisposable
                 if (!read.Success || read.Value == null)
                     return IntegrationValue<ActorAppearanceSnapshot>.Fail(read.Detail ?? "The actor's collection could not be captured.");
                 if (ForeignTemporaryCollection(owned, read.Value) is { } foreign)
-                    return IntegrationValue<ActorAppearanceSnapshot>.Fail(foreign);
+                {
+                    var captured = _port.CaptureInheritedCollection(actor);
+                    if (!captured.Success || captured.Value == null)
+                        return IntegrationValue<ActorAppearanceSnapshot>.Fail(captured.Detail ?? foreign);
+                    inherited = captured.Value;
+                }
                 collection = read.Value;
             }
         }
         var body = CaptureBodyProfile(actor);
         return body.Success
             ? IntegrationValue<ActorAppearanceSnapshot>.Ok(new(state, collection, body.Value,
-                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources))
+                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources, inherited))
             : IntegrationValue<ActorAppearanceSnapshot>.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
     }
 
@@ -214,7 +220,13 @@ public sealed class ActorIntegrationSession : IDisposable
         {
             if (!result.Success) failures.Add(result.Detail ?? "Appearance restore failed.");
         }
-        if (snapshot.Collection is { } collection)
+        if (snapshot.InheritedCollection is { } inherited)
+        {
+            var restored = _port.RestoreInheritedCollection(actor, inherited);
+            if (!restored.Success) return Lift(restored);
+            if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+        }
+        else if (snapshot.Collection is { } collection)
         {
             if (collection.HasIndividualAssignment)
                 Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));

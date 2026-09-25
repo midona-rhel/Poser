@@ -1096,9 +1096,6 @@ public sealed class WorldObjectRestoreTests
         public bool? ReadBgNightState(nint address) => null;
         public bool WriteBgAnimationSpeed(nint address, float speed) =>
             true;
-        public byte? ReadBgTailByte(nint address, int offset) => null;
-        public void WriteBgTailByte(nint address, int offset, byte value) { }
-        public string DescribeBgAnimation(nint address) => string.Empty;
         public int TailReads;
         public byte TailValue;
         public byte HeldTail;
@@ -1109,8 +1106,6 @@ public sealed class WorldObjectRestoreTests
             return true;
         }
         public void WriteBgTailHeld(nint address, byte[] values) => HeldTail = values[0];
-        public ulong? ReadBgObjectFlags(nint address) => null;
-        public void WriteBgObjectFlags(nint address, ulong flags) { }
         public void WriteBgNightState(nint address, bool night) => LastNightState = night;
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address)

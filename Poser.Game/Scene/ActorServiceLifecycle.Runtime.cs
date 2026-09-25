@@ -3,6 +3,7 @@ using Poser.Application.Integration;
 using Poser.Application.Posing;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
+using Poser.Domain.Integration;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
 using Poser.Entities;
@@ -20,7 +21,7 @@ internal sealed record ActorRuntimeState(
     public int ModelId => Properties.ModelId;
     public CompanionKind? SpawnedKind { get; init; }
     public Posing.AuthoredPoseState Pose { get; init; } = new([]);
-    public Integration.SpawnCollectionSnapshot? InheritedCollection { get; init; }
+    public SpawnCollectionSnapshot? InheritedCollection { get; init; }
 }
 
 internal sealed record LifecycleIk(PoseSlot Slot, int Partial, string Bone,
@@ -59,7 +60,7 @@ internal sealed partial class ActorServiceLifecycle
         if (id is not { } bound) throw new InvalidOperationException("The actor has no stable identity.");
         var collection = _integration.OverridesFor(bound).Mcdf == null
             ? _collections.CaptureInheritedCollection(actor.Address)
-            : Poser.Domain.Integration.IntegrationValue<Integration.SpawnCollectionSnapshot?>.Ok(null);
+            : Poser.Domain.Integration.IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
         if (!collection.Success) throw new InvalidOperationException(collection.Detail);
         var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null);
         if (!captured.Success || captured.Value is not { } properties)

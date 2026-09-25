@@ -1,4 +1,3 @@
-using System.Globalization;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
@@ -109,14 +108,6 @@ public sealed class WorldObjectsPane
                 form => ObjectRows(form, worldObject),
                 divider: false);
 
-            // The instance's raw levers, for the pause hunt and whatever
-            // the next hunt is: every bit writable live, nothing hidden.
-            if (!worldObject.IsVfx && !worldObject.IsFurniture)
-                page.Section(
-                    "Debug",
-                    _openDebug,
-                    next => _openDebug = next,
-                    form => DebugRows(form, worldObject));
         });
 
         // Pumped after the page: the surface a row opened has to outlive
@@ -182,56 +173,6 @@ public sealed class WorldObjectsPane
             });
     }
 
-    private bool _openDebug;
-
-    /// <summary>The base object's 64 flag bits and the draw-flag byte's
-    /// eight, each a live checkbox, plus mono readouts — the manual twin
-    /// of the automated gate hunt.</summary>
-    private void DebugRows(
-        Crystarium.FormScope form, WorldObjectReading worldObject)
-    {
-        if (_values.ReadDebug(worldObject.Id) is not { } debug) return;
-        ulong flags = debug.ObjectFlags ?? 0;
-        form.ReadOnly(
-            "Object flags",
-            flags.ToString("x16", CultureInfo.InvariantCulture),
-            mono: true);
-        for (int row = 0; row < 8; row++)
-        {
-            int start = row * 8;
-            var items = new Crystarium.CheckItem[8];
-            for (int i = 0; i < 8; i++)
-            {
-                int bit = start + i;
-                items[i] = new Crystarium.CheckItem(
-                    bit.ToString(CultureInfo.InvariantCulture),
-                    (flags >> bit & 1UL) != 0,
-                    _ => _pending = () => _values.ToggleObjectFlag(worldObject.Id, bit),
-                    null);
-            }
-            form.Checkboxes(
-                start.ToString(CultureInfo.InvariantCulture) + "-"
-                    + (start + 7).ToString(CultureInfo.InvariantCulture),
-                false,
-                false,
-                44f,
-                items);
-        }
-        byte draw = debug.DrawFlags ?? 0;
-        var drawItems = new Crystarium.CheckItem[8];
-        for (int i = 0; i < 8; i++)
-        {
-            int bit = i;
-            drawItems[i] = new Crystarium.CheckItem(
-                bit.ToString(CultureInfo.InvariantCulture),
-                (draw >> bit & 1) != 0,
-                _ => _pending = () => _values.ToggleDrawFlag(worldObject.Id, bit),
-                null);
-        }
-        form.Checkboxes("Draw flags", false, false, 44f, drawItems);
-
-        form.ReadOnly("Tail C0-DF", debug.Tail, mono: true);
-    }
 
     // ── sections ─────────────────────────────────────────────────────────
 

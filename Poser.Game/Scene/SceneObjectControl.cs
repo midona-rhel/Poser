@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Globalization;
-using System.Text;
 using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
@@ -73,32 +71,4 @@ public sealed class SceneObjectControl(
         return new(result.Succeeded, result.Detail);
     }
 
-    public WorldObjectDebugReading? ReadDebug(WorldObjectId id)
-    {
-        if (Resolve(id) is not { IsVfx: false, IsFurniture: false } o) return null;
-        var tail = new StringBuilder(96);
-        // Native BG diagnostic fields: draw flags at 0x88, opaque tail bytes C0–DF.
-        for (int offset = 0xC0; offset < 0xE0; offset++)
-        {
-            if (offset > 0xC0 && offset % 8 == 0) tail.Append(' ');
-            tail.Append((o.DebugByte(offset) ?? 0).ToString("x2", CultureInfo.InvariantCulture));
-        }
-        return new(o.DebugObjectFlags, o.DebugByte(0x88), tail.ToString());
-    }
-
-    public ValueWriteResult ToggleObjectFlag(WorldObjectId id, int bit)
-    {
-        if (bit is < 0 or >= 64 || Resolve(id) is not { IsVfx: false, IsFurniture: false, DebugObjectFlags: { } flags } o)
-            return new(false, "Object flags are unavailable.");
-        o.DebugObjectFlags = flags ^ (1UL << bit);
-        return new(true);
-    }
-
-    public ValueWriteResult ToggleDrawFlag(WorldObjectId id, int bit)
-    {
-        if (bit is < 0 or >= 8 || Resolve(id) is not { IsVfx: false, IsFurniture: false } o || o.DebugByte(0x88) is not { } flags)
-            return new(false, "Draw flags are unavailable.");
-        o.SetDebugByte(0x88, (byte)(flags ^ (1 << bit)));
-        return new(true);
-    }
 }

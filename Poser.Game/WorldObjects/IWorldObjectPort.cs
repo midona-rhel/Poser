@@ -292,20 +292,9 @@ public interface IWorldObjectPort
     /// its skeleton's controls exist.</summary>
     bool WriteBgAnimationSpeed(nint address, float speed);
 
-    byte? ReadBgTailByte(nint address, int offset);
-
-    void WriteBgTailByte(nint address, int offset, byte value);
-
-    /// <summary>Diagnostic: the instance's animation topology.</summary>
-    string DescribeBgAnimation(nint address);
-
     bool TryReadBgTail(nint address, byte[] into);
 
     void WriteBgTailHeld(nint address, byte[] values);
-
-    ulong? ReadBgObjectFlags(nint address);
-
-    void WriteBgObjectFlags(nint address, ulong flags);
 
     void WriteBgNightState(nint address, bool night);
 

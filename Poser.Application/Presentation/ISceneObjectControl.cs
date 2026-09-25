@@ -13,7 +13,6 @@ public sealed record WorldObjectReading(
     byte Stain, IReadOnlyList<FurnitureLightState> FurnitureLights, bool NightState,
     bool AnimationPaused, bool LoopVfx, float VfxSpeed, bool VfxPaused, float VfxIntensity);
 
-public sealed record WorldObjectDebugReading(ulong? ObjectFlags, byte? DrawFlags, string Tail);
 
 /// <summary>Exact-id property access for props, scenery, furniture and VFX.
 /// Reads are detached; native replacement and value history stay behind this boundary.</summary>
@@ -38,7 +37,4 @@ public interface ISceneObjectControl
     ValueWriteResult SetVfxPaused(WorldObjectId id, bool value);
     ValueWriteResult SetVfxIntensity(WorldObjectId id, float value);
     Task<ValueWriteResult> Respawn(WorldObjectId id, string path);
-    WorldObjectDebugReading? ReadDebug(WorldObjectId id);
-    ValueWriteResult ToggleObjectFlag(WorldObjectId id, int bit);
-    ValueWriteResult ToggleDrawFlag(WorldObjectId id, int bit);
 }

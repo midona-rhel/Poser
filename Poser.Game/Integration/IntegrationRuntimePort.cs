@@ -515,14 +515,44 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     // on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
     private readonly Dictionary<nint, Guid> _duplicateCollections = new();
 
+    public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor) =>
+        Guarded(Penumbra, "Capture inherited collection", () =>
+        {
+            if (ResolveIndex(actor, out var detail) < 0)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail(detail!);
+            return CaptureInheritedCollection(_bindings.Value.Resolve(actor).Value!.Address);
+        });
+
+    public IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot) =>
+        Guarded(Penumbra, "Restore inherited collection", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            var address = _bindings.Value.Resolve(actor).Value!.Address;
+            var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+            if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify this actor.");
+            // History may outlive an external reassignment. Never force away
+            // another plugin's temporary collection to restore our duplicate.
+            if (!individual && effective != Guid.Empty
+                && (!_duplicateCollections.TryGetValue(address, out var owned) || owned != effective)
+                && !_getCollections.InvokeFunc().ContainsKey(effective))
+                return IntegrationPortResult.Fail("Another plugin now owns the actor's temporary collection.");
+            return RestoreInheritedCollection(address, snapshot);
+        });
+
     public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(nint actor) =>
         Guarded(Penumbra, "Capture inherited collection", () =>
         {
             if (AddressPair(actor, actor) is { } refusal)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
-            if (!_duplicateCollections.ContainsKey(actor))
+            if (!_duplicateCollections.TryGetValue(actor, out var owned))
                 return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
             var index = IndexOf(actor);
+            var (valid, _, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+            if (!valid || effective != owned)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail(
+                    "The duplicate's collection has been replaced; its owned resources cannot be captured.");
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)index });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail("Penumbra reported no resources for the duplicate.");

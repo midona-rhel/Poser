@@ -30,9 +30,6 @@ public interface IWorldObject
     bool? Dyeable { get; }
     bool NightState { get; set; }
     bool AnimationPaused { get; set; }
-    ulong? DebugObjectFlags { get; set; }
-    byte? DebugByte(int offset);
-    void SetDebugByte(int offset, byte value);
     Task<WorldObjectRespawnResult> Respawn(string path);
     Transform InitialPlacement { get; }
     byte InitialFlags { get; }

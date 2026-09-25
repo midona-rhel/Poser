@@ -44,6 +44,10 @@ public interface IIntegrationRuntimePort
 
     IntegrationValue<CollectionAssignment> GetCollectionAssignment(ActorId actor);
 
+    /// <summary>Captures only a currently effective collection owned by the duplicate lifecycle.</summary>
+    IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor);
+    IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot);
+
     /// <summary>Creates or updates only this actor's individual assignment.</summary>
     IntegrationPortResult SetIndividualCollection(ActorId actor, Guid collection);
 

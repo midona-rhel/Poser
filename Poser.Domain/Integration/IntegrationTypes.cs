@@ -48,11 +48,10 @@ public sealed record IntegrationAvailability(bool Available, string Detail);
 /// <summary>One pickable external entity (collection, design, profile).</summary>
 public sealed record ExternalItem(Guid Id, string Name);
 
-/// <summary>
-/// The Penumbra collection currently affecting an actor, and whether that
-/// comes from an individual assignment (as opposed to inheritance from a
-/// group/default assignment).
-/// </summary>
+/// <summary>Detached redirects and meta for a Poser-owned duplicate collection.</summary>
+public sealed record SpawnCollectionSnapshot(IReadOnlyDictionary<string, string> Paths, string Manipulations);
+
+/// <summary>The effective collection and whether it is individually assigned.</summary>
 public sealed record CollectionAssignment(
     Guid EffectiveId, string EffectiveName, bool HasIndividualAssignment);
 

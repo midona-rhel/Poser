@@ -275,29 +275,6 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// <summary>The user's placement, for the anchor pump.</summary>
     internal Transform DesiredPlacement => _placement;
 
-    /// <summary>Live debug access to the base object's 64-bit flag word.
-    /// </summary>
-    public ulong? DebugObjectFlags
-    {
-        get => _released ? null : _owner.ReadObjectFlags(this);
-        set
-        {
-            if (!_released && value is { } stated)
-                _owner.WriteObjectFlags(this, stated);
-        }
-    }
-
-    /// <summary>Live debug access to one instance byte (the port bounds
-    /// the offsets).</summary>
-    public byte? DebugByte(int offset) =>
-        _released ? null : _owner.ReadDebugByte(this, offset);
-
-    public void SetDebugByte(int offset, byte value)
-    {
-        if (!_released)
-            _owner.WriteDebugByte(this, offset, value);
-    }
-
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
@@ -765,29 +742,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// Stagehand's poll.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
 
-    internal ulong? ReadObjectFlags(AdoptedWorldObject handle) =>
-        _disposed || !IsHandleCurrent(handle)
-            ? null
-            : _port.ReadBgObjectFlags(handle.Address);
-
-    internal void WriteObjectFlags(AdoptedWorldObject handle, ulong flags)
-    {
-        if (!_disposed && IsHandleCurrent(handle))
-            _port.WriteBgObjectFlags(handle.Address, flags);
-    }
-
-    internal byte? ReadDebugByte(AdoptedWorldObject handle, int offset) =>
-        _disposed || !IsHandleCurrent(handle)
-            ? null
-            : _port.ReadBgTailByte(handle.Address, offset);
-
-    internal void WriteDebugByte(
-        AdoptedWorldObject handle, int offset, byte value)
-    {
-        if (!_disposed && IsHandleCurrent(handle))
-            _port.WriteBgTailByte(handle.Address, offset, value);
-    }
-
     internal bool? CanDye(AdoptedWorldObject handle) =>
         _disposed || !IsHandleCurrent(handle)
             ? false
@@ -809,11 +763,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             _port.WriteBgAnimationSpeed(handle.Address, speed)
                 ? 0
                 : AnimationPauseRetryTicks;
-        // Skeleton speed covers skeleton-animated scenery only. Motion
-        // driven through the TRANSFORM (a windmill's turning rotation)
-        // has its gate somewhere in the undocumented tail: pausing runs
-        // the automated hunt — flip a candidate byte, watch the rotation,
-        // keep the byte that stops it (2026-09-01, user-directed).
+        // Skeleton animation uses playback speed; transform-driven animation
+        // instead holds its pose and clock in the post-native frame phase.
         if (handle.AnimationPaused)
         {
             // THE MECHANISM (proved in game 2026-09-01): re-write the
@@ -846,9 +797,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 frozen, captured ? tail : null,
                 previous is SceneryAnimationState.Anchored or SceneryAnimationState.ReanchorPending
                     || previous is SceneryAnimationState.Paused { ResumeAnchored: true });
-            _log.Debug(
-                "[WorldObject] pause topology: "
-                + _port.DescribeBgAnimation(handle.Address));
         }
         else
         {
