@@ -1004,7 +1004,7 @@ public partial class MainWindow
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => camera.Name = next),
             () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
-            () => _cameraPane.OpenSave(camera),
+            () => _cameraPane.OpenSave(cameraId),
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
                 name => _scenePane.SaveCameraEntry(cameraId.LogicalId, name)),

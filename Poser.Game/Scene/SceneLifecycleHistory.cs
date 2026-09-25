@@ -480,7 +480,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             return false;
         if (camera.IsValid)
         {
-            slot.Document = CameraFileService.CreateCameraFile(camera);
+            slot.Document = Cameras.CameraDocument.Capture(camera);
             slot.Locked = camera.IsLocked;
             slot.Target = camera.TargetActor;
             slot.TargetId = camera.TargetActorId;
@@ -505,7 +505,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         var camera = _cameras.CreateCamera(slot.Document.Kind, makeLive: false);
         if (camera == null)
             return false;
-        CameraFileService.Apply(slot.Document, camera);
+        Cameras.CameraDocument.Apply(slot.Document, camera);
         // A saved file treats zero as unspecified; history owns the exact world origin too.
         camera.Position = slot.Document.Position;
         if (slot.Target is { } target && slot.TargetId is { } targetId)

@@ -90,6 +90,11 @@ readings and the same value journal. A joystick gesture retains its initial
 camera ID; changing selection cannot redirect a held gesture. Native units
 and ownership reset baselines remain backend values. Portrait edits capture
 both the mode and roll so undo restores the authored framing.
+Camera file dialogs retain exact IDs or shared creation receipts through
+`ICameraFiles`; Game resolves and captures on the framework thread. File import
+applies its document before recording the shared lifecycle step, so redo restores
+the imported state. The native document mapping is shared with scene capture
+and history, not implemented in presentation.
 
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns

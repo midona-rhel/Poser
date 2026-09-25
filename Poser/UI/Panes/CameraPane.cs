@@ -10,9 +10,6 @@ using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
 
 using Poser.Domain.Cameras;
 
@@ -29,16 +26,10 @@ public sealed class CameraPane
     private const float Deg2Rad = MathF.PI / 180f;
 
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
-    private readonly IVirtualCameraService _cameras;
     private readonly ICameraTargetControl _targets;
 
-    /// <summary>Camera creation and removal use the lifecycle history.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly EntityActions _entityActions;
-    private readonly ICameraFileService _cameraFiles;
-    private readonly IPlacementAnchorSource _anchors;
-    private readonly global::Poser.Files.ObjectPlacementPreferences _placement;
+    private readonly ICameraFiles _cameraFiles;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
     /// standing facts only.</summary>
@@ -68,25 +59,19 @@ public sealed class CameraPane
 
     // An imported or cloned camera is only selectable once the scene refresh
     // has bound it, exactly like a spawned light.
-    private readonly global::Poser.UI.Composition.PendingSelection<IVirtualCamera> _pendingSelect = new();
+    private readonly global::Poser.UI.Composition.PendingSelection<SceneEntityHandle> _pendingSelect = new();
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     private readonly ScenePane _scenePane;
     private readonly ICameraControl _values;
     private readonly ISceneCreation _creation;
-    private readonly global::Poser.UI.Composition.PendingSelection<SceneEntityHandle> _pendingClone = new();
 
     public CameraPane(
         SceneSession scene,
-        IEntityBindings bindings,
-        IVirtualCameraService cameras,
         ICameraTargetControl targets,
-        ISceneLifecycleHistory lifecycle,
         EntityActions entityActions,
-        ICameraFileService cameraFiles,
-        IPlacementAnchorSource anchors,
-        global::Poser.Files.ObjectPlacementPreferences placement,
+        ICameraFiles cameraFiles,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         ScenePane scenePane,
@@ -96,14 +81,9 @@ public sealed class CameraPane
         _values = values;
         _creation = creation;
         _names = names;
-        _anchors = anchors;
-        _placement = placement;
         _scene = scene;
-        _bindings = bindings;
         _scenePane = scenePane;
-        _cameras = cameras;
         _targets = targets;
-        _lifecycle = lifecycle;
         _entityActions = entityActions;
         _cameraFiles = cameraFiles;
         _notices = notices;
@@ -116,14 +96,9 @@ public sealed class CameraPane
     /// </summary>
     public void DrawBrowsers()
     {
-        _pendingClone.Reconcile(handle => _creation.Resolve(handle), _scene.Selection);
         _saveBrowser.Draw();
         _loadBrowser.Draw();
-        _pendingSelect.Reconcile(
-            created => _bindings.GetCameraId(created) is { } id
-                ? SelectionId.ForCamera(id)
-                : null,
-            _scene.Selection);
+        _pendingSelect.Reconcile(handle => _creation.Resolve(handle), _scene.Selection);
     }
 
     /// <summary>Opens the load dialog from outside the pane — the cameras
@@ -132,23 +107,15 @@ public sealed class CameraPane
     {
         _folder.Open(_loadBrowser, path =>
         {
-            // Import creation is recorded through the lifecycle service.
-            var imported = _lifecycle.RecordSpawnedCamera(
-                $"Add camera from {System.IO.Path.GetFileNameWithoutExtension(path)}",
-                _cameraFiles.ImportCamera(path));
-            if (imported == null)
+            var imported = _cameraFiles.Import(path);
+            if (imported.Handle == null)
             {
-                _notices.Failed("Load: the camera file could not be read.");
+                _notices.Failed(imported.Detail ?? "The camera could not be loaded.");
                 return;
             }
-            _pendingSelect.Arm(imported);
+            _pendingSelect.Arm(imported.Handle);
         });
     }
-
-    /// <summary>Arms the created camera for selection once the refresh binds
-    /// it — the header menu and the pane's own clone both route here.</summary>
-    public void SelectWhenBound(IVirtualCamera camera) =>
-        _pendingSelect.Arm(camera);
 
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
@@ -676,7 +643,7 @@ public sealed class CameraPane
 
     private void FileRows(Crystarium.FormScope form, CameraReading camera)
     {
-        form.ActionDropdown("More", _cameras.Cameras.Any(candidate => !candidate.IsDefault)
+        form.ActionDropdown("More", _scene.Snapshot.Cameras.Any(candidate => !candidate.IsDefault)
                 ? ["Save to file…", "Save to library", "Destroy all cameras…"]
                 : ["Save to file…", "Save to library"], -1, "More",
             choice =>
@@ -713,7 +680,7 @@ public sealed class CameraPane
                             "Clone: the camera could not be created.");
                         return;
                     }
-                    _pendingClone.Arm(clone.Handle);
+                    _pendingSelect.Arm(clone.Handle);
                 },
                 help: "Duplicate this camera");
             if (!camera.IsDefault)
@@ -751,29 +718,15 @@ public sealed class CameraPane
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
     /// </summary>
-    public void OpenSave(IVirtualCamera camera)
-    {
-        if (_bindings.GetCameraId(camera) is { } id) OpenSave(id);
-    }
-
-    private void OpenSave(CameraId id)
+    public void OpenSave(CameraId id)
     {
         _folder.Open(_saveBrowser, path =>
         {
-            var resolved = _bindings.Resolve(id);
-            if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
-                _bindings.GetCameraId(camera) != id)
-            {
-                _notices.Refused("Export: the camera no longer exists.");
-                return;
-            }
-            if (_cameraFiles.ExportCamera(
-                    camera, path,
-                    _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
+            var result = _cameraFiles.Export(id, path);
+            if (result.Success)
                 _notices.Done($"Camera saved to {path}.");
             else
-                _notices.Failed(
-                    "Export: the camera file could not be written.");
+                _notices.Failed(result.Detail ?? "The camera file could not be written.");
         });
     }
 

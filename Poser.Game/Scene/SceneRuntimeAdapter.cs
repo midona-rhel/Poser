@@ -1294,14 +1294,14 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public CameraFile CaptureDefaultCameraState() =>
         DefaultCamera is { } camera
-            ? CameraFileService.CreateCameraFile(camera)
+            ? Cameras.CameraDocument.Capture(camera)
             : new CameraFile();
 
     public string? ApplyDefaultCamera(SceneCamera data)
     {
         if (DefaultCamera is not { } camera)
             return "The session has no default camera.";
-        CameraFileService.Apply(data.Camera!, camera);
+        Cameras.CameraDocument.Apply(data.Camera!, camera);
         return null;
     }
 
@@ -1313,7 +1313,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             detail = "The camera could not be created.";
             return null;
         }
-        CameraFileService.Apply(data.Camera!, camera);
+        Cameras.CameraDocument.Apply(data.Camera!, camera);
         detail = null;
         return _handles.Track(SceneEntityKind.Camera, camera);
     }
@@ -1351,7 +1351,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public void RestoreDefaultCamera(CameraFile baseline)
     {
         if (DefaultCamera is { } camera)
-            CameraFileService.Apply(baseline, camera);
+            Cameras.CameraDocument.Apply(baseline, camera);
     }
 
     // ── environment ──────────────────────────────────────────────────────

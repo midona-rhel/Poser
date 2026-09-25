@@ -20,6 +20,7 @@ public interface ISceneCreation
     SceneCreationResult CreateActor(ActorCreationRequest request);
     SceneCreationResult CreateLight(LightKind kind);
     SceneCreationResult CreateCamera(CameraKind kind);
+    SceneCreationResult CreateCamera(Poser.Files.CameraFile document, string description);
     SceneCreationResult CreateProp(PropModel? model = null);
     SceneCreationResult CreateOverlay(OverlayNodeKind kind);
     SceneCreationResult CreateCollider(IkColliderShape shape);

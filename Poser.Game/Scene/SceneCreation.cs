@@ -29,10 +29,11 @@ public sealed class SceneCreation : ISceneCreation
     private readonly AnimationSession _animation;
     private readonly SceneRuntimeHandles _handles;
     private readonly ICameraProjection _camera;
+    private readonly IVirtualCameraService _cameras;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera)
+        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras)
     {
         _framework = framework;
         _sessions = sessions;
@@ -43,6 +44,7 @@ public sealed class SceneCreation : ISceneCreation
         _skeletons = skeletons;
         _animation = animation;
         _camera = camera;
+        _cameras = cameras;
         _handles = new(() => sessions.ActiveSessionGeneration);
     }
 
@@ -66,6 +68,24 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreationResult CreateCamera(CameraKind kind) =>
         Create(SceneEntityKind.Camera, () => _lifecycle.CreateCamera(kind));
+
+    public SceneCreationResult CreateCamera(Poser.Files.CameraFile document, string description) =>
+        Create(SceneEntityKind.Camera, () =>
+        {
+            var camera = _cameras.CreateCamera(document.Kind);
+            if (camera is null) return null;
+            try
+            {
+                Cameras.CameraDocument.Apply(document, camera);
+                // Record the applied file, not the spawn defaults, as the redo baseline.
+                return _lifecycle.RecordSpawnedCamera(description, camera);
+            }
+            catch
+            {
+                _cameras.DestroyCamera(camera);
+                throw;
+            }
+        });
 
     public SceneCreationResult CreateProp(PropModel? model = null) =>
         Create(SceneEntityKind.Prop, () => model is { } value

@@ -34,9 +34,8 @@ public sealed partial class PoseLibraryPane
     /// An object tile's one action, by what the file is. An actor entry
     /// SPAWNS its actor — through the same scene workflow a scene load uses,
     /// with fresh additive options so a clear-first preference set for
-    /// scenes can never fire from a library tile. Lights and cameras import
-    /// through their own services, which spawn a new light and create a new
-    /// camera respectively.
+    /// scenes can never fire from a library tile. All container entries use
+    /// this same additive pipeline.
     /// </summary>
     private void ActivateObject(int index)
     {

@@ -164,7 +164,6 @@ public sealed partial class PoseLibraryPane
         ["As saved", "Relative to camera", "Relative to actor",
          "In front of camera"];
 
-    private readonly ICameraFileService _cameraFiles;
 
     private readonly ISceneLifecycleHistory _lifecycle;
 
@@ -455,7 +454,6 @@ public sealed partial class PoseLibraryPane
         LightPane lightPane,
         CameraPane cameraPane,
         IPlacementAnchorSource anchors,
-        ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,
         ISceneLifecycleHistory lifecycle,
@@ -475,7 +473,6 @@ public sealed partial class PoseLibraryPane
         _lightPane = lightPane;
         _cameraPane = cameraPane;
         _anchors = anchors;
-        _cameraFiles = cameraFiles;
         _placement = placement;
         _environment = environment;
         _sceneOptions = sceneOptions;

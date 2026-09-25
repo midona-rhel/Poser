@@ -519,7 +519,7 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
-        services.AddSingleton<ICameraFileService, CameraFileService>();
+        services.AddSingleton<ICameraFiles, Game.Cameras.CameraFiles>();
         // One territory-to-place resolution is shared by whole-scene capture
         // and pose auto-save so a recorded place means the same thing in both
         // documents.

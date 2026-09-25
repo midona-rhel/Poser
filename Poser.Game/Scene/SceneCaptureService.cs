@@ -639,7 +639,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = CameraFileService.CreateCameraFile(camera);
+            var document = Cameras.CameraDocument.Capture(camera);
             document.Name = Bounded(document.Name, "Camera");
 
             Guid? targetKey = null;
