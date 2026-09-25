@@ -1,8 +1,7 @@
-using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 
-namespace Poser.Game.Journal;
+namespace Poser.Application.Transforms;
 
 /// <summary>
 /// The verbs that break animation state — a redraw, a character file, an

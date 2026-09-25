@@ -114,6 +114,13 @@ Held-expression preview/retry and bake admission belong to the Game boundary.
 The bounded retry retains its exact actor, session and native binding, so hiding
 the pane does not stop it and replacing its target cannot redirect it.
 
+Equipment and customization commands own their history in Application behind
+ID-only controls. The panel retains picker/display state, not undo baselines;
+structural body changes capture fresh customization values before redrawing.
+Game supplies external-provider calls and exact-generation availability through
+the existing integration runtime. Failed equipment inverses retain their failure
+and remain retryable, including partially restored outfits.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

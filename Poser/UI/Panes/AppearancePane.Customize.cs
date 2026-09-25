@@ -182,7 +182,7 @@ public sealed partial class AppearancePane
             var seat = row.CenterControl(square);
             ImGui.SetCursorScreenPos(seat);
             Crystarium.Dropdown("appearance-clan", clanNames, clanIndex, index =>
-                Body(actor, state, "Change clan", new Dictionary<CustomizeKey, int>
+                Body(actor, "Change clan", new Dictionary<CustomizeKey, int>
                 {
                     [CustomizeKey.Race] = clans[index].Race,
                     [CustomizeKey.Clan] = clans[index].Clan,
@@ -197,7 +197,7 @@ public sealed partial class AppearancePane
             ImGui.SetCursorScreenPos(new Vector2(seat.X + dropW + gap + captionW + gap, seat.Y));
             Crystarium.IconButton(
                 gender == 1 ? TablerIcon.GenderFemale : TablerIcon.GenderMale,
-                () => Body(actor, state, "Swap gender", new Dictionary<CustomizeKey, int>
+                () => Body(actor, "Swap gender", new Dictionary<CustomizeKey, int>
                 {
                     [CustomizeKey.Gender] = gender == 1 ? 0 : 1,
                 }),
@@ -208,15 +208,10 @@ public sealed partial class AppearancePane
     }
 
     private void Body(
-        ActorId actor, CustomizeState? state, string description,
+        ActorId actor, string description,
         IReadOnlyDictionary<CustomizeKey, int> next)
     {
-        var before = new Dictionary<CustomizeKey, int>();
-        foreach (var key in next.Keys)
-            before[key] = state?.Value(key) ?? 0;
-        ReportExternal(_disruptive.Run(actor, description,
-            () => _customizeSession.Apply(actor, next),
-            () => _customizeSession.Apply(actor, before)), description);
+        ReportExternal(_customizeSession.SetBody(actor, next, description), description);
         InvalidateCustomize();
     }
 

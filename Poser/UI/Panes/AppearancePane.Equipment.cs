@@ -17,7 +17,7 @@ namespace Poser.UI;
 /// colour boxes — a Prop verb under each weapon; the facewear; the
 /// visibility switches; the outfit verbs; the raw model ids, closed. Every
 /// change is one journal step through
-/// <see cref="Game.Journal.WardrobeSession"/>. Without Glamourer
+/// <see cref="Poser.Application.Appearance.IWardrobeControl"/>. Without Glamourer
 /// everything disables in place and says why.
 /// </summary>
 public sealed partial class AppearancePane
@@ -520,12 +520,7 @@ public sealed partial class AppearancePane
     /// the look read before the revert back on.</summary>
     private void RevertLook(ActorId actor)
     {
-        var before = _integration.GetStateJson(actor);
-        Func<IntegrationResult>? inverse = before.Success && before.Value is { } json
-            ? () => _integration.ApplyStateJson(actor, json)
-            : null;
-        ReportExternal(_disruptive.Run(actor, "Revert look",
-            () => _integration.RevertState(actor), inverse), "Revert");
+        ReportExternal(_wardrobeSession.Revert(actor), "Revert");
         InvalidateWardrobe();
     }
 

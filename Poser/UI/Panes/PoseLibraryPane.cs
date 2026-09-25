@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
+using Poser.Application.Transforms;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
@@ -172,7 +173,7 @@ public sealed partial class PoseLibraryPane
     private readonly SceneLoadPreferences _sceneOptions;
 
     private readonly SelectionSession _selection;
-    private readonly Game.Journal.DisruptiveSteps _disruptive;
+    private readonly DisruptiveSteps _disruptive;
     private readonly Game.Integration.CharaImport _chara;
 
     private readonly SceneSession _scene;
@@ -458,7 +459,7 @@ public sealed partial class PoseLibraryPane
         IEnvironmentService environment,
         ISceneLifecycleHistory lifecycle,
         UserNotices notices,
-        Game.Journal.DisruptiveSteps disruptive,
+        DisruptiveSteps disruptive,
         Game.Integration.CharaImport chara)
     {
         _chara = chara;

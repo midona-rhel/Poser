@@ -2,9 +2,8 @@ using Poser.Application.Integration;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Services;
 
-namespace Poser.Game.Journal;
+namespace Poser.Application.Appearance;
 
 /// <summary>
 /// What the actor wears, as journal steps: an item with its dyes in a
@@ -13,20 +12,23 @@ namespace Poser.Game.Journal;
 /// write, so undo puts the previous item back rather than "nothing".
 /// A refused write is no step.
 /// </summary>
-public sealed class WardrobeSession
+public sealed class WardrobeSession : IWardrobeControl
 {
     private readonly ValueJournal _journal;
     private readonly ActorIntegrationSession _integration;
-    private readonly IEntityBindings _bindings;
+    private readonly IIntegrationRuntimePort _runtime;
+    private readonly DisruptiveSteps _disruptive;
 
     public WardrobeSession(
         ValueJournal journal,
         ActorIntegrationSession integration,
-        IEntityBindings bindings)
+        IIntegrationRuntimePort runtime,
+        DisruptiveSteps disruptive)
     {
         _journal = journal;
         _integration = integration;
-        _bindings = bindings;
+        _runtime = runtime;
+        _disruptive = disruptive;
     }
 
     public IntegrationValue<WardrobeState> Read(ActorId actor) => _integration.ReadWardrobe(actor);
@@ -47,8 +49,8 @@ public sealed class WardrobeSession
         var result = _integration.SetItem(actor, slot, itemId, dye1, dye2);
         if (!result.Success)
             return result;
-        _journal.Record(description, before, after,
-            worn => _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2),
+        _journal.RecordResult(description, before, after,
+            worn => Written(_integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2)),
             () => Alive(actor));
         return result;
     }
@@ -83,8 +85,8 @@ public sealed class WardrobeSession
         var result = _integration.SetFacewear(actor, bonusItemId);
         if (!result.Success)
             return result;
-        _journal.Record(description, before, bonusItemId,
-            id => _integration.SetFacewear(actor, id), () => Alive(actor));
+        _journal.RecordResult(description, before, bonusItemId,
+            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor));
         return result;
     }
 
@@ -114,8 +116,8 @@ public sealed class WardrobeSession
             MetaSwitch.WeaponVisible => on ? "Show weapon" : "Hide weapon",
             _ => "Set switch",
         };
-        _journal.Record(description, before, on,
-            value => _integration.SetMetaSwitch(actor, which, value), () => Alive(actor));
+        _journal.RecordResult(description, before, on,
+            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor));
         return result;
     }
 
@@ -132,10 +134,10 @@ public sealed class WardrobeSession
         var state = Read(actor);
         if (!state.Success || state.Value is null)
             return new(false, state.Detail ?? "The wardrobe could not be read.", state.AppearanceRefusal);
-        var before = new Dictionary<EquipSlot, WardrobeSlot>(state.Value.Slots);
-        var after = new Dictionary<EquipSlot, WardrobeSlot>(before);
+        var before = new Dictionary<EquipSlot, WardrobeSlot>();
+        var after = new Dictionary<EquipSlot, WardrobeSlot>();
         IntegrationResult outcome = IntegrationResult.Ok();
-        foreach (var (slot, worn) in before)
+        foreach (var (slot, worn) in state.Value.Slots)
         {
             if (outfit(slot) is not { } wanted || wanted == worn)
                 continue;
@@ -145,22 +147,36 @@ public sealed class WardrobeSession
                 outcome = result;
                 break;
             }
+            before[slot] = worn;
             after[slot] = wanted;
         }
-        bool changed = false;
-        foreach (var (slot, worn) in after)
-            changed |= before[slot] != worn;
-        if (changed)
-            _journal.Record<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(description, before, after,
+        if (before.Count > 0)
+            _journal.RecordResult<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(description, before, after,
                 Dress, () => Alive(actor));
         return outcome;
 
-        void Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
+        ValueWriteResult Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
         {
             foreach (var (slot, worn) in slots)
-                _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2);
+            {
+                var result = _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2);
+                if (!result.Success)
+                    return Written(result);
+            }
+            return ValueWriteResult.Ok();
         }
     }
 
-    private bool Alive(ActorId actor) => _bindings.Resolve(actor).Success;
+    public IntegrationResult Revert(ActorId actor)
+    {
+        var before = _integration.GetStateJson(actor);
+        if (!before.Success || before.Value is not { } json)
+            return new(false, before.Detail ?? "The look could not be read.", before.AppearanceRefusal);
+        return _disruptive.Run(actor, "Revert look",
+            () => _integration.RevertState(actor),
+            () => _integration.ApplyStateJson(actor, json));
+    }
+
+    private static ValueWriteResult Written(IntegrationResult result) => new(result.Success, result.Detail);
+    private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
 }

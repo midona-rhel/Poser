@@ -3,7 +3,7 @@ using Newtonsoft.Json.Linq;
 using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Game.Journal;
+using Poser.Application.Transforms;
 
 namespace Poser.Game.Integration;
 

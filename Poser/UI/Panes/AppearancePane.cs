@@ -26,7 +26,7 @@ public sealed partial class AppearancePane
 {
     private readonly IWardrobeCatalog _wardrobe;
     private readonly IPropCatalog _props;
-    private readonly Game.Journal.WardrobeSession _wardrobeSession;
+    private readonly IWardrobeControl _wardrobeSession;
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
     private readonly Func<WardrobeItem, nint> _wardrobeItemTexture;
     private readonly Func<WardrobeItem, string?> _wardrobeItemBadge;
@@ -36,7 +36,7 @@ public sealed partial class AppearancePane
     private static readonly string[] ViewLabels = ["General", "Appearance", "Equipment"];
     private static readonly string[] AttachedViewLabels = ["General"];
     private readonly ICustomizeCatalog _customize;
-    private readonly Game.Journal.CustomizeSession _customizeSession;
+    private readonly ICustomizeControl _customizeSession;
     private int _view;
     private ActorId? _accessActor;
     private DateTime _accessAt = DateTime.MinValue;
@@ -76,7 +76,7 @@ public sealed partial class AppearancePane
     private readonly UserNotices _notices;
     private readonly IInvisibleSkinService _invisibleSkin;
     private readonly Game.Journal.ActorValueSession _values;
-    private readonly Game.Journal.DisruptiveSteps _disruptive;
+    private readonly DisruptiveSteps _disruptive;
     private readonly Game.Integration.CharaImport _chara;
     private readonly EntityActions _entityActions;
 
@@ -163,14 +163,14 @@ public sealed partial class AppearancePane
         IInvisibleSkinService invisibleSkin,
         UserNotices notices,
         Game.Journal.ActorValueSession values,
-        Game.Journal.DisruptiveSteps disruptive,
+        DisruptiveSteps disruptive,
         EntityActions entityActions,
         IWardrobeCatalog wardrobe,
         IPropCatalog props,
-        Game.Journal.WardrobeSession wardrobeSession,
+        IWardrobeControl wardrobeSession,
         global::Poser.UI.Controls.EntityNameModal names,
         ICustomizeCatalog customize,
-        Game.Journal.CustomizeSession customizeSession,
+        ICustomizeControl customizeSession,
         IAppearanceColorControl colors,
         Game.Integration.CharaImport chara)
     {

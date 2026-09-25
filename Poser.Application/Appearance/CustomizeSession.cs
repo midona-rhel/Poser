@@ -2,9 +2,8 @@ using Poser.Application.Integration;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Services;
 
-namespace Poser.Game.Journal;
+namespace Poser.Application.Appearance;
 
 /// <summary>
 /// The actor's customization, through Glamourer, as journal steps. A
@@ -13,20 +12,23 @@ namespace Poser.Game.Journal;
 /// lands as one step whose inverse is the values read before. A
 /// refused write is no step.
 /// </summary>
-public sealed class CustomizeSession
+public sealed class CustomizeSession : ICustomizeControl
 {
     private readonly ValueJournal _journal;
     private readonly ActorIntegrationSession _integration;
-    private readonly IEntityBindings _bindings;
+    private readonly IIntegrationRuntimePort _runtime;
+    private readonly DisruptiveSteps _disruptive;
 
     public CustomizeSession(
         ValueJournal journal,
         ActorIntegrationSession integration,
-        IEntityBindings bindings)
+        IIntegrationRuntimePort runtime,
+        DisruptiveSteps disruptive)
     {
         _journal = journal;
         _integration = integration;
-        _bindings = bindings;
+        _runtime = runtime;
+        _disruptive = disruptive;
     }
 
     public IntegrationValue<CustomizeState> Read(ActorId actor) => _integration.ReadCustomize(actor);
@@ -63,7 +65,15 @@ public sealed class CustomizeSession
 
     /// <summary>Several values as one step.</summary>
     public IntegrationResult SetMany(
-        ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description)
+        ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
+        SetValues(actor, values, description, disruptive: false);
+
+    public IntegrationResult SetBody(
+        ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
+        SetValues(actor, values, description, disruptive: true);
+
+    private IntegrationResult SetValues(
+        ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description, bool disruptive)
     {
         // The first write takes the look: its state as it stands is
         // captured once and put back when the actor leaves or GPose ends.
@@ -81,10 +91,13 @@ public sealed class CustomizeSession
         }
         if (values.All(pair => before[pair.Key] == pair.Value))
             return IntegrationResult.Ok();
-        var result = Apply(actor, values);
+        var after = new Dictionary<CustomizeKey, int>(values);
+        if (disruptive)
+            return _disruptive.Run(actor, description,
+                () => Apply(actor, after), () => Apply(actor, before));
+        var result = Apply(actor, after);
         if (!result.Success)
             return result;
-        var after = new Dictionary<CustomizeKey, int>(values);
         _journal.RecordResult<IReadOnlyDictionary<CustomizeKey, int>>(description, before, after,
             next =>
             {
@@ -94,10 +107,8 @@ public sealed class CustomizeSession
         return result;
     }
 
-    /// <summary>The bare write, for a caller that journals the step itself
-    /// (a disruptive race change).</summary>
-    public IntegrationResult Apply(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+    private IntegrationResult Apply(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
         _integration.SetCustomize(actor, values);
 
-    private bool Alive(ActorId actor) => _bindings.Resolve(actor).Success;
+    private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
 }
