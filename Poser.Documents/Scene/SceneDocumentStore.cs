@@ -4,7 +4,7 @@ using Poser.Scene;
 
 namespace Poser.Files;
 
-/// <summary>One format-routing store for native scenes and Stagehand documents.</summary>
+/// <summary>One format-routing store for Poser scenes and Stagehand documents.</summary>
 public sealed class SceneDocumentStore : ISceneDocumentStore
 {
     private readonly SceneFileStore _scenes;

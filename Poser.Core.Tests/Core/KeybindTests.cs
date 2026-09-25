@@ -31,7 +31,7 @@ public sealed class KeybindTests
             Assert.Equal(text, KeyChord.Parse(text).ToString());
         Assert.False(KeyChord.Parse("Ctrl+Nonsense").IsBound);
         Assert.Equal("[", KeyChord.Parse("OEM_4").ToString());
-        Assert.Contains(Dalamud.Bindings.ImGui.ImGuiKey.Key1, KeyChord.CapturableKeys());
+        Assert.Contains(KeyCode.KEY_1, KeyChord.CapturableKeys());
         Assert.All(new[] { KeybindPreset.Poser, KeybindPreset.Brio, KeybindPreset.Ktisis },
             preset => Assert.Equal(KeybindRegistry.Actions.Count,
                 KeybindRegistry.Bindings(preset).Count));

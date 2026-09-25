@@ -612,7 +612,7 @@ public sealed class PoseLibraryServiceTests
             Func<string, bool>? observeDirectory,
             params LibrarySourceConfig[] sources)
         {
-            var config = new ConfigurationService(Substitute.For<IDalamudPluginInterface>());
+            var config = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
             _config = config;
             config.Config.Library.Sources.Clear();
             if (sources.Length == 0)
@@ -654,7 +654,7 @@ public sealed class PoseLibraryServiceTests
             int maxFolders = PoseLibraryLimits.MaxFolders,
             int maxSources = PoseLibraryLimits.MaxSources)
         {
-            _config = new ConfigurationService(Substitute.For<IDalamudPluginInterface>());
+            _config = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
             _config.Config.Library = library;
             return new PoseLibraryService(_config, AtomicPoseFileStore.Default,
                 enumerateFiles: enumerateFiles, enumerateDirectories: enumerateDirectories,

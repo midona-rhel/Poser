@@ -647,7 +647,7 @@ public sealed partial class PoseLibraryPane
                 if (!eligible)
                     continue;
                 _applyTargets.Add(actor.Id);
-                string name = ActorNames.Display(actor);
+                string name = ActorNames.Display(_config, actor);
                 items.Add(new ContextMenuItem(name, TablerIcon.UserPlus));
             }
             if (items.Count == 0)

@@ -106,7 +106,7 @@ public sealed partial class PoseLibraryPane
         {
             var actor = _applyTargets[i];
             _vm.ApplyTargetNames[i] = _scene.Snapshot.FindActor(actor) is { } described
-                ? ActorNames.Display(described) : "Actor";
+                ? ActorNames.Display(_config, described) : "Actor";
         }
         int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice.Value) : -1;
         if (index < 0)

@@ -96,7 +96,10 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly IEditorState _editorState;
     private readonly IPoseInteraction _bonePosing;
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public GraphicalBonePane(
+        global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
@@ -104,6 +107,7 @@ public sealed class GraphicalBonePane : IDisposable
         IEditorState editorState,
         IPoseInteraction bonePosing)
     {
+        _configuration = configuration;
         _ikPort = ikPort;
         _editorState = editorState;
         _bonePosing = bonePosing;
@@ -326,7 +330,7 @@ public sealed class GraphicalBonePane : IDisposable
         // Every dot in this section is an IVCS bone, so with the switch off it
         // would draw as a bare image over an empty map.
         if (FindBone(skeleton, "iv_asi_oya_a_l") != null
-            && Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones)
+            && _configuration.Config.Display.ShowNsfwBones)
         {
             DrawBoneSectionAt(
                 "ivcs_toes",
@@ -582,7 +586,7 @@ public sealed class GraphicalBonePane : IDisposable
         // partners wear the mirror color — same swatches, same priority
         // (selected > hovered > IK > mirror), body and face alike.
         var skeletonColors =
-            global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+            _configuration.Config.Skeleton;
         HashSet<string>? armedIk = null;
         HashSet<string>? mirrorPartners = null;
         foreach (var (id, _, _, _) in _dotCandidates)
@@ -606,7 +610,7 @@ public sealed class GraphicalBonePane : IDisposable
             // partner, so BOTH modes show it — resolved per bone through
             // the one symmetry rule, in the maps exactly as the overlay.
             var appConfig =
-                global::Poser.Config.ConfigurationService.Instance.Config;
+                _configuration.Config;
             if (Core.BoneSymmetry.EffectiveMode(
                     appConfig.PerBoneSymmetry,
                     appConfig.BoneSymmetryOverrides,
@@ -764,7 +768,7 @@ public sealed class GraphicalBonePane : IDisposable
         // never become selectable from a body/face dot.
         if (actor?.CharacterSkeleton is { } skeleton)
         {
-            bool showNsfw = Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones;
+            bool showNsfw = _configuration.Config.Display.ShowNsfwBones;
             foreach (var bone in skeleton.Bones)
             {
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))

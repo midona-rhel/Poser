@@ -11,10 +11,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using K4os.Compression.LZ4.Legacy;
 using Microsoft.Win32.SafeHandles;
-using Poser.Application.Integration;
 using Poser.Domain.Integration;
 
-namespace Poser.Game.Mcdf;
+namespace Poser.Documents.Mcdf;
 
 /// <summary>
 /// MCDF v1 wire I/O. The complete file is a legacy LZ4 stream whose

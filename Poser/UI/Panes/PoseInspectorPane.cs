@@ -108,7 +108,7 @@ public partial class PoseInspectorPane
         }
         else if (ImGui.IsKeyPressed(ImGuiKey.Escape)
             || (_cleanGroupFrame != null
-                && _cleanGroupScale != Config.ConfigurationService.Instance.Config.Gizmo.GroupScale))
+                && _cleanGroupScale != _configuration.Config.Gizmo.GroupScale))
         {
             ClearTransformSession(cancel: true);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
@@ -178,7 +178,10 @@ public partial class PoseInspectorPane
         "How much the foot helps reach the target",
     ];
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public PoseInspectorPane(
+        global::Poser.Config.ConfigurationService configuration,
         IPoseInteraction interaction,
         ITransformFacade cleanTransforms,
         IActorResetControl actorReset,
@@ -198,6 +201,7 @@ public partial class PoseInspectorPane
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator)
     {
+        _configuration = configuration;
         _groups = groups;
         _groupCoordinator = groupCoordinator;
         _overlayPresentation = overlayPresentation;
@@ -411,7 +415,7 @@ public partial class PoseInspectorPane
     };
 
     private string ActorLabel(ActorId id) =>
-        _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(actor) : "";
+        _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(_configuration, actor) : "";
 
     // Rotation rings use the current presentation frame.
     /// <summary>The camera the rail ball edits; null off camera
@@ -561,7 +565,7 @@ public partial class PoseInspectorPane
     {
         if (!_groupCoordinator.Resolve(_selection.Selected, out var targets, out _)
             || !_groupCoordinator.TryReadSelection(
-                Config.ConfigurationService.Instance.Config.Gizmo.GroupScale, out var current, out _))
+                _configuration.Config.Gizmo.GroupScale, out var current, out _))
             return;
         var begin = _cleanTransforms.Begin(targets, DomainOperation.Translate,
             DomainSpace.World, DomainPivot.Centroid, description: "Move to camera");
@@ -1117,6 +1121,7 @@ public partial class PoseInspectorPane
             _matrixSkeletonId != matrixSkeleton.Id)
         {
             _matrixVm = BoneMatrixBuilder.Build(
+                _configuration.Config.Display.ShowNsfwBones,
                 matrixSkeleton,
                 _selection,
                 (id, additive, range) =>
@@ -1303,7 +1308,7 @@ public partial class PoseInspectorPane
 
         var positions = new Dictionary<BoneId, Vector3>();
         var center = Vector3.Zero;
-        bool showNsfw = Config.ConfigurationService.Instance
+        bool showNsfw = _configuration
             .Config.Display.ShowNsfwBones;
         foreach (var bone in skeleton.Bones)
         {
@@ -1470,7 +1475,7 @@ public partial class PoseInspectorPane
             ClearTransformSession();
         }
 
-        float dragSpeed = Config.ConfigurationService.Instance.Config
+        float dragSpeed = _configuration.Config
             .Transform.For(_primary?.Kind == SceneEntityKind.Bone);
 
         // Swap only the displayed rotation columns.
@@ -1700,7 +1705,7 @@ public partial class PoseInspectorPane
             int current = -1;
             for (int i = 0; i < others.Count; i++)
             {
-                _gazeNames[i] = ActorNames.Display(others[i]);
+                _gazeNames[i] = ActorNames.Display(_configuration, others[i]);
                 if (state.Target == others[i].Id)
                     current = i;
             }
@@ -2061,7 +2066,7 @@ public partial class PoseInspectorPane
         names[0] = "Any actor";
         for (int i = 0; i < actors.Count; i++)
         {
-            names[i + 1] = ActorNames.Display(actors[i]);
+            names[i + 1] = ActorNames.Display(_configuration, actors[i]);
             if (actors[i].Id == shownActor)
                 actorIndex = i;
         }
@@ -2638,7 +2643,7 @@ public partial class PoseInspectorPane
         if (!_railHeaderConfigHooked)
         {
             _railHeaderConfigHooked = true;
-            Config.ConfigurationService.Instance.OnConfigurationChanged +=
+            _configuration.OnConfigurationChanged +=
                 () => _railHeaderPrimed = false;
         }
         bool linked = _interaction.LinkedBonesEnabled;
@@ -2857,7 +2862,7 @@ public partial class PoseInspectorPane
 
         if (IsMultiEntitySelection)
         {
-            var scaleMode = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale;
+            var scaleMode = _configuration.Config.Gizmo.GroupScale;
             if (_groupCoordinator.TryReadSelection(scaleMode, out var group, out var error, requireEditable: false))
             {
                 bool editable = _groupCoordinator.Resolve(_selection.Selected, out _, out var refusal);
@@ -2998,10 +3003,10 @@ public partial class PoseInspectorPane
                 : null,
             relativeSecondaryBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
-                Config.ConfigurationService.Instance.Config
+                _configuration.Config
                     .RelativeSecondaryBones,
             groupScale: IsMultiEntitySelection
-                ? Config.ConfigurationService.Instance.Config.Gizmo.GroupScale
+                ? _configuration.Config.Gizmo.GroupScale
                 : global::Poser.Domain.Transforms.GroupScaleMode.SizesAndSpacing,
             groupId: IsMultiEntitySelection
                 ? _groups.ActiveSelection(_selection.Selected)?.Id
@@ -3015,7 +3020,7 @@ public partial class PoseInspectorPane
         _cleanDisplayedCurrent = displayedStart;
         _cleanGesture = gesture;
         _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame() : null;
-        _cleanGroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale;
+        _cleanGroupScale = _configuration.Config.Gizmo.GroupScale;
     }
 
     private void ApplyTransformSession(Transform displayedAfter)
@@ -3154,7 +3159,7 @@ public partial class PoseInspectorPane
         string canonicalName)
     {
         var configuration =
-            Config.ConfigurationService.Instance.Config;
+            _configuration.Config;
         return Core.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,

@@ -53,7 +53,7 @@ public partial class MainWindow
     {
         // Pose-file commands need the selected actor's skeleton.
         bool poseTarget = SelectedSkeleton() != null;
-        var uiConfig = Config.ConfigurationService.Instance.Config.UI;
+        var uiConfig = _configuration.Config.UI;
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
         bool inspectorOpen = GetInspectorWindowOpen?.Invoke() ?? true;
         int layoutState = (uiConfig.DetachedShell ? 1 : 0)

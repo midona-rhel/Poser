@@ -177,7 +177,10 @@ public sealed class EnvironmentPane
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public EnvironmentPane(
+        global::Poser.Config.ConfigurationService configuration,
         IEnvironmentService environment,
         IWorldRenderingService rendering,
         IFestivalService festivals,
@@ -187,6 +190,7 @@ public sealed class EnvironmentPane
         global::Poser.UI.Controls.EntityNameModal names,
         Game.Journal.EnvironmentSession values)
     {
+        _configuration = configuration;
         _values = values;
         _names = names;
         _workflow = workflow;
@@ -1030,7 +1034,7 @@ public sealed class EnvironmentPane
     /// every scene uses.</summary>
     private void SaveToLibrary(string name)
     {
-        var root = Config.ConfigurationService.Instance.Config.Library
+        var root = _configuration.Config.Library
             .ResolveObjectsRoot();
         if (!global::Poser.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
         {

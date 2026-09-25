@@ -26,7 +26,8 @@ At this revision:
 - `Poser.Documents` references only `Poser.Domain`; it owns portable file
   models, codecs, validation, storage and document-placement math.
 - `Poser.Application` references `Poser.Domain` and `Poser.Documents`.
-- `Poser.Core` references `Poser.Domain` and `Poser.Documents`.
+- `Poser.Core` temporarily references `Poser.Domain`, `Poser.Documents`,
+  and `Poser.Application` while its remaining native consumers migrate.
 - `Poser.Game` references `Poser.Domain`, `Poser.Application`, and
   `Poser.Core`.
 - The host `Poser` references `Poser.Domain`, `Poser.Application`,
@@ -36,8 +37,16 @@ At this revision:
 
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
 the game and runs its hooks on the framework thread. `Poser.Core` still holds
-legacy entities, services, format adapters, configuration, and some game code.
+legacy entities, services, and some game code.
 The host wires the assemblies; UI shows application state.
+
+Configuration data and JSON recovery/storage live in Documents; settings
+migrations and notifications live in Application behind host-provided persistence.
+Legacy configuration type metadata is read against the known schema, without
+loading old assemblies. Keybinding text and key codes are portable Domain values;
+ImGui and native key conversion remain at the input boundary.
+Stagehand conversion and MCDF package storage also live in Documents; actor
+resource discovery and IPC remain in Game.
 
 Actor appearance commands own their history inverses in Application. UI
 supplies an actor and the selected value; it never constructs restore callbacks

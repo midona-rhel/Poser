@@ -502,7 +502,7 @@ public sealed partial class AppearancePane
     private void SaveDesign(ActorId actor)
     {
         string suggested = _scene.Snapshot.FindActor(actor) is { } described
-            ? ActorNames.Display(described)
+            ? ActorNames.Display(_configuration, described)
             : "Design";
         _names.Open("Save design", suggested, name =>
         {

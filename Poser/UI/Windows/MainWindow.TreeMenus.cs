@@ -39,7 +39,7 @@ public partial class MainWindow
 
     private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId, out List<Action?> actions)
     {
-        var sourceLabel = ActorNames.Display(actorId,
+        var sourceLabel = ActorNames.Display(_configuration, actorId,
             _scene.Snapshot.FindActor(actorId)?.Name ?? "Actor");
         actions =
         [

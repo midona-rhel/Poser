@@ -277,6 +277,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     private readonly WorldObjectLifecycleOwner _worldObjectOwner;
 
     public SceneLifecycleHistory(
+        Config.ConfigurationService configuration,
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
@@ -302,6 +303,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             lighting,
             cameras,
             new ActorServiceLifecycle(
+                configuration,
                 actors, posing, skeletons, poseFiles, poses, framework, log,
                 gaze, integration, bindings, bonePosing, actorManager, presentation, collections),
             new PropServiceLifecycle(props),

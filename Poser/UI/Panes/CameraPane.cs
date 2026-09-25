@@ -67,7 +67,10 @@ public sealed class CameraPane
     private readonly ICameraControl _values;
     private readonly ISceneCreation _creation;
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public CameraPane(
+        global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         ICameraTargetControl targets,
         EntityActions entityActions,
@@ -78,6 +81,7 @@ public sealed class CameraPane
         ICameraControl values,
         ISceneCreation creation)
     {
+        _configuration = configuration;
         _values = values;
         _creation = creation;
         _names = names;
@@ -192,7 +196,7 @@ public sealed class CameraPane
         bool locked = camera.IsLocked;
         // A camera is an entity, so its rows take the entity drag speed the
         // settings page sets — the same one an actor or a light is moved at.
-        float perPixel = ConfigurationService.Instance.Config
+        float perPixel = _configuration.Config
             .Transform.For(isBone: false);
         static float Axis(Vector3 v, int axis) =>
             axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
@@ -409,7 +413,7 @@ public sealed class CameraPane
         var displayedId = followedId ?? nativeTargetId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string name = ActorNames.Display(actor);
+            string name = ActorNames.Display(_configuration, actor);
             choices.Add((actor.Id, name));
             labels.Add(name);
             if (displayedId is { } exact && actor.Id == exact)

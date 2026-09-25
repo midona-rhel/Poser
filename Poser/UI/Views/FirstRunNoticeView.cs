@@ -14,10 +14,10 @@ namespace Poser.UI.Views;
 /// is accepted.
 ///
 /// <para>The gate holds no plugin state and owns no resources: it reads the
-/// live config through <see cref="ConfigurationService.Instance"/> and writes
+/// live config through <see cref="configuration"/> and writes
 /// exactly one integer, so teardown has nothing to unwind here.</para>
 /// </summary>
-public sealed class FirstRunNoticeView
+public sealed class FirstRunNoticeView(ConfigurationService configuration)
 {
     /// <summary>Sized to hold the whole notice without scrolling at the design
     /// scale: the body's paragraphs measure ~300px at the Large width, and the
@@ -35,8 +35,8 @@ public sealed class FirstRunNoticeView
     /// <summary>True while the workspace is gated. The host suppresses
     /// workspace input paths that do not travel through ImGui (keybinds) while
     /// this holds.</summary>
-    public static bool Pending =>
-        !FirstRunNotice.IsAccepted(ConfigurationService.Instance.Config);
+    public bool Pending =>
+        !FirstRunNotice.IsAccepted(configuration.Config);
 
     public void Draw()
     {
@@ -144,7 +144,7 @@ public sealed class FirstRunNoticeView
 
     private void Accept()
     {
-        var configuration = ConfigurationService.Instance;
+
         FirstRunNotice.Accept(configuration.Config);
         configuration.Save();
         _typed = string.Empty;

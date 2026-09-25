@@ -1,4 +1,5 @@
 using Poser.Application.Lifecycle;
+using Poser.Documents.Mcdf;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;

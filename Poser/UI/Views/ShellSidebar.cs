@@ -167,9 +167,7 @@ public sealed class ShellSidebar
 
         Sync(vm, theme);
 
-        // Missing configuration keeps guides visible.
-        _hideGuides = Config.ConfigurationService.Instance is { } config
-            && !config.Config.UI.ShowTreeGuides;
+        _hideGuides = !vm.ShowTreeGuides;
 
         // Search remains fixed above the scrolling tree.
         float treeHeight = MathF.Max(1f, size.Y / scale - SearchBandHeight);

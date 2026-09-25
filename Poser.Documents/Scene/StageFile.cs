@@ -4,7 +4,6 @@ using System.IO;
 using System.Numerics;
 using System.Text.Json;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Stagehand.Definitions;
 using Stagehand.Definitions.Objects;
 

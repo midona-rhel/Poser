@@ -11,9 +11,9 @@ namespace Poser.UI;
 internal static class PoserKeybinds
 {
     /// <summary>Both of an action's chords, defaults filled in.</summary>
-    public static KeybindSlots Slots(string action)
+    public static KeybindSlots Slots(UIConfiguration settings, string action)
     {
-        var bindings = ConfigurationService.Instance.Config.UI.Bindings;
+        var bindings = settings.Bindings;
         return bindings.TryGetValue(action, out var slots)
             ? slots
             : KeybindRegistry.Default(action);
@@ -24,9 +24,9 @@ internal static class PoserKeybinds
     /// primary is unbound. A badge states ONE chord, and the one worth
     /// stating is the one that will actually fire.
     /// </summary>
-    public static string Effective(string action)
+    public static string Effective(UIConfiguration settings, string action)
     {
-        var slots = Slots(action);
+        var slots = Slots(settings, action);
         return slots.Primary.Length > 0 ? slots.Primary : slots.Secondary;
     }
 }

@@ -42,13 +42,13 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         held.Add(second);
         held.Add(VirtualKey.SHIFT);
         var fast = Move();
-        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.X, 4);
-        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.Z, 4);
+        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.X, 4);
+        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.Z, 4);
         held.Remove(VirtualKey.SHIFT);
         held.Add(VirtualKey.CONTROL);
         var slow = Move();
-        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.X, 4);
-        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.Z, 4);
+        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.X, 4);
+        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.Z, 4);
         held.Clear();
         Assert.Equal(Vector3.Zero, Move());
         held.Add(first);

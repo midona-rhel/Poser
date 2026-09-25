@@ -90,11 +90,11 @@ public partial class MainWindow
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
                 Actor: { } actorId } =>
                 _scene.Snapshot.FindActor(actorId.LogicalId) is { } actor
-                    ? ActorNames.Display(actor)
+                    ? ActorNames.Display(_configuration, actor)
                     : "Poser",
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
                 _scene.Snapshot.FindActor(boneId.Skeleton.Actor.LogicalId) is { } owner
-                    ? ActorNames.Display(owner)
+                    ? ActorNames.Display(_configuration, owner)
                     : "Poser",
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),

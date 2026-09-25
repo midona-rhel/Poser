@@ -8,11 +8,11 @@ namespace Poser.UI;
 /// index. One accessor, so no pane strips or masks on its own.</summary>
 public static class ActorNames
 {
-    public static string Display(ActorDescriptor actor) =>
-        Display(actor.Id, actor.Name);
+    public static string Display(Config.ConfigurationService configuration, ActorDescriptor actor) =>
+        Display(configuration, actor.Id, actor.Name);
 
-    public static string Display(ActorId id, string rawName) =>
-        Config.ConfigurationService.Instance.GetDisplayName(id.LogicalId, rawName);
+    public static string Display(Config.ConfigurationService configuration, ActorId id, string rawName) =>
+        configuration.GetDisplayName(id.LogicalId, rawName);
 
     /// <summary>The scene name without its object index, for an entity with
     /// no lineage to look up.</summary>

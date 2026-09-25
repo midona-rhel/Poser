@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace Poser.Game.Mcdf;
+namespace Poser.Documents.Mcdf;
 
 /// <summary>Windows ownership primitives whose managed counterparts are
 /// path-based and therefore cannot prove exclusive directory creation or

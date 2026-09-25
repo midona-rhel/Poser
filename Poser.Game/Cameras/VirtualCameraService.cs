@@ -50,8 +50,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// settings save takes effect on the next frame, not the next GPose
     /// session.
     /// </summary>
-    internal static Config.CameraConfiguration CameraSettings =>
-        Config.ConfigurationService.Instance is { } service
+    internal Config.CameraConfiguration CameraSettings =>
+        _configuration is { } service
             ? service.Config.Camera
             : FallbackCameraSettings;
 
@@ -154,7 +154,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     private bool _disposed;
 
+    private readonly global::Poser.Config.ConfigurationService ? _configuration;
+
     public VirtualCameraService(
+        global::Poser.Config.ConfigurationService configuration,
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IFramework framework,
@@ -164,6 +167,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         Dalamud.Plugin.Services.IObjectTable objectTable,
         IKeyState keyState)
     {
+        _configuration = configuration;
         _log = log;
         _framework = framework;
         _gPose = gPose;

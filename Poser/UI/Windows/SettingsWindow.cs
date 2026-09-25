@@ -30,7 +30,10 @@ public class SettingsWindow : Window
     private bool _openLibrary;
     private bool _openSkeleton;
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public SettingsWindow(
+        global::Poser.Config.ConfigurationService configuration,
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
@@ -43,6 +46,7 @@ public class SettingsWindow : Window
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
+        _configuration = configuration;
         _autoSave = autoSave;
         _integrations = integrations;
         _issueReport = issueReport;
@@ -134,8 +138,8 @@ public class SettingsWindow : Window
         {
             _vm = _snapshot;
             ApplyToConfig(preview: true);
-            ConfigurationService.Instance.ApplyChange(save: false);
-            var ui = ConfigurationService.Instance.Config.UI;
+            _configuration.ApplyChange(save: false);
+            var ui = _configuration.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
             Crystarium.FloatingSurface.ConfigureEffects(
                 ui.FillOpacity, ui.BackdropBlur);
@@ -161,7 +165,7 @@ public class SettingsWindow : Window
         try
         {
             _vm.SourceSnapshot = _library.Snapshot;
-            _vm.SavedLibrary = ConfigurationService.Instance.Config.Library;
+            _vm.SavedLibrary = _configuration.Config.Library;
             _vm.SourceScanBusy = _library.IsScanning;
             SettingsView.Draw(_vm, min);
             _folderDialog.Draw();
@@ -172,7 +176,7 @@ public class SettingsWindow : Window
             {
                 _appliedSignature = _vm.Signature();
                 ApplyToConfig(preview: true);
-                ConfigurationService.Instance.ApplyChange(save: false);
+                _configuration.ApplyChange(save: false);
             }
         }
         finally
@@ -185,7 +189,7 @@ public class SettingsWindow : Window
 
     private SettingsViewModel BuildViewModel()
     {
-        var c = ConfigurationService.Instance.Config;
+        var c = _configuration.Config;
         var vm = new SettingsViewModel
         {
             Category = 0,
@@ -284,7 +288,7 @@ public class SettingsWindow : Window
             Library = new LibrarySettingsDraft(c.Library),
             SavedLibrary = c.Library,
 
-            ConfigLoadFailure = ConfigurationService.Instance.LoadFailure,
+            ConfigLoadFailure = _configuration.LoadFailure,
 
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
@@ -310,7 +314,7 @@ public class SettingsWindow : Window
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
         vm.OnOpenSource = source =>
         {
-            if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, ConfigurationService.Instance.Config.Library))
+            if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, _configuration.Config.Library))
             {
                 _notices.Refused("The source changed. Save or cancel pending edits and retry.");
                 return;
@@ -337,7 +341,7 @@ public class SettingsWindow : Window
         };
         vm.OnRepairSource = issue =>
         {
-            if (vm.Library.TryRepair(issue, ConfigurationService.Instance.Config.Library, out var detail))
+            if (vm.Library.TryRepair(issue, _configuration.Config.Library, out var detail))
                 _notices.Done("Folder created. Retrying saved sources.");
             else
                 _notices.Failed(detail);
@@ -367,7 +371,7 @@ public class SettingsWindow : Window
     }
     private void ResetConfig(ConfigResetScope scope)
     {
-        var svc = ConfigurationService.Instance;
+        var svc = _configuration;
         switch (scope)
         {
             case ConfigResetScope.Display:
@@ -396,7 +400,7 @@ public class SettingsWindow : Window
 
     private void SaveToConfig()
     {
-        if (!_vm.Library.TryApply(ConfigurationService.Instance.Config.Library, out var detail))
+        if (!_vm.Library.TryApply(_configuration.Config.Library, out var detail))
         {
             _vm.LibraryStatus = detail;
             _notices.Refused(detail);
@@ -404,7 +408,7 @@ public class SettingsWindow : Window
             return;
         }
         ApplyToConfig(preview: false);
-        var svc = ConfigurationService.Instance;
+        var svc = _configuration;
         var c = svc.Config;
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
@@ -420,7 +424,7 @@ public class SettingsWindow : Window
     /// auto-save root, the bindings.</summary>
     private void ApplyToConfig(bool preview)
     {
-        var svc = ConfigurationService.Instance;
+        var svc = _configuration;
         var c = svc.Config;
 
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;

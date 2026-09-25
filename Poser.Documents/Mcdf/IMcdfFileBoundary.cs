@@ -1,6 +1,6 @@
 using Poser.Domain.Integration;
 
-namespace Poser.Application.Integration;
+namespace Poser.Documents.Mcdf;
 
 /// <summary>
 /// The MCDF v1 file boundary: package reading with validation/extraction,

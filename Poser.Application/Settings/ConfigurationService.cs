@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Dalamud.Plugin;
-using Poser.Core;
-using Poser.Entities;
 
 namespace Poser.Config;
 
@@ -15,9 +12,7 @@ public class ConfigurationService : IDisposable
 {
     public PoserConfiguration Config { get; private set; }
 
-    private readonly IDalamudPluginInterface _pluginInterface;
-
-    public static ConfigurationService Instance { get; private set; } = null!;
+    private readonly IConfigurationPersistence _persistence;
 
     public event Action? OnConfigurationChanged;
 
@@ -30,79 +25,17 @@ public class ConfigurationService : IDisposable
     /// </summary>
     public string LoadFailure { get; private set; } = string.Empty;
 
-    public ConfigurationService(IDalamudPluginInterface pluginInterface)
+    public ConfigurationService(IConfigurationPersistence persistence)
     {
-        Instance = this;
-        _pluginInterface = pluginInterface;
-        Config = LoadOrRecover();
+        _persistence = persistence;
+        var loaded = persistence.Load();
+        Config = loaded.Configuration;
+        LoadFailure = loaded.Failure;
         MigrateConfig();
 
         // Seeded in memory only; it persists with the next save the user causes.
         Config.Library.EnsureDefaults();
 
-        // The friendly-name switch is a field on the bone tables, because the
-        // bones read it per frame; this is where the stored value reaches it.
-        Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
-            Config.Skeleton.ShowFriendlyBoneNames;
-    }
-
-    /// <summary>
-    /// The stored config, or defaults with the unreadable file preserved
-    /// beside it. Three failures are one case: a throwing deserialize, a null
-    /// result, and a result of the wrong type — in every one the user's
-    /// settings are about to be replaced by defaults and the next save would
-    /// overwrite the only copy, so the file is copied first and the reason is
-    /// kept for the settings page to state.
-    /// </summary>
-    private PoserConfiguration LoadOrRecover()
-    {
-        object? stored = null;
-        string reason = string.Empty;
-        try
-        {
-            stored = _pluginInterface.GetPluginConfig();
-        }
-        catch (Exception ex)
-        {
-            reason = ex.Message;
-        }
-
-        if (stored is PoserConfiguration config)
-            return config;
-
-        // No file at all is a first run, not a failure: nothing was lost and
-        // there is nothing to back up.
-        var file = _pluginInterface.ConfigFile;
-        if (file is not { Exists: true })
-            return new PoserConfiguration();
-
-        LoadFailure = BackUp(file, reason);
-        return new PoserConfiguration();
-    }
-
-    /// <summary>Copies the unreadable config beside itself and reports what
-    /// happened in one sentence. A failure to copy is itself reported rather
-    /// than swallowed — the user is being told their settings are gone, and
-    /// "there is a backup" has to be true.</summary>
-    private static string BackUp(System.IO.FileInfo file, string reason)
-    {
-        string detail = reason.Length > 0 ? $" ({reason})" : string.Empty;
-        try
-        {
-            string backup = file.FullName + ".bak-"
-                + DateTime.Now.ToString(
-                    "yyyyMMdd-HHmmss",
-                    System.Globalization.CultureInfo.InvariantCulture);
-            System.IO.File.Copy(file.FullName, backup, overwrite: true);
-            return "Your settings could not be read and have been reset to "
-                + $"defaults{detail}. The old file was saved as {backup}.";
-        }
-        catch (Exception ex)
-        {
-            return "Your settings could not be read and have been reset to "
-                + $"defaults{detail}. Backing the old file up also failed: "
-                + ex.Message;
-        }
     }
 
     /// <summary>
@@ -156,14 +89,14 @@ public class ConfigurationService : IDisposable
 
     public void Save(bool notify)
     {
-        _pluginInterface.SavePluginConfig(Config);
+        _persistence.Save(Config);
         if (notify) OnConfigurationChanged?.Invoke();
     }
 
     public void ApplyChange(bool save = true)
     {
         if (save)
-            Save();
+            Save(notify: false);
 
         OnConfigurationChanged?.Invoke();
     }

@@ -78,7 +78,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private static readonly string[] PhysicsPrefixes =
         { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public ActorServiceLifecycle(
+        global::Poser.Config.ConfigurationService configuration,
         IActorSpawnService spawns,
         IPosingService posing,
         ISkeletonService skeletons,
@@ -94,6 +97,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Integration.ISpawnCollectionPort collections)
     {
+        _configuration = configuration;
         _collections = collections;
         _presentation = presentation;
         _actorManager = actorManager;
@@ -114,19 +118,19 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     {
         var target = (IActor)actor;
         return _bindings.GetActorId(target) is { } id
-            ? Config.ConfigurationService.Instance.GetDisplayName(id.LogicalId, target.Name)
+            ? _configuration.GetDisplayName(id.LogicalId, target.Name)
             : Config.ConfigurationService.StripObjectIndex(target.Name);
     }
 
     public void SetName(object actor, string name) =>
         WhenNameBound((IActor)actor, id =>
-            Config.ConfigurationService.Instance.SetNickname(id.LogicalId, name));
+            _configuration.SetNickname(id.LogicalId, name));
 
     public void NameCreated(object actor, string seed)
     {
         // Display nicknames only: changing the native name breaks Penumbra identity.
         WhenNameBound((IActor)actor, id =>
-            Config.ConfigurationService.Instance.SetNickname(id.LogicalId,
+            _configuration.SetNickname(id.LogicalId,
                 Poser.Domain.Scene.EntityNames.Next(seed,
                     _actorManager.Actors.Where(x => !ReferenceEquals(x, actor)).Select(GetName))));
     }

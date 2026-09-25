@@ -103,7 +103,10 @@ public sealed class LightPane
     private readonly ScenePane _scenePane;
     private readonly ILightControl _values;
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public LightPane(
+        global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         ISceneCreation creation,
         EntityActions entityActions,
@@ -118,6 +121,7 @@ public sealed class LightPane
         ScenePane scenePane,
         ILightControl values)
     {
+        _configuration = configuration;
         _values = values;
         _names = names;
         _notices = notices;
@@ -578,7 +582,7 @@ public sealed class LightPane
                     if (!descriptor.Id.Equals(boneId))
                         continue;
                     string label =
-                        $"{ActorNames.Display(actor)} · {descriptor.DisplayName}";
+                        $"{ActorNames.Display(_configuration, actor)} · {descriptor.DisplayName}";
                     _attachLabel = (boneId, revision, label);
                     return label;
                 }
@@ -593,7 +597,7 @@ public sealed class LightPane
         _boneChoices.Clear();
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string actorName = ActorNames.Display(actor);
+            string actorName = ActorNames.Display(_configuration, actor);
             foreach (var skeleton in actor.Skeletons)
             {
                 foreach (var descriptor in skeleton.Bones)

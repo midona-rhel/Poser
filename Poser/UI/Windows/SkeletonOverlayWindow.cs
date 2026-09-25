@@ -35,39 +35,39 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     private readonly Application.Scene.SceneGroups _groups;
 
     // Configuration from settings
-    private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
+    private SkeletonConfiguration Config => _configuration.Config.Skeleton;
 
-    private static float DotRadius => Config.BoneDotRadius;
-    private static float LineThickness => Config.BoneLineThickness;
-    private static float LineOpacity => Config.BoneLineOpacity;
-    private static float LineOpacityWhileUsing => Config.BoneLineOpacityWhileUsing;
-    private static float OctahedraWidth => Config.OctahedraWidth;
+    private float DotRadius => Config.BoneDotRadius;
+    private float LineThickness => Config.BoneLineThickness;
+    private float LineOpacity => Config.BoneLineOpacity;
+    private float LineOpacityWhileUsing => Config.BoneLineOpacityWhileUsing;
+    private float OctahedraWidth => Config.OctahedraWidth;
 
-    private static uint BoneColor => Config.BoneColor;
-    private static uint OutlineColor => Config.BoneOutlineColor;
+    private uint BoneColor => Config.BoneColor;
+    private uint OutlineColor => Config.BoneOutlineColor;
 
     // While the stored color still equals its fresh-install default, the
     // selected/hovered family follows the live accent (theme + AccentIndex);
     // an explicit ColorWell override pins the stored value instead.
-    private static uint SelectedBoneColor =>
+    private uint SelectedBoneColor =>
         Config.SelectedBoneColor == SkeletonConfiguration.DefaultSelectedBoneColor
             ? ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Palette.Primary)
             : Config.SelectedBoneColor;
-    private static uint ModifiedBoneColor => Config.ModifiedBoneColor;
-    private static uint HoveredBoneColor =>
+    private uint ModifiedBoneColor => Config.ModifiedBoneColor;
+    private uint HoveredBoneColor =>
         Config.HoveredBoneColor == SkeletonConfiguration.DefaultHoveredBoneColor
             ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(
                 Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
             : Config.HoveredBoneColor;
-    private static uint IkChainColor => Config.IkChainColor;
-    private static uint MirroredBoneColor => Config.MirroredBoneColor;
+    private uint IkChainColor => Config.IkChainColor;
+    private uint MirroredBoneColor => Config.MirroredBoneColor;
 
-    private static bool ShowSkeletonLines => Config.ShowSkeletonLines;
-    private static bool LineToCircle => Config.SkeletonLineToCircle;
-    private static bool HideSkeletonWhileDragging =>
+    private bool ShowSkeletonLines => Config.ShowSkeletonLines;
+    private bool LineToCircle => Config.SkeletonLineToCircle;
+    private bool HideSkeletonWhileDragging =>
         Config.HideSkeletonWhileDragging;
-    private static bool ShowNsfwBones =>
-        ConfigurationService.Instance.Config.Display.ShowNsfwBones;
+    private bool ShowNsfwBones =>
+        _configuration.Config.Display.ShowNsfwBones;
 
     // ── the per-frame display model ──────────────────────────────────────
     // One VALUE per drawn handle, held in buffers this window owns and
@@ -371,7 +371,10 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         WorldAdoptionCandidate Candidate,
         Vector2 ReleasePoint);
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public SkeletonOverlayWindow(
+        global::Poser.Config.ConfigurationService configuration,
         IPoseInteraction poseInteraction,
         SceneSession scene,
         IViewportReads viewport,
@@ -394,6 +397,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             ImGuiWindowFlags.NoSavedSettings |
             ImGuiWindowFlags.NoBringToFrontOnFocus)
     {
+        _configuration = configuration;
         _scene = scene;
         _selection = scene.Selection;
         _viewport = viewport;
@@ -749,7 +753,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                     // Nickname / anonymous-mask aware, like every surface. The
                     // raw object-index suffix is stripped first so the mask and
                     // nickname lookups see the same name the shell shows.
-                    Name = ActorNames.Display(actor),
+                    Name = ActorNames.Display(_configuration, actor),
                     Id = actorSelectionId,
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
@@ -816,7 +820,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             // selection's symmetry or link will also move, and armed IK
             // chain members, collect even while the armature is hidden
             // or filtered — marking can only tint a collected bone.
-            var symmetryConfig = ConfigurationService.Instance.Config;
+            var symmetryConfig = _configuration.Config;
             HashSet<string>? implicated =
                 armedIkBones != null ? new(armedIkBones) : null;
             for (int b = 0; b < count; b++)
@@ -910,7 +914,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
         // Eyes and ears that move together by default are partners too.
         if (_poseInteraction.LinkedBonesEnabled
-            || ConfigurationService.Instance.Config.AutoLinkPairedBones)
+            || _configuration.Config.AutoLinkPairedBones)
             MarkLinkPartners(bones);
 
         // No armature filter here anymore: every entry above was already
@@ -1258,7 +1262,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         return found;
     }
 
-    private static float ActorOpacity(ActorId actor, Guid? activeLineage) =>
+    private float ActorOpacity(ActorId actor, Guid? activeLineage) =>
         activeLineage is not { } active || actor.LogicalId == active
             ? 1f
             : Math.Clamp(Config.InactiveActorOpacity, 0f, 1f);
@@ -1658,7 +1662,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         _ => 0,
     };
 
-    private static void DrawAdoptionHandles(
+    private void DrawAdoptionHandles(
         ImDrawListPtr drawList, List<AdoptDisplayData> adopts)
     {
         if (adopts.Count == 0)
@@ -1947,10 +1951,10 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// <summary>Flags the opposite-side partners of the selected bones so
     /// Mirror symmetry shows what a transform will also move. Partners are
     /// matched inside the selected bone's own skeleton, never across actors.</summary>
-    private static void MarkMirrorPartners(
+    private void MarkMirrorPartners(
         List<BoneDisplayData> bones, SymmetryMode globalMode)
     {
-        var configuration = ConfigurationService.Instance.Config;
+        var configuration = _configuration.Config;
         HashSet<(SkeletonId, string)>? partners = null;
         foreach (var bone in bones)
         {
@@ -2012,7 +2016,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// <summary>The one color priority for bones: Selected > Hovered > IK >
     /// mirror partner > fallback. Hover is opt-in because the dot layer leaves
     /// hover feedback to the hover list.</summary>
-    private static uint ResolveBoneColor(BoneDisplayData bone, bool useHover, uint fallback)
+    private uint ResolveBoneColor(BoneDisplayData bone, bool useHover, uint fallback)
     {
         if (bone.IsSelected)
             return SelectedBoneColor;
@@ -2320,7 +2324,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// <summary>The light's own emission colour, tone-mapped the way the Light
     /// tab's colour well maps it — the native value is HDR and reaches far past
     /// white. An unresolved light falls back to the bone family.</summary>
-    private static Vector4 LightColor(LightDisplayData light)
+    private Vector4 LightColor(LightDisplayData light)
     {
         if (light.Live is not { } live)
             return ColorToVector(BoneColor) with { W = light.IsSelected ? 1f : 0.6f };

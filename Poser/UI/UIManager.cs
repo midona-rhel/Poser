@@ -336,7 +336,7 @@ public sealed class UIManager : IUIManager
 
     private void HandleKeybinds()
     {
-        if (Views.FirstRunNoticeView.Pending
+        if (!FirstRunNotice.IsAccepted(_configService.Config)
             || !_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)
         {
@@ -350,7 +350,7 @@ public sealed class UIManager : IUIManager
 
         foreach (var bind in _keybinds)
         {
-            var slots = PoserKeybinds.Slots(bind.Name);
+            var slots = PoserKeybinds.Slots(_configService.Config.UI, bind.Name);
             bind.Sync(slots);
             if (_keyEvents.Available)
             {
@@ -378,8 +378,8 @@ public sealed class UIManager : IUIManager
                     ? bind.Primary
                     : bind.Secondary;
                 if (fired.IsBound
-                    && _keyState.IsVirtualKeyValid(fired.Key))
-                    _keyState[fired.Key] = false;
+                    && _keyState.IsVirtualKeyValid((int)fired.Key))
+                    _keyState[(int)fired.Key] = false;
             }
             else if (!active)
             {
@@ -396,7 +396,7 @@ public sealed class UIManager : IUIManager
     /// key state on the draw frame came too late for the game's dispatch.</summary>
     private bool OnKeyEvent(VirtualKey key, global::Poser.Services.KeyEventKind kind)
     {
-        if (Views.FirstRunNoticeView.Pending
+        if (!FirstRunNotice.IsAccepted(_configService.Config)
             || !_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)
             return false;
@@ -438,7 +438,7 @@ public sealed class UIManager : IUIManager
 
     private bool ChordIs(KeyChord chord, VirtualKey key)
     {
-        if (!chord.IsBound || chord.Key != key)
+        if (!chord.IsBound || (int)chord.Key != (int)key)
             return false;
         return chord.Ctrl == _keyState[VirtualKey.CONTROL]
             && chord.Shift == _keyState[VirtualKey.SHIFT]
@@ -455,7 +455,7 @@ public sealed class UIManager : IUIManager
             return false;
         if (chord.Alt != _keyState[VirtualKey.MENU])
             return false;
-        return _keyState[chord.Key];
+        return _keyState[(VirtualKey)(int)chord.Key];
     }
 
     private sealed class Keybind(string name, Action run)

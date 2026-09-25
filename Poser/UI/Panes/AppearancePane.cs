@@ -139,6 +139,8 @@ public sealed partial class AppearancePane
     /// <summary>Folder used by character-file browsers.</summary>
     private string _mcdfPath;
 
+    private readonly Config.ConfigurationService _configuration;
+
     public AppearancePane(
         ActorPresentationSession presentation,
         ModelCatalog modelCatalog,
@@ -161,6 +163,7 @@ public sealed partial class AppearancePane
         IAppearanceColorControl colors,
         ICharacterFiles characterFiles)
     {
+        _configuration = config;
         _characterFiles = characterFiles;
         _customize = customize;
         _customizeSession = customizeSession;
@@ -1075,7 +1078,7 @@ public sealed partial class AppearancePane
     private void OpenMcdfExport(ActorId actor)
     {
         string description = _scene.Snapshot.FindActor(actor) is { } described
-            ? ActorNames.Display(described)
+            ? ActorNames.Display(_configuration, described)
             : "Actor";
         _mcdfExportBrowser.Open(_mcdfPath, chosen =>
         {

@@ -235,13 +235,7 @@ public partial class MainWindow : Window
 
     private readonly AppShellViewModel _vm = new();
 
-    /// <summary>The acceptance gate. A field initializer, not a dependency:
-    /// it reads the config service's static instance exactly like the rename
-    /// modal below does.</summary>
-    private readonly FirstRunNoticeView _firstRunNotice = new()
-    {
-        OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url),
-    };
+    private readonly FirstRunNoticeView _firstRunNotice;
 
     /// <summary>The per-frame shell view model, for the split-part windows —
     /// they are registered after this window, so a frame's model is already
@@ -498,7 +492,10 @@ public partial class MainWindow : Window
 
     public Func<bool>? GetInspectorWindowOpen { get; set; }
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public MainWindow(
+        global::Poser.Config.ConfigurationService configuration,
         IGPoseService gPoseService,
         IActorManager actorManager,
         IBonePosingService bonePosingService,
@@ -560,6 +557,8 @@ public partial class MainWindow : Window
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
+        _configuration = configuration;
+        _firstRunNotice = new(configuration) { OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url) };
         _vm.BranchLabel = BuildMetadata.Branch is "" or "unknown" or "detached" or "main" or "master"
             ? ""
             : BuildMetadata.Commit.Length == 0
@@ -841,7 +840,10 @@ public partial class MainWindow : Window
     private float EffectiveMinimumWidth()
     {
         float minimum = MinimumWidth;
-        var ui = Config.ConfigurationService.Instance.Config.UI;
+        var ui = _configuration.Config.UI;
+        _vm.ShowTreeGuides = ui.ShowTreeGuides;
+        _vm.UndoShortcut = PoserKeybinds.Effective(ui, "Undo");
+        _vm.RedoShortcut = PoserKeybinds.Effective(ui, "Redo");
         if (ui.DetachedShell)
             minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
         // A split inspector hands the rail's column back too.
@@ -1037,7 +1039,7 @@ public partial class MainWindow : Window
         if (primary is { Kind: SceneEntityKind.Camera, Camera: { } lookId })
         {
             if (!Equals(_lookThroughApplied, primary)
-                && Config.ConfigurationService.Instance.Config.Camera
+                && _configuration.Config.Camera
                     .LookThroughSelectedCamera)
             {
                 _lookThroughApplied = primary;
@@ -1055,9 +1057,9 @@ public partial class MainWindow : Window
         _vm.Collapsed = _collapsed;
         _vm.SidebarCollapsed = _sidebarCollapsed;
         _vm.InspectorSplit =
-            Config.ConfigurationService.Instance.Config.UI.SplitInspector;
+            _configuration.Config.UI.SplitInspector;
         _vm.Detached =
-            Config.ConfigurationService.Instance.Config.UI.DetachedShell;
+            _configuration.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
         _vm.ContentKind = ContentKind(primary);
         // The shell's retained per-row state is swept on structural change
@@ -1087,13 +1089,13 @@ public partial class MainWindow : Window
         // environment, or the scene, chosen by the selector band — and
         // selecting any entity snaps back to the target panel (you
         // selected it to inspect it).
-        var railConfig = Config.ConfigurationService.Instance.Config.UI;
+        var railConfig = _configuration.Config.UI;
         if (primary is { } primaryNow && primaryNow != _lastPrimaryForMode)
         {
             if (_lastPrimaryForMode is not null && railConfig.InspectorMode != 0)
             {
                 railConfig.InspectorMode = 0;
-                Config.ConfigurationService.Instance.Save();
+                _configuration.Save();
             }
             _lastPrimaryForMode = primaryNow;
         }
@@ -1105,9 +1107,9 @@ public partial class MainWindow : Window
             _vm.InspectorMode = _contentMode;
             _vm.OnInspectorMode = next =>
             {
-                Config.ConfigurationService.Instance.Config
+                _configuration.Config
                     .UI.InspectorMode = next;
-                Config.ConfigurationService.Instance.Save();
+                _configuration.Save();
             };
             _vm.DrawRail = _poseRail.Draw;
         }
@@ -1118,7 +1120,7 @@ public partial class MainWindow : Window
         // The seg DESCRIBES the primary selected bone — its effective
         // mode through the one three-tier rule — and the global otherwise.
         var symmetryConfig =
-            Config.ConfigurationService.Instance.Config;
+            _configuration.Config;
         var primaryBone = _scene.Selection.Primary?.Bone;
         _vm.SymmetryMode = primaryBone is { } describedBone
             ? (int)Core.BoneSymmetry.EffectiveMode(
@@ -1157,7 +1159,7 @@ public partial class MainWindow : Window
         // reached that way, so the one switch arms both. Read here rather than
         // wired once, so a Settings change takes effect on the next frame.
         _bonePosingService.LinkedBonesEnabled =
-            Config.ConfigurationService.Instance.Config.LinkSiblingBones;
+            _configuration.Config.LinkSiblingBones;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.UndoDescription = _cleanTransforms.UndoDescription;

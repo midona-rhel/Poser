@@ -11,8 +11,7 @@ public sealed class ActorNicknameLifetimeTests
     [Fact]
     public void NicknameSurvivesSameSessionRebindingButNotNextSessionSlotReuse()
     {
-        var plugin = Substitute.For<IDalamudPluginInterface>();
-        plugin.GetPluginConfig().Returns(new PoserConfiguration());
+        var plugin = new Poser.Tests.Fixtures.MemoryConfigurationPersistence();
         var names = new ConfigurationService(plugin);
         var original = new ActorId(Guid.NewGuid(), 0);
         var restored = new ActorId(original.LogicalId, 1);

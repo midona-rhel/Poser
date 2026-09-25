@@ -5,7 +5,7 @@ using Microsoft.Win32.SafeHandles;
 using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Game.Mcdf;
+using Poser.Documents.Mcdf;
 
 namespace Poser.Game.Tests;
 

@@ -1366,7 +1366,7 @@ public static partial class SettingsView
                 vm.PresetArmed = false;
                 vm.RebindRefusal = string.Empty;
                 vm.RebindHeld.Clear();
-                foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
+                foreach (var (key, imguiKey) in KeyChordInput.CapturableTokens())
                     if (vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey))
                         vm.RebindHeld.Add(key);
             },
@@ -1491,7 +1491,7 @@ public static partial class SettingsView
             return;
         }
 
-        foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
+        foreach (var (key, imguiKey) in KeyChordInput.CapturableTokens())
         {
             bool down = vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey);
             if (!down)
@@ -1508,7 +1508,7 @@ public static partial class SettingsView
                     Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT),
                 io.KeyAlt || vm.KeyDown(
                     Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
-                key).ToString();
+                (KeyCode)(int)key).ToString();
             // NO colliding binds: a chord already bound anywhere else is
             // REFUSED — the capture stays armed and says who holds it.
             string? holder = null;

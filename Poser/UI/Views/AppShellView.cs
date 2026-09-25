@@ -150,6 +150,9 @@ public sealed class ShellTab
 
 public sealed class AppShellViewModel
 {
+    public bool ShowTreeGuides = true;
+    public string UndoShortcut = "";
+    public string RedoShortcut = "";
     public bool GPoseActive = true;
 
     public List<ShellSidebarSection> Sections = new();
@@ -579,7 +582,7 @@ public static class AppShellView
                     corners);
             }
 
-            SyncKeybindHelp();
+            SyncKeybindHelp(vm);
             DrawTitlebar(vm, min, max, s, dl);
 
             // Double-clicking the bar's open band collapses — the chevron's
@@ -1549,9 +1552,9 @@ public static class AppShellView
         }
     }
 
-    private static void SyncKeybindHelp()
+    private static void SyncKeybindHelp(AppShellViewModel vm)
     {
-        string undo = PoserKeybinds.Effective("Undo");
+        string undo = vm.UndoShortcut;
         if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
         {
             _undoShortcut = undo;
@@ -1559,7 +1562,7 @@ public static class AppShellView
             _undoEmptyHelp = $"Nothing to undo · {undo}";
         }
 
-        string redo = PoserKeybinds.Effective("Redo");
+        string redo = vm.RedoShortcut;
         if (!string.Equals(redo, _redoShortcut, StringComparison.Ordinal))
         {
             _redoShortcut = redo;
@@ -1620,7 +1623,7 @@ public static class AppShellView
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        SyncKeybindHelp();
+        SyncKeybindHelp(vm);
         float x = DrawBrandPill(
                 vm, origin.X, origin.Y, height, s, ImGui.GetWindowDrawList())
             + CenterInset * s;

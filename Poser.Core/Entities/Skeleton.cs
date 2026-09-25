@@ -131,13 +131,15 @@ public class Skeleton : EntityBase, ISkeleton
     public Skeleton(
         IActor actor,
         Poser.Domain.Identity.PoseSlot slot,
-        Func<IActor, nint> resolveCharacterBase)
+        Func<IActor, nint> resolveCharacterBase,
+        Func<bool> showAllVieraEars)
         : base(new EntityId($"skeleton_{actor.Id.Unique}_{slot}"), "Skeleton")
     {
         Actor = actor;
         Slot = slot;
         _bonesView = _bones.AsReadOnly();
         _resolveCharacterBase = resolveCharacterBase;
+        _showAllVieraEars = showAllVieraEars;
         IsCollapsed = true; // Start collapsed by default
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
@@ -440,12 +442,14 @@ public class Skeleton : EntityBase, ISkeleton
     /// <para>The ear read is skipped entirely unless the skeleton actually has
     /// ear bones, so a non-Viera skeleton costs nothing.</para>
     /// </summary>
+    private readonly Func<bool> _showAllVieraEars;
+
     private void ApplyBoneFilters()
     {
         bool hasModernJaw =
             _bonesByName.ContainsKey(LegacyBoneFilters.ModernJaw);
         bool showAllEars =
-            Config.ConfigurationService.Instance.Config.Skeleton.ShowAllVieraEars;
+            _showAllVieraEars();
 
         char earSet = '\0';
         if (!showAllEars)

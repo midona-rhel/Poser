@@ -65,7 +65,10 @@ public sealed class DebugBridge : IDisposable
     private readonly Application.Posing.IPoseCommands _poseCommands;
     private readonly CancellationTokenSource _stop = new();
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public DebugBridge(
+        global::Poser.Config.ConfigurationService configuration,
         IEnvironmentService environment,
         IFramework framework,
         IPluginLog log,
@@ -97,6 +100,7 @@ public sealed class DebugBridge : IDisposable
         IPosingService posing,
         Application.Posing.IPoseCommands poseCommands)
     {
+        _configuration = configuration;
         _textures = textures;
         _readback = readback;
         _scenes = scenes;
@@ -424,7 +428,7 @@ public sealed class DebugBridge : IDisposable
             {
                 // The overlay's scope and visibility, for perf captures:
                 // all=1 shows every actor's bones, visible=1 shows them.
-                var skeleton = global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+                var skeleton = _configuration.Config.Skeleton;
                 if (query.TryGetValue("all", out var all))
                     skeleton.OnlyActiveActorBones = all != "1";
                 if (query.TryGetValue("visible", out var visible))

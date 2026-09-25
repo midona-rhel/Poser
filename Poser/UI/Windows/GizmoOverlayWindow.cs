@@ -58,11 +58,11 @@ public class GizmoOverlayWindow : Window
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
 
-    private static Config.GizmoConfiguration GizmoConfig =>
-        Config.ConfigurationService.Instance.Config.Gizmo;
+    private Config.GizmoConfiguration GizmoConfig =>
+        _configuration.Config.Gizmo;
 
     /// <summary>Configured handle span before UI scaling.</summary>
-    private static float HandleSpanPixels =>
+    private float HandleSpanPixels =>
         80f * Math.Clamp(GizmoConfig.GizmoScale, 0.5f, 2f);
     // Reports gesture failures at verbose level.
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
@@ -173,7 +173,10 @@ public class GizmoOverlayWindow : Window
             _beginSuppressed = false;
     }
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public GizmoOverlayWindow(
+        global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         IViewportReads viewport,
         IEditorState editorState,
@@ -196,6 +199,7 @@ public class GizmoOverlayWindow : Window
             ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoSavedSettings)
     {
+        _configuration = configuration;
         // The first click on an unselected entity only selects it: the
         // press that changed the selection may not begin a drag on the
         // gizmo that appeared under it (ruled 2026-09-03). The flag clears
@@ -629,7 +633,7 @@ public class GizmoOverlayWindow : Window
             ClearGesture(suppress: true);
             return null;
         }
-        if (gesture.GroupScale != Config.ConfigurationService.Instance.Config.Gizmo.GroupScale ||
+        if (gesture.GroupScale != _configuration.Config.Gizmo.GroupScale ||
             gesture.Tool != currentTool ||
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
@@ -743,7 +747,7 @@ public class GizmoOverlayWindow : Window
         else if (isGroup)
         {
             if (!_groupCoordinator.TryReadWorldSelection(
-                Config.ConfigurationService.Instance.Config.Gizmo.GroupScale, out var group, out _))
+                _configuration.Config.Gizmo.GroupScale, out var group, out _))
                 return;
             currentTransform = new Transform
             {
@@ -868,7 +872,7 @@ public class GizmoOverlayWindow : Window
         // during a held drag; the drag's sweep and readout, drawn below,
         // never hide.
         bool keepIkVisible = ManipulationDrag.Held && isBone && primaryBone is { } ikBoneId
-            && Config.ConfigurationService.Instance.Config.UI.KeepIkGizmoVisibleWhileManipulating
+            && _configuration.Config.UI.KeepIkGizmoVisibleWhileManipulating
             && _ikPort.Get(TransformTargetId.ForBone(ikBoneId)) is { Enabled: true };
         bool hideGizmo = ManipulationHide.HideGizmo && !keepIkVisible;
         if (layout != null && !io.KeyAlt
@@ -1244,9 +1248,9 @@ public class GizmoOverlayWindow : Window
             includeLinkedBones: isBone && _poseInteraction.LinkedBonesEnabled,
             symmetryFor: isBone ? SymmetryDeltaFor : null,
             relativeSecondaryBones: isBone &&
-                Config.ConfigurationService.Instance.Config
+                _configuration.Config
                     .RelativeSecondaryBones,
-            groupScale: Config.ConfigurationService.Instance.Config.Gizmo.GroupScale);
+            groupScale: _configuration.Config.Gizmo.GroupScale);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(
@@ -1261,7 +1265,7 @@ public class GizmoOverlayWindow : Window
             Tool = tool,
             Orientation = orientation,
             Space = space,
-            GroupScale = Config.ConfigurationService.Instance.Config.Gizmo.GroupScale,
+            GroupScale = _configuration.Config.Gizmo.GroupScale,
             IsGroup = !isBone && targets.Count > 1,
             CapsuleScale = layout.CapsuleScale,
             Start = currentTransform,
@@ -1533,7 +1537,7 @@ public class GizmoOverlayWindow : Window
         string canonicalName)
     {
         var configuration =
-            Config.ConfigurationService.Instance.Config;
+            _configuration.Config;
         return Core.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,

@@ -92,10 +92,10 @@ public partial class MainWindow
             // anonymous mode is on. Prefilling the raw name would leak it.
             () => _names.Open(
                 "Rename actor",
-                ActorNames.Display(actorId, actor.Name),
-                name => Config.ConfigurationService.Instance.SetNickname(
+                ActorNames.Display(_configuration, actorId, actor.Name),
+                name => _configuration.SetNickname(
                     actorId.LogicalId, name),
-                clear: () => Config.ConfigurationService.Instance.SetNickname(
+                clear: () => _configuration.SetNickname(
                     actorId.LogicalId, null),
                 clearHelp: "Remove the nickname and show the real name"),
         };
@@ -116,13 +116,13 @@ public partial class MainWindow
                 disabled: !actor.HasSkeleton));
             actions.Add(() => OpenEntityRename(
                 "Save actor to library",
-                ActorNames.Display(actorId, actor.Name),
+                ActorNames.Display(_configuration, actorId, actor.Name),
                 name => SaveOwnedActorEntry(actorId, name)));
         }
 
         items.Add(new ContextMenuItem("Create collider", TablerIcon.Cube,
             disabled: !actor.HasSkeleton || _actorColliderCapture.Busy));
-        actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(actorId, actor.Name)));
+        actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(_configuration, actorId, actor.Name)));
 
         items.Add(new ContextMenuItem("Tree", TablerIcon.Folder,
             submenuItems: BuildTreeSubmenu("actor:" + actorId, out var treeActions)));

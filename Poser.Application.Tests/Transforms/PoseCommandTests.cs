@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Documents.Mcdf;
 using System.Reflection;
 using Poser.Application.Animation;
 using Poser.Application.Gaze;

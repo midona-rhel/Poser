@@ -31,16 +31,16 @@ public partial class MainWindow
         _poseInspector.BuildBoneChoices = BuildCameraBoneChoices;
         _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
-            Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
+            _configuration.Config.UI.MapMirrorSelection;
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
         _poseInspector.SetMapMirror = on =>
         {
             graphicalBonePane.SidesSwapped = on;
-            Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection = on;
-            Config.ConfigurationService.Instance.Save();
+            _configuration.Config.UI.MapMirrorSelection = on;
+            _configuration.Save();
         };
         _poseInspector.GetSwapRotationXY = () =>
-            Config.ConfigurationService.Instance.Config.UI.SwapRotationXY;
+            _configuration.Config.UI.SwapRotationXY;
         _selection.Live.CompanionResolver = ResolveSiblingBone;
         _vm.OnCollapse = collapsed =>
         {
@@ -66,7 +66,7 @@ public partial class MainWindow
             if (SelectedActorRef() is not { Actor: { } trackActorId })
                 return;
             string trackLabel = _scene.Snapshot.FindActor(trackActorId.LogicalId) is { } tracked
-                ? ActorNames.Display(tracked)
+                ? ActorNames.Display(_configuration, tracked)
                 : "Actor";
             _cameraPane.FollowActor(trackActorId, trackLabel, recenterId);
         };
@@ -93,7 +93,7 @@ public partial class MainWindow
         {
             var mode = (SymmetryMode)i;
             var configuration =
-                Config.ConfigurationService.Instance.Config;
+                _configuration.Config;
             // With the per-bone sheet on, the toolbar EDITS the selected
             // bones' own stated mode — clicking their stated value again
             // clears it back to the toolbar's global. No bones selected
@@ -117,7 +117,7 @@ public partial class MainWindow
                 }
                 if (wroteAny)
                 {
-                    Config.ConfigurationService.Instance.Save();
+                    _configuration.Save();
                     return;
                 }
             }
@@ -152,7 +152,7 @@ public partial class MainWindow
         // reopens it. Attached: the X hides the whole UI as ever.
         _vm.OnHideUi = () =>
         {
-            if (Config.ConfigurationService.Instance.Config.UI.DetachedShell)
+            if (_configuration.Config.UI.DetachedShell)
                 ContentHidden = true;
             else
                 IsOpen = false;

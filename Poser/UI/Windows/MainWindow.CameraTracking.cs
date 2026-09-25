@@ -68,7 +68,7 @@ public partial class MainWindow
                     disabled: locked || actor == null,
                     help: actor == null
                         ? "Choose an actor first"
-                        : $"Choose exact bones on {ActorNames.Display(actor)}",
+                        : $"Choose exact bones on {ActorNames.Display(_configuration, actor)}",
                     id: "camera-track-select-bones");
                 // Picking in the view: a click takes a bone, Ctrl-click
                 // keeps adding within the currently followed actor.
@@ -133,7 +133,7 @@ public partial class MainWindow
         };
         _cameraTrackingBonePicker.OpenMulti(
             $"camera-tracking-bones:{cameraId}:{actorId}",
-            ActorNames.Display(actor),
+            ActorNames.Display(_configuration, actor),
             _cameraBoneChoices,
             choice => choice.Label,
             choice => choice.Key,

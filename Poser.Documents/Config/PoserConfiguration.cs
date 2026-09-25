@@ -1,14 +1,12 @@
 using Poser.Domain.Scene;
-using Dalamud.Configuration;
 using Poser.Library;
 
 namespace Poser.Config;
 
 /// <summary>
 /// Main configuration for Poser plugin.
-/// Implements IPluginConfiguration for Dalamud persistence.
 /// </summary>
-public class PoserConfiguration : IPluginConfiguration
+public class PoserConfiguration
 {
     // 2: overlay color redesign — stored overlay colors reset once on load
     // (ConfigurationService.MigrateConfig); sizes/opacity keep user values.

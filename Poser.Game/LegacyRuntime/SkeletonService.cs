@@ -26,8 +26,11 @@ public class SkeletonService : ISkeletonService
     private readonly IActorManager _actors;
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors)
+    private readonly Config.ConfigurationService _configuration;
+
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, Config.ConfigurationService configuration)
     {
+        _configuration = configuration;
         _log = log;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
@@ -114,7 +117,8 @@ public class SkeletonService : ISkeletonService
                 actor,
                 slot,
                 owner => _actors.IsAvailable(owner)
-                    ? (nint)SlotCharacterBases.Resolve(owner.Address, slot) : nint.Zero);
+                    ? (nint)SlotCharacterBases.Resolve(owner.Address, slot) : nint.Zero,
+                () => _configuration.Config.Skeleton.ShowAllVieraEars);
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;

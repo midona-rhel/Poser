@@ -133,7 +133,13 @@ internal static class ServiceRegistration
     private static IServiceCollection AddConfigurationAndEvents(
         this IServiceCollection services)
     {
-        services.AddSingleton<ConfigurationService>();
+        services.AddSingleton<IConfigurationPersistence, HostConfigurationPersistence>();
+        services.AddSingleton(sp =>
+        {
+            var configuration = new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>());
+            Core.BoneInfo.BoneInfoService.ShowFriendlyNames = configuration.Config.Skeleton.ShowFriendlyBoneNames;
+            return configuration;
+        });
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
         return services;
@@ -366,7 +372,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddIntegrationFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
+        services.AddSingleton<Documents.Mcdf.IMcdfFileBoundary, Documents.Mcdf.McdfFileBoundary>();
         // The lazy registry hand-off breaks the load-time cycle
         // StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort →
         // IntegrationRuntimePort → StableBindingRegistry: the port resolves
@@ -387,7 +393,7 @@ internal static class ServiceRegistration
             // source gives every MCDF operation its exact GPose identity.
             var session = new Application.Integration.ActorIntegrationSession(
                 sp.GetRequiredService<Application.Integration.IIntegrationRuntimePort>(),
-                sp.GetRequiredService<Application.Integration.IMcdfFileBoundary>(),
+                sp.GetRequiredService<Documents.Mcdf.IMcdfFileBoundary>(),
                 sp.GetRequiredService<ISessionGenerationSource>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.

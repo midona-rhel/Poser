@@ -110,7 +110,7 @@ internal sealed class AutoSaveHarness : IDisposable
             .CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
             .Returns(_ => NewPoseFile());
 
-        Configuration = new ConfigurationService(Substitute.For<IDalamudPluginInterface>());
+        Configuration = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
     }
 
     /// <summary>

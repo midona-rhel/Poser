@@ -369,7 +369,7 @@ public partial class MainWindow
             row.ActorPaused = !_animation.AnyPlaying(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
-            string label = ActorNames.Display(state.Id, state.RawName);
+            string label = ActorNames.Display(_configuration, state.Id, state.RawName);
             if (string.Equals(label, row.Label, StringComparison.Ordinal))
                 continue;
             row.Label = label;
@@ -673,7 +673,7 @@ public partial class MainWindow
         // object-index strip runs here and the warm-frame label refresh is
         // a pair of dictionary lookups.
         string rawName = ActorNames.Clean(actor.Name);
-        string actorLabel = ActorNames.Display(actor);
+        string actorLabel = ActorNames.Display(_configuration, actor);
 
         List<ActorDescriptor>? companions = null;
         foreach (var candidate in snapshot)
@@ -925,7 +925,7 @@ public partial class MainWindow
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter)
     {
-        if (MatchesSidebarFilter(filter, ActorNames.Display(actor), actor.Name))
+        if (MatchesSidebarFilter(filter, ActorNames.Display(_configuration, actor), actor.Name))
             return true;
 
         foreach (var skeleton in actor.Skeletons)
@@ -1117,8 +1117,8 @@ public partial class MainWindow
     /// <summary>Extended/IVCS bones are display-suppressed while
     /// Display.ShowNsfwBones is off. Read live per build: the snapshot's own
     /// IsHidden and every selection path are untouched.</summary>
-    private static bool IsBoneSuppressed(BoneDescriptor bone)
-        => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
+    private bool IsBoneSuppressed(BoneDescriptor bone)
+        => !_configuration.Config.Display.ShowNsfwBones
             && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
     /// <summary>
@@ -1130,7 +1130,7 @@ public partial class MainWindow
     /// </summary>
     private SelectionId? ResolveSiblingBone(SelectionId id)
     {
-        if (!Config.ConfigurationService.Instance.Config.LinkSiblingBones ||
+        if (!_configuration.Config.LinkSiblingBones ||
             id is not { Kind: SceneEntityKind.Bone, Bone: { } bone })
             return null;
 
