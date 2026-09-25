@@ -55,6 +55,18 @@ duplicate-name variants in order, and uses game indices only to find bones.
 Legacy matching and broadcast are explicit compatibility choices. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
+Spawn search, library actor creation and entity duplication use the shared
+creation interface. Deferred UI work keeps session-scoped receipts; only Game
+retains the bodies and resolves them after binding. Appearance-copy ordering,
+posed-copy initialization and lifecycle history are not implemented per window.
+Creation does not change selection: each caller selects its resolved receipt.
+
+Expression gestures and their inverses live in Application and retain actor IDs;
+Game owns catalog resolution and native expression layers. Inspector and body/face
+maps read detached actor/skeleton/bone descriptors. Propagation settings, IK
+translation limits and bake-chain reads cross ID-only contracts; no native bone
+or mutable pose-info instance is retained by these surfaces.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

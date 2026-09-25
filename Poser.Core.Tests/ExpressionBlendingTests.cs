@@ -12,7 +12,8 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Game;
-using Poser.Game.Journal;
+using Poser.Game.Posing;
+using Poser.Application.Posing;
 using Poser.Services;
 using Xunit;
 
@@ -95,10 +96,13 @@ public sealed class ExpressionBlendingTests
         var id = new ActorId(Guid.NewGuid(), 1);
         bindings.GetActorId(f.Actor).Returns(id);
         bindings.Resolve(id).Returns(new BindingResult<IActor>(BindingStatus.Success, f.Actor));
-        var session = new ExpressionSession(journal, f.Service, bindings);
+        var framework = Substitute.For<IFramework>();
+        framework.IsInFrameworkUpdateThread.Returns(true);
+        var session = new ExpressionSession(journal,
+            new ExpressionRuntimePort(framework, bindings, f.Service));
         journal.BeginEdit("pair");
-        session.SetPair(f.Actor, "SmileL", "SmileR", .5f);
-        session.SetPair(f.Actor, "SmileL", "SmileR", 1.4f);
+        session.SetPair(id, "SmileL", "SmileR", .5f);
+        session.SetPair(id, "SmileL", "SmileR", 1.4f);
         journal.EndEdit();
         journal.CommitEdit("pair");
         Assert.Equal(1, appended);
@@ -109,7 +113,7 @@ public sealed class ExpressionBlendingTests
         Assert.True(step.Redo());
         Assert.Equal(1.4f, f.Service.GetWeight(f.Actor, "SmileL"));
         Assert.Equal(1.4f, f.Service.GetWeight(f.Actor, "SmileR"));
-        session.Reset(f.Actor);
+        session.Reset(id);
         var reset = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(reset.Undo());
         Assert.Equal(1.4f, f.Service.GetWeight(f.Actor, "SmileL"));
@@ -181,7 +185,7 @@ public sealed class ExpressionBlendingTests
             Actor.Id.Returns(new EntityId("expression-test"));
             var skeleton = Substitute.For<ISkeleton>();
             skeleton.IsValid.Returns(true);
-            using var stream = typeof(ExpressionService).Assembly.GetManifestResourceStream("Poser.Data.Expressions.Hyur_Feminine_Midlander.json")!;
+            using var stream = typeof(Poser.Files.PoseFileService).Assembly.GetManifestResourceStream("Poser.Data.Expressions.Hyur_Feminine_Midlander.json")!;
             using var json = JsonDocument.Parse(stream);
             var names = json.RootElement.GetProperty("Groups")[0].GetProperty("Units").EnumerateArray()
                 .SelectMany(unit => unit.GetProperty("Bones").EnumerateObject().Select(b => b.Name)

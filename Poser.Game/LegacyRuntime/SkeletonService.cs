@@ -20,13 +20,15 @@ public class SkeletonService : ISkeletonService
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
+    private readonly IActorManager _actors;
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors)
     {
         _log = log;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
+        _actors = actors;
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
@@ -49,7 +51,7 @@ public class SkeletonService : ISkeletonService
     /// </summary>
     public unsafe ISkeleton? GetSkeleton(IActor actor, PoseSlot slot)
     {
-        if (actor.Address == nint.Zero || slot == PoseSlot.Unknown)
+        if (!_actors.IsAvailable(actor) || slot == PoseSlot.Unknown)
             return null;
 
         var currentBase = (nint)SlotCharacterBases.Resolve(actor.Address, slot);
@@ -107,7 +109,8 @@ public class SkeletonService : ISkeletonService
             skeleton = new Skeleton(
                 actor,
                 slot,
-                owner => (nint)SlotCharacterBases.Resolve(owner.Address, slot));
+                owner => _actors.IsAvailable(owner)
+                    ? (nint)SlotCharacterBases.Resolve(owner.Address, slot) : nint.Zero);
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;
@@ -154,6 +157,8 @@ public class SkeletonService : ISkeletonService
 
     public void RefreshSkeleton(IActor actor)
     {
+        if (!_actors.IsAvailable(actor))
+            return;
         foreach (var (key, skeleton) in _skeletons.ToArray())
         {
             if (!key.Actor.Equals(actor.Id))

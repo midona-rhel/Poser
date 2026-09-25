@@ -177,7 +177,10 @@ public partial class MainWindow
     /// the two attach seats.</summary>
     private void DrawFooterMiddle(Vector2 origin, Vector2 size)
     {
-        if (_activeTab == "Pose" && SelectedSkeleton() is { } skeleton)
+        if (_activeTab != "Pose" || _selection.PrimaryActor is not { } actorId) return;
+        var actor = _scene.Snapshot.FindActor(actorId);
+        var slot = _selection.Primary?.Bone?.Slot ?? PoseSlot.Character;
+        if (actor?.GetSkeleton(slot) is { } skeleton)
             _poseInspector.DrawParentingBar(origin, size, skeleton);
     }
 

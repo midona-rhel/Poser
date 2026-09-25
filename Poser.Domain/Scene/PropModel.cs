@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Domain.Scene;
 
 /// <summary>One spawnable prop model: a display name over the weapon model
 /// triple the native spawn takes (Ktisis's props library row, minus the

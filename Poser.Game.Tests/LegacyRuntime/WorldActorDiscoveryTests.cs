@@ -428,6 +428,7 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class FakeActorManager : IActorManager
     {
+        public bool IsAvailable(IActor actor) => Actors.Contains(actor) || AuxiliaryActors.Contains(actor);
         public bool Adopted { get; set; }
         public bool IsAdopted(IActor actor) => Adopted;
         public IReadOnlyList<IActor> Actors { get; set; } = Array.Empty<IActor>();

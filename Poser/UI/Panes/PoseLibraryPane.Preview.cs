@@ -103,7 +103,7 @@ public sealed partial class PoseLibraryPane
         // costs no read per frame; the real build happens only when the binder
         // says something moved — the file load, the expression routing and the
         // filter governance all stay in the one place.
-        if (_bindings.GetActorId(source) is { } actorId && _previewBinder.Begin(
+        if (source is { } actorId && _previewBinder.Begin(
                 actorId, path, PosePreviewController.Trim(BuildImportOptionsCore()), ImGui.GetFrameCount()))
             _previewBinder.Pose(
                 path, PosePreviewController.Trim(BuildImportOptions(path)));
@@ -172,8 +172,8 @@ public sealed partial class PoseLibraryPane
     /// <summary>The actor the preview borrows an appearance from: the
     /// selection's actor when it can be posed, else the first actor an apply
     /// would land on — the picker's own leading candidate.</summary>
-    private IActor? PreviewSource() =>
-        TargetActor() is { HasSkeleton: true } actor
+    private ActorId? PreviewSource() =>
+        TargetActor() is { } actor && _imports.HasPosableSkeleton(actor)
             ? actor
             : FirstApplyTarget();
 

@@ -52,6 +52,7 @@ public partial class MainWindow : Window
     private readonly SelectionSession _selection;
 
     private readonly IEntityBindings _bindings;
+    private readonly ISceneCreation _creation;
 
     private readonly Application.Animation.AnimationSession _animation;
 
@@ -502,6 +503,7 @@ public partial class MainWindow : Window
         IActorSpawnService spawnService,
         SceneSession scene,
         IEntityBindings bindings,
+        ISceneCreation creation,
         IEditorState editorState,
         ITransformFacade cleanTransforms,
         Application.Posing.IPoseCommands cleanPose,
@@ -581,6 +583,7 @@ public partial class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _creation = creation;
         _actorColliderCapture = actorColliderCapture;
         _names = names;
         _issueReport = issueReport;

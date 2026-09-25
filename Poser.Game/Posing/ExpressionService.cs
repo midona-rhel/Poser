@@ -116,7 +116,8 @@ public class ExpressionService : IExpressionService
 
     private void LoadCatalogs()
     {
-        var assembly = Assembly.GetExecutingAssembly();
+        // The catalogs remain embedded in Core with their existing resource names.
+        var assembly = typeof(Poser.Files.PoseFileService).Assembly;
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true };
         foreach (var name in assembly.GetManifestResourceNames())
         {

@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using Poser.Domain.Transforms;
 using System;
 using System.Collections.Generic;
@@ -181,6 +182,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// is about. The bake itself writes the whole skeleton, as Brio's does;
     /// this is what the UI and the live scenario name. Empty when the target is
     /// not an armed, resolvable chain.</summary>
+    IReadOnlyList<BoneId> IIkBake.AffectedChain(TransformTargetId target) =>
+        AffectedChain(target).Select(bone => _bindings.GetBoneId(bone))
+            .OfType<BoneId>().ToArray();
+
     public IReadOnlyList<IBone> AffectedChain(TransformTargetId target)
     {
         if (target.Bone is not { } boneId ||

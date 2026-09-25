@@ -1,10 +1,9 @@
 using System;
-using Poser.Game;
+using Poser.Application.Posing;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Config;
 
 namespace Poser.UI;
@@ -23,19 +22,17 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ExpressionInspectorSection
 {
-    private readonly IExpressionService _expressions;
+    private readonly IExpressionControl _expressions;
     private readonly ConfigurationService _configuration;
     private readonly Dictionary<string, string> _partners = new();
     private bool Unlocked => _configuration.Config.UnlockExpressionWeights;
 
-    private readonly Game.Journal.ExpressionSession _values;
 
     public ExpressionInspectorSection(
-        IExpressionService expressions, Game.Journal.ExpressionSession values,
+        IExpressionControl expressions,
         ConfigurationService configuration)
     {
         _expressions = expressions;
-        _values = values;
         _configuration = configuration;
     }
 
@@ -51,7 +48,6 @@ public sealed class ExpressionInspectorSection
     /// </summary>
     public void Draw(
         Crystarium.FormScope form,
-        IActor actor,
         ActorId? actorId,
         bool paired, // both hosts pair now; kept for call-site stability
         Action<Crystarium.FormScope, ActorId>? expressionRow = null)
@@ -60,7 +56,7 @@ public sealed class ExpressionInspectorSection
             paired ? "Surface · EXPRESSION" : "Rail · EXPRESSION");
         if (expressionRow is { } row && actorId is { } rowActor)
             row(form, rowActor);
-        if (!_expressions.IsAvailable)
+        if (!_expressions.IsAvailable || actorId is not { } actor)
             return;
 
         var units = _expressions.GetUnits(actor);
@@ -69,13 +65,13 @@ public sealed class ExpressionInspectorSection
         var config = _configuration.Config;
         form.Checkboxes("Sliders", false, false, 110f,
             new("Combine L/R", config.CombineExpressionSides, value =>
-            { _values.Seal(); config.CombineExpressionSides = value; _configuration.Save(); },
+            { _expressions.Seal(); config.CombineExpressionSides = value; _configuration.Save(); },
                 "Place left and right sliders together"),
             new("Link L/R", config.LinkExpressionSides, value =>
-            { _values.Seal(); config.LinkExpressionSides = value; _configuration.Save(); },
+            { _expressions.Seal(); config.LinkExpressionSides = value; _configuration.Save(); },
                 "Editing either side sets both sides to the same weight"),
             new("Unlocked", config.UnlockExpressionWeights, value =>
-            { _values.Seal(); config.UnlockExpressionWeights = value; _configuration.Save(); },
+            { _expressions.Seal(); config.UnlockExpressionWeights = value; _configuration.Save(); },
                 "Use unbounded numeric drags instead of bounded sliders"));
         paired = paired && config.CombineExpressionSides;
         _partners.Clear();
@@ -270,7 +266,7 @@ public sealed class ExpressionInspectorSection
     /// <summary>Bounded sliders or unbounded numeric drags, using the same journal.</summary>
     private void DrawUnit(
         Crystarium.FormScope form,
-        IActor actor,
+        ActorId actor,
         string id,
         string label,
         bool bidirectional,
@@ -290,26 +286,26 @@ public sealed class ExpressionInspectorSection
             next => SetWeight(actor, id, next),
             format: "0%",
             bare: bare,
-            altReset: 0f, onBegin: _values.Seal);
+            altReset: 0f, onBegin: _expressions.Seal);
     }
 
-    private void SetWeight(IActor actor, string id, float weight)
+    private void SetWeight(ActorId actor, string id, float weight)
     {
         if (_configuration.Config.LinkExpressionSides && _partners.TryGetValue(id, out var partner))
         {
             // Stable pair key regardless of which side starts this gesture.
             var left = id.EndsWith("L", StringComparison.Ordinal) ? id : partner;
             var right = left == id ? partner : id;
-            _values.SetPair(actor, left, right, weight);
+            _expressions.SetPair(actor, left, right, weight);
         }
-        else _values.SetWeight(actor, id, weight);
+        else _expressions.SetWeight(actor, id, weight);
     }
 
     /// <summary>Two unrelated single units share one surface row, each
     /// under its own label with its own value.</summary>
     private void DrawSinglePair(
         Crystarium.FormScope form,
-        IActor actor,
+        ActorId actor,
         (string Id, string Label, bool Bidirectional) first,
         (string Id, string Label, bool Bidirectional) second)
     {
@@ -331,7 +327,7 @@ public sealed class ExpressionInspectorSection
     /// for two of them.</summary>
     private void DrawPair(
         Crystarium.FormScope form,
-        IActor actor,
+        ActorId actor,
         string leftLabel,
         string rightLabel,
         bool bidirectional,
@@ -365,7 +361,7 @@ public sealed class ExpressionInspectorSection
     /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
         Crystarium.FormPairCell cell,
-        IActor actor,
+        ActorId actor,
         string id,
         float minimum,
         string help)
@@ -383,7 +379,7 @@ public sealed class ExpressionInspectorSection
             1f,
             next => SetWeight(actor, id, next),
             format: "0%",
-            help: help, onBegin: _values.Seal, altReset: 0f);
+            help: help, onBegin: _expressions.Seal, altReset: 0f);
     }
 
     /// <summary>The cell label spoken in full for its hover: "Furrow L"
@@ -395,12 +391,12 @@ public sealed class ExpressionInspectorSection
                 ? label[..^2] + " right"
                 : label;
 
-    private void DrawReset(Crystarium.FormScope form, IActor actor)
+    private void DrawReset(Crystarium.FormScope form, ActorId actor)
     {
         bool active = _expressions.HasActiveExpression(actor);
         form.Actions("Expression", actions => actions.Button(
             "Reset",
-            () => _values.Reset(actor),
+            () => _expressions.Reset(actor),
             disabled: !active,
             help: "Zero every expression slider"));
     }

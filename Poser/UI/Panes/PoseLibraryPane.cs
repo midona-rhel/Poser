@@ -145,7 +145,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly IPoseImportCommands _imports;
 
-    private readonly IActorSpawnService _spawnService;
+    private readonly ISceneCreation _creation;
 
     private readonly ISceneWorkflow _scenes;
 
@@ -176,7 +176,7 @@ public sealed partial class PoseLibraryPane
     private readonly Game.Journal.DisruptiveSteps _disruptive;
     private readonly Game.Integration.CharaImport _chara;
 
-    private readonly IEntityBindings _bindings;
+    private readonly SceneSession _scene;
 
     private readonly ActorIntegrationSession _integration;
 
@@ -184,7 +184,6 @@ public sealed partial class PoseLibraryPane
 
     private readonly PoseFileInspectorSection _files;
 
-    private readonly IActorManager _actors;
 
     /// <summary>Where every verb's OUTCOME goes. A file verb, an apply and a
     /// spawn all answer after the click that started them; they are not the
@@ -200,7 +199,7 @@ public sealed partial class PoseLibraryPane
     /// own row have none, so those keep the pointer.</summary>
     private Vector2 _applyMenuAnchor;
 
-    private readonly List<IActor> _applyTargets = new();
+    private readonly List<ActorId> _applyTargets = new();
 
     /// <summary>Which library the tabs are showing. SESSION state: it is a
     /// browsing mode, not a preference, so it is never persisted and every
@@ -420,7 +419,7 @@ public sealed partial class PoseLibraryPane
     /// draw after it becomes true is the old window's OnOpen.</summary>
     private bool _showing;
 
-    private IActor? _pendingActor;
+    private SceneEntityHandle? _pendingActor;
 
     private string? _pendingPath;
 
@@ -444,13 +443,12 @@ public sealed partial class PoseLibraryPane
         IPoseImportCommands imports,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
-        IActorSpawnService spawnService,
+        ISceneCreation creation,
         SelectionSession selection,
-        IEntityBindings bindings,
+        SceneSession scene,
         ActorIntegrationSession integration,
         IAutoSaveService autoSave,
         PoseFileInspectorSection files,
-        IActorManager actors,
         IPosePreview preview,
         ISceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
@@ -472,7 +470,7 @@ public sealed partial class PoseLibraryPane
         _library = library;
         _thumbs = thumbs;
         _imports = imports;
-        _spawnService = spawnService;
+        _creation = creation;
         _scenes = scenes;
         _lightPane = lightPane;
         _cameraPane = cameraPane;
@@ -482,11 +480,10 @@ public sealed partial class PoseLibraryPane
         _environment = environment;
         _sceneOptions = sceneOptions;
         _selection = selection;
-        _bindings = bindings;
+        _scene = scene;
         _integration = integration;
         _autoSave = autoSave;
         _files = files;
-        _actors = actors;
         _notices = notices;
         _previewBinder = new PosePreviewController(previewRuntime, capture);
 
@@ -649,15 +646,13 @@ public sealed partial class PoseLibraryPane
             _applyMenuRequested = false;
             _applyTargets.Clear();
             var items = new List<ContextMenuItem>();
-            foreach (var actor in _actors.Actors)
+            foreach (var actor in _scene.Snapshot.Actors)
             {
-                bool eligible = _type == LibraryType.Mcdf || actor.HasSkeleton;
+                bool eligible = _type == LibraryType.Mcdf || actor.CharacterSkeleton is not null;
                 if (!eligible)
                     continue;
-                _applyTargets.Add(actor);
-                string name = _bindings.GetActorId(actor) is { } id
-                    ? ActorNames.Display(id, actor.Name)
-                    : ActorNames.Clean(actor.Name);
+                _applyTargets.Add(actor.Id);
+                string name = ActorNames.Display(actor);
                 items.Add(new ContextMenuItem(name, TablerIcon.UserPlus));
             }
             if (items.Count == 0)

@@ -26,6 +26,10 @@ public interface IActorManager : IDisposable
     /// </summary>
     IReadOnlyList<IActor> AuxiliaryActors { get; }
 
+    /// <summary>Checks this exact body's current native slot, without probing
+    /// its retained address. A cached actor list is not proof of lifetime.</summary>
+    bool IsAvailable(IActor actor);
+
     /// <summary>Whether the actor is the player's own character — the
     /// overworld body or its GPose copy, which shares its game object id.
     /// Ownership of character data rests on this and on Poser having

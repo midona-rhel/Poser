@@ -260,8 +260,8 @@ public partial class MainWindow
                 "Pose" => poseActions,
                 "Duplicate" => new List<Action?>
                 {
-                    () => Duplicate(actor),
-                    () => DuplicateWithPose(actor),
+                    () => DuplicateAndSelect(SelectionId.ForActor(actorId)),
+                    () => DuplicateAndSelect(SelectionId.ForActor(actorId), withPose: true),
                 },
                 "Tree" => treeActions,
                 _ => null,
@@ -605,7 +605,7 @@ public partial class MainWindow
     /// <summary>Right-click menu for a staged overlay NODE (balloon, talk,
     /// status) — distinct from the bone-category overlay menu below. The
     /// same lifetime family the light menu speaks, in the overlay's
-    /// vocabulary; the pane's own Duplicate is reused so one duplication
+    /// vocabulary; the shared creation service supplies the duplication
     /// rule answers everywhere.</summary>
     private void DrawOverlayNodeContextMenu()
     {
@@ -637,7 +637,7 @@ public partial class MainWindow
             () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.Visible),
             () => OpenEntityRename(
                 "Rename overlay", node.Name, next => node.Name = next),
-            () => _overlayPane.Duplicate(node),
+            () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
             () => OpenEntityRename(
                 "Save overlay to library", node.State.Name,
                 name => _scenePane.SaveOverlayEntry(
@@ -818,7 +818,7 @@ public partial class MainWindow
             () => OpenEntityRename(
                 "Rename light", light.Name, next => light.Name = next),
             () => _lightPane.MoveToCamera(lightId),
-            () => _lifecycle.CloneLight(light),
+            () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
             () => _lightPane.OpenSave(light),
             // The library save asks for the entry's NAME first — the same
             // modal renames use, with the light's name as the start.
@@ -911,12 +911,7 @@ public partial class MainWindow
             () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
             () => OpenEntityRename(
                 "Rename object", prop.Name, next => prop.Name = next),
-            () =>
-            {
-                if (_lifecycle.CloneProp(prop) is IPropHandle clone &&
-                    _bindings.GetPropId(clone) is { } cloneId)
-                    _selection.Select(SelectionId.ForProp(cloneId));
-            },
+            () => DuplicateAndSelect(SelectionId.ForProp(propId)),
             () => OpenEntityRename(
                 "Save prop to library", prop.Name,
                 name => _scenePane.SavePropEntry(propId.LogicalId, name)),
@@ -1008,11 +1003,7 @@ public partial class MainWindow
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => camera.Name = next),
-            () =>
-            {
-                if (_lifecycle.CloneCamera(camera) is { } clone)
-                    _cameraPane.SelectWhenBound(clone);
-            },
+            () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
             () => _cameraPane.OpenSave(camera),
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
@@ -1113,9 +1104,7 @@ public partial class MainWindow
                 next => worldObject.Name = next),
             () =>
             {
-                if (DuplicateWorldObject(worldObject) is { } copy
-                    && _bindings.GetWorldObjectId(copy) is { } copyId)
-                    _selection.Select(SelectionId.ForWorldObject(copyId));
+                DuplicateAndSelect(SelectionId.ForWorldObject(worldObjectId));
             },
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,

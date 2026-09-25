@@ -79,7 +79,6 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowColliderCapsule = RowColliderCone + 1;
     private const int RowColliderSphere = RowColliderCapsule + 1;
     private const int ActionRows = RowColliderSphere + 1;
-    private readonly ICameraService _viewCamera;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
     /// the stated kind (null = everything) — the from-library rows' one
@@ -97,25 +96,19 @@ public sealed class SpawnBrowserWindow : Window
 
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
-    private readonly IActorSpawnService _spawnService;
+    private readonly ISceneCreation _creation;
     private readonly IPropCatalog _propService;
     private readonly IOverlayNodeService _overlayService;
-    private readonly OverlayPane _overlayPane;
     private readonly ILightingService _lightingService;
     private readonly LightPane _lightPane;
     private readonly IVirtualCameraService _cameraService;
     private readonly CameraPane _cameraPane;
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
-    private readonly IEntityBindings _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
 
-    /// <summary>Every entity this browser adds goes through the lifecycle
-    /// seam, so the add lands in the shell's undo history.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
-    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
 
@@ -156,28 +149,23 @@ public sealed class SpawnBrowserWindow : Window
 
     private int _lastRow = -1;
     private double _lastActivatedAt;
-    private IActor? _pendingSelectSpawned;
+    private SceneEntityHandle? _pendingSelectSpawned;
+    private readonly SceneSession _scene;
 
-    private ILight? _pendingSelectSpawnedLight;
-    private IWorldObject? _pendingSelectSpawnedWorldObject;
 
     public SpawnBrowserWindow(
-        ICameraService viewCamera,
-        IActorSpawnService spawnService,
+        ISceneCreation creation,
+        SceneSession scene,
         IPropCatalog propService,
         IOverlayNodeService overlayService,
-        OverlayPane overlayPane,
         ILightingService lightingService,
         LightPane lightPane,
         IVirtualCameraService cameraService,
         CameraPane cameraPane,
         ISpawnCatalogService catalog,
         SelectionSession selection,
-        IEntityBindings bindings,
         AnimationSession animation,
         ConfigurationService configuration,
-        ISceneLifecycleHistory lifecycle,
-        global::Poser.Application.Integration.ActorIntegrationSession integration,
         ITextureProvider textures,
         UserNotices notices,
         ReferenceImageSession referenceImages,
@@ -187,7 +175,6 @@ public sealed class SpawnBrowserWindow : Window
         IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
-        global::Poser.Application.Appearance.ActorModelIdSession model,
         ScenePane scenePane,
         AppearancePane appearancePane,
         Dalamud.Plugin.Services.IPluginLog log)
@@ -196,22 +183,18 @@ public sealed class SpawnBrowserWindow : Window
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
-        _spawnService = spawnService;
+        _creation = creation;
+        _scene = scene;
         _propService = propService;
         _overlayService = overlayService;
-        _overlayPane = overlayPane;
         _lightingService = lightingService;
         _lightPane = lightPane;
         _cameraService = cameraService;
-        _viewCamera = viewCamera;
         _cameraPane = cameraPane;
         _catalog = catalog;
         _selection = selection;
-        _bindings = bindings;
         _animation = animation;
         _configuration = configuration;
-        _lifecycle = lifecycle;
-        _integration = integration;
         _notices = notices;
         _referenceImages = referenceImages;
         _library = library;
@@ -220,7 +203,6 @@ public sealed class SpawnBrowserWindow : Window
         _assets = assets;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
-        _model = model;
         _scenePane = scenePane;
         _appearance = appearancePane;
         _icons = new GameIconResolver(textures);
@@ -470,13 +452,13 @@ public sealed class SpawnBrowserWindow : Window
     /// world-object spawn every picked asset lands through.</summary>
     private void SpawnWorldAsset(string path)
     {
-        var at = global::Poser.Transform.Identity;
+        var at = Domain.Transforms.PoseTransform.Identity;
         if (_anchors.TryCurrentFor(
                 _configuration.Config.DefaultSpawnPlacement,
                 out var position, out _, out _))
             at = at with { Position = position };
-        if (_lifecycle.SpawnWorldObject(path, at, true) is IWorldObject spawned)
-            _pendingSelectSpawnedWorldObject = spawned;
+        if (_creation.CreateWorldObject(path, at).Handle is { } spawned)
+            SelectSpawned(spawned);
         else
             _notices.Failed("The selected world asset could not be spawned.");
     }
@@ -780,8 +762,6 @@ public sealed class SpawnBrowserWindow : Window
     private readonly global::Poser.Application.Appearance.ModelCatalog
         _modelCatalog;
     private readonly IModelCatalogLoader _modelLoader;
-    private readonly global::Poser.Application.Appearance.ActorModelIdSession
-        _model;
 
     /// <summary>The two catalog sections' rows, minted ONCE on a
     /// background task: 111k row records with an id and a lowered label
@@ -799,7 +779,6 @@ public sealed class SpawnBrowserWindow : Window
     private readonly List<global::Poser.Domain.Appearance.ModelCatalogEntry>
         _npcEntries = new();
     private int _modelCatalogVersion = -1;
-    private (IActor Actor, int ModelCharaId)? _pendingNpcModel;
     private readonly ScenePane _scenePane;
     private readonly AppearancePane _appearance;
     private readonly Dalamud.Plugin.Services.IPluginLog? _log;
@@ -1009,19 +988,6 @@ public sealed class SpawnBrowserWindow : Window
             _containsMatches.Add(index);
     }
 
-    private IActor? CloneWearingCollection(IActor source)
-    {
-        var clone = _spawnService.CloneActor(source);
-        if (clone == null)
-            return null;
-        _lifecycle.WhenPosable(clone, c =>
-        {
-            _spawnService.CopyDrawnAppearance(source, c);
-            _spawnService.CopyEquipmentVisibility(source, c);
-        });
-        return clone;
-    }
-
     /// <summary>Clone is the one row whose availability moves with the
     /// selection, so it is the one row rewritten per frame.</summary>
     private void SyncCloneRow()
@@ -1030,7 +996,7 @@ public sealed class SpawnBrowserWindow : Window
         var row = _vm.Rows[RowCloneActor];
         if (row.Disabled != disabled)
             _vm.Rows[RowCloneActor] = row with { Disabled = disabled };
-        bool posedDisabled = SelectedActor() is not { HasSkeleton: true };
+        bool posedDisabled = SelectedActor()?.CharacterSkeleton is null;
         var posed = _vm.Rows[RowCloneActorPosed];
         if (posed.Disabled != posedDisabled)
             _vm.Rows[RowCloneActorPosed] = posed with { Disabled = posedDisabled };
@@ -1062,39 +1028,19 @@ public sealed class SpawnBrowserWindow : Window
         switch (index)
         {
             case RowNewActor:
-                SelectSpawned(_lifecycle.SpawnActor(
-                    "Add actor",
-                    () => _spawnService.SpawnNewActor(
-                        reserveCompanionSlot: false)));
+                SelectSpawned(_creation.CreateActor(new()).Handle);
                 return;
             case RowNewActorCompanion:
-                SelectSpawned(_lifecycle.SpawnActor(
-                    "Add actor with companion slot",
-                    () => _spawnService.SpawnNewActor(
-                        reserveCompanionSlot: true)));
+                SelectSpawned(_creation.CreateActor(new(ReserveCompanionSlot: true)).Handle);
                 return;
             case RowCloneActor:
-                if (SelectedActor() is { } source)
-                    SelectSpawned(_lifecycle.SpawnActor(
-                        "Duplicate actor",
-                        () => CloneWearingCollection(source), source: source));
-                return;
             case RowCloneActorPosed:
-                if (SelectedActor() is { } posedSource)
-                {
-                    var copy = _lifecycle.SpawnActorWithPose(
-                        "Duplicate actor with pose",
-                        () => CloneWearingCollection(posedSource),
-                        posedSource);
-                    if (copy != null && _bindings.GetActorId(copy) is { } copyId)
-                    {
-                        _animation.Pause(copyId);
-                    }
-                    SelectSpawned(copy);
-                }
+                if (SelectedActor() is { } source)
+                    SelectSpawned(_creation.Duplicate(SelectionId.ForActor(source.Id),
+                        withPose: index == RowCloneActorPosed).Handle);
                 return;
             case RowProp:
-                if (_lifecycle.SpawnProp() == null)
+                if (_creation.CreateProp().Handle == null)
                     _notices.Failed(SpawnFailedNote);
                 return;
             case RowActorFromLibrary:
@@ -1143,10 +1089,7 @@ public sealed class SpawnBrowserWindow : Window
                 // the body and the import lands once it binds.
                 _appearance.OpenMcdfSpawn(() =>
                 {
-                    var body = _lifecycle.SpawnActor(
-                        "Add actor from file",
-                        () => _spawnService.SpawnNewActor(
-                            reserveCompanionSlot: false));
+                    var body = _creation.CreateActor(new()).Handle;
                     if (body == null)
                         _notices.Failed(SpawnFailedNote);
                     else
@@ -1164,42 +1107,18 @@ public sealed class SpawnBrowserWindow : Window
             case RowOverlayBalloon:
             case RowOverlayStatus:
             {
-                var overlayKind = index switch
-                {
-                    RowOverlayBalloon => OverlayNodeKind.Balloon,
-                    RowOverlayStatus => OverlayNodeKind.Status,
-                    _ => OverlayNodeKind.Talk,
-                };
-                var state = Game.Overlays.OverlayNodeService.DefaultState(overlayKind);
-                if (index >= RowColliderPlane)
-                {
-                    Matrix4x4.Invert(_viewCamera.GetViewMatrix(), out var view);
-                    var position = _viewCamera.GetCameraPosition() - new Vector3(view.M31, view.M32, view.M33) * 2f;
-                    state = new Domain.Presentation.OverlayNodeState
+                var result = index >= RowColliderPlane
+                    ? _creation.CreateCollider(index == RowColliderCapsule ? Domain.Posing.IkColliderShape.Capsule
+                        : index == RowColliderSphere ? Domain.Posing.IkColliderShape.Sphere
+                        : (Domain.Posing.IkColliderShape)(index - RowColliderPlane))
+                    : _creation.CreateOverlay(index switch
                     {
-                        Kind = OverlayNodeKind.Collider, Alpha = .2f,
-                        Collider = new Domain.Posing.IkCollider
-                        {
-                            Shape = index == RowColliderCapsule ? Domain.Posing.IkColliderShape.Capsule
-                                : index == RowColliderSphere ? Domain.Posing.IkColliderShape.Sphere
-                                : (Domain.Posing.IkColliderShape)(index - RowColliderPlane),
-                            Transform = Domain.Transforms.PoseTransform.Identity with { Position = position,
-                                Scale = index == RowColliderCapsule ? new Vector3(.5f, 1, .5f) : Vector3.One },
-                        },
-                    };
-                }
-                if (_lifecycle.SpawnOverlay(state)
-                    is IOverlayNode staged)
-                {
-                    // The pane owns the pending select and is pumped by the
-                    // main window every frame, so the selection lands however
-                    // this window is dismissed — the camera row's rule.
-                    _overlayPane.SelectWhenBound(staged);
-                    return;
-                }
-                _notices.Failed(
-                    "The overlay could not be staged — the game's "
-                    + "interface would not take it.");
+                        RowOverlayBalloon => OverlayNodeKind.Balloon,
+                        RowOverlayStatus => OverlayNodeKind.Status,
+                        _ => OverlayNodeKind.Talk,
+                    });
+                if (result.Handle is { } overlay) SelectSpawned(overlay);
+                else _notices.Failed(result.Detail ?? "The overlay could not be created.");
                 return;
             }
             case RowLightSpot:
@@ -1213,8 +1132,7 @@ public sealed class SpawnBrowserWindow : Window
                     RowLightDirectional => LightKind.Directional,
                     _ => LightKind.Spot,
                 };
-                if (_lifecycle.SpawnLight(kind) is { } light)
-                    _pendingSelectSpawnedLight = light;
+                SelectSpawned(_creation.CreateLight(kind).Handle);
                 return;
             case RowLightFromFile:
                 // The pane owns the dialog and the import's own selection; it
@@ -1225,19 +1143,16 @@ public sealed class SpawnBrowserWindow : Window
             case RowCameraGame:
             case RowCameraFree:
             {
-                var created = _lifecycle.CreateCamera(
+                var created = _creation.CreateCamera(
                     index == RowCameraFree ? CameraKind.Free : CameraKind.Game);
-                if (created == null)
+                if (created.Handle is null)
                 {
                     _notices.Failed(
                         "The camera could not be created — cameras exist "
                         + "only inside GPose.");
                     return;
                 }
-                // The camera pane owns the pending select; it is pumped by
-                // the main window every frame, so the selection lands however
-                // this window is dismissed.
-                _cameraPane.SelectWhenBound(created);
+                SelectSpawned(created.Handle);
                 return;
             }
             case RowCameraFromFile:
@@ -1301,23 +1216,19 @@ public sealed class SpawnBrowserWindow : Window
                 if (npcIndex >= 0 && npcIndex < _npcEntries.Count)
                 {
                     var npc = _npcEntries[npcIndex];
-                    var spawnedNpc = _lifecycle.SpawnActor(
-                        $"Add {npc.Name}",
-                        () => _spawnService.SpawnNewActor(
-                            reserveCompanionSlot: false));
+                    var spawnedNpc = _creation.CreateActor(new(ModelCharaId: npc.ModelCharaId)).Handle;
                     if (spawnedNpc == null)
                     {
                         _notices.Failed(SpawnFailedNote);
                         return;
                     }
-                    _pendingNpcModel = (spawnedNpc, npc.ModelCharaId);
                     SelectSpawned(spawnedNpc);
                 }
                 return;
             }
             var models = _propService.Catalog;
             if (modelIndex >= 0 && modelIndex < models.Count &&
-                _lifecycle.SpawnProp(models[modelIndex]) == null)
+                _creation.CreateProp(models[modelIndex]).Handle == null)
                 _notices.Failed(SpawnFailedNote);
             return;
         }
@@ -1326,8 +1237,7 @@ public sealed class SpawnBrowserWindow : Window
         // at spawn — never attached to an owner's slot, and with no
         // post-spawn model surface anywhere.
         var entry = _catalog.Entries[index - ActionRows];
-        var spawned = _lifecycle.SpawnActor(
-            $"Add {entry.Name}", () => _spawnService.SpawnCatalogActor(entry), name: entry.Name);
+        var spawned = _creation.CreateActor(new(Catalog: entry)).Handle;
         if (spawned == null)
         {
             _notices.Failed(SpawnFailedNote);
@@ -1338,28 +1248,14 @@ public sealed class SpawnBrowserWindow : Window
     }
 
     /// <summary>The selection's actor — a bone selection resolves to the actor
-    /// that owns it — as a live actor, or null when nothing resolves.</summary>
-    private IActor? SelectedActor()
-    {
-        var actorId = _selection.Primary switch
-        {
-            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-                bone.Skeleton.Actor,
-            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
-                gazeActor,
-            _ => (ActorId?)null,
-        };
-        if (actorId is not { } id)
-            return null;
-        var resolved = _bindings.Resolve(id);
-        return resolved.Success ? resolved.Value : null;
-    }
+    /// that owns it — as detached scene facts, or null when nothing resolves.</summary>
+    private ActorDescriptor? SelectedActor() =>
+        _selection.PrimaryActor is { } id ? _scene.Snapshot.FindActor(id) : null;
 
     /// <summary>Selects a freshly spawned actor so the thing just created is
     /// the thing being edited. The scene has not rescanned yet, so the id is
     /// resolved on the next refresh rather than here.</summary>
-    private void SelectSpawned(IActor? spawned)
+    private void SelectSpawned(SceneEntityHandle? spawned)
     {
         if (spawned == null)
             return;
@@ -1371,40 +1267,12 @@ public sealed class SpawnBrowserWindow : Window
     /// forget it.</summary>
     private void ReconcilePendingSpawn()
     {
-        if (_pendingSelectSpawnedWorldObject is { } worldObject)
-        {
-            if (!worldObject.IsValid)
-                _pendingSelectSpawnedWorldObject = null;
-            else if (_bindings.GetWorldObjectId(worldObject) is { } worldId)
-            {
-                _selection.Select(SelectionId.ForWorldObject(worldId));
-                _pendingSelectSpawnedWorldObject = null;
-            }
-        }
-
-        if (_pendingSelectSpawnedLight is { } spawnedLight &&
-            _bindings.GetLightId(spawnedLight) is { } lightId)
-        {
-            _selection.Select(SelectionId.ForLight(lightId));
-            _pendingSelectSpawnedLight = null;
-        }
-
-        // The NPC spawn's second half: the fresh body takes the model
-        // the row named, once the actor is bound.
-        if (_pendingNpcModel is { } owed
-            && _bindings.GetActorId(owed.Actor) is { } owedActor)
-        {
-            _model.Apply(owedActor, owed.ModelCharaId);
-            _pendingNpcModel = null;
-        }
-
-        if (_pendingSelectSpawned is not { } spawned)
+        if (_pendingSelectSpawned is not { } spawned ||
+            _creation.Resolve(spawned) is not { } id)
             return;
-        if (_bindings.GetActorId(spawned) is not { } id)
-            return;
-        _selection.Select(SelectionId.ForActor(id));
+        _selection.Select(id);
         _pendingSelectSpawned = null;
-        FreezeIfRequested(id);
+        if (id.Actor is { } actor) FreezeIfRequested(actor);
     }
 
     /// <summary>

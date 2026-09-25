@@ -40,7 +40,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
-    private readonly IActorSpawnService _spawner;
+    private readonly ISceneCreation _creation;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
@@ -74,7 +74,7 @@ public sealed class DebugBridge : IDisposable
         IActorManager actors,
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        IActorSpawnService spawner,
+        ISceneCreation creation,
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
@@ -126,7 +126,7 @@ public sealed class DebugBridge : IDisposable
         _actors = actors;
         _bindings = bindings;
         _lifecycle = lifecycle;
-        _spawner = spawner;
+        _creation = creation;
         _listener = new TcpListener(IPAddress.Loopback, Port);
         try
         {
@@ -931,14 +931,14 @@ public sealed class DebugBridge : IDisposable
             case "/spawncatalog":
             {
                 string want = query.TryGetValue("name", out var cn) ? cn.ToLowerInvariant() : "wind-up titan";
-                global::Poser.Services.SpawnCatalogEntry? entry = null;
+                global::Poser.Domain.Companions.SpawnCatalogEntry? entry = null;
                 foreach (var e in _catalog.Entries)
                     if (e.NameLower == want || (entry == null && e.NameLower.Contains(want)))
                         entry = e;
                 if (entry is not { } found)
                     return Json(new { ok = false, detail = "no catalog entry matches" });
-                var spawnedActor = _lifecycle.SpawnActor($"Add {found.Name}", () => _spawner.SpawnCatalogActor(found));
-                return Json(new { ok = spawnedActor != null, name = spawnedActor?.Name, entry = found.Name, kind = found.Kind.ToString() });
+                var spawned = _creation.CreateActor(new(Catalog: found));
+                return Json(new { ok = spawned.Handle is not null, detail = spawned.Detail, entry = found.Name, kind = found.Kind.ToString() });
             }
             case "/spawnobject":
             {
@@ -976,34 +976,12 @@ public sealed class DebugBridge : IDisposable
                 _port.ProbeClips(id);
                 return Json(new { ok = true });
             case "/clone":
-            {
-                var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor), source: actor);
-                return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
-            }
             case "/dupepose":
             case "/dupe":
             {
-                bool posed = path == "/dupepose";
-                IActor? Wearing()
-                {
-                    var c = _spawner.CloneActor(actor);
-                    if (c != null && _bindings.GetActorId(c) is { } cid)
-                        _lifecycle.WhenPosable(c, copy =>
-                        {
-                            _spawner.CopyDrawnAppearance(actor, (IActor)copy);
-                            _spawner.CopyEquipmentVisibility(actor, (IActor)copy);
-                        });
-                    return c;
-                }
-                var copy = posed
-                    ? _lifecycle.SpawnActorWithPose($"Duplicate actor '{actor.Name}' with pose", Wearing, actor)
-                    : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing, source: actor);
-                var copyId = copy != null ? _bindings.GetActorId(copy) : null;
-                if (posed && copyId is { } pid)
-                {
-                    _animation.Pause(pid);
-                }
-                return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
+                var copy = _creation.Duplicate(SelectionId.ForActor(id), withPose: path == "/dupepose");
+                var copyId = copy.Handle is { } receipt ? _creation.Resolve(receipt)?.Actor : null;
+                return Json(new { ok = copy.Handle is not null, detail = copy.Detail, id = copyId?.ToString() });
             }
         }
         return Json(new { error = $"unknown endpoint {path}" });

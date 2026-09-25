@@ -2,6 +2,7 @@ using System.Numerics;
 using Poser.Application.Viewport;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game.Bindings;
@@ -42,6 +43,13 @@ public sealed class ViewportProjection : IViewportReads
 
     /// <summary>Whether the actor currently carries a model-transform
     /// override (display badge state).</summary>
+    public (IkColliderShape Shape, bool Locked)? GetCollider(OverlayId id) =>
+        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value?.State.Collider is { } collider
+            ? (collider.Shape, collider.Locked) : null;
+
+    public bool IsLightAttached(LightId id) =>
+        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value?.AttachedBone is not null;
+
     public bool HasActorOverride(ActorId id)
     {
         if (!_framework.IsInFrameworkUpdateThread)

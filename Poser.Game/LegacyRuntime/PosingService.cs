@@ -25,7 +25,7 @@ public unsafe class PosingService : IPosingService
     private readonly IFramework _framework;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly Dalamud.Plugin.Services.IObjectTable _objectTable;
+    private readonly IActorManager _actors;
     private readonly ConfigurationService _configuration;
     private readonly IVirtualCameraService _cameras;
     private readonly Dictionary<nint, ActorOrbitPosition> _orbitPositions = new();
@@ -49,7 +49,7 @@ public unsafe class PosingService : IPosingService
 
     // Original transforms before override (for restoration)
     private readonly Dictionary<nint, Transform> _originalTransforms = new();
-    private readonly HashSet<nint> _liveActorAddresses = new();
+    private readonly Dictionary<nint, IActor> _liveActors = new();
 
     public PosingService(
         IPluginLog log,
@@ -57,7 +57,7 @@ public unsafe class PosingService : IPosingService
         IGPoseService gPoseService,
         IEventBus eventBus,
         IGameInteropProvider hooking,
-        Dalamud.Plugin.Services.IObjectTable objectTable,
+        IActorManager actors,
         ConfigurationService configuration,
         IVirtualCameraService cameras)
     {
@@ -65,7 +65,7 @@ public unsafe class PosingService : IPosingService
         _framework = framework;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
-        _objectTable = objectTable;
+        _actors = actors;
         _configuration = configuration;
         _cameras = cameras;
 
@@ -87,6 +87,7 @@ public unsafe class PosingService : IPosingService
 
         // Reset all when exiting GPose
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Subscribe<GPoseExitingEvent>(OnGPoseExiting);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
 
         _log.Debug("PosingService initialized");
@@ -102,7 +103,8 @@ public unsafe class PosingService : IPosingService
         // still happens.
         try
         {
-            if (_gPoseService.IsGPosing && _transformOverrides.TryGetValue((nint)gameObject, out var transform))
+            if (_gPoseService.IsGPosing && IsAvailable((nint)gameObject) &&
+                _transformOverrides.TryGetValue((nint)gameObject, out var transform))
             {
                 // Reapply our override instead of game's reset
                 ApplyTransformToActor((nint)gameObject, transform);
@@ -129,6 +131,11 @@ public unsafe class PosingService : IPosingService
         }
     }
 
+    private void OnGPoseExiting(GPoseExitingEvent e) => ClearAllOverrides();
+
+    private bool IsAvailable(nint address) =>
+        _liveActors.TryGetValue(address, out var actor) && _actors.IsAvailable(actor);
+
     private void OnFrameworkUpdate(IFramework framework)
     {
         if (!_gPoseService.IsGPosing)
@@ -144,7 +151,7 @@ public unsafe class PosingService : IPosingService
         _staleOverrideBuffer.Clear();
         foreach (var (actorAddress, transform) in _transformOverrides)
         {
-            if (_objectTable.CreateObjectReference(actorAddress) == null)
+            if (!IsAvailable(actorAddress))
             {
                 _staleOverrideBuffer.Add(actorAddress);
                 continue;
@@ -180,7 +187,7 @@ public unsafe class PosingService : IPosingService
 
     private void ApplyTransformToActor(nint actorAddress, Transform transform)
     {
-        if (actorAddress == nint.Zero)
+        if (!IsAvailable(actorAddress))
             return;
 
         var gameObject = (GameObject*)actorAddress;
@@ -205,8 +212,7 @@ public unsafe class PosingService : IPosingService
     public void SetTransformOverride(IActor actor, Transform transform)
     {
         if (!_gPoseService.IsGPosing ||
-            actor.Address == nint.Zero ||
-            !_liveActorAddresses.Contains(actor.Address) ||
+            !_actors.IsAvailable(actor) ||
             !TrySanitizeTransform(transform, out transform))
         {
             return;
@@ -230,12 +236,8 @@ public unsafe class PosingService : IPosingService
 
     private void OnActorListChanged(ActorListChangedEvent e)
     {
-        _liveActorAddresses.Clear();
-        foreach (var actor in e.Actors)
-            _liveActorAddresses.Add(actor.Address);
-
         foreach (var address in _transformOverrides.Keys
-                     .Where(address => !_liveActorAddresses.Contains(address))
+                     .Where(address => !IsAvailable(address))
                      .ToArray())
         {
             // The native object is gone or the address has been recycled. Drop
@@ -244,6 +246,9 @@ public unsafe class PosingService : IPosingService
             _originalTransforms.Remove(address);
             _orbitPositions.Remove(address);
         }
+        _liveActors.Clear();
+        foreach (var actor in e.Actors)
+            _liveActors[actor.Address] = actor;
     }
 
     private static bool TrySanitizeTransform(Transform input, out Transform sanitized)
@@ -270,6 +275,8 @@ public unsafe class PosingService : IPosingService
 
     public Transform GetOriginalTransform(IActor actor)
     {
+        if (!_actors.IsAvailable(actor))
+            return Transform.Identity;
         if (_originalTransforms.TryGetValue(actor.Address, out var original))
         {
             return original;
@@ -280,6 +287,8 @@ public unsafe class PosingService : IPosingService
 
     public Transform GetEffectiveTransform(IActor actor)
     {
+        if (!_actors.IsAvailable(actor))
+            return Transform.Identity;
         if (_transformOverrides.TryGetValue(actor.Address, out var transform))
         {
             return transform;
@@ -327,7 +336,7 @@ public unsafe class PosingService : IPosingService
         {
             if (_originalTransforms.TryGetValue(address, out var original))
             {
-                if (_objectTable.CreateObjectReference(address) != null)
+                if (IsAvailable(address))
                 {
                     RestoreCameraOrbit(address);
                     ApplyTransformToActor(address, original);
@@ -353,7 +362,7 @@ public unsafe class PosingService : IPosingService
         // Restore all original transforms
         foreach (var (actorAddress, original) in _originalTransforms)
         {
-            if (_objectTable.CreateObjectReference(actorAddress) == null) continue;
+            if (!IsAvailable(actorAddress)) continue;
             RestoreCameraOrbit(actorAddress);
             ApplyTransformToActor(actorAddress, original);
         }
@@ -373,6 +382,7 @@ public unsafe class PosingService : IPosingService
         ClearAllOverrides();
         _setPositionHook?.Dispose();
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Unsubscribe<GPoseExitingEvent>(OnGPoseExiting);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _framework.Update -= OnFrameworkUpdate;
         GC.SuppressFinalize(this);

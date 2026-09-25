@@ -223,7 +223,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Game.Journal.EnvironmentSession>();
         services.AddSingleton<Game.Journal.ActorValueSession>();
-        services.AddSingleton<Game.Journal.ExpressionSession>();
+        services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
+        services.AddSingleton<IExpressionControl, ExpressionSession>();
         services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
         services.AddSingleton<Application.Gaze.IGazeControl, Application.Gaze.GazeSession>();
         services.AddSingleton<AnimationSteps>();
@@ -280,6 +281,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
         services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
+        services.AddSingleton<IPoseInteraction, Game.Posing.PoseInteraction>();
         services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
         services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
@@ -447,6 +449,7 @@ internal static class ServiceRegistration
         services.AddSingleton<IActorSpawnService>(
             sp => sp.GetRequiredService<ActorSpawnService>());
         services.AddSingleton<WorldActorDiscovery>();
+        services.AddSingleton<ISceneCreation, Game.Scene.SceneCreation>();
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;

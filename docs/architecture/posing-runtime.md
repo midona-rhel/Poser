@@ -14,6 +14,12 @@ the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
 
+Actor resolution rechecks the discovery-time object-table slot, address and
+game identity on the framework thread. Logout refuses before probing native
+bodies, even before the next discovery/exit notification. Auxiliary preview
+bodies obey the same rule. Bone resolution additionally verifies the current
+slot skeleton and bone instance; a cached registry entry alone is not liveness.
+
 ## Actor identity
 
 An actor's identity is its GameObjectId AND its object-table index. The index

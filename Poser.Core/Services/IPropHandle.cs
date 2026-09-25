@@ -1,3 +1,4 @@
+using Poser.Domain.Scene;
 using System.Numerics;
 using Poser.Domain.Presentation;
 

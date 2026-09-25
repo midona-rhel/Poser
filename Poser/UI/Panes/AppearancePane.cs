@@ -68,6 +68,7 @@ public sealed partial class AppearancePane
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
     private readonly IEntityBindings _bindings;
+    private readonly ISceneCreation _creation;
     private readonly CompanionSection _companions;
     private readonly ITextureProvider _textures;
 
@@ -155,6 +156,7 @@ public sealed partial class AppearancePane
         SceneSession scene,
         IActorSpawnService spawn,
         IEntityBindings bindings,
+        ISceneCreation creation,
         CompanionSection companions,
         ITextureProvider textures,
         Config.ConfigurationService config,
@@ -211,6 +213,7 @@ public sealed partial class AppearancePane
         _scene = scene;
         _spawn = spawn;
         _bindings = bindings;
+        _creation = creation;
         _companions = companions;
         _textures = textures;
         _modelQuery = ComputeModelSearch;
@@ -1138,7 +1141,7 @@ public sealed partial class AppearancePane
     /// the import begins the moment the actor binds. The pane owns the
     /// dialog and the pending, so the flow survives the portal closing.
     /// </summary>
-    public void OpenMcdfSpawn(Func<global::Poser.Entities.IActor?> spawn)
+    public void OpenMcdfSpawn(Func<SceneEntityHandle?> spawn)
     {
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
@@ -1162,7 +1165,7 @@ public sealed partial class AppearancePane
     }
 
     /// <summary>The spawn whose body still owes its character file.</summary>
-    private (global::Poser.Entities.IActor Body, string Path, Newtonsoft.Json.Linq.JObject? Chara)?
+    private (SceneEntityHandle Body, string Path, Newtonsoft.Json.Linq.JObject? Chara)?
         _pendingMcdfDress;
 
     /// <summary>Second half of <see cref="OpenMcdfSpawn"/>, pumped with the
@@ -1170,12 +1173,7 @@ public sealed partial class AppearancePane
     private void ReconcileMcdfSpawn()
     {
         if (_pendingMcdfDress is not { } dress
-            || _bindings.GetActorId(dress.Body) is not { } bound)
-            return;
-        // Unlike MCDF's asynchronous redraw pipeline, a direct .chara apply
-        // needs the freshly spawned character body to have finished loading.
-        if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase)
-            && !dress.Body.HasSkeleton)
+            || _creation.Resolve(dress.Body, requirePose: dress.Chara is not null)?.Actor is not { } bound)
             return;
         _pendingMcdfDress = null;
         if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase))

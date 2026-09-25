@@ -154,7 +154,7 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        if (TargetActor() is not { HasSkeleton: true } actor)
+        if (TargetActor() is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
             _notices.Refused("Select an actor to apply a pose to.");
             return;
@@ -164,16 +164,16 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>The one apply: a tile onto an EXPLICIT actor — the picker's
     /// choice or the double-click path's selection target.</summary>
-    private void ApplyTo(int index, IActor actor)
+    private void ApplyTo(int index, ActorId actor)
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         if (_type == LibraryType.Mcdf)
         {
-            ApplyCharacterFile(index);
+            ApplyCharacterFile(index, actor);
             return;
         }
-        if (!actor.HasSkeleton)
+        if (!_imports.HasPosableSkeleton(actor))
         {
             _notices.Refused("That actor has no skeleton to pose.");
             return;
@@ -190,11 +190,7 @@ public sealed partial class PoseLibraryPane
         // baseline is stale from this call on — the NEXT tile has to be shown
         // landing on this one, not on what stood before it.
         _previewBinder.InvalidateBaseline();
-        if (_bindings.GetActorId(actor) is not { } expectedActor)
-        {
-            _notices.Failed("Apply: the actor could not be resolved.");
-            return;
-        }
+        var expectedActor = actor;
         var result = _imports.ImportPose(
             expectedActor,
             path,
@@ -213,10 +209,9 @@ public sealed partial class PoseLibraryPane
     /// session reports progress and every failure on its own surface; the
     /// notification only carries a refusal to start.
     /// </summary>
-    private void ApplyCharacterFile(int index)
+    private void ApplyCharacterFile(int index, ActorId? requestedTarget = null)
     {
-        if (TargetActor() is not { } actor
-            || _bindings.GetActorId(actor) is not { } id)
+        if ((requestedTarget ?? TargetActor()) is not { } id)
         {
             _notices.Refused("Select an actor to apply a character file to.");
             return;
@@ -232,7 +227,7 @@ public sealed partial class PoseLibraryPane
             () => _integration.BeginImport(id, path),
             () => _integration.ResetMcdf(id), asset: path);
         if (!begun.Success)
-            _notices.Failed("Import", begun.Detail);
+            _notices.Failed("Import", begun.Detail ?? "The character file could not be applied.");
     }
 
     private void Spawn(int index)
@@ -250,7 +245,7 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        var spawned = _spawnService.SpawnNewActor(reserveCompanionSlot: false);
+        var spawned = _creation.CreateActor(new()).Handle;
         if (spawned is null)
         {
             _notices.Failed("The actor could not be spawned.");
@@ -276,7 +271,7 @@ public sealed partial class PoseLibraryPane
     {
         if (_pendingActor is not { } spawned)
             return;
-        if (_bindings.GetActorId(spawned) is not { } id)
+        if (_creation.Resolve(spawned, requirePose: true)?.Actor is not { } id)
         {
             if (++_pendingFrames < PendingSpawnFrames)
                 return;

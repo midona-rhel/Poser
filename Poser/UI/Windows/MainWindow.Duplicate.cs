@@ -13,7 +13,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
@@ -47,54 +46,13 @@ public partial class MainWindow
             disabled: !posable),
     ];
 
-    /// <summary>One entity's copy, by kind; the live copy, or null when
+    /// <summary>One entity's copy receipt, or null when
     /// the kind has none or the copy failed.</summary>
-    private object? DuplicateEntity(SelectionId id, bool withPose)
+    private SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
     {
-        switch (id)
-        {
-            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
-                    ? DuplicateActor(actor, withPose)
-                    : null;
-            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
-                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
-                    ? _lifecycle.CloneLight(light)
-                    : null;
-            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
-                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
-                    ? _lifecycle.CloneProp(prop)
-                    : null;
-            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
-                return _bindings.Resolve(cameraId) is { Success: true, Value: { IsValid: true } camera }
-                    ? _lifecycle.CloneCamera(camera)
-                    : null;
-            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
-                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
-                    ? _overlayPane.Duplicate(node)
-                    : null;
-            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }:
-                return _bindings.Resolve(objectId) is { Success: true, Value: { IsValid: true } worldObject }
-                    ? DuplicateWorldObject(worldObject)
-                    : null;
-            default:
-                return null;
-        }
-    }
-
-    /// <summary>A spawned copy of a world object: the same model at the
-    /// same place with the same dressing. A borrowed object whose model
-    /// never loaded states its address as the path and has nothing to
-    /// copy from.</summary>
-    private IWorldObject? DuplicateWorldObject(
-        IWorldObject source)
-    {
-        if (!source.Path.Contains('/'))
-        {
-            _notices.Failed($"'{source.Name}' has no model to copy.");
-            return null;
-        }
-        return _lifecycle.CloneWorldObject(source);
+        var result = _creation.Duplicate(id, withPose);
+        if (result.Handle is null) _notices.Failed(result.Detail ?? "The entity could not be duplicated.");
+        return result.Handle;
     }
 
     // ── duplicating groups ───────────────────────────────────────────────
@@ -106,7 +64,7 @@ public partial class MainWindow
     {
         public string Name = "";
         public bool Hidden, Paused, Night;
-        public readonly List<object> Members = new();
+        public readonly List<SceneEntityHandle> Members = new();
         public readonly List<GroupCopy> Children = new();
         public Guid? Parent;
         public int Index = -1;
@@ -152,6 +110,7 @@ public partial class MainWindow
 
     private void PumpGroupCopies()
     {
+        _pendingDuplicate.Reconcile(handle => _creation.Resolve(handle), _selection);
         for (int i = _groupCopies.Count - 1; i >= 0; i--)
         {
             var copy = _groupCopies[i];
@@ -180,7 +139,7 @@ public partial class MainWindow
     private bool CopyBound(GroupCopy copy)
     {
         foreach (var member in copy.Members)
-            if (IdOfLive(member) == null)
+            if (ResolveCopy(member) == null)
                 return false;
         foreach (var child in copy.Children)
             if (!CopyBound(child))
@@ -192,7 +151,7 @@ public partial class MainWindow
     {
         var ids = new List<SelectionId>();
         foreach (var member in copy.Members)
-            if (IdOfLive(member) is { } id)
+            if (ResolveCopy(member) is { } id)
                 ids.Add(id);
         var children = new List<global::Poser.Application.Scene.SceneGroup>();
         foreach (var child in copy.Children)
@@ -215,81 +174,13 @@ public partial class MainWindow
         return group;
     }
 
-    /// <summary>A live entity's selection id once the scene has bound it.</summary>
-    private SelectionId? IdOfLive(object live) => live switch
-    {
-        IActor actor => _bindings.GetActorId(actor) is { } a ? SelectionId.ForActor(a) : null,
-        ILight light => _bindings.GetLightId(light) is { } l ? SelectionId.ForLight(l) : null,
-        IPropHandle prop => _bindings.GetPropId(prop) is { } p ? SelectionId.ForProp(p) : null,
-        IVirtualCamera camera => _bindings.GetCameraId(camera) is { } c ? SelectionId.ForCamera(c) : null,
-        IOverlayNode node => _bindings.GetOverlayId(node) is { } o ? SelectionId.ForOverlay(o) : null,
-        IWorldObject worldObject =>
-            _bindings.GetWorldObjectId(worldObject) is { } w ? SelectionId.ForWorldObject(w) : null,
-        _ => null,
-    };
+    private SelectionId? ResolveCopy(SceneEntityHandle receipt) => _creation.Resolve(receipt);
 
-    // ── group gates: closed hides, pauses or benights everything beneath
-    // and remembers each member's own state; open gives it back — unless
-    // a gate further up is still closed ──────────────────────────────────
+    private readonly Composition.PendingSelection<SceneEntityHandle> _pendingDuplicate = new();
 
-    /// <summary>The plain duplicate: the drawn appearance and the source's
-    /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
-    private void Duplicate(IActor actor)
+    private void DuplicateAndSelect(SelectionId source, bool withPose = false)
     {
-        if (DuplicateActor(actor, withPose: false) is { } clone
-            && _bindings.GetActorId(clone) is { } cloneId)
-            _selection.Select(SelectionId.ForActor(cloneId));
-    }
-
-    private void DuplicateWithPose(IActor actor)
-    {
-        if (DuplicateActor(actor, withPose: true) is { } clone
-            && _bindings.GetActorId(clone) is { } cloneId)
-            _selection.Select(SelectionId.ForActor(cloneId));
-    }
-
-    /// <summary>The copy itself, plain or posed; posed falls back to plain
-    /// for an actor with no skeleton to read.</summary>
-    private IActor? DuplicateActor(IActor actor, bool withPose)
-    {
-        if (!withPose || !actor.HasSkeleton)
-            return _lifecycle.SpawnActor(
-                $"Duplicate actor '{ActorNames.Clean(actor.Name)}'",
-                () => CloneWearingCollection(actor), source: actor);
-        return DuplicateActorWithPose(actor);
-    }
-
-    /// <summary>The posed duplicate: spawned wearing the collection, restored
-    /// to the source's pose and place once posable, frozen, and its gaze
-    /// frozen with it — a duplicate never animates and never tracks. No
-    /// Customize+: the captured bones already carry it.</summary>
-    private IActor? DuplicateActorWithPose(IActor actor)
-    {
-        var clone = _lifecycle.SpawnActorWithPose(
-            $"Duplicate actor '{ActorNames.Clean(actor.Name)}' with pose",
-            () => CloneWearingCollection(actor),
-            actor);
-        if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
-            return clone;
-        _animation.Pause(cloneId);
-        return clone;
-    }
-
-    /// <summary>The seed copy plus what the built body needs again: the
-    /// drawn look and the equipment visibility flags once posable. The
-    /// Penumbra collection is the spawn service's own inherit. Plain-copy
-    /// lifecycle also copies Customize+; posed copies carry its shape in
-    /// the captured bone scales and translations.</summary>
-    private IActor? CloneWearingCollection(IActor source)
-    {
-        var clone = _spawnService.CloneActor(source);
-        if (clone == null)
-            return null;
-        _lifecycle.WhenPosable(clone, c =>
-        {
-            _spawnService.CopyDrawnAppearance(source, c);
-            _spawnService.CopyEquipmentVisibility(source, c);
-        });
-        return clone;
+        if (DuplicateEntity(source, withPose) is { } copy)
+            _pendingDuplicate.Arm(copy);
     }
 }

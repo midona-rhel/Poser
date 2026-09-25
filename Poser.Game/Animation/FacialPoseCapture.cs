@@ -29,7 +29,7 @@ namespace Poser.Game.Animation;
 public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 {
     private readonly IFramework _framework;
-    private readonly StableBindingRegistry _bindings;
+    private readonly IEntityBindings _bindings;
     private readonly SceneSession _scene;
     private readonly AnimationSession _animation;
     private readonly TransformCommandService _transforms;
@@ -92,7 +92,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 
     public FacialPoseCapture(
         IFramework framework,
-        StableBindingRegistry bindings,
+        IEntityBindings bindings,
         SceneSession scene,
         AnimationSession animation,
         TransformCommandService transforms,

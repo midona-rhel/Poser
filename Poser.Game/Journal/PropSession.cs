@@ -1,3 +1,4 @@
+using Poser.Domain.Scene;
 using Poser.Application.Transforms;
 using Poser.Services;
 

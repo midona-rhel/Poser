@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Viewport;
@@ -10,6 +11,8 @@ namespace Poser.Application.Viewport;
 /// Reads only; nothing here writes.</summary>
 public interface IViewportReads
 {
+    (IkColliderShape Shape, bool Locked)? GetCollider(OverlayId id);
+    bool IsLightAttached(LightId id);
     bool HasActorOverride(ActorId id);
     PoseTransform? GetModelTransform(TransformTargetId target);
     PoseTransform? GetPropTransform(PropId id);

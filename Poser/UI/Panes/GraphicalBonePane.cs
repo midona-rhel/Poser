@@ -1,4 +1,7 @@
+using Poser.Application.Posing;
+using Poser.Domain.Scene;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -28,7 +31,6 @@ public sealed class GraphicalBonePane : IDisposable
 
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
 
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
@@ -36,8 +38,6 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly List<(SelectionId Id, Vector2 Pos, string Name, bool Matches)>
         _dotCandidates = new();
     private Vector2? _marqueeStart;
-    private readonly IActorManager _actorManager;
-    private readonly ISkeletonService _skeletonService;
     private readonly ITextureProvider _textureProvider;
     private readonly ICustomizeReadRuntimePort _customizeRead;
 
@@ -94,27 +94,21 @@ public sealed class GraphicalBonePane : IDisposable
 
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IEditorState _editorState;
-    private readonly IBonePosingService _bonePosing;
+    private readonly IPoseInteraction _bonePosing;
 
     public GraphicalBonePane(
         SceneSession scene,
-        IEntityBindings bindings,
-        IActorManager actorManager,
-        ISkeletonService skeletonService,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
         Application.Posing.IIkConfigurationPort ikPort,
         IEditorState editorState,
-        IBonePosingService bonePosing)
+        IPoseInteraction bonePosing)
     {
         _ikPort = ikPort;
         _editorState = editorState;
         _bonePosing = bonePosing;
         _scene = scene;
         _selection = scene.Selection;
-        _bindings = bindings;
-        _actorManager = actorManager;
-        _skeletonService = skeletonService;
         _textureProvider = textureProvider;
         _customizeRead = customizeRead;
 
@@ -145,10 +139,11 @@ public sealed class GraphicalBonePane : IDisposable
         _currentSection = 0;
         _dotIds.Clear();
 
-        var (actor, actorId) = GetSelectedActor();
+        var actor = GetSelectedActor();
+        var actorId = actor?.Id;
         if (actor == null)
             return false;
-        var skeleton = _skeletonService.GetSkeleton(actor);
+        var skeleton = actor.CharacterSkeleton;
         if (skeleton == null)
             return false;
 
@@ -267,7 +262,7 @@ public sealed class GraphicalBonePane : IDisposable
         return true;
     }
 
-    private void DrawBodyPage(ISkeleton skeleton, Vector2 contentArea)
+    private void DrawBodyPage(SkeletonDescriptor skeleton, Vector2 contentArea)
     {
         // This is a canvas, not a flow layout. Stable design-space slots keep
         // every image centered and prevent optional tail/toe sections from
@@ -303,7 +298,7 @@ public sealed class GraphicalBonePane : IDisposable
         // own beneath the figure — no map image ever offered it. It goes
         // through DrawBoneAt, so hover, click, filter and marquee treat
         // it exactly as any drawn dot.
-        if (skeleton.GetBone("n_root") is { } rootBone)
+        if (FindBone(skeleton, "n_root") is { } rootBone)
         {
             var rootSeat = Slot(337f, 1105f, 0f, 0f);
             DrawBoneAt(rootBone, new Vector2(rootSeat.X, rootSeat.Y));
@@ -319,7 +314,7 @@ public sealed class GraphicalBonePane : IDisposable
             drawMirrors: true,
             skeleton);
 
-        if (skeleton.GetBone("n_sippo_a") != null)
+        if (FindBone(skeleton, "n_sippo_a") != null)
         {
             DrawBoneSectionAt(
                 "tail",
@@ -330,7 +325,7 @@ public sealed class GraphicalBonePane : IDisposable
 
         // Every dot in this section is an IVCS bone, so with the switch off it
         // would draw as a bare image over an empty map.
-        if (skeleton.GetBone("iv_asi_oya_a_l") != null
+        if (FindBone(skeleton, "iv_asi_oya_a_l") != null
             && Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones)
         {
             DrawBoneSectionAt(
@@ -349,7 +344,7 @@ public sealed class GraphicalBonePane : IDisposable
     /// </summary>
     private Vector2 _faceSourceSize = Vector2.One;
 
-    private void DrawFacePage(ISkeleton skeleton, ActorId? actorId, Vector2 contentArea)
+    private void DrawFacePage(SkeletonDescriptor skeleton, ActorId? actorId, Vector2 contentArea)
     {
         // Face-map variant (race → head section) is a native customize read
         // and lives behind the Game read port; without a stable id for the
@@ -450,7 +445,7 @@ public sealed class GraphicalBonePane : IDisposable
         string sectionName,
         Vector4 rect,
         bool drawMirrors,
-        ISkeleton skeleton)
+        SkeletonDescriptor skeleton)
     {
         if (!_config.PoseImages.TryGetValue(sectionName, out var section) ||
             string.IsNullOrEmpty(section.Image))
@@ -486,9 +481,9 @@ public sealed class GraphicalBonePane : IDisposable
         _currentSection++;
         foreach (var graphicBone in section.Bones)
         {
-            var bone = skeleton.GetBone(graphicBone.Name);
+            var bone = FindBone(skeleton, graphicBone.Name);
             var mirrorBoneName = drawMirrors ? GetMirrorBoneName(graphicBone.Name) : null;
-            var mirrorBone = mirrorBoneName != null ? skeleton.GetBone(mirrorBoneName) : null;
+            var mirrorBone = mirrorBoneName != null ? FindBone(skeleton, mirrorBoneName) : null;
 
             // Mirror selection swaps which bone each sided dot addresses;
             // center bones (no counterpart) are unaffected.
@@ -512,25 +507,24 @@ public sealed class GraphicalBonePane : IDisposable
         }
     }
 
-    private void DrawBoneAt(IBone bone, Vector2 screenPos)
+    private void DrawBoneAt(BoneDescriptor bone, Vector2 screenPos)
     {
         // Selection identity is the stable id from the snapshot table; the
-        // live bone stays inside the map's rendering walk and never enters a
-        // selection command.
-        if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
+        // descriptor also supplies labels and parent connections without a native read.
+        if (!_dotIds.TryGetValue((bone.Id.CanonicalName, bone.Id.PartialId), out var selectionId))
             return;
-        bool matches = MatchesFilter(bone.Name, bone.BoneName);
+        bool matches = MatchesFilter(bone.DisplayName, bone.Id.CanonicalName);
         // Brio's line rule, copied whole: a connector goes to the DIRECT
         // parent only, and only when that parent has a dot on the SAME
         // panel — an ancestor walk wired panels together into insanity
         // (2026-09-01).
-        (int, string, int)? parentKey = bone.ParentBone is { } parent
-            ? (_currentSection, parent.BoneName, parent.PartialId)
+        (int, string, int)? parentKey = bone.Parent is { } parent
+            ? (_currentSection, parent.CanonicalName, parent.PartialId)
             : null;
-        _dotKeys[(_currentSection, bone.BoneName, bone.PartialId)] =
+        _dotKeys[(_currentSection, bone.Id.CanonicalName, bone.Id.PartialId)] =
             screenPos;
         _dotParents.Add(parentKey);
-        _dotCandidates.Add((selectionId, screenPos, bone.Name, matches));
+        _dotCandidates.Add((selectionId, screenPos, bone.DisplayName, matches));
         // A filtered-out dot is outside the marquee too: dragging a box over
         // the map must select what the map is offering, not what it is
         // greying.
@@ -758,56 +752,27 @@ public sealed class GraphicalBonePane : IDisposable
         return null;
     }
 
-    private (IActor? Actor, ActorId? Id) GetSelectedActor()
+    private static BoneDescriptor? FindBone(SkeletonDescriptor skeleton, string name) =>
+        skeleton.Bones.FirstOrDefault(bone => bone.Id.CanonicalName == name);
+
+    private ActorDescriptor? GetSelectedActor()
     {
-        // Primary selection decides which actor's maps draw. The stable id
-        // resolves to a live actor for this frame's rendering walk only.
-        var lineage = _selection.Primary switch
+        if (_selection.PrimaryActor is not { } id)
+            return _scene.Snapshot.Actors.FirstOrDefault();
+        var actor = _scene.Snapshot.FindActor(id);
+        // Maps are Character-only. Auxiliary bones with the same name must
+        // never become selectable from a body/face dot.
+        if (actor?.CharacterSkeleton is { } skeleton)
         {
-            { Kind: SceneEntityKind.Actor, Actor: { } actorId } => actorId.LogicalId,
-            { Kind: SceneEntityKind.Bone, Bone: { } boneId } => boneId.Skeleton.Actor.LogicalId,
-            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor.LogicalId,
-            _ => (Guid?)null,
-        };
-        if (lineage is { } target)
-        {
-            foreach (var descriptor in _scene.Snapshot.Actors)
+            bool showNsfw = Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones;
+            foreach (var bone in skeleton.Bones)
             {
-                if (descriptor.Id.LogicalId != target)
+                if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
-                // The Body/Face maps are Character-only: dot identity comes
-                // from the Character slot so a same-named auxiliary bone can
-                // never be highlighted or selected from a map.
-                if (descriptor.CharacterSkeleton is { } skeletonDescriptor)
-                {
-                    // Extended/IVCS bones get no dot id, and DrawBoneAt draws
-                    // nothing without one — the display suppression for the
-                    // maps, with the snapshot and selection untouched.
-                    bool showNsfw = Config.ConfigurationService.Instance
-                        .Config.Display.ShowNsfwBones;
-                    foreach (var bone in skeletonDescriptor.Bones)
-                    {
-                        if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(
-                                bone.Id.CanonicalName))
-                            continue;
-                        _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] =
-                            SelectionId.ForBone(bone.Id);
-                    }
-                }
-                // Residual frame-scoped resolution: the maps still render from
-                // the live skeleton; the face-map variant read goes through
-                // the customize read port with this exact id.
-                var resolved = _bindings.Resolve(descriptor.Id);
-                return resolved.Success
-                    ? (resolved.Value, descriptor.Id)
-                    : (null, null);
+                _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] = SelectionId.ForBone(bone.Id);
             }
         }
-
-        // Fall back to first actor; its stable id is the registry's reverse
-        // mapping (null before the first committed scene refresh).
-        var fallback = _actorManager.Actors.Count > 0 ? _actorManager.Actors[0] : null;
-        return (fallback, fallback != null ? _bindings.GetActorId(fallback) : null);
+        return actor;
     }
 
     private static string? GetMirrorBoneName(string boneName)

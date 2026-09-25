@@ -667,6 +667,7 @@ public sealed class ActorSpawnServiceOwnershipTests
 
     private sealed class FakeActorManager : IActorManager
     {
+        public bool IsAvailable(IActor actor) => Actors.Contains(actor) || AuxiliaryActors.Contains(actor);
         public FakeActorManager(IActor? actor = null) =>
             Actors = actor is null ? Array.Empty<IActor>() : [actor];
         public IReadOnlyList<IActor> Actors { get; set; }

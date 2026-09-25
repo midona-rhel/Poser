@@ -30,13 +30,8 @@ public sealed partial class PoseLibraryPane
     /// resolves to the actor that owns it — as a live actor, or null when
     /// nothing resolves. Entering the library does not clear the selection, so
     /// the actor being posed is still the actor a pose lands on.</summary>
-    private IActor? TargetActor()
-    {
-        if (_selection.PrimaryActor is not { } id)
-            return null;
-        var resolved = _bindings.Resolve(id);
-        return resolved.Success ? resolved.Value : null;
-    }
+    private ActorId? TargetActor() =>
+        _selection.PrimaryActor is { } id && _scene.Snapshot.FindActor(id) is not null ? id : null;
 
     /// <summary>The apply gates. The picker chooses the target, so applying
     /// only needs an ELIGIBLE ACTOR TO EXIST — the sidebar selection is
@@ -54,10 +49,10 @@ public sealed partial class PoseLibraryPane
         // is pushed, so "From file", the presets and the export commands act
         // on the actor the tiles would apply to instead of silently eating
         // the click.
-        var host = TargetActor() is { HasSkeleton: true } selected
+        var host = TargetActor() is { } selected && _imports.HasPosableSkeleton(selected)
             ? selected : FirstApplyTarget();
         _files.SetHostImportTarget(
-            host is not null ? _bindings.GetActorId(host) : null,
+            host,
             inLibrary: true);
 
         // A character file is applied to an actor that already exists; there is
@@ -93,7 +88,7 @@ public sealed partial class PoseLibraryPane
     /// <summary>Whom a pose or character file applies to: the scene's
     /// eligible actors in a dropdown beside the verb, the selection's actor
     /// by default, a chosen one until the choice leaves the scene.</summary>
-    private IActor? _applyChoice;
+    private ActorId? _applyChoice;
 
     private void SyncApplyTargets()
     {
@@ -102,24 +97,23 @@ public sealed partial class PoseLibraryPane
         if (!shows)
             return;
         _applyTargets.Clear();
-        foreach (var actor in _actors.Actors)
-            if (_type == LibraryType.Mcdf || actor.HasSkeleton)
-                _applyTargets.Add(actor);
+        foreach (var actor in _scene.Snapshot.Actors)
+            if (_type == LibraryType.Mcdf || actor.CharacterSkeleton is not null)
+                _applyTargets.Add(actor.Id);
         if (_vm.ApplyTargetNames.Length != _applyTargets.Count)
             _vm.ApplyTargetNames = new string[_applyTargets.Count];
         for (int i = 0; i < _applyTargets.Count; i++)
         {
             var actor = _applyTargets[i];
-            _vm.ApplyTargetNames[i] = _bindings.GetActorId(actor) is { } id
-                ? ActorNames.Display(id, actor.Name)
-                : ActorNames.Clean(actor.Name);
+            _vm.ApplyTargetNames[i] = _scene.Snapshot.FindActor(actor) is { } described
+                ? ActorNames.Display(described) : "Actor";
         }
-        int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice) : -1;
+        int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice.Value) : -1;
         if (index < 0)
         {
             _applyChoice = null;
             var selected = TargetActor();
-            index = selected != null ? _applyTargets.IndexOf(selected) : -1;
+            index = selected != null ? _applyTargets.IndexOf(selected.Value) : -1;
         }
         _vm.ApplyTargetIndex = index < 0 && _applyTargets.Count > 0 ? 0 : index;
     }
@@ -138,11 +132,11 @@ public sealed partial class PoseLibraryPane
     /// <summary>The first actor this tab's apply could land on, in scene order
     /// — the candidate the picker leads with, and the same eligibility
     /// <see cref="DrawApplyMenu"/> lists by.</summary>
-    private IActor? FirstApplyTarget()
+    private ActorId? FirstApplyTarget()
     {
-        foreach (var candidate in _actors.Actors)
-            if (_type == LibraryType.Mcdf || candidate.HasSkeleton)
-                return candidate;
+        foreach (var candidate in _scene.Snapshot.Actors)
+            if (_type == LibraryType.Mcdf || candidate.CharacterSkeleton is not null)
+                return candidate.Id;
         return null;
     }
 

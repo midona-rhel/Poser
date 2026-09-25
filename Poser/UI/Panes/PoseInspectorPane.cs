@@ -31,7 +31,7 @@ namespace Poser.UI;
 /// <summary>Renders Inspector rail and workspace pose controls.</summary>
 public partial class PoseInspectorPane
 {
-    private readonly IBonePosingService _bonePosingService;
+    private readonly IPoseInteraction _interaction;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IIkBake _ikBake;
     private readonly ITransformFacade _cleanTransforms;
@@ -45,7 +45,6 @@ public partial class PoseInspectorPane
     private readonly GroupTransformCoordinator _groupCoordinator;
     private GroupTransformFrame? _cleanGroupFrame;
     private GroupScaleMode _cleanGroupScale;
-    private readonly IEntityBindings _bindings;
     private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -71,7 +70,6 @@ public partial class PoseInspectorPane
 
     // Commands use stable selection IDs.
     private SelectionId? _primary;
-    private IEntity? _entity;
     private SelectionId[] _selectionSnapshot = Array.Empty<SelectionId>();
 
     // Keep Euler values stable during a rotation drag.
@@ -180,20 +178,18 @@ public partial class PoseInspectorPane
     ];
 
     public PoseInspectorPane(
-        IBonePosingService bonePosingService,
+        IPoseInteraction interaction,
         ITransformFacade cleanTransforms,
         IActorResetControl actorReset,
         IPoseCommands poseCommands,
         IGazeControl gazeValues,
         IEditorState editorState,
         SceneSession scene,
-        IEntityBindings bindings,
         IViewportReads viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,
         IIkBake ikBake,
-        IActorSpawnService spawnService,
         CameraPane cameraPane,
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
@@ -207,16 +203,14 @@ public partial class PoseInspectorPane
         _notices = notices;
         _ikPort = ikPort;
         _ikBake = ikBake;
-        _spawnService = spawnService;
         _cameraPane = cameraPane;
         _overlayPane = overlayPane;
         _selection = scene.Selection;
         _scene = scene;
-        _bindings = bindings;
         _viewport = viewport;
         _expressionSection = expressionSection;
         _poseFileSection = poseFileSection;
-        _bonePosingService = bonePosingService;
+        _interaction = interaction;
         _cleanTransforms = cleanTransforms;
         _actorReset = actorReset;
         _poseCommands = poseCommands;
@@ -229,12 +223,11 @@ public partial class PoseInspectorPane
     {
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } selected })
             return selected;
-        if (OwningActor() is not { } actor ||
-            _bindings.GetActorId(actor) is not { } actorId)
+        if (OwningActorId() is not { } actorId)
             return null;
         foreach (var descriptor in _scene.Snapshot.Actors)
         {
-            if (descriptor.Id.LogicalId != actorId.LogicalId)
+            if (descriptor.Id != actorId)
                 continue;
             foreach (var skeleton in descriptor.Skeletons)
                 if (skeleton.Bones.Count > 0)
@@ -245,7 +238,6 @@ public partial class PoseInspectorPane
         return null;
     }
 
-    private readonly IActorSpawnService _spawnService;
 
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
@@ -253,8 +245,7 @@ public partial class PoseInspectorPane
     private readonly UserNotices _notices;
     private bool _openCameraTracking = true;
 
-    private bool IsCreature(IActor actor) =>
-        actor.IsCompanion || _spawnService.GetSpawnedKind(actor) is not null;
+    private bool IsCreature(ActorDescriptor actor) => _interaction.IsCreature(actor.Id);
 
     // Cache transform resolution by selection and scene revision.
     private readonly List<SelectionId> _effectiveKey = new();
@@ -281,7 +272,7 @@ public partial class PoseInspectorPane
         _effective = TransformTargetResolver.Resolve(
             selected, _scene.Snapshot,
             id => _groups.IsLockedChild(id, selected) ||
-                (id.Overlay is { } o && _bindings.Resolve(o).Value?.State.Collider?.Locked == true));
+                (id.Overlay is { } o && _viewport.GetCollider(o)?.Locked == true));
         return _effective;
     }
 
@@ -328,18 +319,11 @@ public partial class PoseInspectorPane
 
     private SkeletonDescriptor? PrimarySkeletonDescriptor()
     {
-        var (lineage, slot) = _primary switch
-        {
-            { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
-                Actor: { } actorId } =>
-                ((Guid?)actorId.LogicalId, PoseSlot.Character),
-            { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
-                (boneId.Skeleton.Actor.LogicalId, boneId.Slot),
-            _ => ((Guid?)null, PoseSlot.Character),
-        };
-        if (lineage is not { } target)
-            return null;
-        return _scene.Snapshot.FindActor(target)?.GetSkeleton(slot);
+        var actor = OwningActor();
+        if (_primary?.Bone is { } bone)
+            return actor?.GetSkeleton(bone.Slot) is { } skeleton && skeleton.Id == bone.Skeleton
+                ? skeleton : null;
+        return actor?.CharacterSkeleton;
     }
 
     // Bone selection stays within its slot skeleton.
@@ -379,16 +363,6 @@ public partial class PoseInspectorPane
         }
         _primary = primary;
         _selectionSnapshot = selected.ToArray();
-
-        _entity = primary switch
-        {
-            { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
-                Actor: { } actorId } =>
-                _bindings.Resolve(actorId) is { Success: true } actor ? actor.Value : null,
-            { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
-                _bindings.Resolve(boneId) is { Success: true } bone ? bone.Value : null,
-            _ => null,
-        };
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -400,14 +374,13 @@ public partial class PoseInspectorPane
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
-        var surfaceSkeleton = OwningSkeleton();
+        var surfaceSkeleton = PrimarySkeletonDescriptor();
         if (surfaceSkeleton != null)
         {
             cursor.Y += DrawPoseSurface(
                 dl,
                 cursor,
                 size,
-                surfaceSkeleton,
                 s);
         }
         else
@@ -429,18 +402,12 @@ public partial class PoseInspectorPane
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
     }
 
-    public (string Prefix, string Bold) CrumbParts() => _entity switch
+    public (string Prefix, string Bold) CrumbParts() => _primary switch
     {
-        IBone bone => ($"{ActorDisplayName(bone.Skeleton.Actor)} · ", bone.Name),
-        null => ("", ""),
-        IActor actor => ("", ActorDisplayName(actor)),
-        { } e => ("", ActorNames.Clean(e.Name)),
+        { Bone: { } bone } => ($"{ActorLabel(bone.Skeleton.Actor)} · ", SlotBonesOf(bone)?.FirstOrDefault(item => item.Id == bone)?.DisplayName ?? bone.CanonicalName),
+        { Actor: { } actor } => ("", ActorLabel(actor)),
+        _ => ("", ""),
     };
-
-    private string ActorDisplayName(IActor actor) =>
-        _bindings.GetActorId(actor) is { } id
-            ? ActorNames.Display(id, actor.Name)
-            : ActorNames.Clean(actor.Name);
 
     private string ActorLabel(ActorId id) =>
         _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(actor) : "";
@@ -740,7 +707,7 @@ public partial class PoseInspectorPane
                  { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget })
         {
             var actor = OwningActor();
-            var skeleton = OwningSkeleton();
+            var skeleton = PrimarySkeletonDescriptor();
             bool humanoid = actor != null && !IsCreature(actor);
             if (actor != null && humanoid)
                 stack.Section(
@@ -748,7 +715,7 @@ public partial class PoseInspectorPane
                     "Gaze",
                     _openGaze,
                     next => _openGaze = next,
-                    form => DrawGaze(form, actor, wide: false));
+                    form => DrawGaze(form, actor.Id, wide: false));
             // The narrow rail keeps face-weight sliders only.
             if (actor != null && humanoid && _expressionSection.CanDraw)
                 stack.Section(
@@ -757,7 +724,7 @@ public partial class PoseInspectorPane
                     _openExpression,
                     next => _openExpression = next,
                     form => _expressionSection.Draw(
-                        form, actor, OwningActorId(), paired: false));
+                        form, OwningActorId(), paired: false));
             if (skeleton != null)
             {
                 stack.Section(
@@ -771,7 +738,7 @@ public partial class PoseInspectorPane
                     "IK",
                     _openActorIk,
                     next => _openActorIk = next,
-                    form => DrawActorIk(form, skeleton));
+                    form => DrawActorIk(form));
             }
         }
 
@@ -779,8 +746,8 @@ public partial class PoseInspectorPane
     }
 
     public bool HasAuthoredEdits =>
-        OwningSkeleton() is { } skeleton &&
-        _bindings.GetActorId(skeleton.Actor) is { } actorId &&
+        PrimarySkeletonDescriptor() is not null &&
+        OwningActorId() is { } actorId &&
         _poseCommands.HasAuthoredEdits(actorId);
 
 
@@ -788,7 +755,6 @@ public partial class PoseInspectorPane
         ImDrawListPtr dl,
         Vector2 cursor,
         Vector2 size,
-        ISkeleton skeleton,
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
@@ -1006,7 +972,7 @@ public partial class PoseInspectorPane
                     _openSurfaceExpression,
                     next => _openSurfaceExpression = next,
                     form => _expressionSection.Draw(
-                        form, actor, OwningActorId(), paired: true,
+                        form, OwningActorId(), paired: true,
                         DrawExpressionRow),
                     divider: false);
             });
@@ -1023,7 +989,7 @@ public partial class PoseInspectorPane
             return viewportHeight;
 
         var actor = OwningActor();
-        var skeleton = OwningSkeleton();
+        var skeleton = PrimarySkeletonDescriptor();
         InsetScrollSurface(
             "##pose-actor-scroll", min, max, s,
             (origin, contentWidth) =>
@@ -1050,7 +1016,7 @@ public partial class PoseInspectorPane
                         "IK",
                         _openSurfaceActorIk,
                         next => _openSurfaceActorIk = next,
-                        form => DrawActorIk(form, skeleton),
+                        form => DrawActorIk(form),
                         divider: stack.Any);
                 if (actor != null && OwningActorId() is { } actorId)
                     stack.Section(
@@ -1070,7 +1036,7 @@ public partial class PoseInspectorPane
                         "Gaze",
                         _openSurfaceGaze,
                         next => _openSurfaceGaze = next,
-                        form => DrawGaze(form, actor, wide: true),
+                        form => DrawGaze(form, actor.Id, wide: true),
                         divider: stack.Any);
                 if (skeleton != null)
                 {
@@ -1088,8 +1054,7 @@ public partial class PoseInspectorPane
                         next => _openSurfaceFiles = next,
                         form =>
                         {
-                            if (_bindings.GetActorId(skeleton.Actor) is { } actorId)
-                                _poseFileSection.Draw(form, actorId);
+                            _poseFileSection.Draw(form, skeleton.Id.Actor);
                         },
                         divider: stack.Any);
                 }
@@ -1205,9 +1170,9 @@ public partial class PoseInspectorPane
     internal void DrawParentingBar(
         Vector2 cursor,
         Vector2 size,
-        ISkeleton skeleton)
+        SkeletonDescriptor skeleton)
     {
-        var poseInfo = _bonePosingService.GetPoseInfo(skeleton);
+        if (_interaction.GetPropagation(skeleton.Id) is not { } propagation) return;
         Crystarium.ActionBar(
             "pose-parenting-footer",
             cursor,
@@ -1234,15 +1199,15 @@ public partial class PoseInspectorPane
                 })
                 {
                     bool propagates =
-                        poseInfo.DefaultPropagation.HasFlag(component);
+                        propagation.HasFlag(component);
                     bar.Checkbox(
                         label,
                         propagates,
                         next =>
                         {
-                            poseInfo.DefaultPropagation = next
-                                ? poseInfo.DefaultPropagation | component
-                                : poseInfo.DefaultPropagation & ~component;
+                            _interaction.SetPropagation(skeleton.Id, next
+                                ? propagation | component
+                                : propagation & ~component);
                         },
                         help);
                 }
@@ -1429,7 +1394,7 @@ public partial class PoseInspectorPane
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
         var scale = transform.Scale;
         bool capsule = !IsMultiEntitySelection && _primary?.Overlay is { } capsuleId &&
-            _bindings.Resolve(capsuleId).Value?.State.Collider?.Shape == IkColliderShape.Capsule;
+            _viewport.GetCollider(capsuleId)?.Shape == IkColliderShape.Capsule;
 
         void Apply(Vector3 next, DomainOperation operation)
         {
@@ -1505,7 +1470,7 @@ public partial class PoseInspectorPane
         }
 
         float dragSpeed = Config.ConfigurationService.Instance.Config
-            .Transform.For(_entity is IBone);
+            .Transform.For(_primary?.Kind == SceneEntityKind.Bone);
 
         // Swap only the displayed rotation columns.
         bool swap = GetSwapRotationXY?.Invoke() == true;
@@ -1564,7 +1529,7 @@ public partial class PoseInspectorPane
                 r => r == 1 ? "0.0" : "0.000",
                 _ => !canEdit,
                 _ => _groupTransformUnavailableReason
-                    ?? (_entity is IActor
+                    ?? (_primary?.Kind == SceneEntityKind.Actor
                         ? "Freeze the animation to move"
                         : canEdit ? null : "Transform is unavailable."),
                 altReset: r => r == 1 ? 0f : r == 2 ? 1f : null));
@@ -1654,7 +1619,7 @@ public partial class PoseInspectorPane
     // Refusals are scoped to their target actor.
     private (ActorId Actor, string Text)? _gazeRefusal;
 
-    private void DrawGaze(Crystarium.FormScope form, IActor sourceActor, bool wide)
+    private void DrawGaze(Crystarium.FormScope form, ActorId actor, bool wide)
     {
         using var profile = FrameProfiler.Scope(
             wide ? "Surface · GAZE" : "Rail · GAZE");
@@ -1664,8 +1629,7 @@ public partial class PoseInspectorPane
             return;
         }
 
-        if (_bindings.GetActorId(sourceActor) is not { } actor ||
-            _gazeValues.Read(actor) is not { } state)
+        if (_gazeValues.Read(actor) is not { } state)
             return;
 
         var sourceLineage = actor.LogicalId;
@@ -2516,7 +2480,7 @@ public partial class PoseInspectorPane
             _notices.Failed($"Bake: {failed.Detail}");
     }
 
-    private void DrawActorIk(Crystarium.FormScope form, ISkeleton skeleton)
+    private void DrawActorIk(Crystarium.FormScope form)
     {
         PumpBakeQueue();
         var actorId = OwningActorId();
@@ -2559,9 +2523,8 @@ public partial class PoseInspectorPane
     {
         var bones = new List<BoneId>();
         foreach (var chain in chains)
-            foreach (var bone in _ikBake.AffectedChain(chain))
-                if (_bindings.GetBoneId(bone) is { } id && !bones.Contains(id))
-                    bones.Add(id);
+            foreach (var id in _ikBake.AffectedChain(chain))
+                if (!bones.Contains(id)) bones.Add(id);
         if (bones.Count > 0)
             _overlayPresentation.SetVisible(bones, true);
     }
@@ -2569,19 +2532,15 @@ public partial class PoseInspectorPane
 
     private void DrawPoseActions(
         Crystarium.FormScope form,
-        ISkeleton skeleton,
+        SkeletonDescriptor skeleton,
         bool wide)
     {
         using var profile = FrameProfiler.Scope(
             wide ? "Surface · POSE" : "Rail · POSE");
-        // Virtual bone groups still have a legacy presentation wrapper; resolve
-        // its exact owner once, never retain that wrapper in a pose command.
-        if (_bindings.GetActorId(skeleton.Actor) is not { } actorId) return;
-        var bone = _entity as IBone;
-        var concrete = bone is VirtualBone group ? group.PivotBone : bone;
-        var boneId = concrete != null ? _bindings.GetBoneId(concrete) : null;
-        var boneName = bone?.Name ?? string.Empty;
-        var sourceLabel = ActorDisplayName(skeleton.Actor);
+        var actorId = skeleton.Id.Actor;
+        var boneId = _primary?.Bone;
+        var boneName = boneId?.CanonicalName ?? string.Empty;
+        var sourceLabel = ActorLabel(actorId);
         bool hasAuthoredEdits = _poseCommands.HasAuthoredEdits(actorId);
         form.Actions("Edit", actions =>
         {
@@ -2681,7 +2640,7 @@ public partial class PoseInspectorPane
             Config.ConfigurationService.Instance.OnConfigurationChanged +=
                 () => _railHeaderPrimed = false;
         }
-        bool linked = _bonePosingService.LinkedBonesEnabled;
+        bool linked = _interaction.LinkedBonesEnabled;
         bool hasOverride = HasActorTransformOverride;
         if (_railHeaderPrimed &&
             _railHeaderRevision == _scene.Revision &&
@@ -2714,7 +2673,7 @@ public partial class PoseInspectorPane
             {
                 var bone = bones[0];
                 var siblings = SlotBonesOf(bone);
-                int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
+                int linked = _interaction.LinkedBonesEnabled && siblings != null
                     ? 1 + BoneLinkCatalog.GetLinked(bone.CanonicalName).Count(linkName =>
                         siblings.Any(candidate =>
                             candidate.Id.CanonicalName == linkName &&
@@ -2824,7 +2783,7 @@ public partial class PoseInspectorPane
 
     public bool IsOverlaySelection =>
         _primary is { Kind: SceneEntityKind.Overlay, Overlay: { } id } &&
-        _bindings.Resolve(id).Value?.State.Collider == null;
+        _viewport.GetCollider(id) is null;
 
     /// <summary>The rail pad's overlay node — the camera ball's idiom.
     /// </summary>
@@ -2934,7 +2893,7 @@ public partial class PoseInspectorPane
                 // Attached lights are read-only.
                 return _viewport.GetLightTransform(lightId) is { } lightValue
                     ? (Transform.FromPose(lightValue),
-                        canEdit && _bindings.Resolve(lightId).Value?.AttachedBone == null)
+                        canEdit && !_viewport.IsLightAttached(lightId))
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Prop, Prop: { } propId }:
                 return _viewport.GetPropTransform(propId) is { } propValue
@@ -3032,7 +2991,7 @@ public partial class PoseInspectorPane
                 }}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
-                _bonePosingService.LinkedBonesEnabled,
+                _interaction.LinkedBonesEnabled,
             symmetryFor: targets[0].Kind == TransformTargetKind.Bone
                 ? SymmetryDeltaFor
                 : null,
@@ -3060,7 +3019,7 @@ public partial class PoseInspectorPane
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        if (!IsMultiEntitySelection && _entity is not (IActor or IBone) &&
+        if (!IsMultiEntitySelection && _primary?.Kind is not (SceneEntityKind.Actor or SceneEntityKind.GazeTarget or SceneEntityKind.Bone) &&
             _primary is not { Kind: SceneEntityKind.Light } &&
             _primary is not { Kind: SceneEntityKind.Prop } &&
             _primary is not { Kind: SceneEntityKind.Overlay } &&
@@ -3071,10 +3030,10 @@ public partial class PoseInspectorPane
             _cleanModelStart is not { } modelStart)
             return;
 
-        if (_entity is IBone bone && _cleanDisplayedCurrent is { } previous
+        if (_primary?.Bone is { } bone && _cleanDisplayedCurrent is { } previous
             && displayedAfter.Position != previous.Position)
             displayedAfter = displayedAfter with { Position = previous.Position
-                + _bonePosingService.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
+                + _interaction.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
         var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,
@@ -3186,20 +3145,8 @@ public partial class PoseInspectorPane
 
     private ActorId? OwningActorId() => _primary?.OwningActor;
 
-    private IActor? OwningActor() => _entity switch
-    {
-        IActor actor => actor,
-        IBone bone => bone.Skeleton.Actor,
-        _ => null,
-    };
-
-    private ISkeleton? OwningSkeleton() => _entity switch
-    {
-        ISkeleton skeleton => skeleton,
-        IBone bone => bone.Skeleton,
-        IActor { HasSkeleton: true } actor => actor.Skeleton,
-        _ => null,
-    };
+    private ActorDescriptor? OwningActor() =>
+        OwningActorId() is { } actor ? _scene.Snapshot.FindActor(actor) : null;
 
     /// <summary>The per-bone symmetry resolver, the gizmo's twin.</summary>
     private System.Nullable<DomainDeltaMode> SymmetryDeltaFor(

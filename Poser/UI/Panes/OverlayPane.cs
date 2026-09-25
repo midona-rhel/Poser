@@ -35,7 +35,7 @@ public sealed class OverlayPane
 
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
     /// both land in the shell's undo history.</summary>
-    private readonly ISceneLifecycleHistory _lifecycle;
+    private readonly ISceneCreation _creation;
     private readonly EntityActions _entityActions;
 
     private readonly GameIconResolver _icons;
@@ -61,7 +61,7 @@ public sealed class OverlayPane
 
     /// <summary>The node a create or duplicate made, selected once the scene
     /// refresh has bound it.</summary>
-    private readonly global::Poser.UI.Composition.PendingSelection<IOverlayNode> _pendingSelect = new();
+    private readonly global::Poser.UI.Composition.PendingSelection<SceneEntityHandle> _pendingSelect = new();
 
     private string _status = string.Empty;
 
@@ -75,7 +75,7 @@ public sealed class OverlayPane
         SceneSession scene,
         IEntityBindings bindings,
         StatusIconCatalog statusIcons,
-        ISceneLifecycleHistory lifecycle,
+        ISceneCreation creation,
         EntityActions entityActions,
         ITextureProvider textures,
         ScenePane scenePane,
@@ -86,7 +86,7 @@ public sealed class OverlayPane
         _scene = scene;
         _bindings = bindings;
         _statusIcons = statusIcons;
-        _lifecycle = lifecycle;
+        _creation = creation;
         _entityActions = entityActions;
         _icons = new GameIconResolver(textures);
         _scenePane = scenePane;
@@ -100,7 +100,7 @@ public sealed class OverlayPane
     /// <summary>Selects a node some other surface just created — the spawn
     /// browser's rows and this pane's own duplicate. The scene has not
     /// rescanned yet, so the id is resolved on a later frame.</summary>
-    public void SelectWhenBound(IOverlayNode? node)
+    private void SelectWhenBound(SceneEntityHandle? node)
     {
         if (node != null)
             _pendingSelect.Arm(node);
@@ -481,7 +481,7 @@ public sealed class OverlayPane
                     }));
             actions.Button(
                 "Duplicate",
-                () => _pending = () => Duplicate(node),
+                () => _pending = () => { if (_bindings.GetOverlayId(node) is { } id) Duplicate(id); },
                 help: "Duplicate this overlay");
             actions.Button(
                 "Delete",
@@ -536,17 +536,15 @@ public sealed class OverlayPane
 
     /// <summary>Public because the overlay row's context menu speaks this
     /// verb too — one duplication rule, wherever it is asked.</summary>
-    public IOverlayNode? Duplicate(IOverlayNode node)
+    private void Duplicate(OverlayId id)
     {
-        if (_lifecycle.CloneOverlay(node) is IOverlayNode copy)
+        var result = _creation.Duplicate(SelectionId.ForOverlay(id));
+        if (result.Handle is { } copy)
         {
-            _pendingSelect.Arm(copy);
+            SelectWhenBound(copy);
             _status = string.Empty;
-            return copy;
         }
-        _status = "The overlay could not be duplicated — the game's interface "
-            + "would not take it.";
-        return null;
+        else _status = result.Detail ?? "The overlay could not be duplicated.";
     }
 
     private static Vector2 Centred(IOverlayNode node)
@@ -575,12 +573,7 @@ public sealed class OverlayPane
     /// refresh has bound the new node, select it and forget it.</summary>
     private void ReconcilePendingSelect()
     {
-        _pendingSelect.Reconcile(
-            node => _bindings.GetOverlayId(node) is { } id
-                ? SelectionId.ForOverlay(id)
-                : null,
-            _scene.Selection,
-            stillValid: node => node.IsValid);
+        _pendingSelect.Reconcile(receipt => _creation.Resolve(receipt), _scene.Selection);
     }
 
     private static string ContentTitle(OverlayNodeKind kind) => kind switch
