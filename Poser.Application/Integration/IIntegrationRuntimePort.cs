@@ -173,9 +173,9 @@ public interface IIntegrationRuntimePort
     /// <summary>Saved (normal) profiles only.</summary>
     IntegrationValue<IReadOnlyList<ExternalItem>> GetBodyProfiles();
 
-    /// <summary>The actor's active profile id and whether it is a readable
-    /// saved profile. An active id absent from the saved list is a
-    /// temporary profile the API cannot read back.</summary>
+    /// <summary>The profile exposed by the provider's active-ID query.
+    /// Customize+ 6.x omits temporary profiles: null does not establish their
+    /// absence. Poser-owned profile contents must come from retained ownership.</summary>
     IntegrationValue<BodyProfileProbe> ProbeBodyProfile(ActorId actor);
 
     IntegrationValue<string> GetBodyProfileJson(Guid profile);

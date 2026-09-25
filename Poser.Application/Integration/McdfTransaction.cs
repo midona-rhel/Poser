@@ -1429,39 +1429,14 @@ public sealed class McdfTransaction
             return IntegrationResult.Fail(
                 modRoot.Detail ?? "Penumbra's mod directory could not be read.");
 
-        string customizeData = string.Empty;
-        if (_port.CustomizePlus.Available)
-        {
-            var probe = _port.ProbeBodyProfile(actor);
-            if (!probe.Success || probe.Value is not { } bodyState)
-                return IntegrationResult.Fail(
-                    probe.Detail ?? "The Customize+ state could not be read.");
-            if (bodyState.ActiveProfile is { } active)
-            {
-                if (bodyState.ActiveIsSaved)
-                {
-                    var json = _port.GetBodyProfileJson(active);
-                    if (!json.Success || json.Value is not { } profileJson)
-                        return IntegrationResult.Fail(
-                            json.Detail ?? "The active profile could not be read.");
-                    customizeData = Convert.ToBase64String(
-                        System.Text.Encoding.UTF8.GetBytes(profileJson));
-                }
-                else if (active == current.TemporaryBodyProfile
-                    && current.BodyProfileJson is { } retained)
-                {
-                    // Poser's own temporary profile exports from the
-                    // session's retained JSON.
-                    customizeData = Convert.ToBase64String(
-                        System.Text.Encoding.UTF8.GetBytes(retained));
-                }
-                else
-                {
-                    return IntegrationResult.Fail(
-                        "This actor's body scale is a temporary profile from another plugin that cannot be read back; exporting would silently lose it.");
-                }
-            }
-        }
+        // The C+ active-profile query can omit temporary profiles. Copy,
+        // history and export must use the same retained-profile precedence.
+        var body = _owner.CaptureBodyProfile(actor);
+        if (!body.Success)
+            return IntegrationResult.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
+        string customizeData = body.Value is { } profileJson
+            ? Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(profileJson))
+            : string.Empty;
 
         // Every vendor read above is frozen synchronously on the framework
         // thread. Inspection, hashing, semantic filtering, and package

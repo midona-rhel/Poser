@@ -862,8 +862,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (ec != CustomizeEcSuccess)
                 return IntegrationValue<BodyProfileProbe>.Fail(
                     $"Customize+ failed reading the active profile (code {ec}).");
-            // Saved profiles answer GetByUniqueId; a temporary profile is
-            // reported active but cannot be read back.
+            // C+ 6.x's active-ID query omits temporary profiles entirely.
+            // Keep the readability check for providers that do expose an ID;
+            // callers must not infer absence of a temporary profile from null.
             var (readEc, _) = _getProfileByUniqueId.InvokeFunc(profile);
             return IntegrationValue<BodyProfileProbe>.Ok(
                 new BodyProfileProbe(profile, readEc == CustomizeEcSuccess));
