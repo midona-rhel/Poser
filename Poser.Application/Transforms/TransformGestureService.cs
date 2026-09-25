@@ -34,7 +34,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     private ActiveGestureState? _active;
     private bool _transitionActive;
 
-    private readonly JournalContexts? _journal;
     private readonly GroupTransformState? _groupTransforms;
     private readonly IGroupTransformSource? _groupSource;
     private readonly GroupTransformCoordinator? _groupCoordinator;
@@ -45,7 +44,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         SceneSession scene,
         ITransformRuntimePort runtime,
         TransformHistory history,
-        JournalContexts? journal = null,
         GroupTransformState? groupTransforms = null,
         IGroupTransformSource? groupSource = null,
         GroupTransformCoordinator? groupCoordinator = null)
@@ -53,7 +51,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         _scene = scene;
         _runtime = runtime;
         History = history;
-        _journal = journal;
         _groupTransforms = groupTransforms;
         _groupSource = groupSource;
         _groupCoordinator = groupCoordinator;
@@ -188,9 +185,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             command,
             pivot,
             captured.ToArray(),
-            groupBefore,
-            _journal?.BeginActorStep(
-                captured.Select(state => state.Target.ActorLineage)));
+            groupBefore);
         return GestureResult.Ok(id);
     }
 
@@ -455,7 +450,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             active.Before,
             after)
         {
-            Context = active.Journal?.Complete(),
             GroupState = groupChange,
         });
         _active = null;
@@ -508,7 +502,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
-        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } or JournalStep { CompleteReplay: not null })
+        if (entry is JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
@@ -573,7 +567,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
-        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } or JournalStep { CompleteReplay: not null })
+        if (entry is JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
@@ -687,17 +681,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             commit();
         }, remap: patch.GroupState != null);
         return RecoveryResult(recovery);
-    }
-
-    public GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
-    {
-        if (entry is TransformPatch { GroupState: not null } patch)
-        {
-            using var transition = TryEnterTransition();
-            return transition == null ? Busy() : RestorePatch(patch, before, commit);
-        }
-        commit();
-        return GestureResult.Ok();
     }
 
     /// <summary>
@@ -895,6 +878,5 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         Vector3 Pivot,
         IReadOnlyList<TransformTargetState> Before,
         GroupTransformSnapshot? GroupBefore = null,
-        JournalContexts.StepScope? Journal = null,
         GroupTransformSnapshot? GroupProposed = null);
 }

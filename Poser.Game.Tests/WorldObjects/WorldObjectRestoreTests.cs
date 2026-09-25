@@ -54,7 +54,7 @@ public sealed class WorldObjectRestoreTests
             new WorldObjectServiceLifecycle(world.Service), worldObjectTarget: Target);
         var values = new WorldObjectSession(new ValueJournal(history), lifecycle);
         world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
-            history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid), _ => true));
+            history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid)));
         var original = (AdoptedWorldObject)(borrowed
             ? lifecycle.AdoptWorldObject(world.Port.Add(path, Placed, isVfx: path.EndsWith(".avfx")))!
             : lifecycle.SpawnWorldObject(path, Placed, true)!);

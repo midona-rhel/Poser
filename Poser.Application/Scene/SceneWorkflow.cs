@@ -354,11 +354,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             () => !_disposed && !Busy && Rollback(load.Current) is null,
             () => BeginLoad(path, options, load).Success)
         {
-            Context = new StepContext(
-                Array.Empty<ActorStateKey>(),
-                Array.Empty<ActorSnapshot>(),
-                Array.Empty<ActorSnapshot>(),
-                path),
+            RequiredAsset = path,
         });
     }
 

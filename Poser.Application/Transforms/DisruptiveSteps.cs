@@ -6,7 +6,7 @@ namespace Poser.Application.Transforms;
 
 /// <summary>Appearance-changing commands share the complete non-animation actor inverse.</summary>
 public sealed class DisruptiveSteps(
-    TransformHistory history, IActorStateSnapshots snapshots, ActorDisruptionEpochs epochs,
+    TransformHistory history, IActorStateSnapshots snapshots,
     ValueJournal values)
 {
     public IntegrationResult Run(ActorId actor, string description, Func<IntegrationResult> verb)
@@ -17,7 +17,6 @@ public sealed class DisruptiveSteps(
             return IntegrationResult.Fail(captured.Detail ?? "The actor's state could not be captured.");
         var result = verb();
         if (!result.Success) return result;
-        epochs.Bump(actor.LogicalId);
 
         // A redraw/import may still be pending. Capture the redo state on the
         // first undo, after later entries have been undone, not from the old body

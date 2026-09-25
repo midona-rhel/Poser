@@ -623,9 +623,7 @@ public sealed class GroupTransformStateTests
         f.PerformNamed(group, new(Vector3.Zero, Quaternion.Identity, new(2f)),
             GroupScaleMode.SpacingOnly);
         var authored = f.State.NamedSnapshot(group.Id)!;
-        var snapshotPort = new SnapshotPort(f);
-        var journal = new UndoJournal(f.History, f.Service, snapshotPort,
-            new Lazy<IPoseSnapshotPort>(() => snapshotPort), _ => true, _ => {});
+        var journal = new UndoJournal(f.History, f.Service, _ => true, _ => {});
         var untouched = f.Live.ToDictionary();
         int writes = f.Writes, frameReads = f.FrameReads;
         void Refuse(bool refused)
@@ -773,53 +771,6 @@ public sealed class GroupTransformStateTests
         Assert.Equal(Vector3.Zero, f.Snapshot.Expected[f.Targets[0]].Position);
     }
 
-    [Fact]
-    public void Snapshot_fallback_finishes_group_restore_through_recovery_before_committing()
-    {
-        using var f = new Fixture();
-        var before = f.Snapshot;
-        f.Perform(new(Vector3.One, Quaternion.Identity, Vector3.One));
-        var patch = (TransformPatch)f.History.PeekUndo()!;
-        f.History.Clear();
-        var snapshots = new SnapshotPort(f);
-        patch = patch with { Context = new(
-            f.Targets.Select(target => new ActorStateKey(target.Actor!.Value.LogicalId,
-                target.Actor.Value, [], "old", 0)).ToArray(),
-            f.Targets.Select(target => new ActorSnapshot(target.Actor!.Value.LogicalId,
-                before.Expected[target], [])).ToArray(),
-            f.Targets.Select(target => new ActorSnapshot(target.Actor!.Value.LogicalId,
-                f.Live[target], [])).ToArray()) };
-        f.History.Append(patch);
-        var journal = new UndoJournal(f.History, f.Service, snapshots,
-            new Lazy<IPoseSnapshotPort>(() => snapshots), _ => true, _ => {}) { StateKeys = true };
-        f.FailRestore = true;
-        Assert.True(journal.Undo().Success); // snapshot import starts asynchronously
-        Assert.True(f.History.CanUndo);
-        snapshots.Complete();
-        snapshots.Complete();
-        Assert.NotNull(f.Service.PendingRecovery);
-        Assert.True(f.History.CanUndo);
-        Assert.NotEqual(before.Controls, f.Snapshot.Controls);
-        f.Rebind();
-        f.FailRestore = false;
-        Assert.True(journal.Undo().Success);
-        Assert.Equal(before.Controls, f.Snapshot.Controls);
-        Assert.False(f.History.CanUndo);
-        Assert.True(f.History.CanRedo);
-    }
-
-    private sealed class SnapshotPort(Fixture fixture) : IActorStateKeySource, IPoseSnapshotPort
-    {
-        private Action<bool>? _done;
-        public ActorStateKey? Current(Guid lineage) => new(lineage,
-            fixture.Targets.First(target => target.Actor!.Value.LogicalId == lineage).Actor!.Value,
-            [], "changed", 1);
-        public ActorSnapshot? Capture(Guid lineage) => null;
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
-        { _done = finished; return true; }
-        public void Complete() { var done = _done; _done = null; done!(true); }
-    }
-
     private static PoseTransform Pose(Vector3 position) =>
         PoseTransform.CreateChecked(position, Quaternion.Identity, Vector3.One);
 
@@ -881,7 +832,7 @@ public sealed class GroupTransformStateTests
             Targets = mapped;
             Publish();
             Coordinator.BindingsPublished();
-            History.Reconcile(Scene.Contains, _ => true, CurrentTarget);
+            History.Reconcile(Scene.Contains, CurrentTarget);
             foreach (var member in Selected) Selection.Add(member);
         }
         public TransformGestureId Begin(GroupScaleMode mode = GroupScaleMode.SizesAndSpacing)

@@ -165,7 +165,7 @@ public sealed class PoseCommandTests
     }
 
     private sealed class Fixture : ITransformRuntimePort, IPoseEditReads,
-        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateSnapshots, IActorStateKeySource, IDisposable
+        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateSnapshots, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
@@ -201,7 +201,7 @@ public sealed class PoseCommandTests
                     new BonePose([new(new(PoseLayerKind.Manual, "manual"), TransformComponents.All,
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
-            Journal = new(History, Gestures, this, new(() => this), _ => true, _ => { });
+            Journal = new(History, Gestures, _ => true, _ => { });
             var edits = new PoseEditService(Scene, this, History, Gestures);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),
@@ -225,7 +225,6 @@ public sealed class PoseCommandTests
         }
         public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed) => completed(current() ? GestureResult.Ok() : GestureResult.Fail("Stale history"));
-        public ActorStateKey? Current(Guid lineage) => null;
         public PoseEditResult ResetExpression(ActorId actor) => FailExpression
             ? throw new InvalidOperationException("native reset failed") : PoseEditResult.Ok(1);
         public PoseEditResult ClearIk(ActorId actor) { IkClears++; return PoseEditResult.Ok(1); }

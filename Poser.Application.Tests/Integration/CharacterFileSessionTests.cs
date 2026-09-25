@@ -95,7 +95,7 @@ public sealed class CharacterFileSessionTests
             Creation = (CreationProxy)(object)creation;
             Creation.Session = () => ActiveSessionGeneration!.Value;
             var integration = _integration = new ActorIntegrationSession(port, null!, this);
-            Control = new(integration, Files, new(History, this, new(), new ValueJournal(History)), creation, this, Clock);
+            Control = new(integration, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
         }
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
             IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,

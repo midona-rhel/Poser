@@ -12,9 +12,8 @@ public abstract record HistoryEntry(string Description)
     // Re-keying replaces the immutable patch while an async restore may
     // still hold the old object. The operation identity survives that copy.
     public Guid Id { get; init; } = Guid.NewGuid();
-    /// <summary>The keys and snapshots the step was recorded under; null
-    /// for an entry that never invalidates.</summary>
-    public StepContext? Context { get; init; }
+    /// <summary>External file required to repeat the operation, when any.</summary>
+    public string? RequiredAsset { get; init; }
 }
 
 public sealed record TransformPatch(
@@ -64,7 +63,7 @@ public sealed class TransformHistory
     private LifecycleHistoryBatch? _batch;
 
     /// <summary>Records one synchronous removal command. Earlier value edits
-    /// are sealed first; only context-free lifecycle and journal entries belong
+    /// are sealed first; only synchronous lifecycle and journal entries belong
     /// to the batch. The callback must not schedule work or cross an await.</summary>
     public void RecordLifecycleBatch(string description, Action removals)
     {
@@ -228,22 +227,12 @@ public sealed class TransformHistory
     /// entry whose light has been undone away is precisely the entry that
     /// must survive to be redone.</para>
     /// </summary>
-    /// <summary>
-    /// Drops what can never come back. A transform patch with a stale target
-    /// survives only while it carries snapshots and every actor it keyed
-    /// still exists — a new generation is an invalidation, not a loss. Any
-    /// keyed entry goes when one of its actors is gone for good.
-    /// </summary>
     public void Reconcile(
         Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
-        Func<Guid, bool> lineagePresent,
         Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
     {
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);
-        bool ActorsGone(HistoryEntry entry) =>
-            entry.Context is { } context &&
-            context.Keys.Any(key => !lineagePresent(key.Lineage));
         // A patch whose targets went stale is first RE-KEYED: a bone edit
         // survives the actor's redraw by naming the same bone on the new
         // body, as Brio's whole-pose snapshot does (ruled 2026-09-03). Only
@@ -286,8 +275,6 @@ public sealed class TransformHistory
         }
         bool Stale(HistoryEntry entry)
         {
-            if (ActorsGone(entry))
-                return true;
             if (entry is not TransformPatch patch)
                 return false;
             bool staleTarget =
@@ -295,7 +282,7 @@ public sealed class TransformHistory
                 patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target));
             if (!staleTarget)
                 return false;
-            return patch.Context is not { Before.Count: > 0 };
+            return true;
         }
         Rekey(_undo);
         Rekey(_redo);

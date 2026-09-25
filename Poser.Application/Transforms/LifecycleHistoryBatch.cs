@@ -10,7 +10,7 @@ internal sealed class LifecycleHistoryBatch(string description)
 
     public bool TryAdd(HistoryEntry entry)
     {
-        if (Environment.CurrentManagedThreadId != _thread || entry.Context is not null
+        if (Environment.CurrentManagedThreadId != _thread || entry.RequiredAsset is not null || entry is JournalStep { CompleteReplay: not null }
             || entry is not (SceneLifecyclePatch or JournalStep)) return false;
         _children.Add(new(entry));
         return true;

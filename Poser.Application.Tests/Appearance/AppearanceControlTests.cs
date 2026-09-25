@@ -175,7 +175,7 @@ public sealed class AppearanceControlTests
             var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             var integration = new ActorIntegrationSession(port, null!, this);
-            var disruptive = new DisruptiveSteps(History, this, new(), new ValueJournal(History));
+            var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History));
             var journal = new ValueJournal(History);
             Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
             Customize = new CustomizeSession(journal, integration, port, disruptive);

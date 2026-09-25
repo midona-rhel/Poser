@@ -165,9 +165,6 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         /// already inside the history's own walk, and an append there would
         /// clear the redo stack the walk had just pushed onto.</summary>
         public bool SuppressHistory;
-        /// <summary>The journal scope opened before the first mutation; null
-        /// for a preview body or a suppressed import.</summary>
-        public JournalContexts.StepScope? Journal;
         /// <summary>The file the import came from, when it came from one.</summary>
         public string? Asset;
         public ImportStage Stage = ImportStage.Apply;
@@ -278,12 +275,10 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         IkBakeCapture ikBake,
         IPoseFileService poseFiles,
         ISkeletonService skeletons,
-        JournalContexts journal,
         IPluginLog log)
     {
         _framework = framework;
         _scene = scene;
-        _journal = journal;
         _sessions = sessions;
         _bindings = bindings;
         _posing = posing;
@@ -423,7 +418,6 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         return GestureResult.Ok() with { OperationReceipt = pending };
     }
 
-    private readonly JournalContexts _journal;
 
     public GestureResult Begin(
         PoseImportOperation operation,
@@ -590,10 +584,6 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             return FailAdmitted(import,
                 "An import target belongs to a different actor generation.");
         import.Targets = import.Order.ToArray();
-        // The scope opens BEFORE the reset below: after it, the snapshot
-        // would be the reset pose.
-        if (!import.PreviewTarget && !import.SuppressHistory)
-            import.Journal = _journal.BeginActorStep([import.TargetActorId.LogicalId]);
 
         try
         {
@@ -1552,7 +1542,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         if (before.Count > 0)
             _history.Append(new TransformPatch(import.Description, before, after)
             {
-                Context = import.Journal?.Complete(import.Asset),
+                RequiredAsset = import.Asset,
             });
         return null;
     }

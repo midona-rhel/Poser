@@ -225,7 +225,7 @@ public sealed class PresentationResetHistoryTests
             Values = new(values, Session, new Game.Presentation.ActorValueRuntime(Bindings, Spawn));
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
-            Journal = new(History, runner, new Keys(), new Lazy<IPoseSnapshotPort>(() => throw new Exception()), _ => true, _ => { });
+            Journal = new(History, runner, _ => true, _ => { });
             var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
             ColorValues = new(Session, integration, values, runner, Bindings);
         }
@@ -293,7 +293,6 @@ public sealed class PresentationResetHistoryTests
     {
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => throw new InvalidOperationException("Unexpected runtime call");
     }
-    private sealed class Keys : IActorStateKeySource { public ActorStateKey? Current(Guid lineage) => null; }
 
     private sealed class Port : IPresentationRuntimePort
     {

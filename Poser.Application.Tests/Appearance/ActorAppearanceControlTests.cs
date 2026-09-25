@@ -98,7 +98,7 @@ public sealed class ActorAppearanceControlTests
             _integration = new(port, null!, this);
             _models = new(this);
             Control = new ActorAppearanceControl(_integration, _models,
-                new(History, this, new(), new ValueJournal(History)));
+                new(History, this, new ValueJournal(History)));
         }
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor)
         {

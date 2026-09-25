@@ -207,25 +207,18 @@ internal static class ServiceRegistration
         services.AddSingleton<TransformGestureService>();
         services.AddSingleton<ISelectionPlacement, SelectionPlacement>();
         services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
-        services.AddSingleton<ActorDisruptionEpochs>();
-        services.AddSingleton<IActorStateKeySource, ActorStateKeySource>();
         services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
         // Lazy: the snapshot port restores through the pose facade, which
         // reaches the gesture service the journal sits above.
         services.AddSingleton(sp => new System.Lazy<IPoseSnapshotPort>(
             sp.GetRequiredService<IPoseSnapshotPort>));
-        services.AddSingleton<JournalContexts>();
         services.AddSingleton(sp => new UndoJournal(
             sp.GetRequiredService<TransformHistory>(),
             sp.GetRequiredService<IUndoRunner>(),
-            sp.GetRequiredService<IActorStateKeySource>(),
-            sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>(),
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
         services.AddSingleton<ValueJournal>();
-        // Native overlays are discovered before the journal's actor-key source,
-        // which itself needs the binding registry and overlays. Resolve the
-        // journal only when a native drag completes, after construction.
+        // Native overlay construction and value writes must not resolve each other eagerly.
         services.AddSingleton(sp => new System.Lazy<ValueJournal>(sp.GetRequiredService<ValueJournal>));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         services.AddSingleton<Game.Journal.WorldObjectSession>();

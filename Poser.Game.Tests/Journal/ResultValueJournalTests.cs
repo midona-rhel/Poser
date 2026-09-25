@@ -65,7 +65,7 @@ public sealed class ResultValueJournalTests
         var history = new TransformHistory();
         var target = new Target();
         Set(new ValueJournal(history), target, 8);
-        var undo = new UndoJournal(history, new Runner(history), null!, null!, _ => true, _ => { });
+        var undo = new UndoJournal(history, new Runner(history), _ => true, _ => { });
         target.Reject = true;
         for (int i = 0; i < 3; i++)
         {

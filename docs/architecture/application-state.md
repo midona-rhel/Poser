@@ -49,6 +49,9 @@ gesture attempts to restore every captured baseline. If restore cannot finish,
 the recovery information and ownership stay available for retry; the failed
 gesture is not added to success history. Cancel and undo/redo use the same
 restore path, and discrete edits cannot interleave with a live gesture.
+Ordinary history replays recorded edits; animation changes never trigger an
+implicit whole-pose recovery mode. Whole-state restoration is an explicit
+command inverse, not a second selectable history implementation.
 
 `PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
 duplicate-name variants in order, and uses game indices only to find bones.

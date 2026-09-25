@@ -108,13 +108,13 @@ public sealed class LifecycleHistoryBatchTests
     }
 
     [Fact]
-    public void Contextual_entry_ends_collection_and_keeps_its_context()
+    public void File_dependent_entry_ends_collection_and_keeps_its_asset()
     {
         var history = new TransformHistory();
         var published = new List<HistoryEntry>();
         history.Appended += published.Add;
         var contextual = new JournalStep("Actor edit", () => true, () => true)
-        { Context = new StepContext([], [], [], "pose.pose") };
+        { RequiredAsset = "pose.pose" };
         var later = new SceneLifecyclePatch("Later", () => true, () => true);
         history.RecordLifecycleBatch("Remove selection", () =>
         {
@@ -126,6 +126,22 @@ public sealed class LifecycleHistoryBatchTests
         Assert.Equal("First", published[0].Description);
         Assert.Same(contextual, published[1]);
         Assert.Same(later, published[2]);
+    }
+
+    [Fact]
+    public void Deferred_restoration_is_not_folded_into_a_synchronous_removal_batch()
+    {
+        var history = new TransformHistory();
+        var deferred = new JournalStep("Reset", () => true, () => true)
+        { CompleteReplay = (_, _, _, completed) => completed(Poser.Domain.Transforms.GestureResult.Ok()) };
+        history.RecordLifecycleBatch("Remove", () =>
+        {
+            history.Append(new SceneLifecyclePatch("First", () => true, () => true));
+            history.Append(deferred);
+        });
+        Assert.Same(deferred, history.PeekUndo());
+        history.CommitUndo(deferred);
+        Assert.Equal("First", history.UndoDescription);
     }
 
     [Fact]

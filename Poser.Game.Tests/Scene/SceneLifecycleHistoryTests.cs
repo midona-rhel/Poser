@@ -100,7 +100,7 @@ public sealed class SceneLifecycleHistoryTests
         world.History.Append(new TransformPatch("Move entity", [state], [state]));
         if (collider) world.Lifecycle.DestroyOverlay(entity);
         else world.Lifecycle.DestroyProp(entity);
-        world.History.Reconcile(_ => false, _ => true);
+        world.History.Reconcile(_ => false);
         Assert.True(world.Undo());
         var newTarget = Target(Current());
         Assert.NotEqual(oldTarget, newTarget);
@@ -108,7 +108,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
         world.History.CommitUndo(patch);
         Assert.True(world.Undo());
-        world.History.Reconcile(_ => false, _ => true);
+        world.History.Reconcile(_ => false);
         Assert.True(world.Redo());
         var thirdTarget = Target(Current());
         Assert.NotEqual(newTarget, thirdTarget);
@@ -263,7 +263,7 @@ public sealed class SceneLifecycleHistoryTests
         var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
         world.History.Append(new TransformPatch("Move light", [state], [state]));
         world.Lifecycle.DestroyLight(light);
-        world.History.Reconcile(_ => false, _ => true);
+        world.History.Reconcile(_ => false);
         Assert.True(world.Undo());
         var restored = Assert.Single(world.Lighting.Lights);
         var newTarget = world.Lighting.Target(restored)!.Value;
@@ -273,7 +273,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
         world.History.CommitUndo(patch);
         Assert.True(world.Undo()); // undo acquisition, removes second native copy
-        world.History.Reconcile(_ => false, _ => true);
+        world.History.Reconcile(_ => false);
         Assert.True(world.Redo());
         var thirdTarget = world.Lighting.Target(Assert.Single(world.Lighting.Lights));
         Assert.NotEqual(newTarget, thirdTarget);
@@ -784,7 +784,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal("Add spot light", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Equal("edit", world.History.UndoDescription);
-        world.History.Reconcile(static _ => false, _ => true);
+        world.History.Reconcile(static _ => false);
         Assert.True(world.History.CanUndo);
 
         var disabled = new World(capacity: 0);
