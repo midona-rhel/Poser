@@ -523,6 +523,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddPoseLibraryFeature(
         this IServiceCollection services)
     {
+        services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
+        services.AddSingleton<Application.Library.IAutoSaveLibrary, Application.Library.AutoSaveLibrary>();
+        services.AddSingleton<Application.Library.ILibrarySceneActions, Application.Library.LibrarySceneActions>();
         services.AddSingleton<Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();

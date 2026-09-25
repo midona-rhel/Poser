@@ -30,111 +30,18 @@ namespace Poser.UI;
 /// <summary>Activating a tile: apply, spawn, load a scene, apply a character file.</summary>
 public sealed partial class PoseLibraryPane
 {
-    /// <summary>
-    /// An object tile's one action, by what the file is. An actor entry
-    /// SPAWNS its actor — through the same scene workflow a scene load uses,
-    /// with fresh additive options so a clear-first preference set for
-    /// scenes can never fire from a library tile. All container entries use
-    /// this same additive pipeline.
-    /// </summary>
     private void ActivateObject(int index)
     {
-        if (index < 0 || index >= _vm.Tiles.Count ||
-            index >= _tileKinds.Count)
-            return;
-        var path = _vm.Tiles[index].ThumbKey;
-        var name = _vm.Tiles[index].Label;
-        switch (_tileKinds[index])
-        {
-            // ONE pipeline: every container entry — actor, group, object,
-            // light, camera — spawns through the same placement-anchored
-            // load.
-            case PoseLibraryEntryKind.Actor:
-            case PoseLibraryEntryKind.Group:
-            case PoseLibraryEntryKind.WorldObject:
-            case PoseLibraryEntryKind.Prop:
-            case PoseLibraryEntryKind.Light:
-            case PoseLibraryEntryKind.Camera:
-                var actorMode = EffectiveMode();
-                if (!_anchors.TryCurrentFor(
-                        actorMode, out var anchorPosition,
-                        out var anchorYaw, out var anchorRefusal))
-                {
-                    _notices.Refused(anchorRefusal!);
-                    break;
-                }
-                var started = _scenes.BeginLoad(path, new SceneLoadOptions
-                {
-                    Placement = actorMode,
-                    PlacementPosition = anchorPosition,
-                    PlacementYaw = anchorYaw,
-                });
-                if (!started.Success)
-                    _notices.Failed(
-                        started.Detail ?? "The actor could not be spawned.");
-                break;
-            case PoseLibraryEntryKind.Overlay:
-                // Screen-space: placement modes do not apply; the stored
-                // centre-relative position re-attaches at the current
-                // centre inside the load.
-                var overlayLoad = _scenes.BeginLoad(path, new SceneLoadOptions
-                {
-                    IncludeActors = false,
-                    IncludeProps = false,
-                    IncludeLights = false,
-                    IncludeCameras = false,
-                    IncludeEnvironment = false,
-                });
-                if (!overlayLoad.Success)
-                    _notices.Failed(
-                        overlayLoad.Detail ??
-                        "The overlay could not be staged.");
-                break;
-            case PoseLibraryEntryKind.Environment:
-                // The load applies only what the file states; an environment
-                // entry states nothing but the environment.
-                var applied = _scenes.BeginLoad(path, new SceneLoadOptions
-                {
-                    IncludeActors = false,
-                    IncludeProps = false,
-                    IncludeLights = false,
-                    IncludeCameras = false,
-                    IncludeOverlays = false,
-                });
-                if (!applied.Success)
-                    _notices.Failed(
-                        applied.Detail ??
-                        "The environment could not be applied.");
-                break;
-        }
+        if (index < 0 || index >= _vm.Tiles.Count || index >= _tileKinds.Count) return;
+        var result = _libraryScene.SpawnEntry(_vm.Tiles[index].ThumbKey, _tileKinds[index], EffectiveMode());
+        if (!result.Success) _notices.Failed(result.Detail ?? "The entry could not be loaded.");
     }
 
-    /// <summary>Restores a highlighted scene through the ONE scene workflow —
-    /// the same single-flight transaction the scene workspace starts, so a
-    /// refusal reads the same on either surface.</summary>
     private void LoadScene(int index)
     {
-        if (index < 0 || index >= _vm.Tiles.Count)
-            return;
-        // Scenes obey the placement rule like every entry (ruled
-        // 2026-08-31): the standing load options, plus wherever the
-        // footer's choice puts the content.
-        var sceneLoad = _sceneOptions.Options;
-        var sceneMode = EffectiveMode();
-        if (sceneMode != ObjectPlacementMode.AsSaved
-            && _anchors.TryCurrentFor(
-                sceneMode, out var scenePoint, out var sceneYaw, out _))
-            sceneLoad = sceneLoad with
-            {
-                Placement = sceneMode,
-                PlacementPosition = scenePoint,
-                PlacementYaw = sceneYaw,
-            };
-        var started = _scenes.BeginLoad(
-            _vm.Tiles[index].ThumbKey, sceneLoad);
-        if (!started.Success)
-            _notices.Failed(
-                started.Detail ?? "The scene could not be loaded.");
+        if (index < 0 || index >= _vm.Tiles.Count) return;
+        var result = _libraryScene.LoadScene(_vm.Tiles[index].ThumbKey, EffectiveMode());
+        if (!result.Success) _notices.Failed(result.Detail ?? "The scene could not be loaded.");
     }
 
     private void Apply(int index)
@@ -236,17 +143,8 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        var spawned = _creation.CreateActor(new()).Handle;
-        if (spawned is null)
-        {
-            _notices.Failed("The actor could not be spawned.");
-            return;
-        }
-
-        // The options are frozen HERE, at the click, so a toggle or tab
-        // change made while the scene binds the new actor cannot retarget
-        // the import.
-        _pendingCreation.ApplyPoseWhenReady(spawned, path, BuildImportOptions(path));
+        var result = _libraryScene.SpawnPose(path, BuildImportOptions(path));
+        if (!result.Success) { _notices.Failed(result.Detail!); return; }
         if (cmpNote is { Length: > 0 })
             _notices.Refused(cmpNote);
     }

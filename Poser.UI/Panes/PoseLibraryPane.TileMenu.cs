@@ -153,23 +153,7 @@ public sealed partial class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
-        var tile = _vm.Tiles[index];
-        _metaPath = tile.ThumbKey;
-        _metaAuthor = tile.Author ?? string.Empty;
-        _metaTags = string.Join(", ", tile.Tags);
-        // Description and the preview image are not on the tile — the grid has
-        // no use for either — so the document is read once, here, rather than
-        // widening every tile in the library to carry them.
-        _metaDescription = string.Empty;
-        _metaHadImage = false;
-        _metaImage = PosePreviewImageEdit.Keep;
-        var read = AtomicPoseFileStore.Default.Read(_metaPath);
-        if (read.Succeeded && read.Pose is { } pose)
-        {
-            _metaDescription = pose.Description ?? string.Empty;
-            _metaHadImage = !string.IsNullOrEmpty(pose.Base64Image);
-        }
-        _metaOpen = true;
+        _metadataEditor.Open(_vm.Tiles[index]);
     }
 
     /// <summary>Whether the highlighted tile is an editable document: the ONE

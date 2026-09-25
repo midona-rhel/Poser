@@ -131,7 +131,7 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>The first actor this tab's apply could land on, in scene order
     /// — the candidate the picker leads with, and the same eligibility
-    /// <see cref="DrawApplyMenu"/> lists by.</summary>
+    /// the target dropdown lists by.</summary>
     private ActorId? FirstApplyTarget()
     {
         foreach (var candidate in _scene.Snapshot.Actors)

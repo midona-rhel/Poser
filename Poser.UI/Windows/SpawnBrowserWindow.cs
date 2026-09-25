@@ -116,7 +116,7 @@ public sealed class SpawnBrowserWindow : Window
         UserNotices notices,
         ReferenceImageSession referenceImages,
         global::Poser.Library.IPoseLibraryService library,
-        ISceneWorkflow scenes,
+        Application.Library.ILibrarySceneActions libraryScene,
         IPlacementAnchorSource anchors,
         IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
@@ -141,7 +141,7 @@ public sealed class SpawnBrowserWindow : Window
         _notices = notices;
         _referenceImages = referenceImages;
         _library = library;
-        _scenes = scenes;
+        _libraryScene = libraryScene;
         _anchors = anchors;
         _assets = assets;
         _modelCatalog = modelCatalog;
@@ -667,7 +667,7 @@ public sealed class SpawnBrowserWindow : Window
     }
 
     private readonly global::Poser.Library.IPoseLibraryService _library;
-    private readonly ISceneWorkflow _scenes;
+    private readonly Application.Library.ILibrarySceneActions _libraryScene;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IWorldAssetCatalog _assets;
     private readonly global::Poser.Application.Appearance.ModelCatalog
@@ -702,45 +702,9 @@ public sealed class SpawnBrowserWindow : Window
     /// falls back to the entry's saved placement.</summary>
     private void SpawnSavedObject(SpawnDispatch.Saved saved)
     {
-        switch (saved.Kind)
-        {
-            case global::Poser.Library.PoseLibraryEntryKind.Overlay:
-                // Screen-space: placement modes do not apply; the stored
-                // centre-relative position re-attaches inside the load.
-                var overlayLoad = _scenes.BeginLoad(
-                    saved.Path,
-                    new SceneLoadOptions
-                    {
-                        IncludeActors = false,
-                        IncludeProps = false,
-                        IncludeLights = false,
-                        IncludeCameras = false,
-                        IncludeEnvironment = false,
-                    });
-                if (!overlayLoad.Success)
-                    _notices.Failed(
-                        overlayLoad.Detail
-                        ?? $"'{saved.Label}' could not be staged.");
-                return;
-        }
-        // The configured default rules here — the portal has no
-        // placement dropdown of its own.
-        var mode = _configuration.Config.DefaultSpawnPlacement;
-        var options = new SceneLoadOptions();
-        if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
-            && _anchors.TryCurrentFor(
-                mode, out var anchorPosition, out var anchorYaw, out _))
-            options = new SceneLoadOptions
-            {
-                Placement = mode,
-                PlacementPosition = anchorPosition,
-                PlacementYaw = anchorYaw,
-            };
-        var started = _scenes.BeginLoad(saved.Path, options);
-        if (!started.Success)
-            _notices.Failed(
-                started.Detail
-                ?? $"'{saved.Label}' could not be spawned.");
+        var result = _libraryScene.SpawnEntry(saved.Path, saved.Kind,
+            _configuration.Config.DefaultSpawnPlacement, fallbackToSaved: true);
+        if (!result.Success) _notices.Failed(result.Detail ?? $"'{saved.Label}' could not be spawned.");
     }
 
     private SpawnActionDescriptor ActionRow(

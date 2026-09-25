@@ -28,18 +28,9 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>
-/// Binder for <see cref="PoseLibraryView"/> (view+binder pattern —
-/// docs/architecture/ui-workspace.md): owns the rail, the tile list, the filter
-/// cache, the footer caption and every apply/spawn call the grid makes.
-///
-/// <para>The scan lives in <see cref="IPoseLibraryService"/> and publishes one
-/// immutable snapshot; this rebuilds its rows only when the revision moves, so
-/// a warm frame reads rows it minted at scan time and allocates nothing.</para>
-///
-/// <para>The library is a MODE of the shell workspace rather than a window, so
-/// <see cref="Tick"/> runs every frame whether or not the mode is showing: a
-/// spawn started here has to complete even after the user has gone back to an
-/// actor.</para>
+/// Library navigation and grid presentation. Metadata editing and file details
+/// have independent presentation owners; application controls own file policy,
+/// activation and pending creation.
 /// </summary>
 public sealed partial class PoseLibraryPane
 {
@@ -73,26 +64,9 @@ public sealed partial class PoseLibraryPane
 
     private const string FavoritesLabel = "Favorites";
 
-    /// <summary>The auto-save folder name's own format
-    /// (<c>AutoSaveService.CreateSnapshotFolder</c>), which is UTC.</summary>
-    private const string SnapshotFolderFormat = "yyyy-MM-dd HH-mm-ss'Z'";
-
-    /// <summary>The stamp every tile shows —
-    /// <see cref="LibraryStamp.DateTimeFormat"/>, the same one the scan mints
-    /// <c>ModifiedText</c> with, so an auto-save entry and a pose tile read
-    /// alike.</summary>
-    private const string StampFormat = LibraryStamp.DateTimeFormat;
-
     /// <summary>The day part of an auto-save rail row and of a scene section.
     /// DISPLAY only — never used to read a name off disk.</summary>
     private const string DayFormat = LibraryStamp.DateFormat;
-
-    /// <summary>The auto-save DAY folder's own name
-    /// (<c>AutoSaveService.DayFolderFormat</c>). A stored name is parsed back,
-    /// so it keeps its century where the caption drops it — and it is a
-    /// separate constant from <see cref="DayFormat"/> for exactly that reason.
-    /// </summary>
-    private const string SnapshotDayFolderFormat = "yyyy-MM-dd";
 
     /// <summary>What joins a day to the place it was taken in. One separator
     /// for both surfaces: a scene section heading reads "place – day", an
@@ -139,20 +113,14 @@ public sealed partial class PoseLibraryPane
 
     private readonly IPoseImportCommands _imports;
 
-    private readonly ISceneCreation _creation;
-    private readonly IPendingSceneCreation _pendingCreation;
+    private readonly Application.Library.ILibrarySceneActions _libraryScene;
 
     private readonly ISceneWorkflow _scenes;
 
-    private readonly LightPane _lightPane;
-
-    private readonly CameraPane _cameraPane;
-
-    private readonly IPlacementAnchorSource _anchors;
 
     private readonly ObjectPlacementPreferences _placement;
 
-    private readonly IEnvironmentControl _environment;
+    private readonly LibraryDetailsPanel _details;
 
     /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
@@ -161,9 +129,6 @@ public sealed partial class PoseLibraryPane
 
 
 
-    /// <summary>The standing load options, so a scene started from a TILE is
-    /// the same load the scene workspace's dialog would have run.</summary>
-    private readonly SceneLoadPreferences _sceneOptions;
 
     private readonly SelectionSession _selection;
     private readonly ICharacterFiles _characterFiles;
@@ -183,13 +148,6 @@ public sealed partial class PoseLibraryPane
     private readonly UserNotices _notices;
 
     private readonly PoseLibraryViewModel _vm = new();
-
-    private bool _applyMenuRequested;
-
-    /// <summary>Where the actor picker opens. The FOOTER button has a seat and
-    /// hands it over; a tile double-click, a submit key and the tile menu's
-    /// own row have none, so those keep the pointer.</summary>
-    private Vector2 _applyMenuAnchor;
 
     private readonly List<ActorId> _applyTargets = new();
 
@@ -238,20 +196,7 @@ public sealed partial class PoseLibraryPane
     /// and the footer caption read it, never the worker's flags.</summary>
     private bool _autoPending;
 
-    /// <summary>Guards the worker's coalescing state, exactly as
-    /// <c>PoseLibraryService</c> guards a scan: a re-dirty raised while a pass
-    /// runs queues exactly ONE more rather than stacking workers.</summary>
-    private readonly object _autoSync = new();
-
-    private bool _autoScanning;
-
-    private bool _autoQueued;
-
-    /// <summary>The completed enumeration awaiting a mint, or null — the only
-    /// cross-thread channel. The worker publishes a DETACHED result: strings
-    /// and lists it owns alone, pointing at no view row, so one arriving after
-    /// the mode is left simply sits here until the next entry.</summary>
-    private List<AutoSaveFolder>? _autoResult;
+    private readonly Application.Library.IAutoSaveLibrary _autoLibrary;
 
     /// <summary>Lower-cased tags per TILE. Tiles are a filtered view of the
     /// snapshot's entries, so the tag test can no longer index the entries by
@@ -356,33 +301,8 @@ public sealed partial class PoseLibraryPane
     // indices do not survive a refilter, paths do.
     private readonly global::Poser.UI.Controls.EntityNameModal _renameModal = new();
 
-    private bool _metaOpen;
-
-    private string _metaPath = string.Empty;
-
-    private string _metaAuthor = string.Empty;
-
-    private string _metaTags = string.Empty;
-
-    private string _metaDescription = string.Empty;
-
-    /// <summary>Whether the file carried a preview image when the modal
-    /// opened, and what the modal has decided to do about it. Both halves are
-    /// needed: the caption states what IS stored, and the edit states what
-    /// Save will write, which are different things until Save runs.</summary>
-    private bool _metaHadImage;
-
-    private PosePreviewImageEdit _metaImage = PosePreviewImageEdit.Keep;
-
-    /// <summary>The picker for a preview image. Its own dialog rather than the
-    /// pose browser's: the extensions differ, and a dialog remembers the
-    /// folder it was last in.</summary>
-    private readonly Crystarium.FileDialog _metaImageBrowser =
-        new("Preview image", new[] { ".png", ".jpg", ".jpeg" });
-
-    /// <summary>Where the image picker last landed, so a second edit opens
-    /// where the first one left off.</summary>
-    private string _lastImageFolder = string.Empty;
+    private readonly LibraryMetadataEditor _metadataEditor;
+    private readonly Application.Library.ILibraryFileOperations _fileOperations;
 
     private bool _deleteOpen;
 
@@ -427,8 +347,7 @@ public sealed partial class PoseLibraryPane
         IPoseImportCommands imports,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
-        ISceneCreation creation,
-        IPendingSceneCreation pendingCreation,
+        Application.Library.ILibrarySceneActions libraryScene,
         SelectionSession selection,
         SceneSession scene,
         ActorIntegrationSession integration,
@@ -436,29 +355,25 @@ public sealed partial class PoseLibraryPane
         PoseFileInspectorSection files,
         IPosePreview preview,
         ISceneWorkflow scenes,
-        SceneLoadPreferences sceneOptions,
-        LightPane lightPane,
-        CameraPane cameraPane,
-        IPlacementAnchorSource anchors,
         ObjectPlacementPreferences placement,
         IEnvironmentControl environment,
         UserNotices notices,
-        ICharacterFiles characterFiles)
+        ICharacterFiles characterFiles,
+        Application.Library.ILibraryFileOperations fileOperations,
+        Application.Library.IAutoSaveLibrary autoLibrary)
     {
+        _autoLibrary = autoLibrary;
+        _fileOperations = fileOperations;
+        _metadataEditor = new(fileOperations, thumbs, notices);
         _characterFiles = characterFiles;
         _config = config;
         _library = library;
         _thumbs = thumbs;
         _imports = imports;
-        _creation = creation;
-        _pendingCreation = pendingCreation;
+        _libraryScene = libraryScene;
         _scenes = scenes;
-        _lightPane = lightPane;
-        _cameraPane = cameraPane;
-        _anchors = anchors;
         _placement = placement;
-        _environment = environment;
-        _sceneOptions = sceneOptions;
+        _details = new(environment);
         _selection = selection;
         _scene = scene;
         _integration = integration;
@@ -596,56 +511,11 @@ public sealed partial class PoseLibraryPane
         // width through ChromeWidth so their clusters do not jump.
         _vm.ChromeWidth = size.X;
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
-        DrawApplyMenu();
         DrawTileMenu();
         _renameModal.Draw();
-        // While the image picker is open the modal is not begun: an ImGui
-        // modal that is begun blocks every other window, picker included,
-        // and dims over it. Its state is untouched, so it resumes where it
-        // was when the picker closes.
-        if (!_metaImageBrowser.IsOpen)
-            DrawMetadataModal();
-        _metaImageBrowser.Draw();
+        _metadataEditor.Draw();
         PumpEnrichments();
         DrawDeleteModal();
-    }
-
-    /// <summary>The footer primary's actor picker: every scene actor
-    /// (skeleton-bearing for pose applies), applied-to on pick — the pose
-    /// goes to whoever is CHOSEN, never silently to the selection.</summary>
-    private void DrawApplyMenu()
-    {
-        if (_applyMenuRequested)
-        {
-            _applyMenuRequested = false;
-            _applyTargets.Clear();
-            var items = new List<ContextMenuItem>();
-            foreach (var actor in _scene.Snapshot.Actors)
-            {
-                bool eligible = _type == LibraryType.Mcdf || actor.CharacterSkeleton is not null;
-                if (!eligible)
-                    continue;
-                _applyTargets.Add(actor.Id);
-                string name = ActorNames.Display(_config, actor);
-                items.Add(new ContextMenuItem(name, TablerIcon.UserPlus));
-            }
-            if (items.Count == 0)
-            {
-                _notices.Refused("No actor to apply to.");
-                return;
-            }
-            if (items.Count == 1)
-            {
-                ApplyTo(_vm.Selected, _applyTargets[0]);
-                return;
-            }
-            Crystarium.FloatingMenu.Open(
-                "##library-apply-target", _applyMenuAnchor, items.ToArray());
-        }
-
-        int clicked = Crystarium.FloatingMenu.Draw("##library-apply-target");
-        if (clicked >= 0 && clicked < _applyTargets.Count)
-            ApplyTo(_vm.Selected, _applyTargets[clicked]);
     }
 
     // ── the tile menu ────────────────────────────────────────────────────
@@ -661,22 +531,6 @@ public sealed partial class PoseLibraryPane
     }
 
     // ── the objects inspector rail ───────────────────────────────────────
-
-    /// <summary>The probed path the details rows were read from; a selection
-    /// change re-probes. Object entry files are small (a light or camera is a
-    /// page of JSON; a container answers through its bounded metadata read),
-    /// so the probe runs inline on the click.</summary>
-    private string? _detailsPath;
-
-    private readonly List<(string Label, string Value)> _detailsRows = [];
-
-    private Vector3? _detailsColor;
-
-    /// <summary>Which anchors the probed entry records — what gates the
-    /// placement choices offered for it.</summary>
-    private bool _detailsHasCameraAnchor;
-
-    private bool _detailsHasActorAnchor;
 
     /// <summary>The modes on offer, positional against the dropdown. ALL
     /// four, always (ruled 2026-08-31): an entry without a saved anchor no

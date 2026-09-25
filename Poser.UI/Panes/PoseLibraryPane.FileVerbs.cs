@@ -28,7 +28,7 @@ public sealed partial class PoseLibraryPane
 {
     private void RetryProbe(string path)
     {
-        var result = PoseLibraryFileActions.Default.Probe(path);
+        var result = _fileOperations.Probe(path);
         if (!result.Succeeded)
         {
             _notices.Failed("Retry", result.Detail);
@@ -48,13 +48,12 @@ public sealed partial class PoseLibraryPane
 
     private void QuarantineFile(string path)
     {
-        var result = PoseLibraryFileActions.Default.Quarantine(path);
+        var result = _fileOperations.Quarantine(path);
         if (!result.Succeeded)
         {
             _notices.Failed("Quarantine", result.Detail);
             return;
         }
-        FavoritePathChanged(path, null);
         _notices.Done("Moved into "
             + PoseLibraryFileActions.QuarantineFolderName + ".");
         _library.RequestScan();
@@ -104,17 +103,14 @@ public sealed partial class PoseLibraryPane
         _movePath = null;
         foreach (var more in _moveMore)
         {
-            var moved = PoseLibraryFileActions.Default.Move(more, destination);
-            if (moved.Succeeded)
-                FavoritePathChanged(more, moved.ResultPath);
-            else
+            var moved = _fileOperations.Move(more, destination);
+            if (!moved.Succeeded)
                 _notices.Failed("Move", moved.Detail);
         }
         _moveMore.Clear();
-        var result = PoseLibraryFileActions.Default.Move(path, destination);
+        var result = _fileOperations.Move(path, destination);
         if (result.Succeeded)
         {
-            FavoritePathChanged(path, result.ResultPath);
             _library.RequestScan();
         }
         else
@@ -143,19 +139,6 @@ public sealed partial class PoseLibraryPane
         {
             _notices.Failed("Reveal", ex.Message);
         }
-    }
-
-    /// <summary>Favourites key on the absolute path, so a path-changing verb
-    /// carries the favourite along (or drops it with the file). Saves only
-    /// when something actually changed.</summary>
-    private void FavoritePathChanged(string oldPath, string? newPath)
-    {
-        var favorites = _config.Config.Library.Favorites;
-        if (!favorites.Remove(oldPath))
-            return;
-        if (newPath is not null)
-            favorites.Add(newPath);
-        _config.Save();
     }
 
     // ── the file modals ──────────────────────────────────────────────────
@@ -190,10 +173,9 @@ public sealed partial class PoseLibraryPane
             System.IO.Path.GetFileNameWithoutExtension(path),
             name =>
             {
-                var result = PoseLibraryFileActions.Default.Rename(path, name);
+                var result = _fileOperations.Rename(path, name);
                 if (result.Succeeded)
                 {
-                    FavoritePathChanged(path, result.ResultPath);
                     _library.RequestScan();
                 }
                 else
@@ -233,18 +215,11 @@ public sealed partial class PoseLibraryPane
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         var tile = _vm.Tiles[index];
-        var favorites = _config.Config.Library.Favorites;
         if (tile.Favorite == favorite)
             return;
-        if (favorite)
-            favorites.Add(tile.ThumbKey);
-        else
-            favorites.Remove(tile.ThumbKey);
+        _fileOperations.SetFavorite(tile.ThumbKey, favorite);
         tile.Favorite = favorite;
 
-        // Favouriting is a deliberate act with no other write to ride on, so
-        // it persists immediately.
-        _config.Save();
 
         // Only the scanned rails carry the synthetic Favorites head; the
         // auto-save tab's row 1 is a day and a place.

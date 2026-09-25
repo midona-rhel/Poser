@@ -21,6 +21,11 @@ Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
 menu disclosure stay with the menu composer. Neither owns workflow progression.
 Shared placement, duplication, removal and group gates use application commands.
 
+Library navigation and grid rows are separate from the selected-file details and
+metadata-editor drafts. Application owns additive entry loading, pose-spawn
+continuation, file-operation policy and favorites; Documents performs scans and
+safe writes. Autosave browsing scans continue independently of panel visibility.
+
 Inspector and Properties read the current selection independently when drawing.
 Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
