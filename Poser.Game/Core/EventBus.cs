@@ -6,11 +6,6 @@ using Poser.Services;
 namespace Poser.Core;
 
 /// <summary>
-/// Marker interface for all events published through the EventBus.
-/// </summary>
-public interface IEvent { }
-
-/// <summary>
 /// Provides decoupled communication between components via publish/subscribe pattern.
 /// </summary>
 public class EventBus : IEventBus

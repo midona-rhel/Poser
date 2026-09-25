@@ -42,6 +42,9 @@ public interface ICameraControl
 {
     CameraReading? Read(CameraId id);
     void Seal();
+    ValueWriteResult Cycle(int delta);
+    ValueWriteResult SetLocked(CameraId id, bool value);
+    ValueWriteResult ResetProperties(CameraId id);
     ValueWriteResult SetName(CameraId id, string value);
     ValueWriteResult SetAngle(CameraId id, Vector2 value);
     ValueWriteResult SetPan(CameraId id, Vector2 value);

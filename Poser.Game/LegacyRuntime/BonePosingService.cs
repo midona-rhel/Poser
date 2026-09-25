@@ -1029,7 +1029,8 @@ public unsafe partial class BonePosingService : IBonePosingService
     // Default OFF: the eye pair (BoneLinkCatalog j_f_eye_l/r) made a left-eye
     // drag mirror into the right by default (user 2026-08-11: disable it).
     // The Link symmetry mode remains the explicit way to couple edits.
-    public bool LinkedBonesEnabled { get; set; }
+    public bool LinkedBonesSuppressed { get; set; }
+    public bool LinkedBonesEnabled => !LinkedBonesSuppressed && (_configuration?.Config.LinkSiblingBones ?? false);
 
     private bool _propagatingLinks;
 

@@ -220,6 +220,7 @@ public interface IBonePosingService : IDisposable
     /// eyes; Viera ear-variant chains) applies the same delta to the others.
     /// Default on; per-session toggle.
     /// </summary>
-    bool LinkedBonesEnabled { get; set; }
+    bool LinkedBonesEnabled { get; }
+    bool LinkedBonesSuppressed { get; set; }
 
 }

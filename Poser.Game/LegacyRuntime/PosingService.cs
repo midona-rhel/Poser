@@ -29,7 +29,7 @@ public unsafe class PosingService : IPosingService
     private readonly ConfigurationService _configuration;
     private readonly IVirtualCameraService _cameras;
     private readonly Dictionary<nint, ActorOrbitPosition> _orbitPositions = new();
-    public bool DeferCameraOrbitUpdate { get; set; }
+    private readonly Application.Input.CameraInputState _input;
 
     /// <summary>Reused per-frame buffer for entries whose stored address no
     /// longer resolves in the object table (single-threaded framework tick;
@@ -59,7 +59,8 @@ public unsafe class PosingService : IPosingService
         IGameInteropProvider hooking,
         IActorManager actors,
         ConfigurationService configuration,
-        IVirtualCameraService cameras)
+        IVirtualCameraService cameras,
+        Application.Input.CameraInputState input)
     {
         _log = log;
         _framework = framework;
@@ -68,6 +69,7 @@ public unsafe class PosingService : IPosingService
         _actors = actors;
         _configuration = configuration;
         _cameras = cameras;
+        _input = input;
 
         // Hook SetPosition to intercept game reset attempts (like Brio does)
         try
@@ -176,7 +178,7 @@ public unsafe class PosingService : IPosingService
         var native = (GameObject*)address;
         if (native->DrawObject == null || !state.TryTake(native->DrawOffset,
                 _configuration.Config.Camera.UpdateOrbitWithActorPosition,
-                DeferCameraOrbitUpdate, _cameras.LiveCamera is { IsLocked: true }, out var position))
+                _input.PointerDragHeld, _cameras.LiveCamera is { IsLocked: true }, out var position))
             return;
         // Our Brio-style detour blocks game resets while the draw transform
         // is held. This intentional Ktisis pivot update must bypass it.

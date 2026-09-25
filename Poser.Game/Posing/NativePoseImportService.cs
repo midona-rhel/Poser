@@ -43,7 +43,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
             || _skeletons.GetSkeleton(current) is not { } skeleton)
             return null;
         return new(
-            PoseFileService.IsExpressionOnlyPose(pose),
+            Poser.Files.PoseFileClassification.IsExpressionOnly(pose),
             PoseFileService.IsBodyOnlyPose(pose),
             PoseFileService.IsDawntrailSkeleton(skeleton)
                 && PoseFileService.IsLikelyDawntrailPose(pose),

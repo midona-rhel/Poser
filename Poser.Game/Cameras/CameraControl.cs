@@ -31,6 +31,27 @@ public sealed class CameraControl(
 
     public void Seal() => values.Seal();
 
+    public ValueWriteResult Cycle(int delta)
+    {
+        if (!framework.IsInFrameworkUpdateThread || !cameras.IsAvailable)
+            return new(false, "Camera controls are unavailable.");
+        var list = cameras.Cameras;
+        int current = -1;
+        for (int i = 0; i < list.Count; i++)
+            if (ReferenceEquals(list[i], cameras.LiveCamera)) { current = i; break; }
+        if (current < 0 || list.Count < 2) return ValueWriteResult.Ok();
+        int next = ((current + delta) % list.Count + list.Count) % list.Count;
+        return bindings.GetCameraId(list[next]) is { } id
+            ? SetLive(id, true) : new(false, "The camera is no longer available.");
+    }
+    public ValueWriteResult ResetProperties(CameraId id) => Edit(id, values.ResetProperties);
+    public ValueWriteResult SetLocked(CameraId id, bool value)
+    {
+        if (Resolve(id) is not { } camera) return new(false, "The camera is no longer available.");
+        values.SetLocked(camera, value);
+        return ValueWriteResult.Ok();
+    }
+
     private ValueWriteResult Edit(CameraId id, Func<IVirtualCamera, bool> write)
     {
         if (Resolve(id) is not { } camera) return new(false, "The camera is no longer available.");

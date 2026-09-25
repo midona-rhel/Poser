@@ -49,6 +49,8 @@ public sealed class ViewportProjection : IViewportReads
         _cameras = cameras;
     }
 
+    public void RequestBoneSnapshot() => BoneSnapshotDemand.Request();
+
     public ColliderViewportState? GetCollider(OverlayId id) =>
         _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value is { State.Collider: { } collider } node
             ? new(collider, node.Visible, node.Alpha) : null;

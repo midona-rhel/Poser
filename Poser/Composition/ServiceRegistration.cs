@@ -254,6 +254,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<AnimationSteps>());
         services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<AnimationSession>());
         services.AddSingleton<IExpressionPreview, Game.Animation.ExpressionPreview>();
+        services.AddSingleton<IScenePlaybackControl, ScenePlaybackControl>();
+        services.AddSingleton<IGroupGateState, GroupGateState>();
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<DisruptiveSteps>();
         services.AddSingleton<IWardrobeControl, WardrobeSession>();
@@ -470,6 +472,8 @@ internal static class ServiceRegistration
         services.AddSingleton<ICameraProjection, CameraService>();
         services.AddSingleton<Game.Lighting.LightingService>();
         services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
+        services.AddSingleton<Application.Input.CameraInputState>();
+        services.AddSingleton<Application.Posing.IActorColliderCapture>(sp => sp.GetRequiredService<Game.Posing.ActorColliderCapture>());
         services.AddSingleton<Game.Runtime.SceneFramePhaseService>();
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
@@ -492,6 +496,24 @@ internal static class ServiceRegistration
             sp => sp.GetRequiredService<ActorSpawnService>());
         services.AddSingleton<WorldActorDiscovery>();
         services.AddSingleton<ISceneCreation, Game.Scene.SceneCreation>();
+        services.AddSingleton(sp => new PendingSceneCreation(
+            sp.GetRequiredService<ISceneCreation>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            sp.GetRequiredService<SelectionSession>(),
+            sp.GetRequiredService<IPoseImportCommands>(),
+            sp.GetRequiredService<IAnimationPlayback>(),
+            message => sp.GetRequiredService<UserNotices>().Failed(message)));
+        services.AddSingleton<IPendingSceneCreation>(sp => sp.GetRequiredService<PendingSceneCreation>());
+        services.AddSingleton(sp => new SceneDuplication(
+            sp.GetRequiredService<ISceneCreation>(),
+            sp.GetRequiredService<IPendingSceneCreation>(),
+            sp.GetRequiredService<SceneGroups>(),
+            sp.GetRequiredService<GroupSteps>(),
+            sp.GetRequiredService<SelectionSession>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            message => sp.GetRequiredService<UserNotices>().Failed(message)));
+        services.AddSingleton<ISceneDuplication>(sp => sp.GetRequiredService<SceneDuplication>());
+        services.AddSingleton<Game.Scene.SceneCreationRuntime>();
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;
@@ -613,6 +635,7 @@ internal static class ServiceRegistration
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
         services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
+        services.AddSingleton<global::Poser.Application.Diagnostics.IIssueReports>(sp => sp.GetRequiredService<global::Poser.Diagnostics.IssueReportService>());
         services.AddSingleton<global::Poser.UI.Controls.IssueReportModal>();
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
@@ -648,6 +671,7 @@ internal static class ServiceRegistration
                 configuration.Save);
         });
         services.AddSingleton<WorldAdoptionSource>();
+        services.AddSingleton<Application.Scene.IActorSceneControl, Game.Scene.ActorSceneControl>();
         services.AddSingleton<EntityActions>();
         services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
         services.AddSingleton<Game.World.WorldService>();
@@ -674,6 +698,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddUiShell(
         this IServiceCollection services)
     {
+        services.AddSingleton(new UiBuildIdentity(BuildMetadata.Branch, BuildMetadata.Commit));
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
         return services;

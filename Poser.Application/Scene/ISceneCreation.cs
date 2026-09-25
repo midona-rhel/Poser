@@ -17,6 +17,7 @@ public sealed record SceneCreationResult(SceneEntityHandle? Handle, string? Deta
 /// <summary>Creation retains native bodies in the runtime, never in deferred UI callbacks.</summary>
 public interface ISceneCreation
 {
+    bool IsAvailable(SceneEntityKind kind);
     SceneCreationResult CreateActor(ActorCreationRequest request);
     SceneCreationResult CreateLight(LightKind kind);
     SceneCreationResult CreateLight(Poser.Files.LightFile document, string description);

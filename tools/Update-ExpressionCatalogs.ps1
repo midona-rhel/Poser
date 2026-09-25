@@ -3,7 +3,7 @@ param(
     [string]$Revision = '847f3673'
 )
 $ErrorActionPreference = 'Stop'
-$root = [IO.Path]::GetFullPath("$PSScriptRoot/../Poser.Core/Data/Expressions")
+$root = [IO.Path]::GetFullPath("$PSScriptRoot/../Poser.Game/Data/Expressions")
 $mapping = @{
     Hyur_Masculine_Midlander = '101_Midlander_Masculine'; Hyur_Feminine_Midlander = '201_Midlander_Feminine'
     Hyur_Masculine_Highlander = '301_Highlander_Masculine'; Hyur_Feminine_Highlander = '401_Highlander_Feminine'

@@ -13,9 +13,9 @@ public sealed class ExpressionClassifierTests
         var tagged = FileWith("j_sebo_a", "j_f_eye_l");
         tagged.Tags = new List<string> { "body-only", "expression" };
 
-        Assert.True(PoseFileService.IsExpressionOnlyPose(face));
-        Assert.False(PoseFileService.IsExpressionOnlyPose(mixed));
-        Assert.True(PoseFileService.IsExpressionOnlyPose(tagged));
+        Assert.True(Poser.Files.PoseFileClassification.IsExpressionOnly(face));
+        Assert.False(Poser.Files.PoseFileClassification.IsExpressionOnly(mixed));
+        Assert.True(Poser.Files.PoseFileClassification.IsExpressionOnly(tagged));
         Assert.True(PoseFileService.IsBodyOnlyPose(FileWith("n_root", "j_sebo_a")));
         Assert.False(PoseFileService.IsBodyOnlyPose(face));
     }
@@ -29,7 +29,7 @@ public sealed class ExpressionClassifierTests
         var tagged = FileWith("j_kao");
         tagged.Tags = new List<string> { "Dawntrail expression" };
 
-        Assert.True(PoseFileService.IsExpressionOnlyPose(unrelated));
+        Assert.True(Poser.Files.PoseFileClassification.IsExpressionOnly(unrelated));
         Assert.True(PoseFileService.IsLikelyDawntrailPose(tongue));
         Assert.True(PoseFileService.IsLikelyDawntrailPose(tagged));
         Assert.False(PoseFileService.IsLikelyDawntrailPose(unrelated));

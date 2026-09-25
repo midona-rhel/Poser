@@ -23,10 +23,12 @@ namespace Poser.Diagnostics;
 /// are tokens throughout: the recorder scrubbed them as they were
 /// written, and the scene file is scrubbed before it is packed.
 /// </summary>
-public sealed class IssueReportService
+public sealed class IssueReportService : IIssueReports, IDisposable
 {
     public const int LogLines = 200;
 
+    private readonly IFramework _framework;
+    private readonly UI.UserNotices _notices;
     private readonly ActionRecorder _recorder;
     private readonly IDalamudPluginInterface _plugin;
     private readonly ConfigurationService _config;
@@ -42,6 +44,7 @@ public sealed class IssueReportService
 
     public IssueReportService(
         ActionRecorder recorder,
+        IFramework framework,
         IDalamudPluginInterface plugin,
         ConfigurationService config,
         SceneSession scene,
@@ -49,6 +52,8 @@ public sealed class IssueReportService
         IPluginLog log,
         UI.UserNotices notices)
     {
+        _framework = framework;
+        _notices = notices;
         _recorder = recorder;
         _plugin = plugin;
         _config = config;
@@ -61,6 +66,7 @@ public sealed class IssueReportService
         _recorder.ActorToken = TokenFor;
         _recorder.Scrub = Scrub;
         notices.Posted += _recorder.Notice;
+        framework.Update += OnFrameworkUpdate;
     }
 
     /// <summary>Where the reports land.</summary>
@@ -111,8 +117,16 @@ public sealed class IssueReportService
     }
 
     /// <summary>Closes a report whose scene save has landed. Called once a
-    /// frame by the dialog while a save is pending.</summary>
-    public void Tick()
+    /// framework frame, independently of the report dialog.</summary>
+    private void OnFrameworkUpdate(IFramework _) => Tick();
+
+    public void Dispose()
+    {
+        _framework.Update -= OnFrameworkUpdate;
+        _notices.Posted -= _recorder.Notice;
+    }
+
+    private void Tick()
     {
         if (_pendingZip is null || _scenes.Busy)
             return;

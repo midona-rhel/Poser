@@ -31,10 +31,11 @@ public sealed class SceneCreation : ISceneCreation
     private readonly ICameraProjection _camera;
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
+    private readonly IOverlayNodeService _overlays;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting)
+        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays)
     {
         _framework = framework;
         _sessions = sessions;
@@ -47,10 +48,19 @@ public sealed class SceneCreation : ISceneCreation
         _camera = camera;
         _cameras = cameras;
         _lighting = lighting;
+        _overlays = overlays;
         _handles = new(() => sessions.ActiveSessionGeneration);
     }
 
     private bool CanCreate => _framework.IsInFrameworkUpdateThread && _sessions.ActiveSessionGeneration.HasValue;
+
+    public bool IsAvailable(SceneEntityKind kind) => kind switch
+    {
+        SceneEntityKind.Light => _lighting.IsAvailable,
+        SceneEntityKind.Camera => _cameras.IsAvailable,
+        SceneEntityKind.Overlay => _overlays.IsAvailable,
+        _ => CanCreate,
+    };
 
     public SceneCreationResult CreateActor(ActorCreationRequest request)
     {

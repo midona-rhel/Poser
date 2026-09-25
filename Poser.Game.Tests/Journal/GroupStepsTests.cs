@@ -1,3 +1,4 @@
+using NSubstitute;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -42,9 +43,8 @@ public sealed class GroupStepsTests
         var groups = new SceneGroups();
         var history = new TransformHistory();
         var values = new ValueJournal(history);
-        var steps = new GroupSteps(groups, history, values);
-        int reapplied = 0;
-        steps.ReapplyGates = () => reapplied++;
+        var gates = Substitute.For<IGroupGateState>();
+        var steps = new GroupSteps(groups, history, values, gates: gates);
         var made = steps.Create("Pair", new[] { Actor(), Actor() })!;
         var target = new { Visible = true };
 
@@ -59,7 +59,7 @@ public sealed class GroupStepsTests
         Assert.Equal("Hide group", history.UndoDescription);
         Assert.True(Undo(history));
         Assert.False(groups.Find(made.Id)!.Hidden);
-        Assert.Equal(1, reapplied);
+        gates.Received(1).Reapply();
         Assert.Equal("Create group", history.UndoDescription);
     }
 }

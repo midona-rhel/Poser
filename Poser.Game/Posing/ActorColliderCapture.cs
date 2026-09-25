@@ -18,7 +18,7 @@ namespace Poser.Game.Posing;
 /// <summary>Capture native state once; all file parsing/skinning works on managed snapshots.</summary>
 public sealed class ActorColliderCapture(
     IEntityBindings bindings, IIntegrationRuntimePort integration, IDataManager data,
-    Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log)
+    Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log) : Application.Posing.IActorColliderCapture
 {
     private sealed record ModelSnapshot(string Path, ushort Race, uint Attributes, uint Shapes);
     private sealed record Snapshot(ModelSnapshot[] Models, Dictionary<string, Matrix4x4> Bones,

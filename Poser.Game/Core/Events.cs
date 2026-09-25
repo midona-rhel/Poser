@@ -11,11 +11,6 @@ namespace Poser.Core;
 
 #region System Events
 
-/// <summary>
-/// Published when GPose state changes (entering or exiting).
-/// </summary>
-public record GPoseStateChangedEvent(bool IsGPosing) : IEvent;
-
 /// <summary>Final capture has finished; restore owned native values before
 /// GPoseStateChangedEvent(false) removes actors and their bindings.</summary>
 public record GPoseExitingEvent : IEvent;
@@ -70,11 +65,5 @@ public record CameraListChangedEvent(IReadOnlyList<IVirtualCamera> Cameras) : IE
 
 #region Service Events
 
-/// <summary>
-/// A gaze entry's mode changed (any actor). Consumers re-read state from
-/// IGazeService; the payload stays empty so the native-thread publisher never
-/// marshals actor references.
-/// </summary>
-public record GazeStateChangedEvent : IEvent;
 
 #endregion

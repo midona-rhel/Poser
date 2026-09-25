@@ -13,6 +13,7 @@ namespace Poser.Application.Viewport;
 /// Reads only; nothing here writes.</summary>
 public interface IViewportReads
 {
+    void RequestBoneSnapshot();
     ColliderViewportState? GetCollider(OverlayId id);
     LightViewportState? GetLight(LightId id);
     ActorId? GameTarget { get; }

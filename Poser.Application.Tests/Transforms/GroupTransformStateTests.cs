@@ -612,9 +612,9 @@ public sealed class GroupTransformStateTests
         bool unavailableRead, bool refusedOnRedo)
     {
         using var f = new Fixture(3);
-        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
         int reappliedGates = 0;
-        steps.ReapplyGates = () => reappliedGates++;
+        var gates = new GateObserver(() => reappliedGates++);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator, gates);
         var group = steps.Create("Pair", f.Selected.Take(2).ToArray())!;
         f.SelectNamed(group);
         var frame = f.State.NamedSnapshot(group.Id)!.Baseline.Frame;
@@ -952,5 +952,15 @@ public sealed class GroupTransformStateTests
             return TransformPortResult.Ok(state);
         }
         public void Dispose() { Service.Dispose(); Coordinator.Dispose(); }
+    }
+    private sealed class GateObserver(Action reapply) : IGroupGateState
+    {
+        public void Reapply() => reapply();
+        public void RestoreReleased(GroupsSnapshot previous) { }
+        public void SetHidden(SceneGroup group, bool hidden) { }
+        public void SetPaused(SceneGroup group, bool paused) { }
+        public void SetNight(SceneGroup group, bool night) { }
+        public void Join(SelectionId member) { }
+        public void Leave(SelectionId member) { }
     }
 }

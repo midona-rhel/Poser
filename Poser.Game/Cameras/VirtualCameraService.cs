@@ -114,8 +114,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// owns the keyboard, flight keys stand down (the modifier contract's
     /// focus rule). Written from the draw side, read on the camera's
     /// update — a one-frame lag is invisible.</summary>
-    public bool SuppressFlightKeys { get; set; }
-    public bool FlightActive { get; private set; }
+    private readonly Application.Input.CameraInputState _input = new();
+    public bool SuppressFlightKeys { get => _input.TextInputActive; set => _input.TextInputActive = value; }
+    public bool FlightActive { get => _input.FlightActive; private set => _input.FlightActive = value; }
 
     // The last fly-speed change the wheel made, for the overlay's readout.
     // Two scalar fields rather than one notice struct because the writer is
@@ -163,7 +164,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IEventBus events,
         Dalamud.Plugin.Services.IObjectTable objectTable,
         IKeyState keyState,
-        Runtime.SceneFramePhaseService framePhases)
+        Runtime.SceneFramePhaseService framePhases,
+        Application.Input.CameraInputState input)
     {
         _configuration = configuration;
         _log = log;
@@ -173,6 +175,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _objectTable = objectTable;
         _keyState = keyState;
         _framePhases = framePhases;
+        _input = input;
 
         using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
             error => log.Error(error, "Camera activation cleanup failed"));

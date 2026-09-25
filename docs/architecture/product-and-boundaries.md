@@ -30,13 +30,14 @@ At this revision:
   `Poser.Documents`.
 - The host `Poser` references `Poser.Domain`, `Poser.Application`,
   `Poser.Game`, and `Poser.UI`.
-- `Poser.UI` has no project references. Host-side UI composition remains in
-  `Poser/UI`.
+- `Poser.UI` references only Domain, Application and Documents. All windows,
+  panes and overlays live here; host composition supplies runtime implementations.
 
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
 the game and runs its hooks on the framework thread. Native entities, skeletons
 and low-level service contracts live in Game; the Core project is retired.
-The host wires the assemblies; UI shows application state.
+The host wires the assemblies; UI shows application state. CI checks the allowed
+project graph and builds/tests the portable layers without the game SDK.
 
 Configuration data and JSON recovery/storage live in Documents; settings
 migrations and notifications live in Application behind host-provided persistence.
