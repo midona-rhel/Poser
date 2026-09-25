@@ -232,7 +232,10 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Presentation.ICameraTargetControl, Game.Cameras.CameraTargetControl>();
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
         services.AddSingleton<Game.Journal.EnvironmentSession>();
-        services.AddSingleton<Game.Journal.ActorValueSession>();
+        services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
+        services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
+        services.AddSingleton<Application.Companions.ICompanionRuntime, Game.Companions.CompanionRuntime>();
+        services.AddSingleton<Application.Companions.ICompanionControl, Application.Companions.CompanionSession>();
         services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
         services.AddSingleton<IExpressionControl, ExpressionSession>();
         services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
@@ -252,7 +255,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();
         services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
         services.AddSingleton(sp => new Game.Journal.EntitySessions(
-            sp.GetRequiredService<Game.Journal.ActorValueSession>(),
+            sp.GetRequiredService<Application.Presentation.IActorValueControl>(),
             sp.GetRequiredService<Game.Journal.LightSession>(),
             sp.GetRequiredService<Game.Journal.CameraSession>(),
             sp.GetRequiredService<Game.Journal.PropSession>(),

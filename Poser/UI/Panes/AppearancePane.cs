@@ -66,8 +66,6 @@ public sealed partial class AppearancePane
     private readonly IModelCatalogLoader _modelLoader;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
-    private readonly IActorSpawnService _spawn;
-    private readonly IEntityBindings _bindings;
     private readonly ISceneCreation _creation;
     private readonly CompanionSection _companions;
     private readonly ITextureProvider _textures;
@@ -75,7 +73,7 @@ public sealed partial class AppearancePane
     /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
     private readonly IInvisibleSkinService _invisibleSkin;
-    private readonly Game.Journal.ActorValueSession _values;
+    private readonly IActorValueControl _values;
     private readonly DisruptiveSteps _disruptive;
     private readonly Game.Integration.CharaImport _chara;
     private readonly EntityActions _entityActions;
@@ -154,15 +152,13 @@ public sealed partial class AppearancePane
         IModelCatalogLoader modelLoader,
         ActorIntegrationSession integration,
         SceneSession scene,
-        IActorSpawnService spawn,
-        IEntityBindings bindings,
         ISceneCreation creation,
         CompanionSection companions,
         ITextureProvider textures,
         Config.ConfigurationService config,
         IInvisibleSkinService invisibleSkin,
         UserNotices notices,
-        Game.Journal.ActorValueSession values,
+        IActorValueControl values,
         DisruptiveSteps disruptive,
         EntityActions entityActions,
         IWardrobeCatalog wardrobe,
@@ -211,8 +207,6 @@ public sealed partial class AppearancePane
         _modelLoader = modelLoader;
         _integration = integration;
         _scene = scene;
-        _spawn = spawn;
-        _bindings = bindings;
         _creation = creation;
         _companions = companions;
         _textures = textures;
@@ -777,14 +771,13 @@ public sealed partial class AppearancePane
         PresentationOverrides owned,
         PresentationReading reading)
     {
-        var resolved = _bindings.Resolve(actor);
-        var live = resolved.Success ? resolved.Value : null;
+        var visible = _values.ReadVisibility(actor);
         form.Switch(
             "Visible",
-            live is not null && _spawn.IsVisible(live),
+            visible ?? false,
             value => SetActorVisibility(actor, value),
             help: "Hide this actor without moving it",
-            disabled: live is null);
+            disabled: visible is null);
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_values.SetOpacity(actor, value), "Opacity"),
             help: "Fade the whole actor", onBegin: _values.Seal);
@@ -800,14 +793,13 @@ public sealed partial class AppearancePane
         PresentationOverrides owned,
         PresentationReading reading)
     {
-        var resolved = _bindings.Resolve(actor);
-        var live = resolved.Success ? resolved.Value : null;
+        var visible = _values.ReadVisibility(actor);
         form.Switch(
             "Visible",
-            live is not null && _spawn.IsVisible(live),
+            visible ?? false,
             value => SetActorVisibility(actor, value),
             help: "Hide this actor without moving it",
-            disabled: live is null);
+            disabled: visible is null);
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_values.SetOpacity(actor, value), "Opacity"),
@@ -843,13 +835,7 @@ public sealed partial class AppearancePane
 
     private void SetActorVisibility(ActorId actor, bool visible)
     {
-        var resolved = _bindings.Resolve(actor);
-        if (!resolved.Success || resolved.Value is not { } live)
-        {
-            _notices.Refused("The actor is no longer available.");
-            return;
-        }
-        var result = _values.SetVisibility(live, visible);
+        var result = _values.SetVisibility(actor, visible);
         if (!result.Success)
             _notices.Refused("Visibility", result.Detail ?? "The change was refused.");
     }

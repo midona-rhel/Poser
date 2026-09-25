@@ -116,7 +116,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
             case { Actor: { } actorId }:
                 if (!CurrentActor(actorId, out var actor)
                     || !ActorOwnershipMatches(actorId, actor)) return false;
-                return _sessions.Actors.SetVisibility(actor, visible).Success;
+                return _sessions.Actors.SetVisibility(actorId, visible).Success;
             case { Light: { } lightId }:
                 if (!CurrentLight(lightId, out var light)
                     || (current.Removal == SelectionRemoval.Release)

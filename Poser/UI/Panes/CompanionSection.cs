@@ -4,11 +4,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using Dalamud.Plugin.Services;
 using Poser.Application.Companions;
-using Poser.Application.Scene;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -24,10 +21,7 @@ public sealed class CompanionSection
 {
     private readonly CompanionCatalog _catalog;
     private readonly ICompanionCatalogLoader _catalogLoader;
-    private readonly IActorSpawnService _spawn;
-    private readonly IEntityBindings _bindings;
-    private readonly SceneSession _scene;
-    private readonly Game.Journal.ActorValueSession _values;
+    private readonly ICompanionControl _companions;
     private readonly UserNotices _notices;
 
     private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
@@ -78,19 +72,13 @@ public sealed class CompanionSection
     public CompanionSection(
         CompanionCatalog catalog,
         ICompanionCatalogLoader catalogLoader,
-        IActorSpawnService spawn,
-        IEntityBindings bindings,
-        SceneSession scene,
+        ICompanionControl companions,
         ITextureProvider textures,
-        Game.Journal.ActorValueSession values,
         UserNotices notices)
     {
-        _values = values;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
-        _spawn = spawn;
-        _bindings = bindings;
-        _scene = scene;
+        _companions = companions;
         _notices = notices;
         _icons = new GameIconResolver(textures);
         _query = Compute;
@@ -102,29 +90,21 @@ public sealed class CompanionSection
 
     // ── the one surface ──────────────────────────────────────────────────
 
-    /// <summary>The exact owner-routed verbs available to an actor row.</summary>
-    public readonly record struct ActionState(bool IsAttachedChild, bool Occupied);
-
     /// <summary>Describes the current exact relationship. Attached bodies route
     /// through their owner; root actors are admitted only when they own a slot.</summary>
-    public ActionState? ActionsFor(ActorId subjectId)
-    {
-        if (!TryResolveOwner(subjectId, out _, out var owner, out bool child))
-            return null;
-        return new ActionState(child, _spawn.GetCompanionInfo(owner) is not null);
-    }
+    public CompanionReading? ActionsFor(ActorId subjectId) => _companions.Read(subjectId);
 
     /// <summary>Opens the picker against the exact owner resolved from either
     /// the owner row or its attached child. A stale child cannot retarget a new
     /// relationship because the descriptor and binding must both still match.</summary>
     public bool OpenAttachPicker(ActorId subjectId)
     {
-        if (!TryResolveOwner(subjectId, out var ownerId, out var owner, out _))
+        if (_companions.Read(subjectId) is not { } state)
             return false;
         _catalogLoader.EnsureLoaded();
         _pickSubject = subjectId;
-        _pickOwner = ownerId;
-        var current = _spawn.GetCompanionInfo(owner);
+        _pickOwner = state.Owner;
+        var current = state.Attachment;
         if (current is { } attached)
         {
             int index = Array.IndexOf(KindValues, (CompanionKind?)attached.Kind);
@@ -147,10 +127,9 @@ public sealed class CompanionSection
     /// <summary>Detaches through the current exact owner relationship.</summary>
     public bool Detach(ActorId subjectId)
     {
-        if (!TryResolveOwner(subjectId, out _, out var owner, out _)
-            || _spawn.GetCompanionInfo(owner) is null)
+        if (_companions.Read(subjectId) is not { Occupied: true } state)
             return false;
-        return _values.SetCompanion(owner, null);
+        return _companions.Set(subjectId, state.Owner, null).Success;
     }
 
     /// <summary>The strip is CONTROLLED — its selection lives here — so the
@@ -168,19 +147,15 @@ public sealed class CompanionSection
             || _pickSubject is not { } subjectId
             || _pickOwner is not { } frozenOwner)
             return;
-        if (!TryResolveOwner(
-                subjectId, out var ownerId, out var owner, out _)
-            || ownerId != frozenOwner)
-            return;
         // One call both attaches and swaps: the backend empties the slot
         // before it fills it. The menu item that opens this surface is gated
         // on the slot existing, but the native write can still be refused.
-        if (!_values.SetCompanion(
-                owner,
-                new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id)))
+        var result = _companions.Set(subjectId, frozenOwner,
+            new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id));
+        if (!result.Success)
             _notices.Refused(
                 "Attachment",
-                "The game refused the companion-slot change.");
+                result.Detail ?? "The game refused the companion-slot change.");
     }
 
     private PickerOptions<CompanionEntry> Options() => new()
@@ -212,52 +187,6 @@ public sealed class CompanionSection
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
-
-    private bool TryResolveOwner(
-        ActorId subjectId,
-        out ActorId ownerId,
-        out IActor owner,
-        out bool attachedChild)
-    {
-        ownerId = default;
-        owner = null!;
-        attachedChild = false;
-        CompanionKind? childKind = null;
-        if (_scene.Snapshot.FindActor(subjectId) is not { } subject)
-            return false;
-
-        if (subject.OwnerActor is { } linkedOwner)
-        {
-            if (subject.AttachmentKind is not { } linkedKind
-                || Resolve(subjectId) is null)
-                return false;
-            ownerId = linkedOwner;
-            attachedChild = true;
-            childKind = linkedKind;
-        }
-        else
-        {
-            ownerId = subject.Id;
-        }
-
-        if (Resolve(ownerId) is not { } exactOwner
-            || !_spawn.HasCompanionSlot(exactOwner))
-            return false;
-        if (attachedChild)
-        {
-            var current = _spawn.GetCompanionInfo(exactOwner);
-            if (current is null || current.Value.Kind != childKind)
-                return false;
-        }
-        owner = exactOwner;
-        return true;
-    }
-
-    private IActor? Resolve(ActorId id)
-    {
-        var resolved = _bindings.Resolve(id);
-        return resolved.Success ? resolved.Value : null;
-    }
 
     /// <summary>The catalog row the slot currently carries, if any — an
     /// empty slot has no row.</summary>

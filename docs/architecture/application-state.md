@@ -123,6 +123,13 @@ Game supplies external-provider calls and exact-generation availability through
 the existing integration runtime. Failed equipment inverses retain their failure
 and remain retryable, including partially restored outfits.
 
+Actor visibility/presentation and companion changes also journal in Application.
+UI holds exact IDs and detached slot readings; Game resolves native bodies on
+every read/write. A companion pick revalidates the original subject and owner,
+while its history follows that owner's slot because the operation replaces the
+child. Replay never retains the previous native actor wrapper. Refused writes
+and inverses use the shared value-journal failure handling.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are
