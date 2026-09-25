@@ -8,7 +8,7 @@ using Poser.Services;
 
 namespace Poser.UI.Controls;
 
-// Equipment and furniture use the same named, colour-backed dye menu.
+// Equipment, props and furniture share the named, colour-backed dye menu.
 internal sealed class DyePicker(string id)
 {
     private readonly Crystarium.SearchPicker<DyeEntry> _picker = new(id);

@@ -219,6 +219,7 @@ internal static class ServiceRegistration
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
+        services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
         services.AddSingleton<Game.Journal.OverlaySession>();
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
@@ -496,7 +497,6 @@ internal static class ServiceRegistration
             Game.WorldObjects.NativeWorldObjectPort>();
         services.AddSingleton<Game.WorldObjects.WorldObjectService>();
         services.AddSingleton<Game.WorldObjects.WorldAssetCatalog>();
-        services.AddSingleton<Game.StainCatalog>();
         return services;
     }
 

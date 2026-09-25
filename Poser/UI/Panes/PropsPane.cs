@@ -1,7 +1,6 @@
 using System;
-using Poser.Game;
-using Poser.Game.Scene;
 using Poser.Services;
+using Poser.Application.Presentation;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
@@ -22,17 +21,18 @@ public sealed class PropsPane
 {
     public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
-    private readonly StainCatalog _stains;
+    private readonly IWardrobeCatalog _stains;
 
     /// <summary>The dye sheet's picker; the owner string carries which of
     /// the two channels is being chosen.</summary>
-    private readonly Crystarium.SearchPicker<StainEntry> _dyePicker =
+    private readonly Controls.DyePicker _dyePicker =
         new("prop-dye");
 
     private string _status = string.Empty;
-    private IPropHandle? _animDraftFor;
+    private PropId? _animDraftFor;
+    private PropId? _dyeTarget;
     private float _animDraft;
+    private byte _animBaseline;
 
     private readonly EntityActions _entityActions;
 
@@ -41,19 +41,17 @@ public sealed class PropsPane
     /// <summary>Anything that changes the list, run after the page has drawn.
     /// </summary>
     private Action? _pending;
-    private readonly Game.Journal.PropSession _values;
+    private readonly ISceneObjectControl _values;
 
     public PropsPane(
         SceneSession scene,
-        IEntityBindings bindings,
         EntityActions entityActions,
-        StainCatalog stains,
+        IWardrobeCatalog stains,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.Journal.PropSession values)
+        ISceneObjectControl values)
     {
         _scene = scene;
-        _bindings = bindings;
         _entityActions = entityActions;
         _stains = stains;
         _values = values;
@@ -86,7 +84,8 @@ public sealed class PropsPane
 
         // Pumped after the page — the overlay pane's rule.
         if (_dyePicker.Draw() is { } picked
-            && SelectedProp() is { } target)
+            && _dyeTarget is { } targetId
+            && SelectedProp() is { } target && target.Id == targetId)
         {
             int channel = picked.Owner.EndsWith("1", StringComparison.Ordinal)
                 ? 1
@@ -94,9 +93,10 @@ public sealed class PropsPane
             var next = channel == 0
                 ? target.Model with { Stain0 = picked.Item.Id }
                 : target.Model with { Stain1 = picked.Item.Id };
-            _status = _values.SetModel(target, next, out var refusal)
+            var result = _values.SetModel(targetId, next);
+            _status = result.Success
                 ? string.Empty
-                : refusal ?? "The dye could not be applied.";
+                : result.Detail ?? "The dye could not be applied.";
         }
 
         var pending = _pending;
@@ -104,38 +104,30 @@ public sealed class PropsPane
         pending?.Invoke();
     }
 
-    private void OpenDyePicker(IPropHandle prop, int channel)
+    private void OpenDyePicker(PropReading prop, int channel)
     {
+        _dyeTarget = prop.Id;
         byte current = channel == 0
             ? prop.Model.Stain0
             : prop.Model.Stain1;
-        _dyePicker.Open(
-            "prop-dye-" + channel,
-            _stains.Entries,
-            static stain => stain.Name,
-            static stain => stain.Id.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
-            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            loadError: _stains.Entries.Count <= 1
-                ? "The dye sheet could not be read."
-                : null);
+        _dyePicker.Open("prop-dye-" + channel, _stains, current);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void PropRows(Crystarium.FormScope form, IPropHandle prop)
+    private void PropRows(Crystarium.FormScope form, PropReading prop)
     {
         // Identity first, the camera pattern: the name leads the page.
         form.TextInput(
             "Name",
             prop.Name,
-            next => _values.SetName(prop, next),
+            next => _values.SetName(prop.Id, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,
-            next => _values.SetVisible(prop, next),
+            next => _values.SetVisible(prop.Id, next),
             help: "Hide this object without destroying it");
         // The dyes bake at creation, so choosing one respawns the weapon
         // in place — handle, name, and placement survive.
@@ -143,21 +135,21 @@ public sealed class PropsPane
             "Dye",
             cell => cell.Picker(
                 "##prop-dye-0",
-                _stains.NameOf(prop.Model.Stain0),
+                DyeName(prop.Model.Stain0),
                 () => OpenDyePicker(prop, channel: 0),
                 help: "Dye the model's first channel"),
             "Dye 2",
             cell => cell.Picker(
                 "##prop-dye-1",
-                _stains.NameOf(prop.Model.Stain1),
+                DyeName(prop.Model.Stain1),
                 () => OpenDyePicker(prop, channel: 1),
                 help: "Dye the model's second channel"));
         // The variant edits a DRAFT and applies on release — a respawn
         // per drag tick would churn the weapon.
-        if (!ReferenceEquals(_animDraftFor, prop))
+        if (_animDraftFor != prop.Id || _animBaseline != prop.Model.AnimationVariant)
         {
-            _animDraftFor = prop;
-            _animDraft = prop.Model.AnimationVariant;
+            _animDraftFor = prop.Id;
+            _animDraft = _animBaseline = prop.Model.AnimationVariant;
         }
         form.Number(
             "Pose variant",
@@ -169,12 +161,14 @@ public sealed class PropsPane
             onCommit: () =>
             {
                 byte stated = (byte)_animDraft;
-                if (stated != prop.Model.AnimationVariant)
-                    _status = prop.Respawn(
-                        prop.Model with { AnimationVariant = stated },
-                        out var refusal)
-                        ? string.Empty
-                        : refusal ?? "The variant could not be applied.";
+                if (_values.Read(prop.Id) is { } current && stated != current.Model.AnimationVariant)
+                {
+                    var result = _values.SetModel(prop.Id,
+                        current.Model with { AnimationVariant = stated });
+                    _status = result.Success ? string.Empty
+                        : result.Detail ?? "The variant could not be applied.";
+                    _animDraftFor = null;
+                }
             });
         if (_status.Length > 0)
             form.Status(_status, warning: true);
@@ -190,9 +184,9 @@ public sealed class PropsPane
                     "Save prop to library", prop.Name,
                     name =>
                     {
-                        if (_bindings.GetPropId(prop) is { } entryId)
+                        if (_values.Read(prop.Id) is not null)
                             _scenePane.SavePropEntry(
-                                entryId.LogicalId, name);
+                                prop.Id.LogicalId, name);
                     });
                 },
                 help: "Save a spawnable copy of this prop", icon: TablerIcon.Dots);
@@ -204,8 +198,7 @@ public sealed class PropsPane
                 "Destroy",
                 () =>
                 {
-                    if (_bindings.GetPropId(prop) is { } id)
-                        _pending = () => _ = _entityActions.Remove(SelectionId.ForProp(id));
+                    _pending = () => _ = _entityActions.Remove(SelectionId.ForProp(prop.Id));
                 },
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
@@ -214,14 +207,13 @@ public sealed class PropsPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private IPropHandle? SelectedProp()
+    private string DyeName(byte id) => id == 0 ? "None" : _stains.Dye(id)?.Name ?? "Dye " + id;
+
+    private PropReading? SelectedProp()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Prop, Prop: { } propId })
             return null;
-        var resolved = _bindings.Resolve(propId);
-        return resolved.Success && resolved.Value is { IsValid: true } prop
-            ? prop
-            : null;
+        return _values.Read(propId);
     }
 }

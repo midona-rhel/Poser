@@ -74,6 +74,12 @@ only display values, projects them through `ICameraProjection`, and owns drawing
 hit-testing and gesture input. Collider reads preserve their immutable geometry
 identity for rendering caches; copying mesh arrays every frame is not required.
 
+Prop, scenery, furniture and VFX editors read detached values and send exact IDs
+through `ISceneObjectControl`; Game resolves native objects and uses the existing
+value journals. Picker targets and deferred callbacks cannot follow a replacement
+generation or a newly selected entity. Native respawn and diagnostic offsets
+stay behind that boundary, rather than in editor closures.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

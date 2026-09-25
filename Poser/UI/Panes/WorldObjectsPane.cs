@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
 using Poser.Application.Scene;
+using Poser.Application.Presentation;
+using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
 
@@ -28,11 +30,11 @@ namespace Poser.UI;
 public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
     private readonly IWorldAssetCatalog _assets;
     private readonly IWardrobeCatalog _wardrobe;
     private readonly Controls.DyePicker _stainPicker = new("furniture-stain");
-    private IWorldObject? _stainTarget;
+    private WorldObjectId? _stainTarget;
+    private WorldObjectId? _assetTarget;
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
@@ -48,28 +50,26 @@ public sealed class WorldObjectsPane
     private bool _openObject = true;
 
     private Action? _pending;
-    private IWorldObject? _pathDraftFor;
+    private WorldObjectId? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
-    private Task<WorldObjectRespawnResult>? _respawn;
-    private IWorldObject? _respawnTarget;
+    private Task<ValueWriteResult>? _respawn;
+    private WorldObjectId? _respawnTarget;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     public WorldObjectsPane(
         SceneSession scene,
-        IEntityBindings bindings,
         EntityActions entityActions,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         IWorldAssetCatalog assets,
         IWardrobeCatalog wardrobe,
-        Game.Journal.WorldObjectSession values)
+        ISceneObjectControl values)
     {
         _values = values;
         _names = names;
         _scene = scene;
-        _bindings = bindings;
         _entityActions = entityActions;
         _scenePane = scenePane;
         _assets = assets;
@@ -77,17 +77,17 @@ public sealed class WorldObjectsPane
     }
 
     private readonly ScenePane _scenePane;
-    private readonly Game.Journal.WorldObjectSession _values;
+    private readonly ISceneObjectControl _values;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
         if (_respawn is { IsCompleted: true } completed)
         {
             var result = completed.GetAwaiter().GetResult();
-            if (ReferenceEquals(SelectedWorldObject(), _respawnTarget))
+            if (SelectedWorldObject() is { } selected && selected.Id == _respawnTarget)
             {
                 _status = result.Detail ?? string.Empty;
-                if (result.Succeeded) _pathDraftFor = null;
+                if (result.Success) _pathDraftFor = null;
             }
             _respawn = null;
             _respawnTarget = null;
@@ -122,14 +122,15 @@ public sealed class WorldObjectsPane
         // Pumped after the page: the surface a row opened has to outlive
         // that row's own draw call — the overlay pane's rule.
         if (_assetPicker.Draw() is { } picked
-            && SelectedWorldObject() is { } target)
+            && _assetTarget is { } targetId
+            && SelectedWorldObject() is { } target && target.Id == targetId)
         {
-            BeginRespawn(target, picked.Item.Path);
+            BeginRespawn(targetId, picked.Item.Path);
         }
 
         if (_stainPicker.Draw() is { } stain
-            && _stainTarget is { IsValid: true } furniture
-            && ReferenceEquals(SelectedWorldObject(), furniture))
+            && _stainTarget is { } furniture
+            && SelectedWorldObject() is { } selectedFurniture && selectedFurniture.Id == furniture)
         {
             _values.Seal();
             _values.SetStain(furniture, stain.Item.Id);
@@ -141,17 +142,19 @@ public sealed class WorldObjectsPane
         pending?.Invoke();
     }
 
-    private void BeginRespawn(IWorldObject target, string path)
+    private void BeginRespawn(WorldObjectId target, string path)
     {
         if (_respawn is { IsCompleted: false }) return;
         _status = string.Empty;
         _respawnTarget = target;
-        _respawn = target.Respawn(path);
+        _respawn = _values.Respawn(target, path);
     }
 
     private void OpenAssetPicker()
     {
-        bool furniture = SelectedWorldObject()?.IsFurniture == true;
+        if (SelectedWorldObject() is not { } target) return;
+        _assetTarget = target.Id;
+        bool furniture = target.IsFurniture;
         if (!furniture && _assetChoices == null)
         {
             _assetChoices = new List<WorldAsset>(
@@ -164,7 +167,7 @@ public sealed class WorldObjectsPane
             furniture ? _assets.Furniture : _assetChoices!,
             static asset => asset.Label,
             static asset => asset.Path,
-            SelectedWorldObject()?.Path ?? string.Empty,
+            target.Path,
             loadError: (furniture ? _assets.Furniture.Count : _assetChoices!.Count) == 0
                 ? "The path catalog could not be read."
                 : null,
@@ -185,9 +188,10 @@ public sealed class WorldObjectsPane
     /// eight, each a live checkbox, plus mono readouts — the manual twin
     /// of the automated gate hunt.</summary>
     private void DebugRows(
-        Crystarium.FormScope form, IWorldObject worldObject)
+        Crystarium.FormScope form, WorldObjectReading worldObject)
     {
-        ulong flags = worldObject.DebugObjectFlags ?? 0;
+        if (_values.ReadDebug(worldObject.Id) is not { } debug) return;
+        ulong flags = debug.ObjectFlags ?? 0;
         form.ReadOnly(
             "Object flags",
             flags.ToString("x16", CultureInfo.InvariantCulture),
@@ -202,12 +206,7 @@ public sealed class WorldObjectsPane
                 items[i] = new Crystarium.CheckItem(
                     bit.ToString(CultureInfo.InvariantCulture),
                     (flags >> bit & 1UL) != 0,
-                    _ => _pending = () =>
-                    {
-                        if (worldObject.DebugObjectFlags is { } current)
-                            worldObject.DebugObjectFlags =
-                                current ^ (1UL << bit);
-                    },
+                    _ => _pending = () => _values.ToggleObjectFlag(worldObject.Id, bit),
                     null);
             }
             form.Checkboxes(
@@ -218,7 +217,7 @@ public sealed class WorldObjectsPane
                 44f,
                 items);
         }
-        byte draw = worldObject.DebugByte(0x88) ?? 0;
+        byte draw = debug.DrawFlags ?? 0;
         var drawItems = new Crystarium.CheckItem[8];
         for (int i = 0; i < 8; i++)
         {
@@ -226,38 +225,25 @@ public sealed class WorldObjectsPane
             drawItems[i] = new Crystarium.CheckItem(
                 bit.ToString(CultureInfo.InvariantCulture),
                 (draw >> bit & 1) != 0,
-                _ => _pending = () =>
-                {
-                    if (worldObject.DebugByte(0x88) is { } current)
-                        worldObject.SetDebugByte(
-                            0x88, (byte)(current ^ (1 << bit)));
-                },
+                _ => _pending = () => _values.ToggleDrawFlag(worldObject.Id, bit),
                 null);
         }
         form.Checkboxes("Draw flags", false, false, 44f, drawItems);
 
-        var tail = new System.Text.StringBuilder(96);
-        for (int offset = 0xC0; offset < 0xE0; offset++)
-        {
-            if (offset > 0xC0 && offset % 8 == 0)
-                tail.Append(' ');
-            tail.Append((worldObject.DebugByte(offset) ?? 0)
-                .ToString("x2", CultureInfo.InvariantCulture));
-        }
-        form.ReadOnly("Tail C0-DF", tail.ToString(), mono: true);
+        form.ReadOnly("Tail C0-DF", debug.Tail, mono: true);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
 
     private void ObjectRows(
-        Crystarium.FormScope form, IWorldObject worldObject)
+        Crystarium.FormScope form, WorldObjectReading worldObject)
     {
         // Identity first: the name is Poser's to give even on a borrowed
         // thing; the model path below stays the map's fact.
         form.TextInput(
             "Name",
             worldObject.Name,
-            next => _values.SetName(worldObject, next),
+            next => _values.SetName(worldObject.Id, next),
             placeholder: worldObject.IsFurniture ? "Furniture" : "Object",
             help: "What the sidebar calls this object");
         // A SPAWNED object's model is editable — an explicit-apply field,
@@ -267,9 +253,9 @@ public sealed class WorldObjectsPane
         // map's fact.
         if (worldObject.Spawned)
         {
-            if (!ReferenceEquals(_pathDraftFor, worldObject))
+            if (_pathDraftFor != worldObject.Id)
             {
-                _pathDraftFor = worldObject;
+                _pathDraftFor = worldObject.Id;
                 _pathDraft = worldObject.Path;
             }
             form.TextInput(
@@ -289,7 +275,7 @@ public sealed class WorldObjectsPane
                     () =>
                     {
                         var stated = _pathDraft;
-                        _pending = () => BeginRespawn(worldObject, stated);
+                        _pending = () => BeginRespawn(worldObject.Id, stated);
                     },
                     disabled: _respawn is { IsCompleted: false },
                     help: "Recreate this object from the stated path");
@@ -308,7 +294,7 @@ public sealed class WorldObjectsPane
             cell => cell.Switch(
                 "##world-object-visible",
                 worldObject.Visible,
-                next => _values.SetVisible(worldObject, next),
+                next => _values.SetVisible(worldObject.Id, next),
                 help: "Hide this object without moving it"),
             "Opacity",
             cell => cell.Slider(
@@ -316,7 +302,7 @@ public sealed class WorldObjectsPane
                 worldObject.Opacity,
                 0f,
                 1f,
-                next => _values.SetOpacity(worldObject, next),
+                next => _values.SetOpacity(worldObject.Id, next),
                 help: "Fade the whole object",
                 onBegin: _values.Seal));
         var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
@@ -326,28 +312,28 @@ public sealed class WorldObjectsPane
                 "Dye",
                 cell => Controls.DyePicker.Cell(cell, "##furniture-stain", _wardrobe, worldObject.Stain, () =>
                 {
-                    _stainTarget = worldObject;
+                    _stainTarget = worldObject.Id;
                     _stainPicker.Open("Dye", _wardrobe, worldObject.Stain);
                 }, () =>
                 {
                     _values.Seal();
-                    _values.SetStain(worldObject, 0);
+                    _values.SetStain(worldObject.Id, 0);
                     _values.Seal();
                 }),
                 "Tint",
                 cell => cell.ColorWell("##furniture-tint", new Vector4(tint, 1f),
-                    value => _values.SetTint(worldObject, new Vector3(value.X, value.Y, value.Z))));
+                    value => _values.SetTint(worldObject.Id, new Vector3(value.X, value.Y, value.Z))));
             var lights = worldObject.FurnitureLights;
             form.Cells(cells =>
             {
                 cells.Cell("Night", cell => cell.Switch("##furniture-night", worldObject.NightState,
-                    next => _values.SetNightState(worldObject, next),
+                    next => _values.SetNightState(worldObject.Id, next),
                     help: "Set the furniture's child models to their night state"));
                 for (int i = 0; i < lights.Count; i++)
                 {
                     var light = lights[i];
                     cells.Cell($"Light {i + 1}", cell => cell.Switch("##furniture-light-" + light.Key,
-                        light.Enabled, enabled => _values.SetFurnitureLight(worldObject, light.Key, enabled)));
+                        light.Enabled, enabled => _values.SetFurnitureLight(worldObject.Id, light.Key, enabled)));
                 }
             });
         }
@@ -357,7 +343,7 @@ public sealed class WorldObjectsPane
                 "Tint",
                 new Vector4(tint, 1f),
                 value => _values.SetTint(
-                    worldObject, new Vector3(value.X, value.Y, value.Z))),
+                    worldObject.Id, new Vector3(value.X, value.Y, value.Z))),
                 help: "Multiply the effect's colours");
         }
         else
@@ -371,7 +357,7 @@ public sealed class WorldObjectsPane
                     "##world-object-tint",
                     new Vector4(tint, 1f),
                     value => _values.SetTint(
-                        worldObject, new Vector3(value.X, value.Y, value.Z)),
+                        worldObject.Id, new Vector3(value.X, value.Y, value.Z)),
                     disabled: undyeable,
                     help: undyeable
                         ? "This model takes no dye"
@@ -380,7 +366,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##world-object-night",
                     worldObject.NightState,
-                    next => _values.SetNightState(worldObject, next),
+                    next => _values.SetNightState(worldObject.Id, next),
                     help: "Toggles night state"));
             // BORROWED scenery only: a spawned copy cannot be animated
             // by the game (the layout drives only its own instances), so
@@ -390,7 +376,7 @@ public sealed class WorldObjectsPane
                 form.Switch(
                     "Paused",
                     worldObject.AnimationPaused,
-                    next => _values.SetAnimationPaused(worldObject, next),
+                    next => _values.SetAnimationPaused(worldObject.Id, next),
                     help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
@@ -401,7 +387,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-loop",
                     worldObject.LoopVfx,
-                    next => _values.SetLoopVfx(worldObject, next),
+                    next => _values.SetLoopVfx(worldObject.Id, next),
                     help: "Replay the effect when it runs out"),
                 "Speed",
                 cell => cell.Slider(
@@ -409,7 +395,7 @@ public sealed class WorldObjectsPane
                     worldObject.VfxSpeed,
                     0f,
                     3f,
-                    next => _values.SetVfxSpeed(worldObject, next),
+                    next => _values.SetVfxSpeed(worldObject.Id, next),
                     help: "Playback speed",
                     onBegin: _values.Seal));
             form.Pair(
@@ -417,7 +403,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-paused",
                     worldObject.VfxPaused,
-                    next => _values.SetVfxPaused(worldObject, next),
+                    next => _values.SetVfxPaused(worldObject.Id, next),
                     help: "Freeze the effect mid-frame"),
                 "Intensity",
                 cell => cell.Slider(
@@ -425,7 +411,7 @@ public sealed class WorldObjectsPane
                     worldObject.VfxIntensity,
                     0f,
                     4f,
-                    next => _values.SetVfxIntensity(worldObject, next),
+                    next => _values.SetVfxIntensity(worldObject.Id, next),
                     help: "Brighten or dim the effect",
                     onBegin: _values.Seal));
         }
@@ -434,10 +420,9 @@ public sealed class WorldObjectsPane
                     worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
                     name =>
                     {
-                        if (_bindings.GetWorldObjectId(worldObject)
-                            is { } entryId)
+                        if (_values.Read(worldObject.Id) is not null)
                             _scenePane.SaveWorldObjectEntry(
-                                entryId.LogicalId, name);
+                                worldObject.Id.LogicalId, name);
                     }),
                 help: "Save a spawnable copy of this entity"));
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
@@ -447,8 +432,7 @@ public sealed class WorldObjectsPane
                     "Destroy",
                     () =>
                     {
-                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
-                            _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(borrowedId));
+                        _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(worldObject.Id));
                     },
                     variant: ButtonVariant.Danger,
                     help: "Destroy this spawned object");
@@ -457,8 +441,7 @@ public sealed class WorldObjectsPane
                     "Release",
                     () =>
                     {
-                        if (_bindings.GetWorldObjectId(worldObject) is { } borrowedId)
-                            _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(borrowedId));
+                        _pending = () => _ = _entityActions.Remove(SelectionId.ForWorldObject(worldObject.Id));
                     },
                     help: "Give this object back to the map, where it stood");
         });
@@ -466,14 +449,11 @@ public sealed class WorldObjectsPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private IWorldObject? SelectedWorldObject()
+    private WorldObjectReading? SelectedWorldObject()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } id })
             return null;
-        var resolved = _bindings.Resolve(id);
-        return resolved.Success && resolved.Value is { IsValid: true } worldObject
-            ? worldObject
-            : null;
+        return _values.Read(id);
     }
 }
