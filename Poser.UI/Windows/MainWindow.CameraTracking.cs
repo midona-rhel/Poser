@@ -29,7 +29,6 @@ public partial class MainWindow
     private void DrawCameraTrackingActors(
         Crystarium.FormScope form, CameraId cameraId)
     {
-        _cameraTargets.Reconcile(cameraId);
         if (_cameraTargets.Read(cameraId) is not { } camera)
         {
             form.Status("Tracking is unavailable for this camera.");

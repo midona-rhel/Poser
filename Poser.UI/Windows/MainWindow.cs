@@ -796,7 +796,6 @@ public partial class MainWindow : Window
 
     private int _railShift;
 
-    private SelectionId? _lookThroughApplied;
 
     private int _detachShift;
 
@@ -947,24 +946,6 @@ public partial class MainWindow : Window
         var primary = _selection.Primary;
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
-        // Look-through-on-select (option): a camera ARRIVING as the primary
-        // selection becomes the live camera — once per arrival, so live can
-        // still be switched away while the camera stays selected.
-        if (primary is { Kind: SceneEntityKind.Camera, Camera: { } lookId })
-        {
-            if (!Equals(_lookThroughApplied, primary)
-                && _configuration.Config.Camera
-                    .LookThroughSelectedCamera)
-            {
-                _lookThroughApplied = primary;
-                if (_cameraControl.Read(lookId) is { IsLive: false })
-                    _cameraControl.SetLive(lookId, true);
-            }
-        }
-        else
-        {
-            _lookThroughApplied = null;
-        }
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;

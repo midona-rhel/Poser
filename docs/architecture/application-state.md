@@ -84,6 +84,8 @@ Camera follow, recenter and bone tracking share `ICameraTargetControl`.
 For these actions, the pane, sidebar and picker retain IDs and detached readings;
 Game owns native target fallback, stale-reference pruning and exact-generation
 checks. Follow remains distinct from recentering, which changes framing only.
+Selection-follow and stale tracking reconciliation advance on the framework
+thread even when the camera pane or main window is hidden.
 Tracking mode values keep their existing serialized numbers.
 Camera property rows and the inspector joystick use detached `ICameraControl`
 readings and the same value journal. A joystick gesture retains its initial
@@ -175,7 +177,7 @@ Application also owns import pause, supersession, settle and speed restoration.
 Game retains scope planning and in-pass writes/rollback behind the import runtime.
 All import callers use `IPoseImportCommands` with exact actor IDs. Game resolves
 those IDs before planning on the framework thread; stale targets refuse without
-reading skeletons. The native facade contract has been removed from Core.
+reading skeletons. Native facade implementations remain inside Game.
 Pose-file dialogs retain exact actor IDs, including deferred browser callbacks,
 not native actors or skeletons. Compatibility inspection returns detached facts;
 Game resolves the current rig, while UI owns option drafts and warning wording.

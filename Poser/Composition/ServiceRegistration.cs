@@ -239,7 +239,11 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Application.Presentation.ILightControl, Game.Lights.LightControl>();
         services.AddSingleton<Game.Journal.CameraSession>();
-        services.AddSingleton<Application.Presentation.ICameraTargetControl, Game.Cameras.CameraTargetControl>();
+        services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
+        services.AddSingleton<Game.Cameras.CameraTargetControl>();
+        services.AddSingleton<Application.Presentation.ICameraTargetControl>(sp =>
+            sp.GetRequiredService<Game.Cameras.CameraTargetControl>());
+        services.AddSingleton<Game.Cameras.CameraWorkspaceRuntime>();
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
         services.AddSingleton<IEnvironmentControl, EnvironmentControl>();
         services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();

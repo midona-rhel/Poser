@@ -403,7 +403,6 @@ public sealed class CameraPane
     private void TargetRows(Crystarium.FormScope form, CameraReading camera)
     {
         var cameraId = camera.Id;
-        ReportTarget(_targets.Reconcile(cameraId));
         if (_targets.Read(cameraId) is not { } target) return;
         bool locked = camera.IsLocked;
         var choices = new List<(ActorId Id, string Name)>();

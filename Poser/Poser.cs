@@ -131,6 +131,7 @@ public class Poser : IDalamudPlugin
         log.Debug("Load link: scene workflow");
         _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
         _ = _serviceProvider.GetRequiredService<Game.Scene.SceneCreationRuntime>();
+        _ = _serviceProvider.GetRequiredService<Game.Cameras.CameraWorkspaceRuntime>();
         log.Debug("Load stage: scene auto-save");
         _serviceProvider.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
             _serviceProvider.GetRequiredService<SceneAutoSaveService>());

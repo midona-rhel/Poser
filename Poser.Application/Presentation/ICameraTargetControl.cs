@@ -14,7 +14,6 @@ public sealed record CameraTargetReading(
 public interface ICameraTargetControl
 {
     CameraTargetReading? Read(CameraId id);
-    ValueWriteResult Reconcile(CameraId id);
     ValueWriteResult Follow(CameraId id, ActorId actor, string displayName);
     ValueWriteResult SetTargetLocked(CameraId id, bool value);
     ValueWriteResult ToggleGameTarget(CameraId id);
