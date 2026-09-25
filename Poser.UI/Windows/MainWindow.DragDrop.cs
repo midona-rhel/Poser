@@ -126,54 +126,6 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Folds or opens the tree: the root row alone, or the root
-    /// and everything keyed beneath it.</summary>
-    private void SetTreeCollapsed(string root, bool collapsed, bool subtree)
-    {
-        _expandVersion++;
-        void Set(string key)
-        {
-            if (collapsed)
-                _collapsedNodes.Add(key);
-            else
-                _collapsedNodes.Remove(key);
-        }
-        Set(root);
-        if (!subtree)
-            return;
-        foreach (var key in _subtreeDisclosure.Keys.ToArray())
-            if (key == root || key.StartsWith(root + "/", StringComparison.Ordinal))
-                _subtreeDisclosure.Remove(key);
-        _subtreeDisclosure[root] = collapsed;
-        IEnumerable<string> keys = _knownActorNodes.Concat(_knownCategoryNodes);
-        foreach (var key in keys.ToArray())
-            if (key.StartsWith(root + "/", StringComparison.Ordinal))
-                Set(key);
-        // Attached actors are visual children but keep independent actor keys.
-        if (_scene.Snapshot.Actors.FirstOrDefault(actor => "actor:" + actor.Id == root) is { } owner)
-            foreach (var child in _scene.Snapshot.Actors)
-                if (IsOwnedBy(child, owner))
-                    SetTreeCollapsed("actor:" + child.Id, collapsed, true);
-    }
-
-    private readonly Dictionary<string, bool> _subtreeDisclosure = new();
-
-    private void SeedTreeNode(string key, HashSet<string> known)
-    {
-        if (!known.Add(key)) return;
-        // Children are built lazily. Expand all must also reach branches
-        // that have never been drawn, with the closest branch command winning.
-        bool collapsed = true;
-        int closest = -1;
-        foreach (var (root, value) in _subtreeDisclosure)
-            if (root.Length > closest && (key == root || key.StartsWith(root + "/", StringComparison.Ordinal)))
-            {
-                collapsed = value;
-                closest = root.Length;
-            }
-        if (collapsed) _collapsedNodes.Add(key);
-    }
-
     /// <summary>The root slot a drop row stands for: a group head or a
     /// grouped member answers its group's slot, an ungrouped entity its
     /// own. Rows with no root stake — bones, categories, reference

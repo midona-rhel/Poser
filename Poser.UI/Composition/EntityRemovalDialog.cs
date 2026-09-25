@@ -7,14 +7,23 @@ using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
-public partial class MainWindow
+public sealed class EntityRemovalDialog
 {
+    private readonly Application.Scene.SceneSession _scene;
+    private readonly EntityActions _actions;
+
+    public EntityRemovalDialog(Application.Scene.SceneSession scene, EntityActions actions)
+    {
+        _scene = scene;
+        _actions = actions;
+    }
+
     private bool _bulkDestroyOpen;
     private string _bulkDestroyTitle = string.Empty;
     private string _bulkDestroyDescription = string.Empty;
     private Action? _bulkDestroy;
 
-    private void ConfirmDestroyAllLights()
+    public void ConfirmDestroyAllLights()
     {
         var lights = _scene.Snapshot.Lights.ToArray();
         if (lights.Length == 0)
@@ -24,11 +33,11 @@ public partial class MainWindow
         _bulkDestroyDescription = $"Are you sure?\nDestroy {spawned} spawned lights.\n"
             + $"Release {lights.Length - spawned} captured lights back to the game.";
         var ids = lights.Select(light => SelectionId.ForLight(light.Id)).ToArray();
-        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
+        _bulkDestroy = () => _ = _actions.Remove(ids);
         _bulkDestroyOpen = true;
     }
 
-    private void ConfirmDestroyAllCameras()
+    public void ConfirmDestroyAllCameras()
     {
         var cameras = _scene.Snapshot.Cameras.Where(camera => !camera.IsDefault).ToArray();
         if (cameras.Length == 0)
@@ -36,33 +45,33 @@ public partial class MainWindow
         _bulkDestroyTitle = "Destroy all cameras?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {cameras.Length} cameras.\nThe main camera will be kept.";
         var ids = cameras.Select(camera => SelectionId.ForCamera(camera.Id)).ToArray();
-        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
+        _bulkDestroy = () => _ = _actions.Remove(ids);
         _bulkDestroyOpen = true;
     }
 
-    private void ConfirmDestroyAllProps()
+    public void ConfirmDestroyAllProps()
     {
         var ids = _scene.Snapshot.Props.Select(prop => SelectionId.ForProp(prop.Id)).ToArray();
         if (ids.Length == 0)
             return;
         _bulkDestroyTitle = "Destroy all objects?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {ids.Length} spawned objects.\nBorrowed world scenery will be kept.";
-        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
+        _bulkDestroy = () => _ = _actions.Remove(ids);
         _bulkDestroyOpen = true;
     }
 
-    private void ConfirmDestroyAllOverlays()
+    public void ConfirmDestroyAllOverlays()
     {
         var ids = _scene.Snapshot.Overlays.Select(overlay => SelectionId.ForOverlay(overlay.Id)).ToArray();
         if (ids.Length == 0)
             return;
         _bulkDestroyTitle = "Destroy all overlays?";
         _bulkDestroyDescription = $"Are you sure?\nDestroy {ids.Length} overlays.\nReference images will be kept.";
-        _bulkDestroy = () => _ = RemoveEntitiesSafely(ids);
+        _bulkDestroy = () => _ = _actions.Remove(ids);
         _bulkDestroyOpen = true;
     }
 
-    private void DrawBulkDestroyModal()
+    public void DrawBulkDestroyModal()
     {
         Crystarium.Modal("##bulk-destroy", _bulkDestroyOpen,
             open =>

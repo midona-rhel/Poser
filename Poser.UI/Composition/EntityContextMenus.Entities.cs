@@ -22,19 +22,17 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>The context menus per entity kind.</summary>
-public partial class MainWindow
+internal sealed partial class EntityContextMenus
 {
     /// <summary>The selected actor's skeleton, or null when nothing posable is
     /// selected or its binding no longer resolves.</summary>
-    private SkeletonDescriptor? SelectedSkeleton() =>
-        SelectedActorId() is { } id ? ResolveActorDescriptor(id)?.CharacterSkeleton : null;
 
     /// <summary>Right-click actor menu: the lifetime actions that were stranded
     /// without a sidebar affordance (target / visibility / rename / clone / companion / despawn).
     /// The menu state is a stable ActorId; the legacy lifetime services still
     /// take live actors, so the id resolves through the binding registry for
     /// the duration of one frame and is dropped when resolution fails.</summary>
-    private void DrawActorContextMenu()
+    public void DrawActorContextMenu()
     {
         if (!_ctxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##actor-ctx")) return;
         if (_ctxActorId is not { } actorId)
@@ -335,7 +333,7 @@ public partial class MainWindow
     /// <summary>The preset store, which is shared by every actor: create one
     /// from what the menu's actor currently shows, or delete one. These
     /// operations apply immediately and remain outside Settings.</summary>
-    private void DrawBonePresetManager()
+    public void DrawBonePresetManager()
     {
         if (!_presetManagerOpen)
             return;
@@ -402,7 +400,7 @@ public partial class MainWindow
     /// operations. Hierarchy facts come from the scene snapshot; selection and
     /// pose commands dispatch stable ids only.
     /// </summary>
-    private void DrawBoneContextMenu()
+    public void DrawBoneContextMenu()
     {
         if (!_boneCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##bone-ctx")) return;
         if (_ctxBoneId is not { } boneId)
@@ -537,7 +535,7 @@ public partial class MainWindow
     /// picture is not in the scene, so there is nothing for undo to restore it
     /// to and nothing to isolate it from.
     /// </summary>
-    private void DrawReferenceImageContextMenu()
+    public void DrawReferenceImageContextMenu()
     {
         if (!_referenceCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##reference-ctx")) return;
         if (_ctxReferenceImage is not { } image)
@@ -599,7 +597,7 @@ public partial class MainWindow
     /// same lifetime family the light menu speaks, in the overlay's
     /// vocabulary; the shared creation service supplies the duplication
     /// rule answers everywhere.</summary>
-    private void DrawOverlayNodeContextMenu()
+    public void DrawOverlayNodeContextMenu()
     {
         if (!_overlayNodeCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-node-ctx")) return;
         if (_ctxOverlayNodeId is not { } overlayId)
@@ -641,7 +639,7 @@ public partial class MainWindow
                     () => _selection.Remove(SelectionId.ForOverlay(overlayId)));
             },
             null,
-            ConfirmDestroyAllOverlays,
+            _removalDialog.ConfirmDestroyAllOverlays,
         };
         if (node.State.Collider is { } collider)
         {
@@ -668,7 +666,7 @@ public partial class MainWindow
         DrawMoreAction(items, moreActions);
     }
 
-    private void DrawOverlayContextMenu()
+    public void DrawOverlayContextMenu()
     {
         if (!_overlayCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-ctx")) return;
         if (_ctxOverlayBones is not { Count: > 0 } captured) return;
@@ -779,7 +777,7 @@ public partial class MainWindow
     /// gives its rows, spoken in the light's vocabulary — the eye, the file,
     /// and the ownership-aware destroy/release the actions section makes.
     /// </summary>
-    private void DrawLightContextMenu()
+    public void DrawLightContextMenu()
     {
         if (!_lightCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##light-ctx")) return;
         if (_ctxLightId is not { } lightId)
@@ -843,7 +841,7 @@ public partial class MainWindow
         actions.Add(null);
         items.Add(new ContextMenuItem("Destroy all lights…", TablerIcon.Trash,
             danger: true, disabled: _scene.Snapshot.Lights.Count == 0));
-        actions.Add(ConfirmDestroyAllLights);
+        actions.Add(_removalDialog.ConfirmDestroyAllLights);
 
         AddHandleAction(items, actions, SelectionId.ForLight(lightId));
         var moreActions = MoveMoreActions(items, actions);
@@ -870,7 +868,7 @@ public partial class MainWindow
     /// file carries. Every lifetime verb goes through the history seam, so a
     /// clone and destroy use the same history seam as light actions.</para>
     /// </summary>
-    private void DrawPropContextMenu()
+    public void DrawPropContextMenu()
     {
         if (!_propCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##prop-ctx")) return;
         if (_ctxPropId is not { } propId)
@@ -912,7 +910,7 @@ public partial class MainWindow
                     () => _selection.Remove(SelectionId.ForProp(propId)));
             },
             null,
-            ConfirmDestroyAllProps,
+            _removalDialog.ConfirmDestroyAllProps,
         };
 
         AddHandleAction(ref items, ref actions, SelectionId.ForProp(propId));
@@ -932,7 +930,7 @@ public partial class MainWindow
     /// <summary>Right-click camera menu for live, framing, file, and lifetime
     /// actions. The default camera cannot be destroyed.
     /// </summary>
-    private void DrawCameraContextMenu()
+    public void DrawCameraContextMenu()
     {
         if (!_cameraCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##camera-ctx")) return;
         if (_ctxCameraId is not { } cameraId)
@@ -999,7 +997,7 @@ public partial class MainWindow
         actions.Add(null);
         items.Add(new ContextMenuItem("Destroy all cameras…", TablerIcon.Trash,
             danger: true, disabled: !_scene.Snapshot.Cameras.Any(c => !c.IsDefault)));
-        actions.Add(ConfirmDestroyAllCameras);
+        actions.Add(_removalDialog.ConfirmDestroyAllCameras);
 
         AddHandleAction(items, actions, SelectionId.ForCamera(cameraId));
         var moreActions = MoveMoreActions(items, actions);
@@ -1040,7 +1038,7 @@ public partial class MainWindow
     /// <summary>Right-click borrowed-object menu: the eye, the user's own
     /// name over the map's model, and Release — never Destroy, because the
     /// map owns the thing and gets it back where it stood.</summary>
-    private void DrawWorldObjectContextMenu()
+    public void DrawWorldObjectContextMenu()
     {
         if (!_worldObjectCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##world-object-ctx")) return;
         if (_ctxWorldObjectId is not { } worldObjectId)
@@ -1139,7 +1137,7 @@ public partial class MainWindow
     /// <summary>Right-click group-head menu: the structure verbs. The
     /// selection verbs live one click away — the head's left click IS the
     /// member selection, whose own menu then answers.</summary>
-    private void DrawGroupContextMenu()
+    public void DrawGroupContextMenu()
     {
         if (!_groupCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##group-ctx")) return;
         if (_ctxGroupId is not { } groupId)
@@ -1151,7 +1149,7 @@ public partial class MainWindow
             return;
         }
         bool locked = group.Locked;
-        bool filtering = !string.IsNullOrEmpty(_sidebarFilter);
+        bool filtering = !string.IsNullOrEmpty(_sidebar.Filter);
         // The gates read as the group's own state: closed shows the verb
         // that opens it. A closed gate anywhere above still wins.
         var items = new[]
@@ -1237,7 +1235,7 @@ public partial class MainWindow
     /// through the same plumbing the single menus use. A kind a verb
     /// cannot reach is skipped, never refused; verbs no selected kind
     /// answers disable in place.</summary>
-    private void DrawSelectionContextMenu()
+    public void DrawSelectionContextMenu()
     {
         if (!_selectionCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##selection-ctx")) return;
         int entities = global::Poser.Application.Selection.EntitySelection

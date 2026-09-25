@@ -89,39 +89,17 @@ public partial class MainWindow : Window
     private readonly global::Poser.Application.Transforms.GroupTransformState _groupTransforms;
     private readonly global::Poser.Application.Transforms.GroupTransformCoordinator _groupCoordinator;
 
-    /// <summary>A group row's click target — selects the whole membership.
-    /// </summary>
-    private readonly record struct GroupRowTag(Guid Id);
-
-    /// <summary>The outliner's ONE section, retained with its rows: the
-    /// tree is the most expensive thing a frame can assemble, so it is
-    /// rebuilt only when <see cref="BuildSidebar"/>'s gate flips and
-    /// flag-refreshed in place on every other frame. One section because
-    /// the root list is the USER'S order — group heads and entities of
-    /// every kind interleave freely, so kind boundaries cannot own
-    /// rows.</summary>
-    private readonly ShellSidebarSection _sceneSection = new()
-    {
-        Title = "",
-    };
-
-    /// <summary>Rebuild scratch: the root-eligible entities handed to the
-    /// order sync, retained to keep the cold path allocation-flat.</summary>
-
+    private readonly SidebarComposer _sidebar;
+    private readonly EntityContextMenus _contextMenus;
+    private readonly EntityRemovalDialog _removalDialog;
+    private readonly Application.Transforms.ISelectionPlacement _placement;
+    private readonly Controls.EntityNameModal _names;
+    private readonly Controls.IssueReportModal _issueReport;
     private readonly ISceneWorkflow _sceneWorkflow;
-
-    /// <summary>Rebuilds this pending structure has waited through: the
-    /// spawned entities bind within a publish or two, so a stage nothing
-    /// ever resolves against is dropped rather than held forever.</summary>
 
     private readonly ICameraProjection _gameCamera;
 
     private readonly IViewportReads _viewportProjection;
-
-    // actor context menu + rename modal: stable ids only; the lifetime
-    // services still take legacy actors, so ids resolve per frame through the
-    // binding registry and the pointer never persists in UI state.
-    private ActorId? _ctxActorId;
 
     private bool _shellMenuOpenRequested;
 
@@ -141,34 +119,6 @@ public partial class MainWindow : Window
 
     /// <summary>The split flags the rows were last built under, packed.</summary>
     private int _shellMenuLayoutState = -1;
-
-    private bool _ctxOpenRequested;
-
-    private BoneId? _ctxBoneId;
-
-    private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
-
-    private bool _boneCtxOpenRequested;
-
-    private IReadOnlyList<BoneId>? _ctxOverlayBones;
-
-    private string? _ctxOverlayMemoryKey;
-
-    private bool _overlayCtxOpenRequested;
-
-    // Bone-visibility presets: the menu applies them to one actor, the manager
-    // owns the shared store. Both hold an id, never a descriptor.
-    private ActorId? _presetActorId;
-
-    private readonly List<ContextMenuItem> _bonePresetItems = [];
-
-    private readonly List<Action?> _bonePresetActions = [];
-
-    private bool _presetManagerOpen;
-
-    private string _presetNameValue = "";
-
-    private string? _presetSaveNote;
 
     private readonly IEditorState _editorState;
 
@@ -217,12 +167,6 @@ public partial class MainWindow : Window
     private bool _collapsed;
 
     private float _savedHeight = DefaultHeight;
-
-    private readonly HashSet<string> _collapsedNodes = new();
-
-    private readonly HashSet<string> _knownCategoryNodes = new();
-
-    private readonly HashSet<string> _knownActorNodes = new();
 
     private float _sidebarWidth = 280f;
 
@@ -338,43 +282,6 @@ public partial class MainWindow : Window
 
     /// <summary>The actor rows, with the snapshot facts a warm frame needs to
     /// restate their live flags without walking the scene again.</summary>
-    private readonly List<ActorRowState> _actorRows = new();
-
-    private readonly record struct ActorRowState(
-        ShellSidebarRow Row,
-        ActorId Id,
-        string RawName,
-        bool SnapshotHidden);
-
-    /// <summary>Bone category → index into the rebuild's group list. Indexed by
-    /// the enum itself, because the FindIndex predicate this replaces was one
-    /// closure allocation per bone per frame.</summary>
-    private readonly int[] _categorySlots =
-        new int[(int)Core.BoneInfo.BoneCategory.Other + 1];
-
-    // ── sidebar rebuild gate (see BuildSidebar) ─────────────────────────
-    private bool _sidebarBuilt;
-
-    private ulong _sidebarRevision;
-
-    private string _sidebarFilter = "";
-
-    private int _sidebarExpandVersion = -1;
-
-    /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
-    /// is not part of the scene revision and cannot be, so the one row it owns
-    /// needs its own arming bit. Written from the gaze service's publishing
-    /// thread — volatile, and nothing but the bit is touched there.</summary>
-    private volatile bool _gazeDirty;
-
-    /// <summary>Bumped by every disclosure toggle. The gate cannot observe
-    /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
-    /// disclosure is the one non-scene input that changes the row count.
-    /// </summary>
-    private int _expandVersion;
-
-    private int _sidebarGroupsRevision = -1;
-
     /// <summary>The ANONYMOUS GROUP's strip: two or more entities selected
     /// together get one Selection page — a group that was never created.
     /// </summary>
@@ -501,6 +408,8 @@ public partial class MainWindow : Window
         Application.Presentation.ISceneObjectControl objectControl,
         Composition.UiBuildIdentity buildIdentity,
         SceneSession scene,
+        EntityRemovalDialog removalDialog,
+        Application.Transforms.ISelectionPlacement placement,
         ISceneCreation creation,
         IScenePlaybackControl playback,
         ISceneDuplication duplication,
@@ -585,6 +494,8 @@ public partial class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _creation = creation;
+        _removalDialog = removalDialog;
+        _placement = placement;
         _playback = playback;
         _duplication = duplication;
         _actorColliderCapture = actorColliderCapture;
@@ -597,7 +508,7 @@ public partial class MainWindow : Window
 
         _propService = propService;
         _propsPane = propsPane;
-        _propsPane.RequestDestroyAll = ConfirmDestroyAllProps;
+        _propsPane.RequestDestroyAll = removalDialog.ConfirmDestroyAllProps;
         _worldObjectsPane = worldObjectsPane;
         _overlayPane = overlayPane;
         _companions = companions;
@@ -605,10 +516,10 @@ public partial class MainWindow : Window
         _animationPane = animationPane;
         _appearancePane = appearancePane;
         _lightPane = lightPane;
-        _lightPane.RequestDestroyAll = ConfirmDestroyAllLights;
+        _lightPane.RequestDestroyAll = removalDialog.ConfirmDestroyAllLights;
         _cameraPane = cameraPane;
         _cameraTargets = cameraTargets;
-        _cameraPane.RequestDestroyAll = ConfirmDestroyAllCameras;
+        _cameraPane.RequestDestroyAll = removalDialog.ConfirmDestroyAllCameras;
         // Camera tracking consumes this window's already-built actor/category
         // hierarchy; the shared row model keeps disclosure and identities in
         // lockstep with the sidebar instead of minting a second flat tree.
@@ -649,7 +560,20 @@ public partial class MainWindow : Window
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
         // and does nothing else: the publisher is not the draw thread.
-        eventBus.Subscribe<GazeStateChangedEvent>(_ => _gazeDirty = true);
+        _sidebar = new SidebarComposer(
+            _vm, _configuration, _scene, _groups, _selection, _animation, _gazeService,
+            _cameraControl, _overlayControl, _lightControl, _objectControl,
+            _viewportProjection, _entityCommands, _referenceImages, SidebarActorIcon);
+        _contextMenus = new EntityContextMenus(
+            _actorColliderCapture, _actorControl, _animation, _bonePresets,
+            _cameraControl, _cameraPane, _cleanPose, _companions,
+            _configuration, _groupSteps, _groups, _lightControl,
+            _lightPane, _log, _notices, _objectControl,
+            _overlayControl, _overlayPresentation, _referenceImages, _scene,
+            _scenePane, _selection, _sidebar, _poseFileSection,
+            _duplication, _entityCommands, _entityActions, _playback,
+            _cameraTargets, _names, _issueReport, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement);
+        eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
         _poseRail = poseRail;
@@ -933,7 +857,7 @@ public partial class MainWindow : Window
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         }
         DrawShellMenu();
-        DrawActorContextMenu();
+        _contextMenus.DrawActorContextMenu();
         // Window-level: the attach picker outlives the context menu that
         // opened it.
         _companions.DrawPicker();
@@ -942,19 +866,19 @@ public partial class MainWindow : Window
         // is therefore pumped at the shell. A no-op on the frames the
         // animation pane already drew the surface for its own rows.
         _animationPane.DrawExpressionPicker();
-        DrawBoneContextMenu();
-        DrawOverlayContextMenu();
-        DrawOverlayNodeContextMenu();
-        DrawReferenceImageContextMenu();
-        DrawLightContextMenu();
-        DrawCameraContextMenu();
-        DrawPropContextMenu();
-        DrawWorldObjectContextMenu();
-        DrawGroupContextMenu();
-        DrawSelectionContextMenu();
+        _contextMenus.DrawBoneContextMenu();
+        _contextMenus.DrawOverlayContextMenu();
+        _contextMenus.DrawOverlayNodeContextMenu();
+        _contextMenus.DrawReferenceImageContextMenu();
+        _contextMenus.DrawLightContextMenu();
+        _contextMenus.DrawCameraContextMenu();
+        _contextMenus.DrawPropContextMenu();
+        _contextMenus.DrawWorldObjectContextMenu();
+        _contextMenus.DrawGroupContextMenu();
+        _contextMenus.DrawSelectionContextMenu();
         DrawEntityRenameModal();
-        DrawBulkDestroyModal();
-        DrawBonePresetManager();
+        _removalDialog.DrawBulkDestroyModal();
+        _contextMenus.DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives subsequent selection changes.
         // surface next.
@@ -1160,7 +1084,9 @@ public partial class MainWindow : Window
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
-        BuildSidebar(primary);
+        _sidebar.Build();
+        foreach (var (kind, entry) in _worldClasses)
+            entry.On = _worldAdoption.IsShown(kind);
         BuildTabs(primary);
         ApplyTabLayout(_contentMode
             switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
@@ -1252,9 +1178,10 @@ public partial class MainWindow : Window
             _cleanTransforms.Redo();
     }
 
-    private static readonly bool[] RootTreeLines = Array.Empty<bool>();
 
     private ActorId? SelectedActorId() => _selection.PrimaryActor;
+    private SkeletonDescriptor? SelectedSkeleton() =>
+        SelectedActorId() is { } id ? ResolveActorDescriptor(id)?.CharacterSkeleton : null;
 
     private readonly IPropCatalog _propService;
 

@@ -22,7 +22,7 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>Ktisis's bone categories: how a skeleton's bones fold into the sidebar tree.</summary>
-public partial class MainWindow
+internal sealed partial class SidebarComposer
 {
     private static bool KtisisCategoryLabelMatches(string filter)
     {
@@ -314,4 +314,76 @@ public partial class MainWindow
             });
         }
     }
+    public IReadOnlyList<global::Poser.UI.BoneChoice> BuildBoneChoices(
+        ActorDescriptor actor)
+    {
+        var rows = new List<global::Poser.UI.BoneChoice>();
+        var skeleton = actor.CharacterSkeleton;
+        if (skeleton != null)
+        {
+            var byName = new Dictionary<string,
+                (BoneDescriptor Bone, int Ordinal)>(StringComparer.Ordinal);
+            int ordinal = 0;
+            foreach (var bone in skeleton.Bones)
+                if (!bone.IsHidden && !IsBoneSuppressed(bone))
+                    byName[bone.Id.CanonicalName] = (bone, ordinal++);
+            var claimed = new HashSet<string>(StringComparer.Ordinal);
+            var categories = new List<BuiltCategory>();
+            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
+                if (BuildKtisisCategory(
+                        root, byName, claimed, string.Empty, filtering: false)
+                    is { } category)
+                    categories.Add(category);
+            var leftovers = byName.Values
+                .Where(entry => !claimed.Contains(entry.Bone.Id.CanonicalName))
+                .OrderBy(entry => entry.Ordinal)
+                .Select(entry => entry.Bone)
+                .ToList();
+            if (leftovers.Count > 0)
+                categories.Add(new BuiltCategory(
+                    "Other", "Other", leftovers, leftovers, []));
+            foreach (var category in categories)
+                AddCameraCategoryBones(rows, category, []);
+        }
+
+        foreach (var auxiliary in actor.Skeletons.Where(value =>
+            value.Id.Slot != PoseSlot.Character))
+        {
+            string label = SlotLabel(auxiliary.Id.Slot);
+            foreach (var bone in auxiliary.Bones)
+            {
+                if (bone.IsHidden || IsBoneSuppressed(bone))
+                    continue;
+                rows.Add(new global::Poser.UI.BoneChoice(
+                    bone.Id.ToString(),
+                    bone.DisplayName,
+                    $"{label} {bone.DisplayName} {bone.Id.CanonicalName}",
+                    bone.Id,
+                    label));
+            }
+        }
+        return rows;
+    }
+
+    private static void AddCameraCategoryBones(
+        List<global::Poser.UI.BoneChoice> rows,
+        BuiltCategory category,
+        string[] ancestors)
+    {
+        var contexts = new string[ancestors.Length + 1];
+        Array.Copy(ancestors, contexts, ancestors.Length);
+        contexts[^1] = category.Label;
+        foreach (var child in category.Children)
+            AddCameraCategoryBones(rows, child, contexts);
+        string searchContext = string.Join(' ', contexts);
+        foreach (var bone in category.VisibleBones)
+            rows.Add(new global::Poser.UI.BoneChoice(
+                bone.Id.ToString(),
+                bone.DisplayName,
+                $"{searchContext} {bone.DisplayName} "
+                    + bone.Id.CanonicalName,
+                bone.Id,
+                category.Label));
+    }
+
 }

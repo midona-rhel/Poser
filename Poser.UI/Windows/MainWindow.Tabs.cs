@@ -511,55 +511,8 @@ public partial class MainWindow
     /// offset from the others.</summary>
     private void MoveSelectionToCamera()
     {
-        var resolved = global::Poser.Application.Transforms.TransformTargetResolver
-            .Resolve(
-                _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
-        if (resolved is not { } selection)
-        {
-            _notices.Failed("Nothing movable is selected.");
-            return;
-        }
-        var sum = System.Numerics.Vector3.Zero;
-        int counted = 0;
-        foreach (var target in selection.Targets)
-        {
-            var pose =
-                target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                    ? _viewportProjection.GetActorTransform(actor)
-                    : _viewportProjection.GetModelTransform(target);
-            if (pose is not { } position)
-                continue;
-            sum += position.Position;
-            counted++;
-        }
-        if (counted == 0)
-        {
-            _notices.Failed("Nothing movable is selected.");
-            return;
-        }
-        var centroid = sum / counted;
-        var look = _gameCamera.GetLookDirection();
-        if (look.LengthSquared() < 1e-6f)
-            look = System.Numerics.Vector3.UnitZ;
-        var goal = _gameCamera.GetCameraPosition()
-            + System.Numerics.Vector3.Normalize(look) * 2.5f;
-        var begin = _cleanTransforms.Begin(
-            selection.Targets,
-            global::Poser.Domain.Transforms.TransformOperation.Translate,
-            global::Poser.Domain.Transforms.TransformSpace.World,
-            description: "Move to camera");
-        if (!begin.Success || begin.GestureId is not { } gestureId)
-        {
-            _notices.Failed(
-                $"Move to camera: {begin.Detail ?? "refused"}.");
-            return;
-        }
-        _cleanTransforms.Update(gestureId,
-            new global::Poser.Domain.Transforms.TransformDelta(
-                goal - centroid,
-                System.Numerics.Quaternion.Identity,
-                System.Numerics.Vector3.One));
-        _cleanTransforms.Commit(gestureId);
+        var result = _placement.MoveToCamera();
+        if (!result.Success) _notices.Failed(result.Detail ?? "Move to camera was refused.");
     }
 
     private void DrawTabContent(Vector2 origin, Vector2 size)

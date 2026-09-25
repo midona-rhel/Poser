@@ -149,29 +149,7 @@ public partial class MainWindow
             : new ContextMenuItem("Open", glyph, disabled: attached),
     ];
 
-    /// <summary>Character data is saved only for an owned actor: one
-    /// Poser spawned, or the player's own character.</summary>
-    private bool SaveOwnedActorEntry(ActorId actorId, string name)
-    {
-        if (ResolveActorDescriptor(actorId) is not { IsOwned: true })
-        {
-            _notices.Refused(
-                "Only an actor you spawned or your own character can be saved to the library.");
-            return false;
-        }
-        return _scenePane.SaveActorEntry(actorId.LogicalId, name);
-    }
-
-    /// <summary>Whether every actor among the members is owned; a group
-    /// holding anyone else's actor saves without appearance.</summary>
-    private bool AllActorsOwned(IReadOnlyList<SelectionId> members)
-    {
-        foreach (var member in members)
-            if (member.Actor is { } actorId
-                && ResolveActorDescriptor(actorId) is not { IsOwned: true })
-                return false;
-        return true;
-    }
+    private bool AllActorsOwned(IReadOnlyList<SelectionId> members) => _contextMenus.AllActorsOwned(members);
 
     /// <summary>What the active pane keeps in the content footer between
     /// the two attach seats.</summary>

@@ -5,7 +5,7 @@ using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
-public partial class MainWindow
+internal sealed partial class EntityContextMenus
 {
     private string? _ctxBoneExpandKey;
     private string? _ctxBranchExpandKey;
@@ -14,17 +14,17 @@ public partial class MainWindow
 
     private ContextMenuItem[] BuildTreeSubmenu(string? key, out List<Action?> actions)
     {
-        bool disabled = key == null || !string.IsNullOrEmpty(_sidebarFilter);
+        bool disabled = key == null || !string.IsNullOrEmpty(_sidebar.Filter);
         actions =
         [
-            () => { if (key != null) SetTreeCollapsed(key, false, false); },
-            () => { if (key != null) SetTreeCollapsed(key, true, false); },
-            () => { if (key != null) SetTreeCollapsed(key, false, true); },
-            () => { if (key != null) SetTreeCollapsed(key, true, true); },
+            () => { if (key != null) _sidebar.SetTreeCollapsed(key, false, false); },
+            () => { if (key != null) _sidebar.SetTreeCollapsed(key, true, false); },
+            () => { if (key != null) _sidebar.SetTreeCollapsed(key, false, true); },
+            () => { if (key != null) _sidebar.SetTreeCollapsed(key, true, true); },
             null,
-            () => OnSkeletonSettingsRequested?.Invoke(),
+            () => _openSkeletonSettings(),
         ];
-        string? help = !string.IsNullOrEmpty(_sidebarFilter)
+        string? help = !string.IsNullOrEmpty(_sidebar.Filter)
             ? "Clear the sidebar search to change disclosure" : null;
         return
         [
@@ -75,11 +75,11 @@ public partial class MainWindow
     private void SetGroupTreeCollapsed(Guid id, bool collapsed, bool subtree)
     {
         if (_groups.Find(id) is not { } group) return;
-        SetTreeCollapsed("group:" + id, collapsed, false);
+        _sidebar.SetTreeCollapsed("group:" + id, collapsed, false);
         if (!subtree) return;
         foreach (var member in group.Members)
             if (member.Actor is { } actor)
-                SetTreeCollapsed("actor:" + actor, collapsed, true);
+                _sidebar.SetTreeCollapsed("actor:" + actor, collapsed, true);
         foreach (var child in group.Children)
             SetGroupTreeCollapsed(child, collapsed, true);
     }

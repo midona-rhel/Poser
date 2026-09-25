@@ -205,6 +205,7 @@ internal static class ServiceRegistration
             return new TransformHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<ISelectionPlacement, SelectionPlacement>();
         services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
         services.AddSingleton<ActorDisruptionEpochs>();
         services.AddSingleton<IActorStateKeySource, ActorStateKeySource>();
@@ -634,6 +635,7 @@ internal static class ServiceRegistration
         // The one transient-message channel every surface below speaks
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
+        services.AddSingleton<EntityRemovalDialog>();
         services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
         services.AddSingleton<global::Poser.Application.Diagnostics.IIssueReports>(sp => sp.GetRequiredService<global::Poser.Diagnostics.IssueReportService>());
         services.AddSingleton<global::Poser.UI.Controls.IssueReportModal>();

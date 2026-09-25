@@ -28,7 +28,7 @@ public partial class MainWindow
     private void WireShell(GraphicalBonePane graphicalBonePane, AnimationPane animationPane)
     {
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
-        _poseInspector.BuildBoneChoices = BuildCameraBoneChoices;
+        _poseInspector.BuildBoneChoices = _sidebar.BuildBoneChoices;
         _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
             _configuration.Config.UI.MapMirrorSelection;
@@ -195,98 +195,11 @@ public partial class MainWindow
         {
             if (row.ExpandKey is not { } expandKey)
                 return;
-            _expandVersion++;
-            if (!_collapsedNodes.Add(expandKey))
-                _collapsedNodes.Remove(expandKey);
+            _sidebar.ToggleDisclosure(expandKey);
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnSidebarCollapse = v => _sidebarCollapsed = v;
-        _vm.OnRowContextMenu = row =>
-        {
-            // A right-click on a row that RIDES the multi-entity selection
-            // opens the selection's own menu — the verbs speak for the
-            // whole carry, exactly as a drag does. An unselected row keeps
-            // its single menu.
-            if (row.Tag is SelectionId ctxMember
-                && global::Poser.Application.Selection.EntitySelection
-                    .IsEntity(ctxMember.Kind)
-                && _selection.IsSelected(ctxMember)
-                && global::Poser.Application.Selection.EntitySelection
-                    .CountEntities(_selection.Selected) >= 2)
-            {
-                _selectionCtxOpenRequested = true;
-            }
-            else if (row.Tag is GroupRowTag ctxGroup)
-            {
-                _ctxGroupId = ctxGroup.Id;
-                _groupCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId
-                { Kind: SceneEntityKind.WorldObject, WorldObject: { } ctxWorld })
-            {
-                _ctxWorldObjectId = ctxWorld;
-                _worldObjectCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
-            {
-                _ctxActorId = ctxActor;
-                _ctxOpenRequested = true;
-            }
-            else if (row.SkeletonContext is { } ctxSkeleton)
-            {
-                _ctxBranchSkeleton = ctxSkeleton;
-                _ctxBranchLabel = row.Label;
-                _ctxBranchExpandKey = row.ExpandKey;
-                _ctxOverlayBones = row.OverlayBones;
-                _ctxOverlayMemoryKey = row.OverlayMemoryKey;
-                _overlayCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone, Bone: { } ctxBone })
-            {
-                _ctxBoneId = ctxBone;
-                _ctxBoneOverlayBones = row.OverlayBones;
-                _ctxBoneExpandKey = row.HasChildren ? row.ExpandKey : null;
-                _boneCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId
-                { Kind: SceneEntityKind.Light, Light: { } ctxLight })
-            {
-                _ctxLightId = ctxLight;
-                _lightCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId
-                { Kind: SceneEntityKind.Camera, Camera: { } ctxCamera })
-            {
-                _ctxCameraId = ctxCamera;
-                _cameraCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId
-                { Kind: SceneEntityKind.Prop, Prop: { } ctxProp })
-            {
-                _ctxPropId = ctxProp;
-                _propCtxOpenRequested = true;
-            }
-            else if (row.Tag is SelectionId
-                { Kind: SceneEntityKind.Overlay, Overlay: { } ctxOverlayNode })
-            {
-                _ctxOverlayNodeId = ctxOverlayNode;
-                _overlayNodeCtxOpenRequested = true;
-            }
-            else if (row.Tag is ReferenceImageInstance ctxImage)
-            {
-                _ctxReferenceImage = ctxImage;
-                _referenceCtxOpenRequested = true;
-            }
-            else if (row.OverlayBones != null)
-            {
-                _ctxBranchSkeleton = null;
-                _ctxBranchLabel = row.Label;
-                _ctxBranchExpandKey = row.ExpandKey;
-                _ctxOverlayBones = row.OverlayBones;
-                _ctxOverlayMemoryKey = row.OverlayMemoryKey;
-                _overlayCtxOpenRequested = true;
-            }
-        };
+        _vm.OnRowContextMenu = _contextMenus.OpenFor;
         _vm.OnActorTarget = row =>
         {
             if (ResolveActorRow(row) is { } actor)

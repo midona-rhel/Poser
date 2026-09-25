@@ -16,6 +16,11 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+The workspace shell composes independent sidebar and entity-menu owners.
+Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
+menu disclosure stay with the menu composer. Neither owns workflow progression.
+Shared placement, duplication, removal and group gates use application commands.
+
 Inspector and Properties read the current selection independently when drawing.
 Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current

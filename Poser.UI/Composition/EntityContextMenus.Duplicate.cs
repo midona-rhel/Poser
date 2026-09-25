@@ -3,7 +3,7 @@ using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
-public partial class MainWindow
+internal sealed partial class EntityContextMenus
 {
     private static ContextMenuItem[] DuplicateSubmenu(bool posable) =>
     [
