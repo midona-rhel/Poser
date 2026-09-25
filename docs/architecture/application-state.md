@@ -80,6 +80,12 @@ value journals. Picker targets and deferred callbacks cannot follow a replacemen
 generation or a newly selected entity. Native respawn and diagnostic offsets
 stay behind that boundary, rather than in editor closures.
 
+Camera follow, recenter and bone tracking share `ICameraTargetControl`.
+For these actions, the pane, sidebar and picker retain IDs and detached readings;
+Game owns native target fallback, stale-reference pruning and exact-generation
+checks. Follow remains distinct from recentering, which changes framing only.
+Tracking mode values keep their existing serialized numbers.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

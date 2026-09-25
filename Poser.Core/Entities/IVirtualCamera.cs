@@ -173,14 +173,3 @@ public interface IVirtualCamera
     /// every ownership moment.</summary>
     void CaptureOwnedDefaults();
 }
-
-/// <summary>Ktisis's tracking modes: Follow keeps the pivot offset on the
-/// actor, Pan swings the look-at to the bones, FollowAndPan blends both.
-/// </summary>
-public enum CameraTrackingMode
-{
-    Follow,
-    Pan,
-    FollowAndPan,
-    None,
-}

@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Application.Scene;
+using Poser.Application.Presentation;
+using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Identity;
@@ -35,7 +37,7 @@ public sealed class CameraPane
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly IVirtualCameraService _cameras;
-    private readonly IActorSpawnService _spawnService;
+    private readonly ICameraTargetControl _targets;
 
     /// <summary>Camera creation and removal use the lifecycle history.</summary>
     private readonly ISceneLifecycleHistory _lifecycle;
@@ -60,11 +62,8 @@ public sealed class CameraPane
 
     /// <summary>MainWindow supplies the actor and bone picker state because it
     /// already owns the scene's exact descriptor snapshot.</summary>
-    public Action<Crystarium.FormScope, IVirtualCamera>? DrawTrackingActors;
+    public Action<Crystarium.FormScope, CameraId>? DrawTrackingActors;
 
-    /// <summary>MainWindow supplies the live GPose target read without
-    /// making this pane own native target state.</summary>
-    public Func<IActor?>? GetNativeTarget;
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Camera", new[] { ".xivc" }, isSaveMode: true);
@@ -86,7 +85,7 @@ public sealed class CameraPane
         SceneSession scene,
         IEntityBindings bindings,
         IVirtualCameraService cameras,
-        IActorSpawnService spawnService,
+        ICameraTargetControl targets,
         ISceneLifecycleHistory lifecycle,
         EntityActions entityActions,
         ICameraFileService cameraFiles,
@@ -105,7 +104,7 @@ public sealed class CameraPane
         _bindings = bindings;
         _scenePane = scenePane;
         _cameras = cameras;
-        _spawnService = spawnService;
+        _targets = targets;
         _lifecycle = lifecycle;
         _entityActions = entityActions;
         _cameraFiles = cameraFiles;
@@ -155,26 +154,7 @@ public sealed class CameraPane
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
     /// cannot reach a native camera setter.</summary>
-    public void CenterOnActor(ActorId actorId)
-    {
-        var resolved = _bindings.Resolve(actorId);
-        if (!resolved.Success || resolved.Value is not { } actor ||
-            _bindings.GetActorId(actor) != actorId)
-        {
-            _notices.Refused("Center: that actor is no longer available.");
-            return;
-        }
-        if (!_spawnService.IsVisible(actor))
-        {
-            _notices.Refused("Center: that actor is not visible.");
-            return;
-        }
-
-        var result = _values.CenterOnActor(actor);
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ?? "Center: the camera could not move.");
-    }
+    public void CenterOnActor(ActorId actorId) => ReportTarget(_targets.CenterOnActor(actorId));
 
     /// <summary>Resets the exact selected camera from the inspector rail.</summary>
     public void ResetSelectedCameraTransform()
@@ -469,16 +449,15 @@ public sealed class CameraPane
 
     private void TargetRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
-        ReconcileTargetActor(camera, notify: true);
+        if (_bindings.GetCameraId(camera) is not { } cameraId) return;
+        ReportTarget(_targets.Reconcile(cameraId));
+        if (_targets.Read(cameraId) is not { } target) return;
         bool locked = camera.IsLocked;
         var choices = new List<(ActorId Id, string Name)>();
         var labels = new List<string>();
         int selected = -1;
-        var followedId = camera.TargetActorId;
-        var nativeTarget = GetNativeTarget?.Invoke();
-        var nativeTargetId = nativeTarget is { } native
-            ? _bindings.GetActorId(native)
-            : null;
+        var followedId = target.FollowedActor;
+        var nativeTargetId = target.GameTarget;
         var displayedId = followedId ?? nativeTargetId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
@@ -489,11 +468,10 @@ public sealed class CameraPane
                 selected = labels.Count - 1;
         }
         if (selected < 0 && displayedId is { } missingId &&
-            nativeTarget is { } missingTarget && nativeTargetId == missingId)
+            target.GameTargetName is { } nativeName && nativeTargetId == missingId)
         {
             // Keep the native game target truthful even during a snapshot
             // handoff; the next refresh will place it among normal actors.
-            string nativeName = ActorNameFrom(missingTarget);
             choices.Add((missingId, nativeName));
             labels.Add(nativeName);
             selected = labels.Count - 1;
@@ -529,7 +507,7 @@ public sealed class CameraPane
                                 FollowActor(
                                     choices[index].Id,
                                     choices[index].Name,
-                                    camera);
+                                    cameraId);
                         },
                         ControlStyle.Workspace with
                         {
@@ -556,7 +534,7 @@ public sealed class CameraPane
                     row.CenterControl(controlHeight).Y));
                 Crystarium.Button(
                     "Recenter",
-                    () => Recenter(camera),
+                    () => ReportTarget(_targets.Recenter(cameraId, _scene.Selection.Primary)),
                     style: buttonStyle,
                     disabled: locked,
                     help: "Center the followed actor",
@@ -573,13 +551,13 @@ public sealed class CameraPane
                 Crystarium.Switch(
                     "##camera-actor-lock",
                     camera.IsTargetLocked,
-                    enabled => ToggleActorLock(camera, nativeTarget, enabled),
+                    enabled => ReportTarget(_targets.SetTargetLocked(cameraId, enabled)),
                     disabled: locked,
                     help: "Lock onto the followed actor");
                 if (!camera.IsTracking && !camera.IsTargetLocked &&
                     ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-                    ToggleNativeTargetOverlay(camera, nativeTarget);
+                    ReportTarget(_targets.ToggleGameTarget(cameraId));
             });
     }
 
@@ -773,300 +751,20 @@ public sealed class CameraPane
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
-        DrawTrackingActors?.Invoke(form, camera);
+        if (_bindings.GetCameraId(camera) is { } id)
+            DrawTrackingActors?.Invoke(form, id);
     }
 
-    private void Recenter(IVirtualCamera camera)
+    private void ReportTarget(ValueWriteResult result)
     {
-        if (!ReconcileTargetActor(camera, notify: true))
-            return;
-        if (camera.TargetActorId is { } followedId)
-        {
-            var resolved = _bindings.Resolve(followedId);
-            if (!resolved.Success || resolved.Value is not { } liveFollowed ||
-                !ReferenceEquals(liveFollowed, camera.TargetActor) ||
-                _bindings.GetActorId(liveFollowed) != followedId)
-            {
-                _notices.Refused("Center: the followed actor is no longer available.");
-                return;
-            }
-            if (!_spawnService.IsVisible(liveFollowed))
-            {
-                _notices.Refused("Center: the followed actor is not visible.");
-                return;
-            }
-            ReportCenter(_values.CenterOnActor(liveFollowed));
-            return;
-        }
-
-        if (camera.TargetActorId is null &&
-            ResolveNativeTarget() is { } nativeTarget)
-        {
-            if (_bindings.GetActorId(nativeTarget) is not { } nativeTargetId)
-            {
-                _notices.Refused(
-                    "Center: the game target is no longer available.");
-                return;
-            }
-            var resolved = _bindings.Resolve(nativeTargetId);
-            if (resolved.Success && resolved.Value is { } liveNative &&
-                _bindings.GetActorId(liveNative) == nativeTargetId &&
-                _spawnService.IsVisible(liveNative))
-            {
-                ReportCenter(_values.CenterOnActor(liveNative));
-                return;
-            }
-            _notices.Refused("Center: the game target is no longer available.");
-            return;
-        }
-
-        if (_scene.Selection.Primary is { Kind: SceneEntityKind.Bone,
-                Bone: { } selectedBoneId })
-        {
-            var resolved = _bindings.Resolve(selectedBoneId);
-            if (!resolved.Success || resolved.Value is not { } selectedBone ||
-                _bindings.GetBoneId(selectedBone) != selectedBoneId)
-            {
-                _notices.Refused("Center: that bone is no longer available.");
-                return;
-            }
-            ReportCenter(_values.CenterOnBone(selectedBone));
-            return;
-        }
-
-        if (_scene.Selection.Primary is { Kind: SceneEntityKind.Actor,
-                Actor: { } selectedActorId })
-        {
-            var resolved = _bindings.Resolve(selectedActorId);
-            if (!resolved.Success || resolved.Value is not { } selectedActor ||
-                _bindings.GetActorId(selectedActor) != selectedActorId)
-            {
-                _notices.Refused("Center: that actor is no longer available.");
-                return;
-            }
-            if (!_spawnService.IsVisible(selectedActor))
-            {
-                _notices.Refused("Center: that actor is not visible.");
-                return;
-            }
-            ReportCenter(_values.CenterOnActor(selectedActor));
-            return;
-        }
-
-        foreach (var tracked in camera.TrackedBones)
-        {
-            if (_bindings.GetBoneId(tracked) is not { } trackedId)
-                continue;
-            var resolved = _bindings.Resolve(trackedId);
-            if (!resolved.Success || resolved.Value is not { } liveBone ||
-                _bindings.GetBoneId(liveBone) != trackedId)
-                continue;
-            ReportCenter(_values.CenterOnBone(liveBone));
-            return;
-        }
-
-        _notices.Refused("Center: select or track an actor or bone first.");
+        if (!result.Success) _notices.Refused(result.Detail ?? "The camera action could not be completed.");
     }
 
-    private IActor? ResolveNativeTarget() => GetNativeTarget?.Invoke();
+    public void FollowActor(ActorId actorId, string displayName, CameraId cameraId) =>
+        ReportTarget(_targets.Follow(cameraId, actorId, displayName));
 
-    private ActorId? ResolveExactTargetActorId(IVirtualCamera camera)
-    {
-        if (camera.TargetActorId is { } targetId)
-        {
-            var resolved = _bindings.Resolve(targetId);
-            if (!resolved.Success || resolved.Value is not { } target ||
-                !ReferenceEquals(target, camera.TargetActor) ||
-                _bindings.GetActorId(target) != targetId)
-                return null;
-            return targetId;
-        }
-        if (ResolveNativeTarget() is not { } native ||
-            _bindings.GetActorId(native) is not { } nativeId)
-            return null;
-        var current = _bindings.Resolve(nativeId);
-        return current.Success && ReferenceEquals(current.Value, native)
-            ? nativeId
-            : null;
-    }
-
-    /// <summary>Locks the current exact target, using the game target only
-    /// when no explicit target is active.</summary>
-    private void ToggleActorLock(
-        IVirtualCamera camera, IActor? nativeTarget, bool enabled)
-    {
-        if (camera.IsLocked || !_cameras.IsAvailable)
-            return;
-        if (!enabled)
-        {
-            _values.ClearTargetActor(camera);
-            return;
-        }
-
-        if (camera.TargetActorId is { } targetId)
-        {
-            var current = _bindings.Resolve(targetId);
-            if (current.Success && current.Value is { } exact &&
-                ReferenceEquals(exact, camera.TargetActor) &&
-                _bindings.GetActorId(exact) == targetId)
-            {
-                _values.SetTargetLocked(camera, true);
-                return;
-            }
-            _values.ClearTargetActor(camera);
-            _notices.Refused("Follow: that actor is no longer available.");
-            return;
-        }
-
-        if (nativeTarget is { } native &&
-            _bindings.GetActorId(native) is { } nativeId)
-        {
-            var resolved = _bindings.Resolve(nativeId);
-            if (resolved.Success &&
-                ReferenceEquals(resolved.Value, native) &&
-                _bindings.GetActorId(native) == nativeId &&
-                _values.SetTargetActor(
-                    camera, native, nativeId, ActorNameFrom(native)))
-            {
-                _values.SetTargetLocked(camera, true);
-                return;
-            }
-        }
-        _notices.Refused("Follow: no current actor can be locked.");
-    }
-
-    private void ToggleNativeTargetOverlay(
-        IVirtualCamera camera, IActor? nativeTarget)
-    {
-        if (camera.IsLocked || camera.IsTracking || camera.IsTargetLocked ||
-            !_cameras.IsAvailable || nativeTarget is null)
-            return;
-        if (_bindings.GetActorId(nativeTarget) is not { } targetId)
-        {
-            _notices.Refused("Follow: the game target is no longer available.");
-            return;
-        }
-        var resolved = _bindings.Resolve(targetId);
-        if (!resolved.Success || resolved.Value is not { } exact ||
-            _bindings.GetActorId(exact) != targetId)
-        {
-            _notices.Refused("Follow: the game target is no longer available.");
-            return;
-        }
-        if (camera.TargetActorId == targetId)
-            _values.ClearTargetActor(camera);
-        else if (_values.SetTargetActor(
-            camera, exact, targetId, ActorNameFrom(exact)))
-            ClearTrackedBonesOutside(camera, targetId);
-    }
-
-    private static string ActorNameFrom(IActor actor) => actor.Name;
-
-    /// <summary>Runs on the framework/UI thread before target presentation or
-    /// recentering. A stale exact id clears the complete follow relationship;
-    /// it never resolves or writes the replacement actor.</summary>
-    private bool ReconcileTargetActor(IVirtualCamera camera, bool notify)
-    {
-        if (camera.TargetActorId is not { } targetId)
-        {
-            if (camera.IsTargetLocked)
-                _values.ClearTargetActor(camera);
-            return true;
-        }
-        var resolved = _bindings.Resolve(targetId);
-        if (resolved.Success && resolved.Value is { } actor &&
-            ReferenceEquals(actor, camera.TargetActor) &&
-            _bindings.GetActorId(actor) == targetId)
-            return true;
-        _values.ClearTargetActor(camera);
-        if (notify)
-            _notices.Refused("Follow: the target actor is no longer available.");
-        return false;
-    }
-
-    private void ReportCenter(CameraCenterResult result)
-    {
-        if (!result.Success)
-            _notices.Refused(result.Detail ?? "Center: the camera could not move.");
-    }
-
-    /// <summary>Public because the camera row's recenter seat speaks this
-    /// verb too — Brio's Bullseye: retarget the tracking onto the actor,
-    /// aim offset corrected to the drawn body.</summary>
-    public void FollowActor(ActorId actorId, string displayName,
-        IVirtualCamera camera)
-    {
-        if (camera.IsTracking)
-        {
-            _notices.Refused("Follow: turn off bone tracking first.");
-            return;
-        }
-        if (camera.IsTargetLocked)
-        {
-            _notices.Refused("Follow: unlock the actor first.");
-            return;
-        }
-        var resolved = _bindings.Resolve(actorId);
-        if (!resolved.Success || resolved.Value is not { } actor)
-        {
-            _notices.Failed($"Follow: {resolved.Detail}");
-            return;
-        }
-        if (_bindings.GetActorId(actor) != actorId)
-        {
-            _notices.Refused("Follow: that actor is no longer available.");
-            return;
-        }
-        if (!_values.SetTargetActor(camera, actor, actorId, displayName))
-        {
-            _notices.Failed("Follow: the actor is not drawn yet.");
-            return;
-        }
-        ClearTrackedBonesOutside(camera, actorId);
-    }
-
-    /// <summary>Resolves one exact bone at gesture time before changing the
-    /// tracked set.</summary>
-    public void ToggleTrackedBone(IVirtualCamera camera, BoneId boneId)
-    {
-        ActorId? authority = ResolveExactTargetActorId(camera);
-        if (authority != boneId.Skeleton.Actor)
-        {
-            _notices.Refused("Track: choose that actor first.");
-            return;
-        }
-        var resolved = _bindings.Resolve(boneId);
-        if (!resolved.Success || resolved.Value is not { } bone ||
-            _bindings.GetBoneId(bone) != boneId)
-        {
-            _notices.Refused("Track: that bone is no longer available.");
-            return;
-        }
-        for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
-        {
-            if (_bindings.GetBoneId(camera.TrackedBones[i]) == boneId)
-            {
-                camera.TrackedBones.RemoveAt(i);
-                return;
-            }
-            if (_bindings.GetBoneId(camera.TrackedBones[i]) is { } otherId &&
-                otherId.Skeleton.Actor != boneId.Skeleton.Actor)
-            {
-                _notices.Refused("Track: tracked bones must use one actor.");
-                return;
-            }
-        }
-        camera.TrackedBones.Add(bone);
-    }
-
-    private void ClearTrackedBonesOutside(
-        IVirtualCamera camera, ActorId actorId)
-    {
-        if (camera.TrackedBones.Any(bone =>
-            _bindings.GetBoneId(bone) is not { } boneId ||
-            boneId.Skeleton.Actor != actorId))
-            camera.TrackedBones.Clear();
-    }
+    public void ToggleTrackedBone(CameraId cameraId, BoneId boneId) =>
+        ReportTarget(_targets.ToggleTrackedBone(cameraId, boneId));
 
     // ── actions ──────────────────────────────────────────────────────────
 

@@ -25,6 +25,27 @@ namespace Poser.UI;
 /// <summary>Per-entity verbs: playing, night, visible, destroy, and the selection forms of each.</summary>
 public partial class MainWindow
 {
+    private bool TryResolveExactActor(ActorId actorId, out IActor actor)
+    {
+        var resolved = _bindings.Resolve(actorId);
+        if (resolved.Success && resolved.Value is { } exact &&
+            _bindings.GetActorId(exact) == actorId)
+        {
+            actor = exact;
+            return true;
+        }
+        actor = null!;
+        return false;
+    }
+
+    private bool ResolveExactActor(ActorId actorId) =>
+        TryResolveExactActor(actorId, out _);
+
+    private ActorDescriptor? ResolveActorDescriptor(ActorId actorId) =>
+        ResolveExactActor(actorId)
+            ? _scene.Snapshot.FindActor(actorId)
+            : null;
+
     /// <summary>Whether this entity is playing its animation: an actor's
     /// timeline, an effect's playback, borrowed scenery's animation. Null
     /// for kinds that do not animate, spawned scenery included.</summary>
@@ -134,34 +155,14 @@ public partial class MainWindow
     /// <summary>Whether the LOOK-AT verb has anything to do — the context
     /// menu's "Look at tracked actor", distinct from the row seat's
     /// Brio-style retarget.</summary>
-    private bool CanRecenterOnTracked(IVirtualCamera camera)
-    {
-        if (!_cameraService.IsAvailable || camera.IsLocked || !camera.IsLive
-            || camera.Kind == CameraKind.Free || camera.FixedPosition != null)
-            return false;
-        return ResolveCameraTrackedActor(camera) is { } tracked
-            && TryResolveExactActor(tracked.Id, out var exact)
-            && _spawnService.IsVisible(exact);
-    }
+    private bool CanRecenterOnTracked(IVirtualCamera camera) =>
+        _bindings.GetCameraId(camera) is { } id &&
+        _cameraTargets.Read(id)?.CanCenterTrackedActor == true;
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)
     {
-        var resolved = _bindings.Resolve(cameraId);
-        if (!resolved.Success ||
-            resolved.Value is not { IsValid: true } camera ||
-            _bindings.GetCameraId(camera) != cameraId ||
-            !_cameraService.IsAvailable || camera.IsLocked || !camera.IsLive ||
-            camera.Kind == CameraKind.Free || camera.FixedPosition != null)
-        {
-            return;
-        }
-        var actor = ResolveCameraTrackedActor(camera);
-        if (actor == null || !TryResolveExactActor(actor.Id, out var exact) ||
-            !_spawnService.IsVisible(exact))
-        {
-            return;
-        }
-        _cameraPane.CenterOnActor(actor.Id);
+        var result = _cameraTargets.CenterTrackedActor(cameraId);
+        if (!result.Success) _notices.Refused(result.Detail ?? "The camera could not move.");
     }
 
     /// <summary>Whether the current selection is empty or every selected

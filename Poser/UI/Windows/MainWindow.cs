@@ -188,6 +188,7 @@ public partial class MainWindow : Window
     private readonly ILightingService _lightingService;
 
     private readonly CameraPane _cameraPane;
+    private readonly Application.Presentation.ICameraTargetControl _cameraTargets;
 
     private readonly IVirtualCameraService _cameraService;
 
@@ -513,6 +514,7 @@ public partial class MainWindow : Window
         LightPane lightPane,
         ILightingService lightingService,
         CameraPane cameraPane,
+        Application.Presentation.ICameraTargetControl cameraTargets,
         IVirtualCameraService cameraService,
         EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
@@ -608,8 +610,8 @@ public partial class MainWindow : Window
         _lightPane.RequestDestroyAll = ConfirmDestroyAllLights;
         _lightingService = lightingService;
         _cameraPane = cameraPane;
+        _cameraTargets = cameraTargets;
         _cameraPane.RequestDestroyAll = ConfirmDestroyAllCameras;
-        _cameraPane.GetNativeTarget = _actorManager.GetGPoseTarget;
         // Camera tracking consumes this window's already-built actor/category
         // hierarchy; the shared row model keeps disclosure and identities in
         // lockstep with the sidebar instead of minting a second flat tree.

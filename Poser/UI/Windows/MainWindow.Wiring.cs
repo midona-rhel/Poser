@@ -65,14 +65,10 @@ public partial class MainWindow
                 return;
             if (SelectedActorRef() is not { Actor: { } trackActorId })
                 return;
-            var cameraResolved = _bindings.Resolve(recenterId);
-            if (!cameraResolved.Success
-                || cameraResolved.Value is not { IsValid: true } trackCamera)
-                return;
             string trackLabel = _scene.Snapshot.FindActor(trackActorId.LogicalId) is { } tracked
                 ? ActorNames.Display(tracked)
                 : "Actor";
-            _cameraPane.FollowActor(trackActorId, trackLabel, trackCamera);
+            _cameraPane.FollowActor(trackActorId, trackLabel, recenterId);
         };
         _vm.OnGroupLock = row =>
         {
