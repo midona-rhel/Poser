@@ -117,6 +117,8 @@ the pane does not stop it and replacing its target cannot redirect it.
 Equipment and customization commands own their history in Application behind
 ID-only controls. The panel retains picker/display state, not undo baselines;
 structural body changes capture fresh customization values before redrawing.
+Their inverse includes dependent fields normalized by the appearance provider;
+ordinary palette/slider edits still restore only their edited fields.
 Game supplies external-provider calls and exact-generation availability through
 the existing integration runtime. Failed equipment inverses retain their failure
 and remain retryable, including partially restored outfits.

@@ -88,6 +88,25 @@ public sealed class AppearanceControlTests
     }
 
     [Fact]
+    public void Body_change_undo_restores_values_normalized_by_the_provider()
+    {
+        var f = new Fixture();
+        f.Runtime.NormalizeBody = true;
+        f.Runtime.Customize[CustomizeKey.Gender] = 1;
+        f.Runtime.Customize[CustomizeKey.BustSize] = 100;
+        Assert.True(f.Customize.SetBody(f.Runtime.Actor,
+            new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 }, "Swap gender").Success);
+        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
+        Assert.True(step.Undo());
+        Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
+        Assert.Equal(100, f.Runtime.Customize[CustomizeKey.BustSize]);
+        Assert.True(step.Redo());
+        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
+        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
+    }
+
+    [Fact]
     public void Revert_does_not_discard_a_look_that_cannot_be_captured()
     {
         var f = new Fixture();
@@ -140,6 +159,7 @@ public sealed class AppearanceControlTests
     {
         public ActorId Actor = ActorId.New();
         public bool Refuse;
+        public bool NormalizeBody;
         public EquipSlot? RefuseSlot;
         public List<string> Writes { get; } = new();
         public Dictionary<EquipSlot, WardrobeSlot> Slots { get; } = new()
@@ -178,6 +198,8 @@ public sealed class AppearanceControlTests
                 case nameof(IIntegrationRuntimePort.SetMetaSwitch): _hatVisible = (bool)args![2]!; break;
                 case nameof(IIntegrationRuntimePort.SetCustomize):
                     foreach (var (key, value) in (IReadOnlyDictionary<CustomizeKey, int>)args![1]!) Customize[key] = value;
+                    if (NormalizeBody && Customize[CustomizeKey.Gender] == 0)
+                        Customize[CustomizeKey.BustSize] = 0;
                     break;
                 default: throw new NotSupportedException(method.Name);
             }
