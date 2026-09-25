@@ -2,6 +2,8 @@ using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Scene;
+using Poser.Domain.Cameras;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Viewport;
@@ -11,7 +13,14 @@ namespace Poser.Application.Viewport;
 /// Reads only; nothing here writes.</summary>
 public interface IViewportReads
 {
-    (IkColliderShape Shape, bool Locked)? GetCollider(OverlayId id);
+    ColliderViewportState? GetCollider(OverlayId id);
+    LightViewportState? GetLight(LightId id);
+    ActorId? GameTarget { get; }
+    FreeCameraSpeedNotice? CameraSpeedNotice { get; }
+    /// <summary>Copies only requested bones into caller-owned buffers, in descriptor order.
+    /// Unavailable/stale entries are excluded. Native skeleton resolution happens once.</summary>
+    void ReadBonePositions(SkeletonId skeleton, IReadOnlyList<BoneDescriptor> bones,
+        Span<bool> included, Span<Vector3> positions);
     bool IsLightAttached(LightId id);
     bool HasActorOverride(ActorId id);
     PoseTransform? GetModelTransform(TransformTargetId target);
@@ -23,3 +32,12 @@ public interface IViewportReads
     PoseTransform? GetParentModelTransform(BoneId id);
     Matrix4x4? GetSkeletonModelMatrix(BoneId id);
 }
+
+public readonly record struct ColliderViewportState(IkCollider Collider, bool Visible, float Alpha)
+{
+    public IkColliderShape Shape => Collider.Shape;
+    public bool Locked => Collider.Locked;
+}
+
+public readonly record struct LightViewportState(
+    LightKind Kind, bool IsOn, Vector3 Color, float SpotAngle, Vector2 AreaAngle);

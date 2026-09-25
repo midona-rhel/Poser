@@ -67,6 +67,13 @@ maps read detached actor/skeleton/bone descriptors. Propagation settings, IK
 translation limits and bake-chain reads cross ID-only contracts; no native bone
 or mutable pose-info instance is retained by these surfaces.
 
+World gizmos and skeleton/light/collider overlays also consume ID-only reads.
+Game resolves each bulk bone-position request once against the exact skeleton;
+caller-owned masks keep hidden bones out of the hot read path. The UI retains
+only display values, projects them through `ICameraProjection`, and owns drawing,
+hit-testing and gesture input. Collider reads preserve their immutable geometry
+identity for rendering caches; copying mesh arrays every frame is not required.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

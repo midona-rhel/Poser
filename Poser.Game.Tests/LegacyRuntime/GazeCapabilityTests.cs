@@ -14,6 +14,8 @@ using Poser.Services;
 
 using Poser.Domain.Scene;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class GazeCapabilityTests
@@ -286,7 +288,7 @@ public sealed class GazeCapabilityTests
     {
         return new GazeService(
             NewProxy<IGPoseService>(),
-            NewProxy<ICameraService>(),
+            NewProxy<ICameraProjection>(),
             NewProxy<IObjectTable>(),
             factory.EventBus,
             NewProxy<ISigScanner>(),
@@ -499,7 +501,7 @@ public sealed class GazeCapabilityTests
 
             var service = new GazeService(
                 NewProxy<IGPoseService>(),
-                NewProxy<ICameraService>(),
+                NewProxy<ICameraProjection>(),
                 objectTable,
                 factory.EventBus,
                 NewProxy<ISigScanner>(),

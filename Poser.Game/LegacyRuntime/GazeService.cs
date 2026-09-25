@@ -17,6 +17,8 @@ using Poser.Services;
 
 using Poser.Domain.Scene;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Game;
 
 internal unsafe delegate nint GazeLoopDelegate(ContainerInterface* args);
@@ -88,7 +90,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private const uint LookAtIndex_Eyes = 2;
 
     private readonly IGPoseService _gPoseService;
-    private readonly ICameraService _cameraService;
+    private readonly ICameraProjection _cameraService;
     private readonly IObjectTable _objectTable;
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
@@ -156,7 +158,7 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public GazeService(
         IGPoseService gPoseService,
-        ICameraService cameraService,
+        ICameraProjection cameraService,
         IObjectTable objectTable,
         IEventBus eventBus,
         ISigScanner sigScanner,
@@ -178,7 +180,7 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     internal GazeService(
         IGPoseService gPoseService,
-        ICameraService cameraService,
+        ICameraProjection cameraService,
         IObjectTable objectTable,
         IEventBus eventBus,
         ISigScanner sigScanner,

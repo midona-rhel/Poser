@@ -12,6 +12,8 @@ using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Game.Scene;
 
 /// <summary>Shared creation policy for sidebar, spawn search, and library.</summary>
@@ -26,11 +28,11 @@ public sealed class SceneCreation : ISceneCreation
     private readonly ISkeletonService _skeletons;
     private readonly AnimationSession _animation;
     private readonly SceneRuntimeHandles _handles;
-    private readonly ICameraService _camera;
+    private readonly ICameraProjection _camera;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraService camera)
+        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera)
     {
         _framework = framework;
         _sessions = sessions;

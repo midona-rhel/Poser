@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Poser.Services;
+namespace Poser.Application.Viewport;
 
 /// <summary>The camera's view-projection and the display centre for one
 /// frame: a surface fetches it once and projects every point with pure
@@ -21,7 +21,7 @@ public readonly record struct ScreenProjection(Matrix4x4 ViewProjection, Vector2
     }
 }
 
-public interface ICameraService
+public interface ICameraProjection
 {
     /// <summary>This frame's projection, for a surface that projects many
     /// points. False when the camera is not available.</summary>

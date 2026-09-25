@@ -13,6 +13,8 @@ using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.UI;
 public class SettingsWindow : Window
 {

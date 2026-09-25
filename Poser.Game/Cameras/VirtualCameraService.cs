@@ -18,6 +18,8 @@ using Poser.Services;
 using SceneCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Camera;
 using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.Game.Cameras;
 
 /// <summary>

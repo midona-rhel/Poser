@@ -111,8 +111,8 @@ public partial class SkeletonOverlayWindow
         var draw = ImGui.GetBackgroundDrawList();
         foreach (var descriptor in _scene.Snapshot.Overlays.Where(x => x.Kind == OverlayNodeKind.Collider))
         {
-            var node = _bindings.Resolve(descriptor.Id).Value;
-            if (node?.State.Collider is not { } collider || !node.Visible) continue;
+            if (_viewport.GetCollider(descriptor.Id) is not { Visible: true } node) continue;
+            var collider = node.Collider;
             var id = SelectionId.ForOverlay(descriptor.Id);
             var color = _selection.IsSelected(id) ? new Vector4(.4f, .9f, 1f, 1f) : new Vector4(.65f, .45f, 1f, 1f);
             uint fill = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha });
@@ -147,7 +147,7 @@ public partial class SkeletonOverlayWindow
                 _cameraService.WorldToScreen(collider.Transform.Position, out var center))
                 handles.Add(new ActorDisplayData
                 {
-                    Name = node.Name,
+                    Name = descriptor.Name,
                     Id = id,
                     ScreenPos = viewport + center,
                     CameraDistance = Vector3.Distance(camera, collider.Transform.Position),
@@ -164,15 +164,16 @@ public partial class SkeletonOverlayWindow
             return;
         }
         if (IkWidthPreview.Target is not { } target ||
-            _bindings.Resolve(target).Value is not { } bone ||
-            _bonePosing.GetIkConfiguration(bone)?.Fabrik is not { } chain ||
+            _ikPort.Get(TransformTargetId.ForBone(target))?.Fabrik is not { } chain ||
             _viewport.GetSkeletonModelMatrix(target) is not { } model) return;
         var points = new List<Vector3>();
+        var skeleton = _scene.Snapshot.Actors.SelectMany(a => a.Skeletons).FirstOrDefault(s => s.Id == target.Skeleton);
+        if (skeleton == null) return;
         foreach (var saved in chain.Bones)
         {
-            var live = bone.Skeleton.Bones.FirstOrDefault(b => b.PartialId == saved.Partial && b.BoneName == saved.Name);
-            if (live == null) return;
-            points.Add(Vector3.Transform(live.LastTransform.Position, model));
+            var bone = skeleton.Bones.FirstOrDefault(b => b.Id.PartialId == saved.Partial && b.Id.CanonicalName == saved.Name);
+            if (bone == null || _viewport.GetBoneModelTransform(bone.Id) is not { } transform) return;
+            points.Add(Vector3.Transform(transform.Position, model));
         }
         Matrix4x4.Invert(_cameraService.GetViewMatrix(), out var view);
         var right = Vector3.Normalize(new Vector3(view.M11, view.M12, view.M13));

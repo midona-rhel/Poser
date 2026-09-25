@@ -1,3 +1,4 @@
+using Poser.Domain.Cameras;
 using Poser.Config;
 using Poser.Entities;
 

@@ -13,7 +13,7 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
+using Poser.Application.Posing;
 using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
@@ -48,14 +48,11 @@ public class GizmoOverlayWindow : Window
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
     private readonly IEditorState _editorState;
-    private readonly ICameraService _cameraService;
-    private readonly IBonePosingService _bonePosingService;
+    private readonly ICameraProjection _cameraService;
+    private readonly IPoseInteraction _poseInteraction;
+    private readonly IIkConfigurationPort _ikPort;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IGazeControl _gazeValues;
-    // Used for the free-camera speed readout.
-    private readonly IVirtualCameraService _virtualCameras;
-    // Resolves stable selections to live actors.
-    private readonly IEntityBindings _bindings;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
@@ -180,12 +177,11 @@ public class GizmoOverlayWindow : Window
         SceneSession scene,
         IViewportReads viewport,
         IEditorState editorState,
-        ICameraService cameraService,
-        IBonePosingService bonePosingService,
+        ICameraProjection cameraService,
+        IPoseInteraction poseInteraction,
+        IIkConfigurationPort ikPort,
         ITransformFacade cleanTransforms,
         IGazeControl gazeValues,
-        IEntityBindings bindings,
-        IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
@@ -210,11 +206,10 @@ public class GizmoOverlayWindow : Window
         _viewport = viewport;
         _editorState = editorState;
         _cameraService = cameraService;
-        _bonePosingService = bonePosingService;
+        _poseInteraction = poseInteraction;
+        _ikPort = ikPort;
         _cleanTransforms = cleanTransforms;
         _gazeValues = gazeValues;
-        _bindings = bindings;
-        _virtualCameras = virtualCameras;
         _presentation = presentation;
         _groups = groups;
         _groupCoordinator = groupCoordinator;
@@ -596,7 +591,7 @@ public class GizmoOverlayWindow : Window
             { Kind: SceneEntityKind.Prop } => GizmoTargetType.Prop,
             { Kind: SceneEntityKind.WorldObject } => GizmoTargetType.WorldObject,
             { Kind: SceneEntityKind.Overlay, Overlay: { } collider } when
-                _bindings.Resolve(collider).Value is { Visible: true, State.Collider: { Locked: false } } => GizmoTargetType.Collider,
+                _viewport.GetCollider(collider) is { Visible: true, Locked: false } => GizmoTargetType.Collider,
             _ => GizmoTargetType.None,
         };
     }
@@ -604,8 +599,7 @@ public class GizmoOverlayWindow : Window
     /// <summary>Attached lights are not transform targets.</summary>
     private bool IsAttached(LightId light)
     {
-        var resolved = _bindings.Resolve(light);
-        return resolved.Success && resolved.Value is { AttachedBone: not null };
+        return _viewport.IsLightAttached(light);
     }
 
     /// <summary>Resolves the effective transform selection.</summary>
@@ -613,7 +607,7 @@ public class GizmoOverlayWindow : Window
         TransformTargetResolver.Resolve(
             _selection.Selected, _scene.Snapshot,
             id => _groups.IsLockedChild(id, _selection.Selected) ||
-                (id.Overlay is { } o && _bindings.Resolve(o).Value?.State.Collider?.Locked == true));
+                (id.Overlay is { } o && _viewport.GetCollider(o)?.Locked == true));
 
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
@@ -741,7 +735,7 @@ public class GizmoOverlayWindow : Window
         Transform currentTransform;
         bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
         bool capsuleScale = !isGroup && selection.Primary.Collider is { } capsuleId &&
-            _bindings.Resolve(capsuleId).Value?.State.Collider?.Shape == Domain.Posing.IkColliderShape.Capsule;
+            _viewport.GetCollider(capsuleId)?.Shape == Domain.Posing.IkColliderShape.Capsule;
         if (gesture is { } presented)
         {
             currentTransform = presented.Current;
@@ -875,8 +869,7 @@ public class GizmoOverlayWindow : Window
         // never hide.
         bool keepIkVisible = ManipulationDrag.Held && isBone && primaryBone is { } ikBoneId
             && Config.ConfigurationService.Instance.Config.UI.KeepIkGizmoVisibleWhileManipulating
-            && _bindings.Resolve(ikBoneId) is { Success: true, Value: { } ikBone }
-            && _bonePosingService.GetIkConfiguration(ikBone) is { Enabled: true };
+            && _ikPort.Get(TransformTargetId.ForBone(ikBoneId)) is { Enabled: true };
         bool hideGizmo = ManipulationHide.HideGizmo && !keepIkVisible;
         if (layout != null && !io.KeyAlt
             && !(hideGizmo && ManipulationHide.Hidden))
@@ -1070,7 +1063,7 @@ public class GizmoOverlayWindow : Window
     /// <summary>Draws the current free-camera speed notice.</summary>
     private void DrawFreeCameraSpeed()
     {
-        if (_virtualCameras.SpeedNotice is not { } notice)
+        if (_viewport.CameraSpeedNotice is not { } notice)
             return;
         float opacity = notice.Opacity(Environment.TickCount64);
         if (opacity <= 0f)
@@ -1248,7 +1241,7 @@ public class GizmoOverlayWindow : Window
                 _ =>
                     $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
             },
-            includeLinkedBones: isBone && _bonePosingService.LinkedBonesEnabled,
+            includeLinkedBones: isBone && _poseInteraction.LinkedBonesEnabled,
             symmetryFor: isBone ? SymmetryDeltaFor : null,
             relativeSecondaryBones: isBone &&
                 Config.ConfigurationService.Instance.Config
@@ -1408,11 +1401,10 @@ public class GizmoOverlayWindow : Window
                         + GizmoSnap.Snap(offset, linearStep);
                 }
                 var newTransform = gesture.Start with { Position = position };
-                if (EffectiveSelection()?.Primary is { Bone: { } boneId }
-                    && _bindings.Resolve(boneId).Value is { } bone)
+                if (EffectiveSelection()?.Primary is { Bone: { } boneId })
                 {
-                    var limited = gesture.Current.Position + _bonePosingService.ClampIkTranslation(
-                        bone, position - gesture.Current.Position);
+                    var limited = gesture.Current.Position + _poseInteraction.ClampIkTranslation(
+                        boneId, position - gesture.Current.Position);
                     if (Vector3.DistanceSquared(limited, position) > 1e-10f)
                     {
                         // Discard rejected travel: reversing the mouse should move

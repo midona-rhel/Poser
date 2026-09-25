@@ -3,6 +3,8 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Services;
 
+using Poser.Application.Viewport;
+
 namespace Poser.UI.Controls;
 
 /// <summary>
@@ -119,7 +121,7 @@ public static class RotationGizmoRings
     /// anywhere on screen. The front depth cut grows toward face-on.
     /// </summary>
     public static ProjectedRings Project(
-        ICameraService camera,
+        ICameraProjection camera,
         Vector2 center,
         Quaternion frame,
         float radiusPixels)

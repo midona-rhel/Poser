@@ -12,6 +12,8 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.UI;
 
 /// <summary>

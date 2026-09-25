@@ -50,7 +50,7 @@ public sealed class LightPane
     private readonly IPlacementAnchorSource _anchors;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
-    private readonly ICameraService _camera;
+    private readonly ICameraProjection _camera;
     private readonly ITextureProvider _textures;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
@@ -132,7 +132,7 @@ public sealed class LightPane
         IPlacementAnchorSource anchors,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
-        ICameraService camera,
+        ICameraProjection camera,
         ITextureProvider textures,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,

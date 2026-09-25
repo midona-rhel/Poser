@@ -12,7 +12,7 @@ using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
+using Poser.Application.Posing;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -23,20 +23,16 @@ namespace Poser.UI;
 /// </summary>
 public partial class SkeletonOverlayWindow : Window, IDisposable
 {
-    private readonly ICameraService _cameraService;
+    private readonly ICameraProjection _cameraService;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
-    private readonly IBonePosingService _bonePosing;
-    private readonly IEntityBindings _bindings;
+    private readonly IPoseInteraction _poseInteraction;
     private readonly WorldAdoptionSource _adoption;
     private readonly Application.Scene.SceneGroups _groups;
-    // Only for the inactive-actor fade: "active" can mean the GAME's target,
-    // and the overlay has no other route to it.
-    private readonly IActorManager _actorManager;
 
     // Configuration from settings
     private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
@@ -128,7 +124,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         public Vector2 ScreenPos;
         public float CameraDistance;
         public bool IsSelected;
-        public ILight? Live;
+        public LightViewportState? Live;
         public bool IsHovered;
         /// <summary>The grouped-child middle state — see
         /// <see cref="ActorDisplayData.Reduced"/>.</summary>
@@ -376,17 +372,15 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         Vector2 ReleasePoint);
 
     public SkeletonOverlayWindow(
-        IBonePosingService bonePosing,
+        IPoseInteraction poseInteraction,
         SceneSession scene,
         IViewportReads viewport,
-        ICameraService cameraService,
+        ICameraProjection cameraService,
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
-        IEntityBindings bindings,
         WorldAdoptionSource adoption,
         Application.Scene.SceneGroups groups,
-        IActorManager actorManager,
         Dalamud.Plugin.Services.IPluginLog log,
         Dalamud.Plugin.Services.ITextureProvider textures)
         : base("##poser_skeleton_overlay",
@@ -407,11 +401,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         _editorState = editorState;
         _presentation = presentation;
         _ikPort = ikPort;
-        _bonePosing = bonePosing;
-        _bindings = bindings;
+        _poseInteraction = poseInteraction;
         _adoption = adoption;
         _groups = groups;
-        _actorManager = actorManager;
         _log = log;
         _textures = textures;
 
@@ -661,7 +653,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 !_cameraService.WorldToScreen(lightTransform.Position, out var lightScreen))
                 continue;
             bool lightSelected = selectedIds.Contains(lightSelectionId);
-            var resolved = _bindings.Resolve(light.Id);
+            var display = _viewport.GetLight(light.Id);
             lights.Add(new LightDisplayData
             {
                 Name = light.Name,
@@ -671,7 +663,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 CameraDistance = Vector3.Distance(
                     cameraPosition, lightTransform.Position),
                 IsSelected = lightSelected,
-                Live = resolved.Success ? resolved.Value : null,
+                Live = display,
                 Reduced = wholeGroup is not null
                     && _groups.GroupOf(lightSelectionId) is { } lightGroup
                     && lightGroup.Id == wholeGroup,
@@ -842,7 +834,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                     && Core.PoseMath.GetMirrorBoneName(canonical)
                         is { } mirror)
                     (implicated ??= new()).Add(mirror);
-                if (_bonePosing.LinkedBonesEnabled || symmetryConfig.AutoLinkPairedBones)
+                if (_poseInteraction.LinkedBonesEnabled || symmetryConfig.AutoLinkPairedBones)
                     foreach (var linked in global::Poser.Domain.Posing
                         .BoneLinkCatalog.GetLinked(canonical))
                         (implicated ??= new()).Add(linked);
@@ -852,9 +844,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             // its cached transform — the references' walk, not a registry
             // resolve per bone. Positions land in scratch arrays indexed
             // like the descriptors; the parent is an index lookup.
-            if (_bindings.Resolve(descriptors[0].Id) is not
-                { Success: true, Value: { Skeleton: { } live } })
-                continue;
             var screen = _screenScratch;
             var world = _worldScratch;
             var placed = _placedScratch;
@@ -876,9 +865,14 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
-                if (live.GetBone(bone.Id.PartialId, bone.Id.BoneIndex) is not { } liveBone)
-                    continue;
-                var worldPos = Vector3.Transform(liveBone.LastTransform.Position, modelMatrix);
+                placed[b] = true;
+            }
+            _viewport.ReadBonePositions(slotSkeleton.Id, descriptors, placed.AsSpan(0, count), world.AsSpan(0, count));
+            for (int b = 0; b < count; b++)
+            {
+                if (!placed[b]) continue;
+                placed[b] = false;
+                var worldPos = Vector3.Transform(world[b], modelMatrix);
                 // The projection refuses what lies behind the camera.
                 if (hasProjection
                     ? !projection.Project(worldPos, out var screenPos)
@@ -915,7 +909,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         LastBoneCount = bones.Count;
         MarkMirrorPartners(bones, _editorState.SymmetryMode);
         // Eyes and ears that move together by default are partners too.
-        if (_bonePosing.LinkedBonesEnabled
+        if (_poseInteraction.LinkedBonesEnabled
             || ConfigurationService.Instance.Config.AutoLinkPairedBones)
             MarkLinkPartners(bones);
 
@@ -1222,10 +1216,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// <summary>The GAME's target as a stable lineage, or null when there is
     /// none or it has no binding.</summary>
     private Guid? _actors_GPoseTargetLineage() =>
-        _actorManager.GetGPoseTarget() is { } target
-        && _bindings.GetActorId(target) is { } id
-            ? id.LogicalId
-            : null;
+        _viewport.GameTarget?.LogicalId;
 
     /// <summary>The actor the current selection belongs to — a selected bone
     /// names its actor exactly as a selected actor does, so posing one actor
@@ -2387,7 +2378,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         ImDrawListPtr drawList,
         Vector2 viewportPos,
         LightDisplayData light,
-        ILight live,
+        LightViewportState live,
         Vector4 color,
         float dotRadius)
     {

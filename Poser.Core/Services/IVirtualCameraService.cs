@@ -4,6 +4,8 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.Services;
 
 /// <summary>The outcome of framing one actor through the current live camera.

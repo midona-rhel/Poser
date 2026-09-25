@@ -3,6 +3,8 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Services;
 
+using Poser.Application.Viewport;
+
 namespace Poser.UI.Controls;
 
 /// <summary>Interactive in-world gizmo handle kinds.</summary>
@@ -50,7 +52,7 @@ public sealed class WorldGizmoProjection
 
     /// <summary>Builds one projection, or null when it is unusable.</summary>
     public static WorldGizmoProjection? Create(
-        ICameraService camera,
+        ICameraProjection camera,
         Vector2 displaySize,
         Vector3 pivotWorld,
         float sizePixels)

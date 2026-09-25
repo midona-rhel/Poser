@@ -1,3 +1,4 @@
+using Poser.Domain.Cameras;
 using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;

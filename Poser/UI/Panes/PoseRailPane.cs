@@ -7,6 +7,8 @@ using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 
+using Poser.Application.Viewport;
+
 namespace Poser.UI;
 
 /// <summary>
@@ -21,7 +23,7 @@ namespace Poser.UI;
 public class PoseRailPane
 {
     private readonly PoseInspectorPane _inspector;
-    private readonly ICameraService _camera;
+    private readonly ICameraProjection _camera;
     private readonly Game.Journal.OverlaySession _overlayValues;
 
     /// <summary>The group verbs, which stand only while more than one entity
@@ -67,7 +69,7 @@ public class PoseRailPane
 
     public PoseRailPane(
         PoseInspectorPane inspector,
-        ICameraService camera,
+        ICameraProjection camera,
         SelectionSection selection,
         Game.Journal.OverlaySession overlayValues)
     {

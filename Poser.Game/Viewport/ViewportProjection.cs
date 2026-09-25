@@ -3,6 +3,8 @@ using Poser.Application.Viewport;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Scene;
+using Poser.Domain.Cameras;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game.Bindings;
@@ -28,28 +30,65 @@ public sealed class ViewportProjection : IViewportReads
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _actors;
     private readonly IBonePosingService _bonePosing;
+    private readonly IActorManager _actorManager;
+    private readonly IVirtualCameraService _cameras;
 
     public ViewportProjection(
         IFramework framework,
         StableBindingRegistry bindings,
         PosingService actors,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        IActorManager actorManager,
+        IVirtualCameraService cameras)
     {
         _framework = framework;
         _bindings = bindings;
         _actors = actors;
         _bonePosing = bonePosing;
+        _actorManager = actorManager;
+        _cameras = cameras;
     }
 
-    /// <summary>Whether the actor currently carries a model-transform
-    /// override (display badge state).</summary>
-    public (IkColliderShape Shape, bool Locked)? GetCollider(OverlayId id) =>
-        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value?.State.Collider is { } collider
-            ? (collider.Shape, collider.Locked) : null;
+    public ColliderViewportState? GetCollider(OverlayId id) =>
+        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value is { State.Collider: { } collider } node
+            ? new(collider, node.Visible, node.Alpha) : null;
+
+    public LightViewportState? GetLight(LightId id) =>
+        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value is { } light
+            ? new(light.Kind, light.IsOn, light.Color, light.SpotAngle, light.AreaAngle) : null;
+
+    public ActorId? GameTarget =>
+        _framework.IsInFrameworkUpdateThread && _actorManager.GetGPoseTarget() is { } actor
+            ? _bindings.GetActorId(actor) : null;
+
+    public FreeCameraSpeedNotice? CameraSpeedNotice => _cameras.SpeedNotice;
+
+    public void ReadBonePositions(SkeletonId id, IReadOnlyList<BoneDescriptor> bones,
+        Span<bool> included, Span<Vector3> positions)
+    {
+        if (included.Length < bones.Count || positions.Length < bones.Count)
+            throw new ArgumentException("Bone output buffers must cover the descriptors.");
+        var skeleton = _framework.IsInFrameworkUpdateThread && bones.Count > 0 && bones[0].Id.Skeleton == id
+            ? _bindings.Resolve(bones[0].Id).Value?.Skeleton : null;
+        for (int i = 0; i < bones.Count; i++)
+        {
+            if (!included[i]) continue;
+            var bone = bones[i].Id;
+            if (bone.Skeleton != id || skeleton?.GetBone(bone.PartialId, bone.BoneIndex) is not { } live
+                || live.BoneName != bone.CanonicalName)
+            {
+                included[i] = false;
+                continue;
+            }
+            positions[i] = live.LastTransform.Position;
+        }
+    }
 
     public bool IsLightAttached(LightId id) =>
         _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value?.AttachedBone is not null;
 
+    /// <summary>Whether the actor currently carries a model-transform
+    /// override (display badge state).</summary>
     public bool HasActorOverride(ActorId id)
     {
         if (!_framework.IsInFrameworkUpdateThread)

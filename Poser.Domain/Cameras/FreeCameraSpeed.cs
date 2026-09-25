@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Entities;
+namespace Poser.Domain.Cameras;
 
 /// <summary>
 /// The free camera's fly speed as the mouse wheel drives it. Pure

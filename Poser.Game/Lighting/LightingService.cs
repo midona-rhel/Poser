@@ -15,6 +15,8 @@ using Poser.Game.WorldObjects;
 using Poser.Services;
 using PoserTransform = Poser.Transform;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Game.Lighting;
 
 /// <summary>
@@ -60,7 +62,7 @@ public sealed unsafe class LightingService : ILightingService
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPose;
-    private readonly ICameraService _camera;
+    private readonly ICameraProjection _camera;
     private readonly IEventBus _events;
     private readonly IObjectTable _objects;
     private readonly IGameInteropProvider _hooks;
@@ -118,7 +120,7 @@ public sealed unsafe class LightingService : ILightingService
         IFramework framework,
         IPluginLog log,
         IGPoseService gPose,
-        ICameraService camera,
+        ICameraProjection camera,
         IEventBus events,
         IObjectTable objects,
         IGameInteropProvider hooks,

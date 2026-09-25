@@ -1,5 +1,7 @@
 using Poser.Entities;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.Config;
 
 /// <summary>

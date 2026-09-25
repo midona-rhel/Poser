@@ -11,7 +11,7 @@ namespace Poser.Game.Transforms;
 
 public sealed class GroupTransformSource(
     SceneSession scene, StableBindingRegistry bindings, IViewportReads viewport,
-    ICameraService camera) : IGroupTransformSource
+    ICameraProjection camera) : IGroupTransformSource
 {
     public PoseTransform? Read(TransformTargetId target) =>
         // Lock/attachment refusal governs editing, not reading existing state.

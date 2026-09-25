@@ -9,6 +9,8 @@ using Poser.Config;
 using Poser.Entities;
 using Poser.Library;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.UI.Views;
 public sealed record IntegrationStatusVm(
     string Name, bool Available, string Detail);

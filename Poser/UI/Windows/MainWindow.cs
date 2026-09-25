@@ -113,7 +113,7 @@ public partial class MainWindow : Window
     /// spawned entities bind within a publish or two, so a stage nothing
     /// ever resolves against is dropped rather than held forever.</summary>
 
-    private readonly global::Poser.Services.ICameraService _gameCamera;
+    private readonly ICameraProjection _gameCamera;
 
     private readonly IViewportReads _viewportProjection;
 
@@ -547,7 +547,7 @@ public partial class MainWindow : Window
         Controls.EntityNameModal names,
         Controls.IssueReportModal issueReport,
         ISceneWorkflow sceneWorkflow,
-        global::Poser.Services.ICameraService gameCamera,
+        ICameraProjection gameCamera,
         IViewportReads viewportProjection,
         Game.Journal.EntitySessions sessions,
         Application.Selection.SelectionEntityCommands entityCommands,

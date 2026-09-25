@@ -14,6 +14,8 @@ using Poser.Entities;
 using Poser.Game.Scene;
 using Poser.Services;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.Game.Tests.Scene;
 
 /// <summary>

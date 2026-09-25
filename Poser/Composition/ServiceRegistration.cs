@@ -28,6 +28,8 @@ using Poser.Services;
 using Poser.UI;
 using Poser.UI.Composition;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Composition;
 
 /// <summary>
@@ -426,7 +428,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddEnvironmentAndCameras(
         this IServiceCollection services)
     {
-        services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<ICameraProjection, CameraService>();
         services.AddSingleton<Game.Lighting.LightingService>();
         services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
