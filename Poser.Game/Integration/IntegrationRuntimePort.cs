@@ -79,6 +79,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<string, Guid, Dictionary<string, string>, string, int, int> _addTemporaryMod;
     private readonly ICallGateSubscriber<int, string> _getMetaManipulations;
     private readonly ICallGateSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]> _getResourcePaths;
+    private readonly ICallGateSubscriber<string, int, string> _resolveGameObjectPath;
     private readonly ICallGateSubscriber<string> _getModDirectory;
     private readonly ICallGateSubscriber<int, int, object?> _redrawObject;
     private readonly ICallGateSubscriber<string, Guid, int, int> _removeTemporaryMod;
@@ -145,6 +146,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _addTemporaryMod = pluginInterface.GetIpcSubscriber<string, Guid, Dictionary<string, string>, string, int, int>("Penumbra.AddTemporaryMod.V5");
         _getMetaManipulations = pluginInterface.GetIpcSubscriber<int, string>("Penumbra.GetMetaManipulations.V5");
         _getResourcePaths = pluginInterface.GetIpcSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]>("Penumbra.GetGameObjectResourcePaths.V5");
+        _resolveGameObjectPath = pluginInterface.GetIpcSubscriber<string, int, string>("Penumbra.ResolveGameObjectPath");
         _getModDirectory = pluginInterface.GetIpcSubscriber<string>("Penumbra.GetModDirectory");
         _redrawObject = pluginInterface.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
         _removeTemporaryMod = pluginInterface.GetIpcSubscriber<string, Guid, int, int>("Penumbra.RemoveTemporaryMod.V5");
@@ -562,10 +564,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)index });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail("Penumbra reported no resources for the duplicate.");
-            var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (resolved, gamePaths) in tree)
-                foreach (var path in gamePaths)
-                    if (!string.Equals(path, resolved, StringComparison.OrdinalIgnoreCase)) paths[path] = resolved;
+            var paths = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, index));
             return IntegrationValue<SpawnCollectionSnapshot?>.Ok(new(paths,
                 _getMetaManipulations.InvokeFunc(index) ?? string.Empty));
         });
@@ -586,14 +585,28 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationPortResult.Fail("Penumbra reported no resources for the source.");
-            var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (resolved, gamePaths) in tree)
-                foreach (var gamePath in gamePaths)
-                    if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
-                        redirects[gamePath] = resolved;
+            var redirects = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, sourceIndex));
             string manipulations = _getMetaManipulations.InvokeFunc(sourceIndex) ?? string.Empty;
             return RestoreInheritedCollection(cloneAddress, new(redirects, manipulations));
         });
+
+    internal static Dictionary<string, string> CaptureRedirects(
+        IReadOnlyDictionary<string, HashSet<string>> tree, Func<string, string> resolve)
+    {
+        var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (loadedPath, gamePaths) in tree)
+            foreach (var gamePath in gamePaths)
+            {
+                // Resource trees can lose resolved paths after collection changes.
+                // An empty redirect prevents even the base skeleton from loading.
+                var resolved = string.IsNullOrWhiteSpace(loadedPath) ? resolve(gamePath) : loadedPath;
+                if (string.IsNullOrWhiteSpace(resolved))
+                    throw new InvalidOperationException($"Penumbra could not resolve {gamePath}.");
+                if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
+                    redirects[gamePath] = resolved;
+            }
+        return redirects;
+    }
 
     public IntegrationPortResult RestoreInheritedCollection(nint cloneAddress, SpawnCollectionSnapshot snapshot) =>
         Guarded(Penumbra, "Restore inherited collection", () =>
