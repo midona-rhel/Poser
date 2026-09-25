@@ -106,6 +106,8 @@ public sealed class GazeSessionTests
             return GazeResult.Ok();
         }
 
+        public GazeResult RestoreSettings(ActorId actor, GazeSettings settings) => RefuseMode
+            ? GazeResult.Refused("Native transition refused") : Change(actor, _ => settings);
         public GazeResult SetMode(ActorId actor, GazeTargetMode mode) => RefuseMode
             ? GazeResult.Refused("Native transition refused") : Change(actor, s => s with { Mode = mode });
         public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>

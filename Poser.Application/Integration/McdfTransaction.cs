@@ -30,7 +30,7 @@ namespace Poser.Application.Integration;
 /// facade and the owner of the per-actor override store; this class mutates
 /// that store only through the session's internal seam.
 /// </summary>
-public sealed class McdfTransaction
+public sealed partial class McdfTransaction
 {
     /// <summary>Same bound the import apply phase uses; a redraw that has
     /// not completed within this window is a failure, never an unbounded
@@ -221,13 +221,14 @@ public sealed class McdfTransaction
         return operation;
     }
 
-    internal IntegrationResult BeginImport(ActorId actor, string path)
+    internal IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained = null)
     {
         if (AdmissionGate() is { } refused)
             return refused;
         if (_sessions.ActiveSessionGeneration is not { } session)
             return IntegrationResult.Fail(
                 "No GPose session is active; an MCDF import needs the exact session identity.");
+        var retainedDirectory = retained == null ? null : _directories[retained.OperationDirectory];
         var operation = Admit(actor, _files.GetFileName(path), McdfOperationKind.Import, session);
         operation.SourcePath = path;
         var cancellation = _cancellation!.Token;
@@ -237,7 +238,7 @@ public sealed class McdfTransaction
             McdfPhase.Reading, 0, 0, 0, 0, true, null);
         _owner.RaiseChanged();
         _task = Task.Run(
-            () => RunImport(operation, path, cancellation), CancellationToken.None);
+            () => RunImport(operation, path, cancellation, retained, retained == null ? null : retainedDirectory), CancellationToken.None);
         return IntegrationResult.Ok();
     }
 
@@ -297,7 +298,7 @@ public sealed class McdfTransaction
     // ── Import ───────────────────────────────────────────────────────────
 
     private async Task RunImport(
-        Operation operation, string path, CancellationToken cancellation)
+        Operation operation, string path, CancellationToken cancellation, McdfPackage? retained, McdfOperationDirectory? retainedDirectory)
     {
         var actor = operation.Target;
         string fileName = operation.FileName;
@@ -402,7 +403,9 @@ public sealed class McdfTransaction
                 _directories[operationDirectory.Path] = operationDirectory;
                 return true;
             });
-            var read = await _files.ReadPackage(path, Limits, operationDirectory, step =>
+            var read = retained != null
+                ? await _files.CopyPackage(retained, retainedDirectory!, operationDirectory, cancellation)
+                : await _files.ReadPackage(path, Limits, operationDirectory, step =>
             {
                 filesTotal = step.FilesTotal;
                 bytesTotal = step.BytesTotal;
@@ -596,6 +599,7 @@ public sealed class McdfTransaction
                 if (!_port.IsResolvable(actor))
                     return "The actor is no longer available.";
                 var current = _owner.OverridesFor(actor);
+                _packages[package.OperationDirectory] = new(Guid.NewGuid(), operation.Session, package);
                 bool replacedGlamourer = package.GlamourerData.Length > 0;
                 bool replacedBody = bodyJson != null;
                 _owner.MutateOverrides(actor, current with
@@ -1366,9 +1370,13 @@ public sealed class McdfTransaction
         if (!_directories.TryGetValue(path, out var ownership))
             return IntegrationPortResult.Fail(
                 "The extraction directory ownership proof is unavailable; cleanup was refused.");
+        if (_historyDirectories.Contains(path)) return IntegrationPortResult.Ok();
         var result = _files.DeleteOperationDirectory(ownership);
         if (result.Success)
+        {
             _directories.Remove(path);
+            _packages.Remove(path);
+        }
         return result;
     }
 

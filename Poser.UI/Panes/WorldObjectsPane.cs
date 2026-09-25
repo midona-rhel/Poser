@@ -421,8 +421,7 @@ public sealed class WorldObjectsPane
                     name =>
                     {
                         if (_values.Read(worldObject.Id) is not null)
-                            _scenePane.SaveWorldObjectEntry(
-                                worldObject.Id.LogicalId, name);
+                            _scenePane.SaveEntry(SelectionId.ForWorldObject(worldObject.Id), name);
                     }),
                 help: "Save a spawnable copy of this entity"));
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>

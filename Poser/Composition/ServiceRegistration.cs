@@ -41,14 +41,7 @@ namespace Poser.Composition;
 /// per-feature registration manifest. These methods only describe ownership;
 /// product behavior remains in the registered services.
 ///
-/// Order contract: the public module methods, their call order
-/// (Dalamud, core, features, presentation), and each module's content are
-/// load-bearing — the lifecycle contract suite composes AddPoserCore +
-/// AddPoserFeatures alone and appends its own overrides afterward, relying on
-/// last-registration-wins. Inside a module no service type is registered
-/// twice and nothing resolves IEnumerable&lt;T&gt; over these registrations,
-/// so intra-module order carries no container meaning; the feature methods
-/// preserve the original registration sequence verbatim regardless.
+/// Runtime modules precede presentation; tests may append explicit runtime overrides.
 /// </summary>
 internal static class ServiceRegistration
 {
@@ -90,7 +83,7 @@ internal static class ServiceRegistration
         return services;
     }
 
-    public static IServiceCollection AddPoserCore(this IServiceCollection services)
+    public static IServiceCollection AddPoserRuntime(this IServiceCollection services)
     {
         services.AddConfigurationAndEvents();
         services.AddSessionLifecycle();
@@ -103,8 +96,6 @@ internal static class ServiceRegistration
         services.AddCatalogs();
         services.AddPoseCaptureFeature();
         services.AddSceneOwnership();
-        // Feature-pending: new core registrations land here until they move
-        // into (or become) a feature method above.
         return services;
     }
 
@@ -659,6 +650,10 @@ internal static class ServiceRegistration
         services.AddSingleton<EnvironmentPane>();
         services.AddSingleton<SceneLoadPreferences>();
         services.AddSingleton<PoseLibraryPane>();
+        services.AddSingleton<Application.Library.ILibrarySceneSave>(sp =>
+            new Application.Library.LibrarySceneSave(sp.GetRequiredService<ISceneWorkflow>(),
+                sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<ConfigurationService>(),
+                sp.GetRequiredService<IPoseLibraryService>(), message => sp.GetRequiredService<UserNotices>().Note(message)));
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
@@ -672,6 +667,13 @@ internal static class ServiceRegistration
                 () => configuration.Config,
                 configuration.Save);
         });
+        services.AddSingleton(sp => new Application.World.WorldAcquisitionControl(
+            sp.GetRequiredService<Application.World.IWorldService>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            sp.GetRequiredService<SelectionSession>(),
+            message => sp.GetRequiredService<UserNotices>().Refused(message)));
+        services.AddSingleton<Application.World.IWorldAcquisitionControl>(sp =>
+            sp.GetRequiredService<Application.World.WorldAcquisitionControl>());
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<Application.Scene.IActorSceneControl, Game.Scene.ActorSceneControl>();
         services.AddSingleton<EntityActions>();

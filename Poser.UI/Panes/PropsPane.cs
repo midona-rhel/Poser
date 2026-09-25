@@ -185,8 +185,7 @@ public sealed class PropsPane
                     name =>
                     {
                         if (_values.Read(prop.Id) is not null)
-                            _scenePane.SavePropEntry(
-                                prop.Id.LogicalId, name);
+                            _scenePane.SaveEntry(SelectionId.ForProp(prop.Id), name);
                     });
                 },
                 help: "Save a spawnable copy of this prop", icon: TablerIcon.Dots);

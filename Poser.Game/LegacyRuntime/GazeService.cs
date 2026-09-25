@@ -585,6 +585,41 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    public GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings)
+    {
+        if (!IsAvailable) return Unavailable();
+        if (Resolve(actor) is not { } gameObject)
+            return GazeResult.Refused("This actor is no longer resolvable.");
+        bool writable = CanWriteCharacter(gameObject);
+        ulong? pendingTarget;
+        lock (_sync)
+        {
+            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            if (settings.Mode == GazeTargetMode.Entity && entry.TargetId != 0 && entry.TargetStale)
+                return StaleRefusal(entry);
+            entry.Mode = settings.Mode;
+            entry.Parts = settings.TargetType;
+            entry.Position = settings.Position;
+            ClearPartLock(entry, GazeTargetType.All);
+            ReseedUnlockedParts(entry);
+            foreach (var part in new[] { GazeTargetType.Eyes, GazeTargetType.Head, GazeTargetType.Body })
+            {
+                // Restoring a lock restores its frozen point, not today's camera/actor target.
+                if (settings.IsPartLocked(part)) ApplyPartLock(entry, part, settings.PartPosition(part));
+                else if (settings.Mode is GazeTargetMode.Position or GazeTargetMode.None or GazeTargetMode.Detached)
+                    WritePart(entry, part, new LookAtTarget {
+                        LookMode = settings.Mode == GazeTargetMode.Position ? LookMode.Position : LookMode.None,
+                        Position = settings.PartPosition(part),
+                    });
+            }
+            BookRelease(entry);
+            pendingTarget = PendingTargetWrite(entry, writable);
+        }
+        WriteCharacterTarget(gameObject, pendingTarget);
+        _eventBus.Publish(new GazeStateChangedEvent());
+        return GazeResult.Ok();
+    }
+
     public GazeResult SetGazeMode(IActor actor, GazeTargetMode mode)
     {
         if (!IsAvailable)

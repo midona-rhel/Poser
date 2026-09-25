@@ -232,6 +232,26 @@ public sealed class GazeCapabilityTests
 
 
 
+    [Theory]
+    [InlineData(GazeTargetMode.None)]
+    [InlineData(GazeTargetMode.Camera)]
+    [InlineData(GazeTargetMode.Forward)]
+    [InlineData(GazeTargetMode.Position)]
+    public void Restoration_preserves_stored_points_and_locks_without_reseeding_them(GazeTargetMode mode)
+    {
+        using var scene = GazeScene.Create();
+        var settings = new Poser.Application.Gaze.GazeSettings(mode, GazeTargetType.All,
+            new(1, 2, 3), new(4, 5, 6), new(7, 8, 9), new(10, 11, 12), true, true, false);
+        Assert.True(scene.Service.RestoreSettings(scene.Actor, settings).Success);
+        var restored = scene.Service.GetGazeState(scene.Actor);
+        Assert.Equal(settings.Mode, restored.Mode);
+        Assert.Equal(settings.Position, restored.Position);
+        Assert.Equal(settings.EyesPosition, restored.EyesPosition);
+        Assert.Equal(settings.HeadPosition, restored.HeadPosition);
+        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Eyes));
+        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Head));
+    }
+
     [Fact]
     public void An_actor_outside_the_gpose_range_is_never_written()
     {

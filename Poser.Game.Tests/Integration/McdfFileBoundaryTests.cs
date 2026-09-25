@@ -12,6 +12,37 @@ namespace Poser.Game.Tests;
 public sealed class McdfFileBoundaryTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task History_copy_has_independent_payloads_and_refuses_a_changed_source(bool changed)
+    {
+        var boundary = new McdfFileBoundary();
+        var source = boundary.CreateOperationDirectory().Value!;
+        var destination = boundary.CreateOperationDirectory().Value!;
+        try
+        {
+            var payload = Path.Combine(source.Path, "p0000.dat");
+            File.WriteAllBytes(payload, [1, 2, 3]);
+            var package = new McdfPackage("source.mcdf", "saved", "", "", "",
+                new Dictionary<string, string> { ["chara/test.mdl"] = payload },
+                new Dictionary<string, string>(), source.Path, 1, 3);
+            if (changed) File.AppendAllText(payload, "changed");
+            var copied = await boundary.CopyPackage(package, source, destination, TestContext.Current.CancellationToken);
+            Assert.Equal(!changed, copied.Success);
+            if (changed) return;
+            var copyPath = copied.Value!.ReplacedGamePaths["chara/test.mdl"];
+            Assert.NotEqual(payload, copyPath);
+            Assert.True(boundary.DeleteOperationDirectory(source).Success);
+            Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(copyPath));
+        }
+        finally
+        {
+            boundary.DeleteOperationDirectory(source);
+            boundary.DeleteOperationDirectory(destination);
+        }
+    }
+
+    [Theory]
     [InlineData(true, false)]
     [InlineData(true, true)]
     [InlineData(false, true)]
@@ -171,6 +202,8 @@ private const int ChunkSizeForTest = 81920;
             string path, McdfLimits limits, McdfOperationDirectory operationDirectory,
             Action<McdfProgressStep> progress, CancellationToken cancellation) =>
             throw new NotSupportedException();
+        public Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package, McdfOperationDirectory source,
+            McdfOperationDirectory destination, CancellationToken cancellation) => throw new NotSupportedException();
         public Task<IntegrationValue<McdfWriteStats>> WritePackage(
             string destination, McdfExportContent content,
             Action<McdfProgressStep> progress, CancellationToken cancellation) =>

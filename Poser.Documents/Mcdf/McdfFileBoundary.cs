@@ -22,7 +22,7 @@ namespace Poser.Documents.Mcdf;
 /// raw file payloads immediately after the JSON in <c>Files</c> order.
 /// Unknown JSON members are ignored; unknown versions fail explicitly.
 /// </summary>
-public sealed class McdfFileBoundary : IMcdfFileBoundary
+public sealed partial class McdfFileBoundary : IMcdfFileBoundary
 {
     // A JSON document larger than this is not a plausible character file.
     private const int MaxJsonBytes = 64 * 1024 * 1024;

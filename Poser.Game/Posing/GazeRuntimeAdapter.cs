@@ -49,6 +49,9 @@ public sealed class GazeRuntimeAdapter(
     private GazeResult Write(ActorId id, Action<IActor> change) =>
         WithActor(id, actor => { change(actor); return GazeResult.Ok(); });
 
+    public GazeResult RestoreSettings(ActorId actor, GazeSettings settings) =>
+        WithActor(actor, live => gaze.RestoreSettings(live, settings));
+
     public GazeResult SetMode(ActorId actor, GazeTargetMode mode) =>
         WithActor(actor, live => gaze.SetGazeMode(live, mode));
     public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>

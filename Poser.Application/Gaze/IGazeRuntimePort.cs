@@ -10,6 +10,7 @@ public interface IGazeRuntimePort
     bool IsAvailable { get; }
     string? UnavailableDetail { get; }
     GazeReading? Read(ActorId actor);
+    GazeResult RestoreSettings(ActorId actor, GazeSettings settings);
     GazeResult SetMode(ActorId actor, GazeTargetMode mode);
     GazeResult SetParts(ActorId actor, GazeTargetType parts);
     GazeResult SetTarget(ActorId actor, ActorId target);

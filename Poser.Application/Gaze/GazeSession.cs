@@ -17,39 +17,18 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
     private static ValueWriteResult Written(GazeResult result) => new(result.Success, result.Detail);
 
     // Preserve existing history scope: settings/points, not native entity retargeting.
-    private ValueWriteResult Restore(ActorId actor, GazeSettings settings)
-    {
-        var result = runtime.SetMode(actor, settings.Mode);
-        if (!result.Success || settings.Mode == GazeTargetMode.None)
-            return Written(result);
-        result = runtime.SetParts(actor, settings.TargetType);
-        if (!result.Success) return Written(result);
-        result = runtime.SetGazePosition(actor, settings.Position);
-        if (!result.Success) return Written(result);
-        foreach (var part in Parts)
-        {
-            result = runtime.SetPartPosition(actor, part, settings.PartPosition(part));
-            if (!result.Success) return Written(result);
-        }
-        foreach (var part in Parts)
-        {
-            result = runtime.SetPartLock(actor, part, settings.IsPartLocked(part));
-            if (!result.Success) return Written(result);
-        }
-        return ValueWriteResult.Ok();
-    }
-
-    private static readonly GazeTargetType[] Parts =
-        [GazeTargetType.Eyes, GazeTargetType.Head, GazeTargetType.Body];
+    private ValueWriteResult Restore(ActorId actor, GazeSettings settings) =>
+        Written(runtime.RestoreSettings(actor, settings));
 
     /// <summary>Shared full-state restore, without creating another history entry.</summary>
     public GazeResult RestoreState(ActorId actor, GazeReading reading)
     {
-        var result = Restore(actor, reading.Settings);
-        if (!result.Success) return new(false, result.Detail);
-        return reading.Settings.Mode == GazeTargetMode.Entity && reading.Target is { } target
-            ? runtime.SetTarget(actor, target)
-            : GazeResult.Ok();
+        if (reading.Target is { } target)
+        {
+            var targetResult = runtime.SetTarget(actor, target);
+            if (!targetResult.Success) return targetResult;
+        }
+        return runtime.RestoreSettings(actor, reading.Settings);
     }
 
     private GazeResult Step(ActorId actor, string description, Func<GazeResult> change)

@@ -486,7 +486,7 @@ public partial class MainWindow
                             () => OpenEntityRename(
                                 "Save group to library", group.Name,
                                 name => _scenePane.SaveGroupEntry(
-                                    _groups.Descendants(group).ToArray(), name, AllActorsOwned(_groups.Descendants(group).ToArray()))));
+                                    _groups.Descendants(group).ToArray(), name)));
                         actions.Button("Ungroup",
                             () => _groupSteps.Dissolve(group.Id));
                     }

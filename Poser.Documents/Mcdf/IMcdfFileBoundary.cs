@@ -47,6 +47,10 @@ public interface IMcdfFileBoundary
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 
+    /// <summary>Copies already-validated payloads between proven owned directories for in-session history.</summary>
+    Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package,
+        McdfOperationDirectory source, McdfOperationDirectory destination, CancellationToken cancellation);
+
     /// <summary>
     /// Writes the complete package to a unique same-directory temporary file,
     /// flushes and closes the LZ4 stream, then atomically replaces the

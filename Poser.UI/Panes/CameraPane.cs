@@ -662,7 +662,7 @@ public sealed class CameraPane
                         name =>
                         {
                             if (_values.Read(camera.Id) is not null)
-                                _scenePane.SaveCameraEntry(camera.Id.LogicalId, name);
+                                _scenePane.SaveEntry(SelectionId.ForCamera(camera.Id), name);
                         });
             }, icon: TablerIcon.Dots);
         form.Actions("Camera file", actions =>

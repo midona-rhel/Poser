@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
-using Poser.Application.Selection;
 using Poser.Application.World;
 using Poser.Services;
 
@@ -22,7 +21,7 @@ public readonly record struct WorldAdoptionCandidate(
     WorldAdoptionKind Kind, string Name, Vector3 Position, float DistanceFromCamera, WorldCandidateId Id);
 
 /// <summary>Overlay-only filters, projection range and selection; world commands belong to IWorldService.</summary>
-public sealed class WorldAdoptionSource(IWorldService world, ICameraProjection camera, SelectionSession selection, UserNotices notices)
+public sealed class WorldAdoptionSource(IWorldService world, ICameraProjection camera, IWorldAcquisitionControl acquisition)
 {
     public const float RangeYalms = 30f;
     public bool ShowActors { get; set; }
@@ -32,7 +31,6 @@ public sealed class WorldAdoptionSource(IWorldService world, ICameraProjection c
     public bool Enabled => ShowActors || ShowLights || ShowWorldObjects || ShowEffects;
     private readonly List<WorldAdoptionCandidate> _candidates = new();
     private Task<WorldSnapshot>? _refresh;
-    private Task<WorldAcquisition>? _acquire;
     public IReadOnlyList<WorldAdoptionCandidate> Candidates => _candidates;
 
     public bool IsShown(WorldAdoptionKind kind) => kind switch
@@ -57,26 +55,12 @@ public sealed class WorldAdoptionSource(IWorldService world, ICameraProjection c
         ShowActors = ShowLights = ShowWorldObjects = ShowEffects = false;
         SetHovered(null);
         _candidates.Clear();
-        _acquire = null;
         _refresh = null;
     }
     public void SetHovered(WorldAdoptionCandidate? candidate) => world.Highlight(candidate?.Id);
-    public void Adopt(in WorldAdoptionCandidate candidate)
-    {
-        if (_acquire is { IsCompleted: false }) return;
-        _acquire = world.Acquire(candidate.Id);
-    }
+    public void Adopt(in WorldAdoptionCandidate candidate) => acquisition.Acquire(candidate.Id);
     public void Tick()
     {
-        if (_acquire is { IsCompleted: true } acquire)
-        {
-            _acquire = null;
-            if (acquire.IsCompletedSuccessfully && acquire.Result.Entity is { } entity)
-                selection.Select(entity);
-            else notices.Refused(acquire.IsCompletedSuccessfully
-                ? acquire.Result.Detail ?? "That world asset could not be borrowed."
-                : "The world borrowing command failed.");
-        }
         _candidates.Clear();
         if (!Enabled) return;
         var kinds = (ShowActors ? WorldKinds.Actor : WorldKinds.None)

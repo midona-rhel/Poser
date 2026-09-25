@@ -23,7 +23,8 @@ Shared placement, duplication, removal and group gates use application commands.
 
 Library navigation and grid rows are separate from the selected-file details and
 metadata-editor drafts. Application owns additive entry loading, pose-spawn
-continuation, file-operation policy and favorites; Documents performs scans and
+continuation, entity/group save admission, file-operation policy and favorites;
+Documents performs scans and
 safe writes. Autosave browsing scans continue independently of panel visibility.
 
 Inspector and Properties read the current selection independently when drawing.

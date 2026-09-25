@@ -629,8 +629,7 @@ internal sealed partial class EntityContextMenus
             () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
             () => OpenEntityRename(
                 "Save overlay to library", node.State.Name,
-                name => _scenePane.SaveOverlayEntry(
-                    overlayId.LogicalId, name)),
+                name => _scenePane.SaveEntry(SelectionId.ForOverlay(overlayId), name)),
             null, // separator
             () =>
             {
@@ -812,7 +811,7 @@ internal sealed partial class EntityContextMenus
             // modal renames use, with the light's name as the start.
             () => OpenEntityRename(
                 "Save light to library", light.Name,
-                name => _scenePane.SaveLightEntry(lightId.LogicalId, name)),
+                name => _scenePane.SaveEntry(SelectionId.ForLight(lightId), name)),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -901,7 +900,7 @@ internal sealed partial class EntityContextMenus
             () => DuplicateAndSelect(SelectionId.ForProp(propId)),
             () => OpenEntityRename(
                 "Save prop to library", prop.Name,
-                name => _scenePane.SavePropEntry(propId.LogicalId, name)),
+                name => _scenePane.SaveEntry(SelectionId.ForProp(propId), name)),
             null, // separator
             () =>
             {
@@ -976,7 +975,7 @@ internal sealed partial class EntityContextMenus
             () => _cameraPane.OpenSave(cameraId),
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
-                name => _scenePane.SaveCameraEntry(cameraId.LogicalId, name)),
+                name => _scenePane.SaveEntry(SelectionId.ForCamera(cameraId), name)),
             null,
         };
         if (!camera.IsDefault)
@@ -1076,8 +1075,7 @@ internal sealed partial class EntityContextMenus
             },
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
-                name => _scenePane.SaveWorldObjectEntry(
-                    worldObjectId.LogicalId, name)),
+                name => _scenePane.SaveEntry(SelectionId.ForWorldObject(worldObjectId), name)),
             null, // separator
             () =>
             {
@@ -1191,7 +1189,7 @@ internal sealed partial class EntityContextMenus
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(
-                    _groups.Descendants(group).ToArray(), name, AllActorsOwned(_groups.Descendants(group).ToArray()))),
+                    _groups.Descendants(group).ToArray(), name)),
             () => _groupSteps.SetLocked(groupId, !group.Locked),
             null, // separator
             () => _groupSteps.SetHidden(group, !group.Hidden),
@@ -1302,7 +1300,7 @@ internal sealed partial class EntityContextMenus
             actions.Add(() => OpenEntityRename(
                 "Save group to library", matched.Name,
                 name => _scenePane.SaveGroupEntry(
-                    _groups.Descendants(matched).ToArray(), name, AllActorsOwned(_groups.Descendants(matched).ToArray()))));
+                    _groups.Descendants(matched).ToArray(), name)));
             items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
             actions.Add(() => _groupSteps.Dissolve(matched.Id));
         }

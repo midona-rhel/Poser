@@ -1,3 +1,4 @@
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Scene;
@@ -41,7 +42,7 @@ public sealed class ScenePane
     private readonly ConfigurationService _config;
     private readonly ISceneAutoSave _snapshots;
     private readonly IPoseLibraryService _library;
-    private readonly LibraryConfiguration _libraryConfig;
+    private readonly Poser.Application.Library.ILibrarySceneSave _librarySave;
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Scene", new[] { SceneFile.Extension }, isSaveMode: true);
@@ -170,163 +171,15 @@ public sealed class ScenePane
     /// open after the first fits its rows exactly.</summary>
     private float _optionsBandHeight = 92f;
 
-    /// <summary>The overlay context menu's "Save to library": one overlay
-    /// node, written into the objects home as a .xivo.</summary>
-    public bool SaveOverlayEntry(Guid logicalKey, string displayName)
-    {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.OverlayEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.OverlayEntry(logicalKey)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The overlay could not be saved to the library.");
-        return result.Success;
-    }
+    public bool SaveEntry(SelectionId target, string displayName) =>
+        ReportLibrarySave(_librarySave.SaveEntry(target, displayName));
 
-    /// <summary>
-    /// The actor context menu's "Save to library": one actor with its
-    /// appearance embedded, written into the objects home as a .xiva.
-    /// Admission refusals are posted as notices here; completion reports
-    /// through the same operation surface every scene save uses.
-    /// </summary>
-    /// <summary>The group menus' "Save to library": the group's members
-    /// with their appearances, the group riding along, written into the
-    /// objects home as a .xivg.</summary>
-    public bool SaveGroupEntry(
-        IReadOnlyList<global::Poser.Domain.Identity.SelectionId> members,
-        string displayName,
-        bool includeAppearance = true)
-    {
-        var keys = new List<Guid>();
-        foreach (var member in members)
-        {
-            Guid? key = member switch
-            {
-                { Actor: { } actor } => actor.LogicalId,
-                { Prop: { } prop } => prop.LogicalId,
-                { WorldObject: { } worldObject } => worldObject.LogicalId,
-                { Light: { } light } => light.LogicalId,
-                { Camera: { } camera } => camera.LogicalId,
-                { Overlay: { } overlay } => overlay.LogicalId,
-                _ => null,
-            };
-            if (key is { } logical)
-                keys.Add(logical);
-        }
-        if (keys.Count < 2)
-        {
-            _notices.Refused(
-                "The group needs at least two members to save.");
-            return false;
-        }
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.GroupEntryExtension);
-        if (!includeAppearance)
-            _notices.Refused(
-                "The group holds an actor that is not yours; it is saved without appearance.");
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.GroupEntry(keys)
-                with
-                {
-                    EntryName = displayName,
-                    IncludeModdedAppearance = includeAppearance,
-                });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The group could not be saved to the library.");
-        return result.Success;
-    }
+    public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
+        ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
 
-    /// <summary>The light menus' "Save to library": one light through the
-    /// SAME workflow pipeline as every entry (ruled 2026-08-31 — the
-    /// pane-direct LightFile write built legacy).</summary>
-    public bool SaveLightEntry(Guid logicalId, string displayName)
+    private bool ReportLibrarySave(SceneActionResult result)
     {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.LightEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.LightEntry(logicalId)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The light could not be saved to the library.");
-        return result.Success;
-    }
-
-    /// <summary>The camera menus' "Save to library" — the light save's
-    /// twin.</summary>
-    public bool SaveCameraEntry(Guid logicalId, string displayName)
-    {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.CameraEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.CameraEntry(logicalId)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The camera could not be saved to the library.");
-        return result.Success;
-    }
-
-    /// <summary>The prop page's "Save to library": one spawned prop —
-    /// model, dyes, pose variant — written as a .xivp.</summary>
-    public bool SavePropEntry(Guid logicalId, string displayName)
-    {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.PropEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.PropEntry(logicalId)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The prop could not be saved to the library.");
-        return result.Success;
-    }
-
-    /// <summary>The world-object menus' "Save to library": the object as
-    /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
-    public bool SaveWorldObjectEntry(Guid logicalId, string displayName)
-    {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.WorldObjectEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.WorldObjectEntry(logicalId)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ??
-                "The object could not be saved to the library.");
+        if (!result.Success) _notices.Refused(result.Detail ?? "The library save could not start.");
         return result.Success;
     }
 
@@ -352,23 +205,6 @@ public sealed class ScenePane
         });
     }
 
-    public bool SaveActorEntry(Guid logicalId, string displayName)
-    {
-        var root = _libraryConfig.ResolveObjectsRoot();
-        if (!PrepareLibraryRoot(root))
-            return false;
-        var path = LibraryConfiguration.NewEntryPath(
-            root, displayName, SceneFile.ActorEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null,
-            SceneSaveOptions.ActorEntry(logicalId)
-                with { EntryName = displayName });
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ?? "The actor could not be saved to the library.");
-        return result.Success;
-    }
-
     public ScenePane(
         ISceneWorkflow workflow,
         ISceneAutoSave snapshots,
@@ -377,7 +213,8 @@ public sealed class ScenePane
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        IPlacementAnchorSource anchors)
+        IPlacementAnchorSource anchors,
+        Poser.Application.Library.ILibrarySceneSave librarySave)
     {
         _anchors = anchors;
         _config = config;
@@ -387,7 +224,7 @@ public sealed class ScenePane
         _library = library;
         _place = place;
         _notices = notices;
-        _libraryConfig = config.Config.Library;
+        _librarySave = librarySave;
         _folder = new(config.Config.Library.EnsureSceneRootExists());
 
         // The verdict column is not a reserved rectangle: it states what the
@@ -416,15 +253,6 @@ public sealed class ScenePane
     /// choice that changes what the file contains — then the save lands in
     /// the scenes home the tab is already scanning. No file dialog detour.
     /// </summary>
-    private bool PrepareLibraryRoot(string root)
-    {
-        if (LibraryConfiguration.TryEnsureDirectory(root, out var detail))
-            return true;
-        _notices.Refused(detail);
-        _library.RequestScan();
-        return false;
-    }
-
     public void RequestLibrarySave()
     {
         _librarySaveName = string.Empty;
@@ -497,15 +325,7 @@ public sealed class ScenePane
                 var name = _librarySaveName.Trim();
                 if (name.Length == 0)
                     name = "Scene";
-                var root = _libraryConfig.ResolveSceneRoot();
-                if (!PrepareLibraryRoot(root))
-                    return;
-                var path = LibraryConfiguration.NewEntryPath(
-                    root, name, SceneFile.Extension);
-                var begun = _workflow.BeginSave(path, null, SaveOptions);
-                if (!begun.Success)
-                    _notices.Refused(
-                        begun.Detail ?? "The scene save could not start.");
+                ReportLibrarySave(_librarySave.SaveScene(name, SaveOptions));
                 _librarySaveOpen = false;
             }
         });

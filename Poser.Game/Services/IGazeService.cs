@@ -66,6 +66,7 @@ public interface IGazeService
 
     /// <summary>Snapshot of the actor's managed gaze state.</summary>
     GazeState GetGazeState(IActor actor);
+    GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings);
 
     /// <summary>
     /// One mode transition. Entering a non-Off mode with no participating

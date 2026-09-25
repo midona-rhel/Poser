@@ -81,10 +81,14 @@ public sealed class ActorIntegrationSession : IDisposable
     {
         if (McdfBusy) return IntegrationValue<ActorAppearanceSnapshot>.Fail("Wait for the current character-file operation to finish.");
         var owned = OverridesFor(actor);
+        Guid? resources = null;
         if (owned.Mcdf is { } mcdf)
         {
-            if (mcdf.SourcePath is not { } source || !_files.ReadSummary(source).Success)
-                return IntegrationValue<ActorAppearanceSnapshot>.Fail("The imported character file is unavailable; its appearance cannot be restored.");
+            if (mcdf.OperationDirectory is not { } directory || mcdf.SourcePath == null)
+                return IntegrationValue<ActorAppearanceSnapshot>.Fail("The imported appearance resources are unavailable.");
+            var retained = _mcdf.RetainHistory(directory);
+            if (!retained.Success) return IntegrationValue<ActorAppearanceSnapshot>.Fail(retained.Detail!);
+            resources = retained.Value;
             if (mcdf.RedrawPending)
                 return IntegrationValue<ActorAppearanceSnapshot>.Fail("The actor's previous redraw has not completed.");
         }
@@ -112,7 +116,7 @@ public sealed class ActorIntegrationSession : IDisposable
         var body = CaptureBodyProfile(actor);
         return body.Success
             ? IntegrationValue<ActorAppearanceSnapshot>.Ok(new(state, collection, body.Value,
-                owned.BodyProfileName, owned.Mcdf?.SourcePath))
+                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources))
             : IntegrationValue<ActorAppearanceSnapshot>.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
     }
 
@@ -143,7 +147,8 @@ public sealed class ActorIntegrationSession : IDisposable
             IntegrationResult result;
             if (snapshot.McdfPath is { } path)
             {
-                result = BeginImport(actor, path);
+                result = snapshot.McdfResources is { } resources
+                    ? _mcdf.RestoreHistory(actor, resources, path) : BeginImport(actor, path);
                 operation = McdfReceipt?.OperationId;
             }
             else
@@ -202,7 +207,8 @@ public sealed class ActorIntegrationSession : IDisposable
     private IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot, bool redraw)
     {
         if (snapshot.McdfPath is not null)
-            return BeginImport(actor, snapshot.McdfPath);
+            return snapshot.McdfResources is { } resources
+                ? _mcdf.RestoreHistory(actor, resources, snapshot.McdfPath) : BeginImport(actor, snapshot.McdfPath);
         var failures = new List<string>();
         void Check(IntegrationResult result)
         {
@@ -748,6 +754,7 @@ public sealed class ActorIntegrationSession : IDisposable
         // first, so its leftovers join _overrides and reset with the rest.
         _mcdf.InvalidateInFlight();
         var failures = new List<string>();
+        if (_mcdf.ReleaseHistoryResources() is { } releaseFailure) failures.Add(releaseFailure);
         foreach (var actor in _overrides.Keys.ToList())
         {
             var result = ResetActor(actor);
@@ -851,6 +858,10 @@ public sealed class ActorIntegrationSession : IDisposable
     }
 
     // ── Internal seam for the MCDF transaction owner ─────────────────────
+
+    internal bool UsesDirectory(string directory) => _overrides.Values.Any(state =>
+        string.Equals(state.Mcdf?.OperationDirectory, directory, StringComparison.OrdinalIgnoreCase)
+        || state.PendingDirectories.Contains(directory, StringComparer.OrdinalIgnoreCase));
 
     internal void MutateOverrides(ActorId actor, IntegrationOverrides updated) =>
         Mutate(actor, updated);

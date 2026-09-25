@@ -149,7 +149,6 @@ public partial class MainWindow
             : new ContextMenuItem("Open", glyph, disabled: attached),
     ];
 
-    private bool AllActorsOwned(IReadOnlyList<SelectionId> members) => _contextMenus.AllActorsOwned(members);
 
     /// <summary>What the active pane keeps in the content footer between
     /// the two attach seats.</summary>

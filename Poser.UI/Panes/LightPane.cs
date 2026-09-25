@@ -649,8 +649,7 @@ public sealed class LightPane
                         name =>
                         {
                             if (_values.Read(light.Id) is not null)
-                                _scenePane.SaveLightEntry(
-                                    light.Id.LogicalId, name);
+                                _scenePane.SaveEntry(SelectionId.ForLight(light.Id), name);
                         });
             }, icon: TablerIcon.Dots);
         form.Actions("Light file", actions =>

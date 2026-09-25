@@ -168,7 +168,9 @@ presentation, gaze, expression and Customize+ state before mutation; failed
 capture refuses the reset. Lifecycle restoration shares those state owners.
 Appearance and collection restoration completes before pose-dependent writes,
 using the Game redraw barrier. MCDF resources remain under the existing
-transaction/session ownership. The single history entry advances only after
+transaction/session ownership: capture retains validated extracted packages until
+session teardown; replay copies them into a fresh owned directory and does not
+depend on the original MCDF file remaining present. The single history entry advances only after
 completion; failures remain retryable. Animation playback is never recovered.
 Pose capture/export takes exact actor IDs through `IPoseFileCapture`; Game
 resolves on the framework thread and refreshes every slot before reading.
@@ -210,7 +212,9 @@ Candidate IDs identify an observed native incarnation. Claim receipts target
 one resulting scene incarnation; releasing it ends those receipts, including
 when release starts from the entity rather than the receipt. Undo may recreate
 a scene incarnation, but an old receipt never redirects to that replacement.
-Native lifetime/restoration behavior is defined in [Scenes](../features/scenes.md).
+Borrow completion and selection advance on framework updates, independently of
+the overlay's visibility. Native lifetime/restoration behavior is defined in
+[Scenes](../features/scenes.md).
 
 ## Results and recovery
 

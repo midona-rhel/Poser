@@ -464,7 +464,7 @@ public sealed class OverlayPane
                     name =>
                     {
                         if (_values.Read(node.Id) != null)
-                            _scenePane.SaveOverlayEntry(node.Id.LogicalId, name);
+                            _scenePane.SaveEntry(SelectionId.ForOverlay(node.Id), name);
                     }));
             actions.Button(
                 "Duplicate",

@@ -226,7 +226,7 @@ public class Poser : IDalamudPlugin
                 chatGui,
                 notificationManager,
                 seStringEvaluator)
-            .AddPoserCore()
+            .AddPoserRuntime()
             .AddPoserFeatures()
             .AddPoserPresentation()
             .BuildServiceProvider(new ServiceProviderOptions
