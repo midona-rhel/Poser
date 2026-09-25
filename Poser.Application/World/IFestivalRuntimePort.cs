@@ -1,24 +1,7 @@
+using Poser.Domain.Scene;
 using System.Collections.Generic;
 
-namespace Poser.Services;
-
-/// <summary>One engine festival slot: id 0 means the slot is empty.</summary>
-public readonly record struct ActiveFestival(uint Id, ushort Phase);
-
-/// <summary>A phase the reference data names for a festival.</summary>
-public sealed record FestivalPhaseInfo(int Id, string Name);
-
-/// <summary>
-/// A festival row joined with the curated reference data. A row the data does
-/// not name is still offered, flagged <see cref="Unknown"/>; a row known to
-/// break the game in some places is flagged <see cref="Unsafe"/>.
-/// </summary>
-public sealed record FestivalEntry(
-    uint Id,
-    string Name,
-    bool Unknown,
-    bool Unsafe,
-    IReadOnlyList<FestivalPhaseInfo> KnownPhases);
+namespace Poser.Application.World;
 
 /// <summary>
 /// The eight engine festival slots (Brio's FestivalService). Changes are queued
@@ -29,7 +12,7 @@ public sealed record FestivalEntry(
 /// slots are snapshotted on the first mutation and written back on GPose exit,
 /// on disposal, and on demand.
 /// </summary>
-public interface IFestivalService
+public interface IFestivalRuntimePort
 {
     /// <summary>Engine slot count.</summary>
     const int MaxFestivals = 8;

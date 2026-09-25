@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using System.Linq;
@@ -33,7 +34,7 @@ public sealed class DebugBridge : IDisposable
     public const int Port = 47999;
 
     private readonly IFramework _framework;
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentRuntimePort _environment;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
     private readonly Game.Animation.AnimationRuntimePort _port;
@@ -69,7 +70,7 @@ public sealed class DebugBridge : IDisposable
 
     public DebugBridge(
         global::Poser.Config.ConfigurationService configuration,
-        IEnvironmentService environment,
+        IEnvironmentRuntimePort environment,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,

@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
@@ -237,7 +238,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.ICameraTargetControl, Game.Cameras.CameraTargetControl>();
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
-        services.AddSingleton<Game.Journal.EnvironmentSession>();
+        services.AddSingleton<IEnvironmentControl, EnvironmentControl>();
         services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
         services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
         services.AddSingleton<Application.Companions.ICompanionRuntime, Game.Companions.CompanionRuntime>();
@@ -466,9 +467,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Input.KeyEventHook>();
         services.AddSingleton<global::Poser.Services.IKeyEvents>(
             sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
-        services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
-        services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
-        services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
+        services.AddSingleton<IEnvironmentRuntimePort, Game.Environment.EnvironmentService>();
+        services.AddSingleton<IWorldRenderingRuntimePort, Game.Environment.WorldRenderingService>();
+        services.AddSingleton<IFestivalRuntimePort, Game.Environment.FestivalService>();
         return services;
     }
 

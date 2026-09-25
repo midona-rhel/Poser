@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
@@ -107,7 +108,7 @@ public class Poser : IDalamudPlugin
             anchoredObjects.AnchorPumpedFromRender = true;
         }
         log.Debug("Load link: environment");
-        _ = _serviceProvider.GetRequiredService<IEnvironmentService>();
+        _ = _serviceProvider.GetRequiredService<IEnvironmentRuntimePort>();
         log.Debug("Load link: bindings");
         _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
         log.Debug("Load link: animation");
@@ -136,7 +137,7 @@ public class Poser : IDalamudPlugin
             }
         });
         log.Debug("Load link: world rendering");
-        _ = _serviceProvider.GetRequiredService<IWorldRenderingService>();
+        _ = _serviceProvider.GetRequiredService<IWorldRenderingRuntimePort>();
         log.Debug("Load link: scene workflow");
         _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
         log.Debug("Load stage: scene auto-save");

@@ -48,6 +48,11 @@ ImGui and native key conversion remain at the input boundary.
 Stagehand conversion and MCDF package storage also live in Documents; actor
 resource discovery and IPC remain in Game.
 
+Environment readings and commands cross `IEnvironmentControl`. Application owns
+capture, apply ordering, gesture coalescing and history; Game implements the
+runtime ports. Scene transactions apply through that same control without a
+second history entry. UI reads detached values, not native environment services.
+
 Actor appearance commands own their history inverses in Application. UI
 supplies an actor and the selected value; it never constructs restore callbacks
 or starts native catalog work. Character-file progress and cancellation use

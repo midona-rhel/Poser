@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using Poser.Application.Scene;
 using Poser.Scene;
 using System;
@@ -62,10 +63,8 @@ public enum EnvironmentTab
 
 public sealed class EnvironmentPane
 {
-    private readonly IEnvironmentService _environment;
-    private readonly IWorldRenderingService _rendering;
-    private readonly IFestivalService _festivals;
-    private readonly Game.Journal.EnvironmentSession _values;
+    private EnvironmentReading _reading = new();
+    private readonly IEnvironmentControl _values;
     private readonly ITextureProvider _textures;
     private readonly ISceneWorkflow _workflow;
 
@@ -181,23 +180,17 @@ public sealed class EnvironmentPane
 
     public EnvironmentPane(
         global::Poser.Config.ConfigurationService configuration,
-        IEnvironmentService environment,
-        IWorldRenderingService rendering,
-        IFestivalService festivals,
         ITextureProvider textures,
         ISceneWorkflow workflow,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.Journal.EnvironmentSession values)
+        IEnvironmentControl values)
     {
         _configuration = configuration;
         _values = values;
         _names = names;
         _workflow = workflow;
         _notices = notices;
-        _environment = environment;
-        _rendering = rendering;
-        _festivals = festivals;
         _textures = textures;
         _icons = new GameIconResolver(textures);
         _weatherQuery = WeatherResults;
@@ -258,7 +251,9 @@ public sealed class EnvironmentPane
     /// </summary>
     public void Draw(Vector2 origin, Vector2 size, EnvironmentTab tab)
     {
+        _reading = _values.Read();
         DrainPickers();
+        _reading = _values.Read();
 
         switch (tab)
         {
@@ -342,7 +337,7 @@ public sealed class EnvironmentPane
             // Picking a weather turns the hold on inside the service: without
             // it the game reverts the pick on its next weather update.
             _values.SetWeather(
-                weather.Item.Id, _environment.TransitionTime);
+                weather.Item.Id, _reading.TransitionTime);
         }
 
         if (_festivalPicker.Draw() is { } festival)
@@ -356,13 +351,13 @@ public sealed class EnvironmentPane
         // Same rule as above, and for the same reason: the three texture grids
         // are pumped whichever tab is up, so a tab change cannot drop one.
         if (_skyTexture.Draw() is { } skyId)
-            _values.SetSky(_environment.Sky with { SkyTextureId = skyId });
+            _values.SetSky(_reading.Sky with { SkyTextureId = skyId });
         if (_cloudTexture.Draw() is { } cloudId)
-            _values.SetClouds(_environment.Clouds with { CloudTexture = cloudId });
+            _values.SetClouds(_reading.Clouds with { CloudTexture = cloudId });
         if (_cloudSideTexture.Draw() is { } cloudSideId)
-            _values.SetClouds(_environment.Clouds with { CloudSideTexture = cloudSideId });
+            _values.SetClouds(_reading.Clouds with { CloudSideTexture = cloudSideId });
         if (_particleTexture.Draw() is { } particleId)
-            _values.SetParticles(_environment.Particles with { TextureId = particleId });
+            _values.SetParticles(_reading.Particles with { TextureId = particleId });
     }
 
     /// <summary>
@@ -407,8 +402,8 @@ public sealed class EnvironmentPane
 
     private void TimeRows(Crystarium.FormScope form)
     {
-        bool available = _environment.IsTimeFreezeAvailable;
-        int minute = _environment.MinuteOfDay;
+        bool available = _reading.IsTimeFreezeAvailable;
+        int minute = _reading.MinuteOfDay;
 
         form.Cells(cells =>
         {
@@ -429,7 +424,7 @@ public sealed class EnvironmentPane
             cells.Cell(
                 "Day of month",
                 cell => cell.Slider(
-                    "##env-day-of-month", _environment.DayOfMonth, 1f, 31f,
+                    "##env-day-of-month", _reading.DayOfMonth, 1f, 31f,
                     value => _values.SetDayOfMonth((int)MathF.Round(value)),
                     format: "0",
                     disabled: !available),
@@ -441,7 +436,7 @@ public sealed class EnvironmentPane
             cells.Cell(
                 "Freeze time",
                 cell => cell.Switch(
-                    "##env-time-freeze", _environment.IsTimeFrozen,
+                    "##env-time-freeze", _reading.IsTimeFrozen,
                     value => _values.SetTimeFrozen(value),
                     disabled: !available),
                 help: available
@@ -450,7 +445,7 @@ public sealed class EnvironmentPane
             cells.Cell(
                 "Restore on exit",
                 cell => cell.Switch(
-                    "##env-time-restore", _environment.ResetTimeOnGPoseExit,
+                    "##env-time-restore", _reading.ResetTimeOnGPoseExit,
                     value => _values.SetResetTimeOnGPoseExit(value)),
                 help: "Hand the clock back to the game when GPose ends");
         });
@@ -460,9 +455,9 @@ public sealed class EnvironmentPane
 
     private void WeatherRows(Crystarium.FormScope form)
     {
-        bool available = _environment.IsWeatherOverrideAvailable;
-        uint current = _environment.CurrentWeatherId;
-        string name = _environment.GetWeatherInfo(current) is { } info
+        bool available = _reading.IsWeatherOverrideAvailable;
+        uint current = _reading.CurrentWeatherId;
+        string name = _reading.GetWeatherInfo(current) is { } info
             ? info.Name
             : IdText(current);
 
@@ -487,7 +482,7 @@ public sealed class EnvironmentPane
         });
         // The slider keeps at least half the row; three-way cells choked
         // it to a third. The two lifetime switches pair below it.
-        form.Slider("Transition", _environment.TransitionTime, 0f, 10f,
+        form.Slider("Transition", _reading.TransitionTime, 0f, 10f,
             value => _values.SetTransitionTime(value),
             help: "Blend time into a picked weather, seconds", onBegin: _values.Seal);
         form.Cells(cells =>
@@ -496,7 +491,7 @@ public sealed class EnvironmentPane
                 "Hold weather",
                 cell => cell.Switch(
                     "##env-weather-hold",
-                    _environment.IsWeatherOverrideEnabled,
+                    _reading.IsWeatherOverrideEnabled,
                     value => _values.SetWeatherOverrideEnabled(value),
                     disabled: !available),
                 help: available
@@ -506,7 +501,7 @@ public sealed class EnvironmentPane
                 "Restore on exit",
                 cell => cell.Switch(
                     "##env-weather-restore",
-                    _environment.ResetWeatherOnGPoseExit,
+                    _reading.ResetWeatherOnGPoseExit,
                     value => _values.SetResetWeatherOnGPoseExit(value)),
                 help: "Hand the weather back when GPose ends");
         });
@@ -516,7 +511,7 @@ public sealed class EnvironmentPane
     /// reserved item, which is what the picker anchors to.</summary>
     private void OpenWeatherPicker()
     {
-        uint current = _environment.CurrentWeatherId;
+        uint current = _reading.CurrentWeatherId;
         _weatherPicker.Open(
             "Weather",
             Array.Empty<WeatherOption>(),
@@ -541,12 +536,12 @@ public sealed class EnvironmentPane
     private IReadOnlyList<WeatherOption> WeatherResults(string query)
     {
         var source = _showAllWeathers
-            ? _environment.AllWeathers
-            : _environment.TerritoryWeathers;
+            ? _reading.AllWeathers
+            : _reading.TerritoryWeathers;
         _weatherVisible.Clear();
         // None is a real selectable ID, not a missing selection. It is also
         // available in territory mode, where zero slots mean no further IDs.
-        if (!_showAllWeathers && _environment.GetWeatherInfo(0) is { } none
+        if (!_showAllWeathers && _reading.GetWeatherInfo(0) is { } none
             && (query.Length == 0 || none.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || "0".Contains(query, StringComparison.Ordinal)))
             _weatherVisible.Add(Option(none));
@@ -581,7 +576,7 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Sky,
             "Let the game run the skybox. Changing any sky value below holds "
                 + "it for Poser.");
-        var sky = _environment.Sky;
+        var sky = _reading.Sky;
         // A texture id is a CHOICE, not a magnitude: the slider that used to
         // carry it had an invented ceiling and showed nothing of what was
         // being chosen. The grid the tile opens is the catalog.
@@ -592,14 +587,14 @@ public sealed class EnvironmentPane
                 cell => _skyTexture.Field(
                     cell,
                     sky.SkyTextureId,
-                    id => _values.SetSky(_environment.Sky with { SkyTextureId = id })),
+                    id => _values.SetSky(_reading.Sky with { SkyTextureId = id })),
                 help: "The skybox texture the zone draws. Step the id, or "
                     + "open the tile for the whole catalog.");
             cells.Cell(
                 "Sun visibility",
                 cell => cell.Slider(
                     "##env-sky-sun", sky.SunVisibility, 0f, 1f,
-                    value => _values.SetSky(_environment.Sky with { SunVisibility = value })),
+                    value => _values.SetSky(_reading.Sky with { SunVisibility = value })),
                 help: "How much of the sun disc shows through the sky");
         });
     }
@@ -609,7 +604,7 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
                 + "holds them for Poser.");
-        var clouds = _environment.Clouds;
+        var clouds = _reading.Clouds;
         form.Cells(cells =>
         {
             cells.Cell(
@@ -617,7 +612,7 @@ public sealed class EnvironmentPane
                 cell => _cloudTexture.Field(
                     cell,
                     clouds.CloudTexture,
-                    id => _values.SetClouds(_environment.Clouds with { CloudTexture = id })),
+                    id => _values.SetClouds(_reading.Clouds with { CloudTexture = id })),
                 help: "The texture the overhead cloud layer draws");
             // "Cloud side texture" overran the label column; it stands beside
             // the overhead one, which is what "side" is said against.
@@ -626,15 +621,15 @@ public sealed class EnvironmentPane
                 cell => _cloudSideTexture.Field(
                     cell,
                     clouds.CloudSideTexture,
-                    id => _values.SetClouds(_environment.Clouds with { CloudSideTexture = id })),
+                    id => _values.SetClouds(_reading.Clouds with { CloudSideTexture = id })),
                 help: "The texture the horizon cloud band draws");
         });
         form.ColorWells("Cloud colours", wells =>
         {
             wells.Well("Top", Opaque(clouds.CloudColor1),
-                value => _values.SetClouds(_environment.Clouds with { CloudColor1 = Rgb(value) }));
+                value => _values.SetClouds(_reading.Clouds with { CloudColor1 = Rgb(value) }));
             wells.Well("Side", Opaque(clouds.CloudColor2),
-                value => _values.SetClouds(_environment.Clouds with { CloudColor2 = Rgb(value) }));
+                value => _values.SetClouds(_reading.Clouds with { CloudColor2 = Rgb(value) }));
         }, help: "Tint the overhead clouds and the horizon band");
         form.Cells(cells =>
         {
@@ -642,13 +637,13 @@ public sealed class EnvironmentPane
                 "Shadow stop",
                 cell => cell.Slider(
                     "##env-cloud-shadow-stop", clouds.ShadowStop, 0f, 2f,
-                    value => _values.SetClouds(_environment.Clouds with { ShadowStop = value })),
+                    value => _values.SetClouds(_reading.Clouds with { ShadowStop = value })),
                 help: "Where the cloud shading gradient ends");
             cells.Cell(
                 "Cloud height",
                 cell => cell.Slider(
                     "##env-cloud-height", clouds.CloudHeight, 0f, 2f,
-                    value => _values.SetClouds(_environment.Clouds with { CloudHeight = value })),
+                    value => _values.SetClouds(_reading.Clouds with { CloudHeight = value })),
                 help: "How tall the horizon cloud band stands");
         });
     }
@@ -660,15 +655,15 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Lighting,
             "Let the game run the ambient lighting. Changing any value below "
                 + "holds it for Poser.");
-        var lighting = _environment.Lighting;
+        var lighting = _reading.Lighting;
         form.ColorWells("Colours", wells =>
         {
             wells.Well("Sun", Opaque(lighting.SunlightColor),
-                value => _values.SetLighting(_environment.Lighting with { SunlightColor = Rgb(value) }));
+                value => _values.SetLighting(_reading.Lighting with { SunlightColor = Rgb(value) }));
             wells.Well("Moon", Opaque(lighting.MoonlightColor),
-                value => _values.SetLighting(_environment.Lighting with { MoonlightColor = Rgb(value) }));
+                value => _values.SetLighting(_reading.Lighting with { MoonlightColor = Rgb(value) }));
             wells.Well("Ambient", Opaque(lighting.AmbientColor),
-                value => _values.SetLighting(_environment.Lighting with { AmbientColor = Rgb(value) }));
+                value => _values.SetLighting(_reading.Lighting with { AmbientColor = Rgb(value) }));
         }, help: "The three lights the zone lights everything with");
         form.Cells(cells =>
         {
@@ -677,7 +672,7 @@ public sealed class EnvironmentPane
                 cell => cell.Slider(
                     "##env-light-saturation", lighting.AmbientSaturation,
                     0f, 5f,
-                    value => _values.SetLighting(_environment.Lighting with
+                    value => _values.SetLighting(_reading.Lighting with
                         {
                             AmbientSaturation = value,
                         })),
@@ -687,7 +682,7 @@ public sealed class EnvironmentPane
                 cell => cell.Slider(
                     "##env-light-temperature", lighting.AmbientTemperature,
                     -2.5f, 2.5f,
-                    value => _values.SetLighting(_environment.Lighting with
+                    value => _values.SetLighting(_reading.Lighting with
                         {
                             AmbientTemperature = value,
                         })),
@@ -696,7 +691,7 @@ public sealed class EnvironmentPane
         // A world vignette measured off the camera: two decades of range whose
         // whole effect lives in the first one, so the travel is exponential.
         form.Slider("Light distance", lighting.LightDistance, 0f, 100f,
-            value => _values.SetLighting(_environment.Lighting with { LightDistance = value }),
+            value => _values.SetLighting(_reading.Lighting with { LightDistance = value }),
             help: "How far the zone's lighting reaches",
             marks: DistanceMarks,
             scale: SliderScale.Decades,
@@ -709,19 +704,19 @@ public sealed class EnvironmentPane
                 "Unknown 1",
                 cell => cell.Slider(
                     "##env-light-unknown-1", lighting.Unknown1, 0f, 10f,
-                    value => _values.SetLighting(_environment.Lighting with { Unknown1 = value })),
+                    value => _values.SetLighting(_reading.Lighting with { Unknown1 = value })),
                 help: "An unidentified lighting value the references still "
                     + "expose");
             cells.Cell(
                 "Unknown 2",
                 cell => cell.Slider(
                     "##env-light-unknown-2", lighting.Unknown2, 0f, 100f,
-                    value => _values.SetLighting(_environment.Lighting with { Unknown2 = value })),
+                    value => _values.SetLighting(_reading.Lighting with { Unknown2 = value })),
                 help: "An unidentified lighting value the references still "
                     + "expose");
         });
         form.Slider("Unknown 4", lighting.Unknown4, 0f, 1f,
-            value => _values.SetLighting(_environment.Lighting with { Unknown4 = value }),
+            value => _values.SetLighting(_reading.Lighting with { Unknown4 = value }),
             help: "An unidentified lighting value the references still expose", onBegin: _values.Seal);
     }
 
@@ -733,20 +728,20 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Fog,
             "Let the game run the fog. Changing any value below holds it for "
                 + "Poser.");
-        var fog = _environment.Fog;
+        var fog = _reading.Fog;
         form.ColorWells("Colour", wells =>
         {
             // No caption: the row label and the section already say fog.
             wells.Well("", fog.Color with { W = 1f },
-                value => _values.SetFog(_environment.Fog with
+                value => _values.SetFog(_reading.Fog with
                 {
-                    Color = Rgb(value, _environment.Fog.Color.W),
+                    Color = Rgb(value, _reading.Fog.Color.W),
                 }));
         }, help: "The colour the fog washes the distance with");
         form.Slider("Colour alpha", fog.Color.W, 0f, 1f,
-            value => _values.SetFog(_environment.Fog with
+            value => _values.SetFog(_reading.Fog with
             {
-                Color = _environment.Fog.Color with { W = value },
+                Color = _reading.Fog.Color with { W = value },
             }),
             help: "How strongly the fog colour applies", onBegin: _values.Seal);
         // Distance is the case the range audit was called on: the scene
@@ -754,7 +749,7 @@ public sealed class EnvironmentPane
         // hundred reads at all, so the 0..1000 both references state stays and
         // the TRAVEL is exponential instead.
         form.Slider("Distance", fog.Distance, 0f, 1000f,
-            value => _values.SetFog(_environment.Fog with { Distance = value }),
+            value => _values.SetFog(_reading.Fog with { Distance = value }),
             help: "How far away the fog starts",
             marks: KilometreMarks,
             scale: SliderScale.Log, onBegin: _values.Seal);
@@ -762,7 +757,7 @@ public sealed class EnvironmentPane
         // is exponential in thickness, which is why the lower ceiling AND the
         // log travel — the top of this range is one flat wall either way.
         form.Slider("Thickness", fog.Thickness, 0f, 50f,
-            value => _values.SetFog(_environment.Fog with { Thickness = value }),
+            value => _values.SetFog(_reading.Fog with { Thickness = value }),
             help: "How dense the fog is once it starts",
             marks: ThicknessMarks,
             scale: SliderScale.Log, onBegin: _values.Seal);
@@ -770,18 +765,18 @@ public sealed class EnvironmentPane
         // offset. The wider ceiling is kept because a held value above 1 must
         // stay reachable; the log travel gives Ktisis's band half the track.
         form.Slider("Fog opacity", fog.FogOpacity, 0f, 10f,
-            value => _values.SetFog(_environment.Fog with { FogOpacity = value }),
+            value => _values.SetFog(_reading.Fog with { FogOpacity = value }),
             help: "How much the fog hides what is behind it",
             marks: OpacityMarks,
             scale: SliderScale.Log, onBegin: _values.Seal);
         form.Slider("Sky opacity", fog.SkyOpacity, 0f, 10f,
-            value => _values.SetFog(_environment.Fog with { SkyOpacity = value }),
+            value => _values.SetFog(_reading.Fog with { SkyOpacity = value }),
             help: "How much of the fog reaches the sky", onBegin: _values.Seal);
         // A sky depth like Distance, and mapped like it. "Sky blend"
         // because "Sky smoothness" truncated — a truncated label never
         // ships.
         form.Slider("Sky blend", fog.SkySmoothness, 0f, 1000f,
-            value => _values.SetFog(_environment.Fog with { SkySmoothness = value }),
+            value => _values.SetFog(_reading.Fog with { SkySmoothness = value }),
             help: "How gradually the fog blends into the sky",
             marks: KilometreMarks,
             scale: SliderScale.Log, onBegin: _values.Seal);
@@ -795,35 +790,35 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Rain,
             "Let the game run the rain. Changing any value below holds it for "
                 + "Poser.");
-        var rain = _environment.Rain;
+        var rain = _reading.Rain;
         form.Slider("Intensity", rain.Intensity, 0f, 1f,
-            value => _values.SetRain(_environment.Rain with { Intensity = value }),
+            value => _values.SetRain(_reading.Rain with { Intensity = value }),
             help: "How hard it rains", onBegin: _values.Seal);
         form.Slider("Line thickness", rain.Size, 0f, 1f,
-            value => _values.SetRain(_environment.Rain with { Size = value }),
+            value => _values.SetRain(_reading.Rain with { Size = value }),
             help: "How thick a single rain line draws", onBegin: _values.Seal);
         form.ColorWells("Colour", wells =>
         {
             wells.Well("", rain.Color with { W = 1f },
-                value => _values.SetRain(_environment.Rain with
+                value => _values.SetRain(_reading.Rain with
                 {
-                    Color = Rgb(value, _environment.Rain.Color.W),
+                    Color = Rgb(value, _reading.Rain.Color.W),
                 }));
         }, help: "The colour the rain lines draw in");
         form.Slider("Colour alpha", rain.Color.W, 0f, 1f,
-            value => _values.SetRain(_environment.Rain with
+            value => _values.SetRain(_reading.Rain with
             {
-                Color = _environment.Rain.Color with { W = value },
+                Color = _reading.Rain.Color with { W = value },
             }),
             help: "How strongly the rain colour applies", onBegin: _values.Seal);
         form.Slider("Weight", rain.Weight, 0f, 10f,
-            value => _values.SetRain(_environment.Rain with { Weight = value }),
+            value => _values.SetRain(_reading.Rain with { Weight = value }),
             help: "How fast the rain falls", onBegin: _values.Seal);
         form.Slider("Scattering", rain.Scatter, 0f, 10f,
-            value => _values.SetRain(_environment.Rain with { Scatter = value }),
+            value => _values.SetRain(_reading.Rain with { Scatter = value }),
             help: "How much the rain spreads as it falls", onBegin: _values.Seal);
         form.Slider("Raindrops", rain.Raindrops, 0f, 1f,
-            value => _values.SetRain(_environment.Rain with { Raindrops = value }),
+            value => _values.SetRain(_reading.Rain with { Raindrops = value }),
             help: "How many drops splash on surfaces", onBegin: _values.Seal);
     }
 
@@ -836,41 +831,41 @@ public sealed class EnvironmentPane
             "Let the game run the particles — dust, snow and leaves all come "
                 + "from this one block. Changing any value below holds it for "
                 + "Poser.");
-        var particles = _environment.Particles;
+        var particles = _reading.Particles;
         form.Slider("Intensity", particles.Intensity, 0f, 1f,
-            value => _values.SetParticles(_environment.Particles with { Intensity = value }),
+            value => _values.SetParticles(_reading.Particles with { Intensity = value }),
             help: "How many particles the air carries", onBegin: _values.Seal);
         form.Slider("Size", particles.Size, 0f, 20f,
-            value => _values.SetParticles(_environment.Particles with { Size = value }),
+            value => _values.SetParticles(_reading.Particles with { Size = value }),
             help: "How large a single particle draws", onBegin: _values.Seal);
         form.Slider("Glow", particles.Glow, 0f, 10f,
-            value => _values.SetParticles(_environment.Particles with { Glow = value }),
+            value => _values.SetParticles(_reading.Particles with { Glow = value }),
             help: "How brightly the particles glow", onBegin: _values.Seal);
         form.ColorWells("Colour", wells =>
         {
             wells.Well("", particles.Color with { W = 1f },
-                value => _values.SetParticles(_environment.Particles with
+                value => _values.SetParticles(_reading.Particles with
                 {
-                    Color = Rgb(value, _environment.Particles.Color.W),
+                    Color = Rgb(value, _reading.Particles.Color.W),
                 }));
         }, help: "The colour the particles draw in");
         form.Slider("Colour alpha", particles.Color.W, 0f, 1f,
-            value => _values.SetParticles(_environment.Particles with
+            value => _values.SetParticles(_reading.Particles with
             {
-                Color = _environment.Particles.Color with { W = value },
+                Color = _reading.Particles.Color with { W = value },
             }),
             help: "How strongly the particle colour applies", onBegin: _values.Seal);
         form.Slider("Weight", particles.Weight, 0f, 10f,
-            value => _values.SetParticles(_environment.Particles with { Weight = value }),
+            value => _values.SetParticles(_reading.Particles with { Weight = value }),
             help: "How quickly the particles sink", onBegin: _values.Seal);
         form.Slider("Spread", particles.Spread, 0f, 10f,
-            value => _values.SetParticles(_environment.Particles with { Spread = value }),
+            value => _values.SetParticles(_reading.Particles with { Spread = value }),
             help: "How widely the particles scatter", onBegin: _values.Seal);
         form.Slider("Speed", particles.Speed, 0f, 1f,
-            value => _values.SetParticles(_environment.Particles with { Speed = value }),
+            value => _values.SetParticles(_reading.Particles with { Speed = value }),
             help: "How fast the particles travel", onBegin: _values.Seal);
         form.Slider("Spin", particles.Spin, 0.05f, 5f,
-            value => _values.SetParticles(_environment.Particles with { Spin = value }),
+            value => _values.SetParticles(_reading.Particles with { Spin = value }),
             help: "How fast the particles turn as they travel", onBegin: _values.Seal);
         // A texture id is a CHOICE, not a magnitude — the same rule the sky
         // and cloud rows already follow. The slider this replaces had an
@@ -883,7 +878,7 @@ public sealed class EnvironmentPane
                 cell => _particleTexture.Field(
                     cell,
                     particles.TextureId,
-                    id => _values.SetParticles(_environment.Particles with { TextureId = id })),
+                    id => _values.SetParticles(_reading.Particles with { TextureId = id })),
                 help: "The particle sheet the air carries — 1 is snow, the "
                     + "rest are dust. Step the id, or open the tile for the "
                     + "whole catalog.");
@@ -897,20 +892,20 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Stars,
             "Let the game run the night sky. Changing any value below holds "
                 + "it for Poser.");
-        var stars = _environment.Stars;
+        var stars = _reading.Stars;
         form.Cells(cells =>
         {
             cells.Cell(
                 "Stars",
                 cell => cell.Slider(
                     "##env-star-count", stars.StarCount, 0f, 20f,
-                    value => _values.SetStars(_environment.Stars with { StarCount = value })),
+                    value => _values.SetStars(_reading.Stars with { StarCount = value })),
                 help: "How many stars the night sky carries");
             cells.Cell(
                 "Star intensity",
                 cell => cell.Slider(
                     "##env-star-intensity", stars.StarIntensity, 0f, 2.5f,
-                    value => _values.SetStars(_environment.Stars with { StarIntensity = value })),
+                    value => _values.SetStars(_reading.Stars with { StarIntensity = value })),
                 help: "How brightly the stars burn");
         });
         form.Cells(cells =>
@@ -920,7 +915,7 @@ public sealed class EnvironmentPane
                 cell => cell.Slider(
                     "##env-constellation-count", stars.ConstellationCount,
                     0f, 10f,
-                    value => _values.SetStars(_environment.Stars with
+                    value => _values.SetStars(_reading.Stars with
                         {
                             ConstellationCount = value,
                         })),
@@ -932,7 +927,7 @@ public sealed class EnvironmentPane
                 cell => cell.Slider(
                     "##env-constellation-intensity",
                     stars.ConstellationIntensity, 0f, 2.5f,
-                    value => _values.SetStars(_environment.Stars with
+                    value => _values.SetStars(_reading.Stars with
                         {
                             ConstellationIntensity = value,
                         })),
@@ -940,7 +935,7 @@ public sealed class EnvironmentPane
         });
         form.PairRows();
         form.Slider("Galaxy intensity", stars.GalaxyIntensity, 0f, 10f,
-            value => _values.SetStars(_environment.Stars with { GalaxyIntensity = value }),
+            value => _values.SetStars(_reading.Stars with { GalaxyIntensity = value }),
             help: "How brightly the galaxy band shows", onBegin: _values.Seal);
         form.EndPair();
         form.Cells(cells =>
@@ -949,10 +944,10 @@ public sealed class EnvironmentPane
                 "Moon colour",
                 cell => cell.ColorWell(
                     "##env-moon-colour", stars.MoonColor with { W = 1f },
-                    value => _values.SetStars(_environment.Stars with
+                    value => _values.SetStars(_reading.Stars with
                     {
                         MoonColor = Rgb(
-                            value, _environment.Stars.MoonColor.W),
+                            value, _reading.Stars.MoonColor.W),
                     })),
                 help: "The colour the moon draws in");
             // The well edits RGB only, so the moon colour's own alpha keeps
@@ -961,17 +956,17 @@ public sealed class EnvironmentPane
                 "Moon alpha",
                 cell => cell.Slider(
                     "##env-moon-alpha", stars.MoonColor.W, 0f, 1f,
-                    value => _values.SetStars(_environment.Stars with
+                    value => _values.SetStars(_reading.Stars with
                     {
                         MoonColor =
-                            _environment.Stars.MoonColor with { W = value },
+                            _reading.Stars.MoonColor with { W = value },
                     })),
                 help: "How strongly the moon colour applies");
             cells.Cell(
                 "Brightness",
                 cell => cell.Slider(
                     "##env-moon-brightness", stars.MoonBrightness, 0f, 1f,
-                    value => _values.SetStars(_environment.Stars with { MoonBrightness = value })),
+                    value => _values.SetStars(_reading.Stars with { MoonBrightness = value })),
                 help: "How brightly the moon shines");
         });
     }
@@ -984,15 +979,15 @@ public sealed class EnvironmentPane
         SectionSwitch(form, "Natural", EnvSection.Wind,
             "Let the game run the wind. Changing any value below holds it for "
                 + "Poser.");
-        var wind = _environment.Wind;
+        var wind = _reading.Wind;
         form.Slider("Direction", wind.Direction, 0f, 360f,
-            value => _values.SetWind(_environment.Wind with { Direction = value }),
+            value => _values.SetWind(_reading.Wind with { Direction = value }),
             help: "Which way the wind blows, in degrees", onBegin: _values.Seal);
         form.Slider("Angle", wind.Angle, 0f, 180f,
-            value => _values.SetWind(_environment.Wind with { Angle = value }),
+            value => _values.SetWind(_reading.Wind with { Angle = value }),
             help: "How far the wind tilts from level, in degrees", onBegin: _values.Seal);
         form.Slider("Speed", wind.Speed, 0f, 1.5f,
-            value => _values.SetWind(_environment.Wind with { Speed = value }),
+            value => _values.SetWind(_reading.Wind with { Speed = value }),
             help: "How hard the wind blows", onBegin: _values.Seal);
     }
 
@@ -1000,22 +995,22 @@ public sealed class EnvironmentPane
 
     private void RenderingRows(Crystarium.FormScope form)
     {
-        bool water = _rendering.IsWaterFreezeAvailable;
+        bool water = _reading.IsWaterFreezeAvailable;
         // Two rows, not four: the water pair, then the lifetime pair.
         form.PairRows();
-        form.Switch("Freeze water", _rendering.IsWaterFrozen,
+        form.Switch("Freeze water", _reading.IsWaterFrozen,
             value => _values.SetWaterFrozen(value),
             help: water
                 ? "Freeze every water surface"
                 : WaterUnavailable,
             disabled: !water);
-        form.Switch("Restore water", _rendering.ResetWaterOnGPoseExit,
+        form.Switch("Restore water", _reading.ResetWaterOnGPoseExit,
             value => _values.SetResetWaterOnGPoseExit(value),
             help: "Hand the water back when GPose ends");
         // One Sections row: the lifetime switch and the release verb are
         // the same subject — and neither label truncates.
         form.SwitchActions("Sections",
-            _environment.ResetSectionsOnGPoseExit,
+            _reading.ResetSectionsOnGPoseExit,
             value => _values.SetResetSectionsOnGPoseExit(value),
             actions => actions.Button("Release all",
                 _values.ReleaseAllSections,
@@ -1054,8 +1049,8 @@ public sealed class EnvironmentPane
 
     private void FestivalRows(Crystarium.FormScope form)
     {
-        bool canModify = _festivals.CanModify;
-        var slots = _festivals.ActiveFestivals;
+        bool canModify = _reading.CanModify;
+        var slots = _reading.ActiveFestivals;
         int shown = 0;
         for (int i = 0; i < slots.Count; i++)
         {
@@ -1065,7 +1060,7 @@ public sealed class EnvironmentPane
             shown++;
             uint id = slot.Id;
             string label = $"Slot {i + 1}";
-            var entry = _festivals.FestivalList.TryGetValue(id, out var known)
+            var entry = _reading.FestivalList.TryGetValue(id, out var known)
                 ? known
                 : null;
             form.ReadOnlyWithActions(
@@ -1136,10 +1131,10 @@ public sealed class EnvironmentPane
         form.Actions("Slots", actions =>
         {
             actions.Button("Add festival", OpenFestivalPicker,
-                disabled: !canModify || !_festivals.HasFreeSlot,
+                disabled: !canModify || !_reading.HasFreeSlot,
                 help: !canModify
                     ? FestivalsUnavailable
-                    : _festivals.HasFreeSlot
+                    : _reading.HasFreeSlot
                         ? "Run one more festival in this zone"
                         : "All eight festival slots are taken");
             actions.Button("Reset",
@@ -1147,8 +1142,8 @@ public sealed class EnvironmentPane
                 {
                     _values.ResetFestivals();
                 },
-                disabled: !_festivals.HasOverride,
-                help: _festivals.HasOverride
+                disabled: !_reading.HasOverride,
+                help: _reading.HasOverride
                     ? "Put back the festivals the zone was running before "
                         + "Poser changed them"
                     : "Poser has not changed this zone's festivals");
@@ -1179,8 +1174,8 @@ public sealed class EnvironmentPane
     {
         if (_festivalEntries is { } cached)
             return cached;
-        var entries = new List<FestivalEntry>(_festivals.FestivalList.Count);
-        foreach (var entry in _festivals.FestivalList.Values)
+        var entries = new List<FestivalEntry>(_reading.FestivalList.Count);
+        foreach (var entry in _reading.FestivalList.Values)
             entries.Add(entry);
         entries.Sort(static (left, right) =>
         {
@@ -1206,8 +1201,8 @@ public sealed class EnvironmentPane
         Crystarium.FormScope form, string label, EnvSection section,
         string help)
     {
-        bool available = _environment.IsSectionHoldAvailable;
-        form.Switch(label, !_environment.IsSectionHeld(section),
+        bool available = _reading.IsSectionHoldAvailable;
+        form.Switch(label, !_reading.IsSectionHeld(section),
             natural => _values.SetSectionHeld(section, !natural),
             help: available ? help : HoldUnavailable,
             disabled: !available);

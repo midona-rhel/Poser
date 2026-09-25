@@ -1,24 +1,24 @@
 using Poser.Application.Transforms;
-using Poser.Services;
+using Poser.Files;
 using Poser.Domain.Scene;
 
-namespace Poser.Game.Journal;
+namespace Poser.Application.World;
 
 /// <summary>Every value a surface sets on the environment — time, weather,
 /// the held sections and their values, water, festivals — as a journal
 /// step.</summary>
-public sealed class EnvironmentSession
+public sealed class EnvironmentControl : IEnvironmentControl
 {
     private readonly ValueJournal _journal;
-    private readonly IEnvironmentService _environment;
-    private readonly IWorldRenderingService _rendering;
-    private readonly IFestivalService _festivals;
+    private readonly IEnvironmentRuntimePort _environment;
+    private readonly IWorldRenderingRuntimePort _rendering;
+    private readonly IFestivalRuntimePort _festivals;
 
-    public EnvironmentSession(
+    public EnvironmentControl(
         ValueJournal journal,
-        IEnvironmentService environment,
-        IWorldRenderingService rendering,
-        IFestivalService festivals)
+        IEnvironmentRuntimePort environment,
+        IWorldRenderingRuntimePort rendering,
+        IFestivalRuntimePort festivals)
     {
         _journal = journal;
         _environment = environment;
@@ -130,4 +130,161 @@ public sealed class EnvironmentSession
                 _festivals.Add(slot.Id, slot.Phase);
         });
     }
+    public EnvironmentReading Read() => new()
+    {
+        MinuteOfDay = _environment.MinuteOfDay,
+        DayOfMonth = _environment.DayOfMonth,
+        IsTimeFrozen = _environment.IsTimeFrozen,
+        IsTimeFreezeAvailable = _environment.IsTimeFreezeAvailable,
+        ResetTimeOnGPoseExit = _environment.ResetTimeOnGPoseExit,
+        IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
+        IsWeatherOverrideAvailable = _environment.IsWeatherOverrideAvailable,
+        ResetWeatherOnGPoseExit = _environment.ResetWeatherOnGPoseExit,
+        IsSectionHoldAvailable = _environment.IsSectionHoldAvailable,
+        ResetSectionsOnGPoseExit = _environment.ResetSectionsOnGPoseExit,
+        CurrentWeatherId = _environment.CurrentWeatherId,
+        TransitionTime = _environment.TransitionTime,
+        Sky = _environment.Sky,
+        Clouds = _environment.Clouds,
+        Lighting = _environment.Lighting,
+        Fog = _environment.Fog,
+        Rain = _environment.Rain,
+        Particles = _environment.Particles,
+        Stars = _environment.Stars,
+        Wind = _environment.Wind,
+        IsWaterFrozen = _rendering.IsWaterFrozen,
+        IsWaterFreezeAvailable = _rendering.IsWaterFreezeAvailable,
+        ResetWaterOnGPoseExit = _rendering.ResetWaterOnGPoseExit,
+        CanModify = _festivals.CanModify,
+        HasFreeSlot = _festivals.HasFreeSlot,
+        HasOverride = _festivals.HasOverride,
+        HeldSections = Enum.GetValues<EnvSection>().Where(_environment.IsSectionHeld).ToArray(),
+        AllWeathers = _environment.AllWeathers.ToArray(),
+        TerritoryWeathers = _environment.TerritoryWeathers.ToArray(),
+        ActiveFestivals = _festivals.ActiveFestivals.ToArray(),
+        FestivalList = _festivals.FestivalList.ToDictionary(pair => pair.Key,
+            pair => pair.Value with { KnownPhases = pair.Value.KnownPhases.ToArray() }),
+    };
+
+    public WeatherInfo? GetWeatherInfo(uint id) => _environment.GetWeatherInfo(id);
+
+    /// <summary>Scene transactions own their composite history entry; direct callers use the same
+    /// ordered application with one environment inverse.</summary>
+    public void Apply(SceneEnvironment target, bool recordHistory = true)
+    {
+        Seal();
+        var before = recordHistory ? Capture() : null;
+        ApplyCore(target);
+        if (before is not null)
+            _journal.Record("Apply environment", before, Capture(), ApplyCore);
+    }
+
+    public SceneEnvironment Capture()
+    {
+        var environment = new SceneEnvironment
+        {
+            MinuteOfDay = Math.Clamp(_environment.MinuteOfDay, 0, 1439),
+            DayOfMonth = Math.Clamp(_environment.DayOfMonth, 1, 31),
+            IsTimeFrozen = _environment.IsTimeFrozen,
+            WeatherId = _environment.CurrentWeatherId,
+            WeatherName = _environment.GetWeatherInfo(
+                _environment.CurrentWeatherId)?.Name ?? string.Empty,
+            IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
+            TransitionTime = float.IsFinite(_environment.TransitionTime) &&
+                _environment.TransitionTime >= 0
+                    ? _environment.TransitionTime
+                    : 0.5f,
+        };
+
+        foreach (var section in Enum.GetValues<EnvSection>())
+        {
+            if (!_environment.IsSectionHeld(section))
+                continue;
+            environment.HeldSections.Add(section);
+            switch (section)
+            {
+                case EnvSection.Sky:
+                    environment.Sky = _environment.Sky;
+                    break;
+                case EnvSection.Clouds:
+                    environment.Clouds = _environment.Clouds;
+                    break;
+                case EnvSection.Lighting:
+                    environment.Lighting = _environment.Lighting;
+                    break;
+                case EnvSection.Fog:
+                    environment.Fog = _environment.Fog;
+                    break;
+                case EnvSection.Rain:
+                    environment.Rain = _environment.Rain;
+                    break;
+                case EnvSection.Particles:
+                    environment.Particles = _environment.Particles;
+                    break;
+                case EnvSection.Stars:
+                    environment.Stars = _environment.Stars;
+                    break;
+                case EnvSection.Wind:
+                    environment.Wind = _environment.Wind;
+                    break;
+            }
+        }
+
+        return environment;
+    }
+
+    private void ApplyCore(SceneEnvironment target)
+    {
+        // Writing the clock forces the freeze on; releasing it afterwards is
+        // the deliberate order for a scene saved with a running clock.
+        _environment.MinuteOfDay = target.MinuteOfDay;
+        _environment.DayOfMonth = target.DayOfMonth;
+        _environment.IsTimeFrozen = target.IsTimeFrozen;
+
+        _environment.TransitionTime = target.TransitionTime;
+        if (target.IsWeatherOverrideEnabled)
+            _environment.SetWeather(target.WeatherId, target.TransitionTime);
+        else
+            _environment.IsWeatherOverrideEnabled = false;
+
+        // Stamp all eight sections: a held section takes its saved values
+        // (the setters imply the hold), an unheld one releases to the game.
+        foreach (var section in Enum.GetValues<EnvSection>())
+        {
+            bool held = target.HeldSections.Contains(section);
+            if (!held)
+            {
+                _environment.SetSectionHeld(section, false);
+                continue;
+            }
+            switch (section)
+            {
+                case EnvSection.Sky when target.Sky is { } sky:
+                    _environment.Sky = sky;
+                    break;
+                case EnvSection.Clouds when target.Clouds is { } clouds:
+                    _environment.Clouds = clouds;
+                    break;
+                case EnvSection.Lighting when target.Lighting is { } lighting:
+                    _environment.Lighting = lighting;
+                    break;
+                case EnvSection.Fog when target.Fog is { } fog:
+                    _environment.Fog = fog;
+                    break;
+                case EnvSection.Rain when target.Rain is { } rain:
+                    _environment.Rain = rain;
+                    break;
+                case EnvSection.Particles when target.Particles is { } particles:
+                    _environment.Particles = particles;
+                    break;
+                case EnvSection.Stars when target.Stars is { } stars:
+                    _environment.Stars = stars;
+                    break;
+                case EnvSection.Wind when target.Wind is { } wind:
+                    _environment.Wind = wind;
+                    break;
+            }
+        }
+    }
+
 }

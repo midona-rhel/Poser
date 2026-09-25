@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Domain.Scene;
 
-namespace Poser.Services;
+namespace Poser.Application.World;
 
 /// <summary>
 /// Time, weather and per-section environment holds (Brio's EnvironmentService
@@ -15,7 +15,7 @@ namespace Poser.Services;
 /// Values read live from the game and write straight back, so a section that is
 /// not held is simply overwritten by the game on its next update.
 /// </summary>
-public interface IEnvironmentService
+public interface IEnvironmentRuntimePort
 {
     // ── Time ──────────────────────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using System;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
@@ -12,7 +13,7 @@ namespace Poser.Game.Environment;
 /// there is nothing to store and nothing to restore — releasing it hands the
 /// surface straight back to the game.
 /// </summary>
-public sealed class WorldRenderingService : IWorldRenderingService, IDisposable
+public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposable
 {
     private readonly IEventBus _events;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;

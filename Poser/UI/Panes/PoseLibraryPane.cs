@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using System;
@@ -158,7 +159,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly ObjectPlacementPreferences _placement;
 
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentControl _environment;
 
     /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
@@ -455,7 +456,7 @@ public sealed partial class PoseLibraryPane
         CameraPane cameraPane,
         IPlacementAnchorSource anchors,
         ObjectPlacementPreferences placement,
-        IEnvironmentService environment,
+        IEnvironmentControl environment,
         ISceneLifecycleHistory lifecycle,
         UserNotices notices,
         ICharacterFiles characterFiles)

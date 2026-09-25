@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using Poser.Application.Posing;
 using System;
 using System.Collections.Generic;
@@ -48,7 +49,7 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentControl _environment;
     private readonly StableBindingRegistry _bindings;
     private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
@@ -58,7 +59,7 @@ public sealed class SceneCaptureService
     private readonly IGazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
-    private readonly IWorldRenderingService _rendering;
+    private readonly IWorldRenderingRuntimePort _rendering;
     private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
 
@@ -72,7 +73,7 @@ public sealed class SceneCaptureService
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentService environment,
+        IEnvironmentControl environment,
         StableBindingRegistry bindings,
         IPoseImportCommands poses,
         IPlaceService place,
@@ -82,7 +83,7 @@ public sealed class SceneCaptureService
         IGazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        IWorldRenderingService rendering,
+        IWorldRenderingRuntimePort rendering,
         World.WorldService worldObjects,
         PlacementAnchorSource anchors)
     {
@@ -704,59 +705,7 @@ public sealed class SceneCaptureService
 
     /// <summary>The ONE environment snapshot builder; the workflow's
     /// rollback baseline uses it too.</summary>
-    internal SceneEnvironment CaptureEnvironment()
-    {
-        var environment = new SceneEnvironment
-        {
-            MinuteOfDay = Math.Clamp(_environment.MinuteOfDay, 0, 1439),
-            DayOfMonth = Math.Clamp(_environment.DayOfMonth, 1, 31),
-            IsTimeFrozen = _environment.IsTimeFrozen,
-            WeatherId = _environment.CurrentWeatherId,
-            WeatherName = _environment.GetWeatherInfo(
-                _environment.CurrentWeatherId)?.Name ?? string.Empty,
-            IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
-            TransitionTime = float.IsFinite(_environment.TransitionTime) &&
-                _environment.TransitionTime >= 0
-                    ? _environment.TransitionTime
-                    : 0.5f,
-        };
-
-        foreach (var section in Enum.GetValues<EnvSection>())
-        {
-            if (!_environment.IsSectionHeld(section))
-                continue;
-            environment.HeldSections.Add(section);
-            switch (section)
-            {
-                case EnvSection.Sky:
-                    environment.Sky = _environment.Sky;
-                    break;
-                case EnvSection.Clouds:
-                    environment.Clouds = _environment.Clouds;
-                    break;
-                case EnvSection.Lighting:
-                    environment.Lighting = _environment.Lighting;
-                    break;
-                case EnvSection.Fog:
-                    environment.Fog = _environment.Fog;
-                    break;
-                case EnvSection.Rain:
-                    environment.Rain = _environment.Rain;
-                    break;
-                case EnvSection.Particles:
-                    environment.Particles = _environment.Particles;
-                    break;
-                case EnvSection.Stars:
-                    environment.Stars = _environment.Stars;
-                    break;
-                case EnvSection.Wind:
-                    environment.Wind = _environment.Wind;
-                    break;
-            }
-        }
-
-        return environment;
-    }
+    internal SceneEnvironment CaptureEnvironment() => _environment.Capture();
 
     /// <summary>A native transform with a degenerate rotation captures as
     /// identity rotation, with a note — the alternative is a whole-save

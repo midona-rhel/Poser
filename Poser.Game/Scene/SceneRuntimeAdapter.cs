@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Scene;
@@ -44,13 +45,14 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentRuntimePort _environment;
+    private readonly IEnvironmentControl _environmentControl;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
     private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
-    private readonly IWorldRenderingService _rendering;
+    private readonly IWorldRenderingRuntimePort _rendering;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
     private readonly World.WorldService _worldObjects;
@@ -84,12 +86,13 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentService environment,
+        IEnvironmentRuntimePort environment,
+        IEnvironmentControl environmentControl,
         StableBindingRegistry bindings,
         AnimationSession animation,
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        IWorldRenderingService rendering,
+        IWorldRenderingRuntimePort rendering,
         IActorManager actors,
         IObjectTable objects,
         World.WorldService worldObjects,
@@ -126,6 +129,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _lighting = lighting;
         _cameras = cameras;
         _environment = environment;
+        _environmentControl = environmentControl;
         _framework.Update += SweepHistoryAppearance;
     }
 
@@ -1360,59 +1364,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             : "The scene was restored except that " + string.Join("; ", failures) + ".";
     }
 
-    public void ApplyEnvironment(SceneEnvironment target)
-    {
-        // Writing the clock forces the freeze on; releasing it afterwards is
-        // the deliberate order for a scene saved with a running clock.
-        _environment.MinuteOfDay = target.MinuteOfDay;
-        _environment.DayOfMonth = target.DayOfMonth;
-        _environment.IsTimeFrozen = target.IsTimeFrozen;
-
-        _environment.TransitionTime = target.TransitionTime;
-        if (target.IsWeatherOverrideEnabled)
-            _environment.SetWeather(target.WeatherId, target.TransitionTime);
-        else
-            _environment.IsWeatherOverrideEnabled = false;
-
-        // Stamp all eight sections: a held section takes its saved values
-        // (the setters imply the hold), an unheld one releases to the game.
-        foreach (var section in Enum.GetValues<EnvSection>())
-        {
-            bool held = target.HeldSections.Contains(section);
-            if (!held)
-            {
-                _environment.SetSectionHeld(section, false);
-                continue;
-            }
-            switch (section)
-            {
-                case EnvSection.Sky when target.Sky is { } sky:
-                    _environment.Sky = sky;
-                    break;
-                case EnvSection.Clouds when target.Clouds is { } clouds:
-                    _environment.Clouds = clouds;
-                    break;
-                case EnvSection.Lighting when target.Lighting is { } lighting:
-                    _environment.Lighting = lighting;
-                    break;
-                case EnvSection.Fog when target.Fog is { } fog:
-                    _environment.Fog = fog;
-                    break;
-                case EnvSection.Rain when target.Rain is { } rain:
-                    _environment.Rain = rain;
-                    break;
-                case EnvSection.Particles when target.Particles is { } particles:
-                    _environment.Particles = particles;
-                    break;
-                case EnvSection.Stars when target.Stars is { } stars:
-                    _environment.Stars = stars;
-                    break;
-                case EnvSection.Wind when target.Wind is { } wind:
-                    _environment.Wind = wind;
-                    break;
-            }
-        }
-    }
+    public void ApplyEnvironment(SceneEnvironment target) =>
+        _environmentControl.Apply(target, recordHistory: false);
 
     // ── rollback ─────────────────────────────────────────────────────────
 

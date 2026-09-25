@@ -1,3 +1,4 @@
+using Poser.Application.World;
 using System;
 using System.Collections.Generic;
 using Dalamud.Hooking;
@@ -124,7 +125,7 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 /// pattern both references validate. No address, pointer or native layout
 /// leaves this assembly.
 /// </summary>
-public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
+public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDisposable
 {
     private const float DefaultTransitionTime = 0.5f;
     // The Eorzean month is 32 days; only 31 are addressable as a day of month,
