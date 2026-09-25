@@ -30,7 +30,7 @@ namespace Poser.Game.Integration;
 /// 0f3dfba (API 6.x). Glamourer flag words: Once 0x1, Equipment 0x2,
 /// Customization 0x4, Lock 0x8.
 /// </summary>
-public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort
+public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort, IDisposable
 {
     /// <summary>Poser's MCDF recovery key ("POSR"). Ordinary editing uses
     /// zero, so it cannot bypass our own MCDF hold. A keyed read may
@@ -69,6 +69,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
+    private readonly ActorRedrawBarrier _redraw;
 
     // Penumbra
     private readonly ICallGateSubscriber<(int Breaking, int Features)> _penumbraVersion;
@@ -130,13 +131,17 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         IFramework framework,
         Lazy<StableBindingRegistry> bindings,
         IActorManager actors,
-        IObjectTable objects)
+        IObjectTable objects,
+        Lazy<ISkeletonService> skeletons,
+        Poser.Application.Lifecycle.ISessionGenerationSource sessions)
     {
         _pluginInterface = pluginInterface;
         _framework = framework;
         _bindings = bindings;
         _actors = actors;
         _objects = objects;
+        _redraw = new ActorRedrawBarrier(new PenumbraRedrawRuntime(
+            pluginInterface, framework, bindings, skeletons, actors, sessions, RequestRedraw));
 
         _penumbraVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         _getCollections = pluginInterface.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
@@ -302,12 +307,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
 
     private static unsafe int IndexOf(nint address) =>
         ((CSGameObject*)address)->ObjectIndex;
-
-    private static unsafe bool IsDrawable(nint address)
-    {
-        var native = (CSGameObject*)address;
-        return native->RenderFlags == 0 && native->DrawObject != null;
-    }
 
     // ── Penumbra ─────────────────────────────────────────────────────────
 
@@ -502,50 +501,11 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return IntegrationPortResult.Ok();
         });
 
-    public async Task<IntegrationPortResult> RedrawAndWait(
-        ActorId actor, TimeSpan timeout, CancellationToken cancellation)
-    {
-        var requested = await OnFrameworkThread(() => RequestRedraw(actor));
-        if (!requested.Success)
-            return requested;
+    public Task<IntegrationPortResult> RedrawAndWait(
+        ActorId actor, TimeSpan timeout, CancellationToken cancellation) =>
+        _redraw.RedrawAndWait(actor, timeout, cancellation);
 
-        long deadline = System.Environment.TickCount64 + (long)timeout.TotalMilliseconds;
-        // Give the redraw a moment to actually tear the draw object down,
-        // or the first poll can see the old body still "drawable".
-        await Task.Delay(150, CancellationToken.None);
-        while (true)
-        {
-            if (cancellation.IsCancellationRequested)
-                return IntegrationPortResult.Fail("The operation was cancelled.");
-            var state = await OnFrameworkThread(() =>
-            {
-                var resolved = _bindings.Value.Resolve(actor);
-                if (!resolved.Success || resolved.Value is not { } legacy
-                    || legacy.Address == nint.Zero)
-                    return (Gone: true, Drawable: false);
-                return (Gone: false, Drawable: IsDrawable(legacy.Address));
-            });
-            if (state.Gone)
-                return IntegrationPortResult.Fail(
-                    "The actor disappeared while waiting for its redraw.");
-            if (state.Drawable)
-            {
-                // Rebuild bindings against the redrawn body so downstream
-                // exact-generation state reconciles before anything else
-                // touches the actor.
-                await OnFrameworkThread(() =>
-                {
-                    _actors.RefreshActors();
-                    return true;
-                });
-                return IntegrationPortResult.Ok();
-            }
-            if (System.Environment.TickCount64 > deadline)
-                return IntegrationPortResult.Fail(
-                    $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
-            await Task.Delay(100, CancellationToken.None);
-        }
-    }
+    public void Dispose() => _redraw.Dispose();
 
     // ── Penumbra: spawn collection inheritance ───────────────────────────
 

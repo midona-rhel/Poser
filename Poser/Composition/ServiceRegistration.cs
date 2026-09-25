@@ -383,6 +383,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
             sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
+        services.AddSingleton(sp => new System.Lazy<ISkeletonService>(
+            sp.GetRequiredService<ISkeletonService>));
         services.AddSingleton<Game.Integration.InvisibleSkinService>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());

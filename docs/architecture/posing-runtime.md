@@ -89,6 +89,13 @@ source actor.
 
 ## Native ordering
 
+Awaited Penumbra redraws register `GameObjectRedrawn` before requesting redraw,
+matching Brio's notification-based completion. The Game-owned barrier correlates
+the exact actor, object-table slot, session and pending operation, then requires
+the current character skeleton and published bindings. A drawable old body is
+not completion. Cancellation, disappearance, provider loss and timeout release
+the observation and return failure.
+
 Animation, IK, and physics run before Poser's saved pose layers are reapplied.
 The runtime then refreshes caches, reparents, refreshes again, and publishes
 the final snapshot. A missing slot is normal. Replacing one slot releases only
