@@ -1,7 +1,5 @@
 ﻿using System;
-using Poser.Game.Overlays;
-using Poser.Game.Scene;
-using Poser.Services;
+using Poser.Application.Presentation;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -30,8 +28,7 @@ namespace Poser.UI;
 public sealed class OverlayPane
 {
     private readonly SceneSession _scene;
-    private readonly IEntityBindings _bindings;
-    private readonly StatusIconCatalog _statusIcons;
+    private readonly IStatusIconCatalog _statusIcons;
 
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
     /// both land in the shell's undo history.</summary>
@@ -73,18 +70,16 @@ public sealed class OverlayPane
 
     public OverlayPane(
         SceneSession scene,
-        IEntityBindings bindings,
-        StatusIconCatalog statusIcons,
+        IStatusIconCatalog statusIcons,
         ISceneCreation creation,
         EntityActions entityActions,
         ITextureProvider textures,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.Journal.OverlaySession values)
+        IOverlayControl values)
     {
         _values = values;
         _scene = scene;
-        _bindings = bindings;
         _statusIcons = statusIcons;
         _creation = creation;
         _entityActions = entityActions;
@@ -95,7 +90,7 @@ public sealed class OverlayPane
 
     private readonly ScenePane _scenePane;
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
-    private readonly Game.Journal.OverlaySession _values;
+    private readonly IOverlayControl _values;
 
     /// <summary>Selects a node some other surface just created — the spawn
     /// browser's rows and this pane's own duplicate. The scene has not
@@ -134,8 +129,8 @@ public sealed class OverlayPane
                 // BETWEEN sections, so the page's first draws neither the rule
                 // nor the margin above it.
                 divider: false);
-            if (node.Kind != OverlayNodeKind.Collider) page.Section(
-                ContentTitle(node.Kind),
+            if (node.State.Kind != OverlayNodeKind.Collider) page.Section(
+                ContentTitle(node.State.Kind),
                 _openContent,
                 next => _openContent = next,
                 form => ContentRows(form, node));
@@ -160,31 +155,31 @@ public sealed class OverlayPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void PlacementRows(
-        Crystarium.FormScope form, IOverlayNode node)
+        Crystarium.FormScope form, OverlayReading node)
     {
         if (node.State.Collider is { } collider)
         {
-            form.TextInput("Name", node.Name, next => _values.SetName(node, next));
+            form.TextInput("Name", node.State.Name, next => _values.SetName(node.Id, next));
             form.Pair("Shape", cell => cell.Dropdown("##collider-shape",
                     collider.Shape == Domain.Posing.IkColliderShape.Mesh
                         ? new[] { "Captured mesh" } : new[] { "Plane", "Box", "Cylinder", "Cone", "Capsule", "Sphere" },
                     collider.Shape == Domain.Posing.IkColliderShape.Mesh ? 0 : (int)collider.Shape > 4 ? (int)collider.Shape - 1 : (int)collider.Shape,
-                    next => _values.SetCollider(node, node.State.Collider! with { Shape = (Domain.Posing.IkColliderShape)(next >= 4 ? next + 1 : next) }),
+                    next => _values.SetColliderShape(node.Id, (Domain.Posing.IkColliderShape)(next >= 4 ? next + 1 : next)),
                     disabled: collider.Shape == Domain.Posing.IkColliderShape.Mesh),
                 "Collision", cell => cell.Switch("##collider-enabled", collider.Enabled,
-                    next => _values.SetCollider(node, node.State.Collider! with { Enabled = next })));
+                    next => _values.SetCollisionEnabled(node.Id, next)));
             form.Pair("Lock transform", cell => cell.Switch("##collider-lock", collider.Locked,
-                    next => _values.SetCollider(node, node.State.Collider! with { Locked = next })),
-                "Visible", cell => cell.Switch("##collider-visible", node.Visible,
-                    next => _values.SetVisible(node, next)));
-            form.Slider("Opacity", node.Alpha, 0f, 1f, next => _values.SetAlpha(node, next), onBegin: _values.Seal);
+                    next => _values.SetColliderLocked(node.Id, next)),
+                "Visible", cell => cell.Switch("##collider-visible", node.State.Visible,
+                    next => _values.SetVisible(node.Id, next)));
+            form.Slider("Opacity", node.State.Alpha, 0f, 1f, next => _values.SetAlpha(node.Id, next), onBegin: _values.Seal);
             return;
         }
-        string name = node.Name;
+        string name = node.State.Name;
         form.TextInput(
             "Name",
             name,
-            next => _values.SetName(node, next),
+            next => _values.SetName(node.Id, next),
             placeholder: "Overlay",
             help: "What the sidebar calls this overlay — never the text it "
                 + "draws");
@@ -194,33 +189,33 @@ public sealed class OverlayPane
             "Visible",
             cell => cell.Switch(
                 "##overlay-visible",
-                node.Visible,
-                next => _values.SetVisible(node, next),
+                node.State.Visible,
+                next => _values.SetVisible(node.Id, next),
                 help: "Hide the overlay without destroying it"),
             "Drag on screen",
             cell => cell.Switch(
                 "##overlay-draggable",
-                node.Draggable,
-                next => _values.SetDraggable(node, next),
+                node.State.Draggable,
+                next => _values.SetDraggable(node.Id, next),
                 help: "Grab the overlay itself and drag it"));
         ScreenPointRows(form, node);
         form.Pair(
             "Scale",
             cell => cell.Slider(
                 "##overlay-scale",
-                node.Scale,
+                node.State.Scale,
                 OverlayNodeLimits.MinScale,
                 OverlayNodeLimits.MaxScale,
-                next => _values.SetScale(node, next),
+                next => _values.SetScale(node.Id, next),
                 help: "Draw the overlay larger or smaller",
                 onBegin: _values.Seal),
             "Opacity",
             cell => cell.Slider(
                 "##overlay-opacity",
-                node.Alpha,
+                node.State.Alpha,
                 0f,
                 1f,
-                next => _values.SetAlpha(node, next),
+                next => _values.SetAlpha(node.Id, next),
                 help: "Fade the whole overlay",
                 onBegin: _values.Seal));
 
@@ -228,11 +223,11 @@ public sealed class OverlayPane
         {
             actions.Button(
                 "Centre",
-                () => _values.SetPosition(node, Centred(node)),
+                () => _values.SetPosition(node.Id, Centred(node)),
                 help: "Move the overlay to the middle of the viewport");
             actions.Button(
                 "Reset size",
-                () => _values.ResetSize(node),
+                () => _values.ResetSize(node.Id),
                 help: "Back to full size and full opacity");
         });
     }
@@ -247,7 +242,7 @@ public sealed class OverlayPane
 
     /// <summary>The rail pad's node — the camera pane's BallCamera idiom:
     /// the rail asks the pane that owns the entity.</summary>
-    public IOverlayNode? RailNode => SelectedNode();
+    public OverlayReading? RailNode => SelectedNode();
 
     /// <summary>
     /// The rail's section for an overlay node — the three facts a node is
@@ -277,9 +272,9 @@ public sealed class OverlayPane
 
     /// <summary>The X and Y wells. Both surfaces draw these, so the pixel
     /// format, the per-pixel rate and the wheel step are stated once.</summary>
-    private void ScreenPointRows(Crystarium.FormScope form, IOverlayNode node)
+    private void ScreenPointRows(Crystarium.FormScope form, OverlayReading node)
     {
-        var position = node.Position;
+        var position = node.State.Position;
         form.Cells(cells =>
         {
             cells.Cell(
@@ -287,7 +282,7 @@ public sealed class OverlayPane
                 cell => cell.Number(
                     "##overlay-x",
                     position.X,
-                    next => _values.SetPosition(node, new Vector2(next, position.Y)),
+                    next => _values.SetPosition(node.Id, new Vector2(next, position.Y)),
                     perPixel: 1f,
                     format: "0",
                     onCommit: null));
@@ -296,7 +291,7 @@ public sealed class OverlayPane
                 cell => cell.Number(
                     "##overlay-y",
                     position.Y,
-                    next => _values.SetPosition(node, new Vector2(position.X, next)),
+                    next => _values.SetPosition(node.Id, new Vector2(position.X, next)),
                     perPixel: 1f,
                     format: "0",
                     onCommit: null));
@@ -304,35 +299,35 @@ public sealed class OverlayPane
         help: "Where the overlay sits, in screen pixels from the top-left");
     }
 
-    private void DraggableRow(Crystarium.FormScope form, IOverlayNode node)
+    private void DraggableRow(Crystarium.FormScope form, OverlayReading node)
     {
         form.Switch(
             "Drag on screen",
-            node.Draggable,
-            next => _values.SetDraggable(node, next),
+            node.State.Draggable,
+            next => _values.SetDraggable(node.Id, next),
             help: "Grab the overlay itself and drag it");
     }
 
     /// <summary>The node's own words. The LABEL is the kind's, because "Line"
     /// and "Effect" are what the tab calls the same field — a rail row that
     /// renamed it would read as a second, different setting.</summary>
-    private void TextRow(Crystarium.FormScope form, IOverlayNode node)
+    private void TextRow(Crystarium.FormScope form, OverlayReading node)
     {
-        bool status = node.Kind is not (
+        bool status = node.State.Kind is not (
             OverlayNodeKind.Talk or OverlayNodeKind.Balloon);
         form.TextInput(
             status ? "Effect" : "Line",
-            node.Text,
-            next => _values.SetText(node, next),
+            node.State.Text,
+            next => _values.SetText(node.Id, next),
             placeholder: status ? "What the effect is called" : "What they say",
             help: status
                 ? "The name the status bar shows"
                 : "The words this overlay draws");
     }
 
-    private void ContentRows(Crystarium.FormScope form, IOverlayNode node)
+    private void ContentRows(Crystarium.FormScope form, OverlayReading node)
     {
-        switch (node.Kind)
+        switch (node.State.Kind)
         {
             case OverlayNodeKind.Talk:
                 TalkRows(form, node);
@@ -346,18 +341,18 @@ public sealed class OverlayPane
         }
     }
 
-    private void TalkRows(Crystarium.FormScope form, IOverlayNode node)
+    private void TalkRows(Crystarium.FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Speaker",
-            node.Speaker,
-            next => _values.SetSpeaker(node, next),
+            node.State.Speaker,
+            next => _values.SetSpeaker(node.Id, next),
             placeholder: "Who is talking",
             help: "The name on the plate above the panel");
         form.TextInput(
             "Line",
-            node.Text,
-            next => _values.SetText(node, next),
+            node.State.Text,
+            next => _values.SetText(node.Id, next),
             placeholder: "What they say",
             help: "The panel's body, up to "
                 + OverlayNodeLimits.MaxTextCharacters + " characters");
@@ -366,25 +361,25 @@ public sealed class OverlayPane
             cell => cell.Dropdown(
                 "##talk-panel",
                 TalkBackgroundLabels,
-                (int)node.TalkBackground,
-                next => _values.SetTalkBackground(node, (TalkBackground)next),
+                (int)node.State.TalkBackground,
+                next => _values.SetTalkBackground(node.Id, (TalkBackground)next),
                 help: "Which dialogue plate to draw on"),
             "Advance mark",
             cell => cell.Dropdown(
                 "##talk-cursor",
                 TalkCursorLabels,
-                (int)node.TalkCursor,
-                next => _values.SetTalkCursor(node, (TalkCursor)next),
+                (int)node.State.TalkCursor,
+                next => _values.SetTalkCursor(node.Id, (TalkCursor)next),
                 help: "The mark in the panel's corner"));
         FontSizeRow(form, node);
     }
 
-    private void BalloonRows(Crystarium.FormScope form, IOverlayNode node)
+    private void BalloonRows(Crystarium.FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Line",
-            node.Text,
-            next => _values.SetText(node, next),
+            node.State.Text,
+            next => _values.SetText(node.Id, next),
             placeholder: "What they say",
             help: "The bubble holds one line; longer text is cut with an "
                 + "ellipsis, exactly as the game's own bubbles are");
@@ -393,52 +388,52 @@ public sealed class OverlayPane
             cell => cell.Dropdown(
                 "##balloon-channel",
                 BalloonChannelLabels,
-                (int)node.BalloonChannel,
-                next => _values.SetBalloonChannel(node, (BalloonChannel)next),
+                (int)node.State.BalloonChannel,
+                next => _values.SetBalloonChannel(node.Id, (BalloonChannel)next),
                 help: "Which chat channel's frame to wear"),
             "Tint",
             cell => cell.Dropdown(
                 "##balloon-tint",
                 BalloonGradientLabels,
-                (int)node.BalloonGradient,
-                next => _values.SetBalloonGradient(node, (BalloonGradient)next),
+                (int)node.State.BalloonGradient,
+                next => _values.SetBalloonGradient(node.Id, (BalloonGradient)next),
                 help: "The colour over the gradient band"));
         form.Pair(
             "Tail",
             cell => cell.Switch(
                 "##balloon-tail",
-                node.ArrowVisible,
-                next => _values.SetArrowVisible(node, next),
+                node.State.ArrowVisible,
+                next => _values.SetArrowVisible(node.Id, next),
                 help: "The point that marks who is speaking"),
             "Tail position",
             cell => cell.Slider(
                 "##balloon-tail-position",
-                node.ArrowX,
+                node.State.ArrowX,
                 OverlayNodeLimits.MinArrowX,
                 OverlayNodeLimits.MaxArrowX,
-                next => _values.SetArrowX(node, next),
+                next => _values.SetArrowX(node.Id, next),
                 format: "0",
-                disabled: !node.ArrowVisible,
+                disabled: !node.State.ArrowVisible,
                 help: "Where along the bottom edge the tail sits"));
         FontSizeRow(form, node);
     }
 
-    private void StatusRows(Crystarium.FormScope form, IOverlayNode node)
+    private void StatusRows(Crystarium.FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Effect",
-            node.Text,
-            next => _values.SetText(node, next),
+            node.State.Text,
+            next => _values.SetText(node.Id, next),
             placeholder: "What the effect is called",
             help: "The name the status bar shows");
-        string current = _statusIcons.NameFor(node.StatusIconId);
+        string current = _statusIcons.NameFor(node.State.StatusIconId);
         form.Pair(
             "Reads as",
             cell => cell.Dropdown(
                 "##status-kind",
                 StatusKindLabels,
-                (int)node.StatusKind,
-                next => _values.SetStatusKind(node, (StatusKind)next),
+                (int)node.State.StatusKind,
+                next => _values.SetStatusKind(node.Id, (StatusKind)next),
                 help: "Gained reads as an addition, expiring as a "
                     + "subtraction"),
             "Icon",
@@ -446,49 +441,47 @@ public sealed class OverlayPane
                 "##status-icon-pick",
                 current.Length > 0
                     ? current
-                    : node.StatusIconId == 0
+                    : node.State.StatusIconId == 0
                         ? "None"
-                        : "Icon " + node.StatusIconId,
+                        : "Icon " + node.State.StatusIconId,
                 () => OpenIconPicker(node),
                 help: "Any status icon the game declares"));
     }
 
-    private void FontSizeRow(Crystarium.FormScope form, IOverlayNode node)
+    private void FontSizeRow(Crystarium.FormScope form, OverlayReading node)
     {
         form.NumericSlider(
             "Text size",
-            node.FontSize,
+            node.State.FontSize,
             OverlayNodeLimits.MinFontSize,
             OverlayNodeLimits.MaxFontSize,
-            next => _values.SetFontSize(node, (uint)MathF.Round(next)),
+            next => _values.SetFontSize(node.Id, (uint)MathF.Round(next)),
             perPixel: 0.2f,
             format: "0",
             help: "Point size of the drawn text");
     }
 
     private void LifetimeRows(
-        Crystarium.FormScope form, IOverlayNode node)
+        Crystarium.FormScope form, OverlayReading node)
     {
         form.Actions(string.Empty, actions =>
         {
             actions.Button("Save to library", () => _names.Open(
-                    "Save overlay to library", node.Name,
+                    "Save overlay to library", node.State.Name,
                     name =>
                     {
-                        if (_bindings.GetOverlayId(node) is { } entryId)
-                            _scenePane.SaveOverlayEntry(
-                                entryId.LogicalId, name);
+                        if (_values.Read(node.Id) != null)
+                            _scenePane.SaveOverlayEntry(node.Id.LogicalId, name);
                     }));
             actions.Button(
                 "Duplicate",
-                () => _pending = () => { if (_bindings.GetOverlayId(node) is { } id) Duplicate(id); },
+                () => _pending = () => Duplicate(node.Id),
                 help: "Duplicate this overlay");
             actions.Button(
                 "Delete",
                 () =>
                 {
-                    if (_bindings.GetOverlayId(node) is { } id)
-                        _pending = () => _ = _entityActions.Remove(SelectionId.ForOverlay(id));
+                    _pending = () => _ = _entityActions.Remove(SelectionId.ForOverlay(node.Id));
                 },
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
@@ -498,8 +491,11 @@ public sealed class OverlayPane
 
     // ── the icon picker ──────────────────────────────────────────────────
 
-    private void OpenIconPicker(IOverlayNode node)
+    private OverlayId? _iconTarget;
+
+    private void OpenIconPicker(OverlayReading node)
     {
+        _iconTarget = node.Id;
         _iconChoices.Clear();
         foreach (var entry in _statusIcons.Entries)
             _iconChoices.Add(new StatusIconChoice(
@@ -513,7 +509,7 @@ public sealed class OverlayPane
             _iconChoices,
             static choice => choice.Name,
             static choice => choice.Key,
-            node.StatusIconId.ToString(
+            node.State.StatusIconId.ToString(
                 System.Globalization.CultureInfo.InvariantCulture),
             loadError: _iconChoices.Count == 0
                 ? "The status sheet declared no icons."
@@ -528,8 +524,9 @@ public sealed class OverlayPane
 
     private void ApplyIcon(StatusIconChoice choice)
     {
-        if (SelectedNode() is { } node)
-            _values.SetStatusIconId(node, choice.IconId);
+        if (_iconTarget is { } id)
+            _values.SetStatusIconId(id, choice.IconId);
+        _iconTarget = null;
     }
 
     // ── acts ─────────────────────────────────────────────────────────────
@@ -547,26 +544,23 @@ public sealed class OverlayPane
         else _status = result.Detail ?? "The overlay could not be duplicated.";
     }
 
-    private static Vector2 Centred(IOverlayNode node)
+    private static Vector2 Centred(OverlayReading node)
     {
         var viewport = ImGui.GetMainViewport().Size;
         // The same extent the node layer gives the game as the node's own size,
         // so the middle a node is centred on is the middle you can grab it by.
-        var extent = OverlayNodeGeometry.DesignSize(node.Kind) * node.Scale;
+        var extent = OverlayNodeGeometry.DesignSize(node.State.Kind) * node.State.Scale;
         return (viewport - extent) * 0.5f;
     }
 
     // ── state ────────────────────────────────────────────────────────────
 
-    private IOverlayNode? SelectedNode()
+    private OverlayReading? SelectedNode()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
             return null;
-        var resolved = _bindings.Resolve(overlayId);
-        return resolved.Success && resolved.Value is { IsValid: true } node
-            ? node
-            : null;
+        return _values.Read(overlayId);
     }
 
     /// <summary>Second half of <see cref="SelectWhenBound"/>: once the scene

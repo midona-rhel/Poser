@@ -221,6 +221,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.PropSession>();
         services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
         services.AddSingleton<Game.Journal.OverlaySession>();
+        services.AddSingleton<Application.Presentation.IOverlayControl, Game.Overlays.OverlayControl>();
+        services.AddSingleton<Application.Presentation.IStatusIconCatalog>(sp =>
+            sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Game.Journal.CameraSession>();

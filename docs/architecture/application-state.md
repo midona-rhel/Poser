@@ -96,6 +96,12 @@ applies its document before recording the shared lifecycle step, so redo restore
 the imported state. The native document mapping is shared with scene capture
 and history, not implemented in presentation.
 
+Overlay properties and the inspector pad use detached readings and exact IDs
+through `IOverlayControl`, retaining the existing shared value journal.
+Pad gestures and deferred icon picks keep their original target; a changed
+selection or replacement generation cannot redirect the edit. Collider property
+commands update the current backend value, not an older UI snapshot.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

@@ -1,6 +1,7 @@
 ﻿using Poser.Domain.Transforms;
 using System;
 using Poser.Application.Viewport;
+using Poser.Application.Presentation;
 using Poser.Application.Gaze;
 using System.Collections.Generic;
 using System.Linq;
@@ -2787,7 +2788,7 @@ public partial class PoseInspectorPane
 
     /// <summary>The rail pad's overlay node — the camera ball's idiom.
     /// </summary>
-    public IOverlayNode? RailOverlayNode() =>
+    public OverlayReading? RailOverlayNode() =>
         _overlayPane.RailNode;
 
     public bool IsActorSelection =>

@@ -2,12 +2,9 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using Poser.Application.Presentation;
 
 namespace Poser.Game.Overlays;
-
-/// <summary>One pickable status icon: the sheet's own name over the icon id
-/// the node draws.</summary>
-public readonly record struct StatusIconEntry(uint IconId, string Name);
 
 /// <summary>
 /// Every status effect the game declares, as an icon the user can put on a
@@ -19,7 +16,7 @@ public readonly record struct StatusIconEntry(uint IconId, string Name);
 /// same picture forty times (Ktisis dedupes the same way,
 /// <c>Interface/Editor/Properties/OverlayPropertyList.cs:53</c>).</para>
 /// </summary>
-public sealed class StatusIconCatalog
+public sealed class StatusIconCatalog : IStatusIconCatalog
 {
     private readonly IDataManager _data;
     private readonly IPluginLog _log;

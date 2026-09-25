@@ -28,7 +28,8 @@ public class PoseRailPane
     private readonly ICameraProjection _camera;
     private readonly ICameraControl _cameraValues;
     private CameraId? _joyCameraId;
-    private readonly Game.Journal.OverlaySession _overlayValues;
+    private readonly IOverlayControl _overlayValues;
+    private OverlayId? _padOverlayId;
 
     /// <summary>The group verbs, which stand only while more than one entity
     /// is selected and take no height otherwise.</summary>
@@ -76,7 +77,7 @@ public class PoseRailPane
         ICameraProjection camera,
         ICameraControl cameraValues,
         SelectionSection selection,
-        Game.Journal.OverlaySession overlayValues)
+        IOverlayControl overlayValues)
     {
         _inspector = inspector;
         _camera = camera;
@@ -473,21 +474,24 @@ public class PoseRailPane
         var mouse = ImGui.GetMousePos();
 
         if (ImGui.IsItemActivated() && canEdit)
+        {
+            _padOverlayId = node!.Id;
             _padOffset = Vector2.Zero;
+        }
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
-        if (active && node != null)
+        if (active && _padOverlayId is { } id && _overlayValues.Read(id) is { } target)
         {
             GizmoPointerOwnership.Hold();
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
                 Crystarium.ChangeValue("##rail-overlay-pad",
-                    () => _overlayValues.SetPosition(node, node.Position + step));
+                    () => _overlayValues.SetPosition(id, target.State.Position + step));
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;
@@ -503,7 +507,11 @@ public class PoseRailPane
             knob = center + shown;
         }
 
-        if (ImGui.IsItemDeactivated()) Crystarium.Commit("##rail-overlay-pad");
+        if (ImGui.IsItemDeactivated())
+        {
+            Crystarium.Commit("##rail-overlay-pad");
+            _padOverlayId = null;
+        }
 
         // The pad: a faint travel boundary and the knob.
         dl.AddCircle(center, discRadius,
