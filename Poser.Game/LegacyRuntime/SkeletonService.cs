@@ -9,6 +9,9 @@ using Poser.Services;
 
 namespace Poser.Game;
 
+/// <summary>The native draw object has been torn down, even if its next allocation reuses the address.</summary>
+internal sealed record ActorDrawInvalidatedEvent(IActor Actor) : IEvent;
+
 /// <summary>
 /// Slot-aware skeleton discovery and caching. Skeletons cache per
 /// (actor, slot); an entry is reused only while its actor binding AND its
@@ -32,6 +35,7 @@ public class SkeletonService : ISkeletonService
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Subscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);
     }
 
     public ISkeleton? GetSkeleton(IActor actor) =>
@@ -219,10 +223,19 @@ public class SkeletonService : ISkeletonService
         }
     }
 
+    private void OnDrawInvalidated(ActorDrawInvalidatedEvent e)
+    {
+        foreach (var (key, skeleton) in _skeletons.ToArray())
+            if (key.Actor == e.Actor.Id && skeleton.Actor.Address == e.Actor.Address)
+                ReleaseSkeleton(key, skeleton);
+        _eventBus.Publish(new SkeletonChangedEvent(e.Actor, null));
+    }
+
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Unsubscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);
         ClearAll();
     }
 }

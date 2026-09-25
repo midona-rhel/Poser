@@ -2069,6 +2069,10 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         if (!_native.WriteModelCharaIdAndBeginRedraw(descriptor, modelCharaId))
             return;
+        // The allocator may reuse the old CharacterBase address before the
+        // next framework read. Publish the teardown now, while it is known,
+        // rather than asking pointer equality to detect a different skeleton.
+        _eventBus.Publish(new ActorDrawInvalidatedEvent(actor));
         PollUntil(
             ownership,
             descriptor,
