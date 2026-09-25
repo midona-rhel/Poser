@@ -19,14 +19,8 @@ using Poser.Domain.Cameras;
 namespace Poser.UI;
 
 /// <summary>
-/// Camera-scoped editor. The pane owns camera state and callbacks; Crystarium
-/// owns row rendering and placement.
-///
-/// <para>Every property row writes the live <see cref="IVirtualCamera"/>
-/// directly — a live camera routes each write to the native camera, a parked
-/// one retains it for its next activation, so a write is the flush either
-/// way. Angular rows convert at the edge: the entity carries the native
-/// radians, the rows speak degrees.</para>
+/// Camera-scoped presentation. Reads are detached and property writes use exact IDs;
+/// angular controls translate native radians to display degrees.
 /// </summary>
 public sealed class CameraPane
 {
@@ -79,7 +73,9 @@ public sealed class CameraPane
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     private readonly ScenePane _scenePane;
-    private readonly Game.Journal.CameraSession _values;
+    private readonly ICameraControl _values;
+    private readonly ISceneCreation _creation;
+    private readonly global::Poser.UI.Composition.PendingSelection<SceneEntityHandle> _pendingClone = new();
 
     public CameraPane(
         SceneSession scene,
@@ -94,9 +90,11 @@ public sealed class CameraPane
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         ScenePane scenePane,
-        Game.Journal.CameraSession values)
+        ICameraControl values,
+        ISceneCreation creation)
     {
         _values = values;
+        _creation = creation;
         _names = names;
         _anchors = anchors;
         _placement = placement;
@@ -118,6 +116,7 @@ public sealed class CameraPane
     /// </summary>
     public void DrawBrowsers()
     {
+        _pendingClone.Reconcile(handle => _creation.Resolve(handle), _scene.Selection);
         _saveBrowser.Draw();
         _loadBrowser.Draw();
         _pendingSelect.Reconcile(
@@ -168,24 +167,7 @@ public sealed class CameraPane
     /// <summary>Resets only the translation of one exact camera.</summary>
     public void ResetCameraTransform(CameraId cameraId)
     {
-        if (!_cameras.IsAvailable)
-        {
-            _notices.Refused("Reset: camera controls are unavailable.");
-            return;
-        }
-        var resolved = _bindings.Resolve(cameraId);
-        if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
-            _bindings.GetCameraId(camera) != cameraId)
-        {
-            _notices.Refused("Reset: the camera is no longer available.");
-            return;
-        }
-        if (camera.IsLocked)
-        {
-            _notices.Refused("Reset: unlock the camera first.");
-            return;
-        }
-        _values.ResetPosition(camera);
+        ReportTarget(_values.ResetPosition(cameraId));
     }
 
     /// <summary>
@@ -267,12 +249,12 @@ public sealed class CameraPane
                     row.Width,
                     [(TablerIcon.ArrowsMove, "Position")],
                     (_, a) => Axis(camera.Position, a),
-                    (_, a, next) => camera.Position =
-                        WithAxis(camera.Position, a, next),
-                    _ => { },
+                    (_, a, next) => ReportTarget(_values.SetPosition(camera.Id,
+                        WithAxis(camera.Position, a, next))),
+                    _ => _values.Seal(),
                     _ => perPixel,
                     _ => "0.00",
-                    _ => locked || !_cameras.IsAvailable));
+                    _ => locked || !camera.Available));
             return;
         }
 
@@ -294,16 +276,15 @@ public sealed class CameraPane
                 (r, a, next) =>
                 {
                     if (r == 0)
-                        _values.SetPositionOffset(
-                            camera, WithAxis(camera.PositionOffset, a, next));
+                        _values.SetPositionOffset(camera.Id, WithAxis(camera.PositionOffset, a, next));
                     else if (camera.FixedPosition is { } point)
-                        _values.SetFixedPosition(camera, WithAxis(point, a, next));
+                        _values.SetFixedPosition(camera.Id, WithAxis(point, a, next));
                 },
                 _ => _values.Seal(),
                 _ => perPixel,
                 _ => "0.00",
                 r => locked ||
-                    (r == 1 && (!pinned || !_cameras.IsAvailable)),
+                    (r == 1 && (!pinned || !camera.Available)),
                 r => r == 1 && !pinned
                     ? "Pin the position to edit it"
                     : locked ? "The camera is locked" : null,
@@ -313,11 +294,11 @@ public sealed class CameraPane
             "Pin position", camera.FixedPosition is not null,
             value =>
             {
-                if (locked || !_cameras.IsAvailable)
+                if (locked || !camera.Available)
                     return;
-                _values.SetFixedPosition(camera, value ? camera.WorldPosition : null);
+                _values.SetFixedPosition(camera.Id, value ? camera.WorldPosition : null);
             },
-            disabled: locked || !_cameras.IsAvailable,
+            disabled: locked || !camera.Available,
             help: "Hold this world position");
     }
 
@@ -337,7 +318,7 @@ public sealed class CameraPane
         string id,
         Vector2 origin,
         Vector2 size,
-        Action<Crystarium.PageScope, CameraId, IVirtualCamera> sections)
+        Action<Crystarium.PageScope, CameraId, CameraReading> sections)
     {
         Crystarium.Page(id, origin, size, page =>
         {
@@ -354,9 +335,9 @@ public sealed class CameraPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void GeneralRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void GeneralRows(Crystarium.FormScope form, CameraReading camera)
     {
-        if (!_cameras.IsAvailable)
+        if (!camera.Available)
             form.Status("Cameras are unavailable: game signatures not found.");
 
         bool locked = camera.IsLocked;
@@ -370,7 +351,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Portrait",
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
-                    _ => camera.TogglePortraitMode(), disabled: locked),
+                    value => ReportTarget(_values.SetPortrait(camera.Id, value)), disabled: locked),
                 help: "Quarter-turn for portrait framing");
         });
         form.Cells(cells =>
@@ -378,7 +359,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##camera-name", camera.Name,
-                    value => _values.SetName(camera, value), disabled: locked),
+                    value => _values.SetName(camera.Id, value), disabled: locked),
                 help: "Name it in the sidebar");
             cells.Cell(
                 "Type",
@@ -392,7 +373,7 @@ public sealed class CameraPane
         });
     }
 
-    private void OrbitRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void OrbitRows(Crystarium.FormScope form, CameraReading camera)
     {
         bool locked = camera.IsLocked;
         // Zoom's response is front-loaded — most framing lives in the first
@@ -400,7 +381,7 @@ public sealed class CameraPane
         // like the environment's distance sliders.
         var limits = camera.ZoomLimits;
         form.Slider("Zoom", camera.Zoom, limits.X, limits.Y,
-            value => _values.SetZoom(camera, value),
+            value => _values.SetZoom(camera.Id, value),
             disabled: locked,
             scale: SliderScale.Log,
             help: "Distance from the pivot", onBegin: _values.Seal);
@@ -415,15 +396,15 @@ public sealed class CameraPane
             cells.Cell(
                 "Angle X",
                 cell => cell.Number("##camera-angle-x", angle.X * Rad2Deg,
-                    value => camera.Angle =
-                        camera.Angle with { X = value * Deg2Rad },
+                    value => ReportTarget(_values.SetAngle(camera.Id,
+                        camera.Angle with { X = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit around the pivot, in degrees");
             cells.Cell(
                 "Angle Y",
                 cell => cell.Number("##camera-angle-y", angle.Y * Rad2Deg,
-                    value => camera.Angle =
-                        camera.Angle with { Y = value * Deg2Rad },
+                    value => ReportTarget(_values.SetAngle(camera.Id,
+                        camera.Angle with { Y = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit above or below, degrees");
         });
@@ -433,23 +414,23 @@ public sealed class CameraPane
             cells.Cell(
                 "Pan",
                 cell => cell.Number("##camera-pan-x", pan.X * Rad2Deg,
-                    value => camera.Pan =
-                        camera.Pan with { X = value * Deg2Rad },
+                    value => ReportTarget(_values.SetPan(camera.Id,
+                        camera.Pan with { X = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Swing the view, degrees");
             cells.Cell(
                 "Tilt",
                 cell => cell.Number("##camera-pan-y", pan.Y * Rad2Deg,
-                    value => camera.Pan =
-                        camera.Pan with { Y = value * Deg2Rad },
+                    value => ReportTarget(_values.SetPan(camera.Id,
+                        camera.Pan with { Y = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Tip the view, degrees");
         });
     }
 
-    private void TargetRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void TargetRows(Crystarium.FormScope form, CameraReading camera)
     {
-        if (_bindings.GetCameraId(camera) is not { } cameraId) return;
+        var cameraId = camera.Id;
         ReportTarget(_targets.Reconcile(cameraId));
         if (_targets.Read(cameraId) is not { } target) return;
         bool locked = camera.IsLocked;
@@ -513,8 +494,8 @@ public sealed class CameraPane
                         {
                             Width = UiWidth.Fixed(dropdownWidth / row.Scale),
                         },
-                        disabled: locked || camera.IsTracking ||
-                            camera.IsTargetLocked,
+                        disabled: locked || target.IsTracking ||
+                            target.IsTargetLocked,
                         help: "Seat the pivot on an actor");
                 }
                 else
@@ -550,18 +531,18 @@ public sealed class CameraPane
                         Crystarium.ActiveTheme.Controls.SwitchHeight).Y));
                 Crystarium.Switch(
                     "##camera-actor-lock",
-                    camera.IsTargetLocked,
+                    target.IsTargetLocked,
                     enabled => ReportTarget(_targets.SetTargetLocked(cameraId, enabled)),
                     disabled: locked,
                     help: "Lock onto the followed actor");
-                if (!camera.IsTracking && !camera.IsTargetLocked &&
+                if (!target.IsTracking && !target.IsTargetLocked &&
                     ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                     ReportTarget(_targets.ToggleGameTarget(cameraId));
             });
     }
 
-    private void MovementRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void MovementRows(Crystarium.FormScope form, CameraReading camera)
     {
         bool locked = camera.IsLocked;
         form.Cells(cells =>
@@ -569,13 +550,13 @@ public sealed class CameraPane
             cells.Cell(
                 "Movement",
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
-                    value => _values.SetMovementEnabled(camera, value),
+                    value => _values.SetMovementEnabled(camera.Id, value),
                     disabled: locked),
                 help: "Fly with WASD while live");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
-                    value => _values.SetMove2D(camera, value), disabled: locked),
+                    value => _values.SetMove2D(camera.Id, value), disabled: locked),
                 help: "Stay in the horizontal plane");
         });
         // The slider ends are the wheel's clamp: the row and the notch read
@@ -585,17 +566,17 @@ public sealed class CameraPane
             "Speed",
             cell => cell.Slider("##camera-speed", camera.MovementSpeed,
                 FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
-                value => _values.SetMovementSpeed(camera, value),
+                value => _values.SetMovementSpeed(camera.Id, value),
                 format: "0.000", disabled: locked,
                 help: "Flight speed; the wheel adjusts it", onBegin: _values.Seal),
             "Sensitivity",
             cell => cell.Slider("##camera-sensitivity",
                 camera.MouseSensitivity, 0.001f, 0.2f,
-                value => _values.SetMouseSensitivity(camera, value),
+                value => _values.SetMouseSensitivity(camera.Id, value),
                 format: "0.000", disabled: locked,
                 help: "How far a right-drag turns the view", onBegin: _values.Seal));
         form.Switch("Delimit angle", camera.DelimitAngle,
-            value => _values.SetDelimitAngle(camera, value),
+            value => _values.SetDelimitAngle(camera.Id, value),
             disabled: locked,
             help: "Let pitch wrap past vertical");
     }
@@ -603,7 +584,7 @@ public sealed class CameraPane
     /// <summary>FoV and roll share one row for both camera kinds: the two
     /// lens facts, side by side.</summary>
     private void FovRollRow(
-        Crystarium.FormScope form, IVirtualCamera camera, bool locked)
+        Crystarium.FormScope form, CameraReading camera, bool locked)
     {
         form.Cells(cells =>
         {
@@ -613,7 +594,7 @@ public sealed class CameraPane
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
                     -44f, 120f,
-                    value => _values.SetFoV(camera, value * Deg2Rad),
+                    value => _values.SetFoV(camera.Id, value * Deg2Rad),
                     format: "0.0", disabled: locked,
                     altReset: camera.DefaultFoV * Rad2Deg, onBegin: _values.Seal),
                 help: "Lens offset, degrees");
@@ -621,7 +602,7 @@ public sealed class CameraPane
                 "Roll",
                 cell => cell.Slider("##camera-roll", camera.Roll * Rad2Deg,
                     -180f, 180f,
-                    value => _values.SetRoll(camera, value * Deg2Rad),
+                    value => _values.SetRoll(camera.Id, value * Deg2Rad),
                     format: "0.0", disabled: locked,
                     altReset: camera.DefaultRoll * Rad2Deg, onBegin: _values.Seal),
                 help: "Tilt around the view axis, in degrees");
@@ -629,7 +610,7 @@ public sealed class CameraPane
     }
 
     private void FreeCameraRows(
-        Crystarium.FormScope form, IVirtualCamera camera)
+        Crystarium.FormScope form, CameraReading camera)
     {
         bool locked = camera.IsLocked;
         FovRollRow(form, camera, locked);
@@ -640,23 +621,23 @@ public sealed class CameraPane
             cells.Cell(
                 "Yaw",
                 cell => cell.Number("##camera-yaw", rotation.X * Rad2Deg,
-                    value => camera.Rotation =
-                        camera.Rotation with { X = value * Deg2Rad },
+                    value => ReportTarget(_values.SetRotation(camera.Id,
+                        camera.Rotation with { X = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.X * Rad2Deg),
                 help: "Which way the camera faces, in degrees");
             cells.Cell(
                 "Pitch",
                 cell => cell.Number("##camera-pitch", rotation.Y * Rad2Deg,
-                    value => camera.Rotation =
-                        camera.Rotation with { Y = value * Deg2Rad },
+                    value => ReportTarget(_values.SetRotation(camera.Id,
+                        camera.Rotation with { Y = value * Deg2Rad })),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.Y * Rad2Deg),
                 help: "Look up or down, degrees");
         });
     }
 
-    private void LimitRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void LimitRows(Crystarium.FormScope form, CameraReading camera)
     {
         bool locked = camera.IsLocked;
         if (camera.Kind != CameraKind.Free)
@@ -667,14 +648,14 @@ public sealed class CameraPane
                     "Collision",
                     cell => cell.Switch("##camera-collision",
                         !camera.DisableCollision,
-                        value => _values.SetDisableCollision(camera, !value),
+                        value => _values.SetDisableCollision(camera.Id, !value),
                         disabled: locked),
                     help: "Let walls push the camera");
                 cells.Cell(
                     "Delimit",
                     cell => cell.Switch("##camera-delimit",
                         camera.DelimitCamera,
-                        value => _values.SetDelimitCamera(camera, value),
+                        value => _values.SetDelimitCamera(camera.Id, value),
                         disabled: locked),
                     help: "Lift zoom and pitch limits");
             });
@@ -682,18 +663,18 @@ public sealed class CameraPane
         form.Pair(
             "Orthographic",
             cell => cell.Switch("##camera-ortho", camera.Orthographic,
-                value => _values.SetOrthographic(camera, value),
+                value => _values.SetOrthographic(camera.Id, value),
                 disabled: locked,
                 help: "Flatten perspective entirely"),
             "Ortho zoom",
             cell => cell.Slider("##camera-ortho-zoom",
                 camera.OrthographicZoom, 0.1f, 10f,
-                value => _values.SetOrthographicZoom(camera, value),
+                value => _values.SetOrthographicZoom(camera.Id, value),
                 disabled: locked || !camera.Orthographic,
                 help: "Width of the flat view", onBegin: _values.Seal));
     }
 
-    private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void FileRows(Crystarium.FormScope form, CameraReading camera)
     {
         form.ActionDropdown("More", _cameras.Cameras.Any(candidate => !candidate.IsDefault)
                 ? ["Save to file…", "Save to library", "Destroy all cameras…"]
@@ -701,7 +682,7 @@ public sealed class CameraPane
             choice =>
             {
                 if (choice == 0)
-                    OpenSave(camera);
+                    OpenSave(camera.Id);
                 else if (choice == 2)
                     RequestDestroyAll?.Invoke();
                 else
@@ -709,9 +690,8 @@ public sealed class CameraPane
                         "Save camera to library", camera.Name,
                         name =>
                         {
-                            if (_bindings.GetCameraId(camera) is { } entryId)
-                                _scenePane.SaveCameraEntry(
-                                    entryId.LogicalId, name);
+                            if (_values.Read(camera.Id) is not null)
+                                _scenePane.SaveCameraEntry(camera.Id.LogicalId, name);
                         });
             }, icon: TablerIcon.Dots);
         form.Actions("Camera file", actions =>
@@ -719,29 +699,28 @@ public sealed class CameraPane
                 help: "Add a camera from a file to the scene"));
     }
 
-    private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void ActionRows(Crystarium.FormScope form, CameraReading camera)
     {
         form.Actions("Camera", actions =>
         {
             actions.Button("Clone",
                 () =>
                 {
-                    var clone = _lifecycle.CloneCamera(camera);
-                    if (clone == null)
+                    var clone = _creation.Duplicate(SelectionId.ForCamera(camera.Id));
+                    if (clone.Handle == null)
                     {
                         _notices.Failed(
                             "Clone: the camera could not be created.");
                         return;
                     }
-                    _pendingSelect.Arm(clone);
+                    _pendingClone.Arm(clone.Handle);
                 },
                 help: "Duplicate this camera");
             if (!camera.IsDefault)
                 actions.Button("Destroy",
                     () =>
                     {
-                        if (_bindings.GetCameraId(camera) is { } id)
-                            _ = _entityActions.Remove(SelectionId.ForCamera(id));
+                        _ = _entityActions.Remove(SelectionId.ForCamera(camera.Id));
                     },
                     help: "Remove this camera from the scene",
                     variant: ButtonVariant.Danger);
@@ -749,10 +728,9 @@ public sealed class CameraPane
 
     }
 
-    private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)
+    private void TrackingRows(Crystarium.FormScope form, CameraReading camera)
     {
-        if (_bindings.GetCameraId(camera) is { } id)
-            DrawTrackingActors?.Invoke(form, id);
+        DrawTrackingActors?.Invoke(form, camera.Id);
     }
 
     private void ReportTarget(ValueWriteResult result)
@@ -768,34 +746,23 @@ public sealed class CameraPane
 
     // ── actions ──────────────────────────────────────────────────────────
 
-    private void SetLive(IVirtualCamera camera, bool live)
-    {
-        if (live)
-        {
-            _values.SetLive(camera);
-            return;
-        }
-        // Switching the live camera off means going back to the game's own —
-        // the default camera; the default itself has nowhere to fall.
-        if (camera.IsDefault)
-            return;
-        foreach (var candidate in _cameras.Cameras)
-        {
-            if (candidate.IsDefault)
-            {
-                _values.SetLive(candidate);
-                return;
-            }
-        }
-    }
+    private void SetLive(CameraReading camera, bool live) =>
+        ReportTarget(_values.SetLive(camera.Id, live));
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
     /// </summary>
     public void OpenSave(IVirtualCamera camera)
     {
+        if (_bindings.GetCameraId(camera) is { } id) OpenSave(id);
+    }
+
+    private void OpenSave(CameraId id)
+    {
         _folder.Open(_saveBrowser, path =>
         {
-            if (!camera.IsValid)
+            var resolved = _bindings.Resolve(id);
+            if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
+                _bindings.GetCameraId(camera) != id)
             {
                 _notices.Refused("Export: the camera no longer exists.");
                 return;
@@ -816,16 +783,13 @@ public sealed class CameraPane
     /// selection is absent, stale, or already destroyed.</summary>
     /// <summary>The rail's camera for the rotation ball; null when the
     /// selection resolves to no camera.</summary>
-    public IVirtualCamera? BallCamera() => TargetCamera().Camera;
+    public CameraReading? BallCamera() => TargetCamera().Camera;
 
-    private (CameraId Id, IVirtualCamera? Camera) TargetCamera()
+    private (CameraId Id, CameraReading? Camera) TargetCamera()
     {
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
             return (default, null);
-        var resolved = _bindings.Resolve(cameraId);
-        if (!resolved.Success || resolved.Value is not { IsValid: true } camera)
-            return (cameraId, null);
-        return (cameraId, camera);
+        return (cameraId, _values.Read(cameraId));
     }
 }

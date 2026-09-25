@@ -8,6 +8,8 @@ using Poser.UI.Controls;
 using Poser.UI.Views;
 
 using Poser.Application.Viewport;
+using Poser.Application.Presentation;
+using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
@@ -24,6 +26,8 @@ public class PoseRailPane
 {
     private readonly PoseInspectorPane _inspector;
     private readonly ICameraProjection _camera;
+    private readonly ICameraControl _cameraValues;
+    private CameraId? _joyCameraId;
     private readonly Game.Journal.OverlaySession _overlayValues;
 
     /// <summary>The group verbs, which stand only while more than one entity
@@ -70,11 +74,13 @@ public class PoseRailPane
     public PoseRailPane(
         PoseInspectorPane inspector,
         ICameraProjection camera,
+        ICameraControl cameraValues,
         SelectionSection selection,
         Game.Journal.OverlaySession overlayValues)
     {
         _inspector = inspector;
         _camera = camera;
+        _cameraValues = cameraValues;
         _selection = selection;
         _overlayValues = overlayValues;
     }
@@ -313,17 +319,20 @@ public class PoseRailPane
         float discRadius = ringRadius - 10f * s;
 
         var camera = _inspector.BallCamera();
-        bool canEdit = camera is { IsLocked: false };
+        bool canEdit = camera is { IsLocked: false, Available: true };
 
         ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
         ImGui.InvisibleButton("##rail-camera-joystick", new Vector2(d, d));
-        bool active = ImGui.IsItemActive() && canEdit;
+        bool active = ImGui.IsItemActive() && canEdit &&
+            (ImGui.IsItemActivated() || _joyCameraId == camera?.Id);
         bool hovered = ImGui.IsItemHovered();
         var mouse = ImGui.GetMousePos();
         float mouseDistance = (mouse - center).Length();
 
         if (ImGui.IsItemActivated() && canEdit)
         {
+            _cameraValues.Seal();
+            _joyCameraId = camera!.Id;
             // Grab the ring only near the ring; everything inside is the
             // stick — and the CLICK POINT is the stick's origin, so the
             // gesture is relative from wherever the hand landed.
@@ -336,6 +345,12 @@ public class PoseRailPane
                     mouse.Y - center.Y, mouse.X - center.X);
                 _joyRollStartValue = camera.Roll;
             }
+        }
+
+        if (ImGui.IsItemDeactivated() || (_joyCameraId is not null && _joyCameraId != camera?.Id))
+        {
+            Crystarium.Commit("##rail-camera-joystick");
+            _joyCameraId = null;
         }
 
         var theme = Crystarium.ActiveTheme;
@@ -353,7 +368,8 @@ public class PoseRailPane
                 float delta = angle - _joyRollStartAngle;
                 if (delta > MathF.PI) delta -= MathF.Tau;
                 if (delta < -MathF.PI) delta += MathF.Tau;
-                camera.Roll = _joyRollStartValue + delta;
+                Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                    _cameraValues.SetRoll(camera.Id, _joyRollStartValue + delta));
                 // The same hide and readout a world drag gets.
                 ManipulationDrag.HoldFromShell(
                     mouse + new Vector2(18f, 14f) * s,
@@ -379,17 +395,19 @@ public class PoseRailPane
                 // A free camera turns the way the stick points; its
                 // rotation runs the other way from an orbit pan.
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
-                    camera.Rotation = camera.Rotation with
+                    Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                        _cameraValues.SetRotation(camera.Id, camera.Rotation with
                     {
                         X = camera.Rotation.X - stepX,
                         Y = camera.Rotation.Y - stepY,
-                    };
+                    }));
                 else
-                    camera.Pan = camera.Pan with
+                    Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                        _cameraValues.SetPan(camera.Id, camera.Pan with
                     {
                         X = camera.Pan.X + stepX,
                         Y = camera.Pan.Y + stepY,
-                    };
+                    }));
                 _joyAccumulated += new Vector2(stepX, stepY);
                 ManipulationDrag.HoldFromShell(
                     mouse + new Vector2(18f, 14f) * s,

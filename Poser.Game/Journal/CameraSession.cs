@@ -29,6 +29,19 @@ public sealed class CameraSession
 
     public void Seal() => _journal.Seal();
 
+    public bool SetPortrait(IVirtualCamera c, bool value)
+    {
+        if (_values.Current(c) is not { IsLocked: false } current) return false;
+        var roll = current.Roll + (current.IsPortraitMode == value ? 0f :
+            value ? MathF.PI / 2f : -MathF.PI / 2f);
+        return Set(c, "Portrait", "Set camera portrait", camera => (camera.IsPortraitMode, camera.Roll),
+            (camera, state) =>
+            {
+                if (camera.IsPortraitMode != state.Item1) camera.TogglePortraitMode();
+                camera.Roll = state.Item2;
+            }, (value, roll));
+    }
+
     /// <summary>True when the camera took the value. A locked camera
     /// refuses and nothing is written or journaled.</summary>
     private bool Set<T>(IVirtualCamera c, string property, string description, Func<IVirtualCamera, T> read, Action<IVirtualCamera, T> write, T value)

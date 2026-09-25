@@ -415,7 +415,7 @@ public partial class PoseInspectorPane
     // Rotation rings use the current presentation frame.
     /// <summary>The camera the rail ball edits; null off camera
     /// selections.</summary>
-    public IVirtualCamera? BallCamera() =>
+    public Application.Presentation.CameraReading? BallCamera() =>
         IsCameraSelection ? _cameraPane.BallCamera() : null;
 
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()

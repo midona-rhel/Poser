@@ -85,6 +85,11 @@ For these actions, the pane, sidebar and picker retain IDs and detached readings
 Game owns native target fallback, stale-reference pruning and exact-generation
 checks. Follow remains distinct from recentering, which changes framing only.
 Tracking mode values keep their existing serialized numbers.
+Camera property rows and the inspector joystick use detached `ICameraControl`
+readings and the same value journal. A joystick gesture retains its initial
+camera ID; changing selection cannot redirect a held gesture. Native units
+and ownership reset baselines remain backend values. Portrait edits capture
+both the mode and roll so undo restores the authored framing.
 
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns

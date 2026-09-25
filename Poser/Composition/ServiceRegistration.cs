@@ -225,6 +225,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.ICameraTargetControl, Game.Cameras.CameraTargetControl>();
+        services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
         services.AddSingleton<Game.Journal.EnvironmentSession>();
         services.AddSingleton<Game.Journal.ActorValueSession>();
         services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
