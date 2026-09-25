@@ -1,71 +1,54 @@
+using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>
-/// The verbs that break animation state — a redraw, a character file, an
-/// appearance apply that redraws — as journal steps. Each bumps the
-/// actor's disruption epoch, so every step recorded before it is invalid
-/// after it; its own undo runs the inverse verb and then restores the
-/// actor's snapshot from before.
-/// </summary>
-public sealed class DisruptiveSteps
+/// <summary>Appearance-changing commands share the complete non-animation actor inverse.</summary>
+public sealed class DisruptiveSteps(
+    TransformHistory history, IActorStateSnapshots snapshots, ActorDisruptionEpochs epochs,
+    ValueJournal values)
 {
-    private readonly TransformHistory _history;
-    private readonly IActorStateKeySource _keys;
-    private readonly Lazy<IPoseSnapshotPort> _snapshots;
-    private readonly ActorDisruptionEpochs _epochs;
-
-    public DisruptiveSteps(
-        TransformHistory history,
-        IActorStateKeySource keys,
-        Lazy<IPoseSnapshotPort> snapshots,
-        ActorDisruptionEpochs epochs)
+    public IntegrationResult Run(ActorId actor, string description, Func<IntegrationResult> verb)
     {
-        _history = history;
-        _keys = keys;
-        _snapshots = snapshots;
-        _epochs = epochs;
-    }
-
-    /// <summary>
-    /// Runs the verb as one step. <paramref name="inverse"/> is what undoes
-    /// the verb itself (a reset, the previous assignment); null when the
-    /// snapshot is the whole way back (a redraw). <paramref name="asset"/>
-    /// is the file the redo depends on.
-    /// </summary>
-    public IntegrationResult Run(
-        ActorId actor,
-        string description,
-        Func<IntegrationResult> verb,
-        Func<IntegrationResult>? inverse = null,
-        string? asset = null)
-    {
-        var lineage = actor.LogicalId;
-        var before = _snapshots.Value.Capture(lineage);
+        values.Seal();
+        var captured = snapshots.Capture(actor);
+        if (!captured.Success || captured.Value is not { } before)
+            return IntegrationResult.Fail(captured.Detail ?? "The actor's state could not be captured.");
         var result = verb();
-        if (!result.Success)
-            return result;
-        _epochs.Bump(lineage);
-        // The keys are read AFTER the bump: the step is current until the
-        // next disruption, and its undo runs the inverse below.
-        var keys = _keys.Current(lineage) is { } key ? new[] { key } : Array.Empty<ActorStateKey>();
-        var after = _snapshots.Value.Capture(lineage);
-        _history.Append(new JournalStep(
-            description,
-            () => inverse?.Invoke().Success ?? true,
-            () => verb().Success)
+        if (!result.Success) return result;
+        epochs.Bump(actor.LogicalId);
+
+        // A redraw/import may still be pending. Capture the redo state on the
+        // first undo, after later entries have been undone, not from the old body
+        // immediately after requesting a redraw. A failed capture does not mutate.
+        ActorStateSnapshot? after = null;
+        string? failure = null;
+        bool PrepareUndo()
         {
-            RestoreSnapshotsAfterReplay = true,
+            if (after != null) return true;
+            var current = snapshots.Capture(actor);
+            if (!current.Success || current.Value is not { } state)
+            {
+                failure = current.Detail ?? "The actor is not ready to capture its current state.";
+                return false;
+            }
+            if (state.Actor != before.Actor || state.Session != before.Session)
+            {
+                failure = "The actor or GPose session changed.";
+                return false;
+            }
+            after = state;
+            failure = null;
+            return true;
+        }
+        history.Append(new JournalStep(description, PrepareUndo, () => after != null)
+        {
             RetainOnFailure = true,
-            Context = new StepContext(
-                keys,
-                before is null ? Array.Empty<ActorSnapshot>() : new[] { before },
-                after is null ? Array.Empty<ActorSnapshot>() : new[] { after },
-                asset),
+            FailureDetail = () => failure,
+            CompleteReplay = (undo, current, cancellation, completed) =>
+                snapshots.Restore(undo ? before : after!, current, cancellation, completed),
         });
         return result;
     }
-
 }

@@ -1,4 +1,7 @@
 using System.Reflection;
+using Poser.Application.Posing;
+using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
@@ -21,12 +24,12 @@ public sealed class ActorAppearanceControlTests
         Assert.True(f.Control.ResetBodyProfile(f.Actor).Success);
         Assert.Null(f.Runtime.ActiveProfile);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.NotEqual(oldId, f.Runtime.ActiveProfile);
         Assert.Equal("body contents", f.Runtime.ProfileJson);
-        Assert.True(step.Redo());
+        Replay(step, false);
         Assert.Null(f.Runtime.ActiveProfile);
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.Equal("body contents", f.Runtime.ProfileJson);
     }
 
@@ -37,16 +40,16 @@ public sealed class ActorAppearanceControlTests
         var chosen = Guid.NewGuid();
         Assert.True(f.Control.SetCollection(f.Actor, chosen, "Chosen").Success);
         var apply = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(apply.Undo());
+        Replay(apply, true);
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
-        Assert.True(apply.Redo());
+        Replay(apply, false);
         Assert.Equal(chosen, f.Runtime.Collection.EffectiveId);
         Assert.True(f.Control.ResetCollection(f.Actor).Success);
         var reset = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
-        Assert.True(reset.Undo());
+        Replay(reset, true);
         Assert.Equal(chosen, f.Runtime.Collection.EffectiveId);
-        Assert.True(reset.Redo());
+        Replay(reset, false);
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
     }
 
@@ -61,33 +64,60 @@ public sealed class ActorAppearanceControlTests
         Assert.True(f.Control.SetModel(f.Actor, 42).Success);
         Assert.True(f.Control.SetModel(f.Actor, 99).Success);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.Equal(42, f.Model);
-        Assert.True(step.Redo());
+        Replay(step, false);
         Assert.Equal(99, f.Model);
         Assert.True(f.Control.ResetModel(f.Actor).Success);
         Assert.Equal(0, f.Model);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateKeySource, IPoseSnapshotPort, IModelIdRuntimePort
+    private static void Replay(JournalStep step, bool undo)
+    {
+        Assert.True(undo ? step.Undo() : step.Redo());
+        GestureResult? result = null;
+        step.CompleteReplay!(undo, () => true, TestContext.Current.CancellationToken, r => result = r);
+        Assert.True(result?.Success, result?.Detail);
+    }
+
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots, IModelIdRuntimePort
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public ActorId Actor { get; } = ActorId.New();
         public TransformHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
         public IActorAppearanceControl Control { get; }
+        private readonly ActorIntegrationSession _integration;
+        private readonly ActorModelIdSession _models;
         public int Model;
         public bool RefuseModel;
         public Fixture()
         {
             var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
-            Control = new ActorAppearanceControl(new(port, null!, this), new(this),
-                new(History, this, new(() => this), new()));
+            _integration = new(port, null!, this);
+            _models = new(this);
+            Control = new ActorAppearanceControl(_integration, _models,
+                new(History, this, new(), new ValueJournal(History)));
         }
-        public ActorStateKey? Current(Guid lineage) => null;
-        public ActorSnapshot? Capture(Guid lineage) => null;
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished) => throw new NotSupportedException();
+        public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor)
+        {
+            var look = _integration.TryCaptureHistory(actor);
+            return look.Success && look.Value is { } captured
+                ? IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
+                    new(actor.LogicalId, new object(), []),
+                    new(Model, captured, PresentationOverrides.None, null, null)))
+                : IntegrationValue<ActorStateSnapshot>.Fail(look.Detail!);
+        }
+        public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed)
+        {
+            var result = _integration.RestoreHistory(snapshot.Actor, snapshot.Properties.Appearance);
+            if (result.Success) _models.Apply(snapshot.Actor, snapshot.Properties.ModelId);
+            completed(result.Success ? GestureResult.Ok() : GestureResult.Fail(result.Detail!));
+        }
+        public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed) => throw new NotSupportedException();
         public int? Read(ActorId actor) => actor == Actor ? Model : null;
         public PresentationPortResult Write(ActorId actor, int value)
         {
@@ -107,6 +137,9 @@ public sealed class ActorAppearanceControlTests
         {
             switch (method!.Name)
             {
+                case "get_Penumbra":
+                case "get_CustomizePlus": return new IntegrationAvailability(true, "");
+                case "get_Glamourer": return new IntegrationAvailability(false, "");
                 case nameof(IIntegrationRuntimePort.GetBodyProfileJson):
                     return (Guid)args![0]! == SavedProfile
                         ? IntegrationValue<string>.Ok("body contents")

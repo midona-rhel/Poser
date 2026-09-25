@@ -123,6 +123,17 @@ public sealed class ActorIntegrationSession : IDisposable
         Func<bool> stillCurrent, CancellationToken cancellation)
     {
         await PendingCompletion.WaitAsync(cancellation);
+        // Ordinary state cannot be applied while an imported package owns the
+        // actor. Release it through its existing transaction and await cleanup.
+        if (snapshot.McdfPath == null)
+        {
+            var reset = await _port.OnFrameworkThread(() =>
+                cancellation.IsCancellationRequested || !stillCurrent()
+                    ? IntegrationResult.Fail("The actor restoration is no longer current.")
+                    : ResetMcdf(actor));
+            if (!reset.Success) return reset;
+            await PendingCompletion.WaitAsync(cancellation);
+        }
         Task pending = Task.CompletedTask;
         Guid? operation = null;
         var started = await _port.OnFrameworkThread(() =>
@@ -198,9 +209,30 @@ public sealed class ActorIntegrationSession : IDisposable
             if (!result.Success) failures.Add(result.Detail ?? "Appearance restore failed.");
         }
         if (snapshot.Collection is { } collection)
-            Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));
+        {
+            if (collection.HasIndividualAssignment)
+                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));
+            else
+            {
+                var restored = _port.RestoreCollection(actor, new(false, null));
+                Check(Lift(restored));
+                if (restored.Success)
+                {
+                    var current = OverridesFor(actor);
+                    Mutate(actor, current with
+                    {
+                        Baseline = current.Baseline with { Collection = null },
+                        CollectionOwned = false,
+                        CollectionName = null,
+                    });
+                    if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+                }
+            }
+        }
         if (snapshot.BodyProfileJson is { } profile)
             Check(ApplyBodyProfileJson(actor, profile, snapshot.BodyProfileName ?? "Restored profile"));
+        else
+            Check(ResetBodyProfile(actor));
         if (snapshot.StateJson is { } json)
         {
             var ownership = OwnLook(actor);

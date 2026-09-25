@@ -94,11 +94,7 @@ public sealed class CustomizeSession : ICustomizeControl
         var after = new Dictionary<CustomizeKey, int>(values);
         if (disruptive)
         {
-            // Changing gender/clan can normalize other customization fields.
-            // Undo must restore those too, not just the requested structural keys.
-            before = new Dictionary<CustomizeKey, int>(state.Value.Values);
-            return _disruptive.Run(actor, description,
-                () => Apply(actor, after), () => Apply(actor, before));
+            return _disruptive.Run(actor, description, () => Apply(actor, after));
         }
         var result = Apply(actor, after);
         if (!result.Success)

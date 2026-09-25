@@ -80,6 +80,16 @@ public sealed class ActorStateSnapshotsTests
         Assert.Empty(f.Events);
     }
 
+    [Fact]
+    public void Pose_capture_exception_is_a_refusal_before_any_mutation()
+    {
+        var f = new Fixture { ThrowPoseCapture = true };
+        var result = f.States.Capture(f.Actor);
+        Assert.False(result.Success);
+        Assert.Contains("Pose unavailable", result.Detail);
+        Assert.Empty(f.Events);
+    }
+
     private sealed class Fixture : ISessionGenerationSource, IPoseSnapshotPort
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
@@ -96,6 +106,7 @@ public sealed class ActorStateSnapshotsTests
         public float Weight = .7f;
         public Vector4 Tint = Vector4.One;
         public bool CannotReadLook;
+        public bool ThrowPoseCapture;
         private readonly Guid _profile = Guid.NewGuid();
 
         public Fixture()
@@ -179,7 +190,8 @@ public sealed class ActorStateSnapshotsTests
             }
         }
 
-        public ActorSnapshot? Capture(Guid lineage) => new(lineage, new object(), []);
+        public ActorSnapshot? Capture(Guid lineage) => ThrowPoseCapture
+            ? throw new InvalidOperationException("Pose unavailable") : new(lineage, new object(), []);
         public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
         {
             Events.Add("pose");

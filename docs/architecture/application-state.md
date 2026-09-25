@@ -123,12 +123,15 @@ Game supplies external-provider calls and exact-generation availability through
 the existing integration runtime. Failed equipment inverses retain their failure
 and remain retryable, including partially restored outfits.
 
-Redrawing history steps replay their appearance verb before restoring the pose.
-The shared journal moves the entry only after the pose import completes, not
-when it is admitted. Game waits for the current body's skeleton and published
-bone bindings, bounded to ten seconds; waiting work retains the exact actor and
-session and is cancelled when its history operation no longer applies. This
-also governs whole-actor restoration.
+Appearance-changing history uses the same complete non-animation snapshot as
+Reset All and lifecycle restoration. Capture failure refuses mutation; the redo
+state is captured on first undo, after pending redraw/import and later edits have
+settled. It never captures the old body immediately after requesting redraw.
+Replay restores external appearance/model before pose-dependent state. The
+journal advances only after completion, retains failed entries for retry, and
+cancels work when its actor, session or history operation no longer applies.
+Inherited collection assignments remain inherited; absent C+ overrides remove
+owned temporary profiles rather than leaving the later override active.
 
 Actor visibility/presentation and companion changes also journal in Application.
 UI holds exact IDs and detached slot readings; Game resolves native bodies on

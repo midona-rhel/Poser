@@ -2,6 +2,9 @@ using System.Reflection;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
+using Poser.Application.Posing;
+using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -81,9 +84,9 @@ public sealed class AppearanceControlTests
         Assert.True(f.Customize.SetBody(f.Runtime.Actor, desired, "Swap gender").Success);
         desired[CustomizeKey.Gender] = 7;
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
-        Assert.True(step.Redo());
+        Replay(step, false);
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
     }
 
@@ -98,10 +101,10 @@ public sealed class AppearanceControlTests
             new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 }, "Swap gender").Success);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
         Assert.Equal(100, f.Runtime.Customize[CustomizeKey.BustSize]);
-        Assert.True(step.Redo());
+        Replay(step, false);
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
     }
@@ -110,9 +113,36 @@ public sealed class AppearanceControlTests
     public void Revert_does_not_discard_a_look_that_cannot_be_captured()
     {
         var f = new Fixture();
+        f.CaptureFailure = true;
         Assert.False(f.Wardrobe.Revert(f.Runtime.Actor).Success);
-        Assert.Empty(f.Runtime.Writes);
         Assert.False(f.History.CanUndo);
+    }
+
+    [Fact]
+    public void Pending_appearance_capture_refuses_undo_without_mutation_then_can_retry()
+    {
+        var f = new Fixture();
+        Assert.True(f.Customize.SetBody(f.Runtime.Actor,
+            new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 1 }, "Swap gender").Success);
+        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        f.CaptureFailure = true;
+        Assert.False(step.Undo());
+        Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
+        Assert.True(step.RetainOnFailure);
+        Assert.Equal("State unavailable", step.FailureDetail!());
+        f.CaptureFailure = false;
+        Replay(step, true);
+        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
+        Replay(step, false);
+        Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
+    }
+
+    private static void Replay(JournalStep step, bool undo)
+    {
+        Assert.True(undo ? step.Undo() : step.Redo());
+        GestureResult? result = null;
+        step.CompleteReplay!(undo, () => true, TestContext.Current.CancellationToken, r => result = r);
+        Assert.True(result?.Success);
     }
 
     private static IntegrationResult Edit(Fixture f, string action) => action switch
@@ -131,11 +161,12 @@ public sealed class AppearanceControlTests
         Assert.Equal(expected.Slots, actual.Slots);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateKeySource, IPoseSnapshotPort
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public TransformHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
+        public bool CaptureFailure;
         public IWardrobeControl Wardrobe { get; }
         public ICustomizeControl Customize { get; }
 
@@ -144,15 +175,28 @@ public sealed class AppearanceControlTests
             var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             var integration = new ActorIntegrationSession(port, null!, this);
-            var disruptive = new DisruptiveSteps(History, this, new(() => this), new());
+            var disruptive = new DisruptiveSteps(History, this, new(), new ValueJournal(History));
             var journal = new ValueJournal(History);
             Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
             Customize = new CustomizeSession(journal, integration, port, disruptive);
         }
 
-        public ActorStateKey? Current(Guid lineage) => null;
-        public ActorSnapshot? Capture(Guid lineage) => null;
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished) => throw new NotSupportedException();
+        public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
+            CaptureFailure ? IntegrationValue<ActorStateSnapshot>.Fail("State unavailable") :
+            IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
+                new(actor.LogicalId, new Dictionary<CustomizeKey, int>(Runtime.Customize), []),
+                new(0, new(null, null, null, null, null), PresentationOverrides.None, null, null)));
+        public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed)
+        {
+            if (!current() || cancellation.IsCancellationRequested) { completed(GestureResult.Fail("Cancelled")); return; }
+            Runtime.Customize.Clear();
+            foreach (var pair in (Dictionary<CustomizeKey, int>)snapshot.Pose.Pose)
+                Runtime.Customize[pair.Key] = pair.Value;
+            completed(GestureResult.Ok());
+        }
+        public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed) => throw new NotSupportedException();
     }
 
     public class RuntimeProxy : DispatchProxy

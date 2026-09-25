@@ -65,9 +65,13 @@ public sealed class ActorStateSnapshots(
         var properties = CaptureProperties(actor);
         if (!properties.Success || properties.Value == null)
             return IntegrationValue<ActorStateSnapshot>.Fail(properties.Detail ?? "Actor state could not be captured.");
-        if (poses.Value.CaptureAuthored(actor.LogicalId) is not { } pose)
-            return IntegrationValue<ActorStateSnapshot>.Fail("The actor's pose and IK could not be captured.");
-        return IntegrationValue<ActorStateSnapshot>.Ok(new(actor, session, pose, properties.Value));
+        try
+        {
+            if (poses.Value.CaptureAuthored(actor.LogicalId) is not { } pose)
+                return IntegrationValue<ActorStateSnapshot>.Fail("The actor's pose and IK could not be captured.");
+            return IntegrationValue<ActorStateSnapshot>.Ok(new(actor, session, pose, properties.Value));
+        }
+        catch (Exception ex) { return IntegrationValue<ActorStateSnapshot>.Fail(ex.Message); }
     }
 
     private bool Current(ActorId actor, SessionGeneration session) =>

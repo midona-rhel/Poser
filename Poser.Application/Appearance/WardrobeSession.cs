@@ -167,15 +167,8 @@ public sealed class WardrobeSession : IWardrobeControl
         }
     }
 
-    public IntegrationResult Revert(ActorId actor)
-    {
-        var before = _integration.GetStateJson(actor);
-        if (!before.Success || before.Value is not { } json)
-            return new(false, before.Detail ?? "The look could not be read.", before.AppearanceRefusal);
-        return _disruptive.Run(actor, "Revert look",
-            () => _integration.RevertState(actor),
-            () => _integration.ApplyStateJson(actor, json));
-    }
+    public IntegrationResult Revert(ActorId actor) =>
+        _disruptive.Run(actor, "Revert look", () => _integration.RevertState(actor));
 
     private static ValueWriteResult Written(IntegrationResult result) => new(result.Success, result.Detail);
     private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);

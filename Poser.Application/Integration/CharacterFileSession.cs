@@ -84,8 +84,7 @@ public sealed class CharacterFileSession(
 
     private IntegrationResult ImportPackage(ActorId actor, string path) =>
         history.Run(actor, "Import character file",
-            () => integration.BeginImport(actor, path),
-            () => integration.ResetMcdf(actor), asset: path);
+            () => integration.BeginImport(actor, path));
 
     private IntegrationResult ApplyAppearance(ActorId actor, string document)
     {
@@ -97,8 +96,7 @@ public sealed class CharacterFileSession(
         var owned = integration.OwnLook(actor);
         if (!owned.Success) return owned;
         return history.Run(actor, "Import character appearance",
-            () => integration.ApplyStateJson(actor, request.Value),
-            () => integration.ApplyStateJson(actor, before.Value));
+            () => integration.ApplyStateJson(actor, request.Value));
     }
 
     private static bool IsAppearance(string path) =>

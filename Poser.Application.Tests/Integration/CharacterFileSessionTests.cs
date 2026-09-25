@@ -1,4 +1,7 @@
 using System.Reflection;
+using Poser.Application.Posing;
+using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
@@ -40,9 +43,9 @@ public sealed class CharacterFileSessionTests
         Assert.Null(f.Control.Advance());
         Assert.Single(f.Runtime.Writes);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(step.Undo());
+        Replay(step, true);
         Assert.Equal("original", f.Runtime.State);
-        Assert.True(step.Redo());
+        Replay(step, false);
         Assert.Equal("chosen document", f.Runtime.State);
         Assert.All(f.Runtime.Writes, actor => Assert.Equal(f.Creation.Actor, actor));
     }
@@ -66,7 +69,15 @@ public sealed class CharacterFileSessionTests
         Assert.False(f.History.CanUndo);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateKeySource, IPoseSnapshotPort
+    private static void Replay(JournalStep step, bool undo)
+    {
+        Assert.True(undo ? step.Undo() : step.Redo());
+        GestureResult? result = null;
+        step.CompleteReplay!(undo, () => true, TestContext.Current.CancellationToken, r => result = r);
+        Assert.True(result?.Success, result?.Detail);
+    }
+
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
         public TransformHistory History { get; } = new();
@@ -75,6 +86,7 @@ public sealed class CharacterFileSessionTests
         public RuntimeProxy Runtime { get; }
         public CreationProxy Creation { get; }
         public CharacterFileSession Control { get; }
+        private readonly ActorIntegrationSession _integration;
         public Fixture()
         {
             var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
@@ -82,12 +94,21 @@ public sealed class CharacterFileSessionTests
             var creation = DispatchProxy.Create<ISceneCreation, CreationProxy>();
             Creation = (CreationProxy)(object)creation;
             Creation.Session = () => ActiveSessionGeneration!.Value;
-            var integration = new ActorIntegrationSession(port, null!, this);
-            Control = new(integration, Files, new(History, this, new(() => this), new()), creation, this, Clock);
+            var integration = _integration = new ActorIntegrationSession(port, null!, this);
+            Control = new(integration, Files, new(History, this, new(), new ValueJournal(History)), creation, this, Clock);
         }
-        public ActorStateKey? Current(Guid lineage) => null;
-        public ActorSnapshot? Capture(Guid lineage) => null;
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished) => throw new NotSupportedException();
+        public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
+            IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
+                new(actor.LogicalId, new object(), []),
+                new(0, new(Runtime.State, null, null, null, null), PresentationOverrides.None, null, null)));
+        public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed)
+        {
+            var result = _integration.RestoreHistory(snapshot.Actor, snapshot.Properties.Appearance);
+            completed(result.Success ? GestureResult.Ok() : GestureResult.Fail(result.Detail!));
+        }
+        public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
+            Action<GestureResult> completed) => throw new NotSupportedException();
     }
 
     private sealed class Files : ICharacterAppearanceFiles
