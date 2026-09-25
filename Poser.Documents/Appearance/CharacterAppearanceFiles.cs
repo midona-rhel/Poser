@@ -1,61 +1,55 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Poser.Application.Integration;
-using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Application.Transforms;
 
-namespace Poser.Game.Integration;
+namespace Poser.Documents.Appearance;
 
-public sealed class CharaImport(ActorIntegrationSession integration, DisruptiveSteps history)
+public interface ICharacterAppearanceFiles
 {
-    public static IntegrationValue<JObject> Read(string path)
+    IntegrationValue<string> Read(string path);
+    IntegrationValue<string> BuildRequest(string currentState, string characterFile);
+}
+
+/// <summary>Character-file validation and Glamourer document conversion; no live actor access.</summary>
+public sealed class CharacterAppearanceFiles : ICharacterAppearanceFiles
+{
+    public IntegrationValue<string> Read(string path)
     {
         try
         {
             using var stream = File.OpenRead(path);
             if (stream.Length > 4 * 1024 * 1024)
-                return IntegrationValue<JObject>.Fail("The character file exceeds 4 MiB.");
+                return IntegrationValue<string>.Fail("The character file exceeds 4 MiB.");
             using var text = new StreamReader(stream);
             using var reader = new JsonTextReader(text) { MaxDepth = 32, DateParseHandling = DateParseHandling.None };
             var file = JObject.Load(reader);
-            if (reader.Read()) return IntegrationValue<JObject>.Fail("The character file has trailing data.");
+            if (reader.Read()) return IntegrationValue<string>.Fail("The character file has trailing data.");
             var validated = CharaRequest.Build(null, file);
-            return validated.Success ? IntegrationValue<JObject>.Ok(file) : validated;
+            return validated.Success ? IntegrationValue<string>.Ok(file.ToString(Formatting.None))
+                : IntegrationValue<string>.Fail(validated.Detail ?? "Invalid character appearance.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            return IntegrationValue<JObject>.Fail($"The character file could not be read: {ex.Message}");
+            return IntegrationValue<string>.Fail($"The character file could not be read: {ex.Message}");
         }
     }
 
-    public IntegrationResult Apply(ActorId actor, string path)
-    {
-        var read = Read(path);
-        return read.Success && read.Value is { } file
-            ? Apply(actor, file) : new(false, read.Detail);
-    }
-
-    public IntegrationResult Apply(ActorId actor, JObject file)
+    public IntegrationValue<string> BuildRequest(string currentState, string characterFile)
     {
         try
         {
-            var before = integration.GetStateJson(actor);
-            if (!before.Success || before.Value is null)
-                return new(false, before.Detail, before.AppearanceRefusal);
-            var request = CharaRequest.Build(JObject.Parse(before.Value), file);
-            if (!request.Success || request.Value is null)
-                return new(false, request.Detail);
-            var own = integration.OwnLook(actor);
-            if (!own.Success) return own;
-            string after = request.Value.ToString(Formatting.None);
-            return history.Run(actor, "Import character appearance",
-                () => integration.ApplyStateJson(actor, after),
-                () => integration.ApplyStateJson(actor, before.Value));
+            var request = CharaRequest.Build(JObject.Parse(currentState), JObject.Parse(characterFile));
+            return request.Success && request.Value is { } value
+                ? IntegrationValue<string>.Ok(value.ToString(Formatting.None))
+                : IntegrationValue<string>.Fail(request.Detail ?? "Invalid character appearance.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            return new(false, $"The character file could not be read: {ex.Message}");
+            return IntegrationValue<string>.Fail($"The character file could not be read: {ex.Message}");
         }
     }
 }

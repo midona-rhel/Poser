@@ -23,6 +23,12 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.10"
         }
       },
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.4, )",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
       "BepuPhysics": {
         "type": "Transitive",
         "resolved": "2.4.0",
@@ -82,6 +88,7 @@
       "poser.documents": {
         "type": "Project",
         "dependencies": {
+          "Newtonsoft.Json": "[13.0.4, )",
           "Poser.Domain": "[1.0.0, )"
         }
       },

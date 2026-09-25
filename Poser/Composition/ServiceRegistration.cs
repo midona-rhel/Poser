@@ -247,7 +247,17 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<DisruptiveSteps>();
         services.AddSingleton<IWardrobeControl, WardrobeSession>();
-        services.AddSingleton<Game.Integration.CharaImport>();
+        services.AddSingleton<Documents.Appearance.ICharacterAppearanceFiles, Documents.Appearance.CharacterAppearanceFiles>();
+        services.AddSingleton<Application.Integration.CharacterFileSession>();
+        services.AddSingleton(sp => new Game.Integration.CharacterFilePump(
+            sp.GetRequiredService<IFramework>(),
+            sp.GetRequiredService<Application.Integration.CharacterFileSession>(),
+            message => sp.GetRequiredService<UserNotices>().Failed("Import", message)));
+        services.AddSingleton<Application.Integration.ICharacterFiles>(sp =>
+        {
+            _ = sp.GetRequiredService<Game.Integration.CharacterFilePump>();
+            return sp.GetRequiredService<Application.Integration.CharacterFileSession>();
+        });
         services.AddSingleton<ICustomizeControl, CustomizeSession>();
         services.AddSingleton<Application.Presentation.IAppearanceColorControl, Game.Journal.AppearanceColorSession>();
         services.AddSingleton<Game.Wardrobe.CustomizeCatalog>();

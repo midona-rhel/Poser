@@ -14,9 +14,15 @@
         "resolved": "0.4.10",
         "contentHash": "6IkxoTPrR7vshA8BQAme82wpkXAuf+lIDaNvvbuAWozRShHZr0utdZXSaYl/SVaDQEWh5poK5XBEov0yKA2oBA=="
       },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
       "poser.documents": {
         "type": "Project",
         "dependencies": {
+          "Newtonsoft.Json": "[13.0.4, )",
           "Poser.Domain": "[1.0.0, )"
         }
       },

@@ -130,6 +130,14 @@ while its history follows that owner's slot because the operation replaces the
 child. Replay never retains the previous native actor wrapper. Refused writes
 and inverses use the shared value-journal failure handling.
 
+Character-file dialogs and library actions share `ICharacterFiles`. Application
+owns format routing, spawn readiness and appearance history; Documents validates
+and converts `.chara`/Glamourer data without game access. Pending imports retain
+the creation receipt and validated document, never a UI selection or native body.
+The framework advances readiness independently of window drawing; session changes,
+unload or a 30-second readiness timeout discard pending work without retargeting.
+MCDF execution and recovery remain owned by the existing integration transaction.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

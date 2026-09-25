@@ -1087,15 +1087,7 @@ public sealed class SpawnBrowserWindow : Window
             case RowActorFromMcdf:
                 // FILE FIRST: the pane's dialog opens now; the pick spawns
                 // the body and the import lands once it binds.
-                _appearance.OpenMcdfSpawn(() =>
-                {
-                    var body = _creation.CreateActor(new()).Handle;
-                    if (body == null)
-                        _notices.Failed(SpawnFailedNote);
-                    else
-                        SelectSpawned(body);
-                    return body;
-                });
+                _appearance.OpenMcdfSpawn(SelectSpawned);
                 return;
             case RowOverlayTalk:
             case RowColliderPlane:

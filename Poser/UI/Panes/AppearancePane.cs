@@ -66,7 +66,6 @@ public sealed partial class AppearancePane
     private readonly IModelCatalogLoader _modelLoader;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
-    private readonly ISceneCreation _creation;
     private readonly CompanionSection _companions;
     private readonly ITextureProvider _textures;
 
@@ -75,7 +74,7 @@ public sealed partial class AppearancePane
     private readonly IInvisibleSkinService _invisibleSkin;
     private readonly IActorValueControl _values;
     private readonly DisruptiveSteps _disruptive;
-    private readonly Game.Integration.CharaImport _chara;
+    private readonly ICharacterFiles _characterFiles;
     private readonly EntityActions _entityActions;
 
     private bool _openModel = true;
@@ -142,8 +141,6 @@ public sealed partial class AppearancePane
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     /// <summary>Folder used by character-file browsers.</summary>
     private string _mcdfPath;
-    private ActorId? _mcdfActor;
-    private string _mcdfDescription = string.Empty;
 
     public AppearancePane(
         ActorPresentationSession presentation,
@@ -152,7 +149,6 @@ public sealed partial class AppearancePane
         IModelCatalogLoader modelLoader,
         ActorIntegrationSession integration,
         SceneSession scene,
-        ISceneCreation creation,
         CompanionSection companions,
         ITextureProvider textures,
         Config.ConfigurationService config,
@@ -168,9 +164,9 @@ public sealed partial class AppearancePane
         ICustomizeCatalog customize,
         ICustomizeControl customizeSession,
         IAppearanceColorControl colors,
-        Game.Integration.CharaImport chara)
+        ICharacterFiles characterFiles)
     {
-        _chara = chara;
+        _characterFiles = characterFiles;
         _customize = customize;
         _customizeSession = customizeSession;
         _colors = colors;
@@ -207,7 +203,6 @@ public sealed partial class AppearancePane
         _modelLoader = modelLoader;
         _integration = integration;
         _scene = scene;
-        _creation = creation;
         _companions = companions;
         _textures = textures;
         _modelQuery = ComputeModelSearch;
@@ -220,7 +215,6 @@ public sealed partial class AppearancePane
     /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
     public void DrawBrowsers()
     {
-        ReconcileMcdfSpawn();
         _mcdfImportBrowser.Draw();
         _mcdfExportBrowser.Draw();
     }
@@ -1064,8 +1058,7 @@ public sealed partial class AppearancePane
                     {
                         actions.Button(
                             mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
-                            () => ReportExternal(_disruptive.Run(actor, "Reset MCDF",
-                                () => _integration.ResetMcdf(actor)), "Reset MCDF"),
+                            () => ReportExternal(_characterFiles.Reset(actor), "Reset MCDF"),
                             help: mcdfOwnedNow
                                 ? "Remove everything the imported character file applied to this actor"
                                 : "Retry deleting extracted files left behind by a failed import",
@@ -1122,93 +1115,37 @@ public sealed partial class AppearancePane
             loaded.Success ? null : loaded.Detail);
     }
 
-    /// <summary>The portal's "Actor from MCDF" row, FILE FIRST (user
-    /// 2026-08-31): the dialog opens, the pick spawns the fresh body, and
-    /// the import begins the moment the actor binds. The pane owns the
-    /// dialog and the pending, so the flow survives the portal closing.
-    /// </summary>
-    public void OpenMcdfSpawn(Func<SceneEntityHandle?> spawn)
+    /// <summary>File first; application owns spawning and applying, UI owns selection.</summary>
+    public void OpenMcdfSpawn(Action<SceneEntityHandle> select)
     {
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
-            Newtonsoft.Json.Linq.JObject? chara = null;
-            if (System.IO.Path.GetExtension(chosen).Equals(".chara", StringComparison.OrdinalIgnoreCase))
-            {
-                var read = Game.Integration.CharaImport.Read(chosen);
-                if (!read.Success || read.Value is null)
-                {
-                    _notices.Failed($"Import character appearance: {read.Detail}");
-                    return;
-                }
-                chara = read.Value;
-            }
-            var body = spawn();
-            if (body == null)
-                return;
-            _pendingMcdfDress = (body, chosen, chara);
+            var result = _characterFiles.Spawn(chosen);
+            if (result.Handle is { } body) select(body);
+            else _notices.Failed(result.Detail ?? "The actor could not be spawned.");
         });
-    }
-
-    /// <summary>The spawn whose body still owes its character file.</summary>
-    private (SceneEntityHandle Body, string Path, Newtonsoft.Json.Linq.JObject? Chara)?
-        _pendingMcdfDress;
-
-    /// <summary>Second half of <see cref="OpenMcdfSpawn"/>, pumped with the
-    /// browsers: once the fresh body binds, the import begins.</summary>
-    private void ReconcileMcdfSpawn()
-    {
-        if (_pendingMcdfDress is not { } dress
-            || _creation.Resolve(dress.Body, requirePose: dress.Chara is not null)?.Actor is not { } bound)
-            return;
-        _pendingMcdfDress = null;
-        if (System.IO.Path.GetExtension(dress.Path).Equals(".chara", StringComparison.OrdinalIgnoreCase))
-        {
-            ReportExternal(_chara.Apply(bound, dress.Chara!), "Import character appearance");
-            return;
-        }
-        var begun = _disruptive.Run(bound, "Import character file",
-            () => _integration.BeginImport(bound, dress.Path),
-            () => _integration.ResetMcdf(bound), asset: dress.Path);
-        if (!begun.Success)
-            _notices.Failed($"Import: {begun.Detail}");
     }
 
     public void OpenMcdfImport(ActorId actor)
     {
-        _mcdfActor = actor;
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
-            if (_mcdfActor is not { } frozen)
-                return;
-            if (System.IO.Path.GetExtension(chosen).Equals(".chara", StringComparison.OrdinalIgnoreCase))
-            {
-                ReportExternal(_chara.Apply(frozen, chosen), "Import character appearance");
-                return;
-            }
-            var begun = _disruptive.Run(frozen, "Import character file",
-                () => _integration.BeginImport(frozen, chosen),
-                () => _integration.ResetMcdf(frozen), asset: chosen);
-            if (!begun.Success)
-                _notices.Failed($"Import: {begun.Detail}");
-            _readoutAt = DateTime.MinValue;
+            ReportExternal(_characterFiles.Import(actor, chosen), "Import");
         });
     }
 
     private void OpenMcdfExport(ActorId actor)
     {
-        _mcdfActor = actor;
-        _mcdfDescription = _scene.Snapshot.FindActor(actor) is { } described
+        string description = _scene.Snapshot.FindActor(actor) is { } described
             ? ActorNames.Display(described)
             : "Actor";
         _mcdfExportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
-            if (_mcdfActor is not { } frozen)
-                return;
-            var begun = _integration.BeginExport(
-                frozen, chosen, $"{_mcdfDescription} — exported by Poser");
+            var begun = _characterFiles.Export(
+                actor, chosen, $"{description} — exported by Poser");
             if (!begun.Success)
                 _notices.Failed($"Export: {begun.Detail}");
         });

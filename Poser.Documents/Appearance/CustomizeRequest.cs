@@ -1,8 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Globalization;
 using Newtonsoft.Json.Linq;
 using Poser.Domain.Integration;
 
-namespace Poser.Game.Integration;
+namespace Poser.Documents.Appearance;
 
 /// <summary>Builds a temporary customize-only design without changing the captured state.</summary>
 internal static class CustomizeRequest

@@ -173,8 +173,7 @@ public sealed partial class PoseLibraryPane
     private readonly SceneLoadPreferences _sceneOptions;
 
     private readonly SelectionSession _selection;
-    private readonly DisruptiveSteps _disruptive;
-    private readonly Game.Integration.CharaImport _chara;
+    private readonly ICharacterFiles _characterFiles;
 
     private readonly SceneSession _scene;
 
@@ -459,11 +458,9 @@ public sealed partial class PoseLibraryPane
         IEnvironmentService environment,
         ISceneLifecycleHistory lifecycle,
         UserNotices notices,
-        DisruptiveSteps disruptive,
-        Game.Integration.CharaImport chara)
+        ICharacterFiles characterFiles)
     {
-        _chara = chara;
-        _disruptive = disruptive;
+        _characterFiles = characterFiles;
         _lifecycle = lifecycle;
         _config = config;
         _library = library;

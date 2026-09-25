@@ -13,6 +13,8 @@ using Poser.Game.Bindings;
 using Poser.Services;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
+using Poser.Documents.Appearance;
+
 namespace Poser.Game.Integration;
 
 /// <summary>

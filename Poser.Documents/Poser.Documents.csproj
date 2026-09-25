@@ -8,6 +8,8 @@
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Same JSON implementation as Dalamud's appearance integrations. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
     <InternalsVisibleTo Include="Poser.Core" />
     <InternalsVisibleTo Include="Poser.Game" />
