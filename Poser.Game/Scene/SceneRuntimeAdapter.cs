@@ -668,44 +668,16 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private void Trace(string message) =>
         _log?.Debug($"Scene pose leg: {message}");
 
-    // Weapon skeletons can arrive before the body. They do not make a
-    // character ready for its scene pose (report 2026-09-06).
-    internal static bool HasCharacterSkeleton(IReadOnlyList<ISkeleton> skeletons) =>
-        skeletons.Any(skeleton => skeleton.Slot == Poser.Domain.Identity.PoseSlot.Character
-            && skeleton.RootBone is not null && skeleton.Bones.Count > 0);
-
     public bool ActorReady(SceneEntityHandle actor)
     {
         var candidate = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(candidate);
-        if (!HasCharacterSkeleton(skeletons) ||
+        if (!ActorPoseReadiness.IsReady(skeletons, _bindings) ||
             _bindings.GetActorId(candidate) is not { } id)
             return false;
         if (_bindings.Resolve(id) is not { Success: true, Value: { } bound } ||
             !ReferenceEquals(bound, candidate))
             return false;
-
-        foreach (var skeleton in skeletons)
-        {
-            // A skeleton still building may have no root yet; that is
-            // not-ready, not a refusal.
-            if (skeleton.RootBone is not { } root)
-            {
-                Trace(
-                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
-                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} has no root yet");
-                return false;
-            }
-            if (_bindings.GetBoneId(root) is null)
-            {
-                Trace(
-                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
-                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} " +
-                    $"base {skeleton.CharacterBaseAddress:X} root {Ord(root)} " +
-                    "is not published to the binding registry");
-                return false;
-            }
-        }
 
         Trace(
             $"ready: actor {candidate.Name} wrapper {Ord(candidate)} " +

@@ -123,6 +123,13 @@ Game supplies external-provider calls and exact-generation availability through
 the existing integration runtime. Failed equipment inverses retain their failure
 and remain retryable, including partially restored outfits.
 
+Redrawing history steps replay their appearance verb before restoring the pose.
+The shared journal moves the entry only after the pose import completes, not
+when it is admitted. Game waits for the current body's skeleton and published
+bone bindings, bounded to ten seconds; waiting work retains the exact actor and
+session and is cancelled when its history operation no longer applies. This
+also governs Reset All's pose inverse; it does not expand the captured state.
+
 Actor visibility/presentation and companion changes also journal in Application.
 UI holds exact IDs and detached slot readings; Game resolves native bodies on
 every read/write. A companion pick revalidates the original subject and owner,

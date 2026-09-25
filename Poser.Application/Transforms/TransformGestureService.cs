@@ -508,6 +508,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
+        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true })
+            return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
                 lifecycle.Undo,
@@ -544,6 +546,21 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
+    public GestureResult Replay(JournalStep step, bool before)
+    {
+        if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
+        using var transition = TryEnterTransition();
+        if (transition == null) return Busy();
+        if (_active != null) return GestureResult.Fail("Cancel the active gesture before undo or redo.");
+        if ((before ? History.PeekUndo() : History.PeekRedo())?.Id != step.Id)
+            return GestureResult.Fail("The history changed before replay.");
+        // The journal owns async snapshot completion; do not hold this
+        // synchronous transition across the import (rollback also needs it).
+        return RunLifecycle(before ? step.Undo : step.Redo,
+            $"Could not {(before ? "undo" : "redo")} {step.Description.ToLowerInvariant()}.",
+            () => { }, step.FailureDetail);
+    }
+
     public GestureResult Redo()
     {
         if (RecoverPending() is { } recovered)
@@ -556,6 +573,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var entry = History.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
+        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true })
+            return GestureResult.Fail("This step requires the asynchronous undo journal.");
         if (entry is SceneLifecyclePatch lifecycle)
             return RunLifecycle(
                 lifecycle.Redo,

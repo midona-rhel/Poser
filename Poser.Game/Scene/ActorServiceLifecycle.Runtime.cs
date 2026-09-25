@@ -108,8 +108,7 @@ internal sealed partial class ActorServiceLifecycle
         { Next(phase); return; }
         // A redraw can publish a skeleton before its stable bone bindings.
         var skeletons = _skeletons.GetSkeletons(actor);
-        if (!SceneRuntimeAdapter.HasCharacterSkeleton(skeletons) || skeletons.Any(s =>
-            s.RootBone is not { } root || _bindings.GetBoneId(root) is null))
+        if (!Poser.Game.Posing.ActorPoseReadiness.IsReady(skeletons, _bindings))
         { Next(phase); return; }
         if (phase == 0)
         {

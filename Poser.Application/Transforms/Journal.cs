@@ -65,6 +65,10 @@ public sealed record JournalStep(
     public bool RetainOnFailure { get; init; }
     public Func<string?>? FailureDetail { get; init; }
 
+    /// <summary>Replay the verb first, then await the direction's context
+    /// snapshots before moving this entry to the other history stack.</summary>
+    public bool RestoreSnapshotsAfterReplay { get; init; }
+
     /// <summary>The value before and after, when the step is a value
     /// change — read by the action recorder, never by undo.</summary>
     public object? BeforeValue { get; init; }
@@ -86,6 +90,11 @@ public interface IPoseSnapshotPort
     /// <summary>Starts the restore. False when it could not start; the
     /// callback then never fires.</summary>
     bool Restore(ActorSnapshot snapshot, Action<bool> finished);
+
+    /// <summary>A deferred restore must still belong to its initiating
+    /// history operation before beginning native work.</summary>
+    bool Restore(ActorSnapshot snapshot, Func<bool> stillCurrent, Action<bool> finished) =>
+        stillCurrent() && Restore(snapshot, finished);
 }
 
 /// <summary>

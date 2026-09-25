@@ -158,6 +158,8 @@ public sealed class UndoJournalTests
         public int Redos;
         public GestureResult Undo() { Undos++; return GestureResult.Ok(); }
         public GestureResult Redo() { Redos++; return GestureResult.Ok(); }
+        public GestureResult Replay(JournalStep step, bool before) =>
+            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
     }
 
     private sealed class LifecycleRefusalRunner(TransformHistory history) : IUndoRunner
@@ -187,14 +189,103 @@ public sealed class UndoJournalTests
     private sealed class FakeSnapshots : IPoseSnapshotPort
     {
         public List<string> Restored { get; } = new();
+        public bool Deferred;
+        public Action<bool>? Complete;
+        public Func<bool>? StillCurrent;
 
         public ActorSnapshot? Capture(Guid lineage) => Snapshot("captured");
 
         public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
         {
             Restored.Add((string)snapshot.Pose);
-            finished(true);
+            if (Deferred) Complete = finished;
+            else finished(true);
             return true;
         }
+
+        public bool Restore(ActorSnapshot snapshot, Func<bool> stillCurrent, Action<bool> finished)
+        {
+            StillCurrent = stillCurrent;
+            return Restore(snapshot, finished);
+        }
+    }
+
+    [Fact]
+    public void Disruptive_undo_runs_inverse_then_waits_for_pose_completion_and_redo_does_the_same()
+    {
+        var world = new World(Key(2));
+        world.Snapshots.Deferred = true;
+        int inverse = 0, verb = 0;
+        var step = new JournalStep("Set model", () => { inverse++; return true; }, () => { verb++; return true; })
+        {
+            RestoreSnapshotsAfterReplay = true,
+            Context = new([Key(1)], [Snapshot("before")], [Snapshot("after")]),
+        };
+        world.History.Append(step);
+
+        Assert.True(world.Journal.Undo().Success);
+        Assert.Equal(1, inverse); // A moved skeleton key must not skip the model inverse.
+        Assert.Same(step, world.History.PeekUndo());
+        Assert.False(world.Journal.CanUndo);
+        Assert.False(world.Journal.Redo().Success);
+        world.Snapshots.Complete!(true);
+        Assert.Same(step, world.History.PeekRedo());
+        Assert.False(world.Journal.IsRestoring);
+
+        Assert.True(world.Journal.Redo().Success);
+        Assert.Equal(1, verb);
+        Assert.Same(step, world.History.PeekRedo());
+        world.Snapshots.Complete!(true);
+        Assert.Same(step, world.History.PeekUndo());
+        Assert.Equal(["before", "after"], world.Snapshots.Restored);
+        Assert.Empty(world.Notices);
+    }
+
+    [Fact]
+    public void Failed_import_does_not_advance_history_and_can_be_retried()
+    {
+        var world = new World(Key(1));
+        world.Snapshots.Deferred = true;
+        var step = new JournalStep("Reset all", () => true, () => true)
+        {
+            RestoreSnapshotsAfterReplay = true,
+            Context = new([], [Snapshot("before")], []),
+        };
+        world.History.Append(step);
+        Assert.True(world.Journal.Undo().Success);
+        world.Snapshots.Complete!(false);
+        Assert.Same(step, world.History.PeekUndo());
+        Assert.False(world.Journal.IsRestoring);
+        Assert.Equal([UndoJournal.RestoreFailed], world.Notices);
+        Assert.True(world.Journal.Undo().Success);
+        world.Snapshots.Complete!(true);
+        Assert.Same(step, world.History.PeekRedo());
+        Assert.True(world.Journal.Redo().Success); // Reset's redo has no pose to import.
+        Assert.Same(step, world.History.PeekUndo());
+        Assert.False(world.Journal.IsRestoring);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void History_changes_cancel_waiting_native_restore_without_advancing_new_entry(bool clear)
+    {
+        var world = new World(Key(1));
+        world.Snapshots.Deferred = true;
+        var step = new JournalStep("Redraw", () => true, () => true)
+        {
+            RestoreSnapshotsAfterReplay = true,
+            Context = new([], [Snapshot("before")], []),
+        };
+        world.History.Append(step);
+        Assert.True(world.Journal.Undo().Success);
+        if (clear) world.History.Clear();
+        var later = new JournalStep("Later", () => true, () => true);
+        world.History.Append(later);
+        Assert.False(world.Snapshots.StillCurrent!());
+        world.Snapshots.Complete!(false);
+        Assert.Same(later, world.History.PeekUndo());
+        Assert.False(world.History.CanRedo);
+        Assert.False(world.Journal.IsRestoring);
     }
 }

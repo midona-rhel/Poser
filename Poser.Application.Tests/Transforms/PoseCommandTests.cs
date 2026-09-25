@@ -29,14 +29,14 @@ public sealed class PoseCommandTests
         Assert.Empty(f.Live[f.Character].Pose.Layers);
         Assert.Empty(f.Live[f.Weapon].Pose.Layers);
         Assert.Equal(original[f.Model], f.Live[f.Model]);
-        Assert.True(f.Gestures.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Equal(original[f.Character], f.Live[f.Character]);
         Assert.Same(older, f.History.PeekUndo());
-        Assert.True(f.Gestures.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.Empty(f.Live[f.Character].Pose.Layers);
         Assert.Empty(f.Live[f.Weapon].Pose.Layers);
         Assert.Equal(2, f.IkClears);
-        Assert.True(f.Gestures.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Same(older, f.History.PeekUndo());
     }
 
@@ -50,13 +50,13 @@ public sealed class PoseCommandTests
         Assert.Contains("Expression", result.Detail);
         Assert.Empty(f.Live[f.Character].Pose.Layers);
         Assert.Equal(1, f.IkClears);
-        Assert.True(f.Gestures.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Equal(original, f.Live[f.Character]);
         var replacement = f.Actor with { Generation = f.Actor.Generation + 1 };
         Assert.True(f.Scene.TryRefresh(new SceneSnapshot(2,
             [new ActorDescriptor(replacement, "replacement", [])], [], [], [])).Accepted);
         f.Captures = 0;
-        Assert.False(f.Gestures.Redo().Success);
+        Assert.False(f.Journal.Redo().Success);
         Assert.False(f.ResetAll.ResetAll(f.Actor).Success);
         Assert.Equal(0, f.Captures);
         Assert.Equal(1, f.IkClears);
@@ -119,7 +119,7 @@ public sealed class PoseCommandTests
     }
 
     private sealed class Fixture : ITransformRuntimePort, IPoseEditReads,
-        IActorPoseResetRuntime, IPoseSnapshotPort, IDisposable
+        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateKeySource, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
@@ -127,6 +127,7 @@ public sealed class PoseCommandTests
         public readonly Dictionary<TransformTargetId, TransformTargetState> Live = new();
         public readonly TransformTargetId Character, Weapon, Model;
         public readonly TransformGestureService Gestures;
+        public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
         public readonly IActorResetControl ResetAll;
         private readonly ActorIntegrationSession _integration;
@@ -151,6 +152,7 @@ public sealed class PoseCommandTests
                     new BonePose([new(new(PoseLayerKind.Manual, "manual"), TransformComponents.All,
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
+            Journal = new(History, Gestures, this, new(() => this), _ => true, _ => { });
             var edits = new PoseEditService(Scene, this, History, Gestures);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),
@@ -162,6 +164,7 @@ public sealed class PoseCommandTests
         }
 
         public PoseEditResult CanReset(ActorId actor) => PoseEditResult.Ok(0);
+        public ActorStateKey? Current(Guid lineage) => null;
         public PoseEditResult ResetExpression(ActorId actor) => FailExpression
             ? throw new InvalidOperationException("native reset failed") : PoseEditResult.Ok(1);
         public PoseEditResult ClearIk(ActorId actor) { IkClears++; return PoseEditResult.Ok(1); }

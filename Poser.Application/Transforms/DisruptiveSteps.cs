@@ -54,9 +54,11 @@ public sealed class DisruptiveSteps
         var after = _snapshots.Value.Capture(lineage);
         _history.Append(new JournalStep(
             description,
-            () => Back(inverse, before),
-            () => Again(verb, after))
+            () => inverse?.Invoke().Success ?? true,
+            () => verb().Success)
         {
+            RestoreSnapshotsAfterReplay = true,
+            RetainOnFailure = true,
             Context = new StepContext(
                 keys,
                 before is null ? Array.Empty<ActorSnapshot>() : new[] { before },
@@ -66,17 +68,4 @@ public sealed class DisruptiveSteps
         return result;
     }
 
-    private bool Back(Func<IntegrationResult>? inverse, ActorSnapshot? before)
-    {
-        if (inverse is { } undo && !undo().Success)
-            return false;
-        return before is null || _snapshots.Value.Restore(before, _ => { });
-    }
-
-    private bool Again(Func<IntegrationResult> verb, ActorSnapshot? after)
-    {
-        if (!verb().Success)
-            return false;
-        return after is null || _snapshots.Value.Restore(after, _ => { });
-    }
 }

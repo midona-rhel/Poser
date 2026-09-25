@@ -8,6 +8,8 @@ public interface IUndoRunner
 {
     GestureResult Undo();
     GestureResult Redo();
+    GestureResult Replay(JournalStep step, bool before) =>
+        GestureResult.Fail("Deferred history replay is not supported by this runner.");
     GestureResult? RecoverPending() => null;
     GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
     {
@@ -77,6 +79,8 @@ public sealed class UndoJournal
         var entry = _history.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
+        if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } step)
+            return ReplayWithSnapshots(step, true);
         if (entry.Context is { } context)
         {
             var validity = Validity(context);
@@ -144,6 +148,8 @@ public sealed class UndoJournal
         {
             if (context.Asset is { } asset && !_assetExists(asset))
                 return Refuse(AssetGone);
+            if (entry is JournalStep { RestoreSnapshotsAfterReplay: true } step)
+                return ReplayWithSnapshots(step, false);
             var validity = Validity(context);
             if (validity == KeyState.Gone)
                 return Refuse(ActorGone);
@@ -154,6 +160,18 @@ public sealed class UndoJournal
                     () => _history.CommitRedo(entry));
         }
         return GiveUpOnRepeat(entry, _runner.Redo());
+    }
+
+    private GestureResult ReplayWithSnapshots(JournalStep step, bool before)
+    {
+        if (step.Context is not { } context) return Refuse(RestoreFailed);
+        if (Validity(context) == KeyState.Gone) return Refuse(ActorGone);
+        var result = _runner.Replay(step, before);
+        if (!result.Success) return GiveUpOnRepeat(step, result);
+        return RestoreSnapshots(step, before ? context.Before : context.After, before, null,
+            () => (before ? _history.PeekUndo() : _history.PeekRedo())?.Id == step.Id,
+            () => { if (before) _history.CommitUndo(step); else _history.CommitRedo(step); },
+            allowEmpty: true);
     }
 
     private enum KeyState { Current, Moved, Gone }
@@ -191,72 +209,66 @@ public sealed class UndoJournal
         HistoryEntry entry,
         IReadOnlyList<ActorSnapshot> snapshots,
         bool before,
-        string done,
+        string? done,
         Func<bool> stillOnTop,
-        Action commit)
+        Action commit,
+        bool allowEmpty = false)
     {
-        if (snapshots.Count == 0)
+        if (snapshots.Count == 0 && !allowEmpty)
             return Refuse(RestoreFailed);
         _restoring = entry;
-        var failure = RestoreFrom(0);
-        if (failure != null)
-        {
-            _restoring = null;
-            return Refuse(failure);
-        }
-        return GestureResult.Ok();
+        GestureResult? completed = null;
+        RestoreFrom(0);
+        return completed ?? GestureResult.Ok();
 
-        string? RestoreFrom(int index)
+        bool Current() => _restoring == entry && stillOnTop();
+
+        void RestoreFrom(int index)
         {
+            if (!Current()) { Finish(false); return; }
             if (index >= snapshots.Count)
             {
                 Finish(true);
-                return null;
+                return;
             }
-            bool started = _snapshots.Value.Restore(snapshots[index], ok =>
+            try
             {
-                if (_restoring != entry)
-                    return;
-                if (!ok)
+                bool started = _snapshots.Value.Restore(snapshots[index], Current, ok =>
                 {
-                    Finish(false);
-                    return;
-                }
-                if (RestoreFrom(index + 1) is { } later)
-                {
-                    _restoring = null;
-                    _notice(later);
-                }
-            });
-            return started ? null : RestoreFailed;
+                    if (_restoring != entry) return;
+                    if (!ok) Finish(false);
+                    else RestoreFrom(index + 1);
+                });
+                if (!started) Finish(false);
+            }
+            catch { Finish(false); }
         }
 
         void Finish(bool ok)
         {
+            if (_restoring != entry) return;
             _restoring = null;
-            if (!ok)
-            {
-                _notice(RestoreFailed);
-                return;
-            }
-            if (stillOnTop())
-            {
-                var result = _runner.CompleteSnapshotRestore(entry, before, () =>
-                {
-                    if (stillOnTop())
-                    {
-                        commit();
-                        _notice(done);
-                    }
-                });
-                if (!result.Success)
-                    _notice(result.Detail ?? RestoreFailed);
-            }
-            else
+            if (!stillOnTop())
             {
                 _history.Drop(entry);
-                _notice(Dropped);
+                completed = Refuse(Dropped);
+                return;
             }
+            if (!ok)
+            {
+                completed = Refuse(RestoreFailed);
+                return;
+            }
+            var result = _runner.CompleteSnapshotRestore(entry, before, () =>
+            {
+                if (stillOnTop())
+                {
+                    commit();
+                    if (done != null) _notice(done);
+                }
+            });
+            if (!result.Success) _notice(result.Detail ?? RestoreFailed);
+            completed = result;
         }
     }
 }

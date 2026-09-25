@@ -35,9 +35,11 @@ public sealed class ActorResetControl(
         // Preserve the existing pose/IK inverse. This is not an animation or
         // external-appearance snapshot, and must not pretend to be one.
         history.Append(new JournalStep("Reset all",
-            () => CanReset(actor).Success && snapshots.Value.Restore(before, _ => { }),
+            () => CanReset(actor).Success,
             () => ResetCore(actor).Success)
         {
+            RestoreSnapshotsAfterReplay = true,
+            RetainOnFailure = true,
             Context = new StepContext([], [before], [], null),
         });
         return result;
