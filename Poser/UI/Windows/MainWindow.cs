@@ -1,5 +1,6 @@
 ﻿using System;
 using Poser.Application.Viewport;
+using Poser.Application.Animation;
 using Poser.Application.Gaze;
 using System.Collections.Generic;
 using System.Globalization;
@@ -54,7 +55,7 @@ public partial class MainWindow : Window
     private readonly IEntityBindings _bindings;
     private readonly ISceneCreation _creation;
 
-    private readonly Application.Animation.AnimationSession _animation;
+    private readonly IAnimationPlayback _animation;
 
     private readonly SkeletonOverlayPresentation _overlayPresentation;
 
@@ -520,7 +521,7 @@ public partial class MainWindow : Window
         PoseLibraryPane libraryPane,
         ScenePane scenePane,
         PoseFileInspectorSection poseFileSection,
-        Application.Animation.AnimationSession animation,
+        IAnimationPlayback animation,
         IAnimationCatalogLoader animationCatalog,
         ICompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,

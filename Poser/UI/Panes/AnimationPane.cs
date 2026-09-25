@@ -1,5 +1,4 @@
-﻿using System;
-using Poser.Services;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -8,8 +7,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
-using Poser.Application.Lifecycle;
-using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -20,18 +17,13 @@ namespace Poser.UI;
 /// <summary>Renders actor animation controls and catalog pickers.</summary>
 public sealed class AnimationPane : IDisposable
 {
-    private const long ExpressionRetryDelayMs = 500;
-
-    private readonly AnimationSession _animation;
-    private readonly AnimationSteps _steps;
+    private readonly IAnimationPlayback _animation;
+    private readonly IAnimationActions _steps;
     private readonly AnimationCatalog _catalog;
 
     // The expression workspace may open before another catalog row.
     private readonly IAnimationCatalogLoader _catalogLoader;
-    private readonly IFacialPoseCapture _facialCapture;
-    private readonly IFramework _framework;
-    private readonly IEntityBindings _bindings;
-    private readonly ISessionGenerationSource _sessionGeneration;
+    private readonly IExpressionPreview _expressions;
     private readonly SceneSession _scene;
 
     // All picker rows share one open feed.
@@ -56,7 +48,6 @@ public sealed class AnimationPane : IDisposable
         _layerSelections = new();
     // Both expression surfaces show the friendly row chosen from the catalog.
     private readonly Dictionary<ActorId, TimelineEntry> _expressionSelections = new();
-    private PendingExpressionRetry? _expressionRetry;
     // A Base scrub keeps one captured control identity until release.
     private ActorId? _scrubActor;
     private ScrubControlId? _scrubControl;
@@ -131,14 +122,11 @@ public sealed class AnimationPane : IDisposable
     private static readonly string[] WeaponLabels = ["All", "Sheathed", "Drawn"];
 
     public AnimationPane(
-        AnimationSession animation,
-        AnimationSteps steps,
+        IAnimationPlayback animation,
+        IAnimationActions steps,
         AnimationCatalog catalog,
         IAnimationCatalogLoader catalogLoader,
-        IFacialPoseCapture facialCapture,
-        IFramework framework,
-        IEntityBindings bindings,
-        ISessionGenerationSource sessionGeneration,
+        IExpressionPreview expressions,
         ITextureProvider textures,
         SceneSession scene,
         UserNotices notices)
@@ -148,10 +136,7 @@ public sealed class AnimationPane : IDisposable
         _steps = steps;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
-        _facialCapture = facialCapture;
-        _framework = framework;
-        _bindings = bindings;
-        _sessionGeneration = sessionGeneration;
+        _expressions = expressions;
         _icons = new GameIconResolver(textures);
         _scene = scene;
         _timelineKey = RowKey;
@@ -172,7 +157,7 @@ public sealed class AnimationPane : IDisposable
             this, "lips", AnimationPickTarget.Lips, AnimationSlot.Lips,
             AnimationSlot.Lips, kindFilter: null, weaponAware: false,
             entries: LipsEntries);
-        _framework.Update += OnFrameworkUpdate;
+        _expressions.Failed += OnExpressionFailed;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -586,8 +571,7 @@ public sealed class AnimationPane : IDisposable
             return;
         }
 
-        CancelExpressionRetry(actor);
-        var expression = _animation.ReleaseExpression(actor);
+        var expression = _expressions.Reset(actor);
         if (!expression.Success)
         {
             Report(expression, "Animation mode");
@@ -597,14 +581,11 @@ public sealed class AnimationPane : IDisposable
         _layerSelections.Remove((actor, AnimationSlot.Facial));
 
         // Advanced releases every layer before Basic can issue Base commands.
-        foreach (var slot in PrimaryLayers)
+        var reset = _steps.ResetLayers(actor);
+        if (!reset.Success)
         {
-            var reset = _steps.ResetSlot(actor, slot);
-            if (!reset.Success)
-            {
-                Report(reset, "Basic animation");
-                return;
-            }
+            Report(reset, "Basic animation");
+            return;
         }
         RemoveLayerSelections(actor);
         _advancedActors.Remove(actor);
@@ -806,7 +787,7 @@ public sealed class AnimationPane : IDisposable
         ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
         _expressionSelections.TryGetValue(actor, out var choice);
         var actionStyle = FixedActionStyle();
-        bool pending = _expressionRetry?.Actor == actor;
+        bool pending = _expressions.IsPending(actor);
         form.Picker(
             "Expression",
             ExpressionNameFor(actor, selected, "Choose expression"),
@@ -831,24 +812,10 @@ public sealed class AnimationPane : IDisposable
                 {
                     actions.Button(
                         "Bake expression",
-                        () =>
-                        {
-                            var descriptor = _scene.Snapshot.FindActor(actor);
-                            if (descriptor == null)
-                                _notices.Refused(
-                                    "Bake expression: actor is no longer in "
-                                    + "the scene.");
-                            else if (_animation.HoldExpression(actor, selected)
-                                is { Success: false } previewFailed)
-                                _notices.Failed(
-                                    $"Bake expression: {previewFailed.Detail}");
-                            else if (_facialCapture.Begin(actor, descriptor)
-                                is { Success: false } failed)
-                                _notices.Failed(
-                                    $"Bake expression: {failed.Detail}");
-                        },
+                        () => Report(
+                            _expressions.Bake(actor, selected), "Bake expression"),
                         disabled: disabled || selected == 0 || pending ||
-                            _facialCapture.IsPending,
+                            _expressions.IsBaking,
                         help: "Bake the face into the pose");
                 }
             },
@@ -1101,15 +1068,6 @@ public sealed class AnimationPane : IDisposable
         AnimationSlot Slot);
 
     private sealed record GeneralSelection(TimelineEntry Entry, bool Applied);
-
-    private sealed record PendingExpressionRetry(
-        ActorId Actor,
-        TimelineEntry Entry,
-        SessionGeneration Session,
-        object Binding,
-        long DueAt);
-
-
     private static string StanceName(AnimationStance stance) => stance switch
     {
         AnimationStance.Idle => "Idle",
@@ -1164,7 +1122,6 @@ public sealed class AnimationPane : IDisposable
 
     private void Apply(ActorId actor, AnimationPick pick)
     {
-        var timeline = (ushort)pick.Entry.TimelineId;
         switch (pick.Target)
         {
             case AnimationPickTarget.General:
@@ -1177,9 +1134,7 @@ public sealed class AnimationPane : IDisposable
                 ChooseLayer(actor, pick.Slot, pick.Entry);
                 break;
             case AnimationPickTarget.Expression:
-                CancelExpressionRetry(actor);
-                var expression = _animation.ChooseSlot(
-                    actor, AnimationSlot.Facial, timeline);
+                var expression = _expressions.Choose(actor, pick.Entry);
                 if (expression.Success)
                     _expressionSelections[actor] = pick.Entry;
                 Report(expression, "Expression");
@@ -1203,7 +1158,7 @@ public sealed class AnimationPane : IDisposable
     private void ResetLayer(ActorId actor, AnimationSlot slot, string label)
     {
         if (slot == AnimationSlot.Facial)
-            CancelExpressionRetry(actor);
+            _expressions.CancelRetry(actor);
         var reset = _steps.ResetSlot(actor, slot);
         if (reset.Success)
         {
@@ -1237,20 +1192,11 @@ public sealed class AnimationPane : IDisposable
 
     private void ResetGeneral(ActorId actor)
     {
-        var reset = _steps.ResetSlot(actor, AnimationSlot.Base);
+        var reset = _steps.ResetGeneral(actor);
         if (!reset.Success)
         {
             Report(reset, "Animation reset");
             return;
-        }
-        if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
-        {
-            var loop = _steps.SetLoop(actor, AnimationSlot.Base, false);
-            if (!loop.Success)
-            {
-                Report(loop, "Animation reset");
-                return;
-            }
         }
         _generalSelections.Remove(actor);
         _layerSelections.Remove((actor, AnimationSlot.Base));
@@ -1276,8 +1222,7 @@ public sealed class AnimationPane : IDisposable
 
     private void ResetExpression(ActorId actor)
     {
-        CancelExpressionRetry(actor);
-        var result = _animation.ReleaseExpression(actor);
+        var result = _expressions.Reset(actor);
         if (result.Success)
         {
             _expressionSelections.Remove(actor);
@@ -1286,65 +1231,10 @@ public sealed class AnimationPane : IDisposable
         ReportExpression(result, "Expression");
     }
 
-    private AnimationResult ApplyExpression(ActorId actor, ushort timeline)
-    {
-        var applied = _animation.HoldExpression(actor, timeline);
-        if (!applied.Success)
-            return applied;
-        if (_expressionSelections.TryGetValue(actor, out var entry) &&
-            entry.TimelineId == timeline &&
-            _sessionGeneration.ActiveSessionGeneration is { } session &&
-            _bindings.Resolve(actor) is { Success: true, Value: { } binding })
-        {
-            _expressionRetry = new PendingExpressionRetry(
-                actor, entry, session, binding,
-                Environment.TickCount64 + ExpressionRetryDelayMs);
-        }
-        return AnimationResult.Ok();
-    }
+    private AnimationResult ApplyExpression(ActorId actor, ushort timeline) =>
+        _expressions.Preview(actor, timeline);
 
-    private void OnFrameworkUpdate(IFramework framework)
-    {
-        if (_expressionRetry is not { } pending)
-            return;
-        if (!ActorPresent(pending.Actor))
-        {
-            _expressionRetry = null;
-            var released = _animation.ReleaseExpression(pending.Actor);
-            if (!released.Success)
-                _notices.Failed($"Expression reset: {released.Detail}");
-            _expressionSelections.Remove(pending.Actor);
-            _layerSelections.Remove((pending.Actor, AnimationSlot.Facial));
-            return;
-        }
-        var binding = _bindings.Resolve(pending.Actor);
-        if (_sessionGeneration.ActiveSessionGeneration != pending.Session ||
-            binding is not { Success: true, Value: { } currentBinding } ||
-            !ReferenceEquals(currentBinding, pending.Binding) ||
-            _animation.SelectedFor(pending.Actor, AnimationSlot.Facial) !=
-                pending.Entry.TimelineId ||
-            !_expressionSelections.TryGetValue(pending.Actor, out var selected) ||
-            selected != pending.Entry)
-        {
-            _expressionRetry = null;
-            return;
-        }
-        if (Environment.TickCount64 < pending.DueAt)
-            return;
-
-        // One delayed replay gives a paused client a second evaluation edge.
-        _expressionRetry = null;
-        var replayed = _animation.HoldExpression(
-            pending.Actor, (ushort)pending.Entry.TimelineId);
-        if (!replayed.Success)
-            _notices.Failed($"Expression retry: {replayed.Detail}");
-    }
-
-    private void CancelExpressionRetry(ActorId actor)
-    {
-        if (_expressionRetry?.Actor == actor)
-            _expressionRetry = null;
-    }
+    private void OnExpressionFailed(string detail) => _notices.Failed(detail);
 
     private bool ActorPresent(ActorId actor)
     {
@@ -1394,8 +1284,7 @@ public sealed class AnimationPane : IDisposable
 
     public void Dispose()
     {
-        _expressionRetry = null;
-        _framework.Update -= OnFrameworkUpdate;
+        _expressions.Failed -= OnExpressionFailed;
     }
 
 }

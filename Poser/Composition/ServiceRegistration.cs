@@ -237,6 +237,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
         services.AddSingleton<Application.Gaze.IGazeControl, Application.Gaze.GazeSession>();
         services.AddSingleton<AnimationSteps>();
+        services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<AnimationSteps>());
+        services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<AnimationSession>());
+        services.AddSingleton<IExpressionPreview, Game.Animation.ExpressionPreview>();
         services.AddSingleton<Application.Scene.GroupSteps>();
         services.AddSingleton<Game.Journal.DisruptiveSteps>();
         services.AddSingleton<Game.Journal.WardrobeSession>();

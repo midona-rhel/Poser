@@ -108,6 +108,12 @@ selection. Light file dialogs use creation receipts; Game owns native capture,
 placement and application, sharing the document mapping with scene/history.
 Import applies the file before recording the shared creation history step.
 
+Animation panes use the application's playback and journal-action interfaces;
+they own picker/filter state, not native bindings or framework callbacks.
+Held-expression preview/retry and bake admission belong to the Game boundary.
+The bounded retry retains its exact actor, session and native binding, so hiding
+the pane does not stop it and replacing its target cannot redirect it.
+
 Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
 bone generations. Application selects the participating skeleton slots and owns
 history through the shared pose edit/transfer services. Region resets are

@@ -11,7 +11,7 @@ namespace Poser.Application.Animation;
 /// scrub, speed — never journals. The undo of a play plays the timeline
 /// the slot held before, or resets the slot when it held none.
 /// </summary>
-public sealed class AnimationSteps
+public sealed class AnimationSteps : IAnimationActions
 {
     private readonly AnimationSession _animation;
     private readonly ValueJournal _journal;
@@ -61,6 +61,28 @@ public sealed class AnimationSteps
             x => result = _animation.SetSlotLoop(actor, slot, 0, x),
             on, () => Alive(actor));
         return result;
+    }
+
+    public AnimationResult ResetGeneral(ActorId actor)
+    {
+        var reset = ResetSlot(actor, AnimationSlot.Base);
+        return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
+            ? SetLoop(actor, AnimationSlot.Base, false)
+            : reset;
+    }
+
+    /// <summary>Restores outgoing advanced layers in their existing order.
+    /// A failed restore leaves earlier successes intact and keeps the mode unchanged.</summary>
+    public AnimationResult ResetLayers(ActorId actor)
+    {
+        foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody,
+                     AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips })
+        {
+            var reset = ResetSlot(actor, slot);
+            if (!reset.Success)
+                return reset;
+        }
+        return AnimationResult.Ok();
     }
 
     private void Put(ActorId actor, AnimationSlot slot, ushort? timeline, bool playFromStart)

@@ -105,7 +105,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly CameraPane _cameraPane;
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
-    private readonly AnimationSession _animation;
+    private readonly IAnimationPlayback _animation;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
 
@@ -164,7 +164,7 @@ public sealed class SpawnBrowserWindow : Window
         CameraPane cameraPane,
         ISpawnCatalogService catalog,
         SelectionSession selection,
-        AnimationSession animation,
+        IAnimationPlayback animation,
         ConfigurationService configuration,
         ITextureProvider textures,
         UserNotices notices,
