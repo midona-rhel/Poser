@@ -612,6 +612,10 @@ public sealed class DebugBridge : IDisposable
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
+                            // Unselected, unmodified skeletons are not kept hot by the UI.
+                            // Refresh through the same read boundary before reporting a pose.
+                            if (_bindings.GetBoneId(bone) is { } liveBone)
+                                _viewport.GetSkeletonModelMatrix(liveBone);
                             var t = bone.LastTransform; var rw = bone.LastRawTransform;
                             return Json(new { name, partial = bone.PartialId, bone.BoneIndex,
                                 bone.IsPartialRoot, bone.IsSkeletonRoot,
