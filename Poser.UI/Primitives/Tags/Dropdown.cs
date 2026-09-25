@@ -188,7 +188,6 @@ public static partial class Crystarium
                                 {
                                     popupSelected = i;
                                     popupChanged = true;
-                                    onChange(i);
                                 }
                                 ImGui.CloseCurrentPopup();
                             }
@@ -232,6 +231,9 @@ public static partial class Crystarium
         if (popupChanged)
         {
             changed = true;
+            // Release the popup owner first: a dialog opened inside it would be
+            // registered as its child and dismissed along with the dropdown.
+            onChange(popupSelected);
         }
 
         if (!string.IsNullOrEmpty(help) && valueHovered)
