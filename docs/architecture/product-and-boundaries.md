@@ -53,6 +53,12 @@ capture, apply ordering, gesture coalescing and history; Game implements the
 runtime ports. Scene transactions apply through that same control without a
 second history entry. UI reads detached values, not native environment services.
 
+Library refresh/cancellation and autosave cadence/admission live in Application.
+Documents owns scans, file actions, snapshot writes and disk retention. Game
+captures detached poses/scenes and owns framework subscriptions; panel visibility
+does not drive this work. Pose and scene snapshots retain their separate formats,
+roots and limits, and scene progress is exposed through `ISceneAutoSave`.
+
 Actor appearance commands own their history inverses in Application. UI
 supplies an actor and the selected value; it never constructs restore callbacks
 or starts native catalog work. Character-file progress and cancellation use

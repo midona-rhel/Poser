@@ -1,7 +1,7 @@
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Scene;
-using Poser.Game.Scene;
+using Poser.Application.AutoSave;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -39,7 +39,7 @@ public sealed class ScenePane
     private readonly ISceneWorkflow _workflow;
     private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
-    private readonly SceneAutoSaveService _snapshots;
+    private readonly ISceneAutoSave _snapshots;
     private readonly IPoseLibraryService _library;
     private readonly LibraryConfiguration _libraryConfig;
 
@@ -371,7 +371,7 @@ public sealed class ScenePane
 
     public ScenePane(
         ISceneWorkflow workflow,
-        SceneAutoSaveService snapshots,
+        ISceneAutoSave snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,

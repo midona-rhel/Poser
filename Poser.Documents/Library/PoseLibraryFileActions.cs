@@ -64,7 +64,7 @@ public sealed class PoseLibraryFileActionResult
 /// recovery verbs (quarantine, restore, retry-probe, delete), the authoring
 /// verbs (rename, move, edit metadata), each with a typed result. Nothing here
 /// mutates a published snapshot — the immutable-complete-pass contract stays
-/// with <see cref="PoseLibraryService"/>; a caller acts on disk and then
+/// with the application library owner; a caller acts on disk and then
 /// requests a rescan.
 ///
 /// <para>Metadata editing goes through the atomic pose store's own bounded

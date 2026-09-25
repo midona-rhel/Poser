@@ -78,7 +78,7 @@ public partial class LibraryConfiguration
         _ => HomeKind(name),
     };
 
-    internal static bool SamePath(string left, string right) =>
+    public static bool SamePath(string left, string right) =>
         NormalizePath(left) is { } a && NormalizePath(right) is { } b
         && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 

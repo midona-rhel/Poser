@@ -113,7 +113,7 @@ public sealed partial class PoseLibraryPane
             return;
         tile.Enriched = true;
         string path = tile.Id;
-        var kind = PoseLibraryService.KindOf(path);
+        var kind = LibraryScanner.KindOf(path);
         _ = Task.Run(() =>
         {
             try
@@ -137,7 +137,7 @@ public sealed partial class PoseLibraryPane
                         metadata.Succeeded ? metadata.Author : null,
                         [],
                         metadata.Succeeded && kind == PoseLibraryEntryKind.Scene
-                            ? PoseLibraryService.DescribeScene(metadata)
+                            ? LibraryScanner.DescribeScene(metadata)
                             : null,
                         status, detail));
                 }

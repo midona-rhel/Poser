@@ -1,4 +1,6 @@
 using Poser.Application.World;
+using Poser.Application.AutoSave;
+using Poser.Game.AutoSave;
 using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
@@ -83,7 +85,7 @@ public class Poser : IDalamudPlugin
             configuration.Config.UI.BackdropBlur);
         // Resolving these lazy singletons activates their subscriptions in runtime order before UI draws.
         log.Debug("Load stage: auto-save");
-        _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
+        _ = _serviceProvider.GetRequiredService<AutoSaveRuntime>();
         log.Debug("Load link: prop spawns");
         _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
         log.Debug("Load link: overlay nodes");
@@ -141,7 +143,8 @@ public class Poser : IDalamudPlugin
         log.Debug("Load link: scene workflow");
         _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
         log.Debug("Load stage: scene auto-save");
-        _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
+        _serviceProvider.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
+            _serviceProvider.GetRequiredService<SceneAutoSaveService>());
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
         startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
-using Poser.Config;
 
 namespace Poser.Library;
 
@@ -67,14 +66,6 @@ public sealed class McdfHashIndex : IMcdfHashIndex
     private readonly object _gate = new();
     private readonly Dictionary<string, (FileStamp Stamp, string Hash)> _cache =
         new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>The production form: the library's own configured MCDF home,
-    /// re-read on every call so re-pointing the home takes effect without a
-    /// restart.</summary>
-    public McdfHashIndex(ConfigurationService configuration)
-        : this(() => configuration.Config.Library.ResolveMcdfRoot())
-    {
-    }
 
     /// <summary>Explicit-root form, for a caller that owns the folder.
     /// </summary>

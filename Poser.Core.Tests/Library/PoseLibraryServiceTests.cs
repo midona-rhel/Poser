@@ -625,7 +625,7 @@ public sealed class PoseLibraryServiceTests
             else
                 config.Config.Library.Sources.AddRange(sources);
             return new PoseLibraryService(
-                config, AtomicPoseFileStore.Default, observeDirectory);
+                config, new LibraryScanner(observeDirectory));
         }
 
         public string WritePoseAt(string directory, string name, PoseFile pose)
@@ -656,9 +656,9 @@ public sealed class PoseLibraryServiceTests
         {
             _config = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
             _config.Config.Library = library;
-            return new PoseLibraryService(_config, AtomicPoseFileStore.Default,
+            return new PoseLibraryService(_config, new LibraryScanner(
                 enumerateFiles: enumerateFiles, enumerateDirectories: enumerateDirectories,
-                maxFiles: maxFiles, maxFolders: maxFolders, maxSources: maxSources);
+                maxFiles: maxFiles, maxFolders: maxFolders, maxSources: maxSources), maxSources);
         }
 
         public void Dispose()

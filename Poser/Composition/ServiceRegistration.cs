@@ -1,3 +1,5 @@
+using Poser.Application.AutoSave;
+using Poser.Game.AutoSave;
 using Poser.Application.World;
 using System;
 using Dalamud.Game;
@@ -554,36 +556,45 @@ internal static class ServiceRegistration
         // documents.
         services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
         // Lazy resolution breaks the final-capture construction cycle.
-        services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
+        services.AddSingleton<IPoseAutoSaveCapture>(sp => new PoseAutoSaveCapturePort(
             sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IFramework>(),
-            sp.GetRequiredService<IGPoseService>(),
             sp.GetRequiredService<IActorManager>,
             sp.GetRequiredService<ISkeletonService>,
             sp.GetRequiredService<IBonePosingService>,
             sp.GetRequiredService<IPoseFileService>,
-            sp.GetRequiredService<ConfigurationService>(),
-            sp.GetRequiredService<IPlaceService>(),
-            sp.GetRequiredService<IDalamudPluginInterface>()));
+            sp.GetRequiredService<IPlaceService>()));
+        services.AddSingleton(sp =>
+        {
+            var log = sp.GetRequiredService<IPluginLog>();
+            var configuration = sp.GetRequiredService<ConfigurationService>();
+            var root = configuration.Config.AutoSave.EnsureRoot(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "AutoSaves"));
+            return new AutoSaveService(sp.GetRequiredService<IPoseAutoSaveCapture>(), configuration,
+                new PoseAutoSaveStore(root, message => log.Error(message),
+                    message => log.Info(message), message => log.Debug(message)),
+                message => log.Error(message), message => log.Debug(message));
+        });
+        services.AddSingleton<IAutoSaveService>(sp => sp.GetRequiredService<AutoSaveService>());
+        services.AddSingleton<AutoSaveRuntime>();
 
         // The checksum index over the MCDF home. ONE instance: its whole
         // value is the digests it remembers between scene loads, and a
         // per-resolve copy would re-read the library every time.
         services.AddSingleton<IMcdfHashIndex>(sp =>
-            new McdfHashIndex(sp.GetRequiredService<ConfigurationService>()));
+            new McdfHashIndex(() => sp.GetRequiredService<ConfigurationService>().Config.Library.ResolveMcdfRoot()));
 
         // SceneWorkflow owns the scene transaction; autosave reuses its
         // capture and store through SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
         services.AddSceneWorkflow();
         services.AddSingleton(sp => new SceneAutoSaveService(
-            sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IFramework>(),
-            sp.GetRequiredService<IGPoseService>(),
             sp.GetRequiredService<ConfigurationService>(),
-            sp.GetRequiredService<SceneCaptureService>(),
-            sp.GetRequiredService<SceneWorkflow>(),
-            sp.GetRequiredService<IDalamudPluginInterface>()));
+            sp.GetRequiredService<SceneCaptureService>().BeginCapture,
+            () => sp.GetRequiredService<SceneWorkflow>().Busy,
+            new SceneAutoSaveStore(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"),
+                message => sp.GetRequiredService<IPluginLog>().Error(message))));
+        services.AddSingleton<ISceneAutoSave>(sp => sp.GetRequiredService<SceneAutoSaveService>());
         return services;
     }
 

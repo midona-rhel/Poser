@@ -93,7 +93,7 @@ public readonly record struct AutoSaveCaptureResult(
 /// Timed pose auto-save. While GPose is active and
 /// <c>PoserConfiguration.AutoSave.Enabled</c> is set, every actor carrying
 /// Poser-authored (unnamed-layer) edits is synchronously detached through
-/// <see cref="IPoseFileService.CreatePoseFile"/> into immutable pose data. An
+/// the native capture port into immutable pose data. An
 /// owned worker serializes and writes that data into a timestamped folder under
 /// <see cref="RootDirectory"/> on the configured interval, plus an applicable
 /// final capture when GPose is left through the application lifecycle

@@ -117,19 +117,13 @@ internal sealed class AutoSaveHarness : IDisposable
     /// Constructed on first use so a test can seed config and actors first.
     /// </summary>
     public AutoSaveService Service => _service ??= new AutoSaveService(
-        Log,
-        (IFramework?)null,
-        GPose,
-        () => ActorManager,
-        () => Skeletons,
-        () => BonePosing,
-        () => PoseFiles,
+        new Poser.Game.AutoSave.PoseAutoSaveCapturePort(Log, () => ActorManager,
+            () => Skeletons, () => BonePosing, () => PoseFiles, Place),
         Configuration,
-        Root,
-        () => NowUtc,
-        Dispatch,
-        HealthStoreOverride,
-        Place);
+        new PoseAutoSaveStore(Root, message => Log.Error(message),
+            message => Log.Info(message), message => Log.Debug(message)),
+        message => Log.Error(message), message => Log.Debug(message),
+        () => NowUtc, Dispatch, HealthStoreOverride);
 
     /// <summary>
     /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces
@@ -178,7 +172,7 @@ internal sealed class AutoSaveHarness : IDisposable
     public void TickAt(DateTime nowUtc)
     {
         NowUtc = nowUtc;
-        Service.Tick(nowUtc);
+        Service.Tick(nowUtc, GPose.IsGPosing);
         WaitForWrite();
     }
 

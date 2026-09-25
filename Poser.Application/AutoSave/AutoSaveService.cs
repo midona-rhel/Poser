@@ -5,77 +5,24 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dalamud.Plugin;
-using Dalamud.Plugin.Services;
 using Poser.Config;
-using Poser.Entities;
+using Poser.Application.AutoSave;
+using CapturedPose = Poser.Files.NamedAutoSavePose;
 using Poser.Services;
 
 namespace Poser.Files;
 
-/// <summary>
-/// Timed pose auto-save (GAP 4). Exports every actor with Poser-authored edits
-/// into
-/// <c>&lt;pluginConfigDir&gt;/AutoSaves/&lt;local day&gt;/&lt;HH-mm-ss&gt; &lt;actor&gt;.pose</c>
-/// while in GPose, and requests one final capture attempt on GPose exit.
-///
-/// <para>SPLIT ACROSS TWO THREADS. <see cref="SaveNow"/> runs on the framework
-/// tick and does only what needs live game state: the authored-edit scan and
-/// <see cref="IPoseFileService.CreatePoseFile"/>. A <see cref="PoseFile"/> is
-/// plain data the moment it is built, so JSON, folder creation, the writes and
-/// retention all run on a worker (<see cref="WriteSnapshot"/>) instead of
-/// hitching a frame once per interval. <see cref="IPoseFileService.ExportPose"/>
-/// is not used because it fuses the capture and the write.</para>
-///
-/// Deliberate deviations from the references:
-/// <list type="bullet">
-/// <item>ONE FOLDER PER DAY, files prefixed with the save time (user call,
-/// 2026-08-08: both references write a folder per save, which at a one-minute
-/// interval buries a session under dozens of sibling folders). Local time,
-/// because the layout exists to be browsed and "that evening's folder" is a
-/// local-calendar notion; the 24-hour prefix keeps name order == time order
-/// within a day, and the same-second suffix in
-/// <see cref="SnapshotFilePath"/> also covers the DST fold's replayed hour.</item>
-/// <item>Retention is computed from what is on disk, not from an in-memory
-/// queue, so it still holds after a plugin restart (Ktisis' does not). It
-/// counts SAVE EVENTS — a time-prefix group of files, or one whole folder of
-/// the old one-folder-per-save layout, which is how pre-existing snapshots
-/// age out with no migration.</item>
-/// <item>One actor failing to export never aborts the rest of the snapshot
-/// (Brio aborts the whole save on a single bad filename).</item>
-/// <item>Nothing is written when no actor has authored edits, so no empty
-/// folders accumulate (Ktisis leaves them).</item>
-/// </list>
-///
-/// <para>The application lifecycle coordinator requests exactly one final
-/// capture attempt before publishing the legacy GPose exit event. The scene
-/// services remain factories so the capture reads their current state without
-/// making composition depend on an event-subscriber order.</para>
-/// </summary>
+/// <summary>Pose autosave cadence, admission, final capture and persistence ownership.</summary>
 public class AutoSaveService : IAutoSaveService
 {
-    private const string AutoSaveFolderName = "AutoSaves";
-    private const string DayFolderFormat = "yyyy-MM-dd";
-    private const string TimePrefixFormat = "HH-mm-ss";
-    /// <summary>Rendered length of <see cref="TimePrefixFormat"/>.</summary>
-    private const int TimePrefixLength = 8;
-
-    private readonly IPluginLog _log;
-    private readonly IFramework? _framework;
-    private readonly IGPoseService _gpose;
-    private readonly Func<IActorManager> _actors;
-    private readonly Func<ISkeletonService> _skeletons;
-    private readonly Func<IBonePosingService> _bonePosing;
-    private readonly Func<IPoseFileService> _poseFiles;
+    private readonly Action<string> _error;
+    private readonly Action<string> _debug;
+    private readonly IPoseAutoSaveCapture _capture;
+    private readonly PoseAutoSaveStore _store;
     private readonly ConfigurationService _configuration;
     private readonly Func<DateTime> _clock;
     private readonly Func<Action, bool> _dispatch;
     private readonly AutoSaveHealthStore _health;
-
-    /// <summary>Where the snapshot is being taken, stamped onto every pose a
-    /// snapshot writes. Optional: a composition without game data (the test
-    /// harness) records no place, which is exactly the legacy shape.</summary>
-    private readonly IPlaceService? _place;
 
     private DateTime? _nextDueUtc;
     private bool _disposed;
@@ -157,59 +104,19 @@ public class AutoSaveService : IAutoSaveService
         string EvidencePaths);
 
     public AutoSaveService(
-        IPluginLog log,
-        IFramework framework,
-        IGPoseService gpose,
-        Func<IActorManager> actors,
-        Func<ISkeletonService> skeletons,
-        Func<IBonePosingService> bonePosing,
-        Func<IPoseFileService> poseFiles,
+        IPoseAutoSaveCapture capture,
         ConfigurationService configuration,
-        IPlaceService place,
-        IDalamudPluginInterface pluginInterface)
-        : this(
-            log,
-            framework,
-            gpose,
-            actors,
-            skeletons,
-            bonePosing,
-            poseFiles,
-            configuration,
-            configuration.Config.AutoSave.EnsureRoot(Path.Combine(
-                pluginInterface.GetPluginConfigDirectory(), AutoSaveFolderName)),
-            place: place)
-    {
-    }
-
-    /// <summary>
-    /// Test seam: explicit root directory, an injectable UTC clock, and an
-    /// optional framework (null means the caller drives <see cref="Tick"/>
-    /// itself instead of the service subscribing to the game tick).
-    /// </summary>
-    internal AutoSaveService(
-        IPluginLog log,
-        IFramework? framework,
-        IGPoseService gpose,
-        Func<IActorManager> actors,
-        Func<ISkeletonService> skeletons,
-        Func<IBonePosingService> bonePosing,
-        Func<IPoseFileService> poseFiles,
-        ConfigurationService configuration,
-        string rootDirectory,
+        PoseAutoSaveStore store,
+        Action<string> error,
+        Action<string> debug,
         Func<DateTime>? utcClock = null,
         Func<Action, bool>? dispatch = null,
-        AutoSaveHealthStore? healthStore = null,
-        IPlaceService? place = null)
+        AutoSaveHealthStore? healthStore = null)
     {
-        _place = place;
-        _log = log;
-        _framework = framework;
-        _gpose = gpose;
-        _actors = actors;
-        _skeletons = skeletons;
-        _bonePosing = bonePosing;
-        _poseFiles = poseFiles;
+        _capture = capture;
+        _store = store;
+        _error = error;
+        _debug = debug;
         _configuration = configuration;
         _clock = utcClock ?? (() => DateTime.UtcNow);
         _dispatch = dispatch ?? (work =>
@@ -217,8 +124,8 @@ public class AutoSaveService : IAutoSaveService
             _ = Task.Run(work);
             return true;
         });
-        RootDirectory = rootDirectory;
-        _health = healthStore ?? new AutoSaveHealthStore(rootDirectory);
+        RootDirectory = store.RootDirectory;
+        _health = healthStore ?? new AutoSaveHealthStore(RootDirectory);
         var stale = _health.RecoverStale();
         // A terminal record (or no record) is a successful observation: only
         // an attempted promotion whose write failed closes new admissions.
@@ -232,26 +139,13 @@ public class AutoSaveService : IAutoSaveService
                 failurePhase: "HealthTransition",
                 detail: _startupHealthFailure,
                 recoveryEvidencePaths: stale.Write?.RecoveryEvidencePaths);
-            _log.Error($"Auto-save: {_startupHealthFailure}");
+            _error($"Auto-save: {_startupHealthFailure}");
         }
         else if (stale.Record is not null)
         {
             _lastHealthRecord = stale.Record;
         }
 
-        try
-        {
-            Directory.CreateDirectory(RootDirectory);
-        }
-        catch (Exception ex)
-        {
-            // A missing root is not fatal at construction: each save retries the
-            // per-snapshot create and logs there.
-            _log.Error($"Auto-save: could not create '{RootDirectory}': {ex.Message}");
-        }
-
-        if (_framework != null)
-            _framework.Update += OnFrameworkUpdate;
     }
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
@@ -338,7 +232,7 @@ public class AutoSaveService : IAutoSaveService
     private void LogHealthFailure(AutoSaveHealthWriteResult result)
     {
         if (!result.Succeeded)
-            _log.Error($"Auto-save health transition failed: {result.Detail}");
+            _error($"Auto-save health transition failed: {result.Detail}");
     }
 
     private void RetainHealthRecoveryLocked(AutoSaveHealthRecord recovery)
@@ -457,16 +351,13 @@ public class AutoSaveService : IAutoSaveService
         }
     }
 
-    private void OnFrameworkUpdate(IFramework framework) => Tick(_clock());
-
     /// <summary>
     /// Interval logic. Idle (not enabled, or not in GPose) disarms the timer;
     /// the first tick after arming schedules one full interval out, so entering
     /// GPose never saves immediately (parity with both references).
     /// </summary>
-    internal void Tick(DateTime nowUtc)
+    public void Tick(DateTime nowUtc, bool isGposing)
     {
-        var isGposing = _gpose.IsGPosing;
         var settings = Settings;
         if (isGposing && !_wasGPosing)
         {
@@ -588,17 +479,6 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// One captured actor. The <see cref="PoseFile"/> is already detached from
-    /// game memory — <see cref="IPoseFileService.CreatePoseFile"/> copies bone
-    /// transforms into plain dictionaries — which is exactly what lets the
-    /// write half run off the framework thread.
-    /// </summary>
-    private readonly record struct CapturedPose(
-        string ActorName,
-        string FileName,
-        PoseFile Pose);
-
-    /// <summary>
     /// Returns the number of actors CAPTURED, not the number of files that
     /// landed: the writes outlive this call. Zero therefore also covers
     /// "nothing had authored edits" and "a periodic item was coalesced into the
@@ -619,40 +499,11 @@ public class AutoSaveService : IAutoSaveService
         var dispatchAccepted = false;
         try
         {
-            var captured = new List<CapturedPose>();
+            var detached = _capture.Capture(reason);
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string? captureFailure = null;
-
-            // Read ONCE, here: every file a snapshot writes was taken in the
-            // same place, and this is the capture thread — the worker half
-            // never touches game state. A composition with no place service
-            // leaves both members unset, which is the "no place recorded"
-            // shape a pre-2026-08-14 auto-save already has.
-            var place = _place?.Current ?? default;
-
-            foreach (var actor in _actors().Actors)
-            {
-                try
-                {
-                    if (!HasAuthoredEdits(actor))
-                        continue;
-
-                    // Both halves of the capture read live game state, so both
-                    // stay here; only the resulting PoseFile crosses over.
-                    var pose = _poseFiles().CreatePoseFile(_skeletons().GetSkeletons(actor));
-                    Stamp(pose, place);
-                    captured.Add(new CapturedPose(
-                        actor.Name,
-                        UniqueFileName(actor.Name, used) + ".pose",
-                        pose));
-                }
-                catch (Exception ex)
-                {
-                    captureFailure ??= ex.Message;
-                    _log.Error(
-                        $"Auto-save ({reason}): could not inspect actor '{actor.Name}': {ex.Message}");
-                }
-            }
+            var captured = detached.Poses.Select(pose => new CapturedPose(pose.ActorName,
+                PoseAutoSaveStore.UniqueFileName(pose.ActorName, used) + ".pose", pose.Pose)).ToList();
+            var captureFailure = detached.Failure;
 
             if (captured.Count == 0)
             {
@@ -662,7 +513,7 @@ public class AutoSaveService : IAutoSaveService
                         $"Auto-save ({reason}) could not capture an actor: {captureFailure}");
                 }
 
-                _log.Debug($"Auto-save ({reason}): no actors with authored edits, skipping");
+                _debug($"Auto-save ({reason}): no actors with authored edits, skipping");
                 return AutoSaveCaptureResult.NotCaptured(
                     "No actors had authored edits.");
             }
@@ -816,28 +667,10 @@ public class AutoSaveService : IAutoSaveService
         }
         catch (Exception ex)
         {
-            _log.Error($"Auto-save ({reason}) failed: {ex}");
+            _error($"Auto-save ({reason}) failed: {ex}");
             return AutoSaveCaptureResult.Failure(
                 $"Auto-save ({reason}) failed: {ex.Message}");
         }
-    }
-
-    /// <summary>
-    /// Records where a captured pose was taken. Absent members are how a file
-    /// says no place was recorded, so an unresolved place writes NOTHING.
-    ///
-    /// <para>The provider's declared contract is non-null; one that breaks it
-    /// must still fail in the WRITE half, where a single bad entry cannot
-    /// abort the rest of the snapshot. Stamping must not turn that into a
-    /// capture failure that silently skips the actor, so the null is tolerated
-    /// here rather than at the call site.</para>
-    /// </summary>
-    private static void Stamp(PoseFile pose, CapturePlace place)
-    {
-        if (pose is null)
-            return;
-        pose.TerritoryId = place.TerritoryId;
-        pose.PlaceName = place.PlaceName;
     }
 
     private bool EnsureWriterLocked()
@@ -858,7 +691,7 @@ public class AutoSaveService : IAutoSaveService
             {
                 _writerRunning = false;
                 completion.TrySetResult(false);
-                _log.Error("Auto-save worker dispatch was not accepted.");
+                _error("Auto-save worker dispatch was not accepted.");
                 return false;
             }
 
@@ -872,7 +705,7 @@ public class AutoSaveService : IAutoSaveService
         {
             _writerRunning = false;
             completion.TrySetException(ex);
-            _log.Error($"Auto-save worker dispatch failed: {ex.Message}");
+            _error($"Auto-save worker dispatch failed: {ex.Message}");
             return false;
         }
     }
@@ -1014,7 +847,7 @@ public class AutoSaveService : IAutoSaveService
 
         if (clean && result.Status != AutoSaveTerminalStatus.RecoveryRequired)
         {
-            if (CleanAll())
+            if (_store.CleanAll())
                 result = AutoSaveTerminalResult.Cleaned();
             else
                 result = AutoSaveTerminalResult.RecoveryRequired(
@@ -1148,74 +981,13 @@ public class AutoSaveService : IAutoSaveService
         IReadOnlyList<CapturedPose> captured,
         long healthGeneration)
     {
-        var success = true;
-        string? failure = null;
-        string? failurePhase = null;
-        var affectedPaths = new List<string>();
-        var recoveryEvidence = new List<string>();
-        var saved = 0;
-        try
-        {
-            var local = nowUtc.ToLocalTime();
-            var dayFolder = Path.Combine(
-                RootDirectory,
-                local.ToString(DayFolderFormat, CultureInfo.InvariantCulture));
-            var prefix = local.ToString(TimePrefixFormat, CultureInfo.InvariantCulture);
-            var planned = new List<(CapturedPose Entry, string Path)>(captured.Count);
-            foreach (var entry in captured)
-            {
-                var path = SnapshotFilePath(dayFolder, prefix, entry.FileName);
-                affectedPaths.Add(path);
-                planned.Add((entry, path));
-            }
-
-            Directory.CreateDirectory(dayFolder);
-            foreach (var (entry, path) in planned)
-            {
-                try
-                {
-                    var write = AtomicPoseFileStore.Default.Write(entry.Pose, path);
-                    if (write.Succeeded)
-                    {
-                        saved++;
-                    }
-                    else
-                    {
-                        success = false;
-                        failurePhase ??= "ActorWrite";
-                        failure ??= write.Failure?.Detail ?? $"export failed for actor '{entry.ActorName}'";
-                        recoveryEvidence.AddRange(write.RecoveryEvidencePaths);
-                        // The typed atomic store carries the filesystem
-                        // evidence; this adds the auto-save actor context.
-                        _log.Error(
-                            $"Auto-save ({reason}): export failed for actor '{entry.ActorName}' -> {path}: {write.Failure?.Detail}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    success = false;
-                    failurePhase ??= "ActorWrite";
-                    failure ??= ex.Message;
-                    _log.Error(
-                        $"Auto-save ({reason}): actor '{entry.ActorName}' -> {path} threw: {ex.Message}");
-                }
-            }
-
-            _log.Info($"Auto-saved {saved}/{captured.Count} actor(s) to {dayFolder} ({reason})");
-            if (!Prune(keep))
-            {
-                success = false;
-                failurePhase ??= "Retention";
-                failure ??= "retention pruning failed";
-            }
-        }
-        catch (Exception ex)
-        {
-            success = false;
-            failurePhase ??= "Worker";
-            failure ??= ex.Message;
-            _log.Error($"Auto-save ({reason}) failed: {ex}");
-        }
+        var written = _store.Write(reason, nowUtc, keep, captured);
+        var success = written.Success;
+        var failure = written.Detail;
+        var failurePhase = written.FailurePhase;
+        var saved = written.Written;
+        var affectedPaths = written.Paths;
+        var recoveryEvidence = written.RecoveryEvidence;
         var health = PublishHealth(AutoSaveHealthRecord.Create(
             operationId,
             reason,
@@ -1239,221 +1011,6 @@ public class AutoSaveService : IAutoSaveService
         return new WorkerResult(success, failure);
     }
 
-    /// <summary>
-    /// Any bone of any present slot carrying an unnamed
-    /// (user-authored, not service-owned) layer.
-    /// </summary>
-    private bool HasAuthoredEdits(IActor actor)
-    {
-        var bonePosing = _bonePosing();
-        return _skeletons().GetSkeletons(actor).Any(skeleton =>
-            bonePosing.GetPoseInfo(skeleton).AllPoses
-                .Any(pose => pose.Stacks.Any(stack => stack.Layer == null)));
-    }
-
-    /// <summary>
-    /// <c>"HH-mm-ss Actor.pose"</c> inside the day folder. A collision (an
-    /// exit save landing in the same second as an interval save, or the DST
-    /// fold replaying an hour) gets a " (2)" suffix before the extension, so
-    /// nothing is ever overwritten.
-    /// </summary>
-    private static string SnapshotFilePath(string dayFolder, string prefix, string fileName)
-    {
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-        var extension = Path.GetExtension(fileName);
-        var candidate = Path.Combine(dayFolder, $"{prefix} {stem}{extension}");
-        for (var suffix = 2; File.Exists(candidate); suffix++)
-            candidate = Path.Combine(dayFolder, $"{prefix} {stem} ({suffix}){extension}");
-        return candidate;
-    }
-
-    /// <summary>
-    /// Ktisis <c>FormatService.StripInvalidChars</c> parity, plus in-snapshot
-    /// de-duplication so two actors with the same name both survive.
-    /// </summary>
-    private static string UniqueFileName(string actorName, HashSet<string> used)
-    {
-        var name = Sanitize(actorName);
-        if (used.Add(name))
-            return name;
-
-        for (var suffix = 2; ; suffix++)
-        {
-            var candidate = $"{name} ({suffix})";
-            if (used.Add(candidate))
-                return candidate;
-        }
-    }
-
-    private static string Sanitize(string actorName)
-    {
-        if (string.IsNullOrWhiteSpace(actorName))
-            return "Actor";
-
-        var invalid = Path.GetInvalidFileNameChars();
-        var chars = actorName.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-        {
-            if (Array.IndexOf(invalid, chars[i]) >= 0)
-                chars[i] = '_';
-        }
-
-        var sanitized = new string(chars).Trim();
-        return sanitized.Length == 0 ? "Actor" : sanitized;
-    }
-
-    /// <summary>
-    /// Disk-based retention: the newest <c>MaxAutoSaves</c> FILES by date are
-    /// kept, everything older is deleted — a file is what the auto-saves tab
-    /// lists and what the cap means to the user (a save of three actors is
-    /// three auto-saves). A whole folder of the old one-folder-per-save
-    /// layout counts as one, which is how pre-existing snapshots join the
-    /// same ordering and age out without a migration. Reading the disk
-    /// rather than a session queue is what makes retention hold across
-    /// restarts.
-    ///
-    /// <para>Date, not name (Brio's semantic): a save is written once and never
-    /// touched again, so its last-write time IS the save date, and a folder or
-    /// file the user renamed keeps its true age instead of being sorted by
-    /// whatever it is now called. Ties break on key, descending, so the order
-    /// is total even at one-second stamp granularity. A day folder whose last
-    /// event was pruned goes with it.</para>
-    /// </summary>
-    private bool Prune(int keep)
-    {
-        var events = new List<(DateTime AtUtc, string Key, string? LegacyDir, List<string>? Files)>();
-        var dayFolders = new List<string>();
-        try
-        {
-            foreach (var dir in Directory.EnumerateDirectories(RootDirectory))
-            {
-                var name = Path.GetFileName(dir) ?? string.Empty;
-                if (!IsDayFolder(name))
-                {
-                    // Old layout: the folder is the save.
-                    events.Add((Directory.GetLastWriteTimeUtc(dir), name, dir, null));
-                    continue;
-                }
-
-                dayFolders.Add(dir);
-                foreach (var group in Directory.EnumerateFiles(dir)
-                             .GroupBy(file => Path.GetFileName(file)))
-                {
-                    var files = group.ToList();
-                    var newest = DateTime.MinValue;
-                    foreach (var file in files)
-                    {
-                        var at = File.GetLastWriteTimeUtc(file);
-                        if (at > newest)
-                            newest = at;
-                    }
-                    events.Add((newest, $"{name}/{group.Key}", null, files));
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Auto-save: could not enumerate '{RootDirectory}' to prune: {ex.Message}");
-            return false;
-        }
-
-        var stale = events
-            .OrderByDescending(entry => entry.AtUtc)
-            .ThenByDescending(entry => entry.Key, StringComparer.Ordinal)
-            .Skip(keep)
-            .ToList();
-
-        var pruned = 0;
-        var success = true;
-        foreach (var (_, _, legacyDir, files) in stale)
-        {
-            try
-            {
-                if (legacyDir != null)
-                    Directory.Delete(legacyDir, recursive: true);
-                else
-                    foreach (var file in files!)
-                        File.Delete(file);
-                pruned++;
-            }
-            catch (Exception ex)
-            {
-                success = false;
-                _log.Error(
-                    $"Auto-save: could not prune '{legacyDir ?? files![0]}': {ex.Message}");
-            }
-        }
-
-        foreach (var dir in dayFolders)
-        {
-            try
-            {
-                if (!Directory.EnumerateFileSystemEntries(dir).Any())
-                    Directory.Delete(dir);
-            }
-            catch (Exception ex)
-            {
-                success = false;
-                _log.Error(
-                    $"Auto-save: could not remove empty day folder '{dir}': {ex.Message}");
-            }
-        }
-
-        if (pruned > 0)
-            _log.Debug($"Auto-save pruned {pruned} old save(s).");
-        return success;
-    }
-
-    private static bool IsDayFolder(string name) =>
-        DateTime.TryParseExact(
-            name,
-            DayFolderFormat,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out _);
-
-    private bool CleanAll()
-    {
-        List<string> folders;
-        try
-        {
-            folders = Directory.EnumerateDirectories(RootDirectory).ToList();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Auto-save: could not enumerate '{RootDirectory}' to clean: {ex.Message}");
-            return false;
-        }
-
-        var deleted = 0;
-        var success = true;
-        foreach (var dir in folders)
-        {
-            try
-            {
-                Directory.Delete(dir, recursive: true);
-                deleted++;
-            }
-            catch (Exception ex)
-            {
-                success = false;
-                _log.Error($"Auto-save: could not delete '{dir}': {ex.Message}");
-            }
-        }
-
-        _log.Info($"Auto-save cleaned {deleted} snapshot folder(s) on leaving GPose.");
-        try
-        {
-            return success && !Directory.EnumerateDirectories(RootDirectory).Any();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(
-                $"Auto-save: could not verify clean-on-exit root '{RootDirectory}': {ex.Message}");
-            return false;
-        }
-    }
-
     /// <summary>Close admission and join the owned worker before disposal.</summary>
     public void Dispose()
     {
@@ -1467,8 +1024,6 @@ public class AutoSaveService : IAutoSaveService
             _pendingPeriodic = null;
         }
 
-        if (_framework != null)
-            _framework.Update -= OnFrameworkUpdate;
         CompleteForExit();
         GC.SuppressFinalize(this);
     }
