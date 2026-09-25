@@ -34,6 +34,7 @@
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />
     <!-- Curated festival names, phases and area exclusions (Brio's data file). -->
     <EmbeddedResource Include="Data\Festivals.json" />
+    <EmbeddedResource Include="Data\Expressions\*.json" LogicalName="Poser.Data.Expressions.%(Filename)%(Extension)" />
     <!-- Curated spawnable prop models: name + weapon model triple (Ktisis's
          community props library, Data/Library/props.json). -->
     <EmbeddedResource Include="Data\props.json" />
@@ -46,7 +47,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
     <ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
-    <ProjectReference Include="..\Poser.Core\Poser.Core.csproj" />
-    <InternalsVisibleTo Include="Poser.Core.Tests" />
+    <ProjectReference Include="..\Poser.Documents\Poser.Documents.csproj" />
   </ItemGroup>
 </Project>

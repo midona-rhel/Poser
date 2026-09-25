@@ -72,6 +72,12 @@ public class LightFile
     [Serializable]
     public class TransformData
     {
+        public static implicit operator Transform(TransformData data) =>
+            new(data.Position, data.Rotation, data.Scale);
+
+        public static implicit operator TransformData(Transform transform) => new()
+        { Position = transform.Position, Rotation = transform.Rotation, Scale = transform.Scale };
+
         public Vector3 Position { get; set; }
         public Quaternion Rotation { get; set; }
         public Vector3 Scale { get; set; }

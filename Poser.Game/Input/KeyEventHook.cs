@@ -65,7 +65,7 @@ public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
                     : (lParam & ((nint)1 << 30)) != 0 ? KeyEventKind.Held : KeyEventKind.Down;
                 bool handled = false;
                 foreach (KeyEventHandler handler in handlers.GetInvocationList())
-                    handled |= handler(key, kind);
+                    handled |= handler((Poser.Config.KeyCode)key, kind);
                 if (handled)
                     return;
             }

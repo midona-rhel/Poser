@@ -17,7 +17,6 @@ namespace Poser.Services;
 /// <summary>Spawned world objects and the render-phase animation pump. Borrowing is controlled by IWorldService.</summary>
 public interface IWorldObjectService
 {
-    bool AnchorPumpedFromRender { get; set; }
     void HoldPausedAnimations();
     bool IsAvailable { get; }
     IWorldObject? Spawn( string path, Transform placement, bool visible, out string? detail);

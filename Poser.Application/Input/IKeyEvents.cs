@@ -1,4 +1,4 @@
-using Dalamud.Game.ClientState.Keys;
+using Poser.Config;
 
 namespace Poser.Services;
 
@@ -10,7 +10,7 @@ public enum KeyEventKind
 }
 
 /// <summary>Answers true to take the key: the game never sees it.</summary>
-public delegate bool KeyEventHandler(VirtualKey key, KeyEventKind kind);
+public delegate bool KeyEventHandler(KeyCode key, KeyEventKind kind);
 
 /// <summary>
 /// The game's key messages before the game acts on them. A handler that

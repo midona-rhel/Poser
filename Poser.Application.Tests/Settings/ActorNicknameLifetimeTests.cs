@@ -1,6 +1,4 @@
 using System;
-using Dalamud.Plugin;
-using NSubstitute;
 using Poser.Config;
 using Poser.Domain.Identity;
 

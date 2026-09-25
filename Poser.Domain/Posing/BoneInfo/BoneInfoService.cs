@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Dalamud.Plugin.Services;
+using System;
 
 namespace Poser.Core.BoneInfo;
 
@@ -9,7 +9,7 @@ namespace Poser.Core.BoneInfo;
 /// </summary>
 public static class BoneInfoService
 {
-    private static IPluginLog? _log;
+    private static Action<string>? _log;
     private static readonly HashSet<string> _loggedUntranslated = new();
 
     /// <summary>Names seen for the first time and not yet reported. A modded
@@ -41,7 +41,7 @@ public static class BoneInfoService
     /// <summary>
     /// Initializes the bone info service with a logger.
     /// </summary>
-    public static void Initialize(IPluginLog log)
+    public static void Initialize(Action<string> log)
     {
         _log = log;
         lock (_loggedUntranslated)
@@ -81,7 +81,7 @@ public static class BoneInfoService
             _nsfwBones.Add(name);
         }
 
-        log.Info($"[BoneInfoService] Loaded {_boneData.Count} bone definitions");
+        log.Invoke($"[BoneInfoService] Loaded {_boneData.Count} bone definitions");
     }
 
     /// <summary>True for IVCS/extended-group bones — the set the
@@ -173,7 +173,7 @@ public static class BoneInfoService
             : names[..MaxListedUntranslated];
         var overflow = names.Length - listed.Length;
         var suffix = overflow > 0 ? $" (+{overflow} more)" : string.Empty;
-        _log.Warning(
+        _log.Invoke(
             $"[BoneInfo] {names.Length} untranslated bone(s): {string.Join(", ", listed)}{suffix}");
     }
 

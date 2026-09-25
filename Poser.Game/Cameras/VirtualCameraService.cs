@@ -63,8 +63,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         "40 55 53 57 48 8D 6C 24 A0 48 81 EC ?? ?? ?? ?? 48 8B 1D";
     private const string CameraCollisionSignature =
         "E8 ?? ?? ?? ?? 4C 8D 44 24 40 89 83 14 ?? ?? ??";
-    private const string CameraSceneUpdateSignature =
-        "48 ?? ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? F6 81 F0 ?? ?? ?? ?? 48 8B ??";
     private const string CameraMatrixLoadSignature =
         "E8 ?? ?? ?? ?? 48 8B 93 90 02 ?? ?? 48 8D 4C 24 40";
     private const string HandleInputSignature =
@@ -83,7 +81,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private delegate nint CameraUpdateDelegate(NativeCamera* camera);
     private delegate nint CameraCollisionDelegate(
         NativeCamera* camera, Vector3* a2, Vector3* a3, float a4, nint a5, float a6);
-    private delegate nint CameraSceneUpdateDelegate(SceneCamera* camera);
     private delegate void CameraMatrixLoadDelegate(RenderCamera* camera, nint matrix);
     private delegate void HandleInputDelegate(
         nint a1, nint a2, nint a3, MouseFrame* mouse, KeyboardFrame* keyboard);
@@ -92,7 +89,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     private readonly Hook<CameraUpdateDelegate>? _cameraUpdateHook;
     private readonly Hook<CameraCollisionDelegate>? _cameraCollisionHook;
-    private readonly Hook<CameraSceneUpdateDelegate>? _cameraSceneUpdateHook;
+    private readonly Runtime.SceneFramePhaseService? _framePhases;
     private readonly Hook<HandleInputDelegate>? _handleInputHook;
     private readonly Hook<CalculateLookPositionDelegate>? _lookPositionHook;
     private readonly CameraMatrixLoadDelegate? _cameraMatrixLoad;
@@ -165,7 +162,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IGPoseService gPose,
         IEventBus events,
         Dalamud.Plugin.Services.IObjectTable objectTable,
-        IKeyState keyState)
+        IKeyState keyState,
+        Runtime.SceneFramePhaseService framePhases)
     {
         _configuration = configuration;
         _log = log;
@@ -174,6 +172,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _events = events;
         _objectTable = objectTable;
         _keyState = keyState;
+        _framePhases = framePhases;
 
         using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
             error => log.Error(error, "Camera activation cleanup failed"));
@@ -207,8 +206,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
         _cameraCollisionHook = TryHook<CameraCollisionDelegate>(
             "camera collision", CameraCollisionSignature, CameraCollisionDetour);
-        _cameraSceneUpdateHook = TryHook<CameraSceneUpdateDelegate>(
-            "scene update", CameraSceneUpdateSignature, CameraSceneUpdateDetour);
         _handleInputHook = TryHook<HandleInputDelegate>(
             "input handler", HandleInputSignature, HandleInputDetour);
         _lookPositionHook = TryHook<CalculateLookPositionDelegate>(
@@ -231,6 +228,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         startup.OnFailure(() => _framework.Update -= OnFrameworkUpdate);
         _framework.Update += OnFrameworkUpdate;
+        startup.OnFailure(() => framePhases.CameraUpdate -= UpdateSceneCamera);
+        framePhases.CameraUpdate += UpdateSceneCamera;
         startup.Complete();
     }
 
@@ -291,7 +290,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             return null;
         // A free camera without the matrix-load call would freeze the view.
         if (kind == CameraKind.Free &&
-            (_cameraMatrixLoad == null || _cameraSceneUpdateHook == null))
+            (_cameraMatrixLoad == null || _framePhases?.RenderHookAvailable != true))
             return null;
 
         var camera = new VirtualCamera(this, kind, isDefault: false)
@@ -732,52 +731,20 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return _cameraCollisionHook!.Original(camera, a2, a3, a4, a5, a6);
     }
 
-    /// <summary>Whether the scene-update detour is live — the frame slot
-    /// between the game's world update and the render, which other
-    /// systems (the world-object animation anchor) borrow through
-    /// <see cref="AfterSceneUpdate"/>.</summary>
-    public bool SceneUpdateHookLive => _cameraSceneUpdateHook != null;
-
-    /// <summary>Runs every frame inside the scene-update detour, after
-    /// the game's own pass: writes made here land before the render
-    /// consumes them — the one slot where a per-frame transform write
-    /// neither flickers nor lags a frame.</summary>
-    public Action? AfterSceneUpdate;
-
-    /// <summary>Brio's scene-update detour: while a free camera is live the
-    /// frame's view matrix is replaced with the fly-cam's and loaded into the
-    /// render camera.</summary>
-    private nint CameraSceneUpdateDetour(SceneCamera* camera)
+    // Runs after the native scene update and scenery anchors, before rendering.
+    private void UpdateSceneCamera(SceneCamera* camera)
     {
-        var result = _cameraSceneUpdateHook!.Original(camera);
-        try
-        {
-            AfterSceneUpdate?.Invoke();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(
-                $"VirtualCameraService: an AfterSceneUpdate borrower failed: {ex}");
-        }
-        try
-        {
-            if (!_gPose.IsGPosing ||
-                _live is not { Kind: CameraKind.Free } live ||
-                _cameraMatrixLoad == null)
-                return result;
+        if (!_gPose.IsGPosing ||
+            _live is not { Kind: CameraKind.Free } live ||
+            _cameraMatrixLoad == null)
+            return;
 
-            camera->ViewMatrix = UpdateFreeCamera(live);
-            var native = Native;
-            if (native != null)
-                _cameraMatrixLoad(
-                    native->Camera.CameraBase.SceneCamera.RenderCamera,
-                    (nint)(&camera->ViewMatrix));
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"VirtualCameraService: free camera update failed: {ex}");
-        }
-        return result;
+        camera->ViewMatrix = UpdateFreeCamera(live);
+        var native = Native;
+        if (native != null)
+            _cameraMatrixLoad(
+                native->Camera.CameraBase.SceneCamera.RenderCamera,
+                (nint)(&camera->ViewMatrix));
     }
 
     /// <summary>Brio's input detour, whole: a live free camera eats the
@@ -1232,7 +1199,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         }
         _cameraUpdateHook?.Dispose();
         _cameraCollisionHook?.Dispose();
-        _cameraSceneUpdateHook?.Dispose();
+        if (_framePhases != null)
+            _framePhases.CameraUpdate -= UpdateSceneCamera;
         _handleInputHook?.Dispose();
         _lookPositionHook?.Dispose();
         GC.SuppressFinalize(this);

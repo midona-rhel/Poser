@@ -129,6 +129,12 @@ public class PoseFile
     [Serializable]
     public class BoneData
     {
+        public static implicit operator Transform(BoneData bone) =>
+            new(bone.Position, bone.Rotation, bone.Scale);
+
+        public static implicit operator BoneData(Transform transform) => new()
+        { Position = transform.Position, Rotation = transform.Rotation, Scale = transform.Scale };
+
         public Vector3 Position { get; set; }
         public Quaternion Rotation { get; set; }
         public Vector3 Scale { get; set; }

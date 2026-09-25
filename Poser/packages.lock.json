@@ -77,14 +77,6 @@
           "Poser.Domain": "[1.0.0, )"
         }
       },
-      "poser.core": {
-        "type": "Project",
-        "dependencies": {
-          "Poser.Application": "[1.0.0, )",
-          "Poser.Documents": "[1.0.0, )",
-          "Poser.Domain": "[1.0.0, )"
-        }
-      },
       "poser.documents": {
         "type": "Project",
         "dependencies": {
@@ -104,7 +96,7 @@
           "KamiToolKit": "[2.2.27, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "Poser.Application": "[1.0.0, )",
-          "Poser.Core": "[1.0.0, )",
+          "Poser.Documents": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )"
         }
       },

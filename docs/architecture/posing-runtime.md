@@ -4,8 +4,7 @@
 unsafe offsets, signatures, hooks, native handles, and lookup-only indices stay
 behind its ports. Those ports pass ids and values to the
 application. Host-side UI code still has some native address paths, so this
-rule does not describe every UI integration path. The current project graph
-also keeps legacy native entities and services in `Poser.Core`; see
+rule does not describe every UI integration path yet; see
 [product-and-boundaries.md](product-and-boundaries.md).
 
 Before game access, runtime code resolves the current actor, skeleton, slot,
@@ -88,6 +87,13 @@ world-actor clone that Poser owns. Poser never adopts, mutates, or deletes the
 source actor.
 
 ## Native ordering
+
+The Game scene-frame owner runs native scene update, scenery animation anchors,
+then camera view replacement, in that order. If the render hook is unavailable,
+that same owner pumps anchors from the framework callback; no camera or UI
+component owns a second fallback. Scenery anchors explicitly watch, anchor,
+pause or await reanchoring; resuming adopts the frozen placement before the
+next rendered frame.
 
 Awaited Penumbra redraws register `GameObjectRedrawn` before requesting redraw,
 matching Brio's notification-based completion. The Game-owned barrier correlates

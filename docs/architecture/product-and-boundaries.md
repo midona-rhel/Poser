@@ -26,18 +26,16 @@ At this revision:
 - `Poser.Documents` references only `Poser.Domain`; it owns portable file
   models, codecs, validation, storage and document-placement math.
 - `Poser.Application` references `Poser.Domain` and `Poser.Documents`.
-- `Poser.Core` temporarily references `Poser.Domain`, `Poser.Documents`,
-  and `Poser.Application` while its remaining native consumers migrate.
 - `Poser.Game` references `Poser.Domain`, `Poser.Application`, and
-  `Poser.Core`.
+  `Poser.Documents`.
 - The host `Poser` references `Poser.Domain`, `Poser.Application`,
-  `Poser.Game`, `Poser.Core`, and `Poser.UI`.
+  `Poser.Game`, and `Poser.UI`.
 - `Poser.UI` has no project references. Host-side UI composition remains in
   `Poser/UI`.
 
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
-the game and runs its hooks on the framework thread. `Poser.Core` still holds
-legacy entities, services, and some game code.
+the game and runs its hooks on the framework thread. Native entities, skeletons
+and low-level service contracts live in Game; the Core project is retired.
 The host wires the assemblies; UI shows application state.
 
 Configuration data and JSON recovery/storage live in Documents; settings
@@ -65,11 +63,10 @@ or starts native catalog work. Character-file progress and cancellation use
 the same application boundary as import/export. Host composition starts catalog
 warm-up; native integration sessions remain the single owners of provider state.
 
-Project directories and assembly names agree (`Poser.Core` and
-`Poser.Core.Tests` included). The Core rename does not remove its legacy
-native dependencies; those remain explicit migration work, not a clean
-application boundary. Its embedded resources retain the `Poser` root namespace
-so file catalogs and pose resources remain compatible.
+Embedded resources retain their original `Poser.Data.*` logical names after
+moving to Documents (rest poses and graphical-bone data) or Game (expressions).
+Portable transforms live in Domain; file conversion operators live on the
+Documents DTOs. Existing serialized fields and keybinding enum values are unchanged.
 
 See [posing-runtime.md](posing-runtime.md) for native ordering and
 [application-state.md](application-state.md) for identity, gestures, and
@@ -83,7 +80,7 @@ before its runtime. The workflow does not construct or dispose its dependencies.
 Scene workflow policy lives in Application, without a Core or Game reference.
 Game implements the runtime interface and outward logging/library notifications.
 Portable documents depend on domain values, never native entities or services;
-legacy transform conversions stay on the Core transform rather than the DTOs.
+transform conversions do not introduce a reverse dependency from Domain.
 Serialized fields, enum values and format rules are unchanged.
 Runtime calls exchange session-scoped `SceneEntityHandle` receipts, not native
 instances. Game retains the exact instance while workflow/history holds its

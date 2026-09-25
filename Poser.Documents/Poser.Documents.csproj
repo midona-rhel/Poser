@@ -14,14 +14,15 @@
     <PackageReference Include="Stagehand.Definitions" Version="0.4.10" />
     <PackageReference Include="K4os.Compression.LZ4.Legacy" Version="1.3.8" />
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
-    <InternalsVisibleTo Include="Poser.Core" />
     <InternalsVisibleTo Include="Poser.Application" />
     <InternalsVisibleTo Include="Poser.Game" />
-    <InternalsVisibleTo Include="Poser.Core.Tests" />
     <InternalsVisibleTo Include="Poser.Game.Tests" />
     <InternalsVisibleTo Include="Poser.Application.Tests" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Data\BoneCategories\*.json" LogicalName="Poser.Data.BoneCategories.BoneCategories.json" />
+    <EmbeddedResource Include="Data\RestPoses\*.pose" LogicalName="Poser.Data.RestPoses.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Data\GraphicalBones\GraphicalBonePosePositions.json" LogicalName="Poser.Data.GraphicalBones.GraphicalBonePosePositions.json" />
+    <EmbeddedResource Include="Data\GraphicalBones\Images\*.png" LogicalName="Poser.Data.GraphicalBones.Images.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

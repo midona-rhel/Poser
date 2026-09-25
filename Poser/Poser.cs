@@ -54,7 +54,7 @@ public class Poser : IDalamudPlugin
         _commandManager = commandManager;
         using var startup = new StartupCleanup(error =>
             log.Error(error, "Failed-startup cleanup failed"));
-        BoneInfoService.Initialize(log);
+        BoneInfoService.Initialize(message => log.Warning(message));
         _serviceProvider = ConfigureServices(
             pluginInterface,
             log,
@@ -96,19 +96,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<ILightingService>();
         _ = _serviceProvider.GetRequiredService<Game.Scene.SceneGroupsLifetime>();
         log.Debug("Load link: cameras");
-        var virtualCameras =
-            _serviceProvider.GetRequiredService<IVirtualCameraService>();
-        // The animation anchor pumps from the render seam when the camera
-        // scene-update hook stands; the overlay draw remains its fallback.
-        if (virtualCameras is Game.Cameras.VirtualCameraService cameraHooks
-            && cameraHooks.SceneUpdateHookLive)
-        {
-            var anchoredObjects = _serviceProvider
-                .GetRequiredService<Game.WorldObjects.WorldObjectService>();
-            cameraHooks.AfterSceneUpdate =
-                anchoredObjects.HoldPausedAnimations;
-            anchoredObjects.AnchorPumpedFromRender = true;
-        }
+        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
         log.Debug("Load link: environment");
         _ = _serviceProvider.GetRequiredService<IEnvironmentRuntimePort>();
         log.Debug("Load link: bindings");

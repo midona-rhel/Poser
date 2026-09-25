@@ -394,8 +394,9 @@ public sealed class UIManager : IUIManager
     /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
-    private bool OnKeyEvent(VirtualKey key, global::Poser.Services.KeyEventKind kind)
+    private bool OnKeyEvent(Config.KeyCode code, global::Poser.Services.KeyEventKind kind)
     {
+        var key = (VirtualKey)code;
         if (!FirstRunNotice.IsAccepted(_configService.Config)
             || !_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)

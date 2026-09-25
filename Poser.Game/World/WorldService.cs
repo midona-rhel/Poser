@@ -237,7 +237,6 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
 
     private void Tick(IFramework framework)
     {
-        if (!_objects.AnchorPumpedFromRender) _objects.HoldPausedAnimations();
         ReconcileSession();
     }
     private void ReconcileSession()

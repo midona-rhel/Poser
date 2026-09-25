@@ -5,8 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Dalamud.Plugin;
-using NSubstitute;
 using Poser.Config;
 using Poser.Files;
 using Poser.Library;

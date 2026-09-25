@@ -470,6 +470,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ICameraProjection, CameraService>();
         services.AddSingleton<Game.Lighting.LightingService>();
         services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
+        services.AddSingleton<Game.Runtime.SceneFramePhaseService>();
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
         services.AddSingleton<global::Poser.Services.IKeyEvents>(
