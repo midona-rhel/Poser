@@ -39,6 +39,12 @@ the game and runs its hooks on the framework thread. `Poser.Core` still holds
 legacy entities, services, format adapters, configuration, and some game code.
 The host wires the assemblies; UI shows application state.
 
+Actor appearance commands own their history inverses in Application. UI
+supplies an actor and the selected value; it never constructs restore callbacks
+or starts native catalog work. Character-file progress and cancellation use
+the same application boundary as import/export. Host composition starts catalog
+warm-up; native integration sessions remain the single owners of provider state.
+
 Project directories and assembly names agree (`Poser.Core` and
 `Poser.Core.Tests` included). The Core rename does not remove its legacy
 native dependencies; those remain explicit migration work, not a clean

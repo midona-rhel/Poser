@@ -359,6 +359,7 @@ internal static class ServiceRegistration
             Application.Appearance.IModelIdRuntimePort,
             Game.Appearance.ModelIdRuntimePort>();
         services.AddSingleton<Application.Appearance.ActorModelIdSession>();
+        services.AddSingleton<Application.Appearance.IActorAppearanceControl, Application.Appearance.ActorAppearanceControl>();
         return services;
     }
 

@@ -4,6 +4,7 @@ using Poser.Application.Transforms;
 using Poser.Documents.Appearance;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
+using Poser.Domain.Operations;
 
 namespace Poser.Application.Integration;
 
@@ -18,6 +19,11 @@ public sealed class CharacterFileSession(
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private PendingSpawn? _pending;
     private sealed record PendingSpawn(SceneEntityHandle Body, string Path, string? Appearance, long Started);
+
+    public McdfProgress? Progress => integration.Mcdf;
+    public OperationReceipt? Receipt => integration.McdfReceipt;
+    public bool Busy => integration.McdfBusy;
+    public void Cancel() => integration.CancelMcdf();
 
     public IntegrationResult Import(ActorId actor, string path)
     {

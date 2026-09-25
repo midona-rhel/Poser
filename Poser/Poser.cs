@@ -120,6 +120,21 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<IGazeService>();
         log.Debug("Load link: integration");
         _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
+        // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
+        var wardrobeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.WardrobeCatalog>();
+        var customizeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.CustomizeCatalog>();
+        _ = System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                wardrobeCatalog.Warm();
+                customizeCatalog.Warm();
+            }
+            catch (Exception ex)
+            {
+                log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
+            }
+        });
         log.Debug("Load link: world rendering");
         _ = _serviceProvider.GetRequiredService<IWorldRenderingService>();
         log.Debug("Load link: scene workflow");
