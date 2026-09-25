@@ -512,7 +512,7 @@ public sealed partial class McdfTransaction
                     if (!assignment.Success || assignment.Value is not { } collectionState)
                         return assignment.Detail ?? "The Penumbra assignment could not be read.";
                     if (_owner.ForeignTemporaryCollectionDetail(
-                            _owner.OverridesFor(actor), collectionState) is { } foreign)
+                            actor, _owner.OverridesFor(actor), collectionState) is { } foreign)
                         return foreign;
                     var created = _port.CreateTemporaryCollection($"Poser MCDF {fileName}");
                     if (!created.Success)
@@ -686,7 +686,7 @@ public sealed partial class McdfTransaction
             var assignment = _port.GetCollectionAssignment(actor);
             if (!assignment.Success || assignment.Value is not { } collectionState)
                 return (null, assignment.Detail ?? "The Penumbra assignment could not be read.");
-            if (_owner.ForeignTemporaryCollectionDetail(current, collectionState) is { } foreign)
+            if (_owner.ForeignTemporaryCollectionDetail(actor, current, collectionState) is { } foreign)
                 return (null, foreign);
         }
 

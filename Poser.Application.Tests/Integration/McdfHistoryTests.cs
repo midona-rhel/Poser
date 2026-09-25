@@ -76,6 +76,23 @@ public sealed class McdfHistoryTests
         Assert.True(retried.Success, retried.Detail);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Import_replaces_a_proven_duplicate_collection_but_not_a_foreign_temporary(bool owned)
+    {
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var runtime = (Runtime)(object)port;
+        runtime.Resources = true;
+        runtime.OwnedDuplicate = owned;
+        using var integration = new ActorIntegrationSession(port, new Files { Resources = true }, new Sessions());
+        Assert.True(integration.BeginImport(ActorId.New(), "body.mcdf").Success);
+        await integration.PendingCompletion;
+        Assert.Equal(owned, integration.Mcdf!.Outcome!.Success);
+        Assert.Equal(owned ? 1 : 0, runtime.Assignments);
+        if (!owned) Assert.Contains("another plugin", integration.Mcdf.Outcome.Detail);
+    }
+
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
@@ -83,6 +100,9 @@ public sealed class McdfHistoryTests
 
     public class Runtime : DispatchProxy
     {
+        public bool Resources, OwnedDuplicate;
+        public int Assignments;
+        private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == nameof(IIntegrationRuntimePort.OnFrameworkThread))
@@ -91,9 +111,26 @@ public sealed class McdfHistoryTests
                 return typeof(Task).GetMethod(nameof(Task.FromResult))!
                     .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
             }
+            if (method.Name == nameof(IIntegrationRuntimePort.AssignTemporaryCollection))
+            {
+                Assignments++;
+                return IntegrationPortResult.Ok();
+            }
             return method.Name switch
             {
-                "get_Penumbra" or "get_Glamourer" or "get_CustomizePlus" => new IntegrationAvailability(false, "Unavailable"),
+                "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
+                "get_Glamourer" or "get_CustomizePlus" => new IntegrationAvailability(false, "Unavailable"),
+                nameof(IIntegrationRuntimePort.GetCollectionAssignment) =>
+                    IntegrationValue<CollectionAssignment>.Ok(new(_collection, "Temporary", false)),
+                nameof(IIntegrationRuntimePort.GetCollections) =>
+                    IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([]),
+                nameof(IIntegrationRuntimePort.CaptureInheritedCollection) =>
+                    IntegrationValue<SpawnCollectionSnapshot?>.Ok(OwnedDuplicate
+                        ? new(new Dictionary<string, string> { ["model"] = "mod/model" }, "") : null),
+                nameof(IIntegrationRuntimePort.CreateTemporaryCollection) => IntegrationValue<Guid>.Ok(Guid.NewGuid()),
+                nameof(IIntegrationRuntimePort.AddTemporaryMods) or nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) =>
+                    IntegrationPortResult.Ok(),
+                nameof(IIntegrationRuntimePort.RedrawAndWait) => Task.FromResult(IntegrationPortResult.Ok()),
                 nameof(IIntegrationRuntimePort.IsResolvable) => true,
                 nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Test actor"),
                 _ => throw new NotSupportedException(method.Name),
@@ -104,7 +141,7 @@ public sealed class McdfHistoryTests
     private sealed class Files : IMcdfFileBoundary
     {
         public int Reads, Copies;
-        public bool OriginalAvailable = true, FailCopy;
+        public bool OriginalAvailable = true, FailCopy, Resources;
         private int _directories;
         public HashSet<string> Deleted { get; } = [];
         public string GetFileName(string path) => path;
@@ -115,7 +152,7 @@ public sealed class McdfHistoryTests
         {
             Reads++;
             return Task.FromResult(OriginalAvailable
-                ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", "", "", new Dictionary<string,string>(),
+                ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", "", "", Resources ? new Dictionary<string,string> { ["model"] = "mod/model" } : new Dictionary<string,string>(),
                     new Dictionary<string,string>(), directory.Path, 0, 0))
                 : IntegrationValue<McdfPackage>.Fail("Original file removed"));
         }

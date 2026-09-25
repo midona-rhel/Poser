@@ -879,8 +879,15 @@ public sealed class ActorIntegrationSession : IDisposable
         Mutate(actor, updated);
 
     internal string? ForeignTemporaryCollectionDetail(
-        IntegrationOverrides current, CollectionAssignment assignment) =>
-        ForeignTemporaryCollection(current, assignment);
+        ActorId actor, IntegrationOverrides current, CollectionAssignment assignment)
+    {
+        var refusal = ForeignTemporaryCollection(current, assignment);
+        if (refusal == null) return null;
+        // Spawn collections have a different native owner from MCDF, but are
+        // still ours. Require that owner's exact live assignment proof.
+        var inherited = _port.CaptureInheritedCollection(actor);
+        return inherited.Success && inherited.Value != null ? null : inherited.Detail ?? refusal;
+    }
 
     internal static bool ForeignTemporaryBody(
         IntegrationOverrides current, BodyProfileProbe probe) =>

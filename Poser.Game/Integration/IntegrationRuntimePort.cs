@@ -386,6 +386,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // refuses foreign temporaries there; nothing can interleave.
             int assignEc = _assignTemporaryCollection.InvokeFunc(
                 collection, index, /*forceAssignment*/ true);
+            if (assignEc == PenumbraEcSuccess
+                && _duplicateCollections.ContainsKey(_bindings.Value.Resolve(actor).Value!.Address))
+                _displacedDuplicateCollections[collection] = actor;
             return assignEc == PenumbraEcSuccess
                 ? IntegrationPortResult.Ok()
                 : IntegrationPortResult.Fail(
@@ -454,11 +457,31 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // An already-absent collection (CollectionMissing) is an
             // idempotent cleanup success, like Customize+ ProfileNotFound
             // and Glamourer NothingDone.
-            return ec is PenumbraEcSuccess or PenumbraEcNothingChanged
-                    or PenumbraEcCollectionMissing
-                ? IntegrationPortResult.Ok()
-                : IntegrationPortResult.Fail(
+            if (ec is not (PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing))
+                return IntegrationPortResult.Fail(
                     $"Penumbra failed deleting the temporary collection (code {ec}).");
+            if (!_displacedDuplicateCollections.TryGetValue(collection, out var actor))
+                return IntegrationPortResult.Ok();
+            int index = ResolveIndex(actor, out _);
+            if (index >= 0
+                && _duplicateCollections.TryGetValue(_bindings.Value.Resolve(actor).Value!.Address, out var inherited))
+            {
+                // Removing an MCDF drops its assignment, not the duplicate's
+                // still-owned collection. Reattach that collection without force:
+                // a later external assignment must never be displaced by cleanup.
+                var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+                if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify the actor during collection cleanup.");
+                if (!individual && effective != inherited
+                    && (effective == Guid.Empty || _getCollections.InvokeFunc().ContainsKey(effective)))
+                {
+                    int restored = _assignTemporaryCollection.InvokeFunc(inherited, index, false);
+                    if (restored != PenumbraEcSuccess)
+                        return IntegrationPortResult.Fail(
+                            $"Penumbra failed restoring the duplicate's collection (code {restored}).");
+                }
+            }
+            _displacedDuplicateCollections.Remove(collection);
+            return IntegrationPortResult.Ok();
         });
 
     public IntegrationValue<string> GetActorMetaManipulations(ActorId actor) =>
@@ -514,6 +537,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     // temporary assignment cannot be undone through the API, and one left
     // on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
     private readonly Dictionary<nint, Guid> _duplicateCollections = new();
+    private readonly Dictionary<Guid, ActorId> _displacedDuplicateCollections = new();
 
     public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor) =>
         Guarded(Penumbra, "Capture inherited collection", () =>
