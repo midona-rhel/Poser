@@ -196,6 +196,28 @@ public class Skeleton : EntityBase, ISkeleton
         return new NativeBoneMap(entry.Bones);
     }
 
+    internal unsafe bool HasCurrentNativeLayout()
+    {
+        var skeleton = GetGameSkeleton();
+        if (skeleton == null || skeleton->PartialSkeletonCount != _nativePartials.Length)
+            return false;
+        for (int partial = 0; partial < _nativePartials.Length; partial++)
+        {
+            hkaPose* current = null;
+            // BuildFromGameSkeleton retains the last available pose's map.
+            for (int index = 0; index < MaxPoses; index++)
+                if (skeleton->PartialSkeletons[partial].GetHavokPose(index) is var pose && pose != null)
+                    current = pose;
+            if (current == null)
+            {
+                if (_nativePartials[partial].NativeSkeleton != 0) return false;
+            }
+            else if (!GetNativeBoneMap(partial, current).IsValid)
+                return false;
+        }
+        return true;
+    }
+
     public void Refresh()
     {
         // Clear existing data

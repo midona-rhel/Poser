@@ -18,6 +18,8 @@ game identity on the framework thread. Logout refuses before probing native
 bodies, even before the next discovery/exit notification. Auxiliary preview
 bodies obey the same rule. Bone resolution additionally verifies the current
 slot skeleton and bone instance; a cached registry entry alone is not liveness.
+Skeleton-cache reuse also checks each native partial's identity and bone count;
+resource completion can replace those while the outer model address stays put.
 
 ## Actor identity
 
