@@ -7,6 +7,8 @@ using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
+using Poser.Application.Viewport;
 
 namespace Poser.UI;
 
@@ -14,6 +16,85 @@ public partial class SkeletonOverlayWindow
 {
     private readonly ConditionalWeakTable<IkCollider, MeshOverlay> _meshOverlays = new();
     private readonly ConditionalWeakTable<IkColliderMesh, MeshOutline> _meshOutlines = new();
+    private readonly Dictionary<OverlayId, PrimitiveOverlay> _primitiveOverlays = new();
+    private readonly HashSet<OverlayId> _drawnColliders = new();
+    private readonly List<OverlayId> _expiredColliderOverlays = new();
+
+    private sealed class PrimitiveOverlay
+    {
+        public readonly IkColliderShape Shape;
+        public readonly Vector3 Scale;
+        public readonly ColliderGeometry Local;
+        public readonly Vector2[] Screen;
+        public readonly bool[] Visible;
+        public readonly int[] Indices;
+
+        public PrimitiveOverlay(IkCollider collider)
+        {
+            Shape = collider.Shape;
+            Scale = collider.Transform.Scale;
+            // Parenting replaces the collider value every frame. Cache by
+            // entity and dimensions, not that ephemeral world-space value.
+            Local = new(collider with { Transform = PoseTransform.Identity with { Scale = Scale } }, 16);
+            Screen = new Vector2[Local.Vertices.Length];
+            Visible = new bool[Screen.Length];
+            Indices = new int[Local.Faces.Sum(f => (f.Length - 2) * 3)];
+        }
+    }
+
+    private unsafe void DrawPrimitiveCollider(ImDrawListPtr draw, OverlayId id, IkCollider collider,
+        Vector2 viewport, ScreenProjection projection, uint fill, uint line)
+    {
+        if ((fill >> 24) == 0) return;
+        _drawnColliders.Add(id);
+        if (!_primitiveOverlays.TryGetValue(id, out var cache) || cache.Shape != collider.Shape || cache.Scale != collider.Transform.Scale)
+            _primitiveOverlays[id] = cache = new(collider);
+        var transform = Matrix4x4.CreateFromQuaternion(collider.Transform.Rotation)
+            * Matrix4x4.CreateTranslation(collider.Transform.Position);
+        for (int i = 0; i < cache.Screen.Length; i++)
+        {
+            cache.Visible[i] = projection.Project(Vector3.Transform(cache.Local.Vertices[i], transform), out var point);
+            cache.Screen[i] = cache.Visible[i] ? viewport + point : Vector2.Zero;
+        }
+
+        int count = 0;
+        int faceCount = collider.Shape == IkColliderShape.Plane ? 1 : cache.Local.Faces.Length;
+        for (int f = 0; f < faceCount; f++)
+        {
+            var face = cache.Local.Faces[f];
+            bool visible = true;
+            foreach (int vertex in face) visible &= cache.Visible[vertex];
+            if (!visible) continue;
+            for (int i = 1; i < face.Length - 1; i++)
+            {
+                cache.Indices[count++] = face[0];
+                cache.Indices[count++] = face[i];
+                cache.Indices[count++] = face[i + 1];
+            }
+        }
+        if (count > 0)
+        {
+            // All faces have the same color/alpha, so their blending commutes:
+            // no distance sort is needed. One indexed batch also avoids both
+            // per-triangle interop and AA fringes on internal tessellation.
+            var uv = ImGui.GetFontTexUvWhitePixel();
+            draw.PrimReserve(count, cache.Screen.Length);
+            var native = draw.Handle;
+            uint first = native->VtxCurrentIdx;
+            for (int i = 0; i < cache.Screen.Length; i++)
+            {
+                native->VtxWritePtr[i].Pos = cache.Screen[i];
+                native->VtxWritePtr[i].Uv = uv;
+                native->VtxWritePtr[i].Col = fill;
+            }
+            for (int i = 0; i < count; i++) native->IdxWritePtr[i] = (ushort)(first + cache.Indices[i]);
+            native->VtxWritePtr += cache.Screen.Length;
+            native->IdxWritePtr += count;
+            native->VtxCurrentIdx += (uint)cache.Screen.Length;
+        }
+        foreach (var (a, b) in cache.Local.Edges)
+            if (cache.Visible[a] && cache.Visible[b]) draw.AddLine(cache.Screen[a], cache.Screen[b], line, 1.5f);
+    }
 
     private sealed class MeshOutline
     {
@@ -75,7 +156,7 @@ public partial class SkeletonOverlayWindow
         }
     }
 
-    private void DrawMeshCollider(ImDrawListPtr draw, IkCollider collider, Vector2 viewport, Vector3 camera, uint line)
+    private void DrawMeshCollider(ImDrawListPtr draw, IkCollider collider, Vector2 viewport, Vector3 camera, ScreenProjection projection, uint line)
     {
         if (collider.Mesh is not { } mesh || (line >> 24) == 0) return;
         if (!_meshOverlays.TryGetValue(collider, out var cache))
@@ -90,7 +171,7 @@ public partial class SkeletonOverlayWindow
             if (!cache.Projected[vertex])
             {
                 cache.Projected[vertex] = true;
-                cache.Visible[vertex] = _cameraService.WorldToScreen(cache.World[vertex], out var screen);
+                cache.Visible[vertex] = projection.Project(cache.World[vertex], out var screen);
                 cache.Screen[vertex] = viewport + screen;
             }
             return cache.Visible[vertex];
@@ -107,44 +188,26 @@ public partial class SkeletonOverlayWindow
 
     private void DrawColliders(Vector2 viewport, Vector3 camera, List<ActorDisplayData> handles)
     {
+        using var profile = FrameProfiler.Scope("Overlay.Colliders");
         DrawIkWidth(viewport);
+        if (!_cameraService.TryGetProjection(out var projection)) return;
+        _drawnColliders.Clear();
         var draw = ImGui.GetBackgroundDrawList();
-        foreach (var descriptor in _scene.Snapshot.Overlays.Where(x => x.Kind == OverlayNodeKind.Collider))
+        foreach (var descriptor in _scene.Snapshot.Overlays)
         {
+            if (descriptor.Kind != OverlayNodeKind.Collider) continue;
             if (_viewport.GetCollider(descriptor.Id) is not { Visible: true } node) continue;
             var collider = node.Collider;
             var id = SelectionId.ForOverlay(descriptor.Id);
             var color = _selection.IsSelected(id) ? new Vector4(.4f, .9f, 1f, 1f) : new Vector4(.65f, .45f, 1f, 1f);
             uint fill = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha });
             uint line = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha > 0 ? .95f : 0 });
-            var geometry = ColliderGeometry.Cached(collider, overlay: true);
             if (collider.Shape == IkColliderShape.Mesh)
-                DrawMeshCollider(draw, collider, viewport, camera, fill);
-            var faces = collider.Shape == IkColliderShape.Plane ? geometry.Faces.Take(1) : geometry.Faces;
-            foreach (var face in faces.OrderByDescending(f => Vector3.DistanceSquared(camera,
-                f.Select(i => geometry.Vertices[i]).Aggregate(Vector3.Zero, (a, b) => a + b) / f.Length)))
-            {
-                var points = new Vector2[face.Length];
-                bool visible = true;
-                for (int i = 0; i < face.Length; i++)
-                {
-                    if (!_cameraService.WorldToScreen(geometry.Vertices[face[i]], out var screen)) { visible = false; break; }
-                    points[i] = viewport + screen;
-                }
-                if (!visible) continue;
-                // Adjacent translucent triangles must not each get an AA
-                // fringe: those overlapping fringes expose the internal mesh.
-                var flags = draw.Flags;
-                draw.Flags &= ~ImDrawListFlags.AntiAliasedFill;
-                for (int i = 1; i < points.Length - 1; i++) draw.AddTriangleFilled(points[0], points[i], points[i + 1], fill);
-                draw.Flags = flags;
-            }
-            foreach (var (a, b) in geometry.Edges)
-                if (_cameraService.WorldToScreen(geometry.Vertices[a], out var sa) &&
-                    _cameraService.WorldToScreen(geometry.Vertices[b], out var sb))
-                    draw.AddLine(viewport + sa, viewport + sb, line, 1.5f);
+                DrawMeshCollider(draw, collider, viewport, camera, projection, fill);
+            else
+                DrawPrimitiveCollider(draw, descriptor.Id, collider, viewport, projection, fill, line);
             if (_presentation.IsHandleShown(id) && !HiddenByGroup(id) &&
-                _cameraService.WorldToScreen(collider.Transform.Position, out var center))
+                projection.Project(collider.Transform.Position, out var center))
                 handles.Add(new ActorDisplayData
                 {
                     Name = descriptor.Name,
@@ -154,6 +217,10 @@ public partial class SkeletonOverlayWindow
                     Opacity = 1f,
                 });
         }
+        _expiredColliderOverlays.Clear();
+        foreach (var id in _primitiveOverlays.Keys)
+            if (!_drawnColliders.Contains(id)) _expiredColliderOverlays.Add(id);
+        foreach (var id in _expiredColliderOverlays) _primitiveOverlays.Remove(id);
     }
 
     private void DrawIkWidth(Vector2 viewport)

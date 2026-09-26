@@ -228,6 +228,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _primitiveOverlays.Clear();
+        _drawnColliders.Clear();
+        _expiredColliderOverlays.Clear();
         _dotPlain?.Dispose();
         _dotSelected?.Dispose();
         _lineSprite?.Dispose();
