@@ -14,10 +14,10 @@ not delete files or replace the final package scan.
 | `.claude/`, `claude/`, `CLAUDE.md`, `AGENTS.local.md` | Local agent/session material. |
 | `imgui.ini`, `*.user`, `.vs/`, `.idea/` | Local editor and window state. |
 | `tools/__pycache__/`, `tools/uiverify/`, captured validation media | Verification scratch and live-test evidence. |
-| `Poser.Core/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
+| `**/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
 
-`Poser.Core/` is an active source project. Only its `Data/GameData/` subtree is
-excluded.
+`Poser.Core` is retired. Runtime resources now live in the owning Documents,
+Game and UI projects; legacy embedded-resource names remain for compatibility.
 
 ## Keep and inspect
 
