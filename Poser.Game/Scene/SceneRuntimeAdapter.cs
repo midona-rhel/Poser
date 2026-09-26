@@ -1316,7 +1316,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
     {
-        var camera = _cameras.CreateCamera(data.Camera!.Kind);
+        // SceneWorkflow activates the saved view after every camera and target is restored.
+        var camera = _cameras.CreateCamera(data.Camera!.Kind, makeLive: false);
         if (camera is null)
         {
             detail = "The camera could not be created.";
