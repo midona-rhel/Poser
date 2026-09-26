@@ -536,7 +536,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             {
                 import.WroteCharacter = true;
                 if (write.Partial != 0)
-                    import.WroteFacePartial = true;
+                    import.WroteFacePartial = plan.ReconcileFace;
                 // The head's pre-import absolute — a SEED only: this cached
                 // value predates the settle tick's LocalTime rewind, and
                 // the apply pass replaces it with the bone's own in-pass

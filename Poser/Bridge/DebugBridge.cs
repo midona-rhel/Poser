@@ -65,6 +65,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IPosingService _posing;
     private readonly Application.Posing.IPoseCommands _poseCommands;
     private readonly Application.Integration.ICharacterFiles _characterFiles;
+    private readonly IObjectTable _objects;
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -101,7 +102,7 @@ public sealed class DebugBridge : IDisposable
         IGPoseService gpose,
         IPosingService posing,
         Application.Posing.IPoseCommands poseCommands,
-        Application.Integration.ICharacterFiles characterFiles)
+        Application.Integration.ICharacterFiles characterFiles, IObjectTable objects)
     {
         _configuration = configuration;
         _textures = textures;
@@ -113,6 +114,7 @@ public sealed class DebugBridge : IDisposable
         _posing = posing;
         _poseCommands = poseCommands;
         _characterFiles = characterFiles;
+        _objects = objects;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -1110,6 +1112,12 @@ public sealed class DebugBridge : IDisposable
             actor = actor.Name,
             id = id.ToString(),
             localPlayer = _actors.IsLocalPlayer(actor),
+            identity = new {
+                local = _objects.LocalPlayer == null ? null : new { name = _objects.LocalPlayer.Name.TextValue, world = _objects.LocalPlayer.HomeWorld.RowId, id = _objects.LocalPlayer.GameObjectId },
+                actor = _objects.CreateObjectReference(actor.Address) is { } reference
+                    ? new { name = reference.Name.TextValue, type = reference.GetType().Name, id = reference.GameObjectId,
+                        world = (reference as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)?.HomeWorld.RowId } : null,
+            },
             penumbra = _integration.Penumbra,
             glamourer = _integration.Glamourer,
             paused = _animation.IsPaused(id),

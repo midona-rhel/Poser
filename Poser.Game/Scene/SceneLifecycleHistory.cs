@@ -93,6 +93,7 @@ internal readonly record struct ActorState(
     PoseFile? Pose)
 {
     public ActorRuntimeState? Runtime { get; init; }
+    public IReadOnlyList<PoseImportWrite>? CopyBones { get; init; }
     /// <summary>Partial-root scales by "partial:bone", the head scaling a
     /// pose file cannot carry (its bones are keyed by name and the roots
     /// share the body's). Applied after the pose lands.</summary>
@@ -286,6 +287,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
         IPoseImportCommands poses,
+        PoseImportCoordinator imports,
         Dalamud.Plugin.Services.IFramework framework,
         Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,
@@ -304,7 +306,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             cameras,
             new ActorServiceLifecycle(
                 configuration,
-                actors, posing, skeletons, poseFiles, poses, framework, log,
+                actors, posing, skeletons, poseFiles, poses, imports, framework, log,
                 gaze, integration, bindings, bonePosing, actorManager, actorStates, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
