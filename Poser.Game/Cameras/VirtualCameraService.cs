@@ -52,9 +52,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             camera->Camera.InputDeltaH, camera->Camera.InputDeltaHAdjusted,
             camera->Camera.InputDeltaV, camera->Camera.InputDeltaVAdjusted,
             camera->Camera.ShouldResetAngles,
-            camera->Camera.LastPosition, camera->Camera.LastLookAtVector,
-            ScenePosition = camera->Camera.SceneCamera.Position,
-            LookAt = camera->Camera.SceneCamera.LookAtVector,
+            LastPosition = (Vector3)camera->Camera.LastPosition,
+            LastLookAtVector = (Vector3)camera->Camera.LastLookAtVector,
+            ScenePosition = (Vector3)camera->Camera.SceneCamera.Position,
+            LookAt = (Vector3)camera->Camera.SceneCamera.LookAtVector,
         });
     }
 #endif
