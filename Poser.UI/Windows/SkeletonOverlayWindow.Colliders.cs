@@ -14,7 +14,7 @@ namespace Poser.UI;
 
 public partial class SkeletonOverlayWindow
 {
-    private readonly ConditionalWeakTable<IkCollider, MeshOverlay> _meshOverlays = new();
+    private readonly Dictionary<OverlayId, MeshOverlay> _meshOverlays = new();
     private readonly ConditionalWeakTable<IkColliderMesh, MeshOutline> _meshOutlines = new();
     private readonly Dictionary<OverlayId, PrimitiveOverlay> _primitiveOverlays = new();
     private readonly HashSet<OverlayId> _drawnColliders = new();
@@ -101,6 +101,7 @@ public partial class SkeletonOverlayWindow
         public readonly Vector3[] Vertices;
         public readonly int[] Indices;
         public readonly (int A, int B, int[] Faces)[] Edges;
+        public readonly Plane[] Planes;
 
         public MeshOutline(IkColliderMesh mesh)
         {
@@ -125,53 +126,55 @@ public partial class SkeletonOverlayWindow
                     faces.Add(i / 3);
                 }
             Edges = edges.Select(e => (e.Key.Item1, e.Key.Item2, e.Value.ToArray())).ToArray();
+            Planes = new Plane[Indices.Length / 3];
+            for (int t = 0; t < Planes.Length; t++)
+            {
+                int i = t * 3;
+                var a = Vertices[Indices[i]];
+                var normal = Vector3.Cross(Vertices[Indices[i + 1]] - a, Vertices[Indices[i + 2]] - a);
+                Planes[t] = new(normal, -Vector3.Dot(normal, a));
+            }
         }
     }
 
     private sealed class MeshOverlay
     {
         public readonly MeshOutline Outline;
-        public readonly Vector3[] World;
-        public readonly Plane[] Planes;
+        public readonly IkColliderMesh Mesh;
         public readonly bool[] Facing;
         public readonly Vector2[] Screen;
         public readonly bool[] Visible;
         public readonly bool[] Projected;
 
-        public MeshOverlay(IkCollider collider, MeshOutline outline)
+        public MeshOverlay(IkColliderMesh mesh, MeshOutline outline)
         {
+            Mesh = mesh;
             Outline = outline;
-            var matrix = Matrix4x4.CreateScale(collider.Transform.Scale) * Matrix4x4.CreateFromQuaternion(collider.Transform.Rotation)
-                * Matrix4x4.CreateTranslation(collider.Transform.Position);
-            World = outline.Vertices.Select(v => Vector3.Transform(v, matrix)).ToArray();
-            Screen = new Vector2[World.Length]; Visible = new bool[World.Length]; Projected = new bool[World.Length];
-            Planes = new Plane[outline.Indices.Length / 3]; Facing = new bool[Planes.Length];
-            for (int t = 0; t < Planes.Length; t++)
-            {
-                int i = t * 3;
-                var a = World[outline.Indices[i]];
-                var normal = Vector3.Cross(World[outline.Indices[i + 1]] - a, World[outline.Indices[i + 2]] - a);
-                Planes[t] = new(normal, -Vector3.Dot(normal, a));
-            }
+            Screen = new Vector2[outline.Vertices.Length]; Visible = new bool[Screen.Length]; Projected = new bool[Screen.Length];
+            Facing = new bool[outline.Planes.Length];
         }
     }
 
-    private void DrawMeshCollider(ImDrawListPtr draw, IkCollider collider, Vector2 viewport, Vector3 camera, ScreenProjection projection, uint line)
+    private void DrawMeshCollider(ImDrawListPtr draw, OverlayId id, IkCollider collider, Vector2 viewport, Vector3 camera, ScreenProjection projection, uint line)
     {
         if (collider.Mesh is not { } mesh || (line >> 24) == 0) return;
-        if (!_meshOverlays.TryGetValue(collider, out var cache))
-        {
-            cache = new(collider, _meshOutlines.GetValue(mesh, static m => new MeshOutline(m)));
-            _meshOverlays.Add(collider, cache);
-        }
+        _drawnColliders.Add(id);
+        if (!_meshOverlays.TryGetValue(id, out var cache) || !ReferenceEquals(cache.Mesh, mesh))
+            _meshOverlays[id] = cache = new(mesh, _meshOutlines.GetValue(mesh, static m => new MeshOutline(m)));
+        var matrix = Matrix4x4.CreateScale(collider.Transform.Scale) * Matrix4x4.CreateFromQuaternion(collider.Transform.Rotation)
+            * Matrix4x4.CreateTranslation(collider.Transform.Position);
+        if (!Matrix4x4.Invert(matrix, out var inverse)) return;
+        // Test the camera against immutable local planes. Following a bone
+        // changes only this matrix, not the mesh topology or per-overlay buffers.
+        var localCamera = Vector3.Transform(camera, inverse);
         Array.Clear(cache.Projected);
-        for (int t = 0; t < cache.Planes.Length; t++) cache.Facing[t] = Plane.DotCoordinate(cache.Planes[t], camera) > 0;
+        for (int t = 0; t < cache.Facing.Length; t++) cache.Facing[t] = Plane.DotCoordinate(cache.Outline.Planes[t], localCamera) > 0;
         bool Project(int vertex)
         {
             if (!cache.Projected[vertex])
             {
                 cache.Projected[vertex] = true;
-                cache.Visible[vertex] = projection.Project(cache.World[vertex], out var screen);
+                cache.Visible[vertex] = projection.Project(Vector3.Transform(cache.Outline.Vertices[vertex], matrix), out var screen);
                 cache.Screen[vertex] = viewport + screen;
             }
             return cache.Visible[vertex];
@@ -203,7 +206,7 @@ public partial class SkeletonOverlayWindow
             uint fill = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha });
             uint line = ImGui.ColorConvertFloat4ToU32(color with { W = node.Alpha > 0 ? .95f : 0 });
             if (collider.Shape == IkColliderShape.Mesh)
-                DrawMeshCollider(draw, collider, viewport, camera, projection, fill);
+                DrawMeshCollider(draw, descriptor.Id, collider, viewport, camera, projection, fill);
             else
                 DrawPrimitiveCollider(draw, descriptor.Id, collider, viewport, projection, fill, line);
             if (_presentation.IsHandleShown(id) && !HiddenByGroup(id) &&
@@ -221,6 +224,10 @@ public partial class SkeletonOverlayWindow
         foreach (var id in _primitiveOverlays.Keys)
             if (!_drawnColliders.Contains(id)) _expiredColliderOverlays.Add(id);
         foreach (var id in _expiredColliderOverlays) _primitiveOverlays.Remove(id);
+        _expiredColliderOverlays.Clear();
+        foreach (var id in _meshOverlays.Keys)
+            if (!_drawnColliders.Contains(id)) _expiredColliderOverlays.Add(id);
+        foreach (var id in _expiredColliderOverlays) _meshOverlays.Remove(id);
     }
 
     private void DrawIkWidth(Vector2 viewport)
