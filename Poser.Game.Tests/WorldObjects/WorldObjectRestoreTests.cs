@@ -952,6 +952,42 @@ public sealed class WorldObjectRestoreTests
     }
 
     [Fact]
+    public void Scenery_does_not_reinterpret_its_own_output_as_native_motion()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
+        var obj = world.Service.Adopt(address)!;
+        var placement = new Transform(new Vector3(10, 20, 30),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), Vector3.One);
+        obj.Transform = placement;
+        world.Service.HoldPausedAnimations();
+        world.Port.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        world.Port.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        var solved = world.Port.PlacementOf(address);
+
+        // Multiple camera/render callbacks need not contain a native animation update.
+        for (int i = 0; i < 4; i++)
+        {
+            world.Service.HoldPausedAnimations();
+            Assert.Equal(solved, world.Port.PlacementOf(address));
+        }
+
+        obj.AnimationPaused = true;
+        obj.AnimationPaused = false;
+        world.Service.HoldPausedAnimations(); // The native fields still contain our held placement.
+        world.Port.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(solved, world.Port.PlacementOf(address));
+        world.Port.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.True(Vector3.Distance(solved.Position + Vector3.UnitY,
+            world.Port.PlacementOf(address).Position) < 0.0001f);
+        world.Service.Dispose();
+    }
+
+    [Fact]
     public void Pause_waits_for_a_loaded_tail_and_drag_updates_the_frozen_placement()
     {
         var world = new World();

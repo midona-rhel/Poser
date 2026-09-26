@@ -93,7 +93,8 @@ then camera view replacement, in that order. If the render hook is unavailable,
 that same owner pumps anchors from the framework callback; no camera or UI
 component owns a second fallback. Scenery anchors explicitly watch, anchor,
 pause or await reanchoring; resuming adopts the frozen placement before the
-next rendered frame.
+next native animation update. Repeated camera phases must not reinterpret the
+anchor's own output as fresh native motion or consume a pending reanchor.
 
 Awaited Penumbra redraws register `GameObjectRedrawn` before requesting redraw,
 matching Brio's notification-based completion. The Game-owned barrier correlates

@@ -843,6 +843,12 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 continue;
             if (handle.AnimationAnchor is SceneryAnimationState.ReanchorPending)
             {
+                // A camera phase is not proof that the native animator ran.
+                // Until it replaces our held output, it cannot supply a new
+                // reference: doing so turns the original placement into a
+                // large animation delta on the following update.
+                if (SameAnimationPlacement(raw, handle.DesiredPlacement))
+                    continue;
                 // Rebase and write in this same frame: never render the
                 // game's original placement during the unpause hand-off.
                 var resumed = handle.DesiredPlacement;
@@ -852,6 +858,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             }
             if (handle.AnimationAnchor is SceneryAnimationState.Anchored anchored)
             {
+                // The scene-camera hook can run again without a native motion
+                // update. Never feed the previous composed output back into
+                // the reference-to-user transform (it compounds the offset).
+                if (SameAnimationPlacement(raw, anchored.LastWritten))
+                    continue;
                 var reference = anchored.Reference;
                 var user = handle.DesiredPlacement;
                 var inverse = Quaternion.Inverse(reference.Rotation);
@@ -878,6 +889,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             watching.LastWritten ??= raw;
         }
     }
+
+    private static bool SameAnimationPlacement(in Transform left, in Transform right) =>
+        Vector3.DistanceSquared(left.Position, right.Position) <= 0.000001f
+        && Math.Abs(Quaternion.Dot(left.Rotation, right.Rotation)) >= 0.999999f;
 
     internal void WriteNightState(AdoptedWorldObject handle)
     {
