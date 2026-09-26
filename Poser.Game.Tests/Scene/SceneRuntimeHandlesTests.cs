@@ -43,4 +43,44 @@ public sealed class SceneRuntimeHandlesTests
         Assert.Null(runtime.Resolve(replacement));
         Assert.Throws<InvalidOperationException>(() => runtime.Require<object>(replacement, SceneEntityKind.Light));
     }
+
+    [Theory]
+    [InlineData(SceneEntityKind.Actor)]
+    [InlineData(SceneEntityKind.Prop)]
+    [InlineData(SceneEntityKind.Overlay)]
+    [InlineData(SceneEntityKind.WorldObject)]
+    [InlineData(SceneEntityKind.Light)]
+    [InlineData(SceneEntityKind.Camera)]
+    public void Rollback_uses_the_restored_entity_without_retargeting_receipt_reads(SceneEntityKind kind)
+    {
+        var runtime = new SceneRuntimeHandles(() => Session);
+        var original = new object();
+        var restored = new object();
+        var receipt = runtime.Track(kind, original);
+        object? removed = null;
+
+        Assert.Same(original, runtime.Resolve(receipt));
+        runtime.Remove<object>(receipt, kind, captured =>
+        {
+            Assert.Same(original, captured);
+            return restored;
+        }, current => removed = current);
+
+        Assert.Same(restored, removed);
+        Assert.Null(runtime.Resolve(receipt));
+    }
+
+    [Fact]
+    public void Failed_rollback_keeps_the_receipt_available_for_retry()
+    {
+        var runtime = new SceneRuntimeHandles(() => Session);
+        var original = new object();
+        var receipt = runtime.Track(SceneEntityKind.Actor, original);
+        Assert.Throws<InvalidOperationException>(() => runtime.Remove<object>(
+            receipt, SceneEntityKind.Actor, current => current,
+            _ => throw new InvalidOperationException("Removal refused")));
+        Assert.Same(original, runtime.Resolve(receipt));
+    }
+
+    private static readonly SessionGeneration Session = SessionGeneration.New();
 }

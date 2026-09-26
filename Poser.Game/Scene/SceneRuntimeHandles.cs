@@ -44,5 +44,16 @@ internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession
             $"The scene {kind} is no longer available in this runtime/session.");
 
     public void Forget(SceneEntityHandle handle) => _entities.Remove(handle);
+
+    public void Remove<T>(SceneEntityHandle handle, SceneEntityKind kind,
+        Func<T, T?> resolveHistory, Action<T> remove) where T : class
+    {
+        // Only a history inverse follows a proven lifecycle alias. Ordinary
+        // receipt reads still resolve the exact original runtime instance.
+        if (Resolve<T>(handle, kind) is not { } original) return;
+        if (resolveHistory(original) is { } current) remove(current);
+        Forget(handle);
+    }
+
     public void Clear() => _entities.Clear();
 }

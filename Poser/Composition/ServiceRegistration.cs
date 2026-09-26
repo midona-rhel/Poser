@@ -300,6 +300,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());

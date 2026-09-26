@@ -257,7 +257,7 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
 public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     IEntityHistoryResolver<ILight>, IEntityHistoryResolver<IWorldObject>,
     IEntityHistoryResolver<IVirtualCamera>, IEntityHistoryResolver<IPropHandle>,
-    IEntityHistoryResolver<IOverlayNode>
+    IEntityHistoryResolver<IOverlayNode>, IEntityHistoryResolver<IActor>
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
@@ -351,7 +351,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _actorOwner = new(
             actor => new ActorSlot { Live = actor },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveActor, RestoreActor);
+            RemoveActor, RestoreActor, retainAliases: true);
         _propOwner = new(
             prop => new PropSlot { Live = prop },
             slot => slot.Live, (slot, live) => slot.Live = live,
@@ -388,6 +388,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     // History alone may resolve an old wrapper to its successor. Public IDs
     // and acquisition receipts remain expired after release.
     ILight? IEntityHistoryResolver<ILight>.Resolve(ILight light) => _lightOwner.CurrentLight(light);
+
+    IActor? IEntityHistoryResolver<IActor>.Resolve(IActor actor) => _actorOwner.Resolve(actor);
 
     IWorldObject? IEntityHistoryResolver<IWorldObject>.Resolve(IWorldObject worldObject) =>
         _worldObjectOwner.CurrentWorldObject(worldObject);
@@ -613,7 +615,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         if (!_actorOwner.TryGetSlot(actor, out var slot) || !slot.HasRespawn)
         {
             if (!_actors.IsSpawned(actor))
-                return false;
+            {
+                _actors.Note($"Despawning '{actor.Name}' cannot be undone: this actor is not owned by Poser.");
+                return _actors.Destroy(actor);
+            }
             slot = SlotFor(actor);
             slot.Respawn = () => _actors.Recreate(slot.Document);
             slot.HasRespawn = true;

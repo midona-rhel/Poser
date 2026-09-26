@@ -1,5 +1,6 @@
 using Poser.Application.World;
 using Poser.Application.Posing;
+using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Scene;
 using System;
@@ -32,6 +33,12 @@ namespace Poser.Game.Scene;
 internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
     private readonly SceneRuntimeHandles _handles;
+    private readonly IEntityHistoryResolver<IActor> _actorHistory;
+    private readonly IEntityHistoryResolver<IPropHandle> _propHistory;
+    private readonly IEntityHistoryResolver<IOverlayNode> _overlayHistory;
+    private readonly IEntityHistoryResolver<IWorldObject> _worldHistory;
+    private readonly IEntityHistoryResolver<ILight> _lightHistory;
+    private readonly IEntityHistoryResolver<IVirtualCamera> _cameraHistory;
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
     private readonly ISceneDocumentStore _documents;
@@ -100,8 +107,20 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         IBonePosingService bonePosing,
+        IEntityHistoryResolver<IActor> actorHistory,
+        IEntityHistoryResolver<IPropHandle> propHistory,
+        IEntityHistoryResolver<IOverlayNode> overlayHistory,
+        IEntityHistoryResolver<IWorldObject> worldHistory,
+        IEntityHistoryResolver<ILight> lightHistory,
+        IEntityHistoryResolver<IVirtualCamera> cameraHistory,
         IPluginLog? log = null)
     {
+        _actorHistory = actorHistory;
+        _propHistory = propHistory;
+        _overlayHistory = overlayHistory;
+        _worldHistory = worldHistory;
+        _lightHistory = lightHistory;
+        _cameraHistory = cameraHistory;
         _bonePosing = bonePosing;
         _mcdfHashes = mcdfHashes;
         _selection = selection;
@@ -1176,9 +1195,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     }
 
     public void ReleaseWorldObject(SceneEntityHandle token) =>
-        Remove<WorldObjects.AdoptedWorldObject>(token, SceneEntityKind.WorldObject, entity =>
+        _handles.Remove<IWorldObject>(token, SceneEntityKind.WorldObject, _worldHistory.Resolve, entity =>
         {
-            if (!_worldObjects.Release(entity) && _worldObjects.Adopted.Contains(entity))
+            var world = (WorldObjects.AdoptedWorldObject)entity;
+            if (!_worldObjects.Release(world) && _worldObjects.Adopted.Contains(world))
                 throw new InvalidOperationException("The scene world object could not be released.");
         });
 
@@ -1369,27 +1389,24 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     // ── rollback ─────────────────────────────────────────────────────────
 
-    public void DestroyActor(SceneEntityHandle actor) => Remove<IActor>(actor, SceneEntityKind.Actor, entity =>
+    public void DestroyActor(SceneEntityHandle actor) => _handles.Remove<IActor>(
+        actor, SceneEntityKind.Actor, _actorHistory.Resolve, entity =>
     {
         if (!_spawns.DestroyActor(entity) && _actors.Actors.Contains(entity))
             throw new InvalidOperationException("The scene actor could not be destroyed.");
     });
 
-    public void DestroyProp(SceneEntityHandle prop) => Remove<PropHandle>(prop, SceneEntityKind.Prop, _props.Destroy);
+    public void DestroyProp(SceneEntityHandle prop) => _handles.Remove<IPropHandle>(
+        prop, SceneEntityKind.Prop, _propHistory.Resolve, entity => _props.Destroy((PropHandle)entity));
 
     public void DestroyOverlay(SceneEntityHandle overlay) =>
-        Remove<Poser.Game.Overlays.OverlayNodeHandle>(overlay, SceneEntityKind.Overlay, _overlays.Destroy);
+        _handles.Remove<IOverlayNode>(overlay, SceneEntityKind.Overlay, _overlayHistory.Resolve,
+            entity => _overlays.Destroy((Poser.Game.Overlays.OverlayNodeHandle)entity));
 
-    public void DestroyLight(SceneEntityHandle light) => Remove<ILight>(light, SceneEntityKind.Light, _lighting.DestroyLight);
+    public void DestroyLight(SceneEntityHandle light) => _handles.Remove<ILight>(
+        light, SceneEntityKind.Light, _lightHistory.Resolve, _lighting.DestroyLight);
 
     public void DestroyCamera(SceneEntityHandle camera) =>
-        Remove<IVirtualCamera>(camera, SceneEntityKind.Camera, _cameras.DestroyCamera);
-
-    private void Remove<T>(SceneEntityHandle handle, SceneEntityKind kind, Action<T> remove) where T : class
-    {
-        // Session teardown may already have removed it; never resolve into a new session.
-        if (_handles.Resolve<T>(handle, kind) is not { } entity) return;
-        remove(entity);
-        _handles.Forget(handle);
-    }
+        _handles.Remove<IVirtualCamera>(
+            camera, SceneEntityKind.Camera, _cameraHistory.Resolve, _cameras.DestroyCamera);
 }

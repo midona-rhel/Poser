@@ -354,6 +354,7 @@ public sealed class SceneLifecycleHistoryTests
             var restored = Assert.Single(world.Actors.Live);
             Assert.Equal("Authored actor", restored.Name);
             Assert.Equal(authored, world.Actors.StateOf(restored));
+            Assert.Same(restored, ((IEntityHistoryResolver<IActor>)world.Lifecycle).Resolve(actor));
             Assert.True(world.Redo());
             Assert.Empty(world.Actors.Live);
         }
