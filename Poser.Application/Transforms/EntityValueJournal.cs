@@ -7,6 +7,13 @@ public interface IEntityHistoryResolver<TEntity> where TEntity : class
     TEntity? Resolve(TEntity original);
 }
 
+/// <summary>Explicitly binds history to a replacement created by a replay.
+/// This never repairs public selection IDs or pending operation receipts.</summary>
+public interface IEntityHistoryBinding<TEntity> : IEntityHistoryResolver<TEntity> where TEntity : class
+{
+    void BindReplacement(TEntity original, TEntity replacement);
+}
+
 /// <summary>Property history resolves its entity again at replay time, so
 /// lifecycle restoration can replace a runtime wrapper without losing edits.</summary>
 public sealed class EntityValueJournal<TEntity>(

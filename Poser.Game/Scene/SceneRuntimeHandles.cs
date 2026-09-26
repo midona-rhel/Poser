@@ -9,7 +9,13 @@ namespace Poser.Game.Scene;
 /// Weak keys release entries when their last workflow/history owner goes away.</summary>
 internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession)
 {
-    private readonly ConditionalWeakTable<SceneEntityHandle, object> _entities = new();
+    private sealed class Entry(object entity)
+    {
+        public object Entity { get; } = entity;
+        public bool Removed { get; set; }
+    }
+
+    private readonly ConditionalWeakTable<SceneEntityHandle, Entry> _entities = new();
     private SessionGeneration? _session;
 
     public void Synchronize()
@@ -25,7 +31,7 @@ internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession
         Synchronize();
         var session = _session ?? throw new InvalidOperationException("No active scene session.");
         var handle = new SceneEntityHandle(session, kind);
-        _entities.Add(handle, entity);
+        _entities.Add(handle, new(entity));
         return handle;
     }
 
@@ -33,7 +39,14 @@ internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession
     {
         Synchronize();
         return handle != null && handle.Session == _session
-            && _entities.TryGetValue(handle, out var entity) ? entity : null;
+            && _entities.TryGetValue(handle, out var entry) && !entry.Removed ? entry.Entity : null;
+    }
+
+    public object? ResolveHistory(SceneEntityHandle handle)
+    {
+        Synchronize();
+        return handle.Session == _session && _entities.TryGetValue(handle, out var entry)
+            ? entry.Entity : null;
     }
 
     public T? Resolve<T>(SceneEntityHandle? handle, SceneEntityKind kind) where T : class =>
@@ -52,7 +65,9 @@ internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession
         // receipt reads still resolve the exact original runtime instance.
         if (Resolve<T>(handle, kind) is not { } original) return;
         if (resolveHistory(original) is { } current) remove(current);
-        Forget(handle);
+        // Retained only by history's weak receipt, for a later scene redo.
+        // Ordinary pending-operation reads must not resolve a removed entity.
+        if (_entities.TryGetValue(handle, out var entry)) entry.Removed = true;
     }
 
     public void Clear() => _entities.Clear();

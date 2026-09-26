@@ -173,6 +173,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         // releasing one is the exact inverse of taking it.
         public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
         public readonly List<Guid> ImportedGroups = new();
+        public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> HistoryEntities =
+            new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
         public CameraFile? DefaultCameraBaseline;
         public SceneEnvironment? EnvironmentBaseline;
         public SceneWorld? WorldBaseline;
@@ -331,6 +333,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private sealed class LoadHistory(Operation current)
     {
         public Operation Current = current;
+        public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> Entities = current.HistoryEntities;
     }
 
     /// <summary>
@@ -1462,6 +1465,14 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     entities.Add(new SceneEntityOutcome("IK", "FABRIK", false, error));
                 RestoreStructure(operation, scene, structureTokens);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
+                operation.HistoryEntities = structureTokens;
+                if (failures.Count == 0 && operation.Replay is { } replay)
+                {
+                    foreach (var (key, previous) in replay.Entities)
+                        if (structureTokens.TryGetValue(key, out var replacement))
+                            _runtime.BindHistoryReplacement(previous, replacement);
+                    replay.Entities = structureTokens;
+                }
                 string detail = failures.Count == 0
                     ? $"Loaded {operation.FileName}: " +
                       $"{Count(actors.Count, "actor")}, " +

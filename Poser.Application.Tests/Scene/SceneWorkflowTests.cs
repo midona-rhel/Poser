@@ -185,6 +185,7 @@ public sealed class SceneWorkflowTests
             await load.Drain;
             Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
             Assert.NotSame(current, runtime.SpawnedLightTokens[^1]);
+            Assert.Equal((current, runtime.SpawnedLightTokens[^1]), runtime.HistoryReplacements[^1]);
             Assert.Same(step, history.PeekUndo());
         }
         Assert.Equal(1, appends);
@@ -596,6 +597,9 @@ public sealed class SceneWorkflowTests
         public readonly ConcurrentQueue<string> Released = new();
 
         public readonly List<SceneEntityHandle> SpawnedLightTokens = new();
+        public readonly List<(SceneEntityHandle Previous, SceneEntityHandle Replacement)> HistoryReplacements = new();
+        public void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement) =>
+            HistoryReplacements.Add((previous, replacement));
         public readonly List<SceneEntityHandle> DestroyedLightTokens = new();
 
         public SceneEntityHandle? SpawnLight(

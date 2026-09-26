@@ -33,12 +33,12 @@ namespace Poser.Game.Scene;
 internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 {
     private readonly SceneRuntimeHandles _handles;
-    private readonly IEntityHistoryResolver<IActor> _actorHistory;
-    private readonly IEntityHistoryResolver<IPropHandle> _propHistory;
-    private readonly IEntityHistoryResolver<IOverlayNode> _overlayHistory;
-    private readonly IEntityHistoryResolver<IWorldObject> _worldHistory;
-    private readonly IEntityHistoryResolver<ILight> _lightHistory;
-    private readonly IEntityHistoryResolver<IVirtualCamera> _cameraHistory;
+    private readonly IEntityHistoryBinding<IActor> _actorHistory;
+    private readonly IEntityHistoryBinding<IPropHandle> _propHistory;
+    private readonly IEntityHistoryBinding<IOverlayNode> _overlayHistory;
+    private readonly IEntityHistoryBinding<IWorldObject> _worldHistory;
+    private readonly IEntityHistoryBinding<ILight> _lightHistory;
+    private readonly IEntityHistoryBinding<IVirtualCamera> _cameraHistory;
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly IFramework _framework;
     private readonly ISceneDocumentStore _documents;
@@ -107,12 +107,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         IBonePosingService bonePosing,
-        IEntityHistoryResolver<IActor> actorHistory,
-        IEntityHistoryResolver<IPropHandle> propHistory,
-        IEntityHistoryResolver<IOverlayNode> overlayHistory,
-        IEntityHistoryResolver<IWorldObject> worldHistory,
-        IEntityHistoryResolver<ILight> lightHistory,
-        IEntityHistoryResolver<IVirtualCamera> cameraHistory,
+        IEntityHistoryBinding<IActor> actorHistory,
+        IEntityHistoryBinding<IPropHandle> propHistory,
+        IEntityHistoryBinding<IOverlayNode> overlayHistory,
+        IEntityHistoryBinding<IWorldObject> worldHistory,
+        IEntityHistoryBinding<ILight> lightHistory,
+        IEntityHistoryBinding<IVirtualCamera> cameraHistory,
         IPluginLog? log = null)
     {
         _actorHistory = actorHistory;
@@ -1388,6 +1388,22 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _environmentControl.Apply(target, recordHistory: false);
 
     // ── rollback ─────────────────────────────────────────────────────────
+
+    public void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement)
+    {
+        if (previous.Kind != replacement.Kind) return;
+        var original = _handles.ResolveHistory(previous);
+        var current = _handles.Resolve(replacement);
+        switch (original, current)
+        {
+            case (IActor from, IActor to): _actorHistory.BindReplacement(from, to); break;
+            case (IPropHandle from, IPropHandle to): _propHistory.BindReplacement(from, to); break;
+            case (IOverlayNode from, IOverlayNode to): _overlayHistory.BindReplacement(from, to); break;
+            case (IWorldObject from, IWorldObject to): _worldHistory.BindReplacement(from, to); break;
+            case (ILight from, ILight to): _lightHistory.BindReplacement(from, to); break;
+            case (IVirtualCamera from, IVirtualCamera to): _cameraHistory.BindReplacement(from, to); break;
+        }
+    }
 
     public void DestroyActor(SceneEntityHandle actor) => _handles.Remove<IActor>(
         actor, SceneEntityKind.Actor, _actorHistory.Resolve, entity =>

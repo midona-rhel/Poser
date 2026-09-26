@@ -300,11 +300,17 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         // The surfaces' ports over the runtime classes registered elsewhere.
         services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
         services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());

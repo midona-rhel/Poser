@@ -255,9 +255,9 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
 /// outlives the session that made it.</para>
 /// </summary>
 public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
-    IEntityHistoryResolver<ILight>, IEntityHistoryResolver<IWorldObject>,
-    IEntityHistoryResolver<IVirtualCamera>, IEntityHistoryResolver<IPropHandle>,
-    IEntityHistoryResolver<IOverlayNode>, IEntityHistoryResolver<IActor>
+    IEntityHistoryBinding<ILight>, IEntityHistoryBinding<IWorldObject>,
+    IEntityHistoryBinding<IVirtualCamera>, IEntityHistoryBinding<IPropHandle>,
+    IEntityHistoryBinding<IOverlayNode>, IEntityHistoryBinding<IActor>
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
@@ -390,6 +390,24 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     ILight? IEntityHistoryResolver<ILight>.Resolve(ILight light) => _lightOwner.CurrentLight(light);
 
     IActor? IEntityHistoryResolver<IActor>.Resolve(IActor actor) => _actorOwner.Resolve(actor);
+
+    void IEntityHistoryBinding<IActor>.BindReplacement(IActor original, IActor replacement) =>
+        _actorOwner.BindReplacement(original, replacement);
+
+    void IEntityHistoryBinding<ILight>.BindReplacement(ILight original, ILight replacement) =>
+        _lightOwner.BindReplacement(original, replacement);
+
+    void IEntityHistoryBinding<IWorldObject>.BindReplacement(IWorldObject original, IWorldObject replacement) =>
+        _worldObjectOwner.BindReplacement(original, replacement);
+
+    void IEntityHistoryBinding<IVirtualCamera>.BindReplacement(IVirtualCamera original, IVirtualCamera replacement) =>
+        _cameraOwner.BindReplacement(original, replacement);
+
+    void IEntityHistoryBinding<IPropHandle>.BindReplacement(IPropHandle original, IPropHandle replacement) =>
+        _propOwner.BindReplacement(original, replacement);
+
+    void IEntityHistoryBinding<IOverlayNode>.BindReplacement(IOverlayNode original, IOverlayNode replacement) =>
+        _overlayOwner.BindReplacement(original, replacement);
 
     IWorldObject? IEntityHistoryResolver<IWorldObject>.Resolve(IWorldObject worldObject) =>
         _worldObjectOwner.CurrentWorldObject(worldObject);

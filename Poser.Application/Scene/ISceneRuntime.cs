@@ -272,6 +272,10 @@ public interface ISceneRuntime
 
     // ── rollback (framework thread) ──────────────────────────────────────
 
+    /// <summary>Connect history to a replacement created by replaying the same
+    /// saved entity. Ordinary runtime receipts stay exact and expired.</summary>
+    void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement) { }
+
     void DestroyActor(SceneEntityHandle actor);
     void DestroyProp(SceneEntityHandle prop);
     void DestroyOverlay(SceneEntityHandle overlay);

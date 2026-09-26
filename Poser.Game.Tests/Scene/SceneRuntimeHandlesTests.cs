@@ -68,6 +68,9 @@ public sealed class SceneRuntimeHandlesTests
 
         Assert.Same(restored, removed);
         Assert.Null(runtime.Resolve(receipt));
+        Assert.Same(original, runtime.ResolveHistory(receipt));
+        runtime.Clear();
+        Assert.Null(runtime.ResolveHistory(receipt));
     }
 
     [Fact]

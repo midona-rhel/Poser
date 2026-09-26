@@ -59,6 +59,9 @@ internal sealed class LightLifecycleOwner
 
     public void Clear() => _slots.Clear();
 
+    public void BindReplacement(ILight original, ILight replacement) =>
+        _slots.BindReplacement(original, replacement);
+
     public ILight? SpawnLight(LightKind kind) =>
         RecordSpawn($"Add {KindName(kind)} light", () => _lighting.SpawnLight(kind));
 

@@ -176,6 +176,9 @@ internal sealed class WorldObjectLifecycleOwner
     public IReadOnlyList<object> WorldObjects => _worldObjects.WorldObjects;
     public void Clear() => _slots.Clear();
 
+    public void BindReplacement(IWorldObject original, IWorldObject replacement) =>
+        _slots.BindReplacement(original, replacement);
+
     public IWorldObject? CurrentWorldObject(IWorldObject worldObject) =>
         _slots.Resolve(worldObject) as IWorldObject;
 

@@ -375,6 +375,27 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
+    public void Scene_replay_rebinds_later_actor_removal_to_its_new_instance()
+    {
+        var world = new World();
+        var original = world.Actors.Spawn("Imported")!;
+        Assert.True(world.Lifecycle.DespawnActor(original));
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.Actors.Live);
+        world.Actors.DestroyActor(restored);
+        var replayed = world.Actors.Spawn("Reloaded")!;
+        var bindings = (IEntityHistoryBinding<IActor>)world.Lifecycle;
+        bindings.BindReplacement(original, replayed);
+
+        Assert.Same(replayed, bindings.Resolve(original));
+        Assert.Same(replayed, bindings.Resolve(restored));
+        Assert.True(world.Redo());
+        Assert.Empty(world.Actors.Live);
+        Assert.True(world.Undo());
+        Assert.Equal("Reloaded", Assert.Single(world.Actors.Live).Name);
+    }
+
+    [Fact]
     public void Camera_removal_restores_origin_lock_tracking_and_optics()
     {
         var world = new World();

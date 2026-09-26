@@ -62,6 +62,12 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
     public TInstance? Resolve(TInstance original) =>
         _slots.TryGetValue(original, out var slot) ? _current(slot) : original;
 
+    public void BindReplacement(TInstance original, TInstance replacement)
+    {
+        if (_slots.TryGetValue(original, out var slot))
+            BindCurrent(slot, replacement);
+    }
+
     public bool CaptureAndRemove(TSlot slot)
     {
         var previous = _current(slot);

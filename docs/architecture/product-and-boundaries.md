@@ -85,11 +85,12 @@ transform conversions do not introduce a reverse dependency from Domain.
 Serialized fields, enum values and format rules are unchanged.
 Runtime calls exchange session-scoped `SceneEntityHandle` receipts, not native
 instances. Game retains the exact instance while workflow/history holds its
-receipt, drops it after confirmed removal, and invalidates all receipts on
+receipt, expires ordinary reads after confirmed removal, and invalidates all receipts on
 session change or disposal. Receipts use reference identity, are not serialized,
 and never rebind by name, address or a newly published selection generation.
-Scene rollback alone follows the existing lifecycle history resolver when a
-later removal was undone; this does not revive or retarget ordinary receipts.
+Scene rollback follows the existing lifecycle history resolver when a later
+removal was undone. Scene redo explicitly reconnects those history slots using
+the same saved entity keys; it never revives or retargets ordinary receipts.
 Native owners still validate native lifetime; a receipt alone is not proof that
 an entity remains alive. Native reference storage uses weak keys so abandoned
 operations and discarded history cannot keep entities alive through the adapter.
