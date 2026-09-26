@@ -76,6 +76,9 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             if (native != null)
             {
                 native->Angle = value;
+#if DEBUG
+                _service.TraceOrbitWrite(native);
+#endif
             }
             _angle = value;
         }
@@ -296,6 +299,9 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         if (native == null)
             return;
         native->Angle = _angle;
+#if DEBUG
+        _service.TraceOrbitWrite(native);
+#endif
         native->Pan = _pan;
         native->Roll = _roll;
         native->Distance = _zoom;

@@ -35,6 +35,26 @@ namespace Poser.Game.Cameras;
 /// </summary>
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
+#if DEBUG
+    private int _orbitTraceFrames;
+    public List<object> OrbitTrace { get; } = new();
+    internal void TraceOrbitWrite(NativeCamera* camera)
+    {
+        OrbitTrace.Clear();
+        _orbitTraceFrames = 12;
+        TraceOrbit("write", camera);
+    }
+    private void TraceOrbit(string phase, NativeCamera* camera)
+    {
+        OrbitTrace.Add(new
+        {
+            phase, active = camera == Native, camera->Angle,
+            camera->Camera.InputDeltaH, camera->Camera.InputDeltaHAdjusted,
+            camera->Camera.InputDeltaV, camera->Camera.InputDeltaVAdjusted,
+            camera->Camera.ShouldResetAngles,
+        });
+    }
+#endif
     // One home for the fly speed's numbers: the wheel's curve owns them and
     // the camera's default is that curve's unit. These are the FLOOR the
     // configured defaults fall back to, not the defaults themselves — see
@@ -647,7 +667,18 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// moves with it so the view direction survives.</summary>
     private nint CameraUpdateDetour(NativeCamera* camera)
     {
+#if DEBUG
+        var trace = _orbitTraceFrames > 0;
+        if (trace) TraceOrbit("before", camera);
+#endif
         var result = _cameraUpdateHook!.Original(camera);
+#if DEBUG
+        if (trace)
+        {
+            TraceOrbit("after", camera);
+            _orbitTraceFrames--;
+        }
+#endif
         try
         {
             if (!_gPose.IsGPosing || _live is not { } live)

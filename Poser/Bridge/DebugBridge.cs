@@ -412,6 +412,7 @@ public sealed class DebugBridge : IDisposable
             case "/cameras":
                 return JsonSerializer.Serialize(new
                 {
+                    orbitTrace = (_cameras as VirtualCameraService)?.OrbitTrace,
                     cameras = _cameras.Cameras.Select(camera => new
                     {
                         id = _bindings.GetCameraId(camera)?.ToString(),
