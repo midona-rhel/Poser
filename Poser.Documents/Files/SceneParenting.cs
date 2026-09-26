@@ -1,4 +1,5 @@
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 
 namespace Poser.Files;
@@ -19,7 +20,8 @@ public static class SceneParenting
         scene.Actors.Select(x => ("actor", x.Key)).Concat(scene.Lights.Select(x => ("light", x.Key)))
             .Concat(scene.Actors.Where(x => x.CompanionKind != null).Select(x => ("companion", x.Key)))
             .Concat(scene.Props.Select(x => ("prop", x.Key))).Concat(scene.Cameras.Select(x => ("camera", x.Key)))
-            .Concat((scene.Overlays ?? []).Select(x => ("overlay", x.Key)))
+            .Concat((scene.Overlays ?? []).Where(x => x.Node?.Kind == OverlayNodeKind.Collider)
+                .Select(x => ("overlay", x.Key)))
             .Concat((scene.WorldObjects ?? []).Select(x => ("worldObject", x.Key))).ToHashSet();
 
     public static void Prune(SceneFile scene, List<string> notes)

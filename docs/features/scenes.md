@@ -39,6 +39,9 @@ Scenes store entity keys and bone names, never live handles. Relationships load
 after entity/pose readiness, within the existing scene transaction. Companion
 references identify the saved owner's attachment. Saving without a parent
 keeps the child's current placement as a static object and reports the omission.
+Loading only selected categories skips links whose endpoints were not restored,
+leaving the admitted child at its saved placement. Screen overlays cannot be
+endpoints; scene validation rejects those links before any native creation.
 Generated body colliders use this contract; Detach makes an individual part static.
 Duplicating an entity retains its parent and local offset as part of the
 creation history entry, alongside its copied properties.

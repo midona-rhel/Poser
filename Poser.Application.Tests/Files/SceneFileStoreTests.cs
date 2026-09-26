@@ -13,6 +13,26 @@ namespace Poser.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {
+    [Theory]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Talk)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Balloon)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Status)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Collider)]
+    public void Only_collider_overlays_can_be_transform_parent_endpoints(Poser.Domain.Presentation.OverlayNodeKind kind)
+    {
+        var scene = ValidScene();
+        var overlay = new SceneOverlay { Key = Guid.NewGuid(), Node = new() { Kind = kind, Collider = new() } };
+        scene.Overlays = [overlay];
+        var actorRef = new SceneStructureRef { Kind = "actor", Key = scene.Actors[0].Key };
+        var overlayRef = new SceneStructureRef { Kind = "overlay", Key = overlay.Key };
+        foreach (bool overlayIsChild in new[] { false, true })
+        {
+            scene.Parents = [new() { Child = overlayIsChild ? overlayRef : actorRef,
+                Target = overlayIsChild ? actorRef : overlayRef }];
+            Assert.Equal(kind == Poser.Domain.Presentation.OverlayNodeKind.Collider, SceneParenting.Validate(scene) == null);
+        }
+    }
+
     [Fact]
     public void Collider_group_saves_and_restores_members_transforms_and_flags()
     {
