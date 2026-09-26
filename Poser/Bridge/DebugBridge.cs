@@ -66,6 +66,7 @@ public sealed class DebugBridge : IDisposable
     private readonly Application.Posing.IPoseCommands _poseCommands;
     private readonly Application.Integration.ICharacterFiles _characterFiles;
     private readonly IObjectTable _objects;
+    private readonly IVirtualCameraService _cameras;
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -102,7 +103,8 @@ public sealed class DebugBridge : IDisposable
         IGPoseService gpose,
         IPosingService posing,
         Application.Posing.IPoseCommands poseCommands,
-        Application.Integration.ICharacterFiles characterFiles, IObjectTable objects)
+        Application.Integration.ICharacterFiles characterFiles, IObjectTable objects,
+        IVirtualCameraService cameras)
     {
         _configuration = configuration;
         _textures = textures;
@@ -115,6 +117,7 @@ public sealed class DebugBridge : IDisposable
         _poseCommands = poseCommands;
         _characterFiles = characterFiles;
         _objects = objects;
+        _cameras = cameras;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -250,6 +253,7 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/cameras (read-only camera values; no scene file written)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -405,6 +409,19 @@ public sealed class DebugBridge : IDisposable
                 });
             case "/actors":
                 return Json(ListActors());
+            case "/cameras":
+                return JsonSerializer.Serialize(new
+                {
+                    cameras = _cameras.Cameras.Select(camera => new
+                    {
+                        id = _bindings.GetCameraId(camera)?.ToString(),
+                        camera.Name, camera.Kind, camera.IsDefault, camera.IsLive,
+                        camera.Angle, camera.Pan, camera.Roll, camera.Zoom, camera.FoV,
+                        camera.PositionOffset, camera.TargetOffset, camera.WorldPosition,
+                        camera.FixedPosition, camera.Position, camera.Rotation,
+                        camera.TargetActorName, camera.IsTargetLocked,
+                    }).ToArray(),
+                }, new JsonSerializerOptions { IncludeFields = true });
             case "/profile":
             {
                 // The frame profiler's own ledger — the instrument Midona reads

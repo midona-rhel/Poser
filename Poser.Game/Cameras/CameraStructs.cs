@@ -40,6 +40,18 @@ public struct NativeCamera
 
     [FieldOffset(0x218)] public Vector2 Collide;
 
+    // The native orbit-position builder compares yaw with the previous orbit
+    // position (0x270) and clamps its correction to +/-4.5 degrees. It checks
+    // 0x245 to bypass that correction for a discontinuous write, then clears
+    // the byte at the end of the same update. Verified in the 2026-09 client.
+    [FieldOffset(0x245)] private byte _skipOrbitCorrection;
+
+    internal void SetOrbitAngle(Vector2 value)
+    {
+        Angle = value;
+        _skipOrbitCorrection = 1;
+    }
+
     /// <summary>Brio's view rotation for seeding a free cam from the orbit
     /// state: yaw from angle minus pan, pitch negated.</summary>
     public readonly Vector3 RotationAsVector3 =>

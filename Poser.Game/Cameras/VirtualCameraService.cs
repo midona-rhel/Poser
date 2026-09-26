@@ -653,16 +653,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             if (!_gPose.IsGPosing || _live is not { } live)
                 return result;
 
-            // UI-written orbit values, re-asserted AFTER the game's update:
-            // a draw-time write lands after this frame's update already ran,
-            // where the update's own normalization can eat it before it ever
-            // renders (the horizontal angle especially). Each write applies
-            // once — the mouse orbit is never fought.
-            if (live.PendingAngle is { } pendingAngle)
-            {
-                camera->Angle = pendingAngle;
-                live.PendingAngle = null;
-            }
+            // Pan, roll and zoom retain their one post-update reassertion.
+            // Angle writes use the native one-update discontinuity flag;
+            // reasserting yaw here would desynchronize it from the rendered view.
             if (live.PendingPan is { } pendingPan)
             {
                 camera->Pan = pendingPan;

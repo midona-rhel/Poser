@@ -57,12 +57,9 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     // ── orbit state ──────────────────────────────────────────────────────
 
-    // UI writes land during draw — AFTER the game's camera update already
-    // ran this frame, where the update can normalize or re-derive them away
-    // before they ever render. Each live write is therefore also queued and
-    // re-asserted once inside the camera-update detour (the phase Brio's
-    // position writes render from), so a drag reads back what it wrote.
-    internal Vector2? PendingAngle;
+    // Pan, roll and zoom retain one post-update reassertion. Orbit angles
+    // instead mark a native discontinuity so native correction and rendering
+    // consume the same authored angle during the update itself.
     internal Vector2? PendingPan;
     internal float? PendingRoll;
     internal float? PendingZoom;
@@ -76,8 +73,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             var native = Live;
             if (native != null)
             {
-                native->Angle = value;
-                PendingAngle = value;
+                native->SetOrbitAngle(value);
             }
             _angle = value;
         }
@@ -289,20 +285,18 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     /// <summary>Writes the parked fields onto the native camera — the first
     /// step of becoming live. Delimit and orthographic are re-asserted from
     /// their flags because both live on the ONE native camera and the
-    /// previous occupant may have left them differently. Every field is also
-    /// queued for the detour re-assert: a live switch happens at draw time,
-    /// the same wrong phase a UI write does.</summary>
+    /// previous occupant may have left them differently. Orbit uses the native
+    /// discontinuity path; the remaining fields retain their queued reassertion.</summary>
     internal void LoadState()
     {
         var native = _service.Native;
         if (native == null)
             return;
-        native->Angle = _angle;
+        native->SetOrbitAngle(_angle);
         native->Pan = _pan;
         native->Roll = _roll;
         native->Distance = _zoom;
         native->Zoom = _fov;
-        PendingAngle = _angle;
         PendingPan = _pan;
         PendingRoll = _roll;
         PendingZoom = _zoom;

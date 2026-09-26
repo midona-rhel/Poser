@@ -9,6 +9,7 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
+using Poser.Domain.Scene;
 
 namespace Poser.Application.Tests.Scene;
 
@@ -1056,6 +1057,27 @@ public sealed class SceneWorkflowTests
         Assert.True(
             frozen < posed,
             "the pose must land on an actor that is already stopped");
+    }
+
+    [Theory]
+    [InlineData(GazeTargetMode.Detached, true)]
+    [InlineData(GazeTargetMode.Position, false)]
+    public async Task Detached_gaze_is_established_before_sampling_the_import_basis(
+        GazeTargetMode mode, bool beforePose)
+    {
+        var actor = Actor("Lead", out _);
+        actor.Gaze = new SceneActorGaze { Mode = mode, Parts = GazeTargetType.All };
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        int gaze = runtime.Calls.IndexOf("ApplyActorGaze:Lead");
+        int posed = runtime.Calls.IndexOf("ArmPoseImport:Lead");
+        Assert.True(gaze >= 0 && posed >= 0);
+        Assert.Equal(beforePose, gaze < posed);
+        Assert.Single(runtime.Calls, call => call == "ApplyActorGaze:Lead");
     }
 
     /// <summary>A scene saved while an actor was PLAYING restores exactly like

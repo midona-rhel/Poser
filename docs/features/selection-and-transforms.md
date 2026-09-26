@@ -167,6 +167,12 @@ camera. Explicit spawn and Look through retain their normal view-switching
 behavior. Removing the live camera still falls back to Main Camera; replaying
 an explicit Look through history entry still changes the view.
 
+Scene cameras are configured and assigned targets while inactive, then the
+saved view is activated once. Explicit orbit assignments (including scene
+restoration and camera switching) bypass native previous-orbit correction for
+one update, so the saved angle is not pulled toward the previous view. Normal
+camera input resumes through the native update without a persistent hold.
+
 Free-camera movement samples held keys through Dalamud `IKeyState`, as
 Brio's `InputManagerService` does. The native keyboard frame is consumed
 only to block game input, never used as the authority for continuous movement.
