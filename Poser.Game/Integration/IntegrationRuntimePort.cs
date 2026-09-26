@@ -339,26 +339,51 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            var (ec, _) = _setCollectionForObject.InvokeFunc(
-                index, collection, /*allowCreateNew*/ true, /*allowDelete*/ false);
-            return PenumbraResult(ec, "assigning the collection");
+            return ChangeIndividualCollection(actor, index, new(true, collection));
         });
 
     public IntegrationPortResult RestoreCollection(ActorId actor, CollectionBaseline baseline) =>
         Guarded(Penumbra, "Restore collection", () =>
         {
+            if (baseline.InheritedCollection is { } inherited)
+                return RestoreInheritedCollection(actor, inherited);
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
                 return IntegrationPortResult.Fail(detail!);
-            // Restoring inheritance deletes Poser's individual assignment;
-            // restoring an individual assignment puts the exact prior
-            // collection back.
-            var (ec, _) = baseline.HadIndividualAssignment
-                ? _setCollectionForObject.InvokeFunc(
-                    index, baseline.IndividualCollection, true, false)
-                : _setCollectionForObject.InvokeFunc(index, null, false, true);
-            return PenumbraResult(ec, "restoring the collection assignment");
+            return ChangeIndividualCollection(actor, index, baseline);
         });
+
+    private IntegrationPortResult ChangeIndividualCollection(ActorId actor, int index, CollectionBaseline next)
+    {
+        var address = _bindings.Value.Resolve(actor).Value!.Address;
+        var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+        if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify this actor.");
+        bool hasOwned = _duplicateCollections.TryGetValue(address, out var owned);
+        if (!individual && effective != Guid.Empty && (!hasOwned || effective != owned)
+            && !_getCollections.InvokeFunc().ContainsKey(effective))
+            return IntegrationPortResult.Fail("Another plugin now owns the actor's temporary collection.");
+        var (ec, _) = next.HadIndividualAssignment
+            ? _setCollectionForObject.InvokeFunc(index, next.IndividualCollection, true, false)
+            : _setCollectionForObject.InvokeFunc(index, null, false, true);
+        var result = PenumbraResult(ec, "assigning the collection");
+        if (!result.Success || !hasOwned) return result;
+
+        // An individual assignment does not displace a temporary collection's
+        // render resolution. Delete only our duplicate collection, after the
+        // ordinary assignment succeeds; the session/history retains its data.
+        int deleted = _deleteTemporaryCollection.InvokeFunc(owned);
+        if (deleted is PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing)
+        {
+            _duplicateCollections.Remove(address);
+            return IntegrationPortResult.Ok();
+        }
+        var (rollback, _) = individual
+            ? _setCollectionForObject.InvokeFunc(index, effective, true, false)
+            : _setCollectionForObject.InvokeFunc(index, null, false, true);
+        return IntegrationPortResult.Fail($"The duplicate collection could not be released (code {deleted}); "
+            + (PenumbraResult(rollback, "restoring the assignment").Success
+                ? "the previous assignment was restored." : $"restoring the previous assignment also failed (code {rollback})."));
+    }
 
     public IntegrationValue<Guid> CreateTemporaryCollection(string name) =>
         Guarded(Penumbra, "Temporary collection", () =>

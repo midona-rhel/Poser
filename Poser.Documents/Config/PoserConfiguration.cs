@@ -134,4 +134,5 @@ public class PoserConfiguration
     /// step: an existing user has not read the notice either.
     /// </summary>
     public int AcceptedNoticeVersion { get; set; }
+    public string? LastSeenReleaseVersion { get; set; }
 }

@@ -718,6 +718,9 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton(new UiBuildIdentity(BuildMetadata.Branch, BuildMetadata.Commit));
+        services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
+            sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
+        services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
         return services;

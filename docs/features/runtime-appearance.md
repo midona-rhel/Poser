@@ -38,6 +38,9 @@ triggering an additional redraw.
 History also captures a duplicate's Poser-owned collection redirects and meta
 through the existing spawn collection owner. It never treats an unknown temporary
 collection as owned; external takeover makes restoration refuse without displacement.
+Choosing an installed collection on a duplicate releases only its Poser-owned
+temporary assignment. Reset and history retain its original redirects and meta
+through that same owner; other plugins' temporary assignments remain protected.
 An MCDF may temporarily replace that proven duplicate assignment. Its native owner
 keeps the inherited collection alive and reattaches it on cleanup only if the exact
 actor remains and no newer external assignment has taken over.

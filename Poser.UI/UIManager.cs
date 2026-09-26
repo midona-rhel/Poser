@@ -37,10 +37,12 @@ public sealed class UIManager : IUIManager
 
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
+    private readonly Views.ReleaseNotesView _releaseNotes;
 
     public UIManager(
         global::Poser.Application.Diagnostics.ActionRecorder recorder,
         Controls.IssueReportModal issueReport,
+        Views.ReleaseNotesView releaseNotes,
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
@@ -60,6 +62,7 @@ public sealed class UIManager : IUIManager
     {
         _recorder = recorder;
         _issueReport = issueReport;
+        _releaseNotes = releaseNotes;
         _log = log;
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -164,6 +167,7 @@ public sealed class UIManager : IUIManager
                     _windows.PumpReferenceImages();
                 // The report dialog is a popup, not a window.
                 _issueReport.Draw();
+                _releaseNotes.Draw();
             }
             using (FrameProfiler.Scope("Shell · floating menus"))
                 Crystarium.FloatingMenu.EndFrame();
