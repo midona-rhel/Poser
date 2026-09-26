@@ -198,6 +198,7 @@ public class SceneFile
     /// seats entities in kind order.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneStructureRef>? RootOrder { get; set; }
+    public List<SceneParentLink>? Parents { get; set; }
 
     // The same wire style every Poser document uses — numerics as
     // comma-space strings, enums by name, PascalCase, pretty printing,

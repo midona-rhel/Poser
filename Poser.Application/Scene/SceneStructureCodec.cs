@@ -13,64 +13,10 @@ internal static class SceneStructureCodec
     {
         try
         {
-            var actorKeys = new Dictionary<Guid, Guid>();
-            foreach (var pair in actorIdentities)
-                actorKeys[pair.Value.LogicalId] = pair.Key;
+            SceneStructureRef? RefOf(SelectionId member) =>
+                SceneParentingCodec.Reference(member, actorIdentities);
 
-            SceneStructureRef? RefOf(
-                global::Poser.Domain.Identity.SelectionId member)
-            {
-                string? kind = member.Kind switch
-                {
-                    global::Poser.Domain.Identity.SceneEntityKind.Actor => "actor",
-                    global::Poser.Domain.Identity.SceneEntityKind.Prop => "prop",
-                    global::Poser.Domain.Identity.SceneEntityKind.WorldObject =>
-                        "worldObject",
-                    global::Poser.Domain.Identity.SceneEntityKind.Light => "light",
-                    global::Poser.Domain.Identity.SceneEntityKind.Camera => "camera",
-                    global::Poser.Domain.Identity.SceneEntityKind.Overlay =>
-                        "overlay",
-                    _ => null,
-                };
-                if (kind == null)
-                    return null;
-                Guid? logical = member switch
-                {
-                    { Actor: { } actor } => actor.LogicalId,
-                    { Prop: { } prop } => prop.LogicalId,
-                    { WorldObject: { } worldObject } => worldObject.LogicalId,
-                    { Light: { } light } => light.LogicalId,
-                    { Camera: { } camera } => camera.LogicalId,
-                    { Overlay: { } overlay } => overlay.LogicalId,
-                    _ => null,
-                };
-                if (logical is not { } key)
-                    return null;
-                if (kind == "actor"
-                    && !actorKeys.TryGetValue(key, out key))
-                    return null;
-                return new SceneStructureRef { Kind = kind, Key = key };
-            }
-
-            SceneStructureRef? TransformRefOf(
-                global::Poser.Domain.Identity.TransformTargetId target)
-            {
-                return target switch
-                {
-                    { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                        when actorKeys.TryGetValue(actor.LogicalId, out var key) =>
-                        new SceneStructureRef { Kind = "actor", Key = key },
-                    { Kind: TransformTargetKind.Prop, Prop: { } prop } =>
-                        new SceneStructureRef { Kind = "prop", Key = prop.LogicalId },
-                    { Kind: TransformTargetKind.WorldObject, WorldObject: { } world } =>
-                        new SceneStructureRef { Kind = "worldObject", Key = world.LogicalId },
-                    { Kind: TransformTargetKind.Collider, Collider: { } collider } =>
-                        new SceneStructureRef { Kind = "overlay", Key = collider.LogicalId },
-                    { Kind: TransformTargetKind.Light, Light: { } light } =>
-                        new SceneStructureRef { Kind = "light", Key = light.LogicalId },
-                    _ => null,
-                };
-            }
+            SceneStructureRef? TransformRefOf(TransformTargetId target) => RefOf(target.ToSelectionId());
 
             var groups = new List<SceneGroupEntry>();
             foreach (var group in snapshot.Groups)

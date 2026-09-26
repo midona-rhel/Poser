@@ -52,31 +52,12 @@ public sealed class LightPane
     /// walking the library by index with each tile captioned by NAME.</summary>
     private readonly Crystarium.TexturePicker _goboGrid;
     private LightId? _goboTarget;
-    private LightId? _attachTarget;
 
-    /// <summary>Every bone of every actor, flat and searchable — the attach
-    /// target is one bone anywhere in the scene, not one bone of one actor.
-    /// </summary>
-    private readonly Crystarium.SearchPicker<BoneChoice> _attachPicker =
-        new("light-attach");
-
-    /// <summary>One picker row per bone, rebuilt at open: the surface's list is
-    /// a snapshot of the scene at the moment it was asked for.</summary>
-    private readonly List<BoneChoice> _boneChoices = new();
 
     /// <summary>A gobo path the texture provider threw on. An exception per row
     /// per frame is a frame-rate cliff, so a failure is remembered.</summary>
     private readonly HashSet<string> _missingGobos = new(StringComparer.Ordinal);
 
-    /// <summary>The attached bone's row label and the snapshot it was derived
-    /// from. Re-deriving walks every bone of every actor, so it is done once per
-    /// scene revision rather than once per frame.</summary>
-    private (BoneId Bone, ulong Revision, string Label)? _attachLabel;
-
-    /// <summary>One bone offered as an attach target: the identity the pick
-    /// resolves through, plus the two strings its row shows.</summary>
-    private sealed record BoneChoice(
-        BoneId Id, string BoneName, string ActorName);
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Light", new[] { ".xivl" }, isSaveMode: true);
@@ -103,10 +84,9 @@ public sealed class LightPane
     private readonly ScenePane _scenePane;
     private readonly ILightControl _values;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly ParentingSection _parenting;
 
     public LightPane(
-        global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         ISceneCreation creation,
         IPendingSceneCreation pendingCreation,
@@ -120,9 +100,9 @@ public sealed class LightPane
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         ScenePane scenePane,
-        ILightControl values)
+        ILightControl values, ParentingSection parenting)
     {
-        _configuration = configuration;
+        _parenting = parenting;
         _values = values;
         _names = names;
         _notices = notices;
@@ -261,8 +241,6 @@ public sealed class LightPane
     {
         if (_goboGrid.Draw() is { } picked)
             ApplyGoboIndex(_goboTarget, picked);
-        if (_attachPicker.Draw() is { } bone)
-            AttachTo(bone.Item);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
@@ -535,101 +513,8 @@ public sealed class LightPane
         });
     }
 
-    /// <summary>The follow target. Attaching is a per-frame copy of the bone's
-    /// position and rotation, so it OWNS the light's transform — the TRANSFORM
-    /// section and the in-world gizmo both stand down while it is set.</summary>
-    private void AttachRows(Crystarium.FormScope form, LightReading light)
-    {
-        var attached = light.AttachedBone;
-        form.Picker(
-            "Attach to",
-            light.IsAttached ? AttachLabel(attached) : "None",
-            () => OpenAttachPicker(light),
-            actions =>
-            {
-                actions.Button(
-                    "Detach",
-                    () =>
-                    {
-                        _values.SetAttachedBone(light.Id, null);
-                        _attachLabel = null;
-                    },
-                    disabled: !light.IsAttached,
-                    help: "Stop following");
-            },
-            help: "Follow a bone");
-    }
-
-    /// <summary>"Actor · bone" for the attached bone, memoized on the scene
-    /// revision. A bone the snapshot no longer lists still reads as attached —
-    /// the service, not this pane, decides when a stale bone detaches.</summary>
-    private string AttachLabel(BoneId? bone)
-    {
-        if (bone is not { } boneId)
-            return "Attached";
-
-        ulong revision = _scene.Snapshot.Revision;
-        if (_attachLabel is { } cached &&
-            cached.Revision == revision &&
-            cached.Bone.Equals(boneId))
-            return cached.Label;
-
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            foreach (var skeleton in actor.Skeletons)
-            {
-                foreach (var descriptor in skeleton.Bones)
-                {
-                    if (!descriptor.Id.Equals(boneId))
-                        continue;
-                    string label =
-                        $"{ActorNames.Display(_configuration, actor)} · {descriptor.DisplayName}";
-                    _attachLabel = (boneId, revision, label);
-                    return label;
-                }
-            }
-        }
-        return "Attached";
-    }
-
-    private void OpenAttachPicker(LightReading light)
-    {
-        _attachTarget = light.Id;
-        _boneChoices.Clear();
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            string actorName = ActorNames.Display(_configuration, actor);
-            foreach (var skeleton in actor.Skeletons)
-            {
-                foreach (var descriptor in skeleton.Bones)
-                    _boneChoices.Add(new BoneChoice(
-                        descriptor.Id, descriptor.DisplayName, actorName));
-            }
-        }
-
-        string? selected = light.AttachedBone?.ToString();
-        _attachPicker.Open(
-            "attach",
-            _boneChoices,
-            static choice => choice.BoneName,
-            static choice => choice.Id.ToString(),
-            selected,
-            options: new PickerOptions<BoneChoice>
-            {
-                Badge = static choice => choice.ActorName,
-                // A row carries a bone name and the actor it belongs to; the
-                // narrow picker cuts the badge.
-                Width = Crystarium.ActiveTheme.Picker.WideWidth,
-            });
-    }
-
-    private void AttachTo(BoneChoice choice)
-    {
-        if (_attachTarget is not { } id) return;
-        var result = _values.SetAttachedBone(id, choice.Id);
-        if (!result.Success) _notices.Failed($"Attach: {result.Detail}");
-        _attachLabel = null;
-    }
+    private void AttachRows(Crystarium.FormScope form, LightReading light) =>
+        _parenting.Draw(form, SelectionId.ForLight(light.Id));
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has

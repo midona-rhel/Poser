@@ -18,12 +18,14 @@ namespace Poser.Game.Posing;
 /// <summary>Capture native state once; all file parsing/skinning works on managed snapshots.</summary>
 public sealed class ActorColliderCapture(
     IEntityBindings bindings, IIntegrationRuntimePort integration, IDataManager data,
-    Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log) : Application.Posing.IActorColliderCapture
+    Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
+    Application.Transforms.TransformParenting parenting) : Application.Posing.IActorColliderCapture
 {
     private sealed record ModelSnapshot(string Path, ushort Race, uint Attributes, uint Shapes);
     private sealed record Snapshot(ModelSnapshot[] Models, Dictionary<string, Matrix4x4> Bones,
         Dictionary<string, ActorBodyColliderBuilder.Joint> Joints,
-        Matrix4x4 World, Vector3 Origin, ushort Race, string DeformerPath);
+        Matrix4x4 World, Vector3 Origin, ushort Race, string DeformerPath,
+        Dictionary<string, (BoneId Id, PoseTransform Frame)> Frames);
 
     public bool Busy { get; private set; }
 
@@ -51,7 +53,14 @@ public sealed class ActorColliderCapture(
                     },
                 }).ToArray();
                 var group = lifecycle.SpawnOverlayGroup(name + " colliders", states, groups,
-                    node => bindings.GetOverlayId((IOverlayNode)node) is { } id ? SelectionId.ForOverlay(id) : null);
+                    node => bindings.GetOverlayId((IOverlayNode)node) is { } id ? SelectionId.ForOverlay(id) : null,
+                    (child, index) =>
+                    {
+                        var frame = snapshot.Frames[parts[index].BoneName];
+                        if (!parenting.Import(child, new(SelectionId.ForBone(frame.Id),
+                            TransformParent.Local(states[index].Collider!.Transform, frame.Frame))))
+                            throw new InvalidOperationException("The collider's parent bone is unavailable.");
+                    });
                 log.Information($"Actor body collider fitted {parts.Length} capsule/sphere parts from {snapshot.Models.Length} models in {timer.ElapsedMilliseconds} ms.");
                 return group;
             });
@@ -96,6 +105,7 @@ public sealed class ActorColliderCapture(
         var origin = new Vector3(world.M41, world.M42, world.M43);
         var bones = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
         var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint>(StringComparer.Ordinal);
+        var frames = new Dictionary<string, (BoneId, PoseTransform)>(StringComparer.Ordinal);
         foreach (var (bone, reference) in skeleton.CaptureReferencePose())
         {
             var partial = &character->Skeleton->PartialSkeletons[bone.PartialId];
@@ -113,10 +123,15 @@ public sealed class ActorColliderCapture(
             // Read the native final pose, not demand-driven inspector caches or raw baselines.
             bones.TryAdd(bone.BoneName, inverseBind * current.ToMatrix() * world);
             joints.TryAdd(bone.BoneName, new(Vector3.Transform(current.Position, world) - origin, bone.ParentBone?.BoneName));
+            if (bindings.GetBoneId(bone) is { } boneId)
+            {
+                var frame = global::Poser.Transform.FromMatrix(current.ToMatrix() * world);
+                frames.TryAdd(bone.BoneName, (boneId, new(frame.Position, frame.Rotation, frame.Scale)));
+            }
         }
         ushort skeletonRace = character->GetModelType() == CharacterBase.ModelType.Human ? ((Human*)character)->RaceSexId : (ushort)0;
         var deformerPath = replacements.GetValueOrDefault(ActorColliderDeformation.GamePath, ActorColliderDeformation.GamePath);
-        return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath);
+        return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath, frames);
 
         bool resourcesForExcludedModel(string actual) => paths.Value is { } resourcePaths &&
             resourcePaths.TryGetValue(actual, out var originals) && originals.Any(p => !IsBodyModelPath(p));

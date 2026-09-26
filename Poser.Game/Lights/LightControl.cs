@@ -12,7 +12,7 @@ namespace Poser.Game.Lights;
 
 public sealed class LightControl(
     IEntityBindings bindings, IFramework framework,
-    ILightingService lighting, LightSession values) : ILightControl
+    ILightingService lighting, LightSession values, TransformParenting parenting) : ILightControl
 {
     public IReadOnlyList<LightGobo> Gobos { get; } = Array.AsReadOnly(
         lighting.Gobos.Select(g => new LightGobo(g.Path, g.Name)).ToArray());
@@ -41,8 +41,8 @@ public sealed class LightControl(
             l.CharacterShadowRange,
             l.ShadowPlaneNear,
             l.ShadowPlaneFar,
-            l.Ownership, l.GoboPath, l.AttachedBone is not null,
-            l.AttachedBone is { } bone ? bindings.GetBoneId(bone) : null)
+            l.Ownership, l.GoboPath, parenting.Read(SelectionId.ForLight(id)) is not null,
+            parenting.Read(SelectionId.ForLight(id))?.Target.Bone)
         : null;
 
     public void Seal() => values.Seal();
@@ -80,18 +80,15 @@ public sealed class LightControl(
 
     public ValueWriteResult SetAttachedBone(LightId id, BoneId? target)
     {
-        if (Resolve(id) is not { } light)
+        if (Resolve(id) is null)
             return new(false, "The light is no longer available.");
-        IBone? bone = null;
         if (target is { } boneId)
         {
             if (bindings.Resolve(boneId) is not { Success: true, Value: { Skeleton.IsValid: true } resolved } ||
                 bindings.GetBoneId(resolved) != boneId)
                 return new(false, "The bone is no longer available.");
-            bone = resolved;
         }
-        values.SetAttachedBone(light, bone);
-        return ValueWriteResult.Ok();
+        return parenting.Attach(SelectionId.ForLight(id), target is { } parent ? SelectionId.ForBone(parent) : null);
     }
 
     public ValueWriteResult ApplyGobo(LightId id, uint index)

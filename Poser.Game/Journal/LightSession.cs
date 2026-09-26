@@ -7,7 +7,7 @@ using Poser.Services;
 namespace Poser.Game.Journal;
 
 /// <summary>Every value a surface sets on a light, as a journal step. The
-/// gobo and the attached bone go through here too.</summary>
+/// gobo goes through here too; parenting uses the shared relationship owner.</summary>
 public sealed class LightSession
 {
     private readonly ValueJournal _journal;
@@ -46,7 +46,6 @@ public sealed class LightSession
     public void SetCharacterShadowRange(ILight l, float v) => Set(l, "CharacterShadowRange", "Set character shadow range", x => x.CharacterShadowRange, (x, value) => x.CharacterShadowRange = value, v);
     public void SetShadowPlaneNear(ILight l, float v) => Set(l, "ShadowPlaneNear", "Set shadow near plane", x => x.ShadowPlaneNear, (x, value) => x.ShadowPlaneNear = value, v);
     public void SetShadowPlaneFar(ILight l, float v) => Set(l, "ShadowPlaneFar", "Set shadow far plane", x => x.ShadowPlaneFar, (x, value) => x.ShadowPlaneFar = value, v);
-    public void SetAttachedBone(ILight l, IBone? v) => Set(l, "AttachedBone", v is null ? "Detach light" : "Attach light", x => x.AttachedBone, (x, value) => x.AttachedBone = value, v);
 
     /// <summary>Projects the gobo; false when the texture could not be
     /// applied, and nothing is journaled then.</summary>

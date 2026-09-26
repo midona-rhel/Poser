@@ -12,7 +12,7 @@ internal static class TransformRecovery
         ArgumentNullException.ThrowIfNull(states);
 
         var attempts = new List<TransformRecoveryAttempt>();
-        foreach (var state in states)
+        foreach (var state in states.OrderBy(state => runtime.DependencyDepth(state.Target)))
         {
             TransformPortResult result;
             try

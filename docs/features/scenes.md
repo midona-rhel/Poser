@@ -17,6 +17,30 @@ Attached companions restore their own captured model placement after their
 bones, not just the owner's placement. Their embedded absolute model transform
 receives the same scene rebase as the owner; bone-local poses are not rebased.
 
+## Transform parenting
+
+Parenting is independent of sidebar grouping. Actors, props, scenery/VFX,
+lights and IK colliders can follow another entity or an actor bone. The shared
+application owner stores a stable target and a position/rotation offset;
+attaching preserves world placement, and detaching leaves the child in place.
+Scale belongs to the child and is not inherited. Screen overlays and cameras
+are not transform-parenting participants. Existing light attachments import
+into this same owner; they do not retain a separate following loop.
+
+Numeric and gizmo edits update the child's offset. Undo/Redo restores that
+offset against the parent's current frame. Multi-entity edits and restoration
+write parents before children. Cycles, including an actor attached to its own
+bone or companion, are refused. Locks prevent editing relationships, not
+following their parents. Missing parents hold children at their last position;
+only lifecycle-history rebinding can redirect a removed entity to its restored
+instance. Bone redraw rebinding stays within the exact actor, slot and name.
+
+Scenes store entity keys and bone names, never live handles. Relationships load
+after entity/pose readiness, within the existing scene transaction. Companion
+references identify the saved owner's attachment. Saving without a parent
+keeps the child's current placement as a static object and reports the omission.
+Generated body colliders use this contract; Detach makes an individual part static.
+
 ## Lifecycle history
 
 Each entity family has a typed lifecycle owner over the same transform

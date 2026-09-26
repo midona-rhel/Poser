@@ -873,7 +873,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     internal Poser.Application.Scene.SceneGroup SpawnOverlayGroup(string name,
         IReadOnlyList<OverlayNodeState> states, Poser.Application.Scene.SceneGroups groups,
-        Func<object, Poser.Domain.Identity.SelectionId?> selection)
+        Func<object, Poser.Domain.Identity.SelectionId?> selection,
+        Action<Poser.Domain.Identity.SelectionId, int>? initialize = null)
     {
         var before = groups.Capture();
         var slots = new List<OverlaySlot>();
@@ -887,6 +888,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
                     ?? throw new InvalidOperationException("A body collider could not be created.")));
             group = groups.Create(name, Members(), allowThin: true)
                 ?? throw new InvalidOperationException("The collider group could not be created.");
+            var members = Members();
+            for (int i = 0; i < members.Length; i++) initialize?.Invoke(members[i], i);
         }
         catch
         {

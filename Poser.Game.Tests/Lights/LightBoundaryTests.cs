@@ -84,9 +84,9 @@ public sealed class LightBoundaryTests
         Assert.Equal("test.tex", f.Light.GoboPath);
         Assert.True(f.Control.SetAttachedBone(f.Id, f.BoneId).Success);
         var attachStep = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.Same(f.Bone, f.Light.AttachedBone);
+        Assert.Equal(f.BoneId, f.Control.Read(f.Id)!.AttachedBone);
         Assert.True(attachStep.Undo());
-        Assert.Null(f.Light.AttachedBone);
+        Assert.Null(f.Control.Read(f.Id)!.AttachedBone);
         f.BoneAvailable = false;
         Assert.False(f.Control.SetAttachedBone(f.Id, f.BoneId).Success);
         Assert.Same(attachStep, f.History.PeekUndo());
@@ -167,7 +167,13 @@ public sealed class LightBoundaryTests
             });
             var framework = Stub<IFramework>((_, _) => OnThread);
             Journal = new(History);
-            Control = new(bindings, framework, lighting, new LightSession(Journal, lighting));
+            var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
+            {
+                "CanParent" or "CanEdit" or "Write" => true,
+                "Read" => (Poser.Domain.Transforms.PoseTransform?)Poser.Domain.Transforms.PoseTransform.Identity,
+                _ => null,
+            }), History, Journal);
+            Control = new(bindings, framework, lighting, new LightSession(Journal, lighting), parenting);
             Files = new(framework, bindings, Stub<ISceneCreation>((_, a) =>
             {
                 Imported = (LightFile)a![0]!;

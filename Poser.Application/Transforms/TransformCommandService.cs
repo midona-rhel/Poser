@@ -151,7 +151,7 @@ public sealed class TransformCommandService
                 return CancelledAfterRecovery(before);
         }
 
-        for (int i = 0; i < writes.Count; i++)
+        foreach (int i in Enumerable.Range(0, writes.Count).OrderBy(i => _runtime.DependencyDepth(before[i].Target)))
         {
             if (cancellationRequested?.Invoke() == true)
                 return CancelledAfterRecovery(before);

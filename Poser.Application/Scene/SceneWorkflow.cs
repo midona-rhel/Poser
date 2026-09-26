@@ -99,19 +99,22 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
     private readonly TransformHistory? _history;
     private readonly Poser.Application.Scene.ISceneStructure? _structure;
+    private readonly TransformParenting? _parenting;
 
     public SceneWorkflow(
         ISceneRuntime runtime,
         ISceneDocumentStore documents,
         ISceneWorkflowObserver? observer = null,
         TransformHistory? history = null,
-        Poser.Application.Scene.ISceneStructure? structure = null)
+        Poser.Application.Scene.ISceneStructure? structure = null,
+        TransformParenting? parenting = null)
     {
         _runtime = runtime;
         _documents = documents;
         _observer = observer;
         _history = history;
         _structure = structure;
+        _parenting = parenting;
     }
 
 
@@ -428,6 +431,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                                     if (outcome.Success && outcome.Scene is { } document
                                         && options.IncludeStructure && _structure != null)
                                         SceneStructureCodec.Write(document, _structure.Capture(), outcome.ActorIdentities);
+                                    if (outcome.Success && outcome.Scene is { } parentDocument && _parenting != null)
+                                        SceneParentingCodec.Write(parentDocument, _parenting.Capture(), outcome.ActorIdentities, _parenting.CompanionOwner);
                                 }
                                 catch (Exception exception)
                                 {
@@ -618,6 +623,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             }
 
             int unsealedAppearance = SceneSavePolicy.Apply(scene, options, notes);
+            SceneParenting.Prune(scene, notes);
 
             if (cancellation.IsCancellationRequested)
             {

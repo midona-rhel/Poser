@@ -40,12 +40,17 @@ public sealed class SceneFileStoreTests
             group.Transform.Members.Add(new() { Member = reference, Initial = pose, Expected = pose });
         }
         scene.Groups = [group];
+        scene.Parents = [new() { Child = group.Members[1], Target = group.Members[0],
+            Offset = new(new(1, 2, 3), Quaternion.CreateFromAxisAngle(Vector3.UnitX, .4f), new(2, 3, 4)) }];
         var write = SceneFileStore.Default.Write(scene, fixture.Path);
         Assert.True(write.Succeeded, write.Failure?.Detail);
         var read = SceneFileStore.Default.Read(fixture.Path);
         Assert.True(read.Succeeded, read.Failure?.Detail);
         var restored = Assert.Single(read.Scene!.Groups!);
         Assert.Equal(group.Name, restored.Name);
+        var savedParent = Assert.Single(read.Scene.Parents!);
+        Assert.Equal(scene.Parents[0].Target.Key, savedParent.Target.Key);
+        Assert.Equal(scene.Parents[0].Offset, savedParent.Offset);
         for (int i = 0; i < 2; i++)
         {
             Assert.Equal(scene.Overlays[i].Node, read.Scene.Overlays![i].Node);

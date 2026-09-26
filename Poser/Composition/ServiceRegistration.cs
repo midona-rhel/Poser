@@ -187,7 +187,14 @@ internal static class ServiceRegistration
     private static IServiceCollection AddTransformFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<ITransformRuntimePort, TransformRuntimePort>();
+        services.AddSingleton<TransformRuntimePort>();
+        services.AddSingleton<IParentingRuntime, ParentingRuntime>();
+        services.AddSingleton<TransformParenting>();
+        services.AddSingleton<ITransformParenting>(sp => sp.GetRequiredService<TransformParenting>());
+        services.AddSingleton<ITransformRuntimePort>(sp => new ParentedTransformPort(
+            sp.GetRequiredService<TransformRuntimePort>(), sp.GetRequiredService<TransformParenting>()));
+        services.AddSingleton<ParentingFrameRuntime>();
+        services.AddTransient<UI.ParentingSection>();
         // The depth is a live setting read per recorded edit, so the history
         // takes the config as a delegate rather than a captured number.
         services.AddSingleton(sp =>

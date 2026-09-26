@@ -116,15 +116,17 @@ participation, transform locking, visibility and face opacity; the inspector and
 world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
-An actor's **Create collider from current pose** action creates a named group
+An actor's **Create collider** action creates a named group
 of at most 30 ordinary colliders: a short waist capsule and one capsule per spine segment, capsules for the neck,
 shoulders, upper/lower limbs and feet, and spheres for the head, hands, breasts,
 hips, elbows, knees and ankles. Joint spheres use the neighbouring capsules' average radius;
 hip and ankle caps match the thigh and lower-leg radius respectively.
 Feet follow the posed
 ankle-to-toe direction, centered and extended to their surface. Each part can be edited or removed
-individually; creating the group is one undo step. Later actor edits, animation
-or removal do not change these frozen, scene/library-saveable shapes.
+individually; creating the group is one undo step. Each part is automatically
+parented to its corresponding bone and follows posing/animation. Dimensions
+remain those fitted at capture time. Use Detach for a static part; relationships
+and missing-parent behavior follow [transform parenting](scenes.md#transform-parenting).
 Loaded model weights assign surfaces to body sections; joint positions supply
 limb lengths. Bone joints are capsule endcap centers, so the rounded ends extend
 past the joints and overlap neighbouring parts; surface-fitted feet keep their

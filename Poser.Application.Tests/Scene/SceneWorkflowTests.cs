@@ -22,6 +22,58 @@ namespace Poser.Application.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    private sealed class ParentRuntime : IParentingRuntime
+    {
+        public Dictionary<SelectionId, PoseTransform> Values = new();
+        public bool CanParent(SelectionId child) => true;
+        public PoseTransform? Read(SelectionId id) => Values.GetValueOrDefault(id, PoseTransform.Identity);
+        public bool Write(SelectionId id, PoseTransform world) { Values[id] = world; return true; }
+        public SelectionId? ResolveBone(ActorId actor, PoseSlot slot, string name, int partial) => null;
+    }
+
+    [Fact]
+    public async Task Parenting_load_save_and_redo_resolve_new_entities_without_live_ids_in_the_file()
+    {
+        var parentKey = Guid.NewGuid(); var childKey = Guid.NewGuid();
+        var document = SceneWith();
+        document.Lights.Add(new() { Key = parentKey, Light = new() { Name = "Parent" } });
+        document.Lights.Add(new() { Key = childKey, Light = new() { Name = "Child" } });
+        var offset = new PoseTransform(new(2, 3, 4), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .3f), new(2));
+        document.Parents = [new() { Child = new() { Kind = "light", Key = childKey },
+            Target = new() { Kind = "light", Key = parentKey }, Offset = offset }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        var groups = new SceneGroups(); var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        var history = new TransformHistory(); var native = new ParentRuntime();
+        var parenting = new TransformParenting(native, history, new(history));
+        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+            structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
+        Assert.True(workflow.BeginLoad("parents.xivs").Success); await workflow.Drain;
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        var first = Assert.Single(parenting.Capture());
+        Assert.Equal(offset, first.Value.Offset);
+        Assert.NotEqual(first.Key, first.Value.Target);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo()); history.CommitUndo(step);
+        Assert.True(step.Redo()); history.CommitRedo(step); await workflow.Drain;
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        parenting.Evaluate();
+        var currentIds = runtime.SpawnedLightTokens.TakeLast(2).Select(t => runtime.ResolveSceneEntity(t)!.Value).ToArray();
+        Assert.Equal(currentIds[0], parenting.Read(currentIds[1])!.Target);
+        runtime.CapturedScene = () =>
+        {
+            var saved = SceneWith();
+            foreach (var id in currentIds) saved.Lights.Add(new() { Key = id.Light!.Value.LogicalId, Light = new() { Name = "Saved" } });
+            return saved;
+        };
+        Assert.True(workflow.BeginSave("saved.xivs").Success); await workflow.Drain;
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        var link = Assert.Single(runtime.Captured!.Parents!);
+        Assert.Equal(currentIds[0].Light!.Value.LogicalId, link.Target.Key);
+        Assert.Equal(currentIds[1].Light!.Value.LogicalId, link.Child.Key);
+        Assert.Equal(offset, link.Offset);
+    }
+
     [Fact]
     public async Task Headless_load_restores_nested_groups_before_completion_and_undo_removes_only_its_groups()
     {
