@@ -112,8 +112,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         NativeCamera* camera, float* lookAt, float* position, byte mode);
 
     private readonly Hook<CameraUpdateDelegate>? _cameraUpdateHook;
-    private delegate int AutoRotateModeDelegate(NativeCamera* camera, nint framework);
-    private readonly Hook<AutoRotateModeDelegate>? _autoRotateModeHook;
     private readonly Hook<CameraCollisionDelegate>? _cameraCollisionHook;
     private readonly Runtime.SceneFramePhaseService? _framePhases;
     private readonly Hook<HandleInputDelegate>? _handleInputHook;
@@ -232,9 +230,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _cameraUpdateHook = TryHook<CameraUpdateDelegate>(
             "camera update", CameraUpdateSignature, CameraUpdateDetour);
         IsAvailable = _cameraUpdateHook != null;
-        _autoRotateModeHook = TryHook<AutoRotateModeDelegate>(
-            "camera auto-rotation", "E8 ?? ?? ?? ?? 48 8B CB 85 C0 0F 84 ?? ?? ?? ?? 83 E8 01",
-            AutoRotateModeDetour);
 
         _cameraCollisionHook = TryHook<CameraCollisionDelegate>(
             "camera collision", CameraCollisionSignature, CameraCollisionDetour);
@@ -671,19 +666,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     // ── hooks ────────────────────────────────────────────────────────────
 
-    private int AutoRotateModeDetour(NativeCamera* camera, nint framework)
-    {
-        var mode = _autoRotateModeHook!.Original(camera, framework);
-#if DEBUG
-        if (_orbitTraceFrames > 0) TraceOrbit($"auto-mode-{mode}", camera);
-#endif
-        // Native mode 4 keeps manual orbit input but suppresses automatic recentering.
-        // Cammy uses the same mode for free camera control; restrict it to the
-        // exact active camera's first update after an authored orbit write.
-        return _gPose.IsGPosing && camera == Native && _live?.OrbitWritePending == true
-            ? 4 : mode;
-    }
-
     /// <summary>Brio's CameraUpdateDetour: the position/target offset is
     /// added after the game has computed the frame's camera, and the look-at
     /// moves with it so the view direction survives.</summary>
@@ -694,8 +676,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (trace) TraceOrbit("before", camera);
 #endif
         var result = _cameraUpdateHook!.Original(camera);
-        if (camera == Native && _live is { } updated)
-            updated.OrbitWritePending = false;
 #if DEBUG
         if (trace)
         {
@@ -1254,7 +1234,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             // The game may already be tearing down.
         }
         _cameraUpdateHook?.Dispose();
-        _autoRotateModeHook?.Dispose();
         _cameraCollisionHook?.Dispose();
         if (_framePhases != null)
             _framePhases.CameraUpdate -= UpdateSceneCamera;
