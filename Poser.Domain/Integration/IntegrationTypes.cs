@@ -122,7 +122,10 @@ public sealed record McdfOwnership(
     string? PendingGlamourerRecovery = null,
     string? PendingBodyRecoveryJson = null,
     string? ActorName = null,
-    string? SourcePath = null);
+    string? SourcePath = null,
+    // The load-only collection is gone, but the current draw object still
+    // references extracted files. Teardown must redraw before releasing them.
+    bool DrawResourcesLoaded = false);
 
 /// <summary>
 /// Poser-owned external state for one exact actor generation. Ownership is

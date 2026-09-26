@@ -305,19 +305,25 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         _service.ApplyOrthographic(_orthographic, OrthographicZoom);
     }
 
-    /// <summary>Seeds a free camera from the current view: real position, and
-    /// the orbit rotation so the first frame looks the same way (Brio's
-    /// ToFreeCam + rotation carry-over). The position comes off the rendered
-    /// view matrix, so seeding from a live FREE camera carries where the shot
-    /// actually is instead of the orbit position it left behind.</summary>
+    /// <summary>Seed both position and orientation from the same rendered
+    /// view, including pan, roll and an already-live free camera.</summary>
     internal void SeedFreeCam()
     {
         var native = _service.Native;
         if (native == null)
             return;
-        Position = native->GetPosition();
+        if (native->TryGetRenderedPose(out var position, out var rotation, out var roll))
+        {
+            Position = position;
+            Rotation = rotation;
+            Roll = roll;
+        }
+        else
+        {
+            Position = native->GetPosition();
+            Rotation = native->RotationAsVector3;
+        }
         SpawnPosition = Position;
-        Rotation = native->RotationAsVector3;
     }
 
     public float DefaultFoV { get; private set; }

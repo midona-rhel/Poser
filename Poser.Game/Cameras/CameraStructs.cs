@@ -57,6 +57,33 @@ public struct NativeCamera
     public readonly Vector3 RotationAsVector3 =>
         new(Angle.X - Pan.X, -Angle.Y - Pan.Y, 0f);
 
+    internal readonly bool TryGetRenderedPose(out Vector3 position, out Vector3 rotation, out float roll)
+    {
+        position = rotation = default;
+        roll = 0;
+        var view = Camera.CameraBase.SceneCamera.ViewMatrix;
+        view.M44 = 1f;
+        if (!Matrix4x4.Invert(view, out var inverse))
+            return false;
+        var look = Vector3.Normalize(new Vector3(view.M13, view.M23, view.M33));
+        var right = Vector3.Normalize(new Vector3(view.M11, view.M21, view.M31));
+        float flat = MathF.Sqrt(look.X * look.X + look.Z * look.Z);
+        float yaw = flat > 1e-6f ? MathF.Atan2(look.X, look.Z) : RotationAsVector3.X;
+        float pitch = MathF.Atan2(look.Y, flat);
+        var unrolledRight = new Vector3(MathF.Cos(yaw), 0, -MathF.Sin(yaw));
+        var unrolledUp = Vector3.Cross(look, unrolledRight);
+        // Free-camera view axes are columns. Its post-multiplied roll turns
+        // the right column toward -up; use that convention when extracting it.
+        float renderedRoll = MathF.Atan2(-Vector3.Dot(right, unrolledUp), Vector3.Dot(right, unrolledRight));
+        if (!float.IsFinite(inverse.M41) || !float.IsFinite(inverse.M42) || !float.IsFinite(inverse.M43)
+            || !float.IsFinite(yaw) || !float.IsFinite(pitch) || !float.IsFinite(renderedRoll))
+            return false;
+        position = inverse.Translation;
+        rotation = new Vector3(yaw, pitch, 0);
+        roll = renderedRoll;
+        return true;
+    }
+
     /// <summary>Brio's RealPosition (CameraExtensions.GetPosition): the eye
     /// the frame is RENDERED from, inverted out of the view matrix. The
     /// scene camera's Position field is not it — a free camera replaces the

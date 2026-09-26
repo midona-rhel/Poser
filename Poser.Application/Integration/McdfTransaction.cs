@@ -558,6 +558,24 @@ public sealed partial class McdfTransaction
                     failure = redraw.Detail;
             }
 
+            if (failure == null && operation.TemporaryCollection is { } loadedCollection)
+            {
+                failure = await _port.OnFrameworkThread(() =>
+                {
+                    if (Guard() is { } stop)
+                        return stop;
+                    // Brio releases the load-only assignment after redraw so
+                    // subsequent animations resolve against the normal collection.
+                    // The loaded draw object still owns references to our files.
+                    var released = _port.DeleteTemporaryCollection(loadedCollection);
+                    if (!released.Success)
+                        return released.Detail;
+                    operation.TemporaryCollection = null;
+                    operation.RedrawPending = true;
+                    return null;
+                });
+            }
+
             if (failure == null && bodyJson != null)
             {
                 Step(McdfPhase.ApplyingBodyProfile, filesTotal, bytesTotal);
@@ -610,7 +628,8 @@ public sealed partial class McdfTransaction
                         operation.OperationDirectory?.Path, operation.GlamourerLocked,
                         operation.TemporaryProfile, operation.BodyJson,
                         ActorName: operation.ActorName,
-                        SourcePath: operation.SourcePath),
+                        SourcePath: operation.SourcePath,
+                        DrawResourcesLoaded: operation.RedrawPending),
                     DesignOwned = !replacedGlamourer && current.DesignOwned,
                     DesignName = replacedGlamourer ? null : current.DesignName,
                     TemporaryBodyProfile = replacedBody ? null : current.TemporaryBodyProfile,
@@ -1028,7 +1047,7 @@ public sealed partial class McdfTransaction
         bool complete = true;
         // A redraw is owed whenever temporary Penumbra ownership was
         // removed — now or, still pending, by an earlier partial teardown.
-        bool removedPenumbra = mcdf.RedrawPending;
+        bool removedPenumbra = mcdf.RedrawPending || mcdf.DrawResourcesLoaded;
         // The captured character name, and only while the object itself is
         // unreachable: Glamourer's state is keyed to the identity, so it is
         // still addressable when the exact generation is not.
@@ -1228,6 +1247,7 @@ public sealed partial class McdfTransaction
                 TemporaryCollection = temporaryCollection,
                 OperationDirectory = operationDirectory,
                 RedrawPending = redrawPending,
+                DrawResourcesLoaded = false,
                 PendingGlamourerRecovery = pendingGlamourer,
                 PendingBodyRecoveryJson = pendingBody,
             },
@@ -1357,6 +1377,7 @@ public sealed partial class McdfTransaction
             GlamourerLocked: false,
             TemporaryProfile: null,
             RedrawPending: false,
+            DrawResourcesLoaded: false,
             PendingGlamourerRecovery: null,
             PendingBodyRecoveryJson: null,
         }

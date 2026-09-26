@@ -75,6 +75,33 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     public void Dispose() => Marshal.FreeHGlobal(_nativeBlock);
+
+    [Theory]
+    [InlineData(0.7f, 0.4f, 0f)]
+    [InlineData(-2.3f, -0.6f, 0.9f)]
+    [InlineData(1.2f, 1.5707963f, -1.1f)]
+    public void Free_camera_seed_preserves_rendered_view_instead_of_unrelated_orbit_fields(float yaw, float pitch, float roll)
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, true);
+        using var service = setup.Service;
+        var source = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false)
+        {
+            Position = new Vector3(83, 4, -126), Rotation = new Vector3(yaw, pitch, 0), Roll = roll,
+        };
+        var expected = service.UpdateFreeCamera(source);
+        var native = (NativeCamera*)_nativeBlock;
+        native->Camera.CameraBase.SceneCamera.ViewMatrix = expected;
+        native->Angle = new Vector2(-0.5f, 0.8f);
+        native->Pan = new Vector2(0.3f, -0.4f);
+        var created = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false);
+        created.SeedFreeCam();
+        var actual = service.UpdateFreeCamera(created);
+        Assert.InRange(Vector3.Distance(source.Position, created.Position), 0, 0.0001f);
+        Assert.InRange(Vector3.Distance(new(expected.M11, expected.M21, expected.M31), new(actual.M11, actual.M21, actual.M31)), 0, 0.0001f);
+        Assert.InRange(Vector3.Distance(new(expected.M12, expected.M22, expected.M32), new(actual.M12, actual.M22, actual.M32)), 0, 0.0001f);
+        Assert.InRange(Vector3.Distance(new(expected.M13, expected.M23, expected.M33), new(actual.M13, actual.M23, actual.M33)), 0, 0.0001f);
+    }
+
     [Fact]
     public void Copies_advance_the_clicked_name_series_without_filling_deleted_gaps()
     {

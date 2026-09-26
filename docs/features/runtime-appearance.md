@@ -65,6 +65,13 @@ owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
 before the captured state is restored, including the by-name path after a
 clone is gone; failure of either part keeps the operation owned.
 
+The MCDF collection is a load-only assignment: after the appearance redraw,
+it is released so subsequent animations resolve through the actor's normal
+collection, matching Brio's MCDF application order. The loaded appearance and
+extracted files remain owned until reset/teardown and its redraw barrier;
+history retains those files through the existing resource owner. Releasing
+the assignment neither redraws away the imported appearance nor deletes files.
+
 The Actor tab has three views under one pill. General is what the
 actor is in the scene: model, opacity, tints, wet surface, collection,
 design, body profile, character file. Appearance is how it looks, through

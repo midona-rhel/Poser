@@ -11,6 +11,60 @@ namespace Poser.Application.Tests.Integration;
 public sealed class McdfHistoryTests
 {
     [Fact]
+    public async Task Import_releases_collection_after_redraw_but_retains_files_until_reset_redraw()
+    {
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var runtime = (Runtime)(object)port;
+        runtime.Resources = runtime.OwnedDuplicate = true;
+        var files = new Files { Resources = true };
+        var loaded = new TaskCompletionSource<IntegrationPortResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        runtime.RedrawResults.Enqueue(loaded.Task);
+        using var integration = new ActorIntegrationSession(port, files, new Sessions());
+        var actor = ActorId.New();
+        Assert.True(integration.BeginImport(actor, "body.mcdf").Success);
+        await runtime.RedrawStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.DeleteTemporaryCollection), runtime.Calls);
+        loaded.SetResult(IntegrationPortResult.Ok());
+        await integration.PendingCompletion;
+        Assert.True(integration.Mcdf!.Outcome!.Success, integration.Mcdf.Outcome.Detail);
+        var ownership = integration.OverridesFor(actor).Mcdf!;
+        Assert.Null(ownership.TemporaryCollection);
+        Assert.True(ownership.DrawResourcesLoaded);
+        Assert.False(ownership.RedrawPending);
+        Assert.Empty(files.Deleted);
+
+        var reset = new TaskCompletionSource<IntegrationPortResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        runtime.RedrawResults.Enqueue(reset.Task);
+        Assert.True(integration.ResetMcdf(actor).Success);
+        Assert.Empty(files.Deleted);
+        reset.SetResult(IntegrationPortResult.Ok());
+        await integration.PendingCompletion;
+        Assert.Contains("directory-1", files.Deleted);
+        Assert.Null(integration.OverridesFor(actor).Mcdf);
+    }
+
+    [Fact]
+    public async Task Collection_release_failure_refuses_import_and_retains_cleanup_for_retry()
+    {
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var runtime = (Runtime)(object)port;
+        runtime.Resources = runtime.OwnedDuplicate = runtime.FailDeleteCollection = true;
+        var files = new Files { Resources = true };
+        using var integration = new ActorIntegrationSession(port, files, new Sessions());
+        var actor = ActorId.New();
+        Assert.True(integration.BeginImport(actor, "body.mcdf").Success);
+        await integration.PendingCompletion;
+        Assert.False(integration.Mcdf!.Outcome!.Success);
+        Assert.NotNull(integration.OverridesFor(actor).Mcdf!.TemporaryCollection);
+        Assert.Empty(files.Deleted);
+        runtime.FailDeleteCollection = false;
+        Assert.True(integration.ResetMcdf(actor).Success);
+        await integration.PendingCompletion;
+        Assert.Null(integration.OverridesFor(actor).Mcdf);
+        Assert.Contains("directory-1", files.Deleted);
+    }
+
+    [Fact]
     public async Task Reset_and_restore_use_retained_resources_without_rereading_the_original_file()
     {
         var sessions = new Sessions();
@@ -101,6 +155,10 @@ public sealed class McdfHistoryTests
     public class Runtime : DispatchProxy
     {
         public bool Resources, OwnedDuplicate;
+        public bool FailDeleteCollection;
+        public List<string> Calls { get; } = [];
+        public Queue<Task<IntegrationPortResult>> RedrawResults { get; } = [];
+        public TaskCompletionSource RedrawStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Assignments;
         private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
@@ -116,6 +174,12 @@ public sealed class McdfHistoryTests
                 Assignments++;
                 return IntegrationPortResult.Ok();
             }
+            Calls.Add(method.Name);
+            if (method.Name == nameof(IIntegrationRuntimePort.RedrawAndWait))
+            {
+                RedrawStarted.TrySetResult();
+                return RedrawResults.TryDequeue(out var result) ? result : Task.FromResult(IntegrationPortResult.Ok());
+            }
             return method.Name switch
             {
                 "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
@@ -128,9 +192,10 @@ public sealed class McdfHistoryTests
                     IntegrationValue<SpawnCollectionSnapshot?>.Ok(OwnedDuplicate
                         ? new(new Dictionary<string, string> { ["model"] = "mod/model" }, "") : null),
                 nameof(IIntegrationRuntimePort.CreateTemporaryCollection) => IntegrationValue<Guid>.Ok(Guid.NewGuid()),
-                nameof(IIntegrationRuntimePort.AddTemporaryMods) or nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) =>
+                nameof(IIntegrationRuntimePort.AddTemporaryMods) =>
                     IntegrationPortResult.Ok(),
-                nameof(IIntegrationRuntimePort.RedrawAndWait) => Task.FromResult(IntegrationPortResult.Ok()),
+                nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) => FailDeleteCollection
+                    ? IntegrationPortResult.Fail("Collection release failed") : IntegrationPortResult.Ok(),
                 nameof(IIntegrationRuntimePort.IsResolvable) => true,
                 nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Test actor"),
                 _ => throw new NotSupportedException(method.Name),
