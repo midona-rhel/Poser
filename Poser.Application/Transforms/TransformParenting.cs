@@ -64,6 +64,10 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         return true;
     }
 
+    /// <summary>Creation owns the history entry; a duplicate inherits its source's attachment and offset.</summary>
+    public bool Copy(SelectionId source, SelectionId copy) =>
+        Read(source) is not { } link || Import(copy, Rebind(link)!);
+
     private void Set(SelectionId child, TransformParent? link)
     {
         foreach (var previous in _links.Keys.Where(id => id != child && history.ResolveLifecycleEntity(id) == child).ToArray())

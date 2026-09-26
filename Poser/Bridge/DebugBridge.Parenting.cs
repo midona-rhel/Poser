@@ -60,6 +60,11 @@ public sealed partial class DebugBridge
         if (query.TryGetValue("child", out var childText))
         {
             var child = Find(childText);
+            if (query.ContainsKey("duplicate"))
+            {
+                var result = _creation.Duplicate(child);
+                return Json(new { result.Detail, id = result.Handle is { } h ? _creation.Resolve(h)?.ToString() : null });
+            }
             if (query.TryGetValue("parent", out var target))
                 return Json(_parenting.Attach(child, target == "none" ? null : Find(target)));
             if (query.ContainsKey("remove"))
@@ -82,7 +87,8 @@ public sealed partial class DebugBridge
             var link = _parenting.Read(e.Id);
             return new { id = e.Id.ToString(), e.Name, world = _parentingRuntime.Read(e.Id),
                 parent = link?.Target.ToString(), offset = link?.Offset,
-                parentWorld = link == null ? null : _parentingRuntime.Read(link.Target) };
+                parentWorld = link == null ? null : _parentingRuntime.Read(link.Target),
+                collider = e.Id.Overlay is { } overlay ? _viewport.GetCollider(overlay) : null };
         }).ToArray(), new JsonSerializerOptions { IncludeFields = true });
     }
 }

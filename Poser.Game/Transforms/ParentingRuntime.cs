@@ -10,10 +10,10 @@ namespace Poser.Game.Transforms;
 public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService posing,
     SceneSession scene, SceneGroups groups) : IParentingRuntime
 {
-    private readonly HashSet<Skeleton> _refreshed = new();
+    private readonly Dictionary<IBone, global::Poser.Transform?> _boneFrames = new();
     public ActorId? CompanionOwner(ActorId actor) => scene.Snapshot.Actors.FirstOrDefault(a => a.Id == actor)?.OwnerActor;
     public ActorId? ResolveCompanion(ActorId owner) => scene.Snapshot.Actors.FirstOrDefault(a => a.OwnerActor == owner)?.Id;
-    public void BeginRead() => _refreshed.Clear();
+    public void BeginRead() => _boneFrames.Clear();
     public bool CanEdit(SelectionId child) => !groups.IsLockedMember(child)
         && (child.Overlay is not { } overlay || bindings.Resolve(overlay).Value?.State.Collider?.Locked != true);
     public bool CanParent(SelectionId id) => id.Kind is SceneEntityKind.Actor or SceneEntityKind.Light
@@ -36,9 +36,9 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
 
     private global::Poser.Transform? ReadBone(IBone bone)
     {
-        if (bone.Skeleton is not Skeleton skeleton || !skeleton.IsValid) return null;
-        if (_refreshed.Add(skeleton)) skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-        return BoneWorld.Of(bone);
+        if (!_boneFrames.TryGetValue(bone, out var frame))
+            _boneFrames[bone] = frame = BoneWorld.ReadCurrent(bone);
+        return frame;
     }
 
     public SelectionId? ResolveBone(ActorId actor, PoseSlot slot, string name, int partial)

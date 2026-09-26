@@ -55,6 +55,26 @@ public sealed class TransformParentingTests
     }
 
     [Fact]
+    public void Copy_inherits_parent_and_offset_without_an_extra_history_entry_and_rebinds_after_redo()
+    {
+        var (r, h, p) = Setup(); var parent = Actor(); var source = Actor(); var copy = Actor();
+        r.Values[parent] = At(1); r.Values[source] = At(3); r.Values[copy] = At(3);
+        p.Attach(source, parent);
+        var history = h.PeekUndo();
+        Assert.True(p.Copy(source, copy));
+        Assert.Equal(p.Read(source), p.Read(copy));
+        Assert.Same(history, h.PeekUndo());
+        r.Values[parent] = At(10); p.Evaluate();
+        Assert.Equal(At(12), r.Values[copy]);
+        var restored = SelectionId.ForActor(copy.Actor!.Value.NextGeneration());
+        r.Values.Remove(copy); r.Values[restored] = At(12);
+        h.RetainLifecycleEntity(copy, () => restored);
+        r.Values[parent] = At(20); p.Evaluate();
+        Assert.Equal(At(22), r.Values[restored]);
+        Assert.Equal(p.Read(source), p.Read(restored));
+    }
+
+    [Fact]
     public void Offset_history_is_relative_to_the_current_parent()
     {
         var (r, h, p) = Setup(); var parent = Actor(); var child = Actor();

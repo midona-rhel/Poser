@@ -40,6 +40,8 @@ after entity/pose readiness, within the existing scene transaction. Companion
 references identify the saved owner's attachment. Saving without a parent
 keeps the child's current placement as a static object and reports the omission.
 Generated body colliders use this contract; Detach makes an individual part static.
+Duplicating an entity retains its parent and local offset as part of the
+creation history entry, alongside its copied properties.
 
 ## Lifecycle history
 
