@@ -22,6 +22,7 @@ internal sealed record ActorRuntimeState(
     public CompanionKind? SpawnedKind { get; init; }
     public Posing.AuthoredPoseState Pose { get; init; } = new([]);
     public SpawnCollectionSnapshot? InheritedCollection { get; init; }
+    public bool Paused { get; init; }
 }
 
 internal sealed record LifecycleIk(PoseSlot Slot, int Partial, string Bone,
@@ -79,6 +80,7 @@ internal sealed partial class ActorServiceLifecycle
         {
             SpawnedKind = _spawns.GetSpawnedKind(actor), InheritedCollection = collection.Value,
             Pose = Posing.AuthoredPoseState.Capture(_skeletons.GetSkeletons(actor), _bonePosing),
+            Paused = _animation.IsPaused(bound),
         };
     }
 
@@ -114,6 +116,15 @@ internal sealed partial class ActorServiceLifecycle
                 {
                     if (!Current()) return;
                     if (!ready.Success) { Note($"'{actor.Name}': {ready.Detail}"); return; }
+                    if (state.FreezePoseOnRestore)
+                    {
+                        // A posed duplicate's deltas were captured against the
+                        // import's neutral frame. Redo must recreate that frozen
+                        // basis, not run a new idle underneath the saved pose.
+                        var paused = _animation.Pause(id);
+                        var rewound = paused.Success ? _animation.RewindPausedControls(id) : paused;
+                        if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); return; }
+                    }
                     if (!actor.IsCompanion && _spawns.GetCompanionInfo(actor) != runtime.Companion
                         && !_spawns.SetCompanion(actor, runtime.Companion))
                     { Note($"'{actor.Name}': companion attachment could not be restored."); return; }

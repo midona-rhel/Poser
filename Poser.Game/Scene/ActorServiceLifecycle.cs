@@ -57,6 +57,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly IPoseFileService _poseFiles;
     private readonly IPoseImportCommands _poses;
     private readonly PoseImportCoordinator _imports;
+    private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGazeService _gaze;
@@ -84,6 +85,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IPoseFileService poseFiles,
         IPoseImportCommands poses,
         PoseImportCoordinator imports,
+        Poser.Application.Animation.AnimationSession animation,
         IFramework framework,
         IPluginLog log,
         IGazeService gaze,
@@ -105,6 +107,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         _poseFiles = poseFiles;
         _poses = poses;
         _imports = imports;
+        _animation = animation;
         _framework = framework;
         _log = log;
         _gaze = gaze;

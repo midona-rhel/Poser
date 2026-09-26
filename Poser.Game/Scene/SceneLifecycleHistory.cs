@@ -94,6 +94,7 @@ internal readonly record struct ActorState(
 {
     public ActorRuntimeState? Runtime { get; init; }
     public IReadOnlyList<PoseImportWrite>? CopyBones { get; init; }
+    public bool FreezePoseOnRestore { get; init; }
     /// <summary>Partial-root scales by "partial:bone", the head scaling a
     /// pose file cannot carry (its bones are keyed by name and the roots
     /// share the body's). Applied after the pose lands.</summary>
@@ -288,6 +289,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         IPoseFileService poseFiles,
         IPoseImportCommands poses,
         PoseImportCoordinator imports,
+        Poser.Application.Animation.AnimationSession animation,
         Dalamud.Plugin.Services.IFramework framework,
         Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,
@@ -306,7 +308,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             cameras,
             new ActorServiceLifecycle(
                 configuration,
-                actors, posing, skeletons, poseFiles, poses, imports, framework, log,
+                actors, posing, skeletons, poseFiles, poses, imports, animation, framework, log,
                 gaze, integration, bindings, bonePosing, actorManager, actorStates, collections),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
@@ -559,6 +561,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         public bool HasRespawn;
         public ActorState Document;
         public bool HasDocument;
+        public bool PosedDuplicate;
     }
 
     /// <summary>Records one actor spawn. <paramref name="spawn"/> must be
@@ -617,6 +620,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         if (_actors.IsSpawned(actor))
             _actors.NameCreated(actor, name);
         var slot = SlotFor(actor);
+        slot.PosedDuplicate = true;
         slot.Respawn = Posed;
         slot.HasRespawn = true;
         _history.Append(new SceneLifecyclePatch(
@@ -671,6 +675,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             // user left it, in the pose they gave it — the same rule the
             // light and the prop follow.
             slot.Document = _actors.Read(actor);
+            if (slot.PosedDuplicate && slot.Document.Runtime?.Paused == true)
+                slot.Document = slot.Document with { FreezePoseOnRestore = true };
             slot.Name = _actors.GetName(actor);
             slot.HasDocument = true;
             if (!_actors.Destroy(actor))

@@ -6,6 +6,18 @@ namespace Poser.Game.Tests.Posing;
 
 public sealed class PartialPoseFrameTests
 {
+    [Fact]
+    public void Head_scale_does_not_contract_facial_bone_spacing()
+    {
+        var before = new Transform(Vector3.Zero, Quaternion.Identity, Vector3.One);
+        var after = before with { Scale = new Vector3(1.05f) };
+        var displayed = new Transform(new Vector3(.03f, .08f, .1f),
+            Quaternion.Identity, new Vector3(1.05f));
+        var applied = new PartialPoseFrame(before, after).ToApply(displayed);
+        Assert.Equal(displayed.Position, applied.Position);
+        Assert.Equal(Vector3.One, applied.Scale);
+    }
+
     private static readonly Transform AnimatedRoot = new(
         new Vector3(0, 1.5f, 0), Quaternion.Identity, Vector3.One);
 
