@@ -1403,7 +1403,7 @@ public static partial class SettingsView
         page.Section("About", form =>
         {
             form.ReadOnly("Poser", vm.Version);
-            form.ReadOnly("Stack", "Crystarium · Poser.Core");
+            form.ReadOnly("Stack", "Crystarium · Poser.UI");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));

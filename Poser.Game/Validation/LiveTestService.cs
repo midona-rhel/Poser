@@ -1201,9 +1201,16 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
         _ownedActors.Add(_testActor);
         var actor = _testActor;
         var ready = await WaitFor(
-            () => _skeletons.GetSkeleton(actor) is { IsValid: true },
+            () =>
+            {
+                var skeletons = _skeletons.GetSkeletons(actor);
+                if (!ActorPoseReadiness.IsReady(skeletons, _bindings)) return false;
+                // WaitFor evaluates on the framework thread. Capture here;
+                // reading again after await runs off-thread and is refused.
+                _testSkeleton = skeletons.First(s => s.Slot == PoseSlot.Character);
+                return true;
+            },
             8000);
-        _testSkeleton = _skeletons.GetSkeleton(actor);
         WriteEvent("controlled-actor-ready", new
         {
             actor = actor.Id.Unique,
