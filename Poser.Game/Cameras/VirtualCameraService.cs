@@ -48,7 +48,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         OrbitTrace.Add(new
         {
-            phase, active = camera == Native, camera->Angle,
+            phase, active = camera == Native, Angle = camera->Angle,
             camera->Camera.InputDeltaH, camera->Camera.InputDeltaHAdjusted,
             camera->Camera.InputDeltaV, camera->Camera.InputDeltaVAdjusted,
             camera->Camera.ShouldResetAngles,
