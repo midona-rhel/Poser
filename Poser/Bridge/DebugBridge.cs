@@ -68,6 +68,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IObjectTable _objects;
     private readonly IVirtualCameraService _cameras;
     private readonly Application.Presentation.ICameraControl _cameraControl;
+    private readonly Application.Viewport.ICameraProjection _cameraProjection;
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -105,7 +106,8 @@ public sealed class DebugBridge : IDisposable
         IPosingService posing,
         Application.Posing.IPoseCommands poseCommands,
         Application.Integration.ICharacterFiles characterFiles, IObjectTable objects,
-        IVirtualCameraService cameras, Application.Presentation.ICameraControl cameraControl)
+        IVirtualCameraService cameras, Application.Presentation.ICameraControl cameraControl,
+        Application.Viewport.ICameraProjection cameraProjection)
     {
         _configuration = configuration;
         _textures = textures;
@@ -120,6 +122,7 @@ public sealed class DebugBridge : IDisposable
         _objects = objects;
         _cameras = cameras;
         _cameraControl = cameraControl;
+        _cameraProjection = cameraProjection;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -415,8 +418,8 @@ public sealed class DebugBridge : IDisposable
             case "/cameras":
                 return JsonSerializer.Serialize(new
                 {
-                    view = _viewport.GetViewMatrix(),
-                    projection = _viewport.GetProjectionMatrix(),
+                    view = _cameraProjection.GetViewMatrix(),
+                    projection = _cameraProjection.GetProjectionMatrix(),
                     cameras = _cameras.Cameras.Select(camera => new
                     {
                         id = _bindings.GetCameraId(camera)?.ToString(),
