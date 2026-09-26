@@ -44,9 +44,8 @@ public sealed class WorldGizmoProjection
     public float ScreenScale;
     /// <summary>Unit direction from camera to pivot.</summary>
     public Vector3 ViewDirection;
-    /// <summary>Image-plane depth direction for the fixed-size rotation ball.</summary>
-    public Vector3 RingViewDirection;
     private float _pivotClipW;
+    private float _clipDepthGradientLength;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
 
@@ -86,9 +85,7 @@ public sealed class WorldGizmoProjection
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
         var depthGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
-        result.RingViewDirection = depthGradient.LengthSquared() > 1e-12f
-            ? Vector3.Normalize(depthGradient)
-            : result.ViewDirection;
+        result._clipDepthGradientLength = depthGradient.Length();
         result._pivotClipW = Vector3.Dot(depthGradient, pivotWorld) + viewProj.M44;
 
         // Measure along camera-right: both points have the same view depth,
@@ -117,14 +114,18 @@ public sealed class WorldGizmoProjection
         return w > 0.001f;
     }
 
-    /// <summary>Projects a rotation-ball offset at the pivot's fixed depth.
-    /// The pivot is perspective-placed, but the control itself cannot warp.</summary>
+    /// <summary>Whether the entire ring ball is in front of the projection plane.</summary>
+    public bool CanProjectRing(float radius) =>
+        _pivotClipW - radius * _clipDepthGradientLength > 0.001f;
+
+    /// <summary>Projects a world-ring offset through the same perspective as the axes.</summary>
     public Vector2 ProjectRingOffset(Vector3 worldOffset)
     {
-        var clip = Vector4.Transform(new Vector4(worldOffset, 0f), ViewProj);
-        // Do not divide each sample by its own depth: that stretches the ball
-        // off-centre and can send its near side across the camera plane.
-        return Center + new Vector2(DisplayCenter.X * clip.X, -DisplayCenter.Y * clip.Y) / _pivotClipW;
+        // A fixed-depth offset loses the pivot's X/Y contribution to the
+        // perspective divide. Off-centre rings then disagree with the axes.
+        // Callers admit the whole ball first, including unsampled sweep points.
+        Project(Pivot + worldOffset, out var screen);
+        return screen;
     }
 
     /// <summary>The world-space mouse ray direction for a screen point.</summary>
@@ -178,6 +179,8 @@ public static class WorldGizmo
             RollAxisWorld = RotationGizmoRings.CameraViewAxis(
                 projection.ViewRotation),
         };
+        if (!projection.CanProjectRing(ringWorldRadius))
+            return rings;
         rings.Points = new Vector2[3][];
         rings.Depth = new float[3][];
         for (int a = 0; a < 3; a++)
@@ -185,16 +188,16 @@ public static class WorldGizmo
             rings.Points[a] = new Vector2[RotationGizmoRings.RingPoints];
             rings.Depth[a] = new float[RotationGizmoRings.RingPoints];
             rings.FrontCutoff[a] = RotationGizmoRings.GrowingArcCutoff(
-                RotationGizmoRings.AxisWorld(rings, a), projection.RingViewDirection);
+                RotationGizmoRings.AxisWorld(rings, a), projection.ViewDirection);
             for (int i = 0; i < RotationGizmoRings.RingPoints; i++)
             {
                 var direction = Vector3.Transform(RotationGizmoRings.LocalRingPoint(a, i), frame);
                 rings.Points[a][i] = projection.ProjectRingOffset(direction * ringWorldRadius);
                 // Unit-ring depth keeps the arc cut independent of gizmo size.
-                rings.Depth[a][i] = Vector3.Dot(direction, projection.RingViewDirection);
+                rings.Depth[a][i] = Vector3.Dot(direction, projection.ViewDirection);
             }
         }
-        // All rings use the requested size, not a sampled bounding circle.
+        // The screen-space roll circle retains the requested size.
         // Roll's draw, pick and sweep share this screen-space radius.
         rings.ScreenRadius = projection.ScreenScale * (ringWorldRadius / projection.WorldScale);
         rings.RollRadius = rings.ScreenRadius + 8f * scale;
