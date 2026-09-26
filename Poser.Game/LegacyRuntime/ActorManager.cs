@@ -497,11 +497,11 @@ public class ActorManager : IActorManager
             // In that case require the native primary slot AND exact player
             // name; a different slot with the same name is not sufficient.
             return reference is IPlayerCharacter player
+                && _gPoseService.IsGPosing && player.ObjectIndex == GPoseStart
                 && !string.IsNullOrEmpty(local.Name.TextValue)
                 && string.Equals(player.Name.TextValue, local.Name.TextValue, StringComparison.Ordinal)
                 && ((player.HomeWorld.RowId != 0 && player.HomeWorld.RowId == local.HomeWorld.RowId)
-                    || (_gPoseService.IsGPosing && player.ObjectIndex == GPoseStart
-                        && player.HomeWorld.RowId == ushort.MaxValue));
+                    || player.HomeWorld.RowId == ushort.MaxValue);
         }
         catch
         {
