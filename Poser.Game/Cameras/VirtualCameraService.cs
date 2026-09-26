@@ -52,6 +52,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             camera->Camera.InputDeltaH, camera->Camera.InputDeltaHAdjusted,
             camera->Camera.InputDeltaV, camera->Camera.InputDeltaVAdjusted,
             camera->Camera.ShouldResetAngles,
+            camera->Camera.LastPosition, camera->Camera.LastLookAtVector,
+            ScenePosition = camera->Camera.SceneCamera.Position,
+            LookAt = camera->Camera.SceneCamera.LookAtVector,
         });
     }
 #endif
@@ -1047,6 +1050,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private float* CalculateLookPositionDetour(
         NativeCamera* camera, float* lookAt, float* position, byte mode)
     {
+#if DEBUG
+        if (_orbitTraceFrames > 0) TraceOrbit("look", camera);
+#endif
         try
         {
             if (_gPose.IsGPosing &&
