@@ -74,6 +74,34 @@ public sealed class SceneWorkflowTests
         Assert.Equal(offset, link.Offset);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Partial_load_skips_parenting_when_either_category_is_excluded(bool excludeChild)
+    {
+        var document = SceneWith(Actor("Parent", out var actorKey));
+        var lightKey = Guid.NewGuid();
+        document.Lights.Add(new() { Key = lightKey, Light = new() { Name = "Child" } });
+        document.Parents = [new() { Child = new() { Kind = "light", Key = lightKey },
+            Target = new() { Kind = "actor", Key = actorKey }, Offset = PoseTransform.Identity }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        var groups = new SceneGroups(); var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        var history = new TransformHistory();
+        var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
+        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+            structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
+        Assert.True(workflow.BeginLoad("partial.xivs", new SceneLoadOptions
+        {
+            IncludeActors = excludeChild, IncludeLights = !excludeChild,
+        }).Success);
+        await workflow.Drain;
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        Assert.Empty(parenting.Capture());
+        Assert.Equal(excludeChild ? 0 : 1, runtime.SpawnedLightTokens.Count);
+        Assert.Equal(excludeChild, runtime.Calls.Contains("SpawnActor:Parent"));
+    }
+
     [Fact]
     public async Task Headless_load_restores_nested_groups_before_completion_and_undo_removes_only_its_groups()
     {

@@ -95,9 +95,12 @@ public sealed partial class SceneWorkflow
         operation.HistoryGroups = entries.Zip(imported).ToDictionary(pair => pair.First.Key, pair => pair.Second);
         foreach (var link in scene.Parents ?? [])
         {
-            if (_parenting == null) throw new InvalidOperationException("Transform parenting is unavailable.");
+            // Category filters and recoverable spawn failures leave no token.
+            // Keep admitted entities at their saved placement; a token whose
+            // live binding disappeared still fails in Resolve above.
             if (Resolve(link.Child) is not { } child || Resolve(link.Target) is not { } target)
-                throw new InvalidOperationException("A transform parent did not load.");
+                continue;
+            if (_parenting == null) throw new InvalidOperationException("Transform parenting is unavailable.");
             if (link.BoneName is { } name)
                 target = target.Actor is { } actor
                     ? _parenting.ResolveBone(actor, link.Slot, name, link.Partial)
