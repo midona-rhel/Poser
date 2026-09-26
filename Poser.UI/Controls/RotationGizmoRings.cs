@@ -37,7 +37,7 @@ public readonly record struct RingHit(int Axis, float Distance, Vector2 Tangent,
 /// both surfaces share: frame basis, segment hit testing, ring drawing,
 /// the camera view axis and roll tangent conventions, and the Ctrl/Shift
 /// sensitivity policy. The world overlay projects its own ring points
-/// through real view/projection matrices at fixed pivot depth (<see cref="WorldGizmo"/>) and
+/// through a pivot-facing orthonormal frame (<see cref="WorldGizmo"/>) and
 /// only borrows what is genuinely common. Both surfaces dispatch results
 /// through the existing clean TransformGestureService lifecycle — this
 /// class owns no gesture state.

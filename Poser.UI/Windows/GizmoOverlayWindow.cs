@@ -975,7 +975,7 @@ public class GizmoOverlayWindow : Window
         {
             case WorldHandleKind.RotateRing:
             {
-                if (layout is not { RingWorldRadius: > 1e-6f })
+                if (layout is not { RingWorldRadius: > 1e-6f, Rings.Valid: true })
                     return;
                 var hub = projection.Center;
                 // The pie caps at one full turn; the readout keeps counting.
