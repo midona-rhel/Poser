@@ -365,6 +365,11 @@ the pose, on the frozen face. The same file produces the same picture on every
 client, which is the definition of a successful load. Nothing about animation
 is attempted, so nothing about animation is refused.
 
+A saved Detached gaze is restored before pose import samples its native basis;
+detaching afterward changes the chest/neck baseline beneath the imported deltas
+and accumulates drift across save/load. Active gaze targets still restore after
+the actors' poses and placement, when their targets are available.
+
 This does not touch the Animation tab, expression hold, or anything else
 outside scene save and load.
 

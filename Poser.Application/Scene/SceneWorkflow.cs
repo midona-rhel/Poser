@@ -1173,6 +1173,17 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
                             "Animation", actor.Name, false, detail));
+                    if (actor.Gaze?.Mode == GazeTargetMode.Detached)
+                    {
+                        // Import deltas use the live animated basis. Detaching
+                        // only afterward removes the native chest/neck aim
+                        // underneath those deltas, drifting every saved pose.
+                        var gazeDetail = _runtime.ApplyActorGaze(
+                            actorTokens[actor.Key], actor, null);
+                        if (gazeDetail != null)
+                            entities.Add(new SceneEntityOutcome(
+                                "Gaze", actor.Name, false, gazeDetail));
+                    }
                 }
                 return null;
             });
@@ -1244,7 +1255,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     return stop;
                 foreach (var actor in actors)
                 {
-                    // Gaze comes AFTER the pose: the look-at re-drives its
+                    if (actor.Gaze?.Mode == GazeTargetMode.Detached)
+                        continue; // Already established before the pose's basis was sampled.
+                    // Active gaze comes AFTER the pose: the look-at re-drives its
                     // channels every frame, and its Entity target is another
                     // RESTORED actor, so it needs every token to exist. The
                     // document validated the reference, so a stated key is
