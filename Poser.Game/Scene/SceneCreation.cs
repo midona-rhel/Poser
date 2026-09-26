@@ -32,10 +32,13 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
+    private readonly Application.Integration.ActorIntegrationSession _integration;
+    private readonly IPluginLog _log;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays)
+        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        Application.Integration.ActorIntegrationSession integration, IPluginLog log)
     {
         _framework = framework;
         _sessions = sessions;
@@ -49,6 +52,8 @@ public sealed class SceneCreation : ISceneCreation
         _cameras = cameras;
         _lighting = lighting;
         _overlays = overlays;
+        _integration = integration;
+        _log = log;
         _handles = new(() => sessions.ActiveSessionGeneration);
     }
 
@@ -179,6 +184,21 @@ public sealed class SceneCreation : ISceneCreation
 
     private IActor? DuplicateActor(IActor source, bool withPose)
     {
+        string? parameters = null;
+        if (_bindings.GetActorId(source) is { } sourceId
+            && _integration.GetStateJson(sourceId) is { Success: true, Value: { } appearance })
+        {
+            try
+            {
+                var request = Documents.Appearance.CustomizeRequest.ParametersOnly(
+                    Newtonsoft.Json.Linq.JObject.Parse(appearance));
+                parameters = request.Value?.ToString(Newtonsoft.Json.Formatting.None);
+            }
+            catch (Newtonsoft.Json.JsonException exception)
+            {
+                _log.Warning(exception, "Could not capture duplicate appearance parameters.");
+            }
+        }
         IActor? Clone()
         {
             var clone = _spawn.CloneActor(source);
@@ -188,6 +208,14 @@ public sealed class SceneCreation : ISceneCreation
                 if (!_actors.IsAvailable(source) || !_actors.IsAvailable(target)) return;
                 _spawn.CopyDrawnAppearance(source, target);
                 _spawn.CopyEquipmentVisibility(source, target);
+                // Native customize bytes contain palette indices, not custom
+                // shader colours/opacity. Copy those through their provider,
+                // without reapplying equipment or requesting another redraw.
+                if (parameters != null && _bindings.GetActorId(target) is { } targetId)
+                {
+                    var applied = _integration.ApplyStateJson(targetId, parameters);
+                    if (!applied.Success) _log.Warning($"Duplicate appearance parameters: {applied.Detail}");
+                }
             });
             return clone;
         }

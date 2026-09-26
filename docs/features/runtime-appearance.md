@@ -32,6 +32,9 @@ Saved source profiles are read through the same active-ID/JSON API Brio uses;
 Poser-owned temporary profiles use their retained JSON. The source is not changed.
 Posed copies already carry the body shape in their captured transforms and do not
 apply the profile again. Lifecycle history retains the copied profile contents.
+Both duplicate modes also copy Glamourer shader parameters, including custom
+face-paint RGB and opacity, without reapplying equipment/customization or
+triggering an additional redraw.
 History also captures a duplicate's Poser-owned collection redirects and meta
 through the existing spawn collection owner. It never treats an unknown temporary
 collection as owned; external takeover makes restoration refuse without displacement.

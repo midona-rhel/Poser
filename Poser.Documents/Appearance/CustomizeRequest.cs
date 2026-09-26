@@ -10,6 +10,17 @@ namespace Poser.Documents.Appearance;
 /// <summary>Builds a temporary customize-only design without changing the captured state.</summary>
 internal static class CustomizeRequest
 {
+    internal static IntegrationValue<JObject> ParametersOnly(JObject snapshot)
+    {
+        var result = Build(snapshot, new Dictionary<CustomizeKey, int>());
+        if (result.Success && result.Value is { } request)
+        {
+            DisableApplication(request);
+            request["Parameters"] = snapshot["Parameters"]?.DeepClone() ?? new JObject();
+        }
+        return result;
+    }
+
     internal static IntegrationValue<JObject> Build(JObject snapshot, IReadOnlyDictionary<CustomizeKey, int> values)
     {
         if (!ByteValue(snapshot["FileVersion"], out int version) || version != 1)

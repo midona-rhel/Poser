@@ -142,8 +142,10 @@ autosave has separate rules in [scenes.md](scenes.md).
 
 MCDF v1 stores appearance resources and temporary file payloads. It does not
 store pose, animation, selection, camera, or scene data. Poser checks the file
-header, size, paths, extensions, duplicate entries, and SHA-1 data before it
-changes an actor.
+header, size, paths, extensions, duplicate entries, and payload hashes before
+it changes an actor. Legacy 40-digit SHA-1 and current 64-digit BLAKE3 hashes
+are verified; new exports use BLAKE3, matching current Lightless and Brio.
+The MCDF v1 layout is unchanged. Customize+ data remains base64-encoded JSON.
 
 Only one MCDF import runs for an actor at a time. Poser applies temporary
 Penumbra, Glamourer, and Customize+ changes after redraw. Failure or

@@ -609,7 +609,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
                         "The extraction directory ownership changed; extraction was refused.");
                 string extracted = Path.Combine(
                     operationDirectory.Path, $"p{i:D4}.dat");
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+                using var hash = new McdfPayloadHash(legacy: entry.Hash.Length == 40);
                 using (var output = new FileStream(
                     extracted, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
@@ -624,7 +624,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
                             return IntegrationValue<McdfPackage>.Fail(
                                 $"The package ends before file {i + 1} of {data.Files.Count} is complete.");
                         output.Write(chunk, 0, got);
-                        hash.AppendData(chunk, 0, got);
+                        hash.Append(chunk.AsSpan(0, got));
                         remaining -= got;
                         bytesDone += got;
                         progress(new McdfProgressStep(
@@ -634,7 +634,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
 
                 if (entry.Hash.Length > 0)
                 {
-                    string computed = Convert.ToHexString(hash.GetHashAndReset());
+                    string computed = hash.Finish();
                     if (!string.Equals(computed, entry.Hash, StringComparison.OrdinalIgnoreCase))
                         return IntegrationValue<McdfPackage>.Fail(
                             $"A payload does not match its declared hash ({entry.Hash}).");
@@ -786,6 +786,9 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
         var seen = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in data.Files)
         {
+            if (entry.Hash.Length != 0 &&
+                (entry.Hash.Length is not (40 or 64) || !entry.Hash.All(Uri.IsHexDigit)))
+                return "A payload declares an unsupported hash; expected SHA-1 or BLAKE3 hexadecimal data.";
             if (entry.Length < 0)
                 return "The package declares a negative file length.";
             if (entry.Length > limits.MaxFileBytes)
@@ -871,7 +874,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
             }
             // Pass 1 — hash and measure every local file so the header can
             // precede the payloads, deduplicating identical content by
-            // SHA-1 while every game path is preserved.
+            // BLAKE3 (current Lightless/Brio) while every game path is preserved.
             var byHash = new Dictionary<string, (
                 WireFile Entry, string LocalPath, McdfExportSourceObservation Source)>(
                 StringComparer.OrdinalIgnoreCase);
@@ -911,8 +914,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
                         throw new WriteFailureException(
                             $"{file.LocalPath} changed while exporting; its declared hash would be false.");
                     input.Position = 0;
-                    string digest = HashStream(
-                        input, HashAlgorithmName.SHA1, cancellation, null);
+                    string digest = HashPayload(input, cancellation);
                     long length = input.Length;
                     if (length > int.MaxValue)
                         throw new WriteFailureException(
@@ -994,8 +996,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
                         throw new WriteFailureException(
                             $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
                     input.Position = 0;
-                    string wireDigestBeforeCopy = HashStream(
-                        input, HashAlgorithmName.SHA1, cancellation, null);
+                    string wireDigestBeforeCopy = HashPayload(input, cancellation);
                     if (!string.Equals(wireDigestBeforeCopy, digest,
                             StringComparison.OrdinalIgnoreCase))
                         throw new WriteFailureException(
@@ -1261,6 +1262,20 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
         return new McdfExportSourceObservation(
             finalPath, string.Empty, length, hash,
             _getIdentity(input.SafeFileHandle));
+    }
+
+    private static string HashPayload(Stream stream, CancellationToken cancellation)
+    {
+        using var hash = new McdfPayloadHash();
+        var chunk = new byte[ChunkSize];
+        int got;
+        while ((got = stream.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            hash.Append(chunk.AsSpan(0, got));
+        }
+        cancellation.ThrowIfCancellationRequested();
+        return hash.Finish();
     }
 
     private static string HashStream(

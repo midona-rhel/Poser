@@ -5,6 +5,7 @@ using System.Linq;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Entities;
@@ -489,8 +490,18 @@ public class ActorManager : IActorManager
         // game object id.
         try
         {
-            return _objectTable.CreateObjectReference(actor.Address) is { } reference
-                && reference.GameObjectId == local.GameObjectId;
+            var reference = _objectTable.CreateObjectReference(actor.Address);
+            if (reference?.GameObjectId == local.GameObjectId)
+                return true;
+            // GPose can replace both object id and home world (0xFFFF).
+            // In that case require the native primary slot AND exact player
+            // name; a different slot with the same name is not sufficient.
+            return reference is IPlayerCharacter player
+                && _gPoseService.IsGPosing && player.ObjectIndex == GPoseStart
+                && !string.IsNullOrEmpty(local.Name.TextValue)
+                && string.Equals(player.Name.TextValue, local.Name.TextValue, StringComparison.Ordinal)
+                && ((player.HomeWorld.RowId != 0 && player.HomeWorld.RowId == local.HomeWorld.RowId)
+                    || player.HomeWorld.RowId == ushort.MaxValue);
         }
         catch
         {

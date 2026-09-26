@@ -29,7 +29,8 @@ public interface IPoseFileService : IDisposable
     /// null takes them all. Skipped bones are simply absent, never zeroed.
     /// </summary>
     PoseFile CreatePoseFile(
-        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null);
+        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null,
+        Func<IBone, Transform>? readTransform = null);
 
     /// <summary>
     /// Loads a pose file and computes the complete import plan for the

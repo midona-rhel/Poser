@@ -14,10 +14,13 @@ internal readonly record struct PartialPoseFrame(Transform Before, Transform Aft
         // Havok reparents by replacing the root's Qs transform. Undo that
         // replacement before diffing a visible target against the apply-pass
         // basis; otherwise the head's rotation/scale is applied twice.
+        // Havok partial attachment rotates/translates bone origins but does
+        // not scale their offsets. Scale still composes for the bone itself.
+        // Treating this as a matrix SRT shrinks facial spacing by head scale.
         var local = Vector3.Transform(visible.Position - After.Position,
-            Quaternion.Inverse(After.Rotation)) / After.Scale;
+            Quaternion.Inverse(After.Rotation));
         return new Transform(
-            Before.Position + Vector3.Transform(local * Before.Scale, Before.Rotation),
+            Before.Position + Vector3.Transform(local, Before.Rotation),
             Quaternion.Normalize(Before.Rotation * Quaternion.Inverse(After.Rotation) * visible.Rotation),
             visible.Scale / After.Scale * Before.Scale);
     }

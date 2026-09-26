@@ -72,7 +72,8 @@ public class SkeletonService : ISkeletonService
 
             if (skeleton.IsValid &&
                 currentBase != nint.Zero &&
-                skeleton.CharacterBaseAddress == currentBase)
+                skeleton.CharacterBaseAddress == currentBase &&
+                skeleton.HasCurrentNativeLayout())
             {
                 return skeleton;
             }
@@ -95,6 +96,8 @@ public class SkeletonService : ISkeletonService
                 $"Skeleton rebuilt in place for {actor.Name} {slot}: " +
                 (!skeleton.IsValid
                     ? "the skeleton went invalid"
+                    : skeleton.CharacterBaseAddress == currentBase
+                    ? "the partial skeleton layout changed in place"
                     : $"the character base moved " +
                       $"({skeleton.CharacterBaseAddress:X} to {currentBase:X})"));
             skeleton.Refresh();

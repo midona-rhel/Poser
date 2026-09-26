@@ -69,6 +69,7 @@ Verified against `Poser/bin` output and the `packages.lock.json` graph.
 | KamiToolKit | 2.2.27 | **MIT** | Direct (`Poser.Game.csproj`) | Package `.nuspec` declares no license, but its `<repository url>` is `https://github.com/MidoriKami/KamiToolKit`; that repo's `LICENSE` reads "MIT License / Copyright (c) 2024 MidoriKami". Fetched from `raw.githubusercontent.com/MidoriKami/KamiToolKit/master/LICENSE`. |
 | K4os.Compression.LZ4.Legacy | 1.3.8 | **MIT** | Direct (`Poser.Game.csproj`) | The `.nuspec` carries only a `licenseUrl` pointing at `github.com/MiloszKrajewski/K4os.Compression.LZ4/blob/master/LICENSE`; that file reads "MIT License / Copyright (c) 2017 Milosz Krajewski". Fetched. |
 | K4os.Compression.LZ4 | 1.3.8 | **MIT** | Transitive, via `.Legacy` | Same repository and LICENSE file. |
+| Blake3 | 2.2.1 | **BSD-2-Clause**; native BLAKE3 **CC0-1.0** | Direct (`Poser.Documents.csproj`) | NuGet license and upstream `license.txt`; notice shipped in `Data/Licenses/Blake3.txt`. |
 | Microsoft.Extensions.DependencyInjection | 10.0.10 | **MIT** | Direct (`Poser.csproj`) | `.nuspec` in the NuGet cache: `<license type="expression">MIT</license>`. |
 | Microsoft.Extensions.DependencyInjection.Abstractions | 10.0.10 | **MIT** | Transitive | `.nuspec`: `<license type="expression">MIT</license>`. |
 

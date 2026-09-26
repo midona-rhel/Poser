@@ -56,6 +56,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
     private readonly IPoseImportCommands _poses;
+    private readonly PoseImportCoordinator _imports;
+    private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGazeService _gaze;
@@ -82,6 +84,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
         IPoseImportCommands poses,
+        PoseImportCoordinator imports,
+        Poser.Application.Animation.AnimationSession animation,
         IFramework framework,
         IPluginLog log,
         IGazeService gaze,
@@ -102,6 +106,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         _skeletons = skeletons;
         _poseFiles = poseFiles;
         _poses = poses;
+        _imports = imports;
+        _animation = animation;
         _framework = framework;
         _log = log;
         _gaze = gaze;
@@ -198,7 +204,17 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     public ActorState ReadPoseForCopy(object actor)
     {
         var target = (IActor)actor;
-        var pose = CapturePose(target);
+        var slots = _skeletons.GetSkeletons(target);
+        // The copy has no source gaze/profile drivers: capture its visible
+        // pose, not an unedited actor's potentially build-time raw cache.
+        // Never overwrite raw caches used for interactive delta math.
+        foreach (var skeleton in slots)
+        {
+            foreach (var bone in skeleton.Bones) _ = bone.LastTransform;
+            if (skeleton is Skeleton live) live.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+        }
+        var pose = slots.Count == 0 ? null : _poseFiles.CreatePoseFile(
+            slots, PoseBoneWanted, static bone => bone.LastTransform);
         var rootScales = CapturePartialRootScales(target);
         return new ActorState(
             _posing.GetEffectiveTransform(target),
@@ -206,6 +222,11 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             pose)
         {
             PartialRootScales = rootScales,
+            CopyBones = slots.SelectMany(s => s.Bones.Where(b =>
+                    (!b.IsPartialRoot || b.IsSkeletonRoot) && PoseBoneWanted(b)
+                    && b.LastTransform.Rotation.LengthSquared() > 1e-8f)
+                .Select(b => new PoseImportWrite(s.Slot, b.PartialId, b.BoneName,
+                    b.LastTransform, Poser.Domain.Posing.TransformComponents.All))).ToArray(),
             PhysicsDeltas = CapturePhysicsDeltas(target),
         };
     }
@@ -267,7 +288,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private static bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName);
+    private bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName)
+        || _bonePosing.GetPoseInfo(bone.Skeleton)
+            .GetPoseInfo(bone.BoneName, bone.PartialId).HasStacks;
 
     private static bool IsPhysicsDriven(string name)
     {
@@ -296,7 +319,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     continue;
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (!IsPhysicsDriven(bone.BoneName) || bone.IsPartialRoot)
+                    if (PoseBoneWanted(bone) || bone.IsPartialRoot)
                         continue;
                     var parent = bone.ParentBone;
                     if (parent == null)
@@ -432,7 +455,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent)
+    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent, int delayTicks = 1)
     {
         if (attempts <= 0)
         {
@@ -455,7 +478,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     _log.Warning(
                         $"SceneLifecycleHistory: '{actor.Name}' came back but its restore failed: {ex.Message}");
                 }
-            }, delayTicks: 1);
+            }, delayTicks: delayTicks);
         }
         catch (Exception ex)
         {
@@ -484,6 +507,11 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
         if (state.Runtime is { } runtime)
         {
+            if (state.FreezePoseOnRestore && _bindings.GetActorId(actor) is { } frozenId)
+            {
+                var rewound = _animation.RewindPausedControls(frozenId);
+                if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); return; }
+            }
             runtime.Pose.Restore(_skeletons.GetSkeletons(actor), _bonePosing);
             RestoreRuntime(actor, runtime, stillCurrent);
             return;
@@ -500,9 +528,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         var options = RestoreOptions;
         if (_bindings.GetActorId(actor) is not { } actorId)
             return;
-        var restored = _poses.ImportPose(
-            actorId, pose, options, $"Restore pose for {actor.Name}",
-            onReceipt: receipt =>
+        void OnReceipt(Poser.Domain.Operations.OperationReceipt receipt)
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
                 {
@@ -513,7 +539,20 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     if (state.PhysicsDeltas is { } physicsDeltas)
                         ApplyPhysicsDeltas(actor, physicsDeltas, stillCurrent);
                 }
-            });
+            }
+        // A file is keyed by name; live partials can contain different jaw
+        // transforms under that same name. A duplicate retains exact keys.
+        Poser.Domain.Posing.PoseEditResult restored;
+        if (state.CopyBones is { } copyBones)
+        {
+            var plan = new PoseImportPlan { ReconcileFace = false };
+            plan.Writes.AddRange(copyBones);
+            restored = _imports.Begin(actorId, new PreparedPoseImport(plan), options,
+                $"Restore pose for {actor.Name}", OnReceipt);
+        }
+        else
+            restored = _poses.ImportPose(actorId, pose, options,
+                $"Restore pose for {actor.Name}", onReceipt: OnReceipt);
         if (!restored.Success)
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");

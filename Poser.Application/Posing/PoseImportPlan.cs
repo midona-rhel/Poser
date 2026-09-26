@@ -35,6 +35,9 @@ public readonly record struct PoseImportWrite(
 /// </summary>
 public sealed class PoseImportPlan
 {
+    // Name-only files need legacy face reconciliation. An exact live copy
+    // already supplies each partial's displayed target in the apply frame.
+    public bool ReconcileFace { get; init; } = true;
     public List<PoseImportReset> Resets { get; } = new();
     public List<PoseImportWrite> Writes { get; } = new();
 
