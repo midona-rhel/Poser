@@ -33,11 +33,13 @@ frozen parent position. The world overlay places its pivot in perspective and
 draws nothing for an unprojectable pivot. Inspector rotation stays in place.
 
 World-gizmo size calibration uses the camera image plane, keeping its reference
-pixel span stable across the viewport. World rotation rings project each point
-through the same perspective as the linear axes, including off-centre pivots.
-Ring drawing, picking, positive tangents and drag sweeps use that same projection;
-front arcs use the eye-to-pivot direction. Rings crossing the camera plane are
-neither drawn nor picked. The inspector retains its direction-only projection.
+pixel span stable across the viewport. World rotation rings use the local
+perspective differential at the pivot, preserving the linear axes' projected
+directions off-centre. One shared normalization bounds the entire rotation ball
+inside the fixed white roll circle; finite-depth perspective must not shift or
+stretch it outside that circle. Drawing, picking, positive tangents and drag
+sweeps share this mapping; front arcs use the eye-to-pivot direction.
+The inspector retains its direction-only projection.
 The white roll circle uses the requested pixel radius, never the furthest
 projected axis-ring sample; drawing, picking and drag sweep share that radius.
 Linear handles face the camera's position relative to the pivot, not its look
