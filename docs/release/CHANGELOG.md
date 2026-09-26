@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.11-beta — parenting, faster colliders and character-file improvements
+
+- Attach actors, lights, objects and colliders to another entity or an actor bone.
+- Generated body colliders follow the actor's bones and remain individually editable.
+- Draw colliders much faster, including older mesh colliders attached to moving bones.
+- Keep collider settings and parent attachments when duplicating them.
+- Switch duplicated actors to another Penumbra collection, with Reset and Undo/Redo support.
+- Preserve face poses, head placement and custom face-paint colours when duplicating actors.
+- Import Lightless MCDFs and export your main actor with Customize+ data.
+- Play modded animations on MCDF actors through their normal Penumbra collection.
+- Restore scene poses and camera views without unexpected pose drift or view changes.
+- Create free cameras from the current view and keep rotation gizmos aligned near screen edges.
+- Manage borrowed world objects and lights through shared editing and history controls.
+- See short, non-blocking release highlights the first time a new version loads.
+
+## 0.9.10-beta — scene restoration and transform controls
+
+- Restore actor models and collections before scene poses, including attached companion placement.
+- Save evaluated IK poses without changing the live scene.
+- Load legacy Anamnesis and CMTool poses alongside modern pose files.
+- Adjust capsule radius, endcap spacing and uniform scale independently.
+- Keep directional scaling local while retaining uniform scaling in World mode.
+- Show actual inspector values while transforms are locked.
+- Clear actor nicknames between GPose sessions.
+- Restore collider group visibility through Undo/Redo.
+
 ## 0.9.9-beta — actor body colliders and world-space posing
 
 - Create a frozen, individually editable group of body colliders from an actor's current pose.
