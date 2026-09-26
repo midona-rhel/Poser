@@ -656,13 +656,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             // UI-written orbit values, re-asserted AFTER the game's update:
             // a draw-time write lands after this frame's update already ran,
             // where the update's own normalization can eat it before it ever
-            // renders (the horizontal angle especially). Each write applies
+            // renders. Orbit angles use the direct native write instead. Each write applies
             // once — the mouse orbit is never fought.
-            if (live.PendingAngle is { } pendingAngle)
-            {
-                camera->Angle = pendingAngle;
-                live.PendingAngle = null;
-            }
             if (live.PendingPan is { } pendingPan)
             {
                 camera->Pan = pendingPan;

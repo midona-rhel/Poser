@@ -57,12 +57,11 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     // ── orbit state ──────────────────────────────────────────────────────
 
-    // UI writes land during draw — AFTER the game's camera update already
+    // UI writes for pan, roll and zoom land during draw — AFTER the game's camera update already
     // ran this frame, where the update can normalize or re-derive them away
     // before they ever render. Each live write is therefore also queued and
     // re-asserted once inside the camera-update detour (the phase Brio's
     // position writes render from), so a drag reads back what it wrote.
-    internal Vector2? PendingAngle;
     internal Vector2? PendingPan;
     internal float? PendingRoll;
     internal float? PendingZoom;
@@ -77,7 +76,6 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             if (native != null)
             {
                 native->Angle = value;
-                PendingAngle = value;
             }
             _angle = value;
         }
@@ -302,7 +300,6 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         native->Roll = _roll;
         native->Distance = _zoom;
         native->Zoom = _fov;
-        PendingAngle = _angle;
         PendingPan = _pan;
         PendingRoll = _roll;
         PendingZoom = _zoom;
