@@ -69,7 +69,9 @@ public sealed class CharacterFileSession(
             _pending = null;
             return null;
         }
-        if (creation.Resolve(pending.Body, requirePose: pending.Appearance is not null)?.Actor is not { } actor)
+        // Both formats capture the pre-import actor state for Undo. An MCDF
+        // does not import a pose, but its history capture still needs the rig.
+        if (creation.Resolve(pending.Body, requirePose: true)?.Actor is not { } actor)
         {
             if (_clock.GetElapsedTime(pending.Started) < TimeSpan.FromSeconds(30)) return null;
             _pending = null;

@@ -15,6 +15,20 @@ namespace Poser.Application.Tests.Integration;
 
 public sealed class CharacterFileSessionTests
 {
+    [Theory]
+    [InlineData("actor.mcdf")]
+    [InlineData("actor.chara")]
+    public void Spawn_waits_for_rig_before_attempting_import_history(string path)
+    {
+        var f = new Fixture();
+        f.Creation.Ready = true;
+        f.Creation.PoseReady = false;
+        Assert.NotNull(f.Control.Spawn(path).Handle);
+        Assert.Null(f.Control.Advance());
+        Assert.Empty(f.Runtime.Writes);
+        Assert.False(f.History.CanUndo);
+    }
+
     [Fact]
     public void Invalid_file_does_not_spawn_and_pending_spawn_is_not_overwritten()
     {
@@ -132,6 +146,7 @@ public sealed class CharacterFileSessionTests
         public Func<SessionGeneration> Session = null!;
         public ActorId Actor = ActorId.New();
         public bool Ready, RequiredPose;
+        public bool PoseReady = true;
         public int Created;
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
@@ -142,7 +157,7 @@ public sealed class CharacterFileSessionTests
                     return new SceneCreationResult(new(Session(), SceneEntityKind.Actor));
                 case nameof(ISceneCreation.Resolve):
                     RequiredPose = (bool)args![1]!;
-                    return Ready ? SelectionId.ForActor(Actor) : null;
+                    return Ready && (!RequiredPose || PoseReady) ? SelectionId.ForActor(Actor) : null;
                 default: throw new NotSupportedException(method.Name);
             }
         }
