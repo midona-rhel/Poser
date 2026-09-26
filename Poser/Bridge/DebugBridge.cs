@@ -45,6 +45,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
+    private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
@@ -88,6 +89,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Application.Appearance.IActorAppearanceControl appearance,
+        global::Poser.Application.Settings.ReleaseNotesSession releaseNotes,
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Services.IBonePosingService bonePosing,
@@ -143,6 +145,7 @@ public sealed partial class DebugBridge : IDisposable
         _integration = integration;
         _session = session;
         _appearance = appearance;
+        _releaseNotes = releaseNotes;
         _skeletons = skeletons;
         _gaze = gaze;
         _framework = framework;
@@ -515,6 +518,9 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/releasenotes":
+                _releaseNotes.Open();
+                return Json(new { ok = true });
             case "/undo":
             {
                 var result = _transforms.Undo();

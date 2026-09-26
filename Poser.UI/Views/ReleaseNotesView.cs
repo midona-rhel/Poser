@@ -8,8 +8,6 @@ namespace Poser.UI.Views;
 
 public sealed class ReleaseNotesView(ReleaseNotesSession session)
 {
-    private bool _started;
-    private bool _measured;
     private static readonly string[] Highlights =
     [
         "Attach scene objects to actors or bones so they follow your pose.",
@@ -23,18 +21,49 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
 
     public void Draw()
     {
-        if (session.IsOpen && !_started)
+        if (!session.IsOpen) return;
+        float scale = ImGuiHelpers.GlobalScale;
+        ImGui.SetNextWindowSize(new Vector2(560, 380) * scale, ImGuiCond.Appearing);
+        ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Appearing, new Vector2(.5f));
+        ImGui.SetNextWindowSizeConstraints(new Vector2(360, 220) * scale, new Vector2(float.MaxValue));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
+        bool open = session.IsOpen;
+        try
         {
-            // Let an existing consent/import dialog finish before claiming its input.
-            if (ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel)) return;
-            _started = true;
+            bool visible = ImGui.Begin("What's new###poser-release-notes", ref open,
+                ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoBackground
+                | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse
+                | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing);
+            try
+            {
+                if (!visible) return;
+                var min = ImGui.GetWindowPos();
+                var size = ImGui.GetWindowSize();
+                var owner = Interactive.BeginOwner("poser-release-notes", InteractionLayer.Window, min, min + size);
+                try
+                {
+                    var frame = Crystarium.WindowFrame("release-notes", min, size, new WindowFrameProps
+                    {
+                        Title = "What's new", OnClose = session.Dismiss,
+                        FooterRight = bar => bar.Button("Close", session.Dismiss),
+                    });
+                    ImGui.SetCursorScreenPos(frame.Body.Min);
+                    ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16) * scale);
+                    try
+                    {
+                        bool bodyVisible = ImGui.BeginChild("##release-notes-body", frame.Body.Size,
+                            false, ImGuiWindowFlags.AlwaysUseWindowPadding);
+                        try { if (bodyVisible) { DrawBody(); session.MarkPresented(); } }
+                        finally { ImGui.EndChild(); }
+                    }
+                    finally { ImGui.PopStyleVar(); }
+                }
+                finally { Interactive.EndOwner(owner); }
+            }
+            finally { ImGui.End(); }
         }
-        Crystarium.Modal("##release-notes", session.IsOpen,
-            open => { if (!open) session.Dismiss(); },
-            "What's new", DrawBody,
-            () => Crystarium.Button("Close", () => { session.Dismiss(); ImGui.CloseCurrentPopup(); },
-                ButtonVariant.Primary, ControlStyle.Comfortable),
-            ModalSize.Medium);
+        finally { ImGui.PopStyleVar(2); if (!open) session.Dismiss(); }
     }
 
     private void DrawBody()
@@ -49,9 +78,5 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
                 TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));
             ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
         }
-        // The auto-sized modal measures off screen on its first frame.
-        if (_measured)
-            session.MarkPresented();
-        _measured = true;
     }
 }

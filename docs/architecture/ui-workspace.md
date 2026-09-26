@@ -9,8 +9,9 @@ visible as anchors when the global overlay mask hides other bones.
 What's new opens on loading a newer plugin version, independently of the main
 workspace and GPose. Application remembers the highest presented version only
 after the UI draws it; same-version reloads and downgrades do not repeat it.
-The dismissible popup contains short user-facing release highlights, not test
-reports, and does not change the first-run acceptance gate.
+The dismissible, non-modal window contains short user-facing release highlights,
+not test reports. It neither dims the background nor blocks other windows or
+the game, and does not change the first-run acceptance gate.
 
 Reference pictures are part of the product. Each picture keeps its visibility,
 opacity, placement, and window. It can be duplicated. A hidden picture stays

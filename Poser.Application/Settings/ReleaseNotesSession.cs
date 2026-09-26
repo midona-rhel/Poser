@@ -16,6 +16,7 @@ public sealed class ReleaseNotesSession
         Version = version.ToString();
         IsOpen = !System.Version.TryParse(configuration.Config.LastSeenReleaseVersion, out var seen)
             || Normalize(version) > Normalize(seen);
+        _presented = !IsOpen;
     }
 
     // A load alone is not presentation: hidden UI must not consume the notice.
@@ -34,6 +35,7 @@ public sealed class ReleaseNotesSession
     }
 
     public void Dismiss() => IsOpen = false;
+    public void Open() => IsOpen = true;
 
     private static Version Normalize(Version version) => new(
         version.Major, version.Minor, Math.Max(0, version.Build), Math.Max(0, version.Revision));

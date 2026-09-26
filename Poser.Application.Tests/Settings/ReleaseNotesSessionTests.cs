@@ -41,6 +41,19 @@ public sealed class ReleaseNotesSessionTests
     }
 
     [Fact]
+    public void Explicit_reopening_preserves_the_seen_version_without_saving_again()
+    {
+        var store = new MemoryStore();
+        store.Config.LastSeenReleaseVersion = "0.9.11.0";
+        var session = new ReleaseNotesSession(new ConfigurationService(store), new(0, 9, 10, 0));
+        session.Open();
+        session.MarkPresented();
+        Assert.True(session.IsOpen);
+        Assert.Equal("0.9.11.0", store.Config.LastSeenReleaseVersion);
+        Assert.Equal(0, store.Saves);
+    }
+
+    [Fact]
     public void Failure_does_not_consume_the_version_and_can_retry()
     {
         var store = new MemoryStore { Fail = true };
