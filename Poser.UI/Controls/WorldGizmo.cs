@@ -44,8 +44,8 @@ public sealed class WorldGizmoProjection
     public float ScreenScale;
     /// <summary>Unit direction from camera to pivot.</summary>
     public Vector3 ViewDirection;
-    private float _pivotClipW;
-    private float _clipDepthGradientLength;
+    private Vector3 _ringRight;
+    private Vector3 _ringUp;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
 
@@ -84,9 +84,24 @@ public sealed class WorldGizmoProjection
         if (toPivot.LengthSquared() < 1e-8f)
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
-        var depthGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
-        result._clipDepthGradientLength = depthGradient.Length();
-        result._pivotClipW = Vector3.Dot(depthGradient, pivotWorld) + viewProj.M44;
+        if (result.RayDirection(result.DisplayCenter) is not { } cameraForward)
+            return null;
+        // Aim a virtual camera at the pivot with the shortest rotation from
+        // the real camera. This preserves camera roll without world-up flips.
+        // Only orientation changes: an orthonormal ball cannot shear or shrink
+        // as its pivot moves off-centre, unlike a perspective-projected sphere
+        // or a normalized perspective differential.
+        var aim = new Quaternion(Vector3.Cross(cameraForward, result.ViewDirection),
+            1f + Vector3.Dot(cameraForward, result.ViewDirection));
+        if (aim.LengthSquared() < 1e-8f)
+            return null;
+        aim = Quaternion.Normalize(aim);
+        var cameraRight = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitX, invView)) *
+            MathF.Sign(projection.M11);
+        var cameraUp = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitY, invView)) *
+            MathF.Sign(projection.M22);
+        result._ringRight = Vector3.Transform(cameraRight, aim);
+        result._ringUp = Vector3.Transform(cameraUp, aim);
 
         // Measure along camera-right: both points have the same view depth,
         // so pixels per world unit does not change across the viewport.
@@ -114,18 +129,10 @@ public sealed class WorldGizmoProjection
         return w > 0.001f;
     }
 
-    /// <summary>Whether the entire ring ball is in front of the projection plane.</summary>
-    public bool CanProjectRing(float radius) =>
-        _pivotClipW - radius * _clipDepthGradientLength > 0.001f;
-
-    /// <summary>Projects rotation geometry with the same perspective as the axes.</summary>
-    public Vector2 ProjectRingOffset(Vector3 worldOffset)
-    {
-        // Admit the entire ball before projecting, including unsampled sweep
-        // points. Keep per-point depth; fixed-depth offsets misalign off-centre.
-        Project(Pivot + worldOffset, out var screen);
-        return screen;
-    }
+    /// <summary>Projects into the fixed-size ball's pivot-facing frame.</summary>
+    public Vector2 ProjectRingOffset(Vector3 worldOffset) =>
+        Center + new Vector2(Vector3.Dot(worldOffset, _ringRight),
+            -Vector3.Dot(worldOffset, _ringUp)) * (ScreenScale / WorldScale);
 
     /// <summary>The world-space mouse ray direction for a screen point.</summary>
     public Vector3? RayDirection(Vector2 screen)
@@ -178,8 +185,6 @@ public static class WorldGizmo
             RollAxisWorld = RotationGizmoRings.CameraViewAxis(
                 projection.ViewRotation),
         };
-        if (!projection.CanProjectRing(ringWorldRadius))
-            return rings;
         rings.Points = new Vector2[3][];
         rings.Depth = new float[3][];
         for (int a = 0; a < 3; a++)
@@ -196,12 +201,9 @@ public static class WorldGizmo
                 rings.Depth[a][i] = Vector3.Dot(direction, projection.ViewDirection);
             }
         }
-        // ImGuizmo (used by Brio/Ktisis) fits the screen-rotation circle to
-        // perspective-projected axis rings instead of shrinking those rings.
-        // Measure the visible polylines, including clipped arc endpoints.
-        rings.ScreenRadius = MathF.Max(
-            projection.ScreenScale * (ringWorldRadius / projection.WorldScale),
-            RotationGizmoRings.FrontArcRadius(rings));
+        // Orthonormal projection keeps every ring's major radius at this size.
+        // The enclosing roll circle therefore needs no view-dependent fitting.
+        rings.ScreenRadius = projection.ScreenScale * (ringWorldRadius / projection.WorldScale);
         rings.RollRadius = rings.ScreenRadius + 8f * scale;
         rings.Valid = true;
         return rings;

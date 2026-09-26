@@ -33,14 +33,16 @@ frozen parent position. The world overlay places its pivot in perspective and
 draws nothing for an unprojectable pivot. Inspector rotation stays in place.
 
 World-gizmo size calibration uses the camera image plane, keeping its reference
-pixel span stable across the viewport. World rotation rings use per-point
-perspective, like the linear axes. Following [ImGuizmo's rotation layout](https://github.com/CedricGuillemet/ImGuizmo/blob/master/src/ImGuizmo.cpp)
-(used by Brio and Ktisis), the white roll circle grows to enclose the projected
-axis arcs instead of shrinking them to a fixed circle. Drawing, picking and
-roll drag feedback share that fitted radius, with the configured size as its
-minimum. Axis tangents and drag sweeps use the same perspective as the rings;
-front arcs use the eye-to-pivot direction. An unprojectable rotation ball is
-neither drawn nor picked. The inspector retains its direction-only projection.
+pixel span stable across the viewport. The world rotation ball uses an
+orthonormal frame aimed along the eye-to-pivot ray, preserving camera roll.
+The pivot is perspective-placed, but the ball and white roll circle retain
+their configured pixel radii across the screen: no perspective stretching,
+normalization shrinkage or fitted outer-circle growth. Drawing, picking,
+positive tangents and drag sweeps share that frame; front arcs use the same
+eye-to-pivot direction. Linear handles retain world perspective. Unlike
+[ImGuizmo's fitted outer circle](https://github.com/CedricGuillemet/ImGuizmo/blob/master/src/ImGuizmo.cpp),
+Poser's rotation ball deliberately has a fixed screen size.
+The inspector retains its direction-only projection.
 Linear handles face the camera's position relative to the pivot, not its look
 direction; their signs remain frozen during a drag.
 Drawn gizmo handles, with a two-pixel scaled margin, resolve before padded scene
