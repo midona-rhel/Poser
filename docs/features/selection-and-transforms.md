@@ -149,6 +149,10 @@ never replaced with a plausible identity baseline.
 
 ## Camera movement
 
+New free cameras take position, direction and roll from the same rendered view,
+not a mixture of rendered position and native orbit angles. This also preserves
+the view when spawning from another free camera or a panned/rolled Main Camera.
+
 `Update camera orbit with actor position` defaults on, matching
 [Ktisis 650d1bb9](https://github.com/ktisis-tools/Ktisis/commit/650d1bb9).
 Actor transform edits defer native pivot synchronization until left-mouse

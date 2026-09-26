@@ -67,6 +67,7 @@ public sealed class DebugBridge : IDisposable
     private readonly Application.Integration.ICharacterFiles _characterFiles;
     private readonly IObjectTable _objects;
     private readonly IVirtualCameraService _cameras;
+    private readonly Application.Presentation.ICameraControl _cameraControl;
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -104,7 +105,7 @@ public sealed class DebugBridge : IDisposable
         IPosingService posing,
         Application.Posing.IPoseCommands poseCommands,
         Application.Integration.ICharacterFiles characterFiles, IObjectTable objects,
-        IVirtualCameraService cameras)
+        IVirtualCameraService cameras, Application.Presentation.ICameraControl cameraControl)
     {
         _configuration = configuration;
         _textures = textures;
@@ -118,6 +119,7 @@ public sealed class DebugBridge : IDisposable
         _characterFiles = characterFiles;
         _objects = objects;
         _cameras = cameras;
+        _cameraControl = cameraControl;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -254,6 +256,7 @@ public sealed class DebugBridge : IDisposable
                     {
                         "/actors",
                         "/cameras (read-only camera values; no scene file written)",
+                        "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -412,6 +415,8 @@ public sealed class DebugBridge : IDisposable
             case "/cameras":
                 return JsonSerializer.Serialize(new
                 {
+                    view = _viewport.GetViewMatrix(),
+                    projection = _viewport.GetProjectionMatrix(),
                     cameras = _cameras.Cameras.Select(camera => new
                     {
                         id = _bindings.GetCameraId(camera)?.ToString(),
@@ -422,6 +427,26 @@ public sealed class DebugBridge : IDisposable
                         camera.TargetActorName, camera.IsTargetLocked,
                     }).ToArray(),
                 }, new JsonSerializerOptions { IncludeFields = true });
+            case "/camera":
+            {
+                if (query.TryGetValue("create", out var kind))
+                    return Json(_creation.CreateCamera(Enum.Parse<Domain.Scene.CameraKind>(kind, true)));
+                var selected = _cameras.Cameras.FirstOrDefault(c => c.Name == query.GetValueOrDefault("camera"));
+                if (selected == null || _bindings.GetCameraId(selected) is not { } cameraId)
+                    return Json(new { error = "No such camera." });
+                float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
+                var result = query.GetValueOrDefault("action") switch
+                {
+                    "live" => _cameraControl.SetLive(cameraId, true),
+                    "angle" => _cameraControl.SetAngle(cameraId, new(Number("x"), Number("y"))),
+                    "pan" => _cameraControl.SetPan(cameraId, new(Number("x"), Number("y"))),
+                    "roll" => _cameraControl.SetRoll(cameraId, Number("x")),
+                    "fov" => _cameraControl.SetFoV(cameraId, Number("x")),
+                    _ => new Application.Transforms.ValueWriteResult(false, "Unknown camera command."),
+                };
+                _cameraControl.Seal();
+                return Json(result);
+            }
             case "/profile":
             {
                 // The frame profiler's own ledger — the instrument Midona reads
@@ -674,6 +699,8 @@ public sealed class DebugBridge : IDisposable
             }
             case "/mcdf":
             {
+                if (query.GetValueOrDefault("reset") == "1")
+                    return Json(_session.ResetMcdf(id));
                 if (query.TryGetValue("export", out var destination))
                 {
                     if (System.IO.File.Exists(destination)) return Json(new { error = "Refusing to overwrite an existing file." });
@@ -681,7 +708,8 @@ public sealed class DebugBridge : IDisposable
                 }
                 if (query.TryGetValue("import", out var source))
                     return Json(_characterFiles.Import(id, source));
-                return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress });
+                return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress,
+                    owned = Owned(id), collection = _integration.GetCollectionAssignment(id) });
             }
             case "/bonediff":
             {
