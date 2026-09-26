@@ -82,7 +82,8 @@ public class PoseFileService : IPoseFileService
     }
 
     public PoseFile CreatePoseFile(
-        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null)
+        IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null,
+        Func<IBone, Transform>? readTransform = null)
     {
         var poseFile = new PoseFile
         {
@@ -111,13 +112,14 @@ public class PoseFileService : IPoseFileService
                 // chain link) carries an all-zero quaternion; a file cannot
                 // hold it and an import could not apply it. Left out — a
                 // NaN, by contrast, is corruption and still refuses.
-                if (IsZeroRotation(bone.LastRawTransform.Rotation))
+                var transform = readTransform?.Invoke(bone) ?? bone.LastRawTransform;
+                if (IsZeroRotation(transform.Rotation))
                 {
                     degenerate++;
                     continue;
                 }
 
-                collection[bone.BoneName] = bone.LastRawTransform;
+                collection[bone.BoneName] = transform;
             }
         }
         if (degenerate > 0)

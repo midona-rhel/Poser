@@ -1344,6 +1344,12 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             (TransformTargetId, Transform, TransformComponents)>(subtree.Count);
         foreach (var bone in subtree)
         {
+            // An explicitly restored partial-root scale is reapplied by
+            // attachment every frame. Reconciling that root as another edit
+            // scales its children, then attachment overwrites only the root:
+            // the duplicate's face grows by rootScale / bodyHeadScale.
+            if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.PartialRootScale.HasValue)
+                continue;
             // A subtree bone without a binding cannot be captured for
             // rollback, so it is not written either — Brio likewise only
             // re-applies what its name lookup finds.

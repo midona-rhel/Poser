@@ -64,6 +64,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IGPoseService _gpose;
     private readonly IPosingService _posing;
     private readonly Application.Posing.IPoseCommands _poseCommands;
+    private readonly Application.Integration.ICharacterFiles _characterFiles;
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -99,7 +100,8 @@ public sealed class DebugBridge : IDisposable
         IPlacementAnchorSource anchors,
         IGPoseService gpose,
         IPosingService posing,
-        Application.Posing.IPoseCommands poseCommands)
+        Application.Posing.IPoseCommands poseCommands,
+        Application.Integration.ICharacterFiles characterFiles)
     {
         _configuration = configuration;
         _textures = textures;
@@ -110,6 +112,7 @@ public sealed class DebugBridge : IDisposable
         _gpose = gpose;
         _posing = posing;
         _poseCommands = poseCommands;
+        _characterFiles = characterFiles;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -632,6 +635,35 @@ public sealed class DebugBridge : IDisposable
                         }
                 return Json(new { error = "no such bone" });
             }
+            case "/bones":
+            {
+                var rows = new List<object>();
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                {
+                    foreach (var bone in skeleton.Bones) _ = bone.LastTransform;
+                    if (skeleton is Skeleton live) live.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+                    foreach (var bone in skeleton.Bones)
+                    {
+                        var t = bone.LastTransform;
+                        rows.Add(new { slot = skeleton.Slot.ToString(), name = bone.BoneName, partial = bone.PartialId,
+                            position = new { t.Position.X, t.Position.Y, t.Position.Z },
+                            rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W },
+                            scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z } });
+                    }
+                }
+                return Json(new { bones = rows });
+            }
+            case "/mcdf":
+            {
+                if (query.TryGetValue("export", out var destination))
+                {
+                    if (System.IO.File.Exists(destination)) return Json(new { error = "Refusing to overwrite an existing file." });
+                    return Json(_characterFiles.Export(id, destination, "Local compatibility check"));
+                }
+                if (query.TryGetValue("import", out var source))
+                    return Json(_characterFiles.Import(id, source));
+                return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress });
+            }
             case "/bonediff":
             {
                 var other = _actors.Actors[int.Parse(query["other"])];
@@ -1077,6 +1109,9 @@ public sealed class DebugBridge : IDisposable
         {
             actor = actor.Name,
             id = id.ToString(),
+            localPlayer = _actors.IsLocalPlayer(actor),
+            penumbra = _integration.Penumbra,
+            glamourer = _integration.Glamourer,
             paused = _animation.IsPaused(id),
             anyPlaying = _animation.AnyPlaying(id),
             overallSpeed = reading?.OverallSpeed,

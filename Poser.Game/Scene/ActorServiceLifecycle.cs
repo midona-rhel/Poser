@@ -198,7 +198,17 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     public ActorState ReadPoseForCopy(object actor)
     {
         var target = (IActor)actor;
-        var pose = CapturePose(target);
+        var slots = _skeletons.GetSkeletons(target);
+        // The copy has no source gaze/profile drivers: capture its visible
+        // pose, not an unedited actor's potentially build-time raw cache.
+        // Never overwrite raw caches used for interactive delta math.
+        foreach (var skeleton in slots)
+        {
+            foreach (var bone in skeleton.Bones) _ = bone.LastTransform;
+            if (skeleton is Skeleton live) live.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+        }
+        var pose = slots.Count == 0 ? null : _poseFiles.CreatePoseFile(
+            slots, PoseBoneWanted, static bone => bone.LastTransform);
         var rootScales = CapturePartialRootScales(target);
         return new ActorState(
             _posing.GetEffectiveTransform(target),
@@ -267,7 +277,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private static bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName);
+    private bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName)
+        || _bonePosing.GetPoseInfo(bone.Skeleton)
+            .GetPoseInfo(bone.BoneName, bone.PartialId).HasStacks;
 
     private static bool IsPhysicsDriven(string name)
     {
@@ -296,7 +308,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     continue;
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (!IsPhysicsDriven(bone.BoneName) || bone.IsPartialRoot)
+                    if (PoseBoneWanted(bone) || bone.IsPartialRoot)
                         continue;
                     var parent = bone.ParentBone;
                     if (parent == null)

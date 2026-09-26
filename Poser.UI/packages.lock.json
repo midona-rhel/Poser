@@ -8,6 +8,11 @@
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
+      "Blake3": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "HfNW2Iiy4hCaVDVGFEyk0mks+M5HSU3O8O517LyYkI6FFuj2jpvNlag4kGQFDSRmJi4/axgOei8k02NKq/uoDg=="
+      },
       "K4os.Compression.LZ4": {
         "type": "Transitive",
         "resolved": "1.3.8",
@@ -41,6 +46,7 @@
       "poser.documents": {
         "type": "Project",
         "dependencies": {
+          "Blake3": "[2.2.1, )",
           "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
           "Newtonsoft.Json": "[13.0.4, )",
           "Poser.Domain": "[1.0.0, )",
