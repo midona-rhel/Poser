@@ -22,7 +22,6 @@ public interface ISceneLifecycleHistory
     void DestroyCamera(IVirtualCamera camera);
     IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null);
     void WhenPosable(IActor actor, Action<IActor> act);
-    void TransferState( IActor from, IActor to, bool rotation, bool position, bool scale, bool physicsDeltas, bool rootScales);
     IActor? SpawnActorWithPose( string description, Func<IActor?> spawn, IActor source);
     bool DespawnActor(IActor actor);
     object? SpawnProp();

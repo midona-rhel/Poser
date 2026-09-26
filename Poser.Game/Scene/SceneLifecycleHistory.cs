@@ -574,25 +574,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     public void WhenPosable(IActor actor, Action<IActor> act) =>
         _actors.WhenPosable(actor, a => act((IActor)a));
 
-    /// <summary>Debug bridge only: the source's state onto an existing
-    /// actor, unjournaled, with the restore knobs set for the run.</summary>
-    public void TransferState(
-        IActor from, IActor to,
-        bool rotation, bool position, bool scale,
-        bool physicsDeltas, bool rootScales)
-    {
-        if (_actors is ActorServiceLifecycle lifecycle)
-        {
-            lifecycle.DebugRotation = rotation;
-            lifecycle.DebugPosition = position;
-            lifecycle.DebugScale = scale;
-            lifecycle.DebugPhysicsDeltas = physicsDeltas;
-            lifecycle.DebugRootScales = rootScales;
-        }
-        var state = _actors.ReadPoseForCopy(from);
-        _actors.Restore(to, state);
-    }
-
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
@@ -624,24 +605,18 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     }
 
     /// <summary>
-    /// Despawns one actor, as a step of the user's history when it can be
-    /// one. Spawning an actor was undoable and despawning it was not, which
-    /// made the pair asymmetric in the direction that costs the user work.
-    ///
-    /// <para>The entry exists exactly when this seam recorded the spawn: only
-    /// then is there a call to run again, and only then does re-running it
-    /// reproduce the appearance and the collection. Every other despawn — an
-    /// actor cloned straight through the world tab, one adopted from the
-    /// overlay, one spawned before the history was last cleared — is destroyed
-    /// all the same and NAMED as unundoable, never silently skipped.</para>
+    /// Removes an owned actor through the shared state capture, regardless of
+    /// whether it came from a scene file or its creation entry still exists.
     /// </summary>
     public bool DespawnActor(IActor actor)
     {
         if (!_actorOwner.TryGetSlot(actor, out var slot) || !slot.HasRespawn)
         {
-            _actors.Note(
-                $"Despawning '{actor.Name}' cannot be undone: Poser has no record of spawning this actor, so it has no call to run again and no way to reproduce the appearance it is wearing.");
-            return _actors.Destroy(actor);
+            if (!_actors.IsSpawned(actor))
+                return false;
+            slot = SlotFor(actor);
+            slot.Respawn = () => _actors.Recreate(slot.Document);
+            slot.HasRespawn = true;
         }
         string description = $"Despawn actor '{actor.Name}'";
         if (!_actorOwner.CaptureAndRemove(slot))

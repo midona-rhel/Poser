@@ -25,6 +25,9 @@ current capabilities when dispatched. Removal keeps
 each entity's destroy or release owner and lifecycle history. Adopted actors,
 borrowed lights and world objects, default cameras, and locked-group members
 retain their separate ownership rules.
+Owned actor removal captures its current state even when scene loading created
+the actor or its original creation entry has been cleared. Restoration does not
+depend on replaying the original spawn action or retaining its source actor.
 
 Inspector, multi-selection and category removal capture exact IDs at confirmation and
 dispatch one batch through the same application command. The Game adapter

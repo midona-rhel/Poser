@@ -331,6 +331,48 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal(1, originalSpawns);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Owned_actor_removal_does_not_require_a_creation_history_entry(bool clearCreationHistory)
+    {
+        var world = new World();
+        var actor = clearCreationHistory
+            ? world.Lifecycle.SpawnActor("Add", () => world.Actors.Spawn("Imported"))!
+            : world.Actors.Spawn("Imported")!;
+        world.History.Clear();
+        actor.Name = "Authored actor";
+        var authored = Posed(new Vector3(12, 3, -4), visible: false);
+        world.Actors.Edit(actor, authored);
+
+        Assert.True(world.Lifecycle.DespawnActor(actor));
+        Assert.Empty(world.Actors.Live);
+        Assert.Empty(world.Actors.Notes);
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.True(world.Undo());
+            var restored = Assert.Single(world.Actors.Live);
+            Assert.Equal("Authored actor", restored.Name);
+            Assert.Equal(authored, world.Actors.StateOf(restored));
+            Assert.True(world.Redo());
+            Assert.Empty(world.Actors.Live);
+        }
+    }
+
+    [Fact]
+    public void Refused_untracked_actor_removal_keeps_the_existing_history()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnProp(Apple);
+        var previous = world.History.UndoDescription;
+        var actor = world.Actors.Spawn("Imported")!;
+        world.Actors.RefuseDestroy = true;
+
+        Assert.False(world.Lifecycle.DespawnActor(actor));
+        Assert.Same(actor, Assert.Single(world.Actors.Live));
+        Assert.Equal(previous, world.History.UndoDescription);
+    }
+
     [Fact]
     public void Camera_removal_restores_origin_lock_tracking_and_optics()
     {

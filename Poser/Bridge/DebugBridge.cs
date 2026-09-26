@@ -657,16 +657,6 @@ public sealed class DebugBridge : IDisposable
                 var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
                 return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
             }
-            case "/transfer":
-            {
-                var from = FindActor(query["from"]);
-                if (from == null)
-                    return Json(new { error = "no such source actor" });
-                bool Flag(string key) => !query.TryGetValue(key, out var v) || v != "0";
-                _lifecycle.TransferState(from, actor,
-                    Flag("rot"), Flag("pos"), Flag("scale"), Flag("physics"), Flag("roots"));
-                return Json(new { ok = true, from = from.Name, to = actor.Name });
-            }
             case "/bake":
             {
                 string name = query["name"]; int part = query.TryGetValue("partial", out var bp) ? int.Parse(bp) : 0;

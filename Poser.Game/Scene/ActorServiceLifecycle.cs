@@ -44,17 +44,12 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     /// </summary>
     private PoseImportOptions RestoreOptions => new()
     {
-        ApplyRotation = DebugRotation,
-        ApplyPosition = DebugPosition,
-        ApplyScale = DebugScale,
+        ApplyRotation = true,
+        ApplyPosition = true,
+        ApplyScale = true,
         ApplyModelTransform = false,
         SuppressHistory = true,
     };
-
-    // Debug-bridge knobs for the restore experiments (2026-09-02): which
-    // components the restore imports and which side passes run.
-    internal bool DebugRotation = true, DebugPosition = true, DebugScale = true;
-    internal bool DebugPhysicsDeltas = true, DebugRootScales = true;
 
     private readonly IActorSpawnService _spawns;
     private readonly IPosingService _posing;
@@ -500,7 +495,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
         // The next apply pass reads these root scales when converting
         // visible file targets into the native partial frame.
-        if (state.PartialRootScales is { } rootScales && DebugRootScales)
+        if (state.PartialRootScales is { } rootScales)
             ApplyPartialRootScales(actor, rootScales);
         var options = RestoreOptions;
         if (_bindings.GetActorId(actor) is not { } actorId)
@@ -515,7 +510,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     // The main import owns the pose until completion. Apply
                     // local physics offsets once, in parent-first native order,
                     // instead of racing four framework-tick writes against it.
-                    if (state.PhysicsDeltas is { } physicsDeltas && DebugPhysicsDeltas)
+                    if (state.PhysicsDeltas is { } physicsDeltas)
                         ApplyPhysicsDeltas(actor, physicsDeltas, stillCurrent);
                 }
             });
