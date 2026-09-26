@@ -108,6 +108,7 @@ public sealed class GroupSteps
 
     private void Restore(GroupsSnapshot snapshot)
     {
+        snapshot = snapshot.Remap(_history);
         _groups.Restore(snapshot);
         if (snapshot.Transforms is not { } transforms) return;
         if (_groupCoordinator != null) _groupCoordinator.RestoreNamed(transforms);

@@ -275,6 +275,7 @@ public interface ISceneRuntime
     /// <summary>Connect history to a replacement created by replaying the same
     /// saved entity. Ordinary runtime receipts stay exact and expired.</summary>
     void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement) { }
+    SelectionId? ResolveHistoryEntity(SceneEntityHandle handle) => ResolveSceneEntity(handle);
 
     void DestroyActor(SceneEntityHandle actor);
     void DestroyProp(SceneEntityHandle prop);

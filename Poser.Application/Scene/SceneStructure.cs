@@ -7,7 +7,11 @@ namespace Poser.Application.Scene;
 
 public sealed record SceneStructureGroup(Guid Key, string Name, Guid? Parent,
     IReadOnlyList<SelectionId> Members, GroupTransformSnapshot? Transform,
-    bool HasTransform, Quaternion? LegacyFrame);
+    bool HasTransform, Quaternion? LegacyFrame)
+{
+    // Only history reuses a runtime group ID; separate imports of the same file do not.
+    public Guid? RestoredId { get; init; }
+}
 
 public sealed record SceneStructureSnapshot(IReadOnlyList<SceneStructureGroup> Groups,
     IReadOnlyList<RootSlot> RootOrder);
@@ -43,7 +47,7 @@ public sealed class SceneStructure(SceneGroups groups, GroupTransformCoordinator
         try
         {
             foreach (var entry in entries)
-                if (groups.Create(entry.Name, entry.Members, allowThin: true) is { } group)
+                if (groups.Create(entry.Name, entry.Members, allowThin: true, restoredId: entry.RestoredId) is { } group)
                     ids.Add(entry.Key, group.Id);
             foreach (var entry in entries)
                 if (entry.Parent is { } parent && ids.TryGetValue(parent, out var parentId)

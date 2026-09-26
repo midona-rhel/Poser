@@ -93,8 +93,10 @@ public sealed class SceneGroups
     /// parent group the new group nests inside it; otherwise it is a root
     /// group seated where its first member sat.</summary>
     public SceneGroup? Create(
-        string name, IReadOnlyList<SelectionId> members, bool allowThin = false)
+        string name, IReadOnlyList<SelectionId> members, bool allowThin = false, Guid? restoredId = null)
     {
+        if (restoredId is { } id && (id == Guid.Empty || Find(id) != null))
+            throw new InvalidOperationException("The restored group identity is already in use or invalid.");
         var kept = new List<SelectionId>();
         foreach (var member in members)
             if (Selection.EntitySelection.IsEntity(member.Kind)
@@ -126,7 +128,7 @@ public sealed class SceneGroups
 
         var group = new SceneGroup
         {
-            Id = Guid.NewGuid(),
+            Id = restoredId ?? Guid.NewGuid(),
             Name = string.IsNullOrWhiteSpace(name) ? "Group" : name.Trim(),
             Members = kept,
         };

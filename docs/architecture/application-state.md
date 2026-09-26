@@ -55,6 +55,11 @@ restore path, and discrete edits cannot interleave with a live gesture.
 Ordinary history replays recorded edits; animation changes never trigger an
 implicit whole-pose recovery mode. Whole-state restoration is an explicit
 command inverse, not a second selectable history implementation.
+Scene-load redo preserves its groups' runtime identities and rebinds their
+members through the same history-only identity resolver as transform edits.
+Group baselines and remembered visibility/play/night flags follow those members;
+ordinary commands and pending receipts still refuse stale IDs. A separate import
+of the same file creates independent groups.
 
 `PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
 duplicate-name variants in order, and uses game indices only to find bones.

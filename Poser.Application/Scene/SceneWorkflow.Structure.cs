@@ -73,12 +73,18 @@ public sealed partial class SceneWorkflow
             }
             entries.Add(new(entry.Key, entry.Name, entry.Parent,
                 entry.Members.Select(Resolve).OfType<SelectionId>().ToArray(),
-                transform, entry.Transform != null, entry.InitialFrameRotation));
+                transform, entry.Transform != null, entry.InitialFrameRotation)
+            {
+                RestoredId = operation.Replay is { } replay && replay.Groups.TryGetValue(entry.Key, out var id)
+                    ? id : null,
+            });
         }
         var order = new List<RootSlot>();
         foreach (var reference in scene.RootOrder ?? [])
             if (reference.Kind == "group") order.Add(RootSlot.ForGroup(reference.Key));
             else if (Resolve(reference) is { } id) order.Add(RootSlot.For(id));
-        operation.ImportedGroups.AddRange(_structure!.Import(entries, order));
+        var imported = _structure!.Import(entries, order);
+        operation.ImportedGroups.AddRange(imported);
+        operation.HistoryGroups = entries.Zip(imported).ToDictionary(pair => pair.First.Key, pair => pair.Second);
     }
 }

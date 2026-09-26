@@ -59,7 +59,7 @@ public sealed class TransformHistory
     private readonly Func<int> _capacity;
     private readonly List<HistoryEntry> _undo = new();
     private readonly List<HistoryEntry> _redo = new();
-    private readonly Dictionary<TransformTargetId, Func<TransformTargetId?>> _lifecycleTargets = new();
+    private readonly Dictionary<SelectionId, Func<SelectionId?>> _lifecycleTargets = new();
     private LifecycleHistoryBatch? _batch;
 
     /// <summary>Records one synchronous removal command. Earlier value edits
@@ -90,13 +90,26 @@ public sealed class TransformHistory
     /// <summary>Keep edits while their entity is deliberately absent. This is
     /// history-only rebinding, never permission to reuse a stale public ID.</summary>
     public void RetainLifecycleTarget(TransformTargetId target, Func<TransformTargetId?> current) =>
-        _lifecycleTargets[target] = current;
+        RetainLifecycleEntity(target.ToSelectionId(), () => current()?.ToSelectionId());
+
+    public void RetainLifecycleEntity(SelectionId entity, Func<SelectionId?> current) =>
+        _lifecycleTargets[entity] = current;
+
+    public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
+        _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
+
+    public TransformTargetId ResolveLifecycleTarget(TransformTargetId target)
+    {
+        var entity = ResolveLifecycleEntity(target.ToSelectionId());
+        return entity.Bone is { } bone ? TransformTargetId.ForBone(bone)
+            : GroupTransformCoordinator.Target(entity) ?? target;
+    }
 
     private void RefreshLifecycleTargets(List<HistoryEntry> stack)
     {
         if (_lifecycleTargets.Count == 0) return;
         TransformTargetId? Resolve(TransformTargetId target) =>
-            _lifecycleTargets.TryGetValue(target, out var current) ? current() ?? target : target;
+            ResolveLifecycleTarget(target);
         for (int i = 0; i < stack.Count; i++)
         {
             if (stack[i] is not TransformPatch patch) continue;
@@ -106,7 +119,7 @@ public sealed class TransformHistory
             {
                 Before = patch.Before.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
                 After = patch.After.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
-                GroupState = patch.GroupState?.Remap(Resolve),
+                GroupState = patch.GroupState?.Remap(Resolve, allowReplacement: true),
             };
         }
     }
@@ -278,8 +291,8 @@ public sealed class TransformHistory
             if (entry is not TransformPatch patch)
                 return false;
             bool staleTarget =
-                patch.Before.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target)) ||
-                patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target));
+                patch.Before.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())) ||
+                patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId()));
             if (!staleTarget)
                 return false;
             return true;

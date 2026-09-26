@@ -170,10 +170,23 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
 
-    public SelectionId? ResolveSceneEntity(SceneEntityHandle token)
+    public SelectionId? ResolveSceneEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token));
+
+    public SelectionId? ResolveHistoryEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token) switch
+    {
+        IActor actor => _actorHistory.Resolve(actor),
+        IPropHandle prop => _propHistory.Resolve(prop),
+        IOverlayNode overlay => _overlayHistory.Resolve(overlay),
+        IWorldObject world => _worldHistory.Resolve(world),
+        ILight light => _lightHistory.Resolve(light),
+        IVirtualCamera camera => _cameraHistory.Resolve(camera),
+        _ => null,
+    });
+
+    private SelectionId? SelectionOf(object? entity)
     {
         IEntityBindings bindings = _bindings;
-        return _handles.Resolve(token) switch
+        return entity switch
         {
             IActor actor when bindings.GetActorId(actor) is { } id => SelectionId.ForActor(id),
             IPropHandle prop when bindings.GetPropId(prop) is { } id => SelectionId.ForProp(id),

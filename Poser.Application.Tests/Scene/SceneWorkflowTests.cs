@@ -94,6 +94,83 @@ public sealed class SceneWorkflowTests
     }
 
     [Fact]
+    public async Task Group_history_after_scene_redo_uses_recreated_members_and_preserves_group_identity()
+    {
+        var keys = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var document = SceneWith();
+        foreach (var key in keys) document.Lights.Add(new() { Key = key, Light = new() { Name = "Member" } });
+        var pose = new PoseTransform(Vector3.One, Quaternion.Identity, Vector3.One);
+        document.Groups = [new() { Key = Guid.NewGuid(), Name = "Pair",
+            Members = keys.Select(key => new SceneStructureRef { Kind = "light", Key = key }).ToList(),
+            Transform = new() { Members = keys.Select(key => new SceneGroupTransformMember
+            {
+                Member = new() { Kind = "light", Key = key }, Initial = pose, Expected = pose,
+            }).ToList() } }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        var groups = new SceneGroups();
+        var state = new GroupTransformState();
+        var history = new TransformHistory();
+        var session = new SceneSession(new SelectionSession());
+        ulong revision = 0;
+        void PublishMembers() => Assert.True(session.TryRefresh(new Poser.Domain.Scene.SceneSnapshot(++revision,
+            [], groups.All.SelectMany(item => item.Members).Distinct().Select(id =>
+                new Poser.Domain.Scene.LightDescriptor(id.Light!.Value, "Member", Poser.Domain.Scene.LightKind.Point)).ToArray(), [], [])).Accepted);
+        using var coordinator = new GroupTransformCoordinator(session, groups, state, new EmptyGroupSource());
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+            structure: new SceneStructure(groups, coordinator, state));
+        var steps = new GroupSteps(groups, history, new ValueJournal(history), state, coordinator);
+        Assert.True(load.BeginLoad("group.xivg").Success);
+        await load.Drain;
+        var group = Assert.Single(groups.All);
+        PublishMembers();
+        var originalMembers = group.Members.ToArray();
+        steps.Run("Hide group", () =>
+        {
+            group.Hidden = true;
+            group.RememberedVisible[originalMembers[0]] = true;
+            group.RememberedVisible[originalMembers[1]] = false;
+        });
+
+        for (int cycle = 0; cycle < 3; cycle++)
+        {
+            var hide = Assert.IsType<JournalStep>(history.PeekUndo());
+            Assert.True(hide.Undo());
+            history.CommitUndo(hide);
+            var spawn = Assert.IsType<JournalStep>(history.PeekUndo());
+            Assert.True(spawn.Undo());
+            history.CommitUndo(spawn);
+            Assert.Empty(groups.All);
+            Assert.True(spawn.Redo());
+            history.CommitRedo(spawn);
+            await load.Drain;
+            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            var restored = Assert.Single(groups.All);
+            PublishMembers();
+            Assert.Equal(group.Id, restored.Id);
+            var currentMembers = restored.Members.ToArray();
+            Assert.DoesNotContain(currentMembers[0], originalMembers);
+            Assert.True(hide.Redo());
+            history.CommitRedo(hide);
+            restored = Assert.Single(groups.All);
+            Assert.Equal(group.Id, restored.Id);
+            Assert.True(restored.Hidden);
+            Assert.Equal(currentMembers, restored.Members);
+            Assert.True(restored.RememberedVisible[currentMembers[0]]);
+            Assert.False(restored.RememberedVisible[currentMembers[1]]);
+            var baseline = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
+            Assert.Equal(currentMembers, baseline.Expected.Keys.Select(target => target.ToSelectionId()));
+        }
+        foreach (var _ in new[] { 0, 1 })
+        {
+            var step = Assert.IsType<JournalStep>(history.PeekUndo());
+            Assert.True(step.Undo());
+            history.CommitUndo(step);
+        }
+        Assert.Empty(groups.All);
+        Assert.Null(state.NamedSnapshot(group.Id));
+    }
+
+    [Fact]
     public async Task Unbound_structure_rolls_back_without_publishing_success_or_leaving_pending_UI_work()
     {
         var key = Guid.NewGuid();

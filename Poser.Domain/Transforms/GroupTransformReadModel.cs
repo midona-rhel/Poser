@@ -166,7 +166,8 @@ public sealed class GroupTransformSnapshot
             Controls with { Position = GroupTransformBaseline.Centroid(members.Values) });
     }
 
-    public GroupTransformSnapshot? Remap(Func<TransformTargetId, TransformTargetId?> resolve)
+    public GroupTransformSnapshot? Remap(Func<TransformTargetId, TransformTargetId?> resolve,
+        bool allowReplacement = false)
     {
         if (Expected.Keys.All(target => resolve(target) == target)) return this;
         var initial = new Dictionary<TransformTargetId, PoseTransform>();
@@ -174,7 +175,7 @@ public sealed class GroupTransformSnapshot
         foreach (var (old, value) in Baseline.InitialTransforms)
         {
             if (resolve(old) is not { } target || target.Kind != old.Kind
-                || GroupTransformIdentity.LogicalId(target) != GroupTransformIdentity.LogicalId(old)
+                || (!allowReplacement && GroupTransformIdentity.LogicalId(target) != GroupTransformIdentity.LogicalId(old))
                 || !Expected.TryGetValue(old, out var current)
                 || !initial.TryAdd(target, value)) return null;
             expected.Add(target, current);

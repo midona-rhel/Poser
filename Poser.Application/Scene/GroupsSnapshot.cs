@@ -45,6 +45,26 @@ public sealed class GroupsSnapshot : IEquatable<GroupsSnapshot>
         IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot> transforms) =>
         new(Groups, Order, ActiveGroupId, transforms);
 
+    public GroupsSnapshot Remap(TransformHistory history)
+    {
+        IReadOnlyDictionary<SelectionId, bool> Flags(IReadOnlyDictionary<SelectionId, bool> flags) =>
+            flags.ToDictionary(pair => history.ResolveLifecycleEntity(pair.Key), pair => pair.Value);
+        var transforms = Transforms?.Select(pair =>
+        {
+            var state = pair.Value.Remap(target => history.ResolveLifecycleTarget(target), allowReplacement: true)
+                ?? throw new InvalidOperationException("The group's history members could not be rebound.");
+            return (Key: GroupTransformKey.For(pair.Key.NamedGroup, state.Expected.Keys), State: state);
+        }).ToDictionary(pair => pair.Key, pair => pair.State);
+        return new(Groups.Select(group => group with
+        {
+            Members = group.Members.Select(history.ResolveLifecycleEntity).ToArray(),
+            RememberedVisible = Flags(group.RememberedVisible),
+            RememberedPlaying = Flags(group.RememberedPlaying),
+            RememberedNight = Flags(group.RememberedNight),
+        }).ToArray(), Order.Select(slot => slot.Entity is { } entity
+            ? RootSlot.For(history.ResolveLifecycleEntity(entity)) : slot).ToArray(), ActiveGroupId, transforms);
+    }
+
     public bool Equals(GroupsSnapshot? other) =>
         other is not null
         && Order.SequenceEqual(other.Order)

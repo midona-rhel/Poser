@@ -173,6 +173,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         // releasing one is the exact inverse of taking it.
         public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
         public readonly List<Guid> ImportedGroups = new();
+        public IReadOnlyDictionary<Guid, Guid> HistoryGroups = new Dictionary<Guid, Guid>();
         public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> HistoryEntities =
             new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
         public CameraFile? DefaultCameraBaseline;
@@ -334,6 +335,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     {
         public Operation Current = current;
         public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> Entities = current.HistoryEntities;
+        public IReadOnlyDictionary<Guid, Guid> Groups = current.HistoryGroups;
     }
 
     /// <summary>
@@ -354,11 +356,23 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         var load = new LoadHistory(operation);
         _history?.Append(new JournalStep(
             $"Load {operation.FileName}",
-            () => !_disposed && !Busy && Rollback(load.Current) is null,
+            () => UndoLoad(load),
             () => BeginLoad(path, options, load).Success)
         {
             RequiredAsset = path,
         });
+    }
+
+    private bool UndoLoad(LoadHistory load)
+    {
+        if (_disposed || Busy) return false;
+        // Register before removal publishes missing bindings. Both transform
+        // patches and group snapshots follow the same replacement on redo.
+        foreach (var (key, token) in load.Entities)
+            if (_runtime.ResolveHistoryEntity(token) is { } entity)
+                _history?.RetainLifecycleEntity(entity, () =>
+                    load.Entities.TryGetValue(key, out var current) ? _runtime.ResolveHistoryEntity(current) : null);
+        return Rollback(load.Current) is null;
     }
 
     // ── Save ─────────────────────────────────────────────────────────────
@@ -1472,6 +1486,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         if (structureTokens.TryGetValue(key, out var replacement))
                             _runtime.BindHistoryReplacement(previous, replacement);
                     replay.Entities = structureTokens;
+                    replay.Groups = operation.HistoryGroups;
                 }
                 string detail = failures.Count == 0
                     ? $"Loaded {operation.FileName}: " +
