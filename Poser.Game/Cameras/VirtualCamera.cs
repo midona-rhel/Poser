@@ -75,7 +75,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             var native = Live;
             if (native != null)
             {
-                native->Angle = value;
+                native->SetOrbitAngle(value);
 #if DEBUG
                 _service.TraceOrbitWrite(native);
 #endif
@@ -298,7 +298,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         var native = _service.Native;
         if (native == null)
             return;
-        native->Angle = _angle;
+        native->SetOrbitAngle(_angle);
 #if DEBUG
         _service.TraceOrbitWrite(native);
 #endif
