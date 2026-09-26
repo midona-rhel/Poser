@@ -8,6 +8,8 @@ namespace Poser.UI.Views;
 
 public sealed class ReleaseNotesView(ReleaseNotesSession session)
 {
+    private bool _started;
+    private bool _measured;
     private static readonly string[] Highlights =
     [
         "Attach scene objects to actors or bones so they follow your pose.",
@@ -21,10 +23,16 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
 
     public void Draw()
     {
+        if (session.IsOpen && !_started)
+        {
+            // Let an existing consent/import dialog finish before claiming its input.
+            if (ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopupId | ImGuiPopupFlags.AnyPopupLevel)) return;
+            _started = true;
+        }
         Crystarium.Modal("##release-notes", session.IsOpen,
             open => { if (!open) session.Dismiss(); },
             "What's new", DrawBody,
-            () => Crystarium.Button("Close", session.Dismiss,
+            () => Crystarium.Button("Close", () => { session.Dismiss(); ImGui.CloseCurrentPopup(); },
                 ButtonVariant.Primary, ControlStyle.Comfortable),
             ModalSize.Medium);
     }
@@ -42,7 +50,8 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
             ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
         }
         // The auto-sized modal measures off screen on its first frame.
-        if (ImGui.GetWindowPos().X >= 0)
+        if (_measured)
             session.MarkPresented();
+        _measured = true;
     }
 }

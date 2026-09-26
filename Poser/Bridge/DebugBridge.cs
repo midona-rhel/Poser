@@ -44,6 +44,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ISceneCreation _creation;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
+    private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
@@ -86,6 +87,7 @@ public sealed partial class DebugBridge : IDisposable
         ISceneCreation creation,
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
+        global::Poser.Application.Appearance.IActorAppearanceControl appearance,
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Services.IBonePosingService bonePosing,
@@ -140,6 +142,7 @@ public sealed partial class DebugBridge : IDisposable
         _bonePosing = bonePosing;
         _integration = integration;
         _session = session;
+        _appearance = appearance;
         _skeletons = skeletons;
         _gaze = gaze;
         _framework = framework;
@@ -656,7 +659,9 @@ public sealed partial class DebugBridge : IDisposable
                 if (!read.Success || read.Value is not { } cur)
                     return Json(new { error = read.Detail });
                 var guid = query.TryGetValue("id", out var g) ? Guid.Parse(g) : cur.EffectiveId;
-                var r = _integration.SetIndividualCollection(id, guid);
+                var name = _session.ListCollections().Value?.FirstOrDefault(c => c.Id == guid)?.Name ?? guid.ToString();
+                var r = query.ContainsKey("reset") ? _appearance.ResetCollection(id)
+                    : _appearance.SetCollection(id, guid, name);
                 return Json(new { ok = r.Success, r.Detail, tried = guid.ToString(), was = $"{cur.EffectiveName} {cur.EffectiveId} individual={cur.HasIndividualAssignment}" });
             }
             case "/resources":
