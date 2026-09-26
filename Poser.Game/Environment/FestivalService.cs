@@ -1,3 +1,5 @@
+using Poser.Domain.Scene;
+using Poser.Application.World;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,7 +27,7 @@ namespace Poser.Game.Environment;
 /// and on disposal; a territory change drops both the queue and the snapshot,
 /// because the slots belong to the zone that is gone.
 /// </summary>
-public sealed unsafe class FestivalService : IFestivalService, IDisposable
+public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
 {
     private const string FestivalDataResource = "Poser.Game.Data.Festivals.json";
     // The layout engine is only safe to write to between festival transitions.
@@ -80,12 +82,12 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
 
     private static GameMain.Festival[] EngineFestivals()
     {
-        var slots = new GameMain.Festival[IFestivalService.MaxFestivals];
+        var slots = new GameMain.Festival[IFestivalRuntimePort.MaxFestivals];
         var main = GameMain.Instance();
         if (main == null)
             return slots;
         var active = main->ActiveFestivals;
-        for (var i = 0; i < IFestivalService.MaxFestivals; i++)
+        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
             slots[i] = active[i];
         return slots;
     }
@@ -124,7 +126,7 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
             return false;
 
         var active = EngineFestivals();
-        for (var i = 0; i < IFestivalService.MaxFestivals; i++)
+        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
         {
             if (active[i].Id != 0)
                 continue;
@@ -145,7 +147,7 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
             return false;
 
         var active = EngineFestivals();
-        for (var i = 0; i < IFestivalService.MaxFestivals; i++)
+        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
         {
             if (active[i].Id != id)
                 continue;
@@ -164,7 +166,7 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
             return false;
 
         var active = EngineFestivals();
-        for (var i = 0; i < IFestivalService.MaxFestivals; i++)
+        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
         {
             if (active[i].Id != id)
                 continue;

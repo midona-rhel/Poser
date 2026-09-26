@@ -5,7 +5,7 @@ using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
-using Poser.Game.Journal;
+using Poser.Application.Appearance;
 using Poser.Application.Transforms;
 
 namespace Poser.Game.Tests;
@@ -18,7 +18,7 @@ public sealed class GlamourerAccessTests
         var port = DispatchProxy.Create<IIntegrationRuntimePort, WriteRaceProxy>();
         var integration = new ActorIntegrationSession(port, null!, new SessionSource());
         var history = new TransformHistory();
-        var customize = new CustomizeSession(new ValueJournal(history), integration, null!);
+        var customize = new CustomizeSession(new ValueJournal(history), integration, port, null!);
         var actor = ActorId.New();
         var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");
         var many = customize.SetMany(actor, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 9 }, "skin");
@@ -52,8 +52,8 @@ public sealed class GlamourerAccessTests
         var session = new ActorIntegrationSession(port, null!, new SessionSource());
         // A refusal must return before touching journal/bindings or invoking
         // any mutation; the proxy throws for every unexpected native call.
-        var wardrobe = new WardrobeSession(null!, session, null!);
-        var customize = new CustomizeSession(null!, session, null!);
+        var wardrobe = new WardrobeSession(null!, session, port, null!);
+        var customize = new CustomizeSession(null!, session, port, null!);
         var actor = ActorId.New();
         IntegrationResult[] results =
         [

@@ -1670,7 +1670,6 @@ public static partial class Crystarium
                 (row.Width - gap * (columns - 1)) / columns;
             float column = MathF.Min(row.LabelWidth, track * FormCellLabelShare);
             float bandHeight = ActiveTheme.Controls.FormRowHeight * row.Scale;
-            bool perCellHelp = false;
             for (int i = 0; i < items.Count; i++)
             {
                 var item = items[i];
@@ -1693,8 +1692,6 @@ public static partial class Crystarium
                 string? cellHelp = string.IsNullOrEmpty(item.Help)
                     ? help
                     : item.Help;
-                if (!string.IsNullOrEmpty(item.Help))
-                    perCellHelp = true;
                 if (cellHelp is null || string.IsNullOrEmpty(item.Label))
                     continue;
                 RegisterHelp(

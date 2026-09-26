@@ -1,3 +1,4 @@
+using Poser.Application.Posing;
 using Poser.Domain.Transforms;
 using System;
 using System.Collections.Generic;
@@ -83,7 +84,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly ITransformRuntimePort _runtime;
     private readonly TransformHistory _history;
     private readonly TransformGestureService _gestures;
-    private readonly JournalContexts _journal;
     private readonly IPluginLog _log;
 
     /// <summary>One slot skeleton's share of a bake: the file collection the
@@ -115,7 +115,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         public readonly HashSet<TransformTargetId> Written = new();
         public string? Failure;
         public bool Completing;
-        public JournalContexts.StepScope? Journal;
     }
 
     private Bake? _pending;
@@ -130,12 +129,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         ITransformRuntimePort runtime,
         TransformHistory history,
         TransformGestureService gestures,
-        JournalContexts journal,
         IPluginLog log)
     {
         _framework = framework;
         _bindings = bindings;
-        _journal = journal;
         _posing = posing;
         _skeletons = skeletons;
         _poseFiles = poseFiles;
@@ -181,6 +178,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// is about. The bake itself writes the whole skeleton, as Brio's does;
     /// this is what the UI and the live scenario name. Empty when the target is
     /// not an armed, resolvable chain.</summary>
+    IReadOnlyList<BoneId> IIkBake.AffectedChain(TransformTargetId target) =>
+        AffectedChain(target).Select(bone => _bindings.GetBoneId(bone))
+            .OfType<BoneId>().ToArray();
+
     public IReadOnlyList<IBone> AffectedChain(TransformTargetId target)
     {
         if (target.Bone is not { } boneId ||
@@ -288,7 +289,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (bake.Slots.Count == 0)
             return GestureResult.Fail("No bone of this actor could be bound for a bake.");
         // The scope opens BEFORE step 2 resets the stacks.
-        bake.Journal = _journal.BeginActorStep([actorId.LogicalId]);
 
         // STEP 2 — clear the authored stacks of every covered bone. Named
         // service layers stay: see the class remarks.
@@ -506,7 +506,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
                 return true;
             })
         {
-            Context = bake.Journal?.Complete(),
         });
         return null;
     }

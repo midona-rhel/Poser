@@ -1,3 +1,4 @@
+using Poser.Domain.Cameras;
 using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -70,7 +71,7 @@ public sealed class CameraSessionTests
         public IReadOnlyList<IVirtualCamera> Cameras => Array.Empty<IVirtualCamera>();
         public IVirtualCamera? LiveCamera => null;
         public FreeCameraSpeedNotice? SpeedNotice => null;
-        public IVirtualCamera? CreateCamera(CameraKind kind) => null;
+        public IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true) => null;
         public IVirtualCamera? CloneCamera(IVirtualCamera source) => null;
         public void DestroyCamera(IVirtualCamera camera) { }
         public void DestroyAllCameras() { }

@@ -4,7 +4,7 @@ namespace Poser.Game.Journal;
 /// that touches several kinds (show, hide, night, pause) takes one
 /// dependency.</summary>
 public sealed record EntitySessions(
-    ActorValueSession Actors,
+    Poser.Application.Presentation.IActorValueControl Actors,
     LightSession Lights,
     CameraSession Cameras,
     PropSession Props,

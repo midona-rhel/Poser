@@ -5,6 +5,8 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 
+using Poser.Domain.Cameras;
+
 namespace Poser.Game.Cameras;
 
 /// <summary>
@@ -33,6 +35,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         VirtualCameraService service, CameraKind kind, bool isDefault)
     {
         _service = service;
+        MovementSpeed = DefaultSpeed;
+        MouseSensitivity = DefaultSensitivity;
         Kind = kind;
         IsDefault = isDefault;
     }
@@ -219,22 +223,22 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public bool Move2D { get; set; }
 
-    public float MovementSpeed { get; set; } = DefaultSpeed;
+    public float MovementSpeed { get; set; }
 
-    public float MouseSensitivity { get; set; } = DefaultSensitivity;
+    public float MouseSensitivity { get; set; }
 
     /// <summary>The configured starting fly speed, clamped to the range the
     /// Speed row can show back — a hand-edited config must not create a
     /// camera whose speed its own slider cannot reach.</summary>
-    private static float DefaultSpeed => Math.Clamp(
-        VirtualCameraService.CameraSettings.DefaultMovementSpeed,
+    private float DefaultSpeed => Math.Clamp(
+        _service.CameraSettings.DefaultMovementSpeed,
         FreeCameraSpeed.Minimum,
         FreeCameraSpeed.Maximum);
 
     /// <summary>The configured starting look sensitivity, clamped to the
     /// Sensitivity row's range for the same reason.</summary>
-    private static float DefaultSensitivity => Math.Clamp(
-        VirtualCameraService.CameraSettings.DefaultMouseSensitivity,
+    private float DefaultSensitivity => Math.Clamp(
+        _service.CameraSettings.DefaultMouseSensitivity,
         0.001f,
         0.2f);
 

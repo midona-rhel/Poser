@@ -1,6 +1,8 @@
+using Poser.Application.Posing;
 using System;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
+using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.Game.Posing;
 using Poser.Services;
@@ -42,23 +44,18 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     /// </summary>
     private PoseImportOptions RestoreOptions => new()
     {
-        ApplyRotation = DebugRotation,
-        ApplyPosition = DebugPosition,
-        ApplyScale = DebugScale,
+        ApplyRotation = true,
+        ApplyPosition = true,
+        ApplyScale = true,
         ApplyModelTransform = false,
         SuppressHistory = true,
     };
-
-    // Debug-bridge knobs for the restore experiments (2026-09-02): which
-    // components the restore imports and which side passes run.
-    internal bool DebugRotation = true, DebugPosition = true, DebugScale = true;
-    internal bool DebugPhysicsDeltas = true, DebugRootScales = true;
 
     private readonly IActorSpawnService _spawns;
     private readonly IPosingService _posing;
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGazeService _gaze;
@@ -76,12 +73,15 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private static readonly string[] PhysicsPrefixes =
         { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public ActorServiceLifecycle(
+        global::Poser.Config.ConfigurationService configuration,
         IActorSpawnService spawns,
         IPosingService posing,
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         IFramework framework,
         IPluginLog log,
         IGazeService gaze,
@@ -89,11 +89,12 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         IActorManager actorManager,
-        Poser.Application.Presentation.ActorPresentationSession presentation,
+        ActorStateSnapshots actorStates,
         Integration.ISpawnCollectionPort collections)
     {
+        _configuration = configuration;
         _collections = collections;
-        _presentation = presentation;
+        _actorStates = actorStates;
         _actorManager = actorManager;
         _bonePosing = bonePosing;
         _spawns = spawns;
@@ -112,19 +113,19 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     {
         var target = (IActor)actor;
         return _bindings.GetActorId(target) is { } id
-            ? Config.ConfigurationService.Instance.GetDisplayName(id.LogicalId, target.Name)
+            ? _configuration.GetDisplayName(id.LogicalId, target.Name)
             : Config.ConfigurationService.StripObjectIndex(target.Name);
     }
 
     public void SetName(object actor, string name) =>
         WhenNameBound((IActor)actor, id =>
-            Config.ConfigurationService.Instance.SetNickname(id.LogicalId, name));
+            _configuration.SetNickname(id.LogicalId, name));
 
     public void NameCreated(object actor, string seed)
     {
         // Display nicknames only: changing the native name breaks Penumbra identity.
         WhenNameBound((IActor)actor, id =>
-            Config.ConfigurationService.Instance.SetNickname(id.LogicalId,
+            _configuration.SetNickname(id.LogicalId,
                 Poser.Domain.Scene.EntityNames.Next(seed,
                     _actorManager.Actors.Where(x => !ReferenceEquals(x, actor)).Select(GetName))));
     }
@@ -383,6 +384,14 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
     public void Note(string detail) => _log.Warning(detail);
 
+    public void DetachGaze(object actor)
+    {
+        // Before the first draw, so a posed duplicate never begins a look-at blend.
+        var result = _gaze.SetGazeMode((IActor)actor, GazeTargetMode.Detached);
+        if (!result.Success)
+            Note($"Duplicate: the gaze could not be detached: {result.Detail}");
+    }
+
     public void WhenPosable(object actor, Action<object> act) =>
         ScheduleReady((IActor)actor, act, ReadyAttempts);
 
@@ -400,7 +409,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             {
                 if (actor.Address == nint.Zero)
                     return;
-                if (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy)
+                if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id) || _poses.IsImportBusy)
                 {
                     ScheduleReady(actor, act, attempts - 1);
                     return;
@@ -462,7 +471,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
             return;
         if ((state.Pose is not null || state.Runtime is not null) &&
-            (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy))
+            (_bindings.GetActorId(actor) is not { } readyId || !_poses.HasPosableSkeleton(readyId) || _poses.IsImportBusy))
         {
             Schedule(actor, state, attempts - 1, stillCurrent);
             return;
@@ -486,11 +495,13 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
         // The next apply pass reads these root scales when converting
         // visible file targets into the native partial frame.
-        if (state.PartialRootScales is { } rootScales && DebugRootScales)
+        if (state.PartialRootScales is { } rootScales)
             ApplyPartialRootScales(actor, rootScales);
         var options = RestoreOptions;
+        if (_bindings.GetActorId(actor) is not { } actorId)
+            return;
         var restored = _poses.ImportPose(
-            actor, pose, options, $"Restore pose for {actor.Name}",
+            actorId, pose, options, $"Restore pose for {actor.Name}",
             onReceipt: receipt =>
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
@@ -499,7 +510,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     // The main import owns the pose until completion. Apply
                     // local physics offsets once, in parent-first native order,
                     // instead of racing four framework-tick writes against it.
-                    if (state.PhysicsDeltas is { } physicsDeltas && DebugPhysicsDeltas)
+                    if (state.PhysicsDeltas is { } physicsDeltas)
                         ApplyPhysicsDeltas(actor, physicsDeltas, stillCurrent);
                 }
             });

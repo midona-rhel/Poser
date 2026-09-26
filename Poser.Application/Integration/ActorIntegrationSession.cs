@@ -1,4 +1,5 @@
 using Poser.Application.Lifecycle;
+using Poser.Documents.Mcdf;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -75,15 +76,112 @@ public sealed class ActorIntegrationSession : IDisposable
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) =>
         _port.GetCollectionAssignment(actor);
 
-    public ActorAppearanceSnapshot CaptureHistory(ActorId actor)
+    /// <summary>Destructive commands cannot silently turn a failed capture into empty state.</summary>
+    public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true)
     {
+        if (McdfBusy) return IntegrationValue<ActorAppearanceSnapshot>.Fail("Wait for the current character-file operation to finish.");
         var owned = OverridesFor(actor);
-        var look = GetStateJson(actor);
-        var collection = ReadCollection(actor);
+        Guid? resources = null;
+        if (owned.Mcdf is { } mcdf)
+        {
+            if (mcdf.OperationDirectory is not { } directory || mcdf.SourcePath == null)
+                return IntegrationValue<ActorAppearanceSnapshot>.Fail("The imported appearance resources are unavailable.");
+            var retained = _mcdf.RetainHistory(directory);
+            if (!retained.Success) return IntegrationValue<ActorAppearanceSnapshot>.Fail(retained.Detail!);
+            resources = retained.Value;
+            if (mcdf.RedrawPending)
+                return IntegrationValue<ActorAppearanceSnapshot>.Fail("The actor's previous redraw has not completed.");
+        }
+        string? state = null;
+        CollectionAssignment? collection = null;
+        SpawnCollectionSnapshot? inherited = null;
+        if (owned.Mcdf == null)
+        {
+            if (Glamourer.Available || owned.DesignOwned)
+            {
+                var look = GetStateJson(actor);
+                if (!look.Success || look.Value == null)
+                    return IntegrationValue<ActorAppearanceSnapshot>.Fail(look.Detail ?? "The actor's appearance could not be captured.");
+                state = look.Value;
+            }
+            if (captureCollection && (Penumbra.Available || owned.CollectionOwned))
+            {
+                var read = ReadCollection(actor);
+                if (!read.Success || read.Value == null)
+                    return IntegrationValue<ActorAppearanceSnapshot>.Fail(read.Detail ?? "The actor's collection could not be captured.");
+                if (ForeignTemporaryCollection(owned, read.Value) is { } foreign)
+                {
+                    var captured = _port.CaptureInheritedCollection(actor);
+                    if (!captured.Success || captured.Value == null)
+                        return IntegrationValue<ActorAppearanceSnapshot>.Fail(captured.Detail ?? foreign);
+                    inherited = captured.Value;
+                }
+                collection = read.Value;
+            }
+        }
         var body = CaptureBodyProfile(actor);
-        return new(look.Success ? look.Value : null,
-            collection.Success ? collection.Value : null,
-            body.Success ? body.Value : null, owned.BodyProfileName, owned.Mcdf?.SourcePath);
+        return body.Success
+            ? IntegrationValue<ActorAppearanceSnapshot>.Ok(new(state, collection, body.Value,
+                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources, inherited))
+            : IntegrationValue<ActorAppearanceSnapshot>.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
+    }
+
+    /// <summary>Await the transaction already admitted by import/reset; never start a competing redraw.</summary>
+    public Task PendingCompletion => _mcdf.CurrentCompletion;
+
+    public async Task<IntegrationResult> RestoreHistoryAndWait(ActorId actor, ActorAppearanceSnapshot snapshot,
+        Func<bool> stillCurrent, CancellationToken cancellation)
+    {
+        await PendingCompletion.WaitAsync(cancellation);
+        // Ordinary state cannot be applied while an imported package owns the
+        // actor. Release it through its existing transaction and await cleanup.
+        if (snapshot.McdfPath == null)
+        {
+            var reset = await _port.OnFrameworkThread(() =>
+                cancellation.IsCancellationRequested || !stillCurrent()
+                    ? IntegrationResult.Fail("The actor restoration is no longer current.")
+                    : ResetMcdf(actor));
+            if (!reset.Success) return reset;
+            await PendingCompletion.WaitAsync(cancellation);
+        }
+        Task pending = Task.CompletedTask;
+        Guid? operation = null;
+        var started = await _port.OnFrameworkThread(() =>
+        {
+            if (cancellation.IsCancellationRequested || !stillCurrent())
+                return IntegrationResult.Fail("The actor restoration is no longer current.");
+            IntegrationResult result;
+            if (snapshot.McdfPath is { } path)
+            {
+                result = snapshot.McdfResources is { } resources
+                    ? _mcdf.RestoreHistory(actor, resources, path) : BeginImport(actor, path);
+                operation = McdfReceipt?.OperationId;
+            }
+            else
+                result = RestoreHistory(actor, snapshot, redraw: false);
+            pending = PendingCompletion;
+            return result;
+        });
+        if (!started.Success) return started;
+        try { await pending.WaitAsync(cancellation); }
+        catch (OperationCanceledException)
+        {
+            await _port.OnFrameworkThread(() =>
+            {
+                if (operation != null && McdfReceipt?.OperationId == operation) CancelMcdf();
+                return true;
+            });
+            throw;
+        }
+        return await _port.OnFrameworkThread(() =>
+        {
+            if (cancellation.IsCancellationRequested || !stillCurrent())
+                return IntegrationResult.Fail("The actor restoration is no longer current.");
+            return operation == null || McdfReceipt is { State: OperationReceiptState.Applied } receipt
+                && receipt.OperationId == operation
+                ? IntegrationResult.Ok()
+                : IntegrationResult.Fail(McdfReceipt?.Detail ?? "The character-file restoration failed.");
+        });
     }
 
     public IntegrationValue<string?> CaptureBodyProfile(ActorId actor)
@@ -110,18 +208,49 @@ public sealed class ActorIntegrationSession : IDisposable
 
     /// <summary>MCDF packages restore through BeginImport first; ordinary looks replay these captured values.</summary>
     public IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot)
+        => RestoreHistory(actor, snapshot, redraw: true);
+
+    private IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot, bool redraw)
     {
         if (snapshot.McdfPath is not null)
-            return BeginImport(actor, snapshot.McdfPath);
+            return snapshot.McdfResources is { } resources
+                ? _mcdf.RestoreHistory(actor, resources, snapshot.McdfPath) : BeginImport(actor, snapshot.McdfPath);
         var failures = new List<string>();
         void Check(IntegrationResult result)
         {
             if (!result.Success) failures.Add(result.Detail ?? "Appearance restore failed.");
         }
-        if (snapshot.Collection is { } collection)
-            Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName));
+        if (snapshot.InheritedCollection is { } inherited)
+        {
+            var restored = _port.RestoreInheritedCollection(actor, inherited);
+            if (!restored.Success) return Lift(restored);
+            if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+        }
+        else if (snapshot.Collection is { } collection)
+        {
+            if (collection.HasIndividualAssignment)
+                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));
+            else
+            {
+                var restored = _port.RestoreCollection(actor, new(false, null));
+                Check(Lift(restored));
+                if (restored.Success)
+                {
+                    var current = OverridesFor(actor);
+                    Mutate(actor, current with
+                    {
+                        Baseline = current.Baseline with { Collection = null },
+                        CollectionOwned = false,
+                        CollectionName = null,
+                    });
+                    if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+                }
+            }
+        }
         if (snapshot.BodyProfileJson is { } profile)
             Check(ApplyBodyProfileJson(actor, profile, snapshot.BodyProfileName ?? "Restored profile"));
+        else
+            Check(ResetBodyProfile(actor));
         if (snapshot.StateJson is { } json)
         {
             var ownership = OwnLook(actor);
@@ -637,6 +766,7 @@ public sealed class ActorIntegrationSession : IDisposable
         // first, so its leftovers join _overrides and reset with the rest.
         _mcdf.InvalidateInFlight();
         var failures = new List<string>();
+        if (_mcdf.ReleaseHistoryResources() is { } releaseFailure) failures.Add(releaseFailure);
         foreach (var actor in _overrides.Keys.ToList())
         {
             var result = ResetActor(actor);
@@ -741,12 +871,23 @@ public sealed class ActorIntegrationSession : IDisposable
 
     // ── Internal seam for the MCDF transaction owner ─────────────────────
 
+    internal bool UsesDirectory(string directory) => _overrides.Values.Any(state =>
+        string.Equals(state.Mcdf?.OperationDirectory, directory, StringComparison.OrdinalIgnoreCase)
+        || state.PendingDirectories.Contains(directory, StringComparer.OrdinalIgnoreCase));
+
     internal void MutateOverrides(ActorId actor, IntegrationOverrides updated) =>
         Mutate(actor, updated);
 
     internal string? ForeignTemporaryCollectionDetail(
-        IntegrationOverrides current, CollectionAssignment assignment) =>
-        ForeignTemporaryCollection(current, assignment);
+        ActorId actor, IntegrationOverrides current, CollectionAssignment assignment)
+    {
+        var refusal = ForeignTemporaryCollection(current, assignment);
+        if (refusal == null) return null;
+        // Spawn collections have a different native owner from MCDF, but are
+        // still ours. Require that owner's exact live assignment proof.
+        var inherited = _port.CaptureInheritedCollection(actor);
+        return inherited.Success && inherited.Value != null ? null : inherited.Detail ?? refusal;
+    }
 
     internal static bool ForeignTemporaryBody(
         IntegrationOverrides current, BodyProfileProbe probe) =>

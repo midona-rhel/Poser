@@ -7,6 +7,9 @@ created entities and restores its captured baselines; redo reads the file
 again and retargets the same step to the new load. Repeated undo never uses
 an earlier load's emptied cleanup lists. Wait for loading to finish before
 undoing it. Clearing existing scene content before a load remains destructive.
+Loaded groups and their transform baselines are restored before completion,
+even with the sidebar closed. Missing bindings time out through load rollback;
+undo removes only that load's groups alongside its created entities.
 Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
@@ -15,6 +18,13 @@ bones, not just the owner's placement. Their embedded absolute model transform
 receives the same scene rebase as the owner; bone-local poses are not rebased.
 
 ## Lifecycle history
+
+Each entity family has a typed lifecycle owner over the same transform
+history. A slot is the identity shared by every history entry for one entity:
+removal captures the latest state into that slot, and restoration rebinds the
+slot to the newly created instance before later entries or actor readiness
+callbacks use it. Clearing transform history clears every owner's instance
+mapping with it.
 
 Removal captures the entity as last edited, not its original spawn arguments.
 Actor restoration creates a fresh body, applies captured appearance/equipment,
@@ -30,6 +40,17 @@ below. A repeated removal captures the latest edits again.
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.
 External targets that no longer exist are not replaced by unrelated entities.
+World-light acquisition/release preserves the edited copy separately from the
+original world's baseline. Undo reacquires only the same native incarnation;
+scenery/VFX reclaim uses the same identity rule, never address presence alone.
+Light, camera, prop, overlay and world-object history share lifecycle-slot
+property replay: resolve the slot's current instance when replaying an edit.
+Property sessions request only the typed history-resolver interface, not the
+whole lifecycle controller; the shared value journal owns the replay policy.
+Lights, props, collider overlays and world objects retain their transform
+targets before removal publishes a scene refresh.
+Earlier edits survive acquisition undo/redo and removal undo/redo. Expired public
+selection IDs and acquisition receipts never redirect to the restored instance.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
 MCDF history reuses its package reference; it is not a portable appearance export.
@@ -201,6 +222,31 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+World acquisition retains exact-instance rollback until its scene identity is
+published. Only then does it append history and issue a claim. Binding timeout,
+session cancellation or resolution failure rolls back through the native owner,
+without acquisition/removal history entries. A refused cleanup stays pending
+for framework-thread retry; it never authorizes mutation of a replacement body.
+
+Borrowing a live BG/VFX object remains supported. Undo first enumerates the
+current world graph, then reads the candidate's incarnation and compares it
+with the identity captured at release; it never probes a saved address before
+the graph confirms that address is live. A missing or mismatched candidate
+skips that history entry with a reason, allowing older history to continue.
+BG identity uses the observed allocation generation and cannot distinguish a
+same-address, same-resource replacement if the native resource pointer is
+reused unchanged. Earlier edits remain available across release and restoration;
+transform history is discarded only when restoring that source fails permanently.
+Group restoration preflights all members, so a
+borrowed refusal cannot leave owned members partially restored. Bulk release
+records only confirmed removals; claims that refuse release remain live with
+their acquisition history. A partial redo keeps successful removals recorded
+and retries only members still present. In a mixed group, the owned members
+remain released when the group restore is refused, and that group's related
+history is discarded; recreate those owned objects manually. Owned-only
+groups, Poser-owned world-object spawns, and borrowed world-light restoration
+keep their existing restore behavior.
+
 Respawning a world object keeps its old native and stable handle while the
 replacement loads hidden. Completion includes model readiness and applicable
 settings (placement, visibility, opacity, stain/night state or VFX playback/colour).
@@ -214,13 +260,15 @@ An initial BG model-resource attachment belongs to the same allocation generatio
 
 ## Borrowed world lights
 
-Borrowing wraps the original native light and captures its editable values;
-it neither spawns a substitute nor suppresses the original. Release and GPose
-exit restore those values on that same light, including its projected texture.
-If the native light disappears, its wrapper is dropped without restoring into
-a replacement at the same address. Spawned lights remain owned and destroyed
-by Poser. This follows Brio's `LightingService.AddWorldLight` /
-`RemoveWroldLight` borrowing model.
+Acquiring a world light creates an editable native copy and suppresses the
+original, following Ktisis's `LightModule.AddFromOverworld`. Game-authored
+updates therefore do not overwrite the user's emission settings. The copy
+retains its own projected-texture reference; toggling it off/on preserves
+intensity. It remains a Light in the sidebar regardless of ownership.
+Release, GPose exit and unload restore the original visibility and destroy
+only the copy. Other source properties are untouched. Source destruction
+removes the copy without restoring into a replacement at the same address;
+the original's observed generation remains the authority for restoration.
 
 ## Light controls and outlines
 

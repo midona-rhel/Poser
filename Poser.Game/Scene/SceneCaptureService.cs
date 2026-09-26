@@ -1,65 +1,21 @@
-﻿using System;
+using Poser.Application.World;
+using Poser.Application.Posing;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Domain.Scene;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Typed result of one whole-scene capture. Notes are per-entity
-/// observations about state the capture could not represent (an actor with
-/// no skeleton, a camera target that no longer resolves) — they are part of
-/// the read model, never silently dropped facts.</summary>
-public sealed class SceneCaptureOutcome
-{
-    public bool Success { get; }
-    public string? Detail { get; }
-    public SceneFile? Scene { get; }
-    public IReadOnlyList<string> Notes { get; }
-
-    /// <summary>Document actor key → the EXACT live actor generation it was
-    /// captured from. The document deliberately carries no native identity, so
-    /// a post-capture step that must talk to the live actor — sealing a
-    /// portable appearance payload, which needs the exporter — reads it here
-    /// rather than re-resolving an actor by name. An unbound actor has no
-    /// entry, and a step that needs one refuses by name instead of guessing.
-    /// </summary>
-    public IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> ActorIdentities
-    { get; }
-
-    private SceneCaptureOutcome(
-        bool success,
-        string? detail,
-        SceneFile? scene,
-        IReadOnlyList<string> notes,
-        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities)
-    {
-        Success = success;
-        Detail = detail;
-        Scene = scene;
-        Notes = notes;
-        ActorIdentities = identities;
-    }
-
-    internal static SceneCaptureOutcome Ok(
-        SceneFile scene,
-        List<string> notes,
-        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId>? identities = null) =>
-        new(true, null, scene, notes.AsReadOnly(),
-            identities ?? EmptyIdentities);
-
-    internal static SceneCaptureOutcome Fail(string detail) =>
-        new(false, detail, null, Array.Empty<string>(), EmptyIdentities);
-
-    private static readonly IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId>
-        EmptyIdentities = new Dictionary<Guid, Poser.Domain.Identity.ActorId>();
-}
 
 /// <summary>
 /// Read-only, pointer-free whole-scene capture. Runs synchronously on the
@@ -70,7 +26,7 @@ public sealed class SceneCaptureOutcome
 /// file are independent of any native binding generation.
 ///
 /// Capture refuses while a pose import owns the caches for the same reason
-/// <see cref="CleanPoseFacade"/>'s copy capture does: the apply window pauses
+/// <see cref="IPoseImportCommands"/>'s copy capture does: the apply window pauses
 /// and rewinds the animation, and a snapshot landing inside it would persist
 /// a half-transitioned pose.
 ///
@@ -93,9 +49,9 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentControl _environment;
     private readonly StableBindingRegistry _bindings;
-    private readonly CleanPoseFacade _poses;
+    private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
@@ -103,7 +59,7 @@ public sealed class SceneCaptureService
     private readonly IGazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
-    private readonly IWorldRenderingService _rendering;
+    private readonly IWorldRenderingRuntimePort _rendering;
     private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
 
@@ -117,9 +73,9 @@ public sealed class SceneCaptureService
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentService environment,
+        IEnvironmentControl environment,
         StableBindingRegistry bindings,
-        CleanPoseFacade poses,
+        IPoseImportCommands poses,
         IPlaceService place,
         IObjectTable objects,
         IPosingService posing,
@@ -127,7 +83,7 @@ public sealed class SceneCaptureService
         IGazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        IWorldRenderingService rendering,
+        IWorldRenderingRuntimePort rendering,
         World.WorldService worldObjects,
         PlacementAnchorSource anchors)
     {
@@ -201,9 +157,8 @@ public sealed class SceneCaptureService
         }
 
         // The outcome is built inside the refresh's own write step, which runs
-        // on the framework thread once the pass has ended (or once the export
-        // capture's tick bound gives up, in which case the caches are exactly
-        // as fresh as a synchronous capture would have found them).
+        // on the framework thread after every slot refreshed. An interrupted
+        // or timed-out refresh refuses capture instead of saving stale caches.
         SceneCaptureOutcome? outcome = null;
         var begun = _exports.Begin(
             slots,
@@ -213,7 +168,7 @@ public sealed class SceneCaptureService
                 return outcome.Success;
             },
             _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
-                "The scene capture produced no result.")));
+                "The scene pose refresh did not complete; no snapshot was captured.")));
         return begun.Success
             ? null
             : begun.Detail ?? "The scene capture could not be armed.";
@@ -276,7 +231,7 @@ public sealed class SceneCaptureService
     /// <summary>
     /// Where the capture ran. The id is the durable machine fact; the NAME is
     /// persisted beside it, because the listing that groups scenes by place
-    /// runs in PosingCore, which has no game data to resolve an id with. The
+    /// runs in Poser.Core, which has no game data to resolve an id with. The
     /// resolution itself lives in <see cref="IPlaceService"/>, which pose
     /// auto-save stamps from too — a place must mean the same thing in both
     /// documents.
@@ -640,7 +595,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = LightFileService.CreateLightFile(light);
+            var document = Lights.LightDocument.Capture(light);
             document.Name = Bounded(document.Name, "Light");
             document.Transform = NormalizedTransform(
                 (Transform)document.Transform, $"Light '{light.Name}'", notes);
@@ -685,7 +640,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = CameraFileService.CreateCameraFile(camera);
+            var document = Cameras.CameraDocument.Capture(camera);
             document.Name = Bounded(document.Name, "Camera");
 
             Guid? targetKey = null;
@@ -750,59 +705,7 @@ public sealed class SceneCaptureService
 
     /// <summary>The ONE environment snapshot builder; the workflow's
     /// rollback baseline uses it too.</summary>
-    internal SceneEnvironment CaptureEnvironment()
-    {
-        var environment = new SceneEnvironment
-        {
-            MinuteOfDay = Math.Clamp(_environment.MinuteOfDay, 0, 1439),
-            DayOfMonth = Math.Clamp(_environment.DayOfMonth, 1, 31),
-            IsTimeFrozen = _environment.IsTimeFrozen,
-            WeatherId = _environment.CurrentWeatherId,
-            WeatherName = _environment.GetWeatherInfo(
-                _environment.CurrentWeatherId)?.Name ?? string.Empty,
-            IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
-            TransitionTime = float.IsFinite(_environment.TransitionTime) &&
-                _environment.TransitionTime >= 0
-                    ? _environment.TransitionTime
-                    : 0.5f,
-        };
-
-        foreach (var section in Enum.GetValues<EnvSection>())
-        {
-            if (!_environment.IsSectionHeld(section))
-                continue;
-            environment.HeldSections.Add(section);
-            switch (section)
-            {
-                case EnvSection.Sky:
-                    environment.Sky = _environment.Sky;
-                    break;
-                case EnvSection.Clouds:
-                    environment.Clouds = _environment.Clouds;
-                    break;
-                case EnvSection.Lighting:
-                    environment.Lighting = _environment.Lighting;
-                    break;
-                case EnvSection.Fog:
-                    environment.Fog = _environment.Fog;
-                    break;
-                case EnvSection.Rain:
-                    environment.Rain = _environment.Rain;
-                    break;
-                case EnvSection.Particles:
-                    environment.Particles = _environment.Particles;
-                    break;
-                case EnvSection.Stars:
-                    environment.Stars = _environment.Stars;
-                    break;
-                case EnvSection.Wind:
-                    environment.Wind = _environment.Wind;
-                    break;
-            }
-        }
-
-        return environment;
-    }
+    internal SceneEnvironment CaptureEnvironment() => _environment.Capture();
 
     /// <summary>A native transform with a degenerate rotation captures as
     /// identity rotation, with a note — the alternative is a whole-save

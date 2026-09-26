@@ -16,6 +16,7 @@ using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game.Animation;
 using Poser.Game.Bindings;
+using Poser.Services;
 
 namespace Poser.Game.Tests.Animation;
 
@@ -33,7 +34,7 @@ public sealed class FacialPoseCaptureTests
         var transforms = new TransformCommandService(scene, NewProxy<ITransformRuntimePort>(), gestures.History, gestures);
         var source = new TestSessionSource();
         using var capture = new FacialPoseCapture(NewProxy<IFramework>(),
-            (StableBindingRegistry)RuntimeHelpers.GetUninitializedObject(typeof(StableBindingRegistry)),
+            NewProxy<IEntityBindings>(),
             scene, new AnimationSession(NewProxy<IAnimationRuntimePort>()), transforms,
             gestures, NewProxy<Poser.Services.IBonePosingService>(), source, NewProxy<IPluginLog>());
         var actor = new ActorId(Guid.NewGuid(), 1);
@@ -108,17 +109,15 @@ private static T NewProxy<T>() where T : class =>
             // reaches the skeleton through the bone it is about to read.
             _boneProxy.Values["Skeleton"] =
                 DispatchProxy.Create<ISkeleton, PropertyProxy>();
-            Bindings = (StableBindingRegistry)RuntimeHelpers.GetUninitializedObject(
-                typeof(StableBindingRegistry));
-            SetField(Bindings, "_actorBindings", new Dictionary<ActorId, IActor>
-            {
-                [Actor] = actorProxy,
-            });
+            Bindings = DispatchProxy.Create<IEntityBindings, BindingProxy>();
             _boneBindings = new Dictionary<BoneId, IBone>
             {
                 [Bone] = boneProxy,
             };
-            SetField(Bindings, "_boneBindings", _boneBindings);
+            var bindingProxy = (BindingProxy)(object)Bindings;
+            bindingProxy.Actor = Actor;
+            bindingProxy.LiveActor = actorProxy;
+            bindingProxy.Bones = _boneBindings;
 
             Framework = FrameworkProxy.Create();
             AnimationPort = AnimationPortProxy.Create();
@@ -183,7 +182,7 @@ private static T NewProxy<T>() where T : class =>
         public BoneId Bone { get; }
         public ActorDescriptor Descriptor { get; private set; }
         public SceneSession Scene { get; }
-        public StableBindingRegistry Bindings { get; }
+        public IEntityBindings Bindings { get; }
         public FrameworkProxy Framework { get; }
         public AnimationPortProxy AnimationPort { get; }
         public AnimationSession Animation { get; }
@@ -475,10 +474,24 @@ private static T NewProxy<T>() where T : class =>
         }
     }
 
-    private static void SetField(object target, string name, object value) =>
-        target.GetType()
-            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(target, value);
+    private class BindingProxy : DispatchProxy
+    {
+        public ActorId Actor;
+        public IActor LiveActor = null!;
+        public Dictionary<BoneId, IBone> Bones = null!;
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            args?[0] switch
+            {
+                ActorId id => new BindingResult<IActor>(
+                    id == Actor ? BindingStatus.Success : BindingStatus.Missing,
+                    id == Actor ? LiveActor : null),
+                BoneId id when Bones.TryGetValue(id, out var bone) =>
+                    new BindingResult<IBone>(BindingStatus.Success, bone),
+                BoneId => new BindingResult<IBone>(BindingStatus.Missing),
+                _ => Default(method?.ReturnType),
+            };
+    }
 
     private static object? Default(Type? type)
     {

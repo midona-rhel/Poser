@@ -4,8 +4,7 @@
 unsafe offsets, signatures, hooks, native handles, and lookup-only indices stay
 behind its ports. Those ports pass ids and values to the
 application. Host-side UI code still has some native address paths, so this
-rule does not describe every UI integration path. The current project graph
-also keeps legacy native entities and services in `Poser.Core`; see
+rule does not describe every UI integration path yet; see
 [product-and-boundaries.md](product-and-boundaries.md).
 
 Before game access, runtime code resolves the current actor, skeleton, slot,
@@ -13,6 +12,12 @@ and bone again. A stale or changed observation fails. A bone index helps find
 the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
+
+Actor resolution rechecks the discovery-time object-table slot, address and
+game identity on the framework thread. Logout refuses before probing native
+bodies, even before the next discovery/exit notification. Auxiliary preview
+bodies obey the same rule. Bone resolution additionally verifies the current
+slot skeleton and bone instance; a cached registry entry alone is not liveness.
 
 ## Actor identity
 
@@ -82,6 +87,21 @@ world-actor clone that Poser owns. Poser never adopts, mutates, or deletes the
 source actor.
 
 ## Native ordering
+
+The Game scene-frame owner runs native scene update, scenery animation anchors,
+then camera view replacement, in that order. If the render hook is unavailable,
+that same owner pumps anchors from the framework callback; no camera or UI
+component owns a second fallback. Scenery anchors explicitly watch, anchor,
+pause or await reanchoring; resuming adopts the frozen placement before the
+next native animation update. Repeated camera phases must not reinterpret the
+anchor's own output as fresh native motion or consume a pending reanchor.
+
+Awaited Penumbra redraws register `GameObjectRedrawn` before requesting redraw,
+matching Brio's notification-based completion. The Game-owned barrier correlates
+the exact actor, object-table slot, session and pending operation, then requires
+the current character skeleton and published bindings. A drawable old body is
+not completion. Cancellation, disappearance, provider loss and timeout release
+the observation and return failure.
 
 Animation, IK, and physics run before Poser's saved pose layers are reapplied.
 The runtime then refreshes caches, reparents, refreshes again, and publishes

@@ -41,9 +41,3 @@ architecture and feature documents.
 |---|---|---|
 | 1–3 | `192fe8ac..102eee9` | Accepted after corrections |
 | Live follow-up | `102eee9..8cdf22a` | Accepted |
-
-## Deferred work
-
-- MainHand/OffHand/Prop/Ornament skeleton-slot discovery and UI (own PBI).
-- Stable-id migration of `CleanPoseFacade`'s remaining `ISkeleton` overloads.
-- Undoable pose-file import.

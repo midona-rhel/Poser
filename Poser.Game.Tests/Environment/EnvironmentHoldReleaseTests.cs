@@ -4,6 +4,7 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Game.Environment;
 using Poser.Services;
+using Poser.Domain.Scene;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 
 namespace Poser.Game.Tests.Environment;

@@ -17,20 +17,17 @@
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
-      "K4os.Compression.LZ4.Legacy": {
-        "type": "Direct",
-        "requested": "[1.3.8, )",
-        "resolved": "1.3.8",
-        "contentHash": "+82CK5zXbGjMnVLm2JJpsSAz3+4CRcMmxUDOmehUh1bDjrmpnc5VHxB14hiV1lXtqe53lNI+O76BQvgWhgI66g==",
-        "dependencies": {
-          "K4os.Compression.LZ4": "1.3.8"
-        }
-      },
       "KamiToolKit": {
         "type": "Direct",
         "requested": "[2.2.27, )",
         "resolved": "2.2.27",
         "contentHash": "+xJxmutfgcVRb+G+20wWMRoRuMUul85FkC0FckHLxfhvLf7yTXbm5HRJGZei+Ir9idMqkJTrbptKQcb9TBigvw=="
+      },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Direct",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "z/2xXlFw2aLGjHyEm6E0tQ+In6VfzQzTrtArbQ2c0TQE16ZbyDCMGPvaUT9I0s8rgy9sRWlU2P9waW37qV04qA=="
       },
       "BepuUtilities": {
         "type": "Transitive",
@@ -42,6 +39,19 @@
         "resolved": "1.3.8",
         "contentHash": "LhwlPa7c1zs1OV2XadMtAWdImjLIsqFJPoRcIWAadSRn0Ri1DepK65UbWLPmt4riLqx2d40xjXRk0ogpqNtK7g=="
       },
+      "K4os.Compression.LZ4.Legacy": {
+        "type": "Transitive",
+        "resolved": "1.3.8",
+        "contentHash": "+82CK5zXbGjMnVLm2JJpsSAz3+4CRcMmxUDOmehUh1bDjrmpnc5VHxB14hiV1lXtqe53lNI+O76BQvgWhgI66g==",
+        "dependencies": {
+          "K4os.Compression.LZ4": "1.3.8"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
       "Stagehand.Definitions": {
         "type": "Transitive",
         "resolved": "0.4.10",
@@ -50,18 +60,29 @@
       "poser.application": {
         "type": "Project",
         "dependencies": {
+          "Poser.Documents": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )"
+        }
+      },
+      "poser.core": {
+        "type": "Project",
+        "dependencies": {
+          "Poser.Application": "[1.0.0, )",
+          "Poser.Documents": "[1.0.0, )",
+          "Poser.Domain": "[1.0.0, )"
+        }
+      },
+      "poser.documents": {
+        "type": "Project",
+        "dependencies": {
+          "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
+          "Newtonsoft.Json": "[13.0.4, )",
+          "Poser.Domain": "[1.0.0, )",
+          "Stagehand.Definitions": "[0.4.10, )"
         }
       },
       "poser.domain": {
         "type": "Project"
-      },
-      "posingcore": {
-        "type": "Project",
-        "dependencies": {
-          "Poser.Domain": "[1.0.0, )",
-          "Stagehand.Definitions": "[0.4.10, )"
-        }
       }
     }
   }

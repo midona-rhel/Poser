@@ -16,5 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
+    <ProjectReference Include="..\Poser.Documents\Poser.Documents.csproj" />
+    <InternalsVisibleTo Include="Poser.Application.Tests" />
+    <InternalsVisibleTo Include="Poser.Game.Tests" />
   </ItemGroup>
 </Project>

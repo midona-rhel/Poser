@@ -1,9 +1,12 @@
+using Poser.Domain.Scene;
 using System;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Files;
 using Poser.Services;
+
+using Poser.Application.Viewport;
 
 namespace Poser.Game.Scene;
 
@@ -15,12 +18,12 @@ namespace Poser.Game.Scene;
 /// </summary>
 public sealed class PlacementAnchorSource : IPlacementAnchorSource
 {
-    private readonly ICameraService _camera;
+    private readonly ICameraProjection _camera;
     private readonly SceneSession _scene;
     private readonly Viewport.ViewportProjection _viewport;
 
     public PlacementAnchorSource(
-        ICameraService camera,
+        ICameraProjection camera,
         SceneSession scene,
         Viewport.ViewportProjection viewport)
     {

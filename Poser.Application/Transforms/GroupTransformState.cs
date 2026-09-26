@@ -13,10 +13,11 @@ public readonly record struct GroupTransformKey(Guid? NamedGroup, string Members
 public sealed record GroupTransformHistoryChange(
     GroupTransformKey Key, GroupTransformSnapshot Before, GroupTransformSnapshot After)
 {
-    public GroupTransformHistoryChange? Remap(Func<TransformTargetId, TransformTargetId?> resolve)
+    public GroupTransformHistoryChange? Remap(Func<TransformTargetId, TransformTargetId?> resolve,
+        bool allowReplacement = false)
     {
-        var before = Before.Remap(resolve);
-        var after = After.Remap(resolve);
+        var before = Before.Remap(resolve, allowReplacement);
+        var after = After.Remap(resolve, allowReplacement);
         return before != null && after != null
             ? new(GroupTransformKey.For(Key.NamedGroup, before.Expected.Keys), before, after) : null;
     }

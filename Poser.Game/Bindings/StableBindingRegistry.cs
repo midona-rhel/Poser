@@ -203,6 +203,8 @@ public sealed class StableBindingRegistry : IEntityBindings
 
         void BindActor(IActor actor, List<ActorDescriptor>? descriptors)
         {
+            if (!_actors.IsAvailable(actor))
+                return;
             var legacyKey = actor.Id.Unique;
             if (!lineages.TryGetValue(legacyKey, out var lineage))
             {
@@ -868,9 +870,10 @@ public sealed class StableBindingRegistry : IEntityBindings
     public BindingResult<IActor> Resolve(ActorId id)
     {
         if (_actorBindings.TryGetValue(id, out var actor))
-            return new BindingResult<IActor>(
-                BindingStatus.Success,
-                actor);
+            return _actors.IsAvailable(actor)
+                ? new BindingResult<IActor>(BindingStatus.Success, actor)
+                : new BindingResult<IActor>(BindingStatus.Missing,
+                    Detail: "The actor's native body is no longer available.");
 
         var current = _actorBindings.Keys.FirstOrDefault(
             candidate => candidate.LogicalId == id.LogicalId);
@@ -890,7 +893,7 @@ public sealed class StableBindingRegistry : IEntityBindings
     {
         foreach (var (boneId, live) in _boneBindings)
             if (boneId.Skeleton == id)
-                return live.Skeleton;
+                return Resolve(boneId).Value?.Skeleton;
         return null;
     }
 
@@ -934,9 +937,17 @@ public sealed class StableBindingRegistry : IEntityBindings
     public BindingResult<IBone> Resolve(BoneId id)
     {
         if (_boneBindings.TryGetValue(id, out var bone))
-            return new BindingResult<IBone>(
-                BindingStatus.Success,
-                bone);
+        {
+            var actor = Resolve(id.Skeleton.Actor);
+            if (!actor.Success)
+                return new BindingResult<IBone>(actor.Status, Detail: actor.Detail);
+            var current = _skeletons.GetSkeleton(actor.Value!, id.Slot);
+            if (current is { IsValid: true } &&
+                ReferenceEquals(current.GetBone(id.PartialId, id.BoneIndex), bone))
+                return new BindingResult<IBone>(BindingStatus.Success, bone);
+            return new BindingResult<IBone>(BindingStatus.StaleTarget,
+                Detail: "The native skeleton changed since this bone was bound.");
+        }
 
         var sameIndex = _boneBindings.FirstOrDefault(pair =>
             pair.Key.Skeleton.Actor.LogicalId ==

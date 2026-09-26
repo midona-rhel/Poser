@@ -1,4 +1,5 @@
 using Poser.Domain.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
@@ -11,9 +12,8 @@ public abstract record HistoryEntry(string Description)
     // Re-keying replaces the immutable patch while an async restore may
     // still hold the old object. The operation identity survives that copy.
     public Guid Id { get; init; } = Guid.NewGuid();
-    /// <summary>The keys and snapshots the step was recorded under; null
-    /// for an entry that never invalidates.</summary>
-    public StepContext? Context { get; init; }
+    /// <summary>External file required to repeat the operation, when any.</summary>
+    public string? RequiredAsset { get; init; }
 }
 
 public sealed record TransformPatch(
@@ -34,7 +34,15 @@ public sealed record TransformPatch(
 public sealed record SceneLifecyclePatch(
     string Description,
     Func<bool> Undo,
-    Func<bool> Redo) : HistoryEntry(Description);
+    Func<bool> Redo) : HistoryEntry(Description)
+{
+    /// <summary>Optional reason for a refused direction.</summary>
+    public Func<string?>? FailureDetail { get; init; }
+
+    /// <summary>Some refusals are permanent for this history entry. Drop it
+    /// after reporting the reason so unrelated earlier history can proceed.</summary>
+    public Func<bool>? DropOnFailure { get; init; }
+}
 
 /// <summary>
 /// Bounded before/after patch history. Capacity is read for each append, and
@@ -51,6 +59,70 @@ public sealed class TransformHistory
     private readonly Func<int> _capacity;
     private readonly List<HistoryEntry> _undo = new();
     private readonly List<HistoryEntry> _redo = new();
+    private readonly Dictionary<SelectionId, Func<SelectionId?>> _lifecycleTargets = new();
+    private LifecycleHistoryBatch? _batch;
+
+    /// <summary>Records one synchronous removal command. Earlier value edits
+    /// are sealed first; only synchronous lifecycle and journal entries belong
+    /// to the batch. The callback must not schedule work or cross an await.</summary>
+    public void RecordLifecycleBatch(string description, Action removals)
+    {
+        ArgumentNullException.ThrowIfNull(removals);
+        if (_batch is not null)
+            throw new InvalidOperationException("A lifecycle batch is already recording.");
+        BeforeAppend?.Invoke();
+        var batch = new LifecycleHistoryBatch(description);
+        _batch = batch;
+        try { removals(); }
+        finally
+        {
+            if (ReferenceEquals(_batch, batch)) FlushBatch();
+        }
+    }
+
+    private void FlushBatch()
+    {
+        var batch = _batch;
+        _batch = null;
+        if (batch?.Build() is { } entry) Append(entry);
+    }
+
+    /// <summary>Keep edits while their entity is deliberately absent. This is
+    /// history-only rebinding, never permission to reuse a stale public ID.</summary>
+    public void RetainLifecycleTarget(TransformTargetId target, Func<TransformTargetId?> current) =>
+        RetainLifecycleEntity(target.ToSelectionId(), () => current()?.ToSelectionId());
+
+    public void RetainLifecycleEntity(SelectionId entity, Func<SelectionId?> current) =>
+        _lifecycleTargets[entity] = current;
+
+    public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
+        _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
+
+    public TransformTargetId ResolveLifecycleTarget(TransformTargetId target)
+    {
+        var entity = ResolveLifecycleEntity(target.ToSelectionId());
+        return entity.Bone is { } bone ? TransformTargetId.ForBone(bone)
+            : GroupTransformCoordinator.Target(entity) ?? target;
+    }
+
+    private void RefreshLifecycleTargets(List<HistoryEntry> stack)
+    {
+        if (_lifecycleTargets.Count == 0) return;
+        TransformTargetId? Resolve(TransformTargetId target) =>
+            ResolveLifecycleTarget(target);
+        for (int i = 0; i < stack.Count; i++)
+        {
+            if (stack[i] is not TransformPatch patch) continue;
+            if (!patch.Before.Concat(patch.After).Any(state => Resolve(state.Target) != state.Target))
+                continue;
+            stack[i] = patch with
+            {
+                Before = patch.Before.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
+                After = patch.After.Select(state => state with { Target = Resolve(state.Target)!.Value }).ToArray(),
+                GroupState = patch.GroupState?.Remap(Resolve, allowReplacement: true),
+            };
+        }
+    }
 
     public event Action? PatchAppended;
     internal event Action? BeforeAppend;
@@ -78,6 +150,13 @@ public sealed class TransformHistory
     public void Append(HistoryEntry patch)
     {
         BeforeAppend?.Invoke();
+        if (_batch is { } batch)
+        {
+            if (batch.TryAdd(patch)) return;
+            // An unexpected contextual/transform edit keeps its own replay
+            // semantics and ends collection, rather than hiding its context.
+            FlushBatch();
+        }
         int capacity = _capacity();
         if (capacity < 1)
         {
@@ -116,8 +195,11 @@ public sealed class TransformHistory
                 }
     }
 
-    public HistoryEntry? PeekUndo() =>
-        CanUndo ? _undo[^1] : null;
+    public HistoryEntry? PeekUndo()
+    {
+        RefreshLifecycleTargets(_undo);
+        return CanUndo ? _undo[^1] : null;
+    }
 
     public void CommitUndo(HistoryEntry patch)
     {
@@ -129,8 +211,11 @@ public sealed class TransformHistory
         _redo.Add(patch);
     }
 
-    public HistoryEntry? PeekRedo() =>
-        CanRedo ? _redo[^1] : null;
+    public HistoryEntry? PeekRedo()
+    {
+        RefreshLifecycleTargets(_redo);
+        return CanRedo ? _redo[^1] : null;
+    }
 
     public void CommitRedo(HistoryEntry patch)
     {
@@ -155,20 +240,12 @@ public sealed class TransformHistory
     /// entry whose light has been undone away is precisely the entry that
     /// must survive to be redone.</para>
     /// </summary>
-    /// <summary>
-    /// Drops what can never come back. A transform patch with a stale target
-    /// survives only while it carries snapshots and every actor it keyed
-    /// still exists — a new generation is an invalidation, not a loss. Any
-    /// keyed entry goes when one of its actors is gone for good.
-    /// </summary>
     public void Reconcile(
         Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
-        Func<Guid, bool> lineagePresent,
         Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
     {
-        bool ActorsGone(HistoryEntry entry) =>
-            entry.Context is { } context &&
-            context.Keys.Any(key => !lineagePresent(key.Lineage));
+        RefreshLifecycleTargets(_undo);
+        RefreshLifecycleTargets(_redo);
         // A patch whose targets went stale is first RE-KEYED: a bone edit
         // survives the actor's redraw by naming the same bone on the new
         // body, as Brio's whole-pose snapshot does (ruled 2026-09-03). Only
@@ -211,16 +288,14 @@ public sealed class TransformHistory
         }
         bool Stale(HistoryEntry entry)
         {
-            if (ActorsGone(entry))
-                return true;
             if (entry is not TransformPatch patch)
                 return false;
             bool staleTarget =
-                patch.Before.Any(state => !isCurrent(state.Target)) ||
-                patch.After.Any(state => !isCurrent(state.Target));
+                patch.Before.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())) ||
+                patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId()));
             if (!staleTarget)
                 return false;
-            return patch.Context is not { Before.Count: > 0 };
+            return true;
         }
         Rekey(_undo);
         Rekey(_redo);
@@ -234,6 +309,18 @@ public sealed class TransformHistory
     {
         _undo.Remove(entry);
         _redo.Remove(entry);
+    }
+
+    /// <summary>Drops transform edits for an entity that a lifecycle release
+    /// leaves absent and cannot safely restore. A grouped edit is removed as
+    /// one action when any member names that entity.</summary>
+    public void DropTransformsFor(TransformTargetId target)
+    {
+        bool Touches(HistoryEntry entry) => entry is TransformPatch patch
+            && (patch.Before.Any(state => state.Target == target)
+                || patch.After.Any(state => state.Target == target));
+        _undo.RemoveAll(Touches);
+        _redo.RemoveAll(Touches);
     }
 
     /// <summary>
@@ -253,6 +340,7 @@ public sealed class TransformHistory
 
     public void Clear()
     {
+        _batch = null;
         _undo.Clear();
         _redo.Clear();
         RaiseCleared();
@@ -260,6 +348,7 @@ public sealed class TransformHistory
 
     private void RaiseCleared()
     {
+        _lifecycleTargets.Clear();
         if (Cleared is { } observers)
             foreach (Action observer in observers.GetInvocationList())
                 try

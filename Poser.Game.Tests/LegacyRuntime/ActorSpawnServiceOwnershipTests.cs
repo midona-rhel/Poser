@@ -17,6 +17,33 @@ public sealed class ActorSpawnServiceOwnershipTests
 {
     private const ushort GPoseObjectTableBase = 200;
 
+    [Fact]
+    public void Model_redraw_invalidates_cached_skeletons_while_draw_is_down_not_after_address_reuse()
+    {
+        var actor = Actor(0x850);
+        var native = new FakeNative(new(850, actor.Address, 850));
+        var bus = new FakeEventBus();
+        var framework = new FakeFramework();
+        var invalidated = new List<IActor>();
+        bus.Subscribe<ActorDrawInvalidatedEvent>(e =>
+        {
+            Assert.False(native.DrawEnabled);
+            invalidated.Add(e.Actor);
+        });
+        using var service = NewService(native, new FakeActorManager(actor), bus: bus, framework: framework);
+
+        service.SetModelCharaId(actor, 5);
+        Assert.Same(actor, Assert.Single(invalidated));
+        framework.RaiseUpdate();
+        Assert.True(native.DrawEnabled);
+        service.SetModelCharaId(actor, 5); // No teardown for an unchanged model.
+        Assert.Single(invalidated);
+        service.SetModelCharaId(actor, 0);
+        Assert.Equal(2, invalidated.Count);
+        framework.RaiseUpdate();
+        Assert.True(native.DrawEnabled);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -667,6 +694,7 @@ public sealed class ActorSpawnServiceOwnershipTests
 
     private sealed class FakeActorManager : IActorManager
     {
+        public bool IsAvailable(IActor actor) => Actors.Contains(actor) || AuxiliaryActors.Contains(actor);
         public FakeActorManager(IActor? actor = null) =>
             Actors = actor is null ? Array.Empty<IActor>() : [actor];
         public IReadOnlyList<IActor> Actors { get; set; }

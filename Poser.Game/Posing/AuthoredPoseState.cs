@@ -22,6 +22,12 @@ internal sealed record AuthoredPoseState(IReadOnlyList<AuthoredBoneState> Bones)
         return new(bones);
     }
 
+    public bool CanRestore(IEnumerable<ISkeleton> skeletons)
+    {
+        var current = skeletons.SelectMany(s => s.Bones.Select(b => (s.Slot, b.PartialId, b.BoneName))).ToHashSet();
+        return Bones.All(b => current.Contains((b.Slot, b.Partial, b.Name)));
+    }
+
     public void Restore(IEnumerable<ISkeleton> skeletons, IBonePosingService posing)
     {
         var saved = Bones.ToDictionary(x => (x.Slot, x.Partial, x.Name));

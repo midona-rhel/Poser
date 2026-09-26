@@ -42,13 +42,13 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         held.Add(second);
         held.Add(VirtualKey.SHIFT);
         var fast = Move();
-        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.X, 4);
-        Assert.Equal(-VirtualCameraService.CameraSettings.FastMultiplier, fast.Z, 4);
+        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.X, 4);
+        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.Z, 4);
         held.Remove(VirtualKey.SHIFT);
         held.Add(VirtualKey.CONTROL);
         var slow = Move();
-        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.X, 4);
-        Assert.Equal(-VirtualCameraService.CameraSettings.SlowMultiplier, slow.Z, 4);
+        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.X, 4);
+        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.Z, 4);
         held.Clear();
         Assert.Equal(Vector3.Zero, Move());
         held.Add(first);
@@ -90,6 +90,67 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         setup.Service.DestroyCamera(two);
         Assert.Equal("Key 4", setup.Service.CloneCamera(one)!.Name);
         Assert.Equal("Main Camera", setup.Service.Cameras.Single(x => x.IsDefault).Name);
+    }
+
+    [Fact]
+    public void Inactive_creation_preserves_view_and_publishes_without_activation()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        using var service = setup.Service;
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var main = service.LiveCamera!;
+        var active = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
+        Assert.Same(active, service.LiveCamera);
+        int changes = setup.Bus.CameraListChanges;
+        var parked = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game, makeLive: false)!;
+        Assert.Same(active, service.LiveCamera);
+        Assert.True(active.IsLive);
+        Assert.False(parked.IsLive);
+        Assert.Contains(parked, service.Cameras);
+        Assert.Equal(changes + 1, setup.Bus.CameraListChanges);
+        service.DestroyAllCameras();
+        Assert.Same(main, service.LiveCamera);
+        Assert.Same(main, Assert.Single(service.Cameras));
+    }
+
+    [Fact]
+    public void Property_reset_is_one_undoable_edit_and_respects_lock()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        using var service = setup.Service;
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
+        var history = new Poser.Application.Transforms.TransformHistory();
+        var session = new Poser.Game.Journal.CameraSession(
+            new Poser.Application.Transforms.ValueJournal(history), service, null!);
+        camera.FoV = 0.4f;
+        camera.Zoom = 7f;
+        camera.FixedPosition = new Vector3(1, 2, 3);
+        camera.TogglePortraitMode();
+        var roll = camera.Roll;
+        camera.IsLocked = true;
+        Assert.False(session.ResetProperties(camera));
+        Assert.False(history.CanUndo);
+        camera.IsLocked = false;
+        Assert.True(session.ResetProperties(camera));
+        Assert.Null(camera.FixedPosition);
+        Assert.False(camera.IsPortraitMode);
+        var reset = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
+        Assert.True(reset.Undo());
+        history.CommitUndo(reset);
+        Assert.False(history.CanUndo);
+        Assert.Equal(0.4f, camera.FoV);
+        Assert.Equal(7f, camera.Zoom);
+        Assert.Equal(new Vector3(1, 2, 3), camera.FixedPosition);
+        Assert.True(camera.IsPortraitMode);
+        Assert.Equal(roll, camera.Roll);
+        Assert.Same(camera, service.LiveCamera);
+        Assert.True(reset.Redo());
+        Assert.Null(camera.FixedPosition);
+        Assert.False(camera.IsPortraitMode);
+        Assert.Equal(0f, camera.FoV);
     }
 
 [Fact]

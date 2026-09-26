@@ -1,3 +1,6 @@
+using Poser.Application.World;
+using Poser.Application.AutoSave;
+using Poser.Game.AutoSave;
 using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
@@ -15,6 +18,7 @@ using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Services;
+using Poser.Application.Scene;
 using Poser.UI;
 
 namespace Poser;
@@ -50,7 +54,7 @@ public class Poser : IDalamudPlugin
         _commandManager = commandManager;
         using var startup = new StartupCleanup(error =>
             log.Error(error, "Failed-startup cleanup failed"));
-        BoneInfoService.Initialize(log);
+        BoneInfoService.Initialize(message => log.Warning(message));
         _serviceProvider = ConfigureServices(
             pluginInterface,
             log,
@@ -81,7 +85,7 @@ public class Poser : IDalamudPlugin
             configuration.Config.UI.BackdropBlur);
         // Resolving these lazy singletons activates their subscriptions in runtime order before UI draws.
         log.Debug("Load stage: auto-save");
-        _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
+        _ = _serviceProvider.GetRequiredService<AutoSaveRuntime>();
         log.Debug("Load link: prop spawns");
         _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
         log.Debug("Load link: overlay nodes");
@@ -92,21 +96,9 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<ILightingService>();
         _ = _serviceProvider.GetRequiredService<Game.Scene.SceneGroupsLifetime>();
         log.Debug("Load link: cameras");
-        var virtualCameras =
-            _serviceProvider.GetRequiredService<IVirtualCameraService>();
-        // The animation anchor pumps from the render seam when the camera
-        // scene-update hook stands; the overlay draw remains its fallback.
-        if (virtualCameras is Game.Cameras.VirtualCameraService cameraHooks
-            && cameraHooks.SceneUpdateHookLive)
-        {
-            var anchoredObjects = _serviceProvider
-                .GetRequiredService<Game.WorldObjects.WorldObjectService>();
-            cameraHooks.AfterSceneUpdate =
-                anchoredObjects.HoldPausedAnimations;
-            anchoredObjects.AnchorPumpedFromRender = true;
-        }
+        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
         log.Debug("Load link: environment");
-        _ = _serviceProvider.GetRequiredService<IEnvironmentService>();
+        _ = _serviceProvider.GetRequiredService<IEnvironmentRuntimePort>();
         log.Debug("Load link: bindings");
         _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
         log.Debug("Load link: animation");
@@ -119,12 +111,30 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<IGazeService>();
         log.Debug("Load link: integration");
         _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
+        // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
+        var wardrobeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.WardrobeCatalog>();
+        var customizeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.CustomizeCatalog>();
+        _ = System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                wardrobeCatalog.Warm();
+                customizeCatalog.Warm();
+            }
+            catch (Exception ex)
+            {
+                log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
+            }
+        });
         log.Debug("Load link: world rendering");
-        _ = _serviceProvider.GetRequiredService<IWorldRenderingService>();
+        _ = _serviceProvider.GetRequiredService<IWorldRenderingRuntimePort>();
         log.Debug("Load link: scene workflow");
         _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
+        _ = _serviceProvider.GetRequiredService<Game.Scene.SceneCreationRuntime>();
+        _ = _serviceProvider.GetRequiredService<Game.Cameras.CameraWorkspaceRuntime>();
         log.Debug("Load stage: scene auto-save");
-        _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
+        _serviceProvider.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
+            _serviceProvider.GetRequiredService<SceneAutoSaveService>());
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
         startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);
@@ -216,7 +226,7 @@ public class Poser : IDalamudPlugin
                 chatGui,
                 notificationManager,
                 seStringEvaluator)
-            .AddPoserCore()
+            .AddPoserRuntime()
             .AddPoserFeatures()
             .AddPoserPresentation()
             .BuildServiceProvider(new ServiceProviderOptions

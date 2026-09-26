@@ -93,8 +93,10 @@ public sealed class SceneGroups
     /// parent group the new group nests inside it; otherwise it is a root
     /// group seated where its first member sat.</summary>
     public SceneGroup? Create(
-        string name, IReadOnlyList<SelectionId> members, bool allowThin = false)
+        string name, IReadOnlyList<SelectionId> members, bool allowThin = false, Guid? restoredId = null)
     {
+        if (restoredId is { } id && (id == Guid.Empty || Find(id) != null))
+            throw new InvalidOperationException("The restored group identity is already in use or invalid.");
         var kept = new List<SelectionId>();
         foreach (var member in members)
             if (Selection.EntitySelection.IsEntity(member.Kind)
@@ -126,7 +128,7 @@ public sealed class SceneGroups
 
         var group = new SceneGroup
         {
-            Id = Guid.NewGuid(),
+            Id = restoredId ?? Guid.NewGuid(),
             Name = string.IsNullOrWhiteSpace(name) ? "Group" : name.Trim(),
             Members = kept,
         };
@@ -383,6 +385,24 @@ public sealed class SceneGroups
     }
 
     // ── the root order ───────────────────────────────────────────────────
+
+    /// <summary>Reconcile only after native bindings have published and member generations were remapped.</summary>
+    public void Reconcile(SceneSession scene)
+    {
+        Prune(id => scene.ReadCurrent(id) != null);
+        var snapshot = scene.Snapshot;
+        var roots = new List<SelectionId>();
+        void Add(SelectionId id) { if (GroupOf(id) == null) roots.Add(id); }
+        foreach (var camera in snapshot.Cameras) Add(SelectionId.ForCamera(camera.Id));
+        foreach (var actor in snapshot.Actors)
+            if (actor.OwnerActor is not { } owner || snapshot.FindActor(owner) == null)
+                Add(SelectionId.ForActor(actor.Id));
+        foreach (var prop in snapshot.Props) Add(SelectionId.ForProp(prop.Id));
+        foreach (var world in snapshot.WorldObjects) Add(SelectionId.ForWorldObject(world.Id));
+        foreach (var light in snapshot.Lights) Add(SelectionId.ForLight(light.Id));
+        foreach (var overlay in snapshot.Overlays) Add(SelectionId.ForOverlay(overlay.Id));
+        SyncRoot(roots);
+    }
 
     public IReadOnlyList<RootSlot> SyncRoot(
         IReadOnlyList<SelectionId> rootEntities)

@@ -5,7 +5,7 @@ namespace Poser.Game.World;
 
 internal sealed record WorldCandidateEntry(
     object Identity, WorldKinds Kind, string Name, System.Numerics.Vector3 Position,
-    Func<bool> Valid, Func<Func<SelectionId?>?> Acquire, Action<bool>? Highlight = null);
+    Func<bool> Valid, Func<WorldAcquisitionBinding?> Acquire, Action<bool>? Highlight = null);
 
 /// <summary>Identity bookkeeping only; each driver supplies its native proof and operations.</summary>
 internal sealed class WorldCandidateBook
@@ -28,7 +28,7 @@ internal sealed class WorldCandidateBook
     }
 
     internal bool TryGet(WorldCandidateId id, out WorldCandidateEntry entry) => _entries.TryGetValue(id, out entry!);
-    internal WorldCommandStatus Acquire(WorldCandidateId id, out Func<SelectionId?>? binding)
+    internal WorldCommandStatus Acquire(WorldCandidateId id, out WorldAcquisitionBinding? binding)
     {
         binding = null;
         if (!TryGet(id, out var entry) || !entry.Valid()) return WorldCommandStatus.StaleCandidate;

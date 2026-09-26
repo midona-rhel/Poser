@@ -437,9 +437,9 @@ public sealed class WorldActorDiscovery
     }
 
     internal bool ReleaseObservation(
-        WorldActorObservation stored, IActor actor, Func<IActor, bool> release)
+        WorldActorObservation stored, IActor actor, Func<IActor, bool> release, bool requireGPose = true)
     {
-        if (!OnOwnerThread || !_gPose.IsGPosing)
+        if (!OnOwnerThread || (requireGPose && !_gPose.IsGPosing))
             return false;
         // A disappeared/replaced body needs no release. Never pass its stale
         // wrapper to a native mutator, even if the address has been reused.

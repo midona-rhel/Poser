@@ -19,7 +19,7 @@ public readonly record struct AnimationResult(bool Success, string? Detail = nul
 /// only after restoration succeeds, so a live actor can retry a failed reset.
 /// Selection, repeat, and speed state remain separate from pose history.
 /// </summary>
-public sealed class AnimationSession
+public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();

@@ -163,6 +163,7 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class StatePort : IActorLifecycle
     {
+        public void DetachGaze(object actor) => throw new NotSupportedException();
         public ActorState Current;
         private readonly Queue<Action> _pending = new();
         public void Pump() { while (_pending.TryDequeue(out var action)) action(); }
@@ -290,6 +291,30 @@ public sealed class WorldActorDiscoveryTests
         Assert.True(step.Undo());
         Assert.Equal(2, releases);
         Assert.Equal(2, seam.Calls.Count); // No adoption as a failed-undo fallback.
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Pending_adoption_rollback_revalidates_its_body_without_recording_history(bool replaced)
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var borrowed = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address);
+        var seam = new CloneSeam { Result = borrowed };
+        var gpose = new FakeGPoseService();
+        var discovery = NewDiscovery(adapter, seam, gpose);
+        var history = new TransformHistory();
+        IActor? released = null;
+        var session = new WorldActorSession(discovery, history, actor => { released = actor; return true; });
+        Assert.True(session.BeginAdopt(Assert.Single(discovery.RefreshCandidates()).Id, out _, out var pending).Success);
+        Assert.False(history.CanUndo);
+        gpose.IsGPosing = false; // Rollback still runs when cancellation is GPose exit.
+        if (replaced) adapter.World[0] = observed with { GameObjectId = 77 };
+        Assert.True(pending!.Rollback());
+        Assert.Same(replaced ? null : borrowed, released);
+        Assert.False(history.CanUndo);
     }
 
     [Fact]
@@ -427,6 +452,7 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class FakeActorManager : IActorManager
     {
+        public bool IsAvailable(IActor actor) => Actors.Contains(actor) || AuxiliaryActors.Contains(actor);
         public bool Adopted { get; set; }
         public bool IsAdopted(IActor actor) => Adopted;
         public IReadOnlyList<IActor> Actors { get; set; } = Array.Empty<IActor>();

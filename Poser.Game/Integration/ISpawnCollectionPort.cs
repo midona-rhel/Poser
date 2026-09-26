@@ -2,8 +2,6 @@ using Poser.Domain.Integration;
 
 namespace Poser.Game.Integration;
 
-public sealed record SpawnCollectionSnapshot(IReadOnlyDictionary<string, string> Paths, string Manipulations);
-
 /// <summary>
 /// The Penumbra half of "a clone looks 1:1": the source's effective
 /// collection follows the appearance copy onto the clone.

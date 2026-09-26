@@ -3,9 +3,11 @@ using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using Poser.Services;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Game;
 
-public class CameraService : ICameraService
+public class CameraService : ICameraProjection
 {
     public unsafe Matrix4x4 GetViewMatrix()
     {

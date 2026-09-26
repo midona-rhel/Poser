@@ -13,6 +13,8 @@ using Poser.Game.Bindings;
 using Poser.Services;
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
+using Poser.Documents.Appearance;
+
 namespace Poser.Game.Integration;
 
 /// <summary>
@@ -28,7 +30,7 @@ namespace Poser.Game.Integration;
 /// 0f3dfba (API 6.x). Glamourer flag words: Once 0x1, Equipment 0x2,
 /// Customization 0x4, Lock 0x8.
 /// </summary>
-public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort
+public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort, IDisposable
 {
     /// <summary>Poser's MCDF recovery key ("POSR"). Ordinary editing uses
     /// zero, so it cannot bypass our own MCDF hold. A keyed read may
@@ -67,6 +69,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
+    private readonly ActorRedrawBarrier _redraw;
 
     // Penumbra
     private readonly ICallGateSubscriber<(int Breaking, int Features)> _penumbraVersion;
@@ -79,6 +82,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<string, Guid, Dictionary<string, string>, string, int, int> _addTemporaryMod;
     private readonly ICallGateSubscriber<int, string> _getMetaManipulations;
     private readonly ICallGateSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]> _getResourcePaths;
+    private readonly ICallGateSubscriber<string, int, string> _resolveGameObjectPath;
     private readonly ICallGateSubscriber<string> _getModDirectory;
     private readonly ICallGateSubscriber<int, int, object?> _redrawObject;
     private readonly ICallGateSubscriber<string, Guid, int, int> _removeTemporaryMod;
@@ -127,13 +131,17 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         IFramework framework,
         Lazy<StableBindingRegistry> bindings,
         IActorManager actors,
-        IObjectTable objects)
+        IObjectTable objects,
+        Lazy<ISkeletonService> skeletons,
+        Poser.Application.Lifecycle.ISessionGenerationSource sessions)
     {
         _pluginInterface = pluginInterface;
         _framework = framework;
         _bindings = bindings;
         _actors = actors;
         _objects = objects;
+        _redraw = new ActorRedrawBarrier(new PenumbraRedrawRuntime(
+            pluginInterface, framework, bindings, skeletons, actors, sessions, RequestRedraw));
 
         _penumbraVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         _getCollections = pluginInterface.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
@@ -145,6 +153,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _addTemporaryMod = pluginInterface.GetIpcSubscriber<string, Guid, Dictionary<string, string>, string, int, int>("Penumbra.AddTemporaryMod.V5");
         _getMetaManipulations = pluginInterface.GetIpcSubscriber<int, string>("Penumbra.GetMetaManipulations.V5");
         _getResourcePaths = pluginInterface.GetIpcSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]>("Penumbra.GetGameObjectResourcePaths.V5");
+        _resolveGameObjectPath = pluginInterface.GetIpcSubscriber<string, int, string>("Penumbra.ResolveGameObjectPath");
         _getModDirectory = pluginInterface.GetIpcSubscriber<string>("Penumbra.GetModDirectory");
         _redrawObject = pluginInterface.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
         _removeTemporaryMod = pluginInterface.GetIpcSubscriber<string, Guid, int, int>("Penumbra.RemoveTemporaryMod.V5");
@@ -299,12 +308,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private static unsafe int IndexOf(nint address) =>
         ((CSGameObject*)address)->ObjectIndex;
 
-    private static unsafe bool IsDrawable(nint address)
-    {
-        var native = (CSGameObject*)address;
-        return native->RenderFlags == 0 && native->DrawObject != null;
-    }
-
     // ── Penumbra ─────────────────────────────────────────────────────────
 
     public IntegrationValue<IReadOnlyList<ExternalItem>> GetCollections() =>
@@ -383,6 +386,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // refuses foreign temporaries there; nothing can interleave.
             int assignEc = _assignTemporaryCollection.InvokeFunc(
                 collection, index, /*forceAssignment*/ true);
+            if (assignEc == PenumbraEcSuccess
+                && _duplicateCollections.ContainsKey(_bindings.Value.Resolve(actor).Value!.Address))
+                _displacedDuplicateCollections[collection] = actor;
             return assignEc == PenumbraEcSuccess
                 ? IntegrationPortResult.Ok()
                 : IntegrationPortResult.Fail(
@@ -451,11 +457,31 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // An already-absent collection (CollectionMissing) is an
             // idempotent cleanup success, like Customize+ ProfileNotFound
             // and Glamourer NothingDone.
-            return ec is PenumbraEcSuccess or PenumbraEcNothingChanged
-                    or PenumbraEcCollectionMissing
-                ? IntegrationPortResult.Ok()
-                : IntegrationPortResult.Fail(
+            if (ec is not (PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing))
+                return IntegrationPortResult.Fail(
                     $"Penumbra failed deleting the temporary collection (code {ec}).");
+            if (!_displacedDuplicateCollections.TryGetValue(collection, out var actor))
+                return IntegrationPortResult.Ok();
+            int index = ResolveIndex(actor, out _);
+            if (index >= 0
+                && _duplicateCollections.TryGetValue(_bindings.Value.Resolve(actor).Value!.Address, out var inherited))
+            {
+                // Removing an MCDF drops its assignment, not the duplicate's
+                // still-owned collection. Reattach that collection without force:
+                // a later external assignment must never be displaced by cleanup.
+                var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+                if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify the actor during collection cleanup.");
+                if (!individual && effective != inherited
+                    && (effective == Guid.Empty || _getCollections.InvokeFunc().ContainsKey(effective)))
+                {
+                    int restored = _assignTemporaryCollection.InvokeFunc(inherited, index, false);
+                    if (restored != PenumbraEcSuccess)
+                        return IntegrationPortResult.Fail(
+                            $"Penumbra failed restoring the duplicate's collection (code {restored}).");
+                }
+            }
+            _displacedDuplicateCollections.Remove(collection);
+            return IntegrationPortResult.Ok();
         });
 
     public IntegrationValue<string> GetActorMetaManipulations(ActorId actor) =>
@@ -498,50 +524,11 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return IntegrationPortResult.Ok();
         });
 
-    public async Task<IntegrationPortResult> RedrawAndWait(
-        ActorId actor, TimeSpan timeout, CancellationToken cancellation)
-    {
-        var requested = await OnFrameworkThread(() => RequestRedraw(actor));
-        if (!requested.Success)
-            return requested;
+    public Task<IntegrationPortResult> RedrawAndWait(
+        ActorId actor, TimeSpan timeout, CancellationToken cancellation) =>
+        _redraw.RedrawAndWait(actor, timeout, cancellation);
 
-        long deadline = System.Environment.TickCount64 + (long)timeout.TotalMilliseconds;
-        // Give the redraw a moment to actually tear the draw object down,
-        // or the first poll can see the old body still "drawable".
-        await Task.Delay(150, CancellationToken.None);
-        while (true)
-        {
-            if (cancellation.IsCancellationRequested)
-                return IntegrationPortResult.Fail("The operation was cancelled.");
-            var state = await OnFrameworkThread(() =>
-            {
-                var resolved = _bindings.Value.Resolve(actor);
-                if (!resolved.Success || resolved.Value is not { } legacy
-                    || legacy.Address == nint.Zero)
-                    return (Gone: true, Drawable: false);
-                return (Gone: false, Drawable: IsDrawable(legacy.Address));
-            });
-            if (state.Gone)
-                return IntegrationPortResult.Fail(
-                    "The actor disappeared while waiting for its redraw.");
-            if (state.Drawable)
-            {
-                // Rebuild bindings against the redrawn body so downstream
-                // exact-generation state reconciles before anything else
-                // touches the actor.
-                await OnFrameworkThread(() =>
-                {
-                    _actors.RefreshActors();
-                    return true;
-                });
-                return IntegrationPortResult.Ok();
-            }
-            if (System.Environment.TickCount64 > deadline)
-                return IntegrationPortResult.Fail(
-                    $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
-            await Task.Delay(100, CancellationToken.None);
-        }
-    }
+    public void Dispose() => _redraw.Dispose();
 
     // ── Penumbra: spawn collection inheritance ───────────────────────────
 
@@ -550,22 +537,50 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     // temporary assignment cannot be undone through the API, and one left
     // on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
     private readonly Dictionary<nint, Guid> _duplicateCollections = new();
+    private readonly Dictionary<Guid, ActorId> _displacedDuplicateCollections = new();
+
+    public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor) =>
+        Guarded(Penumbra, "Capture inherited collection", () =>
+        {
+            if (ResolveIndex(actor, out var detail) < 0)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail(detail!);
+            return CaptureInheritedCollection(_bindings.Value.Resolve(actor).Value!.Address);
+        });
+
+    public IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot) =>
+        Guarded(Penumbra, "Restore inherited collection", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationPortResult.Fail(detail!);
+            var address = _bindings.Value.Resolve(actor).Value!.Address;
+            var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+            if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify this actor.");
+            // History may outlive an external reassignment. Never force away
+            // another plugin's temporary collection to restore our duplicate.
+            if (!individual && effective != Guid.Empty
+                && (!_duplicateCollections.TryGetValue(address, out var owned) || owned != effective)
+                && !_getCollections.InvokeFunc().ContainsKey(effective))
+                return IntegrationPortResult.Fail("Another plugin now owns the actor's temporary collection.");
+            return RestoreInheritedCollection(address, snapshot);
+        });
 
     public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(nint actor) =>
         Guarded(Penumbra, "Capture inherited collection", () =>
         {
             if (AddressPair(actor, actor) is { } refusal)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
-            if (!_duplicateCollections.ContainsKey(actor))
+            if (!_duplicateCollections.TryGetValue(actor, out var owned))
                 return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
             var index = IndexOf(actor);
+            var (valid, _, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
+            if (!valid || effective != owned)
+                return IntegrationValue<SpawnCollectionSnapshot?>.Fail(
+                    "The duplicate's collection has been replaced; its owned resources cannot be captured.");
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)index });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail("Penumbra reported no resources for the duplicate.");
-            var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (resolved, gamePaths) in tree)
-                foreach (var path in gamePaths)
-                    if (!string.Equals(path, resolved, StringComparison.OrdinalIgnoreCase)) paths[path] = resolved;
+            var paths = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, index));
             return IntegrationValue<SpawnCollectionSnapshot?>.Ok(new(paths,
                 _getMetaManipulations.InvokeFunc(index) ?? string.Empty));
         });
@@ -586,14 +601,28 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationPortResult.Fail("Penumbra reported no resources for the source.");
-            var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (resolved, gamePaths) in tree)
-                foreach (var gamePath in gamePaths)
-                    if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
-                        redirects[gamePath] = resolved;
+            var redirects = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, sourceIndex));
             string manipulations = _getMetaManipulations.InvokeFunc(sourceIndex) ?? string.Empty;
             return RestoreInheritedCollection(cloneAddress, new(redirects, manipulations));
         });
+
+    internal static Dictionary<string, string> CaptureRedirects(
+        IReadOnlyDictionary<string, HashSet<string>> tree, Func<string, string> resolve)
+    {
+        var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (loadedPath, gamePaths) in tree)
+            foreach (var gamePath in gamePaths)
+            {
+                // Resource trees can lose resolved paths after collection changes.
+                // An empty redirect prevents even the base skeleton from loading.
+                var resolved = string.IsNullOrWhiteSpace(loadedPath) ? resolve(gamePath) : loadedPath;
+                if (string.IsNullOrWhiteSpace(resolved))
+                    throw new InvalidOperationException($"Penumbra could not resolve {gamePath}.");
+                if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
+                    redirects[gamePath] = resolved;
+            }
+        return redirects;
+    }
 
     public IntegrationPortResult RestoreInheritedCollection(nint cloneAddress, SpawnCollectionSnapshot snapshot) =>
         Guarded(Penumbra, "Restore inherited collection", () =>
@@ -847,8 +876,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (ec != CustomizeEcSuccess)
                 return IntegrationValue<BodyProfileProbe>.Fail(
                     $"Customize+ failed reading the active profile (code {ec}).");
-            // Saved profiles answer GetByUniqueId; a temporary profile is
-            // reported active but cannot be read back.
+            // C+ 6.x's active-ID query omits temporary profiles entirely.
+            // Keep the readability check for providers that do expose an ID;
+            // callers must not infer absence of a temporary profile from null.
             var (readEc, _) = _getProfileByUniqueId.InvokeFunc(profile);
             return IntegrationValue<BodyProfileProbe>.Ok(
                 new BodyProfileProbe(profile, readEc == CustomizeEcSuccess));

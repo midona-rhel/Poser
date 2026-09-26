@@ -97,8 +97,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
             var bone = resolved.Value!;
-            var linked = _bones.LinkedBonesEnabled;
-            _bones.LinkedBonesEnabled = false;
+            var suppressed = _bones.LinkedBonesSuppressed;
+            _bones.LinkedBonesSuppressed = true;
             try
             {
                 _bones.RestorePoseStacks(
@@ -116,7 +116,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             }
             finally
             {
-                _bones.LinkedBonesEnabled = linked;
+                _bones.LinkedBonesSuppressed = suppressed;
             }
             return TransformPortResult.Ok();
         }

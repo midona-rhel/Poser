@@ -107,7 +107,7 @@ public sealed class IkSceneTargetTests
     private static IEntityBindings Bind<T>(object id, Func<Transform> transform,
         Func<bool> present, List<object> requested) where T : class
     {
-        var live = Proxy<T>((method, _) => method.Name == "get_Transform" ? transform() : null);
+        var live = Proxy<T>((method, _) => method.Name == "get_Transform" ? transform() : (object?)null);
         return Proxy<IEntityBindings>((method, args) =>
         {
             Assert.Equal("Resolve", method.Name);

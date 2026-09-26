@@ -1,4 +1,5 @@
 using Poser.Domain.Identity;
+using Poser.Application.Scene;
 using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
@@ -8,35 +9,27 @@ namespace Poser.Game.Scene;
 
 internal sealed partial class SceneRuntimeAdapter
 {
-    public async Task WaitForFabrikBindings(IEnumerable<object> entities, CancellationToken cancellation)
+    public async Task WaitForFabrikBindings(IEnumerable<SceneEntityHandle> entities, CancellationToken cancellation)
     {
         var tokens = entities.ToArray();
-        IEntityBindings bindings = _bindings;
         // Spawning precedes scene publication. Wait for actual binding admission,
         // not a guessed delay, before remapping portable target keys.
         for (int attempt = 0; attempt < 40; attempt++)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (await OnFramework(() => tokens.All(token => token switch
-            {
-                IActor actor => bindings.GetActorId(actor) != null,
-                ILight light => bindings.GetLightId(light) != null,
-                IPropHandle prop => bindings.GetPropId(prop) != null,
-                IWorldObject world => bindings.GetWorldObjectId(world) != null,
-                _ => true,
-            }))) return;
+            if (await OnFramework(() => tokens.All(token => ResolveSceneEntity(token) != null))) return;
             await Task.Delay(50, cancellation);
         }
         // Unavailable references are reported by RestoreFabrik, not rebound by name.
     }
 
-    public IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, object> actors,
-        IReadOnlyDictionary<Guid, object> props, IReadOnlyDictionary<Guid, object> worlds,
-        IReadOnlyDictionary<Guid, object> lights)
+    public IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
+        IReadOnlyDictionary<Guid, SceneEntityHandle> props, IReadOnlyDictionary<Guid, SceneEntityHandle> worlds,
+        IReadOnlyDictionary<Guid, SceneEntityHandle> lights)
     {
         var failures = new List<string>();
         IBone? Bone(SceneBoneAttachment? saved) => saved != null
-            && actors.TryGetValue(saved.ActorKey, out var token) && token is IActor actor
+            && actors.TryGetValue(saved.ActorKey, out var token) && _handles.Resolve<IActor>(token, SceneEntityKind.Actor) is { } actor
                 ? _skeletons.GetSkeletons(actor).Where(s => s.Slot == saved.Slot)
                     .SelectMany(s => s.Bones).FirstOrDefault(b => b.PartialId == saved.PartialId
                         && b.BoneName == saved.BoneName) : null;
@@ -46,11 +39,11 @@ internal sealed partial class SceneRuntimeAdapter
             IEntityBindings bindings = _bindings;
             return saved.Kind switch
             {
-                "light" when lights.TryGetValue(saved.Key, out var token) && token is ILight light
+                "light" when lights.TryGetValue(saved.Key, out var token) && _handles.Resolve<ILight>(token, SceneEntityKind.Light) is { } light
                     && bindings.GetLightId(light) is { } id => SelectionId.ForLight(id),
-                "prop" when props.TryGetValue(saved.Key, out var token) && token is IPropHandle prop
+                "prop" when props.TryGetValue(saved.Key, out var token) && _handles.Resolve<IPropHandle>(token, SceneEntityKind.Prop) is { } prop
                     && bindings.GetPropId(prop) is { } id => SelectionId.ForProp(id),
-                "worldObject" when worlds.TryGetValue(saved.Key, out var token) && token is IWorldObject world
+                "worldObject" when worlds.TryGetValue(saved.Key, out var token) && _handles.Resolve<IWorldObject>(token, SceneEntityKind.WorldObject) is { } world
                     && bindings.GetWorldObjectId(world) is { } id => SelectionId.ForWorldObject(id),
                 _ => null,
             };

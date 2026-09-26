@@ -16,10 +16,26 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+The workspace shell composes independent sidebar and entity-menu owners.
+Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
+menu disclosure stay with the menu composer. Neither owns workflow progression.
+Shared placement, duplication, removal and group gates use application commands.
+
+Library navigation and grid rows are separate from the selected-file details and
+metadata-editor drafts. Application owns additive entry loading, pose-spawn
+continuation, entity/group save admission, file-operation policy and favorites;
+Documents performs scans and
+safe writes. Autosave browsing scans continue independently of panel visibility.
+
 Inspector and Properties read the current selection independently when drawing.
 Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
 selection, not the target it last displayed.
+
+Creation receipts, deferred pose application and group duplication progress on
+framework updates under Application ownership. Closing their initiating window
+neither cancels nor retargets them; session exit invalidates pending receipts.
+Group gate restoration is also application-owned, including during history replay.
 
 Hide UI suspends drawing without closing windows or cancelling Settings edits;
 showing it again preserves which panels were open. Unrelated configuration
@@ -112,7 +128,8 @@ the existing catalog order. With an active search, each source group orders
 categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.
 Action order stays fixed within its category; other matches rank name prefixes
 then alphabetically within each category. Sorting changes visible row indices,
-not the backing activation identities. Furniture has its own import actions;
+not the backing activation identities. Each row carries typed dispatch and its
+category/source; catalog offsets never determine the action. Furniture has its own import actions;
 world-entry library filters distinguish scenery, furniture and VFX despite
 their shared file extension.
 

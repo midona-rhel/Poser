@@ -9,6 +9,9 @@ using Poser.Services;
 
 namespace Poser.Game;
 
+/// <summary>The native draw object has been torn down, even if its next allocation reuses the address.</summary>
+internal sealed record ActorDrawInvalidatedEvent(IActor Actor) : IEvent;
+
 /// <summary>
 /// Slot-aware skeleton discovery and caching. Skeletons cache per
 /// (actor, slot); an entry is reused only while its actor binding AND its
@@ -20,16 +23,22 @@ public class SkeletonService : ISkeletonService
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
+    private readonly IActorManager _actors;
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus)
+    private readonly Config.ConfigurationService _configuration;
+
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, Config.ConfigurationService configuration)
     {
+        _configuration = configuration;
         _log = log;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
+        _actors = actors;
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Subscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);
     }
 
     public ISkeleton? GetSkeleton(IActor actor) =>
@@ -49,7 +58,7 @@ public class SkeletonService : ISkeletonService
     /// </summary>
     public unsafe ISkeleton? GetSkeleton(IActor actor, PoseSlot slot)
     {
-        if (actor.Address == nint.Zero || slot == PoseSlot.Unknown)
+        if (!_actors.IsAvailable(actor) || slot == PoseSlot.Unknown)
             return null;
 
         var currentBase = (nint)SlotCharacterBases.Resolve(actor.Address, slot);
@@ -107,7 +116,9 @@ public class SkeletonService : ISkeletonService
             skeleton = new Skeleton(
                 actor,
                 slot,
-                owner => (nint)SlotCharacterBases.Resolve(owner.Address, slot));
+                owner => _actors.IsAvailable(owner)
+                    ? (nint)SlotCharacterBases.Resolve(owner.Address, slot) : nint.Zero,
+                () => _configuration.Config.Skeleton.ShowAllVieraEars);
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;
@@ -154,6 +165,8 @@ public class SkeletonService : ISkeletonService
 
     public void RefreshSkeleton(IActor actor)
     {
+        if (!_actors.IsAvailable(actor))
+            return;
         foreach (var (key, skeleton) in _skeletons.ToArray())
         {
             if (!key.Actor.Equals(actor.Id))
@@ -214,10 +227,19 @@ public class SkeletonService : ISkeletonService
         }
     }
 
+    private void OnDrawInvalidated(ActorDrawInvalidatedEvent e)
+    {
+        foreach (var (key, skeleton) in _skeletons.ToArray())
+            if (key.Actor == e.Actor.Id && skeleton.Actor.Address == e.Actor.Address)
+                ReleaseSkeleton(key, skeleton);
+        _eventBus.Publish(new SkeletonChangedEvent(e.Actor, null));
+    }
+
     public void Dispose()
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _eventBus.Unsubscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);
         ClearAll();
     }
 }

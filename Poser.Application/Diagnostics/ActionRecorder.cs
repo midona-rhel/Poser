@@ -101,10 +101,10 @@ public sealed class ActionRecorder : IDisposable
                 Describe(patch.Before, patch.After), null, null, null, null),
             JournalStep step => new ActionRecord(
                 DateTime.UtcNow,
-                step.Context is { Asset: not null } ? "File"
-                    : step.Context is { Before.Count: > 0 } ? "Disruptive" : "Value",
+                step.RequiredAsset is not null ? "File"
+                    : step.CompleteReplay is not null ? "Disruptive" : "Value",
                 Scrub(step.Description), null, step.BeforeValue, step.AfterValue,
-                step.Context?.Asset is { } asset ? Scrub(asset) : null, null),
+                step.RequiredAsset is { } asset ? Scrub(asset) : null, null),
             SceneLifecyclePatch lifecycle => new ActionRecord(
                 DateTime.UtcNow, "Lifecycle", Scrub(lifecycle.Description), null, null, null, null, null),
             _ => new ActionRecord(DateTime.UtcNow, "Step", Scrub(entry.Description), null, null, null, null, null),

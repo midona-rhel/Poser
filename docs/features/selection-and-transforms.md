@@ -158,6 +158,11 @@ Camera startup checks the current GPose session on its first framework tick,
 including reloads inside GPose. It waits for native camera readiness and
 creates the default camera once; it does not require another GPose entry.
 
+Camera lifecycle Undo/Redo restores camera data without activating the restored
+camera. Explicit spawn and Look through retain their normal view-switching
+behavior. Removing the live camera still falls back to Main Camera; replaying
+an explicit Look through history entry still changes the view.
+
 Free-camera movement samples held keys through Dalamud `IKeyState`, as
 Brio's `InputManagerService` does. The native keyboard frame is consumed
 only to block game input, never used as the authority for continuous movement.

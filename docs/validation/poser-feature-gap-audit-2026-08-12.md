@@ -38,7 +38,7 @@ become expensive. A scene file and scene-level recovery snapshot would prevent
 hours of reconstruction.
 
 **Evidence:** Poser forcibly hides Projects (`Poser/UI/Windows/MainWindow.cs:1056`)
-and autosaves actor `.pose` files (`PosingCore/Files/AutoSaveService.cs:249-320`).
+and autosaves actor `.pose` files (`Poser.Core/Files/AutoSaveService.cs:249-320`).
 Brio captures and imports complete scenes (`Brio/Brio/Services/SceneService.cs:248-347`)
 and exposes scene Save/Load (`Brio/Brio/UI/Controls/Stateless/FileUIHelpers.cs:98-117`).
 Ktisis persists actors, lights, cameras, environment, and overlays
@@ -174,7 +174,7 @@ shot intent.
 **Evidence:** Poser stores one offset/name in
 `Poser.Game/Cameras/VirtualCameraService.cs:301-313` and its update consumes the
 stored offsets (`:441-443`). The file mapper serializes numeric/projection fields
-only (`PosingCore/Files/CameraFileService.cs:73-112`). Ktisis performs per-frame
+only (`Poser.Core/Files/CameraFileService.cs:73-112`). Ktisis performs per-frame
 target tracking (`Ktisis/Editor/Camera/CameraModule.cs:247-301`) and restores
 actor-linked orbit targets (`Ktisis/Services/Data/SceneDataService.cs:161,416`).
 Brio serializes target offset and selected actor name
@@ -193,7 +193,7 @@ the Model ID hint that Brio Smart Import understands.
 **Evidence:** Poser’s UI and native setter are
 `Poser/UI/Panes/AppearancePane.cs:174-201` and
 `Poser.Game/LegacyRuntime/ActorSpawnService.cs:439-472`; Reset Appearance excludes
-Model ID (`AppearancePane.cs:263-266`), and `PosingCore/Files/PoseFile.cs:15-38`
+Model ID (`AppearancePane.cs:263-266`), and `Poser.Core/Files/PoseFile.cs:15-38`
 has no field. Brio preserves Model ID in pose metadata
 (`Brio/Brio/Files/PoseFile.cs:136-148`) and exposes NPC selection/reset behavior
 (`Brio/Brio/UI/Widgets/Actor/ActorAppearanceWidget.cs:52-110`). Ktisis places an
@@ -269,10 +269,10 @@ state. Corrupt or future `.pose` files remain ordinary library tiles and fail
 only on Apply with a generic status.
 
 **Evidence:** Poser dispatches asynchronous writes and logs failures
-(`PosingCore/Files/AutoSaveService.cs:238-355`); unreadable autosave roots become
+(`Poser.Core/Files/AutoSaveService.cs:238-355`); unreadable autosave roots become
 empty results (`Poser/UI/Panes/PoseLibraryPane.cs:775-820`). Corrupt library
-files deliberately remain listed (`PosingCore/Library/PoseLibraryService.cs:396-401`),
-and Poser has no explicit pose version gate (`PosingCore/Files/PoseFile.cs:15-38`).
+files deliberately remain listed (`Poser.Core/Library/PoseLibraryService.cs:396-401`),
+and Poser has no explicit pose version gate (`Poser.Core/Files/PoseFile.cs:15-38`).
 Brio presents recovery/corruption errors (`Brio/Brio/UI/Windows/AutoSaveWindow.cs:89-236`)
 and both references carry explicit pose/scene version markers
 (`Brio/Brio/Files/PoseFile.cs:140`, `Ktisis/Data/Files/PoseFile.cs:9`).
@@ -287,7 +287,7 @@ Poser lists props, lights, and cameras flat (`Poser/UI/Windows/MainWindow.cs:123
 while Brio supports folders/reparenting and Ktisis exposes a recursive scene tree.
 Pose search matches filenames only even though author/tags are already read and
 displayed (`Poser/UI/Panes/PoseLibraryPane.cs:1097`,
-`PosingCore/Library/PoseLibraryService.cs:293`). Poser can display embedded
+`Poser.Core/Library/PoseLibraryService.cs:293`). Poser can display embedded
 metadata/thumbnails but cannot author or edit them; Brio’s metadata modal can
 edit author, version, description, tags, and preview
 (`Brio/Brio/UI/Modals/MetadataModal.cs:103-184`).
@@ -302,7 +302,7 @@ Poser’s configurable actions are Undo, Redo, four gizmo modes, and Hide UI
 selection, overlay toggle, flip/reset, and similar high-frequency actions that
 Brio and Ktisis expose. Poser also declares `SkeletonViewMode` and
 `ShowSelectedBonesOnly`, and the overlay consumes them, but the current UI has
-no writer (`PosingCore/Services/IEditorState.cs:43-90`,
+no writer (`Poser.Core/Services/IEditorState.cs:43-90`,
 `Poser/UI/Windows/SkeletonOverlayWindow.cs:419-431`).
 
 **User consequence:** existing operations are available, but long posing sessions

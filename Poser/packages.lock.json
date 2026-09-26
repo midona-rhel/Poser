@@ -23,6 +23,12 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.10"
         }
       },
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.4, )",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
       "BepuPhysics": {
         "type": "Transitive",
         "resolved": "2.4.0",
@@ -67,7 +73,17 @@
       "poser.application": {
         "type": "Project",
         "dependencies": {
+          "Poser.Documents": "[1.0.0, )",
           "Poser.Domain": "[1.0.0, )"
+        }
+      },
+      "poser.documents": {
+        "type": "Project",
+        "dependencies": {
+          "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
+          "Newtonsoft.Json": "[13.0.4, )",
+          "Poser.Domain": "[1.0.0, )",
+          "Stagehand.Definitions": "[0.4.10, )"
         }
       },
       "poser.domain": {
@@ -77,22 +93,15 @@
         "type": "Project",
         "dependencies": {
           "BepuPhysics": "[2.4.0, )",
-          "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
           "KamiToolKit": "[2.2.27, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "Poser.Application": "[1.0.0, )",
-          "Poser.Domain": "[1.0.0, )",
-          "PosingCore": "[1.0.0, )"
+          "Poser.Documents": "[1.0.0, )",
+          "Poser.Domain": "[1.0.0, )"
         }
       },
       "poser.ui": {
         "type": "Project"
-      },
-      "posingcore": {
-        "type": "Project",
-        "dependencies": {
-          "Poser.Domain": "[1.0.0, )",
-          "Stagehand.Definitions": "[0.4.10, )"
-        }
       }
     }
   }

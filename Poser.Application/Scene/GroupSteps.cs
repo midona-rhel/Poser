@@ -7,7 +7,7 @@ namespace Poser.Application.Scene;
 /// <summary>
 /// The group verbs as journal steps. Every verb records the whole group
 /// model before and after and puts it back as one; the composite verbs
-/// (a gate, a dissolve) re-run the surface's own routine under a
+/// (a gate, a dissolve) restore application-owned member state under a
 /// suspended value journal, so the member changes they cause are part of
 /// the one step and not steps of their own.
 /// </summary>
@@ -19,27 +19,23 @@ public sealed class GroupSteps
     private readonly GroupTransformState? _groupTransforms;
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private int _assemblyDepth;
+    private readonly IGroupGateState? _gates;
 
     public GroupSteps(
         SceneGroups groups,
         TransformHistory history,
         ValueJournal values,
         GroupTransformState? groupTransforms = null,
-        GroupTransformCoordinator? groupCoordinator = null)
+        GroupTransformCoordinator? groupCoordinator = null,
+        IGroupGateState? gates = null)
     {
+        _gates = gates;
         _groups = groups;
         _history = history;
         _values = values;
         _groupTransforms = groupTransforms;
         _groupCoordinator = groupCoordinator;
     }
-
-    /// <summary>The routine that makes the world match every group's gates
-    /// after the model is put back — the shell owns the member verbs, so it
-    /// hands the routine in.</summary>
-    public Action? ReapplyGates { get; set; }
-
-    public Action<GroupsSnapshot>? RestoreReleasedGates { get; set; }
 
     /// <summary>Runs <paramref name="act"/> as one step. Entries the act
     /// appends on its own fold into the step.</summary>
@@ -101,8 +97,8 @@ public sealed class GroupSteps
             }
             // The destination snapshot may predate closing the gate and has
             // no remembered flags. Restore those from the outgoing snapshot.
-            RestoreReleasedGates?.Invoke(previous);
-            ReapplyGates?.Invoke();
+            _gates?.RestoreReleased(previous);
+            _gates?.Reapply();
             // Seal a deferred capture on its first successful restore. Later
             // undo/redo replays this complete snapshot, not fresh geometry.
             snapshot = Capture();
@@ -112,6 +108,7 @@ public sealed class GroupSteps
 
     private void Restore(GroupsSnapshot snapshot)
     {
+        snapshot = snapshot.Remap(_history);
         _groups.Restore(snapshot);
         if (snapshot.Transforms is not { } transforms) return;
         if (_groupCoordinator != null) _groupCoordinator.RestoreNamed(transforms);
@@ -121,12 +118,42 @@ public sealed class GroupSteps
     public SceneGroup? Create(string name, IReadOnlyList<SelectionId> members, bool allowThin = false) =>
         Run("Create group", () => _groups.Create(name, members, allowThin));
 
+    public void SetHidden(SceneGroup group, bool hidden) =>
+        Run(hidden ? "Hide group" : "Show group", () => _gates?.SetHidden(group, hidden));
+
+    public void SetPaused(SceneGroup group, bool paused) =>
+        Run(paused ? "Pause group" : "Resume group", () => _gates?.SetPaused(group, paused));
+
+    public void SetNight(SceneGroup group, bool night) =>
+        Run(night ? "Group night on" : "Group night off", () => _gates?.SetNight(group, night));
+
+    public void Dissolve(Guid id) =>
+        Run("Dissolve group", () =>
+        {
+            if (_groups.Find(id) is { } group)
+            {
+                _gates?.SetHidden(group, false);
+                _gates?.SetPaused(group, false);
+                _gates?.SetNight(group, false);
+            }
+            _groups.Dissolve(id);
+        });
+
     public void Rename(Guid id, string name) => Run("Rename group", () => _groups.Rename(id, name));
 
     public void AddMember(Guid groupId, SelectionId member, int index = -1) =>
-        Run("Add to group", () => _groups.AddMember(groupId, member, index));
+        Run("Add to group", () =>
+        {
+            _gates?.Leave(member);
+            _groups.AddMember(groupId, member, index);
+            _gates?.Join(member);
+        });
 
-    public void RemoveMember(SelectionId member) => Run("Remove from group", () => _groups.RemoveMember(member));
+    public void RemoveMember(SelectionId member) => Run("Remove from group", () =>
+        {
+            _gates?.Leave(member);
+            _groups.RemoveMember(member);
+        });
 
     public bool Nest(Guid childId, Guid parentId, int index = -1) =>
         Run("Nest group", () => _groups.Nest(childId, parentId, index));

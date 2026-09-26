@@ -17,17 +17,46 @@ namespace Poser.Game.Tests.Journal;
 public sealed class PresentationResetHistoryTests
 {
     [Fact]
+    public void Visibility_inverse_resolves_the_current_wrapper_instead_of_retaining_one()
+    {
+        var f = new Fixture();
+        Assert.True(f.Values.SetVisibility(f.Actor, false).Success);
+        var bindings = (BindingProxy)(object)f.Bindings;
+        bindings.Actor = DispatchProxy.Create<IActor, UnusedProxy>();
+        Assert.True(Assert.IsType<JournalStep>(f.History.PeekUndo()).Undo());
+        Assert.Same(bindings.Actor, f.Visibility.LastActor);
+        Assert.True(f.Visibility.Visible);
+    }
+
+    [Fact]
+    public void Refused_tint_write_and_inverse_do_not_report_success()
+    {
+        var f = new Fixture();
+        f.Port.RefuseSet = true;
+        Assert.False(f.Values.SetTint(f.Actor, PresentationModel.Character, Vector4.Zero).Success);
+        Assert.False(f.History.CanUndo);
+        f.Port.RefuseSet = false;
+        Assert.True(f.Values.SetTint(f.Actor, PresentationModel.Character, Vector4.Zero).Success);
+        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        f.Port.RefuseSet = true;
+        Assert.False(step.Undo());
+        Assert.True(step.RetainOnFailure);
+        f.Port.RefuseSet = false;
+        Assert.True(step.Undo());
+        Assert.Equal(Vector4.One, f.Port.Tint);
+    }
+
+    [Fact]
     public void Visibility_refusal_reports_failure_and_adds_no_history()
     {
         var f = new Fixture();
-        var bindings = (BindingProxy)(object)f.Bindings;
         var spawn = f.Visibility;
 
-        Assert.True(f.Values.SetVisibility(bindings.Actor, false).Success);
+        Assert.True(f.Values.SetVisibility(f.Actor, false).Success);
         var accepted = f.History.PeekUndo();
         spawn.Refuse = true;
 
-        var refused = f.Values.SetVisibility(bindings.Actor, true);
+        var refused = f.Values.SetVisibility(f.Actor, true);
 
         Assert.False(refused.Success);
         Assert.Contains("refused", refused.Detail!, StringComparison.OrdinalIgnoreCase);
@@ -193,10 +222,10 @@ public sealed class PresentationResetHistoryTests
             ((BindingProxy)(object)Bindings).ActorId = Actor;
             Session = new(Port);
             var values = new ValueJournal(History);
-            Values = new(values, Session, null!, Spawn, Bindings);
+            Values = new(values, Session, new Game.Presentation.ActorValueRuntime(Bindings, Spawn));
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
-            Journal = new(History, runner, new Keys(), new Lazy<IPoseSnapshotPort>(() => throw new Exception()), _ => true, _ => { });
+            Journal = new(History, runner, _ => true, _ => { });
             var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
             ColorValues = new(Session, integration, values, runner, Bindings);
         }
@@ -216,7 +245,7 @@ public sealed class PresentationResetHistoryTests
     {
         public bool Alive = true;
         public ActorId ActorId;
-        public IActor Actor { get; } = DispatchProxy.Create<IActor, UnusedProxy>();
+        public IActor Actor { get; set; } = DispatchProxy.Create<IActor, UnusedProxy>();
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
             targetMethod?.Name switch
             {
@@ -232,17 +261,19 @@ public sealed class PresentationResetHistoryTests
     {
         public bool Visible = true;
         public bool Refuse;
+        public IActor? LastActor;
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) =>
             targetMethod?.Name switch
             {
                 "IsVisible" => Visible,
-                "SetVisibility" => Set((bool)args![1]!),
+                "SetVisibility" => Set((IActor)args![0]!, (bool)args[1]!),
                 _ => throw new InvalidOperationException(
                     "Unexpected spawn call: " + targetMethod?.Name),
             };
 
-        private object? Set(bool visible)
+        private object? Set(IActor actor, bool visible)
         {
+            LastActor = actor;
             if (!Refuse)
                 Visible = visible;
             return null;
@@ -262,7 +293,6 @@ public sealed class PresentationResetHistoryTests
     {
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => throw new InvalidOperationException("Unexpected runtime call");
     }
-    private sealed class Keys : IActorStateKeySource { public ActorStateKey? Current(Guid lineage) => null; }
 
     private sealed class Port : IPresentationRuntimePort
     {
@@ -281,7 +311,7 @@ public sealed class PresentationResetHistoryTests
         { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); foreach (var (channel, value) in captures) Colors[channel] = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
         { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); Colors[channel] = incoming; return PresentationPortResult.Ok(); }
-        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return PresentationPortResult.Ok(); }
+        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value) { if (RefuseSet) return PresentationPortResult.Fail("tint refused"); Tint = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult SetWetness(ActorId actor, WetnessState value) { Wetness = value; return PresentationPortResult.Ok(); }
         public PresentationPortResult ClearWetness(ActorId actor, WetnessState value) { Wetness = value; return PresentationPortResult.Ok(); }

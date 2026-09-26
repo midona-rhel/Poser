@@ -2,6 +2,7 @@ using System.Reflection;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Scene;
+using Poser.Game.Posing;
 
 namespace Poser.Game.Tests.Scene;
 
@@ -11,9 +12,9 @@ public sealed class ScenePoseReadinessTests
     public void Weapon_only_actor_waits_for_its_character_skeleton()
     {
         var weapon = Skeleton(PoseSlot.MainHand, true);
-        Assert.False(SceneRuntimeAdapter.HasCharacterSkeleton([weapon]));
-        Assert.False(SceneRuntimeAdapter.HasCharacterSkeleton([weapon, Skeleton(PoseSlot.Character, false)]));
-        Assert.True(SceneRuntimeAdapter.HasCharacterSkeleton([weapon, Skeleton(PoseSlot.Character, true)]));
+        Assert.False(ActorPoseReadiness.HasCharacterSkeleton([weapon]));
+        Assert.False(ActorPoseReadiness.HasCharacterSkeleton([weapon, Skeleton(PoseSlot.Character, false)]));
+        Assert.True(ActorPoseReadiness.HasCharacterSkeleton([weapon, Skeleton(PoseSlot.Character, true)]));
     }
 
     [Fact]

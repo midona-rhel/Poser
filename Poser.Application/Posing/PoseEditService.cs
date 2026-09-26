@@ -67,6 +67,15 @@ public sealed class PoseEditService
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
+        return ResetWithinTransition(targets, region, description, recordHistory: true);
+    }
+
+    // The whole-actor reset and history replay already own the transition and
+    // their inverse. Reuse the same pose write/rollback without nesting either.
+    internal PoseEditResult ResetWithinTransition(
+        IReadOnlyList<TransformTargetId> targets, PoseRegion region,
+        string description, bool recordHistory = false)
+    {
         var prepared = CaptureBones(targets);
         if (!prepared.Success)
             return PoseEditResult.Fail(prepared.Detail!);
@@ -88,7 +97,7 @@ public sealed class PoseEditService
                 HasOverride = false,
             })
             .ToArray();
-        return Apply(description, before, desired);
+        return Apply(description, before, desired, recordHistory);
     }
 
     /// <summary>
@@ -576,7 +585,8 @@ public sealed class PoseEditService
     private PoseEditResult Apply(
         string description,
         IReadOnlyList<TransformTargetState> before,
-        IReadOnlyList<TransformTargetState> desired)
+        IReadOnlyList<TransformTargetState> desired,
+        bool recordHistory = true)
     {
         if (desired.Count == 0)
             return PoseEditResult.Ok(0);
@@ -607,7 +617,8 @@ public sealed class PoseEditService
             after.Add(result.State);
         }
 
-        _history.Append(new TransformPatch(description, before, after));
+        if (recordHistory)
+            _history.Append(new TransformPatch(description, before, after));
         return PoseEditResult.Ok(desired.Count);
     }
 

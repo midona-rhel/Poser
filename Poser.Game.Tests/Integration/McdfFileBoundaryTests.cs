@@ -5,12 +5,84 @@ using Microsoft.Win32.SafeHandles;
 using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Game.Mcdf;
+using Poser.Documents.Mcdf;
 
 namespace Poser.Game.Tests;
 
 public sealed class McdfFileBoundaryTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task History_copy_has_independent_payloads_and_refuses_a_changed_source(bool changed)
+    {
+        var boundary = new McdfFileBoundary();
+        var source = boundary.CreateOperationDirectory().Value!;
+        var destination = boundary.CreateOperationDirectory().Value!;
+        try
+        {
+            var payload = Path.Combine(source.Path, "p0000.dat");
+            File.WriteAllBytes(payload, [1, 2, 3]);
+            var package = new McdfPackage("source.mcdf", "saved", "", "", "",
+                new Dictionary<string, string> { ["chara/test.mdl"] = payload },
+                new Dictionary<string, string>(), source.Path, 1, 3);
+            if (changed) File.AppendAllText(payload, "changed");
+            var copied = await boundary.CopyPackage(package, source, destination, TestContext.Current.CancellationToken);
+            Assert.Equal(!changed, copied.Success);
+            if (changed) return;
+            var copyPath = copied.Value!.ReplacedGamePaths["chara/test.mdl"];
+            Assert.NotEqual(payload, copyPath);
+            Assert.True(boundary.DeleteOperationDirectory(source).Success);
+            Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(copyPath));
+        }
+        finally
+        {
+            boundary.DeleteOperationDirectory(source);
+            boundary.DeleteOperationDirectory(destination);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task Export_roundtrip_preserves_owned_or_saved_body_profile(bool owned, bool saved)
+    {
+        using var files = new TempFiles();
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, ExportRuntimeProxy>();
+        var runtime = (ExportRuntimeProxy)(object)port;
+        runtime.CallerThread = System.Environment.CurrentManagedThreadId;
+        runtime.ModRoot = files.Root;
+        runtime.CustomizeAvailable = true;
+        var actor = ActorId.New();
+        var session = new ActorIntegrationSession(port, files.Boundary, new ActiveSessionSource());
+        const string retained = "{\"Bones\":{\"j_ude_a_l\":{\"Scale\":1.2}}}";
+        if (owned)
+            Assert.True(session.ApplyBodyProfileJson(actor, retained, "Copied profile").Success);
+        runtime.SavedProfile = saved ? Guid.NewGuid() : null;
+        var ownership = session.OverridesFor(actor);
+        string path = Path.Combine(files.Root, "profile.mcdf");
+
+        Assert.True(session.BeginExport(actor, path, "profile roundtrip").Success);
+        await WaitUntilAsync(() => !session.McdfBusy);
+        Assert.True(session.Mcdf?.Outcome?.Success, session.Mcdf?.Outcome?.Detail);
+        var directory = files.Boundary.CreateOperationDirectory();
+        Assert.True(directory.Success);
+        try
+        {
+            var package = await files.Boundary.ReadPackage(path, McdfLimits.Default,
+                directory.Value!, _ => { }, CancellationToken.None);
+            Assert.True(package.Success, package.Detail);
+            string decoded = System.Text.Encoding.UTF8.GetString(
+                Convert.FromBase64String(package.Value!.CustomizePlusData));
+            Assert.Equal(owned ? retained : saved ? runtime.BodyJson : string.Empty, decoded);
+            Assert.Equal(ownership, session.OverridesFor(actor));
+            Assert.Equal(owned ? 1 : 0, runtime.BodyWrites);
+        }
+        finally { files.Boundary.DeleteOperationDirectory(directory.Value!); }
+    }
+
 [Fact]
     public async Task Mcdf_boundary_rejects_invalid_roots_and_preserves_destination_on_source_change()
     {
@@ -53,6 +125,11 @@ private const int ChunkSizeForTest = 81920;
     {
         public int CallerThread { get; set; }
         public List<int> VendorReadThreads { get; } = new();
+        public string ModRoot { get; set; } = "mod-root";
+        public bool CustomizeAvailable { get; set; }
+        public Guid? SavedProfile { get; set; }
+        public string BodyJson { get; set; } = "{\"Bones\":{\"j_kosi\":{\"Scale\":1.1}}}";
+        public int BodyWrites { get; private set; }
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
@@ -61,11 +138,19 @@ private const int ChunkSizeForTest = 81920;
             if (name is "get_Penumbra" or "get_Glamourer")
                 return new IntegrationAvailability(true, "available");
             if (name == "get_CustomizePlus")
-                return new IntegrationAvailability(false, "unavailable");
+                return new IntegrationAvailability(CustomizeAvailable, "available");
             VendorReadThreads.Add(System.Environment.CurrentManagedThreadId);
             Assert.Equal(CallerThread, System.Environment.CurrentManagedThreadId);
+            if (name == nameof(IIntegrationRuntimePort.ApplyTemporaryBodyProfile))
+            {
+                BodyWrites++;
+                return IntegrationValue<Guid>.Ok(Guid.NewGuid());
+            }
             return name switch
             {
+                nameof(IIntegrationRuntimePort.ProbeBodyProfile) =>
+                    IntegrationValue<BodyProfileProbe>.Ok(new(SavedProfile, SavedProfile != null)),
+                nameof(IIntegrationRuntimePort.GetBodyProfileJson) => IntegrationValue<string>.Ok(BodyJson),
                 nameof(IIntegrationRuntimePort.CaptureGlamourerState) =>
                     IntegrationValue<string>.Ok("glamourer"),
                 nameof(IIntegrationRuntimePort.GetActorMetaManipulations) =>
@@ -74,7 +159,7 @@ private const int ChunkSizeForTest = 81920;
                     IntegrationValue<IReadOnlyDictionary<string, IReadOnlyList<string>>>.Ok(
                         new Dictionary<string, IReadOnlyList<string>>()),
                 nameof(IIntegrationRuntimePort.GetModDirectory) =>
-                    IntegrationValue<string>.Ok("mod-root"),
+                    IntegrationValue<string>.Ok(ModRoot),
                 _ => throw new NotSupportedException(name),
             };
         }
@@ -117,6 +202,8 @@ private const int ChunkSizeForTest = 81920;
             string path, McdfLimits limits, McdfOperationDirectory operationDirectory,
             Action<McdfProgressStep> progress, CancellationToken cancellation) =>
             throw new NotSupportedException();
+        public Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package, McdfOperationDirectory source,
+            McdfOperationDirectory destination, CancellationToken cancellation) => throw new NotSupportedException();
         public Task<IntegrationValue<McdfWriteStats>> WritePackage(
             string destination, McdfExportContent content,
             Action<McdfProgressStep> progress, CancellationToken cancellation) =>

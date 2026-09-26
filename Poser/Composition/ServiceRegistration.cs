@@ -1,4 +1,7 @@
-﻿using System;
+using Poser.Application.AutoSave;
+using Poser.Game.AutoSave;
+using Poser.Application.World;
+using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
@@ -7,6 +10,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Animation;
+using Poser.Application.Appearance;
 using Poser.Application.Companions;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
@@ -28,6 +32,8 @@ using Poser.Services;
 using Poser.UI;
 using Poser.UI.Composition;
 
+using Poser.Application.Viewport;
+
 namespace Poser.Composition;
 
 /// <summary>
@@ -35,14 +41,7 @@ namespace Poser.Composition;
 /// per-feature registration manifest. These methods only describe ownership;
 /// product behavior remains in the registered services.
 ///
-/// Order contract: the public module methods, their call order
-/// (Dalamud, core, features, presentation), and each module's content are
-/// load-bearing — the lifecycle contract suite composes AddPoserCore +
-/// AddPoserFeatures alone and appends its own overrides afterward, relying on
-/// last-registration-wins. Inside a module no service type is registered
-/// twice and nothing resolves IEnumerable&lt;T&gt; over these registrations,
-/// so intra-module order carries no container meaning; the feature methods
-/// preserve the original registration sequence verbatim regardless.
+/// Runtime modules precede presentation; tests may append explicit runtime overrides.
 /// </summary>
 internal static class ServiceRegistration
 {
@@ -84,7 +83,7 @@ internal static class ServiceRegistration
         return services;
     }
 
-    public static IServiceCollection AddPoserCore(this IServiceCollection services)
+    public static IServiceCollection AddPoserRuntime(this IServiceCollection services)
     {
         services.AddConfigurationAndEvents();
         services.AddSessionLifecycle();
@@ -97,8 +96,6 @@ internal static class ServiceRegistration
         services.AddCatalogs();
         services.AddPoseCaptureFeature();
         services.AddSceneOwnership();
-        // Feature-pending: new core registrations land here until they move
-        // into (or become) a feature method above.
         return services;
     }
 
@@ -130,7 +127,13 @@ internal static class ServiceRegistration
     private static IServiceCollection AddConfigurationAndEvents(
         this IServiceCollection services)
     {
-        services.AddSingleton<ConfigurationService>();
+        services.AddSingleton<IConfigurationPersistence, HostConfigurationPersistence>();
+        services.AddSingleton(sp =>
+        {
+            var configuration = new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>());
+            Core.BoneInfo.BoneInfoService.ShowFriendlyNames = configuration.Config.Skeleton.ShowFriendlyBoneNames;
+            return configuration;
+        });
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
         return services;
@@ -171,10 +174,13 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<SelectionSession>();
         services.AddSingleton<SceneSession>();
+        services.AddSingleton<ICurrentSelectionEntityReads>(sp =>
+            sp.GetRequiredService<SceneSession>());
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());
         services.AddSingleton<Application.Scene.SceneGroups>();
         services.AddSingleton<Game.Scene.SceneGroupsLifetime>();
+        services.AddSingleton<SelectionEntityCommands>();
         return services;
     }
 
@@ -190,51 +196,77 @@ internal static class ServiceRegistration
             return new TransformHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<ISelectionPlacement, SelectionPlacement>();
         services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
-        services.AddSingleton<ActorDisruptionEpochs>();
-        services.AddSingleton<IActorStateKeySource, ActorStateKeySource>();
         services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
         // Lazy: the snapshot port restores through the pose facade, which
         // reaches the gesture service the journal sits above.
         services.AddSingleton(sp => new System.Lazy<IPoseSnapshotPort>(
             sp.GetRequiredService<IPoseSnapshotPort>));
-        services.AddSingleton<JournalContexts>();
         services.AddSingleton(sp => new UndoJournal(
             sp.GetRequiredService<TransformHistory>(),
             sp.GetRequiredService<IUndoRunner>(),
-            sp.GetRequiredService<IActorStateKeySource>(),
-            sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>(),
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
         services.AddSingleton<ValueJournal>();
-        // Native overlays are discovered before the journal's actor-key source,
-        // which itself needs the binding registry and overlays. Resolve the
-        // journal only when a native drag completes, after construction.
+        // Native overlay construction and value writes must not resolve each other eagerly.
         services.AddSingleton(sp => new System.Lazy<ValueJournal>(sp.GetRequiredService<ValueJournal>));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
+        services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
         services.AddSingleton<Game.Journal.OverlaySession>();
+        services.AddSingleton<Application.Presentation.IOverlayControl, Game.Overlays.OverlayControl>();
+        services.AddSingleton<Application.Presentation.IStatusIconCatalog>(sp =>
+            sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
+        services.AddSingleton<Application.Presentation.ILightControl, Game.Lights.LightControl>();
         services.AddSingleton<Game.Journal.CameraSession>();
-        services.AddSingleton<Game.Journal.EnvironmentSession>();
-        services.AddSingleton<Game.Journal.ActorValueSession>();
-        services.AddSingleton<Game.Journal.ExpressionSession>();
-        services.AddSingleton<Game.Journal.GazeSession>();
+        services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
+        services.AddSingleton<Game.Cameras.CameraTargetControl>();
+        services.AddSingleton<Application.Presentation.ICameraTargetControl>(sp =>
+            sp.GetRequiredService<Game.Cameras.CameraTargetControl>());
+        services.AddSingleton<Game.Cameras.CameraWorkspaceRuntime>();
+        services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
+        services.AddSingleton<IEnvironmentControl, EnvironmentControl>();
+        services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
+        services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
+        services.AddSingleton<Application.Companions.ICompanionRuntime, Game.Companions.CompanionRuntime>();
+        services.AddSingleton<Application.Companions.ICompanionControl, Application.Companions.CompanionSession>();
+        services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
+        services.AddSingleton<IExpressionControl, ExpressionSession>();
+        services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
+        services.AddSingleton<Application.Gaze.GazeSession>();
+        services.AddSingleton<Application.Gaze.IGazeControl>(sp => sp.GetRequiredService<Application.Gaze.GazeSession>());
         services.AddSingleton<AnimationSteps>();
+        services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<AnimationSteps>());
+        services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<AnimationSession>());
+        services.AddSingleton<IExpressionPreview, Game.Animation.ExpressionPreview>();
+        services.AddSingleton<IScenePlaybackControl, ScenePlaybackControl>();
+        services.AddSingleton<IGroupGateState, GroupGateState>();
         services.AddSingleton<Application.Scene.GroupSteps>();
-        services.AddSingleton<Game.Journal.DisruptiveSteps>();
-        services.AddSingleton<Game.Journal.WardrobeSession>();
-        services.AddSingleton<Game.Integration.CharaImport>();
-        services.AddSingleton<Game.Journal.CustomizeSession>();
+        services.AddSingleton<DisruptiveSteps>();
+        services.AddSingleton<IWardrobeControl, WardrobeSession>();
+        services.AddSingleton<Documents.Appearance.ICharacterAppearanceFiles, Documents.Appearance.CharacterAppearanceFiles>();
+        services.AddSingleton<Application.Integration.CharacterFileSession>();
+        services.AddSingleton(sp => new Game.Integration.CharacterFilePump(
+            sp.GetRequiredService<IFramework>(),
+            sp.GetRequiredService<Application.Integration.CharacterFileSession>(),
+            message => sp.GetRequiredService<UserNotices>().Failed("Import", message)));
+        services.AddSingleton<Application.Integration.ICharacterFiles>(sp =>
+        {
+            _ = sp.GetRequiredService<Game.Integration.CharacterFilePump>();
+            return sp.GetRequiredService<Application.Integration.CharacterFileSession>();
+        });
+        services.AddSingleton<ICustomizeControl, CustomizeSession>();
         services.AddSingleton<Application.Presentation.IAppearanceColorControl, Game.Journal.AppearanceColorSession>();
         services.AddSingleton<Game.Wardrobe.CustomizeCatalog>();
         services.AddSingleton<ICustomizeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.CustomizeCatalog>());
         services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();
         services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
         services.AddSingleton(sp => new Game.Journal.EntitySessions(
-            sp.GetRequiredService<Game.Journal.ActorValueSession>(),
+            sp.GetRequiredService<Application.Presentation.IActorValueControl>(),
             sp.GetRequiredService<Game.Journal.LightSession>(),
             sp.GetRequiredService<Game.Journal.CameraSession>(),
             sp.GetRequiredService<Game.Journal.PropSession>(),
@@ -246,16 +278,46 @@ internal static class ServiceRegistration
         services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
+        services.AddSingleton<IPoseEditReads, PoseEditReads>();
+        services.AddSingleton<IActorPoseResetRuntime, ActorPoseResetRuntime>();
+        services.AddSingleton<IActorResetControl, ActorResetControl>();
+        services.AddSingleton<ActorStateSnapshots>();
+        services.AddSingleton<IActorStateSnapshots>(sp => sp.GetRequiredService<ActorStateSnapshots>());
+        services.AddSingleton<IPoseCommands>(sp => new PoseCommands(
+            sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<PoseEditService>(),
+            sp.GetRequiredService<PoseTransferService>(), sp.GetRequiredService<IPoseEditReads>(),
+            (description, result) =>
+            {
+                var log = sp.GetRequiredService<IPluginLog>();
+                if (!result.Success)
+                    log.Warning($"Pose edit '{description}' failed: {result.Detail}");
+                else if (!string.IsNullOrEmpty(result.Detail))
+                    log.Information($"Pose edit '{description}': {result.Detail}");
+            }));
         services.AddSingleton<CleanTransformFacade>();
         // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         // The surfaces' ports over the runtime classes registered elsewhere.
-        services.AddSingleton<IPoseFacade>(sp => sp.GetRequiredService<CleanPoseFacade>());
+        services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
+        services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
         services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
+        services.AddSingleton<IPoseInteraction, Game.Posing.PoseInteraction>();
         services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
         services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
@@ -269,7 +331,9 @@ internal static class ServiceRegistration
         services.AddSingleton<IModelCatalogLoader>(sp => sp.GetRequiredService<Game.Appearance.ModelCatalogLoader>());
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
-        services.AddSingleton<CleanPoseFacade>();
+        services.AddSingleton<IPoseImportCommands, NativePoseImportService>();
+        services.AddSingleton<PoseImportCoordinator>();
+        services.AddSingleton<IPoseImportRuntime, PoseImportRuntime>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
         return services;
     }
@@ -305,13 +369,14 @@ internal static class ServiceRegistration
             Application.Appearance.IModelIdRuntimePort,
             Game.Appearance.ModelIdRuntimePort>();
         services.AddSingleton<Application.Appearance.ActorModelIdSession>();
+        services.AddSingleton<Application.Appearance.IActorAppearanceControl, Application.Appearance.ActorAppearanceControl>();
         return services;
     }
 
     private static IServiceCollection AddIntegrationFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
+        services.AddSingleton<Documents.Mcdf.IMcdfFileBoundary, Documents.Mcdf.McdfFileBoundary>();
         // The lazy registry hand-off breaks the load-time cycle
         // StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort →
         // IntegrationRuntimePort → StableBindingRegistry: the port resolves
@@ -319,6 +384,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
             sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
+        services.AddSingleton(sp => new System.Lazy<ISkeletonService>(
+            sp.GetRequiredService<ISkeletonService>));
         services.AddSingleton<Game.Integration.InvisibleSkinService>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
@@ -332,7 +399,7 @@ internal static class ServiceRegistration
             // source gives every MCDF operation its exact GPose identity.
             var session = new Application.Integration.ActorIntegrationSession(
                 sp.GetRequiredService<Application.Integration.IIntegrationRuntimePort>(),
-                sp.GetRequiredService<Application.Integration.IMcdfFileBoundary>(),
+                sp.GetRequiredService<Documents.Mcdf.IMcdfFileBoundary>(),
                 sp.GetRequiredService<ISessionGenerationSource>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.
@@ -398,16 +465,19 @@ internal static class ServiceRegistration
     private static IServiceCollection AddEnvironmentAndCameras(
         this IServiceCollection services)
     {
-        services.AddSingleton<ICameraService, CameraService>();
+        services.AddSingleton<ICameraProjection, CameraService>();
         services.AddSingleton<Game.Lighting.LightingService>();
         services.AddSingleton<ILightingService>(sp => sp.GetRequiredService<Game.Lighting.LightingService>());
+        services.AddSingleton<Application.Input.CameraInputState>();
+        services.AddSingleton<Application.Posing.IActorColliderCapture>(sp => sp.GetRequiredService<Game.Posing.ActorColliderCapture>());
+        services.AddSingleton<Game.Runtime.SceneFramePhaseService>();
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
-        services.AddSingleton<global::PosingCore.Services.IKeyEvents>(
+        services.AddSingleton<global::Poser.Services.IKeyEvents>(
             sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
-        services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
-        services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
-        services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
+        services.AddSingleton<IEnvironmentRuntimePort, Game.Environment.EnvironmentService>();
+        services.AddSingleton<IWorldRenderingRuntimePort, Game.Environment.WorldRenderingService>();
+        services.AddSingleton<IFestivalRuntimePort, Game.Environment.FestivalService>();
         return services;
     }
 
@@ -421,6 +491,25 @@ internal static class ServiceRegistration
         services.AddSingleton<IActorSpawnService>(
             sp => sp.GetRequiredService<ActorSpawnService>());
         services.AddSingleton<WorldActorDiscovery>();
+        services.AddSingleton<ISceneCreation, Game.Scene.SceneCreation>();
+        services.AddSingleton(sp => new PendingSceneCreation(
+            sp.GetRequiredService<ISceneCreation>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            sp.GetRequiredService<SelectionSession>(),
+            sp.GetRequiredService<IPoseImportCommands>(),
+            sp.GetRequiredService<IAnimationPlayback>(),
+            message => sp.GetRequiredService<UserNotices>().Failed(message)));
+        services.AddSingleton<IPendingSceneCreation>(sp => sp.GetRequiredService<PendingSceneCreation>());
+        services.AddSingleton(sp => new SceneDuplication(
+            sp.GetRequiredService<ISceneCreation>(),
+            sp.GetRequiredService<IPendingSceneCreation>(),
+            sp.GetRequiredService<SceneGroups>(),
+            sp.GetRequiredService<GroupSteps>(),
+            sp.GetRequiredService<SelectionSession>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            message => sp.GetRequiredService<UserNotices>().Failed(message)));
+        services.AddSingleton<ISceneDuplication>(sp => sp.GetRequiredService<SceneDuplication>());
+        services.AddSingleton<Game.Scene.SceneCreationRuntime>();
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;
@@ -429,6 +518,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddPoseLibraryFeature(
         this IServiceCollection services)
     {
+        services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
+        services.AddSingleton<Application.Library.IAutoSaveLibrary, Application.Library.AutoSaveLibrary>();
+        services.AddSingleton<Application.Library.ILibrarySceneActions, Application.Library.LibrarySceneActions>();
         services.AddSingleton<Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();
@@ -465,7 +557,6 @@ internal static class ServiceRegistration
             Game.WorldObjects.NativeWorldObjectPort>();
         services.AddSingleton<Game.WorldObjects.WorldObjectService>();
         services.AddSingleton<Game.WorldObjects.WorldAssetCatalog>();
-        services.AddSingleton<Game.StainCatalog>();
         return services;
     }
 
@@ -485,43 +576,52 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
-        services.AddSingleton<ILightFileService, LightFileService>();
-        services.AddSingleton<ICameraFileService, CameraFileService>();
+        services.AddSingleton<ILightFiles, Game.Lights.LightFiles>();
+        services.AddSingleton<ICameraFiles, Game.Cameras.CameraFiles>();
         // One territory-to-place resolution is shared by whole-scene capture
         // and pose auto-save so a recorded place means the same thing in both
         // documents.
         services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
         // Lazy resolution breaks the final-capture construction cycle.
-        services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
+        services.AddSingleton<IPoseAutoSaveCapture>(sp => new PoseAutoSaveCapturePort(
             sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IFramework>(),
-            sp.GetRequiredService<IGPoseService>(),
             sp.GetRequiredService<IActorManager>,
             sp.GetRequiredService<ISkeletonService>,
             sp.GetRequiredService<IBonePosingService>,
             sp.GetRequiredService<IPoseFileService>,
-            sp.GetRequiredService<ConfigurationService>(),
-            sp.GetRequiredService<IPlaceService>(),
-            sp.GetRequiredService<IDalamudPluginInterface>()));
+            sp.GetRequiredService<IPlaceService>()));
+        services.AddSingleton(sp =>
+        {
+            var log = sp.GetRequiredService<IPluginLog>();
+            var configuration = sp.GetRequiredService<ConfigurationService>();
+            var root = configuration.Config.AutoSave.EnsureRoot(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "AutoSaves"));
+            return new AutoSaveService(sp.GetRequiredService<IPoseAutoSaveCapture>(), configuration,
+                new PoseAutoSaveStore(root, message => log.Error(message),
+                    message => log.Info(message), message => log.Debug(message)),
+                message => log.Error(message), message => log.Debug(message));
+        });
+        services.AddSingleton<IAutoSaveService>(sp => sp.GetRequiredService<AutoSaveService>());
+        services.AddSingleton<AutoSaveRuntime>();
 
         // The checksum index over the MCDF home. ONE instance: its whole
         // value is the digests it remembers between scene loads, and a
         // per-resolve copy would re-read the library every time.
         services.AddSingleton<IMcdfHashIndex>(sp =>
-            new McdfHashIndex(sp.GetRequiredService<ConfigurationService>()));
+            new McdfHashIndex(() => sp.GetRequiredService<ConfigurationService>().Config.Library.ResolveMcdfRoot()));
 
         // SceneWorkflow owns the scene transaction; autosave reuses its
         // capture and store through SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
-        services.AddSingleton<SceneWorkflow>();
+        services.AddSceneWorkflow();
         services.AddSingleton(sp => new SceneAutoSaveService(
-            sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IFramework>(),
-            sp.GetRequiredService<IGPoseService>(),
             sp.GetRequiredService<ConfigurationService>(),
-            sp.GetRequiredService<SceneCaptureService>(),
-            sp.GetRequiredService<SceneWorkflow>(),
-            sp.GetRequiredService<IDalamudPluginInterface>()));
+            sp.GetRequiredService<SceneCaptureService>().BeginCapture,
+            () => sp.GetRequiredService<SceneWorkflow>().Busy,
+            new SceneAutoSaveStore(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"),
+                message => sp.GetRequiredService<IPluginLog>().Error(message))));
+        services.AddSingleton<ISceneAutoSave>(sp => sp.GetRequiredService<SceneAutoSaveService>());
         return services;
     }
 
@@ -533,7 +633,9 @@ internal static class ServiceRegistration
         // The one transient-message channel every surface below speaks
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
+        services.AddSingleton<EntityRemovalDialog>();
         services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
+        services.AddSingleton<global::Poser.Application.Diagnostics.IIssueReports>(sp => sp.GetRequiredService<global::Poser.Diagnostics.IssueReportService>());
         services.AddSingleton<global::Poser.UI.Controls.IssueReportModal>();
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
@@ -555,6 +657,10 @@ internal static class ServiceRegistration
         services.AddSingleton<EnvironmentPane>();
         services.AddSingleton<SceneLoadPreferences>();
         services.AddSingleton<PoseLibraryPane>();
+        services.AddSingleton<Application.Library.ILibrarySceneSave>(sp =>
+            new Application.Library.LibrarySceneSave(sp.GetRequiredService<ISceneWorkflow>(),
+                sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<ConfigurationService>(),
+                sp.GetRequiredService<IPoseLibraryService>(), message => sp.GetRequiredService<UserNotices>().Note(message)));
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
@@ -568,10 +674,20 @@ internal static class ServiceRegistration
                 () => configuration.Config,
                 configuration.Save);
         });
+        services.AddSingleton(sp => new Application.World.WorldAcquisitionControl(
+            sp.GetRequiredService<Application.World.IWorldService>(),
+            sp.GetRequiredService<ISessionGenerationSource>(),
+            sp.GetRequiredService<SelectionSession>(),
+            message => sp.GetRequiredService<UserNotices>().Refused(message)));
+        services.AddSingleton<Application.World.IWorldAcquisitionControl>(sp =>
+            sp.GetRequiredService<Application.World.WorldAcquisitionControl>());
         services.AddSingleton<WorldAdoptionSource>();
-        services.AddSingleton<WorldActions>();
+        services.AddSingleton<Application.Scene.IActorSceneControl, Game.Scene.ActorSceneControl>();
+        services.AddSingleton<EntityActions>();
+        services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
         services.AddSingleton<Game.World.WorldService>();
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
+        services.AddSingleton<Game.World.IWorldReleasePort>(sp => sp.GetRequiredService<Game.World.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
         // Owns every reference picture's texture, so the container's own
         // dispose is what releases them at plugin teardown.
@@ -593,6 +709,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddUiShell(
         this IServiceCollection services)
     {
+        services.AddSingleton(new UiBuildIdentity(BuildMetadata.Branch, BuildMetadata.Commit));
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
         return services;

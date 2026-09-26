@@ -17,7 +17,14 @@ using Poser.Services;
 
 namespace Poser.Game.World;
 
-public sealed class WorldService : IWorldService, IDisposable
+/// <summary>Immediate release on the framework thread, preserving claim bookkeeping.
+/// Used when a larger synchronous entity command owns the dispatch boundary.</summary>
+public interface IWorldReleasePort
+{
+    WorldRelease ReleaseCurrent(SelectionId entity);
+}
+
+public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
 {
     private readonly IFramework _framework;
     private readonly IGPoseService _gpose;
@@ -32,6 +39,8 @@ public sealed class WorldService : IWorldService, IDisposable
     private readonly WorldCandidateBook _book = new();
     private readonly Dictionary<WorldKinds, long> _refreshed = new();
     private readonly WorldClaimBook _claims = new();
+    private readonly List<(SessionGeneration? Session, PendingWorldAcquisition Attempt)> _pending = new();
+    private readonly IPluginLog _log;
     private WorldCandidateEntry? _hovered;
     private WorldCandidateId? _hoveredId;
     private bool _disposed;
@@ -52,18 +61,22 @@ public sealed class WorldService : IWorldService, IDisposable
 
     public Task<WorldRelease> ReleaseSceneObjects() => _framework.RunOnFrameworkThread(() =>
     {
-        _history.ReleaseAllWorldObjects();
-        return new WorldRelease(WorldCommandStatus.Applied);
+        bool allReleased = _history.ReleaseAllWorldObjects();
+        return allReleased
+            ? new WorldRelease(WorldCommandStatus.Applied)
+            : new WorldRelease(WorldCommandStatus.Refused,
+                "Some world objects could not be released; successful removals were recorded.");
     });
 
     public WorldService(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
         WorldActorSession actorClaims, WorldObjectService objects, LightingService lights,
         SceneLifecycleHistory history, IEntityBindings bindings, AnimationSession animation, ConfigurationService config,
-        ISessionGenerationSource sessions)
+        ISessionGenerationSource sessions, IPluginLog log)
     {
         _framework = framework; _gpose = gpose; _actors = actors; _actorClaims = actorClaims;
         _objects = objects; _lights = lights; _history = history; _bindings = bindings;
         _animation = animation; _config = config;
+        _log = log;
         _sessions = sessions; _session = sessions.ActiveSessionGeneration;
         _framework.Update += Tick;
     }
@@ -89,8 +102,7 @@ public sealed class WorldService : IWorldService, IDisposable
             {
                 entries.Add(new(row.Id, WorldKinds.Actor, row.Name, row.Position,
                     () => _actors.TryRetainCandidate(row.Id, out _),
-                    () => _actorClaims.Adopt(row.Id, out var actor).Success && actor != null
-                        ? () => _bindings.GetActorId(actor) is { } id ? SelectionId.ForActor(id) : null : null,
+                    () => _actorClaims.BeginAdopt(row.Id, out _, out var binding).Success ? binding : null,
                     on => _actors.SetHighlight(row.Id, on)));
             }
         if ((due & WorldKinds.Light) != 0)
@@ -98,7 +110,10 @@ public sealed class WorldService : IWorldService, IDisposable
                 entries.Add(new((row.Handle, row.Generation), WorldKinds.Light, "World light", row.Position,
                     () => _lights.GetWorldLightCandidates().Any(l => l.Handle == row.Handle && l.Generation == row.Generation),
                     () => _lights.CaptureWorldLight(row) is { } light
-                        ? () => _bindings.GetLightId(light) is { } id ? SelectionId.ForLight(id) : null : null));
+                        ? new WorldAcquisitionBinding(
+                            () => _bindings.GetLightId(light) is { } id ? SelectionId.ForLight(id) : null,
+                            () => _history.RecordSpawnedLight("Acquire world light", light),
+                            () => { _lights.ReleaseLight(light); return !_lights.Lights.Contains(light); }) : null));
         if ((due & WorldKinds.Object) != 0) AddObjects(false);
         if ((due & WorldKinds.Effect) != 0) AddObjects(true);
         _book.Refresh(due, entries);
@@ -114,8 +129,11 @@ public sealed class WorldService : IWorldService, IDisposable
                 bool marked = false;
                 entries.Add(new(identity, effects ? WorldKinds.Effect : WorldKinds.Object, row.Name, row.Position,
                     () => _objects.TryObserve(row.Address, out var current) && current == identity,
-                    () => _history.AdoptWorldObject(row.Address) is IWorldObject obj
-                        ? () => _bindings.GetWorldObjectId(obj) is { } id ? SelectionId.ForWorldObject(id) : null : null,
+                    () => _objects.Adopt(row.Address) is { } obj
+                        ? new WorldAcquisitionBinding(
+                            () => _bindings.GetWorldObjectId(obj) is { } id ? SelectionId.ForWorldObject(id) : null,
+                            () => _history.RecordAcquiredWorldObject(obj),
+                            () => !_objects.Adopted.Contains(obj) || _objects.Release(obj)) : null,
                     on =>
                     {
                         if (!_objects.TryObserve(row.Address, out var current) || current != identity) return;
@@ -133,44 +151,40 @@ public sealed class WorldService : IWorldService, IDisposable
     public async Task<WorldAcquisition> Acquire(WorldCandidateId candidate)
     {
         WorldAcquisition? failure = null;
-        SessionGeneration? session = null;
-        Func<SelectionId?>? binding = await _framework.RunOnFrameworkThread(() =>
+        var pending = await _framework.RunOnFrameworkThread(() =>
         {
             ReconcileSession();
-            session = _session;
-            if (_disposed || !_gpose.IsGPosing)
+            if (_disposed || !_gpose.IsGPosing || _session == null)
             {
                 failure = new(WorldCommandStatus.Unavailable, Detail: "World borrowing requires GPose.");
-                return null;
+                return (PendingWorldAcquisition?)null;
             }
             HighlightCore(null);
             var status = _book.Acquire(candidate, out var result);
             if (result == null) failure = new(status, Detail: status == WorldCommandStatus.StaleCandidate
                 ? "That world asset is no longer available." : "That world asset could not be borrowed.");
-            else Changed?.Invoke();
-            return result;
-        });
-        if (binding == null) return failure ?? new(WorldCommandStatus.Refused);
-        for (int tick = 0; tick < 120; tick++)
-        {
-            var landed = await _framework.RunOnFrameworkThread(() =>
+            if (result == null) return null;
+            var pending = new PendingWorldAcquisition(result, entity =>
             {
-                if (_disposed || !_gpose.IsGPosing || session != _sessions.ActiveSessionGeneration)
-                    return (WorldAcquisition?)null;
-                var id = binding();
-                if (id?.Actor is { } actor && _config.Config.SpawnFrozen) _animation.Pause(actor);
-                return id is { } entity
-                    ? new WorldAcquisition(WorldCommandStatus.Applied, _claims.Add(entity), entity) : null;
-            });
-            if (landed != null) return landed;
-            if (_disposed || !_gpose.IsGPosing || session != _sessions.ActiveSessionGeneration) break;
-            await _framework.RunOnTick(() => { }, delayTicks: 1);
-        }
-        return new(WorldCommandStatus.Unavailable, Detail: "The borrowed asset did not receive a scene identity.");
+                if (entity.Actor is { } actor && _config.Config.SpawnFrozen) _animation.Pause(actor);
+                return new(WorldCommandStatus.Applied, _claims.Add(entity), entity);
+            }, detail => _log.Warning(detail));
+            _pending.Add((_session, pending));
+            Changed?.Invoke();
+            return pending;
+        });
+        return pending == null ? failure ?? new(WorldCommandStatus.Refused) : await pending.Completion;
     }
 
     public Task<WorldRelease> Release(SelectionId entity) =>
-        _framework.RunOnFrameworkThread(() => _claims.Release(entity, ReleaseCore));
+        _framework.RunOnFrameworkThread(() => ((IWorldReleasePort)this).ReleaseCurrent(entity));
+
+    WorldRelease IWorldReleasePort.ReleaseCurrent(SelectionId entity)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            throw new InvalidOperationException("World release must run on the framework thread.");
+        return _claims.Release(entity, ReleaseCore);
+    }
     public Task<WorldRelease> Release(WorldClaimId claim) =>
         _framework.RunOnFrameworkThread(() => _claims.Release(claim, ReleaseCore));
 
@@ -187,16 +201,18 @@ public sealed class WorldService : IWorldService, IDisposable
         {
             var obj = _bindings.Resolve(objectId).Value;
             if (obj == null || !obj.IsValid) return new(WorldCommandStatus.AlreadyReleased);
-            _history.ReleaseWorldObject(obj);
-            return new(WorldCommandStatus.Applied);
+            return _history.ReleaseWorldObject(obj)
+                ? new(WorldCommandStatus.Applied)
+                : new(WorldCommandStatus.Refused, "The world object could not be released safely.");
         }
         if (entity.Light is { } lightId)
         {
             var light = _bindings.Resolve(lightId).Value;
             if (light == null || !light.IsValid) return new(WorldCommandStatus.AlreadyReleased);
             if (light.Ownership == LightOwnership.Spawned) return new(WorldCommandStatus.Refused, "That light is not borrowed.");
-            _lights.ReleaseLight(light);
-            return new(WorldCommandStatus.Applied);
+            _history.DestroyLight(light);
+            return !_lights.Lights.Contains(light) ? new(WorldCommandStatus.Applied)
+                : new(WorldCommandStatus.Refused, "The world light could not be released.");
         }
         return new(WorldCommandStatus.Refused, "That entity is not a borrowed world asset.");
     }
@@ -219,8 +235,16 @@ public sealed class WorldService : IWorldService, IDisposable
 
     private void Tick(IFramework framework)
     {
-        if (!_objects.AnchorPumpedFromRender) _objects.HoldPausedAnimations();
         ReconcileSession();
+        AdvanceAcquisitions();
+    }
+
+    private void AdvanceAcquisitions()
+    {
+        foreach (var pending in _pending.ToArray())
+            if (pending.Attempt.Tick(!_disposed && _gpose.IsGPosing &&
+                pending.Session == _sessions.ActiveSessionGeneration))
+                _pending.Remove(pending);
     }
     private void ReconcileSession()
     {
@@ -235,6 +259,12 @@ public sealed class WorldService : IWorldService, IDisposable
     {
         _disposed = true;
         _framework.Update -= Tick;
-        _ = _framework.RunOnFrameworkThread(() => { HighlightCore(null); _book.Clear(); _claims.Clear(); });
+        _ = _framework.RunOnFrameworkThread(() =>
+        {
+            AdvanceAcquisitions();
+            if (_pending.Count != 0)
+                _log.Warning("World borrowing cleanup remains owned by native services during shutdown.");
+            HighlightCore(null); _book.Clear(); _claims.Clear();
+        });
     }
 }

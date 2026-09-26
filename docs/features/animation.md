@@ -35,6 +35,7 @@ later when the same session, actor generation, binding, and exact selection
 still match. This bounded retry does not observe face output and a paused actor
 may still require a second click. Pose also provides Bake into pose history.
 
-Switching modes restores the outgoing ownership before changing the mode flag.
+Entering Advanced is a view change; it does not reset or replay the actor.
+Leaving Advanced restores outgoing ownership before changing the mode flag.
 That multi-layer restore is intentionally non-atomic: if a later restore fails,
 the prior mode remains selected, while earlier successful restores stay applied.

@@ -6,6 +6,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Entities;
 using Poser.Game.Scene;
+using Poser.Game.World;
 using Poser.Services;
 
 namespace Poser.Game.Journal;
@@ -19,13 +20,16 @@ public sealed class WorldActorSession
     private readonly IActorLifecycle? _state;
     private readonly ActorPresentationSession? _presentation;
     private readonly Func<IActor, ActorId?>? _actorId;
+    private readonly Func<IActor, bool> _rollback;
 
     public WorldActorSession(WorldActorDiscovery discovery, TransformHistory history, IActorSpawnService spawns,
-        SceneLifecycleHistory lifecycle, ActorPresentationSession presentation, IEntityBindings bindings)
-        : this(discovery, history, spawns.RemoveActorFromScene, lifecycle.ActorStatePort, presentation, bindings.GetActorId) { }
+        SceneLifecycleHistory lifecycle, ActorPresentationSession presentation, IEntityBindings bindings, IActorManager actors)
+        : this(discovery, history, spawns.RemoveActorFromScene, lifecycle.ActorStatePort, presentation, bindings.GetActorId,
+            actor => !actors.IsAdopted(actor) || spawns.RemoveActorFromScene(actor)) { }
 
     internal WorldActorSession(WorldActorDiscovery discovery, TransformHistory history, Func<IActor, bool> release,
-        IActorLifecycle? state = null, ActorPresentationSession? presentation = null, Func<IActor, ActorId?>? actorId = null)
+        IActorLifecycle? state = null, ActorPresentationSession? presentation = null, Func<IActor, ActorId?>? actorId = null,
+        Func<IActor, bool>? rollback = null)
     {
         _discovery = discovery;
         _history = history;
@@ -33,11 +37,21 @@ public sealed class WorldActorSession
         _state = state;
         _presentation = presentation;
         _actorId = actorId;
+        _rollback = rollback ?? release;
     }
 
     internal WorldActorImportResult Adopt(WorldActorCandidateId id, out IActor? actor)
     {
+        var result = BeginAdopt(id, out actor, out var binding);
+        binding?.Commit();
+        return result;
+    }
+
+    internal WorldActorImportResult BeginAdopt(WorldActorCandidateId id, out IActor? actor,
+        out WorldAcquisitionBinding? binding)
+    {
         actor = null;
+        binding = null;
         if (!_discovery.TryRetainCandidate(id, out var observation))
             return WorldActorImportResult.Stale("That world actor is from an older listing.");
         var claim = new Claim(this, observation);
@@ -45,8 +59,12 @@ public sealed class WorldActorSession
         if (result.Success)
         {
             actor = claim.Actor;
-            _history.Append(new JournalStep("Add actor from the world",
-                claim.Release, () => claim.Acquire().Success));
+            if (actor is { } acquired)
+                binding = new(
+                    () => _actorId?.Invoke(acquired) is { } current ? SelectionId.ForActor(current) : null,
+                    () => _history.Append(new JournalStep("Add actor from the world",
+                        claim.Release, () => claim.Acquire().Success)),
+                    () => _discovery.ReleaseObservation(observation, acquired, _rollback, requireGPose: false));
         }
         return result;
     }

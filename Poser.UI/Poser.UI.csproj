@@ -24,4 +24,10 @@
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
+    <ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
+    <ProjectReference Include="..\Poser.Documents\Poser.Documents.csproj" />
+    <InternalsVisibleTo Include="Poser" />
+  </ItemGroup>
 </Project>

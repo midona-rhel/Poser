@@ -7,6 +7,8 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Services;
 
+using Poser.Domain.Scene;
+
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
@@ -264,38 +266,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// controls, and its retries must not run forever.</summary>
     internal int AnimationPauseRetries;
 
-    /// <summary>The placement the pause froze; re-written every draw
-    /// while the pause stands. A drag updates it through the transform
-    /// setter, so a paused object still moves where the user says.</summary>
-    internal Transform? HeldPause;
-
-    /// <summary>The instance tail the pause froze — the animation clock
-    /// lives in it, and a held transform over a running clock jumps on
-    /// unpause.</summary>
-    internal byte[]? HeldPauseTail;
-    internal bool HeldTailPending;
-
-    /// <summary>What the anchor pump last wrote, so the game's own write
-    /// is recognisable: raw differing from this without us writing IS
-    /// the animation.</summary>
-    internal Transform? LastWritten;
-
-    /// <summary>The game transform at anchor engagement. The animation's
-    /// motion is measured against it and replayed on the USER'S placement
-    /// — the object animates around wherever the user put it.</summary>
-    internal Transform? AnimRef;
-
-    /// <summary>Whether the anchor ever engaged on this object — an
-    /// unpause then re-engages IMMEDIATELY instead of waiting to detect
-    /// motion again. The detection wait left a frame window that
-    /// rendered the game's raw value (the unpause blip) and let a quick
-    /// re-pause capture the raw ORIGINAL place instead of the base.
-    /// </summary>
-    internal bool WasAnchored;
-
-    /// <summary>Set on unpause of a previously anchored object: the next
-    /// pump engages on the spot, writing the base that same frame.</summary>
-    internal bool EngageNext;
+    internal SceneryAnimationState AnimationAnchor = new SceneryAnimationState.Watching();
 
     /// <summary>Sets the desired placement WITHOUT writing — the unpause
     /// hand-off: where you froze it becomes where it stands.</summary>
@@ -303,29 +274,6 @@ public sealed class AdoptedWorldObject : IWorldObject
 
     /// <summary>The user's placement, for the anchor pump.</summary>
     internal Transform DesiredPlacement => _placement;
-
-    /// <summary>Live debug access to the base object's 64-bit flag word.
-    /// </summary>
-    public ulong? DebugObjectFlags
-    {
-        get => _released ? null : _owner.ReadObjectFlags(this);
-        set
-        {
-            if (!_released && value is { } stated)
-                _owner.WriteObjectFlags(this, stated);
-        }
-    }
-
-    /// <summary>Live debug access to one instance byte (the port bounds
-    /// the offsets).</summary>
-    public byte? DebugByte(int offset) =>
-        _released ? null : _owner.ReadDebugByte(this, offset);
-
-    public void SetDebugByte(int offset, byte value)
-    {
-        if (!_released)
-            _owner.WriteDebugByte(this, offset, value);
-    }
 
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
@@ -374,9 +322,12 @@ public sealed class AdoptedWorldObject : IWorldObject
         // which would spin the gizmo and save a random phase.
         get => _released
             ? _placement
-            : AnimRef is not null
-                ? _placement
-                : HeldPause ?? _owner.ReadPlacement(this, _placement);
+            : AnimationAnchor switch
+            {
+                SceneryAnimationState.Anchored or SceneryAnimationState.ReanchorPending => _placement,
+                SceneryAnimationState.Paused paused => paused.Placement,
+                _ => _owner.ReadPlacement(this, _placement),
+            };
         set
         {
             if (_released)
@@ -385,7 +336,7 @@ public sealed class AdoptedWorldObject : IWorldObject
             // 2026-09-01): a drag against a running animation is two
             // writers on one value.
             if (!IsVfx && !_animationPaused
-                && (AnimRef is not null || EngageNext))
+                && AnimationAnchor is SceneryAnimationState.Anchored or SceneryAnimationState.ReanchorPending)
                 AnimationPaused = true;
             // A failed/stale native write must not make the handle claim a
             // placement it never reached. Commit the desired value only
@@ -395,8 +346,8 @@ public sealed class AdoptedWorldObject : IWorldObject
             _placement = value;
             // A paused object still goes where the user drags it: the
             // hold re-writes THIS value from then on.
-            if (HeldPause is not null)
-                HeldPause = value;
+            if (AnimationAnchor is SceneryAnimationState.Paused paused)
+                paused.Placement = value;
         }
     }
 
@@ -642,9 +593,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         _pendingStains.Remove(handle);
         handle.NightStatePending = false;
         handle.AnimationPauseRetries = 0;
-        handle.AnimRef = null;
-        handle.LastWritten = null;
-        handle.HeldPauseTail = null;
+        handle.AnimationAnchor = new SceneryAnimationState.Watching();
         handle.VfxPlayback = handle.IsVfx
             ? handle.VfxPaused ? VfxPlaybackState.Paused : VfxPlaybackState.Playing
             : VfxPlaybackState.Unavailable;
@@ -793,29 +742,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     /// Stagehand's poll.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
 
-    internal ulong? ReadObjectFlags(AdoptedWorldObject handle) =>
-        _disposed || !IsHandleCurrent(handle)
-            ? null
-            : _port.ReadBgObjectFlags(handle.Address);
-
-    internal void WriteObjectFlags(AdoptedWorldObject handle, ulong flags)
-    {
-        if (!_disposed && IsHandleCurrent(handle))
-            _port.WriteBgObjectFlags(handle.Address, flags);
-    }
-
-    internal byte? ReadDebugByte(AdoptedWorldObject handle, int offset) =>
-        _disposed || !IsHandleCurrent(handle)
-            ? null
-            : _port.ReadBgTailByte(handle.Address, offset);
-
-    internal void WriteDebugByte(
-        AdoptedWorldObject handle, int offset, byte value)
-    {
-        if (!_disposed && IsHandleCurrent(handle))
-            _port.WriteBgTailByte(handle.Address, offset, value);
-    }
-
     internal bool? CanDye(AdoptedWorldObject handle) =>
         _disposed || !IsHandleCurrent(handle)
             ? false
@@ -837,11 +763,8 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             _port.WriteBgAnimationSpeed(handle.Address, speed)
                 ? 0
                 : AnimationPauseRetryTicks;
-        // Skeleton speed covers skeleton-animated scenery only. Motion
-        // driven through the TRANSFORM (a windmill's turning rotation)
-        // has its gate somewhere in the undocumented tail: pausing runs
-        // the automated hunt — flip a candidate byte, watch the rotation,
-        // keep the byte that stops it (2026-09-01, user-directed).
+        // Skeleton animation uses playback speed; transform-driven animation
+        // instead holds its pose and clock in the post-native frame phase.
         if (handle.AnimationPaused)
         {
             // THE MECHANISM (proved in game 2026-09-01): re-write the
@@ -857,64 +780,41 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             // frame holding ITS value while the render shows ours (the
             // log proved it: held 127.36 vs base 125.93). The frozen pose
             // is what we last composed, never a raw read.
-            handle.HeldPause = handle.EngageNext
-                ? handle.DesiredPlacement
-                : handle.AnimRef is not null
-                    && handle.LastWritten is { } composed
-                    ? composed
-                    : _port.TryRead(handle.Address, out var frozen)
-                        ? frozen
-                        : handle.Transform;
-            handle.EngageNext = false;
-            // The tail is captured only from a LOADED model: before that
-            // the game's own words in it are sentinels, and holding those
-            // every frame crashed the client (2026-09-02).
+            var previous = handle.AnimationAnchor;
+            var frozen = previous switch
+            {
+                SceneryAnimationState.ReanchorPending => handle.DesiredPlacement,
+                SceneryAnimationState.Anchored anchored => anchored.LastWritten,
+                SceneryAnimationState.Paused paused => paused.Placement,
+                _ => _port.TryRead(handle.Address, out var raw) ? raw : handle.Transform,
+            };
+            // Never freeze an unloaded instance's sentinel tail: writing it
+            // back after model readiness can crash the native animator.
             var tail = new byte[0x20];
-            handle.HeldPauseTail =
-                _port.IsBgReady(handle.Address)
-                && _port.TryReadBgTail(handle.Address, tail)
-                    ? tail
-                    : null;
-            handle.HeldTailPending = handle.HeldPauseTail == null;
-            _log.Debug(
-                "[WorldObject] pause topology: "
-                + _port.DescribeBgAnimation(handle.Address));
+            bool captured = _port.IsBgReady(handle.Address)
+                && _port.TryReadBgTail(handle.Address, tail);
+            handle.AnimationAnchor = new SceneryAnimationState.Paused(
+                frozen, captured ? tail : null,
+                previous is SceneryAnimationState.Anchored or SceneryAnimationState.ReanchorPending
+                    || previous is SceneryAnimationState.Paused { ResumeAnchored: true });
         }
         else
         {
-            if (handle.HeldPause is { } frozen)
-                handle.SeedPlacement(frozen);
-            handle.HeldPause = null;
-            handle.HeldPauseTail = null;
-            handle.HeldTailPending = false;
-            handle.LastWritten = null;
-            handle.AnimRef = null;
-            if (handle.WasAnchored)
-                handle.EngageNext = true;
+            var paused = handle.AnimationAnchor as SceneryAnimationState.Paused;
+            if (paused != null)
+                handle.SeedPlacement(paused.Placement);
+            handle.AnimationAnchor = paused?.ResumeAnchored == true
+                ? new SceneryAnimationState.ReanchorPending()
+                : new SceneryAnimationState.Watching();
         }
     }
-
-    /// <summary>Whether the anchor is pumped from the render seam (the
-    /// camera scene-update detour) — the overlay's draw-time pump then
-    /// stands down. The render seam is strictly better: its writes land
-    /// BEFORE the frame renders, so nothing flickers and unpause does
-    /// not blip; the draw pump remains the fallback when the camera
-    /// signature is gone.</summary>
-    public bool AnchorPumpedFromRender { get; set; }
 
     IWorldObject? IWorldObjectService.Spawn(string path, Transform placement, bool visible, out string? detail) =>
         Spawn(path, placement, visible, out detail);
 
-    /// <summary>The ANIMATION ANCHOR. Best seated in the render seam
-    /// (see <see cref="AnchorPumpedFromRender"/>); otherwise the
-    /// overlay's DRAW, where a write still wins the race but shows the
-    /// game's value for one rendered frame (the flicker). Paused
-    /// objects re-write their frozen transform and clock. Objects the
-    /// game visibly animates get COMPOSED instead: the animation's
-    /// motion, measured against the engagement reference, is replayed
-    /// on the user's own placement — move the object and the animation
-    /// moves with it; unpause continues from the frozen phase because
-    /// the frozen pose became the base.</summary>
+    /// <summary>Run by the Game frame-phase owner after native animation.
+    /// Paused objects hold their transform and clock; anchored objects replay
+    /// native motion relative to the user's placement.</summary>
     public void HoldPausedAnimations()
     {
         if (_disposed)
@@ -923,74 +823,76 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         {
             if (handle.IsVfx || !IsHandleCurrent(handle))
                 continue;
-            if (handle.AnimationPaused)
+            if (handle.AnimationAnchor is SceneryAnimationState.Paused paused)
             {
-                if (handle.HeldPause is not { } held)
-                    continue;
-                _port.Write(handle.Address, held);
-                if (handle.HeldPauseTail == null && handle.HeldTailPending
+                _port.Write(handle.Address, paused.Placement);
+                if (paused.TailCapture == SceneryTailCapture.WaitingForModel
                     && _port.IsBgReady(handle.Address))
                 {
-                    var late = new byte[0x20];
-                    if (_port.TryReadBgTail(handle.Address, late))
-                        handle.HeldPauseTail = late;
-                    handle.HeldTailPending = false;
+                    var tail = new byte[0x20];
+                    bool captured = _port.TryReadBgTail(handle.Address, tail);
+                    paused.Tail = captured ? tail : null;
+                    paused.TailCapture = captured
+                        ? SceneryTailCapture.Captured : SceneryTailCapture.Unavailable;
                 }
-                if (handle.HeldPauseTail is { } heldTail)
+                if (paused.Tail is { } heldTail)
                     _port.WriteBgTailHeld(handle.Address, heldTail);
-                handle.LastWritten = held;
-                handle.AnimRef = null;
                 continue;
             }
             if (!_port.TryRead(handle.Address, out var raw))
                 continue;
-            if (handle.EngageNext)
+            if (handle.AnimationAnchor is SceneryAnimationState.ReanchorPending)
             {
-                // The unpause hand-off: engage on the game's fresh value
-                // and write the base THIS frame, so no raw frame renders.
-                handle.EngageNext = false;
-                handle.AnimRef = raw;
+                // A camera phase is not proof that the native animator ran.
+                // Until it replaces our held output, it cannot supply a new
+                // reference: doing so turns the original placement into a
+                // large animation delta on the following update.
+                if (SameAnimationPlacement(raw, handle.DesiredPlacement))
+                    continue;
+                // Rebase and write in this same frame: never render the
+                // game's original placement during the unpause hand-off.
                 var resumed = handle.DesiredPlacement;
                 _port.Write(handle.Address, resumed);
-                handle.LastWritten = resumed;
+                handle.AnimationAnchor = new SceneryAnimationState.Anchored(raw, resumed);
                 continue;
             }
-            if (handle.AnimRef is { } reference)
+            if (handle.AnimationAnchor is SceneryAnimationState.Anchored anchored)
             {
+                // The scene-camera hook can run again without a native motion
+                // update. Never feed the previous composed output back into
+                // the reference-to-user transform (it compounds the offset).
+                if (SameAnimationPlacement(raw, anchored.LastWritten))
+                    continue;
+                var reference = anchored.Reference;
                 var user = handle.DesiredPlacement;
                 var inverse = Quaternion.Inverse(reference.Rotation);
-                var deltaRotation = Quaternion.Normalize(
-                    inverse * raw.Rotation);
-                var deltaPosition = Vector3.Transform(
-                    raw.Position - reference.Position, inverse);
+                var deltaRotation = Quaternion.Normalize(inverse * raw.Rotation);
+                var deltaPosition = Vector3.Transform(raw.Position - reference.Position, inverse);
                 var composed = new Transform(
-                    user.Position
-                        + Vector3.Transform(deltaPosition, user.Rotation),
+                    user.Position + Vector3.Transform(deltaPosition, user.Rotation),
                     Quaternion.Normalize(user.Rotation * deltaRotation),
                     user.Scale);
                 _port.Write(handle.Address, composed);
-                handle.LastWritten = composed;
+                anchored.LastWritten = composed;
                 continue;
             }
-            if (handle.LastWritten is { } prior
-                && (Vector3.DistanceSquared(
-                        raw.Position, prior.Position) > 0.000001f
-                    || Math.Abs(Quaternion.Dot(
-                        raw.Rotation, prior.Rotation)) < 0.999999f))
+            var watching = (SceneryAnimationState.Watching)handle.AnimationAnchor;
+            if (watching.LastWritten is { } prior
+                && (Vector3.DistanceSquared(raw.Position, prior.Position) > 0.000001f
+                    || Math.Abs(Quaternion.Dot(raw.Rotation, prior.Rotation)) < 0.999999f))
             {
-                // The game moved it since we last wrote: the object IS
-                // animated. Engage — from here its motion replays on the
-                // user's placement.
-                handle.AnimRef = raw;
-                handle.WasAnchored = true;
                 var user = handle.DesiredPlacement;
                 _port.Write(handle.Address, user);
-                handle.LastWritten = user;
+                handle.AnimationAnchor = new SceneryAnimationState.Anchored(raw, user);
                 continue;
             }
-            handle.LastWritten ??= raw;
+            watching.LastWritten ??= raw;
         }
     }
+
+    private static bool SameAnimationPlacement(in Transform left, in Transform right) =>
+        Vector3.DistanceSquared(left.Position, right.Position) <= 0.000001f
+        && Math.Abs(Quaternion.Dot(left.Rotation, right.Rotation)) >= 0.999999f;
 
     internal void WriteNightState(AdoptedWorldObject handle)
     {
@@ -1230,15 +1132,34 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     }
 
     public AdoptedWorldObject? Adopt(nint address)
+        => Adopt(address, null, out _);
+
+    private AdoptedWorldObject? Adopt(
+        nint address, WorldObjectIncarnation? expected, out string detail)
     {
-        if (_disposed || _teardownOnly)
+        detail = string.Empty;
+        if (expected is { } expectedIdentity
+            && !CanReclaimBorrow(address, expectedIdentity, out detail))
             return null;
+        if (_disposed || _teardownOnly)
+        {
+            detail = "Unable to undo: the world is unavailable.";
+            return null;
+        }
         if (Find(address) is { } existing)
+        {
+            if (expected is not null)
+            {
+                detail = "Unable to undo: this world object is already borrowed by a newer action.";
+                return null;
+            }
             return existing;
+        }
         if (!_port.TryRead(address, out var placement))
         {
             _log.Warning(
                 "WorldObjectService: that world object no longer exists.");
+            detail = "Unable to undo: the current world object could not be read.";
             return null;
         }
         if (!_port.TryReadFlags(address, out var flags))
@@ -1252,7 +1173,10 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         WorldObjectIncarnation identity;
         VfxStateSnapshot snapshot = default;
         if (!_port.TryReadIncarnation(address, out identity))
+        {
+            detail = "Unable to undo: the current world object identity could not be read.";
             return null;
+        }
         // The graph's object type is authoritative even when its resource
         // filename was unreadable; never route an observed VFX through BG
         // restore merely because RowOf could not supply a path.
@@ -1262,11 +1186,21 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         {
             _log.Warning(
                 $"WorldObjectService: refusing VFX {address:X}; its playback state is unavailable.");
+            detail = "Unable to undo: the current VFX state could not be read.";
+            return null;
+        }
+        if (expected is { } expectedAfterCapture
+            && !MatchesBorrowedIdentity(expectedAfterCapture, identity))
+        {
+            detail = "Unable to undo: the world object at this address no longer matches the captured identity.";
             return null;
         }
         float opacity = snapshot.Color.W;
         if (!isVfx && !_port.TryReadOpacity(address, out opacity))
+        {
+            detail = "Unable to undo: the current world object opacity could not be read.";
             return null;
+        }
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
@@ -1293,8 +1227,59 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             handle.SeedNightState(adoptedState);
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
+        detail = string.Empty;
         return handle;
     }
+
+    /// <summary>Checks a released borrowed identity only after the current
+    /// graph enumeration proves its address is live. The saved address itself
+    /// is never resolved before that membership check.</summary>
+    internal bool CanReclaimBorrow(
+        nint address, WorldObjectIncarnation expected, out string detail)
+    {
+        detail = "Unable to undo: the world is unavailable.";
+        if (_disposed || _teardownOnly || !_port.IsAvailable)
+            return false;
+
+        bool listed = _port.Enumerate().Any(row => row.Address == address);
+        if (!listed)
+        {
+            detail = "Unable to undo: the original world object is no longer in the current world graph.";
+            return false;
+        }
+
+        // This read is safe only after enumeration found the address in the
+        // live graph. It still compares a best-effort observed incarnation;
+        // same-address/same-resource BG reuse is not distinguishable here.
+        if (!_port.TryReadIncarnation(address, out var current))
+        {
+            detail = "Unable to undo: the current world object identity could not be read.";
+            return false;
+        }
+        bool matches = MatchesBorrowedIdentity(expected, current);
+        if (!matches)
+        {
+            detail = "Unable to undo: the world object at this address no longer matches the captured identity.";
+            return false;
+        }
+
+        detail = string.Empty;
+        return true;
+    }
+
+    /// <summary>Re-adopts a released borrowed object after live graph
+    /// membership and the captured incarnation both match.</summary>
+    internal AdoptedWorldObject? ReclaimBorrow(
+        nint address, WorldObjectIncarnation expected, out string detail)
+    {
+        return Adopt(address, expected, out detail);
+    }
+
+    private static bool MatchesBorrowedIdentity(
+        WorldObjectIncarnation expected, WorldObjectIncarnation current) =>
+        expected.IsVfx
+            ? current == expected
+            : current.SameAllocation(expected);
 
     /// <summary>
     /// Adopts one object and puts it back where a saved scene had it. The scene
@@ -1379,7 +1364,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     {
         if (!WritePlacement(handle, placement))
             return false;
-        handle.LastWritten = placement;
+        switch (handle.AnimationAnchor)
+        {
+            case SceneryAnimationState.Watching watching: watching.LastWritten = placement; break;
+            case SceneryAnimationState.Anchored anchored: anchored.LastWritten = placement; break;
+        }
         return true;
     }
 

@@ -1,3 +1,6 @@
+using Poser.Application.World;
+using Poser.Domain.Scene;
+using Poser.Application.Scene;
 using System.Linq;
 #if DEBUG
 using System;
@@ -31,18 +34,18 @@ public sealed class DebugBridge : IDisposable
     public const int Port = 47999;
 
     private readonly IFramework _framework;
-    private readonly IEnvironmentService _environment;
+    private readonly IEnvironmentRuntimePort _environment;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
     private readonly Game.Animation.AnimationRuntimePort _port;
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
-    private readonly IActorSpawnService _spawner;
+    private readonly ISceneCreation _creation;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
-    private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Library.IPoseLibraryService _library;
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
@@ -55,15 +58,19 @@ public sealed class DebugBridge : IDisposable
     private readonly TcpListener _listener;
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
-    private readonly Game.Scene.SceneWorkflow _scenes;
-    private readonly Game.Scene.SceneLoadPreferences _scenePreferences;
+    private readonly ISceneWorkflow _scenes;
+    private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
     private readonly IPosingService _posing;
+    private readonly Application.Posing.IPoseCommands _poseCommands;
     private readonly CancellationTokenSource _stop = new();
 
+    private readonly global::Poser.Config.ConfigurationService _configuration;
+
     public DebugBridge(
-        IEnvironmentService environment,
+        global::Poser.Config.ConfigurationService configuration,
+        IEnvironmentRuntimePort environment,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,
@@ -71,11 +78,11 @@ public sealed class DebugBridge : IDisposable
         IActorManager actors,
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        IActorSpawnService spawner,
+        ISceneCreation creation,
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
-        global::Poser.Services.IGazeService gaze,
+        global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Services.IBonePosingService bonePosing,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
@@ -87,12 +94,14 @@ public sealed class DebugBridge : IDisposable
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation,
         ITextureProvider textures,
         ITextureReadbackProvider readback,
-        Game.Scene.SceneWorkflow scenes,
-        Game.Scene.SceneLoadPreferences scenePreferences,
+        ISceneWorkflow scenes,
+        Application.Scene.SceneLoadPreferences scenePreferences,
         IPlacementAnchorSource anchors,
         IGPoseService gpose,
-        IPosingService posing)
+        IPosingService posing,
+        Application.Posing.IPoseCommands poseCommands)
     {
+        _configuration = configuration;
         _textures = textures;
         _readback = readback;
         _scenes = scenes;
@@ -100,6 +109,7 @@ public sealed class DebugBridge : IDisposable
         _anchors = anchors;
         _gpose = gpose;
         _posing = posing;
+        _poseCommands = poseCommands;
         _environment = environment;
         _overlayPresentation = overlayPresentation;
         _transforms = transforms;
@@ -121,7 +131,7 @@ public sealed class DebugBridge : IDisposable
         _actors = actors;
         _bindings = bindings;
         _lifecycle = lifecycle;
-        _spawner = spawner;
+        _creation = creation;
         _listener = new TcpListener(IPAddress.Loopback, Port);
         try
         {
@@ -243,6 +253,8 @@ public sealed class DebugBridge : IDisposable
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
                         "/state?actor=NAME|INDEX",
+                        "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
+                        "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
                         "/pauseall?actor", "/resumeall?actor",
@@ -250,6 +262,7 @@ public sealed class DebugBridge : IDisposable
                         "/loop?actor&slot=1&on=1|0",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
+                        "/poseedit?actor&action=reset|mirror|stash|applystash&region=All|Body|Face|Hair",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor", "/dupepose?actor",
                         "/log?lines=200&filter=REGEX",
@@ -342,13 +355,13 @@ public sealed class DebugBridge : IDisposable
                     // Diagnostics never overwrite a user's existing scene.
                     if (File.Exists(scenePath))
                         return Json(new { error = "Choose a new file for the diagnostic save." });
-                    var saveOptions = global::Poser.Scene.SceneSaveOptions.Default;
+                    var saveOptions = SceneSaveOptions.Default;
                     if (query.TryGetValue("onlyActor", out var onlyActor))
                     {
                         var target = FindActor(onlyActor);
                         if (target == null || _bindings.GetActorId(target) is not { } targetId)
                             return Json(new { error = "No such actor." });
-                        saveOptions = global::Poser.Scene.SceneSaveOptions.ActorEntry(targetId.LogicalId)
+                        saveOptions = SceneSaveOptions.ActorEntry(targetId.LogicalId)
                             with { IncludeModdedAppearance = false };
                     }
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
@@ -356,7 +369,7 @@ public sealed class DebugBridge : IDisposable
                 }
                 var options = _scenePreferences.Options with { ClearExistingScene = false };
                 var placement = query.TryGetValue("placement", out var requestedPlacement)
-                    ? Enum.Parse<global::Poser.Files.ObjectPlacementMode>(requestedPlacement, true)
+                    ? Enum.Parse<global::Poser.Domain.Scene.ObjectPlacementMode>(requestedPlacement, true)
                     : options.Placement;
                 if (!_anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
                     return Json(new { error = refusal });
@@ -416,7 +429,7 @@ public sealed class DebugBridge : IDisposable
             {
                 // The overlay's scope and visibility, for perf captures:
                 // all=1 shows every actor's bones, visible=1 shows them.
-                var skeleton = global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+                var skeleton = _configuration.Config.Skeleton;
                 if (query.TryGetValue("all", out var all))
                     skeleton.OnlyActiveActorBones = all != "1";
                 if (query.TryGetValue("visible", out var visible))
@@ -544,6 +557,22 @@ public sealed class DebugBridge : IDisposable
                 var r = _port.ProbeCancel(id, a2, a3);
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
             }
+            case "/poseedit":
+            {
+                var action = query.GetValueOrDefault("action", "read").ToLowerInvariant();
+                var result = action switch
+                {
+                    "read" => Domain.Posing.PoseEditResult.Ok(0),
+                    "reset" => _poseCommands.Reset(id,
+                        Enum.Parse<Domain.Posing.PoseRegion>(query.GetValueOrDefault("region", "All"), true)),
+                    "mirror" => _poseCommands.Mirror(id),
+                    "stash" => _poseCommands.Stash(id, actor.Name),
+                    "applystash" => _poseCommands.ApplyStash(id),
+                    _ => Domain.Posing.PoseEditResult.Fail("Unknown pose edit."),
+                };
+                return Json(new { ok = result.Success, result.Affected, result.Detail,
+                    authored = _poseCommands.HasAuthoredEdits(id), stash = _poseCommands.HasStash });
+            }
             case "/reset":
             {
                 var r = _animation.ResetSlot(id, Slot());
@@ -588,6 +617,10 @@ public sealed class DebugBridge : IDisposable
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
+                            // Unselected, unmodified skeletons are not kept hot by the UI.
+                            // Refresh through the same read boundary before reporting a pose.
+                            if (_bindings.GetBoneId(bone) is { } liveBone)
+                                _viewport.GetSkeletonModelMatrix(liveBone);
                             var t = bone.LastTransform; var rw = bone.LastRawTransform;
                             return Json(new { name, partial = bone.PartialId, bone.BoneIndex,
                                 bone.IsPartialRoot, bone.IsSkeletonRoot,
@@ -623,16 +656,6 @@ public sealed class DebugBridge : IDisposable
                     }
                 var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
                 return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
-            }
-            case "/transfer":
-            {
-                var from = FindActor(query["from"]);
-                if (from == null)
-                    return Json(new { error = "no such source actor" });
-                bool Flag(string key) => !query.TryGetValue(key, out var v) || v != "0";
-                _lifecycle.TransferState(from, actor,
-                    Flag("rot"), Flag("pos"), Flag("scale"), Flag("physics"), Flag("roots"));
-                return Json(new { ok = true, from = from.Name, to = actor.Name });
             }
             case "/bake":
             {
@@ -822,13 +845,37 @@ public sealed class DebugBridge : IDisposable
             case "/gazemode":
             {
                 var mode = Enum.Parse<GazeTargetMode>(query["mode"], true);
-                var r = _gaze.SetGazeMode(actor, mode);
-                return Json(new { ok = r.Success, r.Detail, mode = _gaze.GetGazeState(actor).Mode.ToString() });
+                var r = _gaze.SetMode(id, mode);
+                return Json(new { ok = r.Success, r.Detail, mode = _gaze.Read(id)?.Settings.Mode.ToString() });
+            }
+            case "/gazepoint":
+            {
+                var point = new System.Numerics.Vector3(
+                    float.Parse(query["x"], CultureInfo.InvariantCulture),
+                    float.Parse(query["y"], CultureInfo.InvariantCulture),
+                    float.Parse(query["z"], CultureInfo.InvariantCulture));
+                var part = query.TryGetValue("part", out var partName)
+                    ? Enum.Parse<GazeTargetType>(partName, true) : GazeTargetType.None;
+                var r = part == GazeTargetType.None
+                    ? _gaze.SetGazePosition(id, point)
+                    : _gaze.SetPartPosition(id, part, point);
+                // HTTP calls are discrete controls, not a held ImGui gesture.
+                _gaze.Seal();
+                return Json(new { ok = r.Success, r.Detail });
             }
             case "/gaze":
             {
-                var g = _gaze.GetGazeState(actor);
-                return Json(new { mode = g.Mode.ToString() });
+                var g = _gaze.Read(id);
+                if (g is null) return Json(new { error = "actor is no longer bound" });
+                static object Point(System.Numerics.Vector3 p) => new { x = p.X, y = p.Y, z = p.Z };
+                return Json(new
+                {
+                    mode = g.Settings.Mode.ToString(), parts = g.Settings.TargetType.ToString(),
+                    target = g.Target?.ToString(), active = g.Active, stale = g.TargetStale,
+                    anchor = Point(g.Settings.Position), eyes = Point(g.Settings.EyesPosition),
+                    head = Point(g.Settings.HeadPosition), body = Point(g.Settings.BodyPosition),
+                    locks = new { eyes = g.Settings.EyesLocked, head = g.Settings.HeadLocked, body = g.Settings.BodyLocked },
+                });
             }
             case "/equip":
             {
@@ -883,14 +930,14 @@ public sealed class DebugBridge : IDisposable
             case "/spawncatalog":
             {
                 string want = query.TryGetValue("name", out var cn) ? cn.ToLowerInvariant() : "wind-up titan";
-                global::Poser.Services.SpawnCatalogEntry? entry = null;
+                global::Poser.Domain.Companions.SpawnCatalogEntry? entry = null;
                 foreach (var e in _catalog.Entries)
                     if (e.NameLower == want || (entry == null && e.NameLower.Contains(want)))
                         entry = e;
                 if (entry is not { } found)
                     return Json(new { ok = false, detail = "no catalog entry matches" });
-                var spawnedActor = _lifecycle.SpawnActor($"Add {found.Name}", () => _spawner.SpawnCatalogActor(found));
-                return Json(new { ok = spawnedActor != null, name = spawnedActor?.Name, entry = found.Name, kind = found.Kind.ToString() });
+                var spawned = _creation.CreateActor(new(Catalog: found));
+                return Json(new { ok = spawned.Handle is not null, detail = spawned.Detail, entry = found.Name, kind = found.Kind.ToString() });
             }
             case "/spawnobject":
             {
@@ -928,35 +975,12 @@ public sealed class DebugBridge : IDisposable
                 _port.ProbeClips(id);
                 return Json(new { ok = true });
             case "/clone":
-            {
-                var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor), source: actor);
-                return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
-            }
             case "/dupepose":
             case "/dupe":
             {
-                bool posed = path == "/dupepose";
-                IActor? Wearing()
-                {
-                    var c = _spawner.CloneActor(actor);
-                    if (c != null && _bindings.GetActorId(c) is { } cid)
-                        _lifecycle.WhenPosable(c, copy =>
-                        {
-                            _spawner.CopyDrawnAppearance(actor, (IActor)copy);
-                            _spawner.CopyEquipmentVisibility(actor, (IActor)copy);
-                        });
-                    return c;
-                }
-                var copy = posed
-                    ? _lifecycle.SpawnActorWithPose($"Duplicate actor '{actor.Name}' with pose", Wearing, actor)
-                    : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing, source: actor);
-                var copyId = copy != null ? _bindings.GetActorId(copy) : null;
-                if (posed && copyId is { } pid)
-                {
-                    _animation.Pause(pid);
-                    _gaze.SetGazeMode(copy!, GazeTargetMode.Detached);
-                }
-                return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
+                var copy = _creation.Duplicate(SelectionId.ForActor(id), withPose: path == "/dupepose");
+                var copyId = copy.Handle is { } receipt ? _creation.Resolve(receipt)?.Actor : null;
+                return Json(new { ok = copy.Handle is not null, detail = copy.Detail, id = copyId?.ToString() });
             }
         }
         return Json(new { error = $"unknown endpoint {path}" });

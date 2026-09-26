@@ -16,7 +16,6 @@ public readonly record struct ValueWriteResult(bool Success, string? Detail = nu
 public sealed class ValueJournal
 {
     private readonly TransformHistory _history;
-    private readonly JournalContexts? _contexts;
     private PendingEdit? _pending;
     private object? _control;
     private int _editing;
@@ -47,10 +46,9 @@ public sealed class ValueJournal
         }
     }
 
-    public ValueJournal(TransformHistory history, JournalContexts? contexts = null)
+    public ValueJournal(TransformHistory history)
     {
         _history = history;
-        _contexts = contexts;
         // A spawn, bake or transform may append through another journal
         // owner. Commit earlier value edits before that discrete action.
         _history.BeforeAppend += Seal;
@@ -65,16 +63,13 @@ public sealed class ValueJournal
     /// Equal keys share a baseline within a continuous edit.</param>
     /// <param name="alive">Whether the target still exists; a dead target
     /// makes the step's undo and redo no-ops.</param>
-    /// <param name="actors">The lineages of the actors the value belongs
-    /// to, when it belongs to one; the step then carries their keys.</param>
     public void Set<T>(
         object key,
         string description,
         Func<T> read,
         Action<T> write,
         T value,
-        Func<bool>? alive = null,
-        IEnumerable<Guid>? actors = null)
+        Func<bool>? alive = null)
     {
         if (_editing == 0) CommitPending();
         var current = read();
@@ -85,13 +80,11 @@ public sealed class ValueJournal
             write(value);
             return;
         }
-        var scope = actors is { } lineages ? _contexts?.BeginActorStep(lineages) : null;
         write(value);
         var before = current;
         JournalStep Step(T after) => new(
             description, () => Put(alive, write, before), () => Put(alive, write, after))
         {
-            Context = scope?.Complete(),
             BeforeValue = before,
             AfterValue = after,
         };

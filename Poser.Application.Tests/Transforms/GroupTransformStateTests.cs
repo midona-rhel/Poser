@@ -12,6 +12,55 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class GroupTransformStateTests
 {
     [Fact]
+    public void Captured_structure_survives_live_edits_and_restores_its_nested_baseline()
+    {
+        using var f = new Fixture(count: 3);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
+        var child = steps.Create("Child", f.Selected.Take(2).ToArray())!;
+        var parent = f.Groups.Create("Parent", [f.Selected[2]], allowThin: true)!;
+        f.Groups.Nest(child.Id, parent.Id);
+        f.Groups.RestoreOrder([RootSlot.ForGroup(parent.Id)]);
+        ISceneStructure structure = new SceneStructure(f.Groups, f.Coordinator, f.State);
+        var baseline = f.State.NamedSnapshot(child.Id)!;
+        var snapshot = structure.Capture();
+
+        child.Name = "Changed after capture";
+        child.Members.Clear();
+        f.Groups.Clear();
+        f.State.Clear();
+        structure.Import(snapshot.Groups, snapshot.RootOrder);
+
+        var restoredChild = Assert.Single(f.Groups.All, group => group.Name == "Child");
+        var restoredParent = Assert.Single(f.Groups.All, group => group.Name == "Parent");
+        Assert.Equal(restoredParent.Id, restoredChild.ParentId);
+        Assert.Equal(f.Selected.Take(2), restoredChild.Members);
+        Assert.Same(baseline, f.State.NamedSnapshot(restoredChild.Id));
+        Assert.Equal(RootSlot.ForGroup(restoredParent.Id), Assert.Single(f.Groups.RootOrder));
+        Assert.Equal(0, f.Writes);
+    }
+
+    [Fact]
+    public void Binding_publication_reconciles_groups_and_root_order_without_a_view()
+    {
+        using var f = new Fixture(count: 3);
+        var selected = f.Selected;
+        var group = f.Groups.Create("Pair", selected.Take(2).ToArray())!;
+        f.Coordinator.BindingsPublished();
+        Assert.Contains(RootSlot.ForGroup(group.Id), f.Groups.RootOrder);
+        Assert.Contains(RootSlot.For(selected[2]), f.Groups.RootOrder);
+        Assert.DoesNotContain(RootSlot.For(selected[0]), f.Groups.RootOrder);
+
+        // Native publication, not opening/rebuilding a panel, dissolves a group that lost a member.
+        f.Targets = f.Targets.Skip(1).ToArray();
+        f.Publish();
+        f.Coordinator.BindingsPublished();
+        Assert.Null(f.Groups.Find(group.Id));
+        Assert.Contains(RootSlot.For(selected[1]), f.Groups.RootOrder);
+        Assert.DoesNotContain(RootSlot.For(selected[0]), f.Groups.RootOrder);
+        Assert.Null(f.State.NamedSnapshot(group.Id));
+    }
+
+    [Fact]
     public void New_and_absent_frame_captures_are_y_up_but_explicit_frames_are_preserved()
     {
         using var f = new Fixture(cameraRotation: Quaternion.CreateFromYawPitchRoll(.7f, -.5f, .8f));
@@ -563,9 +612,9 @@ public sealed class GroupTransformStateTests
         bool unavailableRead, bool refusedOnRedo)
     {
         using var f = new Fixture(3);
-        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
         int reappliedGates = 0;
-        steps.ReapplyGates = () => reappliedGates++;
+        var gates = new GateObserver(() => reappliedGates++);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator, gates);
         var group = steps.Create("Pair", f.Selected.Take(2).ToArray())!;
         f.SelectNamed(group);
         var frame = f.State.NamedSnapshot(group.Id)!.Baseline.Frame;
@@ -574,9 +623,7 @@ public sealed class GroupTransformStateTests
         f.PerformNamed(group, new(Vector3.Zero, Quaternion.Identity, new(2f)),
             GroupScaleMode.SpacingOnly);
         var authored = f.State.NamedSnapshot(group.Id)!;
-        var snapshotPort = new SnapshotPort(f);
-        var journal = new UndoJournal(f.History, f.Service, snapshotPort,
-            new Lazy<IPoseSnapshotPort>(() => snapshotPort), _ => true, _ => {});
+        var journal = new UndoJournal(f.History, f.Service, _ => true, _ => {});
         var untouched = f.Live.ToDictionary();
         int writes = f.Writes, frameReads = f.FrameReads;
         void Refuse(bool refused)
@@ -724,53 +771,6 @@ public sealed class GroupTransformStateTests
         Assert.Equal(Vector3.Zero, f.Snapshot.Expected[f.Targets[0]].Position);
     }
 
-    [Fact]
-    public void Snapshot_fallback_finishes_group_restore_through_recovery_before_committing()
-    {
-        using var f = new Fixture();
-        var before = f.Snapshot;
-        f.Perform(new(Vector3.One, Quaternion.Identity, Vector3.One));
-        var patch = (TransformPatch)f.History.PeekUndo()!;
-        f.History.Clear();
-        var snapshots = new SnapshotPort(f);
-        patch = patch with { Context = new(
-            f.Targets.Select(target => new ActorStateKey(target.Actor!.Value.LogicalId,
-                target.Actor.Value, [], "old", 0)).ToArray(),
-            f.Targets.Select(target => new ActorSnapshot(target.Actor!.Value.LogicalId,
-                before.Expected[target], [])).ToArray(),
-            f.Targets.Select(target => new ActorSnapshot(target.Actor!.Value.LogicalId,
-                f.Live[target], [])).ToArray()) };
-        f.History.Append(patch);
-        var journal = new UndoJournal(f.History, f.Service, snapshots,
-            new Lazy<IPoseSnapshotPort>(() => snapshots), _ => true, _ => {}) { StateKeys = true };
-        f.FailRestore = true;
-        Assert.True(journal.Undo().Success); // snapshot import starts asynchronously
-        Assert.True(f.History.CanUndo);
-        snapshots.Complete();
-        snapshots.Complete();
-        Assert.NotNull(f.Service.PendingRecovery);
-        Assert.True(f.History.CanUndo);
-        Assert.NotEqual(before.Controls, f.Snapshot.Controls);
-        f.Rebind();
-        f.FailRestore = false;
-        Assert.True(journal.Undo().Success);
-        Assert.Equal(before.Controls, f.Snapshot.Controls);
-        Assert.False(f.History.CanUndo);
-        Assert.True(f.History.CanRedo);
-    }
-
-    private sealed class SnapshotPort(Fixture fixture) : IActorStateKeySource, IPoseSnapshotPort
-    {
-        private Action<bool>? _done;
-        public ActorStateKey? Current(Guid lineage) => new(lineage,
-            fixture.Targets.First(target => target.Actor!.Value.LogicalId == lineage).Actor!.Value,
-            [], "changed", 1);
-        public ActorSnapshot? Capture(Guid lineage) => null;
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
-        { _done = finished; return true; }
-        public void Complete() { var done = _done; _done = null; done!(true); }
-    }
-
     private static PoseTransform Pose(Vector3 position) =>
         PoseTransform.CreateChecked(position, Quaternion.Identity, Vector3.One);
 
@@ -832,7 +832,7 @@ public sealed class GroupTransformStateTests
             Targets = mapped;
             Publish();
             Coordinator.BindingsPublished();
-            History.Reconcile(Scene.Contains, _ => true, CurrentTarget);
+            History.Reconcile(Scene.Contains, CurrentTarget);
             foreach (var member in Selected) Selection.Add(member);
         }
         public TransformGestureId Begin(GroupScaleMode mode = GroupScaleMode.SizesAndSpacing)
@@ -903,5 +903,15 @@ public sealed class GroupTransformStateTests
             return TransformPortResult.Ok(state);
         }
         public void Dispose() { Service.Dispose(); Coordinator.Dispose(); }
+    }
+    private sealed class GateObserver(Action reapply) : IGroupGateState
+    {
+        public void Reapply() => reapply();
+        public void RestoreReleased(GroupsSnapshot previous) { }
+        public void SetHidden(SceneGroup group, bool hidden) { }
+        public void SetPaused(SceneGroup group, bool paused) { }
+        public void SetNight(SceneGroup group, bool night) { }
+        public void Join(SelectionId member) { }
+        public void Leave(SelectionId member) { }
     }
 }

@@ -93,6 +93,9 @@ public class ActorManager : IActorManager
     private readonly IFramework _framework;
     private readonly IEventBus _eventBus;
     private readonly ITargetManager _targetManager;
+    private readonly IClientState _clientState;
+    private readonly Dictionary<IActor, (ushort Index, ulong ObjectId)> _nativeBindings =
+        new(ReferenceEqualityComparer.Instance);
 
     private readonly List<IActor> _actors = new();
 
@@ -116,7 +119,7 @@ public class ActorManager : IActorManager
 
     private readonly Dalamud.Plugin.Services.IPluginLog? _log;
 
-    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager, Dalamud.Plugin.Services.IPluginLog? log = null)
+    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager, IClientState clientState, Dalamud.Plugin.Services.IPluginLog? log = null)
     {
         _log = log;
         _objectTable = objectTable;
@@ -124,9 +127,23 @@ public class ActorManager : IActorManager
         _framework = framework;
         _eventBus = eventBus;
         _targetManager = targetManager;
+        _clientState = clientState;
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
+    }
+
+    public bool IsAvailable(IActor actor)
+    {
+        // Logout can destroy bodies after Update but before Draw. Never read
+        // the old address to discover its slot: resolve the recorded slot first.
+        // Normal GPose exit stays logged in, so final capture/restoration works.
+        if (!_framework.IsInFrameworkUpdateThread || !_clientState.IsLoggedIn ||
+            !_nativeBindings.TryGetValue(actor, out var binding))
+            return false;
+        var current = _objectTable[binding.Index];
+        return current is ICharacter && current.Address == actor.Address &&
+            current.GameObjectId == binding.ObjectId;
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
@@ -326,6 +343,7 @@ public class ActorManager : IActorManager
         // GPose object appeared or disappeared invalidates all of those references.
         var existingByAddress = _actors.ToDictionary(actor => actor.Address);
         var refreshed = new List<IActor>();
+        _nativeBindings.Clear();
         _lastActorIdentities.Clear();
 
         foreach (var gameObject in GetGPoseCharacters())
@@ -352,6 +370,7 @@ public class ActorManager : IActorManager
             }
 
             refreshed.Add(actor);
+            _nativeBindings[actor] = (gameObject.ObjectIndex, gameObject.GameObjectId);
             _lastActorIdentities.Add((gameObject.Address, id));
         }
 
@@ -402,6 +421,7 @@ public class ActorManager : IActorManager
             }
 
             refreshed.Add(actor);
+            _nativeBindings[actor] = (index, gameObject.GameObjectId);
             _lastActorIdentities.Add((gameObject.Address, id));
         }
 
@@ -500,6 +520,7 @@ public class ActorManager : IActorManager
     private void ClearActors()
     {
         RestoreAdoptedSeats();
+        _nativeBindings.Clear();
         _adopted.Clear();
         foreach (var actor in _actors)
         {

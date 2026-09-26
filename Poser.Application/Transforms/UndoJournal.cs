@@ -8,58 +8,47 @@ public interface IUndoRunner
 {
     GestureResult Undo();
     GestureResult Redo();
+    GestureResult Replay(JournalStep step, bool before) =>
+        GestureResult.Fail("Deferred history replay is not supported by this runner.");
     GestureResult? RecoverPending() => null;
-    GestureResult CompleteSnapshotRestore(HistoryEntry entry, bool before, Action commit)
-    {
-        commit();
-        return GestureResult.Ok();
-    }
 }
 
 /// <summary>
-/// Undo and redo for every surface. The journal decides HOW an entry comes
-/// back: an entry whose actor keys still match runs its delta through the
-/// runner; an entry whose key moved restores the actors' snapshots
-/// instead, silently, with one notice. A redo that depends on a file asks
-/// for the file first.
+/// Undo and redo through each entry's recorded inverse. Explicit multi-frame
+/// restoration waits for completion before moving history; file redo checks
+/// its required asset. Animation changes never select an implicit recovery mode.
 /// </summary>
 public sealed class UndoJournal
 {
-    public const string RestoredFromSnapshot =
-        "Undo restored the pose from a snapshot: the actor changed since.";
-    public const string RedoneFromSnapshot =
-        "Redo restored the pose from a snapshot: the actor changed since.";
     public const string AssetGone = "Cannot redo: the file is no longer there.";
-    public const string ActorGone = "Cannot undo: the actor is gone.";
     public const string RestoreFailed = "The pose could not be restored.";
     public const string Dropped = "The step was dropped: the history changed while restoring.";
 
     private readonly TransformHistory _history;
     private readonly IUndoRunner _runner;
-    private readonly IActorStateKeySource _keys;
-    private readonly Lazy<IPoseSnapshotPort> _snapshots;
     private readonly Func<string, bool> _assetExists;
     private readonly Action<string> _notice;
     private HistoryEntry? _restoring;
+    private CancellationTokenSource? _replayCancellation;
 
     public UndoJournal(
         TransformHistory history,
         IUndoRunner runner,
-        IActorStateKeySource keys,
-        Lazy<IPoseSnapshotPort> snapshots,
         Func<string, bool> assetExists,
         Action<string> notice)
     {
         _history = history;
         _runner = runner;
-        _keys = keys;
-        _snapshots = snapshots;
         _assetExists = assetExists;
         _notice = notice;
-        _history.Cleared += () => _restoring = null;
+        _history.Cleared += () =>
+        {
+            _restoring = null;
+            _replayCancellation?.Cancel();
+        };
     }
 
-    /// <summary>True while a snapshot restore is in flight; undo and redo
+    /// <summary>True while an explicit restore is in flight; undo and redo
     /// wait for it.</summary>
     public bool IsRestoring => _restoring != null;
 
@@ -77,17 +66,8 @@ public sealed class UndoJournal
         var entry = _history.PeekUndo();
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
-        if (entry.Context is { } context)
-        {
-            var validity = Validity(context);
-            if (validity == KeyState.Gone)
-                return Refuse(ActorGone);
-            if (validity == KeyState.Moved)
-                return RestoreSnapshots(
-                    entry, context.Before, true, RestoredFromSnapshot,
-                    () => _history.PeekUndo()?.Id == entry.Id,
-                    () => _history.CommitUndo(entry));
-        }
+        if (entry is JournalStep { CompleteReplay: not null } pendingStep)
+            return ReplayUntilComplete(pendingStep, true);
         return GiveUpOnRepeat(entry, _runner.Undo());
     }
 
@@ -98,7 +78,23 @@ public sealed class UndoJournal
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
     {
-        if (result.Success || entry is not JournalStep step || step.RetainOnFailure
+        if (result.Success)
+        {
+            _refused = null;
+            return result;
+        }
+        if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop }
+            && shouldDrop())
+        {
+            _refused = null;
+            _history.Drop(entry);
+            var reason = entry is SceneLifecyclePatch lifecycle
+                ? lifecycle.FailureDetail?.Invoke() ?? result.Detail
+                : result.Detail;
+            _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
+            return result;
+        }
+        if (entry is not JournalStep step || step.RetainOnFailure
             || step.HasDeferredGroupCapture?.Invoke() == true)
         {
             _refused = null;
@@ -124,42 +120,38 @@ public sealed class UndoJournal
         var entry = _history.PeekRedo();
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
-        if (entry.Context is { } context)
-        {
-            if (context.Asset is { } asset && !_assetExists(asset))
-                return Refuse(AssetGone);
-            var validity = Validity(context);
-            if (validity == KeyState.Gone)
-                return Refuse(ActorGone);
-            if (validity == KeyState.Moved)
-                return RestoreSnapshots(
-                    entry, context.After, false, RedoneFromSnapshot,
-                    () => _history.PeekRedo()?.Id == entry.Id,
-                    () => _history.CommitRedo(entry));
-        }
+        if (entry.RequiredAsset is { } asset && !_assetExists(asset))
+            return Refuse(AssetGone);
+        if (entry is JournalStep { CompleteReplay: not null } pendingStep)
+            return ReplayUntilComplete(pendingStep, false);
         return GiveUpOnRepeat(entry, _runner.Redo());
     }
 
-    private enum KeyState { Current, Moved, Gone }
-
-    /// <summary>Whether a step's keys are checked before its delta runs.
-    /// Off, every step is current and undoes by its delta; the redo asset
-    /// check stays. See <see cref="JournalContexts.StateKeys"/>.</summary>
-    public bool StateKeys { get; set; }
-
-    private KeyState Validity(StepContext context)
+    private GestureResult ReplayUntilComplete(JournalStep step, bool before)
     {
-        if (!StateKeys)
-            return KeyState.Current;
-        var state = KeyState.Current;
-        foreach (var key in context.Keys)
+        var started = _runner.Replay(step, before);
+        if (!started.Success) return GiveUpOnRepeat(step, started);
+        _restoring = step;
+        var cancellation = new CancellationTokenSource();
+        _replayCancellation = cancellation;
+        GestureResult? completed = null;
+        bool Current() => _restoring == step
+            && (before ? _history.PeekUndo() : _history.PeekRedo())?.Id == step.Id;
+        void Finish(GestureResult result)
         {
-            if (_keys.Current(key.Lineage) is not { } current)
-                return KeyState.Gone;
-            if (!key.Matches(current))
-                state = KeyState.Moved;
+            if (_restoring != step) { cancellation.Dispose(); return; }
+            bool current = Current();
+            _restoring = null;
+            _replayCancellation = null;
+            cancellation.Dispose();
+            if (!current) { completed = Refuse(Dropped); return; }
+            if (!result.Success) { completed = Refuse(result.Detail ?? RestoreFailed); return; }
+            if (before) _history.CommitUndo(step); else _history.CommitRedo(step);
+            completed = result;
         }
-        return state;
+        try { step.CompleteReplay!(before, Current, cancellation.Token, Finish); }
+        catch (Exception ex) { Finish(GestureResult.Fail(ex.Message)); }
+        return completed ?? GestureResult.Ok();
     }
 
     private GestureResult Refuse(string why)
@@ -168,79 +160,4 @@ public sealed class UndoJournal
         return GestureResult.Fail(why);
     }
 
-    /// <summary>Restores the snapshots one after another (a restore is an
-    /// import, and one import runs at a time), then commits the entry if
-    /// it is still where it was.</summary>
-    private GestureResult RestoreSnapshots(
-        HistoryEntry entry,
-        IReadOnlyList<ActorSnapshot> snapshots,
-        bool before,
-        string done,
-        Func<bool> stillOnTop,
-        Action commit)
-    {
-        if (snapshots.Count == 0)
-            return Refuse(RestoreFailed);
-        _restoring = entry;
-        var failure = RestoreFrom(0);
-        if (failure != null)
-        {
-            _restoring = null;
-            return Refuse(failure);
-        }
-        return GestureResult.Ok();
-
-        string? RestoreFrom(int index)
-        {
-            if (index >= snapshots.Count)
-            {
-                Finish(true);
-                return null;
-            }
-            bool started = _snapshots.Value.Restore(snapshots[index], ok =>
-            {
-                if (_restoring != entry)
-                    return;
-                if (!ok)
-                {
-                    Finish(false);
-                    return;
-                }
-                if (RestoreFrom(index + 1) is { } later)
-                {
-                    _restoring = null;
-                    _notice(later);
-                }
-            });
-            return started ? null : RestoreFailed;
-        }
-
-        void Finish(bool ok)
-        {
-            _restoring = null;
-            if (!ok)
-            {
-                _notice(RestoreFailed);
-                return;
-            }
-            if (stillOnTop())
-            {
-                var result = _runner.CompleteSnapshotRestore(entry, before, () =>
-                {
-                    if (stillOnTop())
-                    {
-                        commit();
-                        _notice(done);
-                    }
-                });
-                if (!result.Success)
-                    _notice(result.Detail ?? RestoreFailed);
-            }
-            else
-            {
-                _history.Drop(entry);
-                _notice(Dropped);
-            }
-        }
-    }
 }

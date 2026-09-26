@@ -1,6 +1,6 @@
 using Newtonsoft.Json.Linq;
 using Poser.Domain.Integration;
-using Poser.Game.Integration;
+using Poser.Documents.Appearance;
 
 namespace Poser.Game.Tests.Integration;
 

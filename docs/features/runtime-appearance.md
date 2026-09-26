@@ -32,6 +32,16 @@ Saved source profiles are read through the same active-ID/JSON API Brio uses;
 Poser-owned temporary profiles use their retained JSON. The source is not changed.
 Posed copies already carry the body shape in their captured transforms and do not
 apply the profile again. Lifecycle history retains the copied profile contents.
+History also captures a duplicate's Poser-owned collection redirects and meta
+through the existing spawn collection owner. It never treats an unknown temporary
+collection as owned; external takeover makes restoration refuse without displacement.
+An MCDF may temporarily replace that proven duplicate assignment. Its native owner
+keeps the inherited collection alive and reattaches it on cleanup only if the exact
+actor remains and no newer external assignment has taken over.
+MCDF export uses that same profile capture: retained Poser-owned JSON takes
+precedence over the external saved-profile query. Customize+ 6.x does not expose
+temporary profiles through that query; a null result is not proof that no
+temporary profile is applied. Export never reapplies a profile to read it.
 
 Glamourer access is actor-generation scoped: editable, Poser-held,
 foreign-held, or unavailable. A refused unkeyed read is probed read-only

@@ -1,12 +1,20 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
+using Poser.Game.Journal;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Services;
+
+using Poser.Domain.Scene;
 
 namespace Poser.Game.Tests.WorldObjects;
 
@@ -22,6 +30,100 @@ namespace Poser.Game.Tests.WorldObjects;
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
+    [Theory]
+    [InlineData("bg/tree.mdl", true)]
+    [InlineData("vfx/fire.avfx", true)]
+    [InlineData("bg/tree.mdl", false)]
+    [InlineData("bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb", false)]
+    public void Edits_replay_after_acquisition_and_release_restore_new_wrappers(string path, bool borrowed)
+    {
+        var world = new World();
+        var history = new TransformHistory();
+        var ids = new Dictionary<AdoptedWorldObject, TransformTargetId>();
+        TransformTargetId? Target(object instance)
+        {
+            var handle = (AdoptedWorldObject)instance;
+            if (!handle.IsValid) return null;
+            if (!ids.TryGetValue(handle, out var id))
+                ids[handle] = id = TransformTargetId.ForWorldObject(WorldObjectId.New());
+            return id;
+        }
+        // Exercise the real service, lifecycle owner and value journal. Scene
+        // refresh occurs synchronously during native release/adoption.
+        var lifecycle = new SceneLifecycleHistory(history, null!, null!, null!, null!, null!,
+            new WorldObjectServiceLifecycle(world.Service), worldObjectTarget: Target);
+        var values = new WorldObjectSession(new ValueJournal(history), lifecycle);
+        world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
+            history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid)));
+        var original = (AdoptedWorldObject)(borrowed
+            ? lifecycle.AdoptWorldObject(world.Port.Add(path, Placed, isVfx: path.EndsWith(".avfx")))!
+            : lifecycle.SpawnWorldObject(path, Placed, true)!);
+        var target = Target(original)!.Value;
+        original.Transform = Moved;
+        TransformTargetState State(Transform value) =>
+            new(target, new PoseTransform(value.Position, value.Rotation, value.Scale), new BonePose(), true);
+        history.Append(new TransformPatch("Move object", [State(Placed)], [State(Moved)]));
+        values.SetVisible(original, false);
+
+        void Step(bool undo)
+        {
+            var entry = (undo ? history.PeekUndo() : history.PeekRedo())!;
+            Assert.NotNull(entry);
+            switch (entry)
+            {
+                case SceneLifecyclePatch patch:
+                    Assert.True(undo ? patch.Undo() : patch.Redo());
+                    break;
+                case JournalStep patch:
+                    Assert.True(undo ? patch.Undo() : patch.Redo());
+                    break;
+                case TransformPatch patch:
+                    foreach (var state in undo ? patch.Before : patch.After)
+                    {
+                        var current = Assert.Single(ids, pair => pair.Value == state.Target && pair.Key.IsValid).Key;
+                        current.Transform = Transform.FromPose(state.Transform);
+                    }
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected history entry.");
+            }
+            if (undo) history.CommitUndo(entry);
+            else history.CommitRedo(entry);
+        }
+
+        for (int cycle = 0; cycle < 2; cycle++)
+        {
+            Step(true);
+            Assert.True(Assert.Single(world.Service.Adopted).Visible);
+            Step(true);
+            Assert.Equal(Placed, Assert.Single(world.Service.Adopted).Transform);
+            Step(true);
+            Assert.Empty(world.Service.Adopted);
+            Step(false);
+            Assert.NotSame(original, Assert.Single(world.Service.Adopted));
+            Step(false);
+            Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+            Step(false);
+            Assert.False(Assert.Single(world.Service.Adopted).Visible);
+        }
+
+        Assert.True(lifecycle.ReleaseWorldObject(Assert.Single(world.Service.Adopted)));
+        Step(true);
+        Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+        Assert.False(Assert.Single(world.Service.Adopted).Visible);
+        Step(true);
+        Assert.True(Assert.Single(world.Service.Adopted).Visible);
+        Step(true);
+        Assert.Equal(Placed, Assert.Single(world.Service.Adopted).Transform);
+        Step(false);
+        Step(false);
+        Step(false);
+        Assert.Empty(world.Service.Adopted);
+        Step(true);
+        Assert.Equal(Moved, Assert.Single(world.Service.Adopted).Transform);
+        Assert.False(Assert.Single(world.Service.Adopted).Visible);
+    }
+
     [Fact]
     public void Furniture_light_switch_preserves_peers_and_restores_through_history_and_respawn()
     {
@@ -816,7 +918,100 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(0.35f, world.Port.ColorOf(address).W);
         Assert.Equal(0, world.Port.VisibleWrites);
     }
-private sealed class World
+    [Fact]
+    public void Scenery_pause_resume_and_immediate_repause_keep_the_composed_placement()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
+        var obj = world.Service.Adopt(address)!;
+        obj.Transform = new Transform(new Vector3(10, 0, 0), Quaternion.Identity, Vector3.One);
+        world.Service.HoldPausedAnimations();
+        // Native animation advances in its original frame.
+        world.Port.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        world.Port.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
+
+        obj.AnimationPaused = true;
+        world.Port.Write(address, Transform.Identity);
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
+        obj.AnimationPaused = false;
+        obj.AnimationPaused = true; // No frame between resume and pause.
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
+        obj.AnimationPaused = false;
+        world.Port.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
+        world.Port.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(12, world.Port.PlacementOf(address).Position.X);
+        world.Service.Dispose();
+    }
+
+    [Fact]
+    public void Scenery_does_not_reinterpret_its_own_output_as_native_motion()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
+        var obj = world.Service.Adopt(address)!;
+        var placement = new Transform(new Vector3(10, 20, 30),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), Vector3.One);
+        obj.Transform = placement;
+        world.Service.HoldPausedAnimations();
+        world.Port.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        world.Port.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        var solved = world.Port.PlacementOf(address);
+
+        // Multiple camera/render callbacks need not contain a native animation update.
+        for (int i = 0; i < 4; i++)
+        {
+            world.Service.HoldPausedAnimations();
+            Assert.Equal(solved, world.Port.PlacementOf(address));
+        }
+
+        obj.AnimationPaused = true;
+        obj.AnimationPaused = false;
+        world.Service.HoldPausedAnimations(); // The native fields still contain our held placement.
+        world.Port.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(solved, world.Port.PlacementOf(address));
+        world.Port.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
+        world.Service.HoldPausedAnimations();
+        Assert.True(Vector3.Distance(solved.Position + Vector3.UnitY,
+            world.Port.PlacementOf(address).Position) < 0.0001f);
+        world.Service.Dispose();
+    }
+
+    [Fact]
+    public void Pause_waits_for_a_loaded_tail_and_drag_updates_the_frozen_placement()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
+        var obj = world.Service.Adopt(address)!;
+        world.Port.BgReady = false;
+        obj.AnimationPaused = true;
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(0, world.Port.TailReads);
+        world.Port.BgReady = true;
+        world.Port.TailValue = 17;
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(1, world.Port.TailReads);
+        world.Port.TailValue = 22;
+        obj.Transform = Moved;
+        world.Port.Write(address, Transform.Identity);
+        world.Service.HoldPausedAnimations();
+        Assert.Equal(Moved, world.Port.PlacementOf(address));
+        Assert.Equal(17, world.Port.HeldTail);
+        Assert.Equal(1, world.Port.TailReads);
+        world.Service.Dispose();
+    }
+
+    private sealed class World
     {
         public FakePort Port { get; } = new();
         public FakeEventBus Events { get; } = new();
@@ -937,13 +1132,16 @@ private sealed class World
         public bool? ReadBgNightState(nint address) => null;
         public bool WriteBgAnimationSpeed(nint address, float speed) =>
             true;
-        public byte? ReadBgTailByte(nint address, int offset) => null;
-        public void WriteBgTailByte(nint address, int offset, byte value) { }
-        public string DescribeBgAnimation(nint address) => string.Empty;
-        public bool TryReadBgTail(nint address, byte[] into) => false;
-        public void WriteBgTailHeld(nint address, byte[] values) { }
-        public ulong? ReadBgObjectFlags(nint address) => null;
-        public void WriteBgObjectFlags(nint address, ulong flags) { }
+        public int TailReads;
+        public byte TailValue;
+        public byte HeldTail;
+        public bool TryReadBgTail(nint address, byte[] into)
+        {
+            TailReads++;
+            into[0] = TailValue;
+            return true;
+        }
+        public void WriteBgTailHeld(nint address, byte[] values) => HeldTail = values[0];
         public void WriteBgNightState(nint address, bool night) => LastNightState = night;
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address)

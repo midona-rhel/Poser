@@ -1,4 +1,5 @@
 using Poser.Application.Lifecycle;
+using Poser.Documents.Mcdf;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -29,7 +30,7 @@ namespace Poser.Application.Integration;
 /// facade and the owner of the per-actor override store; this class mutates
 /// that store only through the session's internal seam.
 /// </summary>
-public sealed class McdfTransaction
+public sealed partial class McdfTransaction
 {
     /// <summary>Same bound the import apply phase uses; a redraw that has
     /// not completed within this window is a failure, never an unbounded
@@ -93,6 +94,8 @@ public sealed class McdfTransaction
     /// <summary>Only one MCDF import/export/teardown transaction runs at a
     /// time.</summary>
     public bool Busy => _task is { IsCompleted: false };
+
+    internal Task CurrentCompletion => _task ?? Task.CompletedTask;
 
     /// <summary>Cooperative cancellation of the running operation.</summary>
     public void Cancel() => _cancellation?.Cancel();
@@ -218,13 +221,14 @@ public sealed class McdfTransaction
         return operation;
     }
 
-    internal IntegrationResult BeginImport(ActorId actor, string path)
+    internal IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained = null)
     {
         if (AdmissionGate() is { } refused)
             return refused;
         if (_sessions.ActiveSessionGeneration is not { } session)
             return IntegrationResult.Fail(
                 "No GPose session is active; an MCDF import needs the exact session identity.");
+        var retainedDirectory = retained == null ? null : _directories[retained.OperationDirectory];
         var operation = Admit(actor, _files.GetFileName(path), McdfOperationKind.Import, session);
         operation.SourcePath = path;
         var cancellation = _cancellation!.Token;
@@ -234,7 +238,7 @@ public sealed class McdfTransaction
             McdfPhase.Reading, 0, 0, 0, 0, true, null);
         _owner.RaiseChanged();
         _task = Task.Run(
-            () => RunImport(operation, path, cancellation), CancellationToken.None);
+            () => RunImport(operation, path, cancellation, retained, retained == null ? null : retainedDirectory), CancellationToken.None);
         return IntegrationResult.Ok();
     }
 
@@ -294,7 +298,7 @@ public sealed class McdfTransaction
     // ── Import ───────────────────────────────────────────────────────────
 
     private async Task RunImport(
-        Operation operation, string path, CancellationToken cancellation)
+        Operation operation, string path, CancellationToken cancellation, McdfPackage? retained, McdfOperationDirectory? retainedDirectory)
     {
         var actor = operation.Target;
         string fileName = operation.FileName;
@@ -399,7 +403,9 @@ public sealed class McdfTransaction
                 _directories[operationDirectory.Path] = operationDirectory;
                 return true;
             });
-            var read = await _files.ReadPackage(path, Limits, operationDirectory, step =>
+            var read = retained != null
+                ? await _files.CopyPackage(retained, retainedDirectory!, operationDirectory, cancellation)
+                : await _files.ReadPackage(path, Limits, operationDirectory, step =>
             {
                 filesTotal = step.FilesTotal;
                 bytesTotal = step.BytesTotal;
@@ -506,7 +512,7 @@ public sealed class McdfTransaction
                     if (!assignment.Success || assignment.Value is not { } collectionState)
                         return assignment.Detail ?? "The Penumbra assignment could not be read.";
                     if (_owner.ForeignTemporaryCollectionDetail(
-                            _owner.OverridesFor(actor), collectionState) is { } foreign)
+                            actor, _owner.OverridesFor(actor), collectionState) is { } foreign)
                         return foreign;
                     var created = _port.CreateTemporaryCollection($"Poser MCDF {fileName}");
                     if (!created.Success)
@@ -593,6 +599,7 @@ public sealed class McdfTransaction
                 if (!_port.IsResolvable(actor))
                     return "The actor is no longer available.";
                 var current = _owner.OverridesFor(actor);
+                _packages[package.OperationDirectory] = new(Guid.NewGuid(), operation.Session, package);
                 bool replacedGlamourer = package.GlamourerData.Length > 0;
                 bool replacedBody = bodyJson != null;
                 _owner.MutateOverrides(actor, current with
@@ -679,7 +686,7 @@ public sealed class McdfTransaction
             var assignment = _port.GetCollectionAssignment(actor);
             if (!assignment.Success || assignment.Value is not { } collectionState)
                 return (null, assignment.Detail ?? "The Penumbra assignment could not be read.");
-            if (_owner.ForeignTemporaryCollectionDetail(current, collectionState) is { } foreign)
+            if (_owner.ForeignTemporaryCollectionDetail(actor, current, collectionState) is { } foreign)
                 return (null, foreign);
         }
 
@@ -1363,9 +1370,13 @@ public sealed class McdfTransaction
         if (!_directories.TryGetValue(path, out var ownership))
             return IntegrationPortResult.Fail(
                 "The extraction directory ownership proof is unavailable; cleanup was refused.");
+        if (_historyDirectories.Contains(path)) return IntegrationPortResult.Ok();
         var result = _files.DeleteOperationDirectory(ownership);
         if (result.Success)
+        {
             _directories.Remove(path);
+            _packages.Remove(path);
+        }
         return result;
     }
 
@@ -1429,39 +1440,14 @@ public sealed class McdfTransaction
             return IntegrationResult.Fail(
                 modRoot.Detail ?? "Penumbra's mod directory could not be read.");
 
-        string customizeData = string.Empty;
-        if (_port.CustomizePlus.Available)
-        {
-            var probe = _port.ProbeBodyProfile(actor);
-            if (!probe.Success || probe.Value is not { } bodyState)
-                return IntegrationResult.Fail(
-                    probe.Detail ?? "The Customize+ state could not be read.");
-            if (bodyState.ActiveProfile is { } active)
-            {
-                if (bodyState.ActiveIsSaved)
-                {
-                    var json = _port.GetBodyProfileJson(active);
-                    if (!json.Success || json.Value is not { } profileJson)
-                        return IntegrationResult.Fail(
-                            json.Detail ?? "The active profile could not be read.");
-                    customizeData = Convert.ToBase64String(
-                        System.Text.Encoding.UTF8.GetBytes(profileJson));
-                }
-                else if (active == current.TemporaryBodyProfile
-                    && current.BodyProfileJson is { } retained)
-                {
-                    // Poser's own temporary profile exports from the
-                    // session's retained JSON.
-                    customizeData = Convert.ToBase64String(
-                        System.Text.Encoding.UTF8.GetBytes(retained));
-                }
-                else
-                {
-                    return IntegrationResult.Fail(
-                        "This actor's body scale is a temporary profile from another plugin that cannot be read back; exporting would silently lose it.");
-                }
-            }
-        }
+        // The C+ active-profile query can omit temporary profiles. Copy,
+        // history and export must use the same retained-profile precedence.
+        var body = _owner.CaptureBodyProfile(actor);
+        if (!body.Success)
+            return IntegrationResult.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
+        string customizeData = body.Value is { } profileJson
+            ? Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(profileJson))
+            : string.Empty;
 
         // Every vendor read above is frozen synchronously on the framework
         // thread. Inspection, hashing, semantic filtering, and package
