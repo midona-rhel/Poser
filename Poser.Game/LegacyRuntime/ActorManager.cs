@@ -493,14 +493,15 @@ public class ActorManager : IActorManager
             var reference = _objectTable.CreateObjectReference(actor.Address);
             if (reference?.GameObjectId == local.GameObjectId)
                 return true;
-            // GPose can assign a different object id to the player's copy.
-            // Use the player identity (name AND home world), never slot order
-            // or a display name alone, to recognize that copy.
+            // GPose can replace both object id and home world (0xFFFF).
+            // In that case require the native primary slot AND exact player
+            // name; a different slot with the same name is not sufficient.
             return reference is IPlayerCharacter player
-                && player.HomeWorld.RowId != 0
-                && player.HomeWorld.RowId == local.HomeWorld.RowId
                 && !string.IsNullOrEmpty(local.Name.TextValue)
-                && string.Equals(player.Name.TextValue, local.Name.TextValue, StringComparison.Ordinal);
+                && string.Equals(player.Name.TextValue, local.Name.TextValue, StringComparison.Ordinal)
+                && ((player.HomeWorld.RowId != 0 && player.HomeWorld.RowId == local.HomeWorld.RowId)
+                    || (_gPoseService.IsGPosing && player.ObjectIndex == GPoseStart
+                        && player.HomeWorld.RowId == ushort.MaxValue));
         }
         catch
         {

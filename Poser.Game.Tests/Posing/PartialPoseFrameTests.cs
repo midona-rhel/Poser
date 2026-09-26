@@ -102,8 +102,8 @@ public sealed class PartialPoseFrameTests
     private static Transform Reparent(Transform raw, PartialPoseFrame frame)
     {
         var local = Vector3.Transform(raw.Position - frame.Before.Position,
-            Quaternion.Inverse(frame.Before.Rotation)) / frame.Before.Scale;
-        return new Transform(frame.After.Position + Vector3.Transform(local * frame.After.Scale, frame.After.Rotation),
+            Quaternion.Inverse(frame.Before.Rotation));
+        return new Transform(frame.After.Position + Vector3.Transform(local, frame.After.Rotation),
             Quaternion.Normalize(frame.After.Rotation * Quaternion.Inverse(frame.Before.Rotation) * raw.Rotation),
             raw.Scale / frame.Before.Scale * frame.After.Scale);
     }
