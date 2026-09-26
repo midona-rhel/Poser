@@ -115,6 +115,31 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     [Fact]
+    public void Orbit_assignment_and_activation_mark_a_snap_but_parked_edits_do_not_touch_native_state()
+    {
+        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
+        using var service = setup.Service;
+        setup.GPose.IsGPosing = true;
+        setup.Bus.Publish(new GPoseStateChangedEvent(true));
+        var native = (NativeCamera*)_nativeBlock;
+        // Native ABI: the orbit-position builder consumes this byte once.
+        var skipCorrection = (byte*)_nativeBlock + 0x245;
+        service.LiveCamera!.Angle = new Vector2(-2.7f, 0.2f);
+        Assert.Equal(new Vector2(-2.7f, 0.2f), native->Angle);
+        Assert.Equal(1, *skipCorrection);
+
+        *skipCorrection = 0; // Native update has consumed the snap.
+        var parked = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game, makeLive: false)!;
+        parked.Angle = new Vector2(0.8f, -0.1f);
+        Assert.Equal(new Vector2(-2.7f, 0.2f), native->Angle);
+        Assert.Equal(0, *skipCorrection);
+        service.SetLive(parked);
+        Assert.Equal(parked.Angle, native->Angle);
+        Assert.Equal(new Vector2(0.8f, -0.1f), native->Angle);
+        Assert.Equal(1, *skipCorrection);
+    }
+
+    [Fact]
     public void Property_reset_is_one_undoable_edit_and_respects_lock()
     {
         var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);

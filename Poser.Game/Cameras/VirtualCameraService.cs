@@ -35,30 +35,6 @@ namespace Poser.Game.Cameras;
 /// </summary>
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
-#if DEBUG
-    private int _orbitTraceFrames;
-    public List<object> OrbitTrace { get; } = new();
-    internal void TraceOrbitWrite(NativeCamera* camera)
-    {
-        OrbitTrace.Clear();
-        _orbitTraceFrames = 12;
-        TraceOrbit("write", camera);
-    }
-    private void TraceOrbit(string phase, NativeCamera* camera)
-    {
-        OrbitTrace.Add(new
-        {
-            phase, active = camera == Native, Angle = camera->Angle,
-            camera->Camera.InputDeltaH, camera->Camera.InputDeltaHAdjusted,
-            camera->Camera.InputDeltaV, camera->Camera.InputDeltaVAdjusted,
-            camera->Camera.ShouldResetAngles,
-            LastPosition = (Vector3)camera->Camera.LastPosition,
-            LastLookAtVector = (Vector3)camera->Camera.LastLookAtVector,
-            ScenePosition = (Vector3)camera->Camera.SceneCamera.Position,
-            LookAt = (Vector3)camera->Camera.SceneCamera.LookAtVector,
-        });
-    }
-#endif
     // One home for the fly speed's numbers: the wheel's curve owns them and
     // the camera's default is that curve's unit. These are the FLOOR the
     // configured defaults fall back to, not the defaults themselves — see
@@ -671,28 +647,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// moves with it so the view direction survives.</summary>
     private nint CameraUpdateDetour(NativeCamera* camera)
     {
-#if DEBUG
-        var trace = _orbitTraceFrames > 0;
-        if (trace) TraceOrbit("before", camera);
-#endif
         var result = _cameraUpdateHook!.Original(camera);
-#if DEBUG
-        if (trace)
-        {
-            TraceOrbit("after", camera);
-            _orbitTraceFrames--;
-        }
-#endif
         try
         {
             if (!_gPose.IsGPosing || _live is not { } live)
                 return result;
 
-            // UI-written orbit values, re-asserted AFTER the game's update:
-            // a draw-time write lands after this frame's update already ran,
-            // where the update's own normalization can eat it before it ever
-            // renders. Orbit angles use the direct native write instead. Each write applies
-            // once — the mouse orbit is never fought.
+            // Pan, roll and zoom retain their one post-update reassertion.
+            // Angle writes use the native one-update discontinuity flag;
+            // reasserting yaw here would desynchronize it from the rendered view.
             if (live.PendingPan is { } pendingPan)
             {
                 camera->Pan = pendingPan;
@@ -1051,9 +1014,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private float* CalculateLookPositionDetour(
         NativeCamera* camera, float* lookAt, float* position, byte mode)
     {
-#if DEBUG
-        if (_orbitTraceFrames > 0) TraceOrbit("look", camera);
-#endif
         try
         {
             if (_gPose.IsGPosing &&
