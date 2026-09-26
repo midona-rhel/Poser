@@ -338,7 +338,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return GestureResult.Fail("A group member transform would exceed the supported numeric range.");
         }
 
-        for (var index = 0; index < active.Before.Count; index++)
+        foreach (var index in Enumerable.Range(0, active.Before.Count)
+            .OrderBy(i => _runtime.DependencyDepth(active.Before[i].Target)))
         {
             TransformPortResult result;
             try

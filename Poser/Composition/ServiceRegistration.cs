@@ -162,7 +162,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IPosingService>(
             sp => sp.GetRequiredService<PosingService>());
         services.AddSingleton<ISkeletonService, SkeletonService>();
-        services.AddSingleton<IIKService, IKService>();
+        services.AddSingleton<IKService>();
+        services.AddSingleton<IIKService>(sp => sp.GetRequiredService<IKService>());
         services.AddSingleton<BonePosingService>();
         services.AddSingleton<IBonePosingService>(
             sp => sp.GetRequiredService<BonePosingService>());
@@ -187,7 +188,14 @@ internal static class ServiceRegistration
     private static IServiceCollection AddTransformFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<ITransformRuntimePort, TransformRuntimePort>();
+        services.AddSingleton<TransformRuntimePort>();
+        services.AddSingleton<IParentingRuntime, ParentingRuntime>();
+        services.AddSingleton<TransformParenting>();
+        services.AddSingleton<ITransformParenting>(sp => sp.GetRequiredService<TransformParenting>());
+        services.AddSingleton<ITransformRuntimePort>(sp => new ParentedTransformPort(
+            sp.GetRequiredService<TransformRuntimePort>(), sp.GetRequiredService<TransformParenting>()));
+        services.AddSingleton<ParentingFrameRuntime>();
+        services.AddTransient<UI.ParentingSection>();
         // The depth is a live setting read per recorded edit, so the history
         // takes the config as a delegate rather than a captured number.
         services.AddSingleton(sp =>

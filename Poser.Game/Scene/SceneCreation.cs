@@ -34,11 +34,13 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IOverlayNodeService _overlays;
     private readonly Application.Integration.ActorIntegrationSession _integration;
     private readonly IPluginLog _log;
+    private readonly Application.Transforms.TransformParenting _parenting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
-        Application.Integration.ActorIntegrationSession integration, IPluginLog log)
+        Application.Integration.ActorIntegrationSession integration, IPluginLog log,
+        Application.Transforms.TransformParenting parenting)
     {
         _framework = framework;
         _sessions = sessions;
@@ -54,6 +56,7 @@ public sealed class SceneCreation : ISceneCreation
         _overlays = overlays;
         _integration = integration;
         _log = log;
+        _parenting = parenting;
         _handles = new(() => sessions.ActiveSessionGeneration);
     }
 
@@ -179,7 +182,10 @@ public sealed class SceneCreation : ISceneCreation
                 && world.Path.Contains('/') => _lifecycle.CloneWorldObject(world),
             _ => null,
         };
-        return Track(source.Kind, copy);
+        var result = Track(source.Kind, copy);
+        if (result.Handle is { } handle && Resolve(handle) is { } target && !_parenting.Copy(source, target))
+            _log.Warning("The duplicated entity could not inherit its source's parent.");
+        return result;
     }
 
     private IActor? DuplicateActor(IActor source, bool withPose)

@@ -49,6 +49,8 @@ public partial class PoseInspectorPane
     private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
+    private readonly ParentingSection _parentingSection;
+    private bool _openParenting = true;
 
     public Func<int, Vector2, bool>? DrawMapInline;
 
@@ -159,8 +161,14 @@ public partial class PoseInspectorPane
         new("ik-bone-target");
     private IReadOnlyList<global::Poser.UI.BoneChoice> _ikBoneChoices =
         Array.Empty<global::Poser.UI.BoneChoice>();
+    private Func<global::Poser.Domain.Scene.ActorDescriptor,
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? _buildBoneChoices;
     public Func<global::Poser.Domain.Scene.ActorDescriptor,
-        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices;
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices
+    {
+        get => _buildBoneChoices;
+        set { _buildBoneChoices = value; _parentingSection.BuildBoneChoices = value; }
+    }
 
     private static readonly string[] ArmJointLabels =
         ["Shoulder", "Elbow", "Hand"];
@@ -199,8 +207,10 @@ public partial class PoseInspectorPane
         SkeletonOverlayPresentation overlayPresentation,
         UserNotices notices,
         global::Poser.Application.Scene.SceneGroups groups,
-        GroupTransformCoordinator groupCoordinator)
+        GroupTransformCoordinator groupCoordinator,
+        ParentingSection parentingSection)
     {
+        _parentingSection = parentingSection;
         _configuration = configuration;
         _groups = groups;
         _groupCoordinator = groupCoordinator;
@@ -697,6 +707,10 @@ public partial class PoseInspectorPane
                 next => _openTranslation = next,
                 DrawTransform,
                 divider: false);
+
+        if (_primary is { } parentable && _parentingSection.Supports(parentable))
+            stack.Section("parenting", "Parenting", _openParenting, next => _openParenting = next,
+                form => _parentingSection.Draw(form, parentable));
 
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {

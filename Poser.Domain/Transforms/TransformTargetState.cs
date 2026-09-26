@@ -19,6 +19,7 @@ public sealed record TransformTargetState(
     BonePose Pose,
     bool HasOverride)
 {
+    public TransformParent? Parent { get; init; }
     /// <summary>
     /// The frozen animated/reference model rotation beneath the authored
     /// layers, captured with the state. Counterpart-aware mirroring rebases

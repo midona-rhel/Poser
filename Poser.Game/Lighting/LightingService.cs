@@ -108,7 +108,6 @@ public sealed unsafe class LightingService : ILightingService
     /// on every frame.</summary>
     private bool _worldLightsSeeded;
 
-    private readonly HashSet<Skeleton> _attachRefreshed = new();
 
     private static readonly TimeSpan GPosePollInterval = TimeSpan.FromSeconds(1);
     private DateTime _nextGPosePollUtc = DateTime.MinValue;
@@ -1103,47 +1102,6 @@ public sealed unsafe class LightingService : ILightingService
 
     #endregion
 
-    #region Bone attachment
-
-    /// <summary>Soft attach, Ktisis' model: the bone drives the light's world
-    /// position and rotation every frame, scale is left to the user, and
-    /// nothing about it is serialized.</summary>
-    private bool ApplyBoneAttachment(Light light)
-    {
-        var bone = light.AttachedBone;
-        if (bone == null)
-            return true;
-
-        var world = TryGetBoneWorldTransform(bone);
-        if (world == null)
-        {
-            light.AttachedBone = null;
-            _log.Debug(
-                $"LightingService: '{light.Name}' detached — its bone is gone");
-            return false;
-        }
-
-        var current = light.Transform;
-        light.Transform = new PoserTransform(
-            world.Value.Position, world.Value.Rotation, current.Scale);
-        return true;
-    }
-
-    private PoserTransform? TryGetBoneWorldTransform(IBone bone)
-    {
-        if (bone.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
-            return null;
-
-        // Update-phase refresh of the display cache only, and once per
-        // skeleton per tick however many lights hang off it.
-        if (_attachRefreshed.Add(skeleton))
-            skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-
-        return BoneWorld.Of(bone);
-    }
-
-    #endregion
-
     private void OnFrameworkUpdate(IFramework framework)
     {
         if (framework.IsFrameworkUnloading || _disposed)
@@ -1154,7 +1112,6 @@ public sealed unsafe class LightingService : ILightingService
         if (_lights.Count == 0)
             return;
 
-        _attachRefreshed.Clear();
         var detached = false;
 
         for (var i = _lights.Count - 1; i >= 0; i--)
@@ -1176,8 +1133,6 @@ public sealed unsafe class LightingService : ILightingService
             if (!light.IsValid)
                 continue;
 
-            if (light.AttachedBone != null && !ApplyBoneAttachment(light))
-                detached = true;
 
             // A light switched away from spot or area cannot project, so the
             // texture goes with the switch rather than lingering unused.

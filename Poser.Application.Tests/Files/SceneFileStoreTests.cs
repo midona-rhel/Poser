@@ -13,6 +13,26 @@ namespace Poser.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {
+    [Theory]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Talk)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Balloon)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Status)]
+    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Collider)]
+    public void Only_collider_overlays_can_be_transform_parent_endpoints(Poser.Domain.Presentation.OverlayNodeKind kind)
+    {
+        var scene = ValidScene();
+        var overlay = new SceneOverlay { Key = Guid.NewGuid(), Node = new() { Kind = kind, Collider = new() } };
+        scene.Overlays = [overlay];
+        var actorRef = new SceneStructureRef { Kind = "actor", Key = scene.Actors[0].Key };
+        var overlayRef = new SceneStructureRef { Kind = "overlay", Key = overlay.Key };
+        foreach (bool overlayIsChild in new[] { false, true })
+        {
+            scene.Parents = [new() { Child = overlayIsChild ? overlayRef : actorRef,
+                Target = overlayIsChild ? actorRef : overlayRef }];
+            Assert.Equal(kind == Poser.Domain.Presentation.OverlayNodeKind.Collider, SceneParenting.Validate(scene) == null);
+        }
+    }
+
     [Fact]
     public void Collider_group_saves_and_restores_members_transforms_and_flags()
     {
@@ -40,12 +60,17 @@ public sealed class SceneFileStoreTests
             group.Transform.Members.Add(new() { Member = reference, Initial = pose, Expected = pose });
         }
         scene.Groups = [group];
+        scene.Parents = [new() { Child = group.Members[1], Target = group.Members[0],
+            Offset = new(new(1, 2, 3), Quaternion.CreateFromAxisAngle(Vector3.UnitX, .4f), new(2, 3, 4)) }];
         var write = SceneFileStore.Default.Write(scene, fixture.Path);
         Assert.True(write.Succeeded, write.Failure?.Detail);
         var read = SceneFileStore.Default.Read(fixture.Path);
         Assert.True(read.Succeeded, read.Failure?.Detail);
         var restored = Assert.Single(read.Scene!.Groups!);
         Assert.Equal(group.Name, restored.Name);
+        var savedParent = Assert.Single(read.Scene.Parents!);
+        Assert.Equal(scene.Parents[0].Target.Key, savedParent.Target.Key);
+        Assert.Equal(scene.Parents[0].Offset, savedParent.Offset);
         for (int i = 0; i < 2; i++)
         {
             Assert.Equal(scene.Overlays[i].Node, read.Scene.Overlays![i].Node);

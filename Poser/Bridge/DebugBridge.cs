@@ -29,7 +29,7 @@ namespace Poser.Bridge;
 /// server in tools/ wraps it). Every game call is marshalled onto the
 /// framework thread; every answer is JSON. Not a feature: a test rig.
 /// </summary>
-public sealed class DebugBridge : IDisposable
+public sealed partial class DebugBridge : IDisposable
 {
     public const int Port = 47999;
 
@@ -107,9 +107,14 @@ public sealed class DebugBridge : IDisposable
         Application.Posing.IPoseCommands poseCommands,
         Application.Integration.ICharacterFiles characterFiles, IObjectTable objects,
         IVirtualCameraService cameras, Application.Presentation.ICameraControl cameraControl,
-        Application.Viewport.ICameraProjection cameraProjection)
+        Application.Viewport.ICameraProjection cameraProjection,
+        Application.Transforms.TransformParenting parenting,
+        Application.Transforms.IParentingRuntime parentingRuntime,
+        SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders)
     {
         _configuration = configuration;
+        _parenting = parenting; _parentingRuntime = parentingRuntime;
+        _sceneSession = sceneSession; _bodyColliders = bodyColliders;
         _textures = textures;
         _readback = readback;
         _scenes = scenes;
@@ -258,6 +263,8 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
+                        "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
@@ -287,6 +294,8 @@ public sealed class DebugBridge : IDisposable
                 return Task.FromResult(TailLog(query));
             case "/screenshot":
                 return Screenshot();
+            case "/bodycolliders":
+                return CreateBodyColliders(query);
             case "/peek":
                 return Task.FromResult(Peek(query));
             case "/poke":
@@ -328,6 +337,7 @@ public sealed class DebugBridge : IDisposable
 
     private string RouteOnFramework(string path, Dictionary<string, string> query)
     {
+        if (path == "/parenting") return ParentingProbe(query);
         switch (path)
         {
             case "/uiinput":

@@ -7,6 +7,8 @@ namespace Poser.Application.Transforms;
 
 public interface ITransformRuntimePort
 {
+    /// <summary>Parents are written before children in one multi-entity edit.</summary>
+    int DependencyDepth(TransformTargetId target) => 0;
     TransformPortResult Capture(TransformTargetId target);
 
     /// <summary>

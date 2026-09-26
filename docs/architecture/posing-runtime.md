@@ -91,8 +91,11 @@ source actor.
 ## Native ordering
 
 The Game scene-frame owner runs native scene update, scenery animation anchors,
-then camera view replacement, in that order. If the render hook is unavailable,
-that same owner pumps anchors from the framework callback; no camera or UI
+transform parenting, then camera view replacement, in that order. Parenting
+also refreshes collider placement before the existing IK collision solve reads
+its shapes. It reads the current posed skeleton, not inspector-driven caches.
+If the render hook is unavailable,
+that same owner pumps anchors/parenting from the framework callback; no camera or UI
 component owns a second fallback. Scenery anchors explicitly watch, anchor,
 pause or await reanchoring; resuming adopts the frozen placement before the
 next native animation update. Repeated camera phases must not reinterpret the

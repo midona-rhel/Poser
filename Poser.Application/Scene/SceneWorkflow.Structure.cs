@@ -20,7 +20,7 @@ public sealed partial class SceneWorkflow
     }
 
     private static bool HasStructure(SceneFile scene) =>
-        scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 };
+        scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 } || scene.Parents is { Count: > 0 };
 
     private async Task<string?> WaitForStructure(Operation operation, SceneFile scene,
         IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, CancellationToken cancellation)
@@ -28,7 +28,8 @@ public sealed partial class SceneWorkflow
         if (!HasStructure(scene)) return null;
         if (_structure == null) return "Scene structure restoration is unavailable.";
         var references = (scene.Groups ?? []).SelectMany(group => group.Members)
-            .Concat(scene.RootOrder ?? []).Select(reference => (reference.Kind, reference.Key))
+            .Concat(scene.RootOrder ?? []).Concat((scene.Parents ?? []).SelectMany(p => new[] { p.Child, p.Target }))
+            .Select(reference => (reference.Kind, reference.Key))
             .Distinct().Where(tokens.ContainsKey).ToArray();
         var deadline = System.Diagnostics.Stopwatch.StartNew();
         while (true)
@@ -53,6 +54,12 @@ public sealed partial class SceneWorkflow
         if (!HasStructure(scene)) return;
         SelectionId? Resolve(SceneStructureRef reference)
         {
+            if (reference.Kind == "companion")
+            {
+                var owner = Resolve(new() { Kind = "actor", Key = reference.Key });
+                return owner?.Actor is { } actor && _parenting?.ResolveCompanion(actor) is { } companion
+                    ? SelectionId.ForActor(companion) : null;
+            }
             if (!tokens.TryGetValue((reference.Kind, reference.Key), out var token)) return null;
             // Recheck at commit: a binding may have disappeared after the readiness wait.
             return _runtime.ResolveSceneEntity(token)
@@ -86,5 +93,21 @@ public sealed partial class SceneWorkflow
         var imported = _structure!.Import(entries, order);
         operation.ImportedGroups.AddRange(imported);
         operation.HistoryGroups = entries.Zip(imported).ToDictionary(pair => pair.First.Key, pair => pair.Second);
+        foreach (var link in scene.Parents ?? [])
+        {
+            // Category filters and recoverable spawn failures leave no token.
+            // Keep admitted entities at their saved placement; a token whose
+            // live binding disappeared still fails in Resolve above.
+            if (Resolve(link.Child) is not { } child || Resolve(link.Target) is not { } target)
+                continue;
+            if (_parenting == null) throw new InvalidOperationException("Transform parenting is unavailable.");
+            if (link.BoneName is { } name)
+                target = target.Actor is { } actor
+                    ? _parenting.ResolveBone(actor, link.Slot, name, link.Partial)
+                        ?? throw new InvalidOperationException($"Parent bone '{name}' is unavailable.")
+                    : throw new InvalidOperationException("A bone parent must belong to an actor.");
+            if (!_parenting.Import(child, new(target, link.Offset)))
+                throw new InvalidOperationException("A transform parent could not be restored.");
+        }
     }
 }

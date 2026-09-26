@@ -229,6 +229,8 @@ public static class SceneFileValidation
 
         if (SceneGroupTransformCodec.Validate(scene) is { } groupFailure)
             return Fail(SceneFileValidationFailureKind.Relationship, groupFailure);
+        if (SceneParenting.Validate(scene) is { } parentingFailure)
+            return Fail(SceneFileValidationFailureKind.Relationship, parentingFailure);
         if (scene.Groups is { } groups)
             foreach (var group in groups)
             {

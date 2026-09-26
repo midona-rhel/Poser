@@ -6,7 +6,7 @@ namespace Poser.Game.Posing;
 internal static class ActorBodyColliderBuilder
 {
     internal sealed record Joint(Vector3 Position, string? Parent);
-    internal sealed record Fitted(string Name, IkCollider Collider);
+    internal sealed record Fitted(string Name, IkCollider Collider, string BoneName);
     private sealed record Span(string Name, string Start, string End, bool FitEnds = false, bool Sphere = false);
 
     private static List<Span> BodySpans(IReadOnlyDictionary<string, Joint> joints)
@@ -24,7 +24,9 @@ internal static class ActorBodyColliderBuilder
                 new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
                 new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
                 new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
-                new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
+                // The knee is a separate joint; the calf drives the shin. Use
+                // its span for both surface fitting and the generated parent.
+                new($"{label} lower leg", $"j_asi_c_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
         }
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
             (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
@@ -118,7 +120,7 @@ internal static class ActorBodyColliderBuilder
                 }
                 if (sphereRadius >= .0001f)
                     fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Sphere,
-                        Transform = new(sphereCenter, Quaternion.Identity, new(sphereRadius * 2)) }));
+                        Transform = new(sphereCenter, Quaternion.Identity, new(sphereRadius * 2)) }, span.Start));
                 continue;
             }
             var axial = points.Select(p => Vector3.Dot(p - start, axis)).Order().ToArray();
@@ -164,7 +166,7 @@ internal static class ActorBodyColliderBuilder
             var rotation = axis.Y < -.999999f
                 ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI) : Quaternion.Normalize(new Quaternion(cross, 1 + axis.Y));
             fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Capsule,
-                Transform = new(center, rotation, new(radius * 2, length, radius * 2)) }));
+                Transform = new(center, rotation, new(radius * 2, length, radius * 2)) }, span.Start));
         }
         // Joint spheres add coverage around bent knees/elbows. Derive their
         // size from the neighbouring fitted limbs.
@@ -175,7 +177,7 @@ internal static class ActorBodyColliderBuilder
             if (radii.Length == 0) return;
             float radius = radii.Average();
             fitted.Add(new(name, new IkCollider { Shape = IkColliderShape.Sphere,
-                Transform = new(joint.Position, Quaternion.Identity, new(radius * 2)) }));
+                Transform = new(joint.Position, Quaternion.Identity, new(radius * 2)) }, bone));
         }
         foreach (var side in new[] { "l", "r" })
         {

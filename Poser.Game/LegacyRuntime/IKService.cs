@@ -22,6 +22,7 @@ namespace Poser.Game;
 /// </summary>
 public unsafe class IKService : IIKService
 {
+    internal event Action? BeforeCollisions;
     private readonly IPluginLog _log;
     private readonly Overlays.OverlayNodeService _overlays;
 
@@ -205,6 +206,8 @@ public unsafe class IKService : IIKService
         bool collisionSolved = false;
         if (request.Config.Collisions && endpoint.Skeleton is Skeleton collisionSkeleton)
         {
+            try { BeforeCollisions?.Invoke(); }
+            catch (Exception error) { _log.Error(error, "Could not update collider parents before IK"); }
             var colliders = _overlays.Nodes.Where(n => n.IsValid && n.State.Collider is { Enabled: true })
                 .Select(n => ColliderGeometry.Cached(n.State.Collider!)).ToArray();
             var model = collisionSkeleton.GetModelMatrix();

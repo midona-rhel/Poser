@@ -18,6 +18,7 @@ public sealed unsafe class SceneFramePhaseService : IDisposable
     private delegate nint SceneUpdate(SceneCamera* camera);
     internal delegate void CameraPhase(SceneCamera* camera);
     internal event CameraPhase? CameraUpdate;
+    internal event Action? TransformUpdate;
     private readonly Hook<SceneUpdate>? _hook;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
@@ -77,13 +78,20 @@ public sealed unsafe class SceneFramePhaseService : IDisposable
     {
         if (_disposed) return;
         Anchor();
+        UpdateTransforms();
         try { CameraUpdate?.Invoke(camera); }
         catch (Exception error) { _log.Error(error, "Scene camera phase failed"); }
     }
 
     private void OnFrameworkUpdate(IFramework _)
     {
-        if (!_disposed && !RenderHookAvailable) Anchor();
+        if (!_disposed && !RenderHookAvailable) { Anchor(); UpdateTransforms(); }
+    }
+
+    private void UpdateTransforms()
+    {
+        try { TransformUpdate?.Invoke(); }
+        catch (Exception error) { _log.Error(error, "Scene parenting phase failed"); }
     }
 
     private void Anchor()
@@ -99,5 +107,6 @@ public sealed unsafe class SceneFramePhaseService : IDisposable
         _framework.Update -= OnFrameworkUpdate;
         _hook?.Dispose();
         CameraUpdate = null;
+        TransformUpdate = null;
     }
 }

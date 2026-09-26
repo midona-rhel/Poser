@@ -55,6 +55,37 @@ public class ActorColliderMeshTests
     }
 
     [Theory]
+    [InlineData("l", "Left")]
+    [InlineData("r", "Right")]
+    public void LowerLegFitsAndFollowsCalfWhileKneeKeepsItsOwnJoint(string side, string label)
+    {
+        string knee = $"j_asi_b_{side}", calf = $"j_asi_c_{side}", ankle = $"j_asi_d_{side}";
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
+            [knee] = new(new(0, 1.2f, .1f), null),
+            [calf] = new(Vector3.UnitY, knee), [ankle] = new(Vector3.Zero, calf) };
+        var vertices = Enumerable.Range(0, 100)
+            .Select(i => new Vector3(.2f * MathF.Cos(i), i / 100f, .2f * MathF.Sin(i))).ToArray();
+        var fitted = ActorBodyColliderBuilder.Fit(joints, vertices, Enumerable.Range(0, vertices.Length).ToArray(),
+            Enumerable.Repeat<string?>(calf, vertices.Length).ToArray());
+        var shin = Assert.Single(fitted, p => p.Name == $"{label} lower leg");
+        Assert.Equal(calf, shin.BoneName);
+        Assert.Equal(new Vector3(0, .5f, 0), shin.Collider.Transform.Position);
+        Assert.InRange(shin.Collider.Transform.Scale.Y, 1.3999f, 1.4001f);
+        var kneeSphere = Assert.Single(fitted, p => p.Name == $"{label} knee");
+        Assert.Equal(knee, kneeSphere.BoneName);
+        Assert.Equal(joints[knee].Position, kneeSphere.Collider.Transform.Position);
+
+        // Changing the calf's rotation must swing the capsule around the calf,
+        // not leave it on the independently rotating knee frame.
+        var frame = new Poser.Domain.Transforms.PoseTransform(joints[shin.BoneName].Position, Quaternion.Identity, Vector3.One);
+        var offset = Poser.Domain.Transforms.TransformParent.Local(shin.Collider.Transform, frame);
+        var rotated = frame with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2) };
+        var followed = Poser.Domain.Transforms.TransformParent.World(offset, rotated);
+        Assert.True(Vector3.Distance(new Vector3(.5f, 1, 0), followed.Position) < .0001f);
+        Assert.True(Vector3.Distance(Vector3.UnitX, Vector3.Transform(Vector3.UnitY, followed.Rotation)) < .0001f);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void CapturesWeightedPoseAndEnabledShapeInBothModelVersions(bool v6)

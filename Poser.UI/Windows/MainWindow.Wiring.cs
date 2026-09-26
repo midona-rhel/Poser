@@ -29,6 +29,7 @@ public partial class MainWindow
     {
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
         _poseInspector.BuildBoneChoices = _sidebar.BuildBoneChoices;
+        _lightPane.BuildBoneChoices = _sidebar.BuildBoneChoices;
         _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
             _configuration.Config.UI.MapMirrorSelection;
