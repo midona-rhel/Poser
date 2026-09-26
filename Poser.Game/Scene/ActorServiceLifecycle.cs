@@ -455,7 +455,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         }
     }
 
-    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent)
+    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent, int delayTicks = 1)
     {
         if (attempts <= 0)
         {
@@ -478,7 +478,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     _log.Warning(
                         $"SceneLifecycleHistory: '{actor.Name}' came back but its restore failed: {ex.Message}");
                 }
-            }, delayTicks: 1);
+            }, delayTicks: delayTicks);
         }
         catch (Exception ex)
         {
@@ -507,6 +507,11 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
         if (state.Runtime is { } runtime)
         {
+            if (state.FreezePoseOnRestore && _bindings.GetActorId(actor) is { } frozenId)
+            {
+                var rewound = _animation.RewindPausedControls(frozenId);
+                if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); return; }
+            }
             runtime.Pose.Restore(_skeletons.GetSkeletons(actor), _bonePosing);
             RestoreRuntime(actor, runtime, stillCurrent);
             return;

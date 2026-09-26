@@ -122,13 +122,14 @@ internal sealed partial class ActorServiceLifecycle
                         // import's neutral frame. Redo must recreate that frozen
                         // basis, not run a new idle underneath the saved pose.
                         var paused = _animation.Pause(id);
-                        var rewound = paused.Success ? _animation.RewindPausedControls(id) : paused;
-                        if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); return; }
+                        if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); return; }
                     }
                     if (!actor.IsCompanion && _spawns.GetCompanionInfo(actor) != runtime.Companion
                         && !_spawns.SetCompanion(actor, runtime.Companion))
                     { Note($"'{actor.Name}': companion attachment could not be restored."); return; }
-                    Schedule(actor, state, ReadyAttempts, Current);
+                    // Same pause-settle-rewind ordering as PoseImportCoordinator.
+                    Schedule(actor, state, ReadyAttempts, Current,
+                        delayTicks: state.FreezePoseOnRestore ? 4 : 1);
                 });
             }
             catch (Exception ex) { Note($"Lifecycle appearance restore failed: {ex.Message}"); }
