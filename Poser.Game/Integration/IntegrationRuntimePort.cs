@@ -514,6 +514,16 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         Guarded(Penumbra, "Mod directory", () =>
             IntegrationValue<string>.Ok(_getModDirectory.InvokeFunc()));
 
+#if DEBUG
+    public IntegrationValue<string> DebugResolveResourcePath(ActorId actor, string path) =>
+        Guarded(Penumbra, "Resource resolution diagnostic", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            return index < 0 ? IntegrationValue<string>.Fail(detail!)
+                : IntegrationValue<string>.Ok(_resolveGameObjectPath.InvokeFunc(path, index));
+        });
+#endif
+
     public IntegrationPortResult RequestRedraw(ActorId actor) =>
         Guarded(Penumbra, "Redraw", () =>
         {

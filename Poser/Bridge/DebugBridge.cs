@@ -702,8 +702,12 @@ public sealed class DebugBridge : IDisposable
             }
             case "/mcdf":
             {
+                if (query.TryGetValue("resolve", out var resourcePath))
+                    return Json(((Game.Integration.IntegrationRuntimePort)_integration).DebugResolveResourcePath(id, resourcePath));
+                if (query.TryGetValue("spawn", out var packagePath))
+                    return Json(_characterFiles.Spawn(packagePath));
                 if (query.GetValueOrDefault("reset") == "1")
-                    return Json(_session.ResetMcdf(id));
+                    return Json(_characterFiles.Reset(id));
                 if (query.TryGetValue("export", out var destination))
                 {
                     if (System.IO.File.Exists(destination)) return Json(new { error = "Refusing to overwrite an existing file." });
