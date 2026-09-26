@@ -6,6 +6,24 @@ namespace Poser.Game.Tests.Integration;
 
 public sealed class CustomizeRequestTests
 {
+    [Fact]
+    public void Parameter_copy_preserves_custom_decal_without_applying_other_appearance()
+    {
+        var snapshot = Snapshot();
+        snapshot["Parameters"]!["DecalColor"] = JObject.Parse("""{"Red":0.16,"Green":0.05,"Blue":0.002,"Alpha":0.47,"Apply":true}""");
+        var before = snapshot.DeepClone();
+        var result = CustomizeRequest.ParametersOnly(snapshot);
+        Assert.True(result.Success, result.Detail);
+        var request = result.Value!;
+        Assert.True(JToken.DeepEquals(snapshot["Parameters"], request["Parameters"]));
+        foreach (var section in new[] { "Customize", "Equipment", "Bonus" })
+            Assert.All(((JObject)request[section]!).Descendants().OfType<JProperty>()
+                .Where(p => p.Name.StartsWith("Apply")), p => Assert.False(p.Value.Value<bool>()));
+        Assert.Null(request["Materials"]);
+        Assert.Null(request["Links"]);
+        Assert.True(JToken.DeepEquals(before, snapshot));
+    }
+
     private static JObject Snapshot()
     {
         var customize = new JObject();

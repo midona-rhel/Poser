@@ -679,6 +679,10 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             if (!slot.Writes.TryGetValue(
                     (bone.PartialId, bone.BoneName), out var entry))
                 return;
+            // The attachment owner restores this root, including its scale.
+            // A file's same-named body-head value is not a second root edit.
+            if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.PartialRootScale.HasValue)
+                return;
 
             // HeadRestore holds an in-pass raw basis, not a visible file
             // target. Every other stage carries post-reparent absolutes.
