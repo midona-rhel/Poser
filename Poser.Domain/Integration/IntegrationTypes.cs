@@ -61,7 +61,10 @@ public sealed record CollectionAssignment(
 /// assigning the previously effective collection permanently.
 /// </summary>
 public sealed record CollectionBaseline(
-    bool HadIndividualAssignment, Guid? IndividualCollection);
+    bool HadIndividualAssignment, Guid? IndividualCollection)
+{
+    public SpawnCollectionSnapshot? InheritedCollection { get; init; }
+}
 
 /// <summary>
 /// The observable Customize+ situation of an actor: the active profile id

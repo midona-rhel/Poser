@@ -345,11 +345,20 @@ public sealed class ActorIntegrationSession : IDisposable
         var incoming = _port.GetCollectionAssignment(actor);
         if (!incoming.Success || incoming.Value is not { } assignment)
             return IntegrationResult.Fail(incoming.Detail ?? "The incoming collection could not be captured.");
+        SpawnCollectionSnapshot? inherited = null;
         if (ForeignTemporaryCollection(current, assignment) is { } foreign)
-            return IntegrationResult.Fail(foreign);
+        {
+            // Duplicate collections belong to our spawn owner, not MCDF.
+            // Capture their resources before releasing the temporary assignment.
+            var captured = _port.CaptureInheritedCollection(actor);
+            if (!captured.Success || captured.Value == null)
+                return IntegrationResult.Fail(captured.Detail ?? foreign);
+            inherited = captured.Value;
+        }
         var baseline = current.Baseline.Collection ?? new CollectionBaseline(
             assignment.HasIndividualAssignment,
-            assignment.HasIndividualAssignment ? assignment.EffectiveId : null);
+            assignment.HasIndividualAssignment ? assignment.EffectiveId : null)
+        { InheritedCollection = inherited };
 
         var applied = _port.SetIndividualCollection(actor, collection);
         if (!applied.Success)
