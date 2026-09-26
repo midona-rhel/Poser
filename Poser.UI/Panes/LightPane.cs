@@ -85,6 +85,10 @@ public sealed class LightPane
     private readonly ILightControl _values;
 
     private readonly ParentingSection _parenting;
+    public Func<ActorDescriptor, IReadOnlyList<BoneChoice>>? BuildBoneChoices
+    {
+        set => _parenting.BuildBoneChoices = value;
+    }
 
     public LightPane(
         SceneSession scene,

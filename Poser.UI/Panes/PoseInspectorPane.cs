@@ -161,8 +161,14 @@ public partial class PoseInspectorPane
         new("ik-bone-target");
     private IReadOnlyList<global::Poser.UI.BoneChoice> _ikBoneChoices =
         Array.Empty<global::Poser.UI.BoneChoice>();
+    private Func<global::Poser.Domain.Scene.ActorDescriptor,
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? _buildBoneChoices;
     public Func<global::Poser.Domain.Scene.ActorDescriptor,
-        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices;
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices
+    {
+        get => _buildBoneChoices;
+        set { _buildBoneChoices = value; _parentingSection.BuildBoneChoices = value; }
+    }
 
     private static readonly string[] ArmJointLabels =
         ["Shoulder", "Elbow", "Hand"];
