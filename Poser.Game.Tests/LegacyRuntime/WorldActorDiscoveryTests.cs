@@ -293,6 +293,30 @@ public sealed class WorldActorDiscoveryTests
         Assert.Equal(2, seam.Calls.Count); // No adoption as a failed-undo fallback.
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Pending_adoption_rollback_revalidates_its_body_without_recording_history(bool replaced)
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var borrowed = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address);
+        var seam = new CloneSeam { Result = borrowed };
+        var gpose = new FakeGPoseService();
+        var discovery = NewDiscovery(adapter, seam, gpose);
+        var history = new TransformHistory();
+        IActor? released = null;
+        var session = new WorldActorSession(discovery, history, actor => { released = actor; return true; });
+        Assert.True(session.BeginAdopt(Assert.Single(discovery.RefreshCandidates()).Id, out _, out var pending).Success);
+        Assert.False(history.CanUndo);
+        gpose.IsGPosing = false; // Rollback still runs when cancellation is GPose exit.
+        if (replaced) adapter.World[0] = observed with { GameObjectId = 77 };
+        Assert.True(pending!.Rollback());
+        Assert.Same(replaced ? null : borrowed, released);
+        Assert.False(history.CanUndo);
+    }
+
     [Fact]
     public void Adoption_history_survives_listing_refresh_and_releases_the_latest_wrapper()
     {

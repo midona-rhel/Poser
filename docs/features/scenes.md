@@ -222,6 +222,12 @@ effect resource-path claims are case-insensitive, reference-counted, and live
 until the last exact teardown; failed creation and failed teardown retain or
 roll back ownership rather than reporting success.
 
+World acquisition retains exact-instance rollback until its scene identity is
+published. Only then does it append history and issue a claim. Binding timeout,
+session cancellation or resolution failure rolls back through the native owner,
+without acquisition/removal history entries. A refused cleanup stays pending
+for framework-thread retry; it never authorizes mutation of a replacement body.
+
 Borrowing a live BG/VFX object remains supported. Undo first enumerates the
 current world graph, then reads the candidate's incarnation and compares it
 with the identity captured at release; it never probes a saved address before

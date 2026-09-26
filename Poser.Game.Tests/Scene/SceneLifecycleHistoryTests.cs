@@ -255,6 +255,23 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
+    public void Refused_light_release_preserves_its_claim_and_history()
+    {
+        var world = new World();
+        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        var acquisition = world.History.PeekUndo();
+        world.Lighting.RefuseDestroy = true;
+        world.Lifecycle.DestroyLight(light);
+        Assert.Same(light, Assert.Single(world.Lighting.Lights));
+        Assert.Same(acquisition, world.History.PeekUndo());
+        world.Lighting.RefuseDestroy = false;
+        world.Lifecycle.DestroyLight(light);
+        Assert.Empty(world.Lighting.Lights);
+        Assert.True(world.Undo());
+        Assert.Single(world.Lighting.Lights);
+    }
+
+    [Fact]
     public void Light_transform_history_survives_absence_and_rekeys_only_inside_history()
     {
         var world = new World();
@@ -981,6 +998,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public bool RefuseSpawn { get; set; }
         public IReadOnlyList<ILight> Live => _lights;
+        public bool RefuseDestroy { get; set; }
 
         public bool IsAvailable => true;
         public IReadOnlyList<ILight> Lights => _lights;
@@ -1000,6 +1018,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public void DestroyLight(ILight light)
         {
+            if (RefuseDestroy) return;
             _lights.Remove(light);
             ((FakeLight)light).IsValid = false;
         }

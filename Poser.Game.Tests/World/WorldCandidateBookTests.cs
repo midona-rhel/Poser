@@ -9,8 +9,8 @@ namespace Poser.Game.Tests.World;
 public sealed class WorldCandidateBookTests
 {
     private static WorldCandidateEntry Entry(WorldKinds kind, object identity, Func<bool>? valid = null,
-        Func<Func<SelectionId?>?>? acquire = null) => new(identity, kind, "Candidate", Vector3.Zero,
-            valid ?? (() => true), acquire ?? (() => () => SelectionId.ForEnvironment()));
+        Func<WorldAcquisitionBinding?>? acquire = null) => new(identity, kind, "Candidate", Vector3.Zero,
+            valid ?? (() => true), acquire ?? (() => new(() => SelectionId.ForEnvironment(), () => { }, () => true)));
 
     [Theory]
     [InlineData(WorldKinds.Actor)]
@@ -25,7 +25,7 @@ public sealed class WorldCandidateBookTests
         book.Refresh(kind, [Entry(kind, (123, 1), () => valid, () =>
         {
             acquisitions++;
-            return () => SelectionId.ForEnvironment();
+            return new(() => SelectionId.ForEnvironment(), () => { }, () => true);
         })]);
         var id = Assert.Single(book.Snapshot.Candidates).Id;
         valid = false;
@@ -34,7 +34,7 @@ public sealed class WorldCandidateBookTests
         Assert.Equal(0, acquisitions);
         valid = true;
         Assert.Equal(WorldCommandStatus.Applied, book.Acquire(id, out binding));
-        Assert.NotNull(binding!());
+        Assert.NotNull(binding!.Resolve());
         Assert.Equal(1, acquisitions);
         Assert.Equal(WorldCommandStatus.StaleCandidate, book.Acquire(id, out _));
         Assert.Equal(1, acquisitions);

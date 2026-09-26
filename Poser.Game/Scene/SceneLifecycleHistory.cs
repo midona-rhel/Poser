@@ -1025,6 +1025,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     internal object? AdoptWorldObject(nint address)
         => _worldObjectOwner.Adopt(address);
 
+    internal void RecordAcquiredWorldObject(IWorldObject worldObject) =>
+        _worldObjectOwner.AppendAcquisition(worldObject);
+
     /// <summary>Copies a world asset's authored properties with the next display name.</summary>
     public IWorldObject? CloneWorldObject(IWorldObject source) =>
         _worldObjectOwner.Clone(source);

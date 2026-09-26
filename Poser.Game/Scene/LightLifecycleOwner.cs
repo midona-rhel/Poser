@@ -136,6 +136,8 @@ internal sealed class LightLifecycleOwner
             slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
             _lighting.DestroyLight(light);
+            if (_lighting.Lights.Contains(light))
+                return false;
         }
         return true;
     }

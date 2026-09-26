@@ -252,7 +252,7 @@ internal sealed class WorldObjectLifecycleOwner
         return allReleased;
     }
 
-    private void AppendAcquisition(object worldObject)
+    internal void AppendAcquisition(object worldObject)
     {
         var slot = _slots.SlotFor(worldObject);
         var entry = new SceneLifecyclePatch(
