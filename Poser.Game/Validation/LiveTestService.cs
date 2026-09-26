@@ -1023,6 +1023,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                         .Select(bone => (Bone: bone, Transform: bone.LastRawTransform))
                         .ToArray(),
                     Pose: _poseFiles.CreatePoseFile(new[] { skeleton }),
+                    Configuration: _ikPort.Get(target),
+                    EndpointEdit: _posing.GetModification(endpoint),
                     Witness: witness.LastRawTransform,
                     WitnessEdit: _posing.GetModification(witness),
                     CanBake: _ikBake.CanBake(target));
@@ -1094,6 +1096,8 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             await WaitFrames(3);
             var undone = await _framework.RunOnFrameworkThread(() => (
                 Cleared: _posing.GetModification(firstJoint) == null,
+                Configuration: _ikPort.Get(target),
+                EndpointEdit: _posing.GetModification(endpoint),
                 Held: captured.Solved.All(entry =>
                     SameTransform(entry.Transform, entry.Bone.LastRawTransform)),
                 WitnessPlace: witness.LastRawTransform,
@@ -1101,8 +1105,16 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
             if (!undone.Cleared)
                 failures.Add(
                     $"One undo left a pose layer on {firstJoint.BoneName}.");
-            if (undone.Held)
-                failures.Add("Undo did not release the baked placement.");
+            if (undone.Configuration != captured.Configuration)
+                failures.Add("Undo did not restore the live IK configuration.");
+            if (undone.EndpointEdit is not { } endpointEdit ||
+                captured.EndpointEdit is not { } originalEndpointEdit ||
+                !SameTransform(originalEndpointEdit, endpointEdit))
+                failures.Add("Undo did not restore the authored IK target edit.");
+            // Undo restores live solving, not an unposed limb. The same target
+            // should reproduce the solved placement without baked joint layers.
+            if (!undone.Held)
+                failures.Add("Restored live IK did not preserve the solved placement.");
             if (!SameTransform(captured.Witness, undone.WitnessPlace))
                 failures.Add(
                     $"Undoing the bake moved {witness.BoneName}.");
@@ -1117,10 +1129,12 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
                 failures.Add(redo.Detail ?? "Redo failed.");
             await WaitFrames(3);
             var redone = await _framework.RunOnFrameworkThread(() =>
+                _ikPort.Get(target)?.Enabled == false &&
+                _posing.GetModification(firstJoint) != null &&
                 captured.Solved.All(entry =>
                     SameTransform(entry.Transform, entry.Bone.LastRawTransform)));
             if (!redone)
-                failures.Add("Redo did not reapply the baked placement.");
+                failures.Add("Redo did not restore the baked pose with live IK disabled.");
 
             WriteEvent("ik-bake", new
             {

@@ -104,7 +104,8 @@ Older scenes may store the span, anchors and portable handle reference; their
 reader still restores these after scene entities exist. New saves follow the
 [baked snapshot contract](files-and-transfer.md#storage-and-library).
 Previews snapshot constraints into their own model frame. The live Bake action
-writes the solved pose and disables the chains.
+writes the solved pose and disables the chains. Undo restores the previous
+authored edits and live chains; Redo restores the baked pose and disables them.
 
 ### IK colliders
 
