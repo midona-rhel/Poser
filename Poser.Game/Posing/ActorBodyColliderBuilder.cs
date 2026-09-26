@@ -24,7 +24,9 @@ internal static class ActorBodyColliderBuilder
                 new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
                 new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
                 new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
-                new($"{label} lower leg", $"j_asi_b_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
+                // The knee is a separate joint; the calf drives the shin. Use
+                // its span for both surface fitting and the generated parent.
+                new($"{label} lower leg", $"j_asi_c_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
         }
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
             (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
