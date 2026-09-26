@@ -966,8 +966,17 @@ public sealed class LiveTestService : ILiveTestService, IDisposable
 
         var setup = await _framework.RunOnFrameworkThread(() =>
         {
+            if (_bindings.GetActorId(skeleton.Actor) is not { } actorId)
+                return (false, "Controlled actor has no stable binding.");
+            // This scenario compares absolute placement across frames. The
+            // animation scenario deliberately resumes this temporary actor;
+            // freeze its baseline here, including when this scenario runs alone.
+            // Cleanup releases all animation overrides on the owned test actor.
+            var paused = _animation.Pause(actorId);
+            if (!paused.Success)
+                return (false, paused.Detail ?? "Could not pause the controlled actor.");
             _posing.ClearIkConfigurations(skeleton);
-            var reset = _cleanPose.Reset(_bindings.GetActorId(skeleton.Actor) ?? default, PoseRegion.All);
+            var reset = _cleanPose.Reset(actorId, PoseRegion.All);
             if (!reset.Success)
                 return (false, reset.Detail ?? "Pose reset failed.");
             var authored = ApplyCleanTransform(
