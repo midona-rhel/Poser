@@ -162,7 +162,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IPosingService>(
             sp => sp.GetRequiredService<PosingService>());
         services.AddSingleton<ISkeletonService, SkeletonService>();
-        services.AddSingleton<IIKService, IKService>();
+        services.AddSingleton<IKService>();
+        services.AddSingleton<IIKService>(sp => sp.GetRequiredService<IKService>());
         services.AddSingleton<BonePosingService>();
         services.AddSingleton<IBonePosingService>(
             sp => sp.GetRequiredService<BonePosingService>());
