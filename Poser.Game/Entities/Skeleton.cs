@@ -204,10 +204,13 @@ public class Skeleton : EntityBase, ISkeleton
         for (int partial = 0; partial < _nativePartials.Length; partial++)
         {
             hkaPose* current = null;
-            // BuildFromGameSkeleton retains the last available pose's map.
+            // Match BuildFromGameSkeleton: the first available pose owns the map.
             for (int index = 0; index < MaxPoses; index++)
                 if (skeleton->PartialSkeletons[partial].GetHavokPose(index) is var pose && pose != null)
+                {
                     current = pose;
+                    break;
+                }
             if (current == null)
             {
                 if (_nativePartials[partial].NativeSkeleton != 0) return false;
