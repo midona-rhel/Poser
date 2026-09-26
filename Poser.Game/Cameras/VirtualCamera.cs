@@ -63,6 +63,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     // re-asserted once inside the camera-update detour (the phase Brio's
     // position writes render from), so a drag reads back what it wrote.
     internal Vector2? PendingPan;
+    internal bool OrbitWritePending;
     internal float? PendingRoll;
     internal float? PendingZoom;
     internal float? PendingFoV;
@@ -75,7 +76,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             var native = Live;
             if (native != null)
             {
-                native->SetOrbitAngle(value);
+                native->Angle = value;
+                OrbitWritePending = true;
 #if DEBUG
                 _service.TraceOrbitWrite(native);
 #endif
@@ -298,7 +300,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         var native = _service.Native;
         if (native == null)
             return;
-        native->SetOrbitAngle(_angle);
+        native->Angle = _angle;
+        OrbitWritePending = true;
 #if DEBUG
         _service.TraceOrbitWrite(native);
 #endif

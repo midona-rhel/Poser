@@ -40,20 +40,6 @@ public struct NativeCamera
 
     [FieldOffset(0x218)] public Vector2 Collide;
 
-    internal void SetOrbitAngle(Vector2 angle)
-    {
-        var yaw = angle.X - Angle.X;
-        Vector3 lookAt = Camera.LastLookAtVector;
-        Vector3 previousPosition = Camera.LastPosition;
-        Camera.LastPosition = lookAt + Vector3.Transform(previousPosition - lookAt,
-            Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw));
-        Vector3 sceneLookAt = Camera.SceneCamera.LookAtVector;
-        Vector3 scenePosition = Camera.SceneCamera.Position;
-        Camera.SceneCamera.Position = sceneLookAt + Vector3.Transform(scenePosition - sceneLookAt,
-            Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw));
-        Angle = angle;
-    }
-
     /// <summary>Brio's view rotation for seeding a free cam from the orbit
     /// state: yaw from angle minus pan, pitch negated.</summary>
     public readonly Vector3 RotationAsVector3 =>
