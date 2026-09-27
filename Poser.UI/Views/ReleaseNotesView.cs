@@ -15,6 +15,8 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
         "Save and export the PMP in one flow, then import it into Penumbra.",
         "Find common controls first in consistent entity menus, without unnecessary one-item submenus.",
         "Toggle facial-detail bones separately from the Head preset.",
+        "Choose which bone presets appear when you show the skeleton, and manage them in a tidier list.",
+        "Move dialogs freely and keep using the game or other windows without a blocking backdrop.",
     ];
 
     public void Draw()
