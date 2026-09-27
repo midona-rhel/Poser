@@ -93,8 +93,7 @@ public static partial class Crystarium
         bool keepOpen = open;
         bool visible = ImGui.Begin(popupId, ref keepOpen,
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
-            | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.NoFocusOnAppearing);
+            | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings);
         // The unwind is unconditional (PBI-013 class): a throw in the body
         // or footer callback must not skip End or strand the
         // style entries on the global stack for every window drawn after.
