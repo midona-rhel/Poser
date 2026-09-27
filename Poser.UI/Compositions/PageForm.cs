@@ -1645,7 +1645,7 @@ public static partial class Crystarium
         }
 
         /// <summary>Draws multiple controls on one row.</summary>
-        public void Cells(Action<FormCellScope> content, string? help = null)
+        public void Cells(Action<FormCellScope> content, string? help = null, int? fixedColumns = null)
         {
             ArgumentNullException.ThrowIfNull(content);
             // A Cells row is ALREADY a designed multi-cell row: pair flow
@@ -1663,7 +1663,8 @@ public static partial class Crystarium
             float gap = ActiveTheme.Spacing.Six * row.Scale;
             // Responsive pages retain room for a label and a stepper before
             // adding another cell. Other pages keep their designed row count.
-            int columns = _page.Responsive
+            int columns = fixedColumns is { } requested ? Math.Clamp(requested, 1, items.Count)
+                : _page.Responsive
                 ? Math.Clamp((int)((row.Width + gap) / (TwoTrackMinimum / 2f * row.Scale + gap)), 1, items.Count)
                 : items.Count;
             float track =

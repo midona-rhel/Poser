@@ -14,7 +14,7 @@ public static class ReleaseNotesHistory
             "Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.",
             "Find Jaw and Jaw Only directly under Head in the skeleton tree.",
             "Right-click equipment or facewear to remove it, and dye or custom-colour swatches to clear them.",
-            "Keep appearance colours in stable rows while editing or resizing the panel.",
+            "Keep appearance colours and face controls in stable rows while editing or resizing the panel.",
             "Enter custom-colour brightness values above 1 in the colour picker.",
             "See every missed update on upgrade and browse release history from Settings.",
         ]),
