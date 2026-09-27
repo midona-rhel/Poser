@@ -42,8 +42,10 @@ the prior mode remains selected, while earlier successful restores stay applied.
 
 ## Static idle export (in development, #304)
 
-Actor context menu → More → Export idle mod opens name, standing `/cpose` slot,
-race/gender and destination choices. Only the source race/gender starts selected.
+Actor context menu → More → Export Idle Pose opens name, standing `/cpose` slot
+and race/gender choices. Save and Export then chooses a destination; confirming
+the filename starts export immediately. Cancelling returns to the options.
+Only the source race/gender starts selected.
 The slot list is the intersection available in game data for all selected targets;
 each target retains its native entry/hold duration. Existing PMP files are not overwritten.
 Body and baked facial expression use separate destination-skeleton bindings;
@@ -76,3 +78,7 @@ the body PAP's TMPP names that library and C010 starts its motion. Putting a
 face binding beside body bindings is not sufficient to register a face motion.
 This follows [VFXEditor's facial-library convention](https://github.com/0ceal0t/Dalamud-VFXEditor/wiki/Using-Facial-Expressions).
 No resident face library or shared ActionTimeline is replaced.
+Multi-motion templates select the primary `cbem_` body motion and a facial
+binding explicitly. Only the selected binding is encoded into each output PAP,
+remapped to index zero; the facial timeline names that same exported motion,
+not an assumed race-independent expression name.

@@ -30,8 +30,7 @@ internal sealed partial class EntityContextMenus
     private List<Action?> MoveMoreActions(List<ContextMenuItem> items, List<Action?> actions, SelectionId? target = null)
     {
         if (target is { } id) AddCommonCommands(items, actions, id);
-        GroupActions(items, actions, "Placement", TablerIcon.ArrowsMove, label => label == "Move to camera");
-        GroupActions(items, actions, "Playback", TablerIcon.PlayerPlay, label => label is "Play" or "Pause");
+        FlattenSingleActions(items, actions);
         var more = new List<ContextMenuItem>();
         var callbacks = new List<Action?>();
         for (int i = 0; i < items.Count;)
@@ -39,7 +38,7 @@ internal sealed partial class EntityContextMenus
             string label = items[i].Label;
             if (label.StartsWith("Save to file", StringComparison.Ordinal)
                 || label == "Save to library"
-                || label is "Create collider" or "Export idle mod…"
+                || label is "Create collider" or "Export Idle Pose…"
                 || label.StartsWith("Destroy all", StringComparison.Ordinal))
             {
                 more.Add(items[i]);
@@ -80,8 +79,8 @@ internal sealed partial class EntityContextMenus
         if (more.Count > 0)
         {
             if (items.Count > 0) { items.Add(ContextMenuItem.Separator); actions.Add(null); }
-            items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray()));
-            actions.Add(null);
+            if (more.Count == 1) { items.Add(more[0]); actions.Add(callbacks[0]); }
+            else { items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray())); actions.Add(null); }
         }
         if (lifetime.Count > 0)
         {
@@ -97,7 +96,9 @@ internal sealed partial class EntityContextMenus
     {
         "Show handle" or "Hide handle" or "Show" or "Hide" or "Switch on" or "Switch off" or "Show in overlay" or "Hide from overlay"
             or "Lock" or "Unlock" or "Lock transform" or "Unlock transform"
-            or "Enable collision" or "Disable collision" => 0,
+            or "Enable collision" or "Disable collision" or "Play" or "Pause"
+            or "Center camera on actor" or "Set game target" or "Look through"
+            or "Return to main camera" or "Look at tracked actor" => 0,
         "Rename" or "Duplicate" => 2,
         "Reset" or "Tree" or "Bone presets" or "Pose" or "Companion" or "Attachment" or "Placement" or "Playback" or "Select" or "Visibility" or "Actor pose" or "Actor bone presets" => 3,
         _ => 1,
@@ -106,9 +107,12 @@ internal sealed partial class EntityContextMenus
     private static int Rank(string label) => label switch
     {
         "Show handle" or "Hide handle" => 0,
-        "Show" or "Hide" or "Switch on" or "Switch off" or "Show in overlay" or "Hide from overlay" => 1,
-        "Lock" or "Unlock" or "Lock transform" or "Unlock transform" => 2,
-        "Enable collision" or "Disable collision" => 3,
+        "Center camera on actor" or "Look at tracked actor" => 1,
+        "Set game target" or "Look through" or "Return to main camera" => 2,
+        "Show" or "Hide" or "Switch on" or "Switch off" or "Show in overlay" or "Hide from overlay" => 3,
+        "Play" or "Pause" => 4,
+        "Lock" or "Unlock" or "Lock transform" or "Unlock transform" => 5,
+        "Enable collision" or "Disable collision" => 6,
         "Rename" => 0, "Duplicate" => 1,
         "Placement" => 10, "Playback" => 20, "Select" => 30, "Visibility" => 40,
         "Pose" or "Actor pose" => 50, "Reset" => 60, "Companion" or "Attachment" => 70,
@@ -157,18 +161,22 @@ internal sealed partial class EntityContextMenus
         DrawMoreAction(items, more);
     }
 
-    private static void GroupActions(List<ContextMenuItem> items, List<Action?> actions,
-        string title, TablerIcon icon, Func<string, bool> matches)
+    private static void FlattenSingleActions(List<ContextMenuItem> items, List<Action?> actions)
     {
-        var children = new List<ContextMenuItem>();
-        for (int i = 0; i < items.Count;)
+        for (int i = 0; i < items.Count; i++)
         {
-            if (!matches(items[i].Label)) { i++; continue; }
-            children.Add(items[i] with { OnInvoke = actions[i] });
-            items.RemoveAt(i); actions.RemoveAt(i);
+            var children = items[i].SubmenuItems?.Where(child => !child.IsSeparator).ToArray();
+            if (children is not { Length: 1 } || children[0].OnInvoke is not { } action) continue;
+            var child = children[0];
+            string label = items[i].Label switch
+            {
+                "Reset" => "Reset " + char.ToLowerInvariant(child.Label[0]) + child.Label[1..],
+                "Companion" => child.Label + " companion",
+                _ => child.Label,
+            };
+            items[i] = child with { Label = label, Disabled = items[i].Disabled || child.Disabled };
+            actions[i] = action;
         }
-        if (children.Count == 0) return;
-        items.Add(new(title, icon, submenuItems: children.ToArray())); actions.Add(null);
     }
 
     private void AddCommonCommands(List<ContextMenuItem> items, List<Action?> actions, SelectionId id)

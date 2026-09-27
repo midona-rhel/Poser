@@ -15,13 +15,18 @@ internal sealed class PapAnimationDocument
     public byte Variant => _source[13];
     public byte[] HavokBytes => _source[_havokOffset.._timelineOffset];
 
+    public Clip BodyClip => Clips.Single(c => !c.IsFace && c.Name.StartsWith("cbem_", StringComparison.Ordinal));
+    // The template supplies binding metadata only; all motion samples are replaced.
+    public Clip FaceClip => Clips.First(c => c.IsFace);
+
     public int DurationFrames
     {
         get
         {
-            // Each single-clip PAP begins its embedded TMB with TMDH.
+            // The first embedded TMB describes the primary motion, even when
+            // the PAP also carries secondary motions (e.g. Miqo'te pose 3).
             var timeline = _source.AsSpan(_timelineOffset);
-            if (Clips.Count != 1 || timeline.Length < 28 || !timeline.Slice(12, 4).SequenceEqual("TMDH"u8))
+            if (timeline.Length < 28 || !timeline.Slice(12, 4).SequenceEqual("TMDH"u8))
                 throw new InvalidDataException("Unsupported idle timeline header.");
             int frames = BinaryPrimitives.ReadInt16LittleEndian(timeline[24..]);
             return frames > 0 ? frames : throw new InvalidDataException("The idle timeline has no duration.");

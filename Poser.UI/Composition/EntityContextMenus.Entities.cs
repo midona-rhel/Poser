@@ -116,7 +116,7 @@ internal sealed partial class EntityContextMenus
             disabled: !(actor.CharacterSkeleton != null) || _actorColliderCapture.Busy));
         actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(_configuration, actorId, actor.Name)));
 
-        items.Add(new ContextMenuItem("Export idle mod…", TablerIcon.Upload,
+        items.Add(new ContextMenuItem("Export Idle Pose…", TablerIcon.Upload,
             disabled: actor.CharacterSkeleton == null || _poseFileSection.IdleExportBusy,
             help: "Bake body and expression into a Penumbra PMP"));
         actions.Add(() => _poseFileSection.OpenIdleExport(actorId));
@@ -163,7 +163,7 @@ internal sealed partial class EntityContextMenus
                 }
                 items.Add(new ContextMenuItem("Companion", TablerIcon.Paw,
                     help: "Attach, change or detach a minion, mount or ornament",
-                    submenuItems: rows.ToArray()));
+                    submenuItems: BindSubmenu(rows.ToArray(), companionActions)));
             }
             actions.Add(null); // Attachment submenu.
         }
@@ -455,7 +455,7 @@ internal sealed partial class EntityContextMenus
                 { OnInvoke = () => _cleanPose.ResetBones(branch.Select(TransformTargetId.ForBone).ToArray(), "Reset bone branch") },
             ]),
             new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
-            new("Actor bone presets", TablerIcon.Eye, submenuItems: presets),
+            new("Bone presets", TablerIcon.Eye, submenuItems: presets),
             new("Tree", TablerIcon.Folder, submenuItems: tree),
         ];
         DrawComposedMenu(menu, ref _boneCtxOpenRequested, items);
@@ -641,7 +641,7 @@ internal sealed partial class EntityContextMenus
                 { OnInvoke = () => _cleanPose.ResetBones(bones.Select(TransformTargetId.ForBone).ToArray(), "Reset " + scope) },
             ]),
             new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
-            new("Actor bone presets", TablerIcon.Eye, submenuItems: presets),
+            new("Bone presets", TablerIcon.Eye, submenuItems: presets),
             new("Tree", TablerIcon.Folder, submenuItems: tree),
         ];
         DrawComposedMenu(menu, ref _overlayCtxOpenRequested, items);

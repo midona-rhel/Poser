@@ -134,10 +134,8 @@ public sealed class IdleModRuntime(
         int sourceSlot = data.FileExists(BodyPath(race, slot, "start")) ? slot : 1;
         var start = new PapAnimationDocument(Read(BodyPath(race, sourceSlot, "start")));
         var neutral = new PapAnimationDocument(Read($"chara/human/{raceName}/animation/{face}/resident/face.pap"));
-        if (start.Clips.Count != 1)
-            throw new InvalidDataException("This idle's animation layout is not supported yet.");
         int neutralIndex = neutral.Clips.Single(c => c.Name == "cfxf_base").BindingIndex;
-        var bodyIdle = _encoder.SampleStart(start.HavokBytes, bodySkeleton, start.Clips[0].BindingIndex);
+        var bodyIdle = _encoder.SampleStart(start.HavokBytes, bodySkeleton, start.BodyClip.BindingIndex);
         var faceIdle = _encoder.SampleStart(neutral.HavokBytes, faceSkeleton, neutralIndex);
         var facePartial = skeleton.Bones.Where(b => b.BoneName.StartsWith("j_f_", StringComparison.Ordinal))
             .Select(b => b.PartialId).Distinct().ToArray();
@@ -199,7 +197,7 @@ public sealed class IdleModRuntime(
             var faceBytes = Read(FaceSkeletonPath(race, face));
             var neutral = new PapAnimationDocument(Read(FacePath(race, face, "resident/face")));
             body = IdlePoseRetargeter.Retarget(source.BodyLayout, source.Body, _encoder.ReadSkeleton(bodyBytes),
-                _encoder.SampleStart(start.HavokBytes, bodyBytes, start.Clips[0].BindingIndex));
+                _encoder.SampleStart(start.HavokBytes, bodyBytes, start.BodyClip.BindingIndex));
             expression = IdlePoseRetargeter.Retarget(source.FaceLayout, source.Expression, _encoder.ReadSkeleton(faceBytes),
                 _encoder.SampleStart(neutral.HavokBytes, faceBytes, neutral.Clips.Single(c => c.Name == "cfxf_base").BindingIndex));
             // The face root is an attachment, never a second exported head rotation.
@@ -208,10 +206,10 @@ public sealed class IdleModRuntime(
         int entryFrames = start.DurationFrames, holdFrames = loop.DurationFrames;
         var samples = IdleAnimationSamples.Create(body, expression, entryFrames / 30f);
         return IdlePapBuilder.Files($"c{race:0000}", face, start, loop, template,
-            _encoder.Encode(start.HavokBytes, 0, samples.Body, samples.Body.Entry),
-            _encoder.Encode(loop.HavokBytes, 0, samples.Body, samples.Body.Hold with { DurationSeconds = holdFrames / 30f }),
-            _encoder.Encode(template.HavokBytes, 0, samples.Expression, samples.Expression.Entry),
-            _encoder.Encode(template.HavokBytes, 0, samples.Expression, samples.Expression.Hold with { DurationSeconds = holdFrames / 30f }),
+            _encoder.Encode(_encoder.Extract(start.HavokBytes, start.BodyClip.BindingIndex), 0, samples.Body, samples.Body.Entry),
+            _encoder.Encode(_encoder.Extract(loop.HavokBytes, loop.BodyClip.BindingIndex), 0, samples.Body, samples.Body.Hold with { DurationSeconds = holdFrames / 30f }),
+            _encoder.Encode(_encoder.Extract(template.HavokBytes, template.FaceClip.BindingIndex), 0, samples.Expression, samples.Expression.Entry),
+            _encoder.Encode(_encoder.Extract(template.HavokBytes, template.FaceClip.BindingIndex), 0, samples.Expression, samples.Expression.Hold with { DurationSeconds = holdFrames / 30f }),
             slot, entryFrames, holdFrames);
     }
 

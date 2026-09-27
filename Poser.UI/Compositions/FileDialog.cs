@@ -155,6 +155,7 @@ public static partial class Crystarium
         private string? _lastError;
         private string? _pendingSelect;
         private Action<string>? _onSelect;
+        public string? ConfirmLabel { get; init; }
 
         /// <summary>The draft the path editor holds. It is the FIELD's value
         /// every frame; committing it is what navigates.</summary>
@@ -352,7 +353,7 @@ public static partial class Crystarium
             bool canConfirm = _isSaveMode
                 ? _fileName.Trim().Length > 0
                 : SelectedFile is not null;
-            string confirmLabel = _isSaveMode ? "Save" : "Load";
+            string confirmLabel = ConfirmLabel ?? (_isSaveMode ? "Save" : "Load");
 
             var rects = WindowFrame(
                 _id,

@@ -11,19 +11,40 @@ namespace Poser.Tests.Files;
 public sealed class IdleModPackageTests
 {
     private const string GamePath = "chara/human/c0801/animation/a0001/bt_common/emote/pose01_loop.pap";
-    private static byte[] Pap()
+    private static byte[] Pap(params (string Name, short Binding, bool Face)[] clips)
     {
+        if (clips.Length == 0) clips = [("cbem_pose01_2lp", 0, false)];
         var timeline = IdlePapBuilder.Timeline("cbem_pose01_2lp", 70);
         using var stream = new MemoryStream();
         using var w = new BinaryWriter(stream);
-        w.Write("pap "u8); w.Write(0x00020001); w.Write((short)1);
+        w.Write("pap "u8); w.Write(0x00020001); w.Write((short)clips.Length);
         w.Write((ushort)801); w.Write((byte)0); w.Write((byte)1);
-        w.Write(26); w.Write(66); w.Write(76);
-        var name = Encoding.ASCII.GetBytes("cbem_pose01_2lp");
-        w.Write(name); w.Write(new byte[32 - name.Length]);
-        w.Write((short)0); w.Write((short)0); w.Write(0);
+        w.Write(26); w.Write(26 + clips.Length * 40); w.Write(36 + clips.Length * 40);
+        foreach (var clip in clips)
+        {
+            var name = Encoding.ASCII.GetBytes(clip.Name);
+            w.Write(name); w.Write(new byte[32 - name.Length]);
+            w.Write((short)0); w.Write(clip.Binding); w.Write(clip.Face ? 1 : 0);
+        }
         w.Write(new byte[10]); w.Write(timeline);
         return stream.ToArray();
+    }
+
+    [Fact]
+    public void Multi_clip_templates_select_body_and_face_and_remap_output_binding()
+    {
+        var body = new PapAnimationDocument(Pap(("cbem_pose03_1", 2, false), ("cbep_e_pose03_1", 0, false)));
+        var face = new PapAnimationDocument(Pap(("cfxf_comeon", 3, true), ("cfxf_smile", 1, true)));
+        Assert.Equal(70, body.DurationFrames);
+        Assert.Throws<InvalidDataException>(() => IdlePapBuilder.BuildClip(face, new byte[8], 70));
+        var files = IdlePapBuilder.Files("c1301", "f0002", body, body, face,
+            new byte[8], new byte[8], new byte[8], new byte[8]);
+        Assert.All(files, file => Assert.Equal(0, Assert.Single(new PapAnimationDocument(file.Bytes).Clips).BindingIndex));
+        Assert.Equal("cbem_pose03_1", new PapAnimationDocument(files[0].Bytes).Clips[0].Name);
+        Assert.Equal("cfxf_comeon", new PapAnimationDocument(files[2].Bytes).Clips[0].Name);
+        Assert.Contains("cfxf_comeon", Encoding.ASCII.GetString(files[0].Bytes));
+        Assert.DoesNotContain("cfxf_grin", Encoding.ASCII.GetString(files[0].Bytes));
+        Assert.DoesNotContain("cfxf_smile", Encoding.ASCII.GetString(files[2].Bytes));
     }
 
     [Fact]

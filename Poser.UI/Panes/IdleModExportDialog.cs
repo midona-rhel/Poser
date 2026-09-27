@@ -13,13 +13,15 @@ namespace Poser.UI;
 
 public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notices, IFramework framework)
 {
-    private const string ModalId = "##idle-export", ModalTitle = "Export idle mod";
-    private readonly Crystarium.FileDialog _dialog = new("Save idle mod", new[] { ".pmp" }, isSaveMode: true);
+    private const string ModalId = "##idle-export", ModalTitle = "Export Idle Pose";
+    private readonly Crystarium.FileDialog _dialog = new("Save and Export Idle Pose", new[] { ".pmp" }, isSaveMode: true)
+        { ConfirmLabel = "Save and Export" };
     private readonly HashSet<int> _races = [];
     private IdleModChoices? _choices;
     private ActorId _actor;
     private Controls.RememberedFolder? _folder;
-    private string _name = string.Empty, _path = string.Empty;
+    private string _name = string.Empty;
+    private IdleModOptions? _pendingOptions;
     private int _slot = 1;
     private bool _open, _loading, _choosePath, _choosingPath;
     public bool Busy => export.Busy || _loading;
@@ -37,7 +39,6 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
                 _folder = folder;
                 _choices = choices;
                 _name = choices.Name;
-                _path = string.Empty;
                 _races.Clear();
                 _races.Add(choices.SourceRaceSexId);
                 _slot = 1;
@@ -55,7 +56,13 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
         {
             _choosePath = false;
             _choosingPath = true;
-            _folder.Open(_dialog, path => _path = path);
+            var actor = _actor;
+            var options = _pendingOptions!;
+            _folder.Open(_dialog, path =>
+            {
+                _choosingPath = false;
+                _ = Save(actor, path, options);
+            });
         }
         _dialog.Draw();
         if (_choosingPath && !_dialog.IsOpen) { _choosingPath = false; _open = true; }
@@ -65,8 +72,7 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
         if (!slots.Contains(_slot)) _slot = slots.FirstOrDefault();
         string? problem = string.IsNullOrWhiteSpace(_name) || _name.Length > 128 ? "Enter a mod name (up to 128 characters)."
             : _races.Count == 0 ? "Select a race and gender."
-            : slots.Length == 0 ? "No shared standing pose slot is available."
-            : string.IsNullOrWhiteSpace(_path) ? "Choose where to save the PMP." : null;
+            : slots.Length == 0 ? "No shared standing pose slot is available." : null;
         Crystarium.Modal(ModalId, _open, value => _open = value, ModalTitle,
             size: ModalSize.Medium, height: 650f,
             body: () => Crystarium.Page("idle-export-options", ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail(), page =>
@@ -77,8 +83,6 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
                     form.Dropdown("Replaces", slots.Select(s => $"Standing pose {s} (/cpose)").ToArray(),
                         Math.Max(0, Array.IndexOf(slots, _slot)), next => { if (next >= 0 && next < slots.Length) _slot = slots[next]; },
                         disabled: slots.Length == 0);
-                    form.Picker("Save as", string.IsNullOrEmpty(_path) ? "Choose a .pmp file…" : _path,
-                        () => { CloseOptions(); _choosePath = true; }, help: _path);
                 }, divider: false);
                 page.Section("Race and gender", form =>
                 {
@@ -99,12 +103,12 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
             {
                 if (Crystarium.Button("Cancel", id: "idle-export-cancel")) CloseOptions();
                 ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-                if (Crystarium.Button("Export", variant: ButtonVariant.Primary, disabled: problem != null || Busy,
+                if (Crystarium.Button("Save and Export", variant: ButtonVariant.Primary, disabled: problem != null || Busy,
                     help: problem, id: "idle-export-save"))
                 {
-                    var options = new IdleModOptions(_name.Trim(), _slot, _races.Order().ToImmutableArray());
+                    _pendingOptions = new IdleModOptions(_name.Trim(), _slot, _races.Order().ToImmutableArray());
                     CloseOptions();
-                    _ = Save(_actor, _path, options);
+                    _choosePath = true;
                 }
             });
         Crystarium.FloatingSurface.ReleaseWhenClosed($"{ModalTitle}##{ModalId}", _open);

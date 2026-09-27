@@ -83,16 +83,18 @@ or group Show/Hide choices take precedence for the session. Selection does not
 reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
 are independent and remain usable.
 
-Entity context menus share the camera's sections: visibility/locking, everyday
-actions, rename/duplicate, and related submenus. Placement, Playback and Reset
-group the supported commands consistently; unsupported capabilities are not
+Entity context menus put supported sidebar controls first (handle, camera/target,
+visibility, playback and locking), then everyday actions, rename/duplicate and
+related submenus. A single action stays direct rather than acquiring a submenu;
+Reset groups multiple reset commands. Unsupported capabilities are not
 invented to fill rows. Rotation/scale reset preserves the other components,
 including position, and uses the same application transform/history path as
 ordinary edits. Bone and skeleton/category menus use Select, Visibility and
-Reset submenus, with whole-actor pose/preset actions explicitly labelled.
+Reset submenus. Bone presets apply to the owning actor, including when opened
+from a bone or branch; Head excludes the separately toggleable Face detail set.
 Save actions, Create collider,
-Export idle mod and category-wide destruction live under More, including a lone
-save action; sidebar and viewport use the same composition. Inspector surfaces
+Export Idle Pose and category-wide destruction live under More when there are
+multiple secondary actions; sidebar and viewport use the same composition. Inspector surfaces
 keep a lone save action direct. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
 destruction (lights, cameras, objects, and overlays) opens a modal with the target count
@@ -110,7 +112,7 @@ menu shape dismisses stale rows rather than dispatching their old indices.
 Tree disclosure belongs to the clicked branch, including descendants that
 have not been drawn yet. Search temporarily reveals matches and disables
 disclosure commands. Skeleton/weapon-slot menus identify their own bones;
-whole-actor presets and pose commands are explicitly labelled Actor, while
+whole-actor pose commands are explicitly labelled Actor, while
 Skeleton settings opens the shared settings page. Shared sections reuse the
 existing commands, not a second settings or pose state.
 

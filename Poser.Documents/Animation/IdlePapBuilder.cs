@@ -14,19 +14,23 @@ internal static class IdlePapBuilder
         string facePrefix = $"chara/human/{race}/animation/{face}/nonresident/";
         string entryLibrary = $"emot/poser_pose{slot:00}_start";
         string holdLibrary = $"emot/poser_pose{slot:00}_loop";
-        return [new(bodyPrefix + "start.pap", BuildClip(start, bodyEntry, entryFrames, entryLibrary)),
-            new(bodyPrefix + "loop.pap", BuildClip(loop, bodyHold, holdFrames, holdLibrary)),
-            new(facePrefix + entryLibrary + ".pap", BuildClip(expression, faceEntry, entryFrames)),
-            new(facePrefix + holdLibrary + ".pap", BuildClip(expression, faceHold, holdFrames))];
+        var facial = expression.FaceClip;
+        return [new(bodyPrefix + "start.pap", BuildClip(start, bodyEntry, entryFrames, entryLibrary, start.BodyClip, facial.Name)),
+            new(bodyPrefix + "loop.pap", BuildClip(loop, bodyHold, holdFrames, holdLibrary, loop.BodyClip, facial.Name)),
+            new(facePrefix + entryLibrary + ".pap", BuildClip(expression, faceEntry, entryFrames, selected: facial)),
+            new(facePrefix + holdLibrary + ".pap", BuildClip(expression, faceHold, holdFrames, selected: facial))];
     }
 
-    public static byte[] BuildClip(PapAnimationDocument source, byte[] havok, int frames, string? faceLibrary = null)
+    public static byte[] BuildClip(PapAnimationDocument source, byte[] havok, int frames, string? faceLibrary = null,
+        PapAnimationDocument.Clip? selected = null, string expressionName = "cfxf_grin")
     {
-        if (source.Clips.Count != 1 || source.Clips[0].BindingIndex != 0 ||
-            source.Clips[0].IsFace && faceLibrary != null)
-            throw new InvalidDataException("Expected a single animation clip with no nested face library.");
-        var body = source.Clips[0];
-        var timeline = Timeline(body.Name, frames, faceLibrary == null ? null : "cfxf_grin", faceLibrary);
+        var body = selected ?? (source.Clips.Count == 1 ? source.Clips[0]
+            : throw new InvalidDataException("Select a motion from the multi-clip animation template."));
+        if (!source.Clips.Contains(body) || body.IsFace && faceLibrary != null)
+            throw new InvalidDataException("Invalid animation template selection or nested face library.");
+        // The caller supplies an independently encoded, single-binding Havok
+        // container. The selected source binding is remapped to output index zero.
+        var timeline = Timeline(body.Name, frames, faceLibrary == null ? null : expressionName, faceLibrary);
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         writer.Write("pap "u8); writer.Write(0x00020001); writer.Write((short)1);
