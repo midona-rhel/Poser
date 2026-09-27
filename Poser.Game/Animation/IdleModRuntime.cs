@@ -109,8 +109,7 @@ public sealed class IdleModRuntime(
         return new(name + " static pose", $"Experimental standing pose 1 replacement for {raceName}, face {face}. " +
             "Body/IK and facial pose are baked. Use only in this character's Penumbra collection with the same appearance and Customize+ profile. " +
             "Requires the same body and face skeleton mods. Equipment, hair/cloth partials and gaze tracking are not exported. Entry is sine-eased; exit uses the game's normal blend-out.",
-            [new(prefix + "start.pap", IdlePapBuilder.BuildPair(start, _encoder.Combine(bodyEntry, faceEntry), 45)),
-             new(prefix + "loop.pap", IdlePapBuilder.BuildPair(loop, _encoder.Combine(bodyHold, faceHold), 70))]);
+            IdlePapBuilder.Files(raceName, face, start, loop, faceTemplate, bodyEntry, bodyHold, faceEntry, faceHold));
 
         IdleSkeletonPose Tracks(IdleHavokEncoder.SkeletonLayout layout, PoseTransform[] idle, int partial)
         {

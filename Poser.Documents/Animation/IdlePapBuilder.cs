@@ -4,26 +4,37 @@ namespace Poser.Documents.Animation;
 
 internal static class IdlePapBuilder
 {
-    public static byte[] BuildPair(PapAnimationDocument source, byte[] combinedHavok, int frames)
+    public static IReadOnlyList<IdleModFile> Files(string race, string face,
+        PapAnimationDocument start, PapAnimationDocument loop, PapAnimationDocument expression,
+        byte[] bodyEntry, byte[] bodyHold, byte[] faceEntry, byte[] faceHold)
     {
-        if (source.Clips.Count != 1 || source.Clips[0].BindingIndex != 0 || source.Clips[0].IsFace)
-            throw new InvalidDataException("Expected a single body idle clip.");
+        string bodyPrefix = $"chara/human/{race}/animation/a0001/bt_common/emote/pose01_";
+        string facePrefix = $"chara/human/{race}/animation/{face}/nonresident/";
+        const string entryLibrary = "emot/poser_pose01_start";
+        const string holdLibrary = "emot/poser_pose01_loop";
+        return [new(bodyPrefix + "start.pap", BuildClip(start, bodyEntry, 45, entryLibrary)),
+            new(bodyPrefix + "loop.pap", BuildClip(loop, bodyHold, 70, holdLibrary)),
+            new(facePrefix + entryLibrary + ".pap", BuildClip(expression, faceEntry, 45)),
+            new(facePrefix + holdLibrary + ".pap", BuildClip(expression, faceHold, 70))];
+    }
+
+    public static byte[] BuildClip(PapAnimationDocument source, byte[] havok, int frames, string? faceLibrary = null)
+    {
+        if (source.Clips.Count != 1 || source.Clips[0].BindingIndex != 0 ||
+            source.Clips[0].IsFace && faceLibrary != null)
+            throw new InvalidDataException("Expected a single animation clip with no nested face library.");
         var body = source.Clips[0];
-        const string faceName = "cfxf_grin";
-        var timelines = new[] { Timeline(body.Name, frames, faceName), Timeline(faceName, frames) };
+        var timeline = Timeline(body.Name, frames, faceLibrary == null ? null : "cfxf_grin", faceLibrary);
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
-        writer.Write("pap "u8); writer.Write(0x00020001); writer.Write((short)2);
+        writer.Write("pap "u8); writer.Write(0x00020001); writer.Write((short)1);
         writer.Write(source.ModelId); writer.Write(source.ModelType); writer.Write(source.Variant);
-        writer.Write(26); writer.Write(106); writer.Write(0);
-        Clip(body.Name, body.Type, 0, false);
-        Clip(faceName, 17, 1, true);
-        writer.Write(combinedHavok);
+        writer.Write(26); writer.Write(66); writer.Write(0);
+        Clip(body.Name, body.Type, 0, body.IsFace);
+        writer.Write(havok);
         while ((stream.Position & 3) != 0) writer.Write((byte)0);
         int timelineOffset = checked((int)stream.Position);
-        writer.Write(timelines[0]);
-        while ((stream.Position & 3) != 0) writer.Write((byte)0);
-        writer.Write(timelines[1]);
+        writer.Write(timeline);
         stream.Position = 22; writer.Write(timelineOffset);
         var bytes = stream.ToArray();
         _ = new PapAnimationDocument(bytes);
@@ -38,9 +49,11 @@ internal static class IdlePapBuilder
         }
     }
 
-    internal static byte[] Timeline(string motion, int frames, string? expression = null)
+    internal static byte[] Timeline(string motion, int frames, string? expression = null, string? faceLibrary = null)
     {
         if (frames is < 1 or > short.MaxValue) throw new ArgumentOutOfRangeException(nameof(frames));
+        if (faceLibrary != null && (expression == null || !System.Text.RegularExpressions.Regex.IsMatch(faceLibrary, @"^emot/[a-z0-9_]+$")))
+            throw new ArgumentException("Invalid face library path.");
         if (string.IsNullOrEmpty(motion) || motion.Any(c => c < 32 || c > 126) ||
             expression is { } e && (e.Length == 0 || e.Any(c => c < 32 || c > 126)))
             throw new ArgumentException("Invalid timeline motion name.");
@@ -48,8 +61,9 @@ internal static class IdlePapBuilder
         using var w = new BinaryWriter(stream, Encoding.ASCII, true);
         var lists = new List<(long Field, long Origin, short[] Values)>();
         var strings = new List<(long Field, long Origin, string Value)>();
-        w.Write("TMLB"u8); w.Write(0); w.Write(expression == null ? 5 : 7);
+        w.Write("TMLB"u8); w.Write(0); w.Write((expression == null ? 5 : 7) + (faceLibrary == null ? 0 : 1));
         Item("TMDH", 16); w.Write((short)1); w.Write((short)0); w.Write((short)frames); w.Write((short)3);
+        if (faceLibrary != null) { var library = Item("TMPP", 12); String(library, faceLibrary); }
         var root = Item("TMAL", 16); List(root, [2]);
         var actor = Item("TMAC", 28); Id(2); w.Write(0); w.Write(0); List(actor, expression == null ? [3] : [3, 4]);
         var track = Item("TMTR", 24); Id(3); List(track, [expression == null ? (short)4 : (short)5]); w.Write(0);

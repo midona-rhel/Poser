@@ -125,21 +125,19 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
             throw new InvalidOperationException("Animation serialization must run on the framework thread.");
     }
 
-    public byte[] Combine(byte[] body, byte[] face)
+    public byte[] Extract(byte[] source, int index)
     {
         RequireFramework();
-        using var first = new LoadedAnimation(body);
-        using var second = new LoadedAnimation(face);
-        if (first.Container->Bindings.Length != 1 || first.Container->Animations.Length != 1 ||
-            second.Container->Bindings.Length != 1 || second.Container->Animations.Length != 1)
-            throw new InvalidDataException("The prototype requires single-motion source clips.");
+        using var first = new LoadedAnimation(source);
+        if (index < 0 || index >= first.Container->Bindings.Length || index >= first.Container->Animations.Length)
+            throw new InvalidDataException("The requested animation binding is absent.");
         using var memory = new ExportMemory();
         var animations = first.Container->Animations;
         var bindings = first.Container->Bindings;
         try
         {
-            first.Container->Animations = memory.Array(new[] { animations[0], second.Container->Animations[0] });
-            first.Container->Bindings = memory.Array(new[] { bindings[0], second.Container->Bindings[0] });
+            first.Container->Animations = memory.Array(new[] { animations[index] });
+            first.Container->Bindings = memory.Array(new[] { bindings[index] });
             return Serialize(first);
         }
         finally

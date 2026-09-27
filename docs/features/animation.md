@@ -59,3 +59,8 @@ owns export completion independently of UI drawing; Documents writes the PMP
 atomically without replacing an existing file. Game serialization operates
 on independently loaded resources, never a live actor's animation container.
 Facial-layer routing and game interruption require live acceptance.
+Facial samples live in their own race/face-specific nonresident PAP library;
+the body PAP's TMPP names that library and C010 starts its motion. Putting a
+face binding beside body bindings is not sufficient to register a face motion.
+This follows [VFXEditor's facial-library convention](https://github.com/0ceal0t/Dalamud-VFXEditor/wiki/Using-Facial-Expressions).
+No resident face library or shared ActionTimeline is replaced.

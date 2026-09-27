@@ -41,21 +41,26 @@ public sealed class IdleModPackageTests
     }
 
     [Fact]
-    public void Body_and_face_are_distinct_bindings_with_resolvable_timeline_names()
+    public void Body_loads_a_separate_facial_library_and_triggers_its_motion()
     {
-        var pair = IdlePapBuilder.BuildPair(new(Pap()), new byte[8], 70);
+        var pair = IdlePapBuilder.BuildClip(new(Pap()), new byte[8], 70, "emot/poser_pose01_loop");
         var document = new PapAnimationDocument(pair);
+        Assert.Single(document.Clips);
         Assert.Equal("cbem_pose01_2lp", document.Clips[0].Name);
         Assert.False(document.Clips[0].IsFace);
-        Assert.True(document.Clips[1].IsFace);
-        Assert.Equal(1, document.Clips[1].BindingIndex);
         int start = BinaryPrimitives.ReadInt32LittleEndian(pair.AsSpan(22));
         int count = BinaryPrimitives.ReadInt32LittleEndian(pair.AsSpan(start + 8));
         int item = start + 12;
         var paths = new List<string>();
+        string? library = null;
         for (int i = 0; i < count; i++)
         {
             var type = Encoding.ASCII.GetString(pair, item, 4);
+            if (type == "TMPP")
+            {
+                int text = item + 8 + BinaryPrimitives.ReadInt32LittleEndian(pair.AsSpan(item + 8));
+                library = Encoding.ASCII.GetString(pair, text, Array.IndexOf(pair, (byte)0, text) - text);
+            }
             if (type is "C009" or "C010")
             {
                 int field = item + (type == "C009" ? 20 : 32);
@@ -66,6 +71,30 @@ public sealed class IdleModPackageTests
             item += BinaryPrimitives.ReadInt32LittleEndian(pair.AsSpan(item + 4));
         }
         Assert.Equal(new[] { "cbem_pose01_2lp", "cfxf_grin" }, paths);
+        Assert.Equal("emot/poser_pose01_loop", library);
+    }
+
+    [Fact]
+    public void Both_declared_face_libraries_are_packaged_with_face_bindings_and_full_duration()
+    {
+        var face = Pap();
+        face.AsSpan(26, 32).Clear();
+        Encoding.ASCII.GetBytes("cfxf_grin").CopyTo(face, 26);
+        BinaryPrimitives.WriteInt16LittleEndian(face.AsSpan(58), 17);
+        BinaryPrimitives.WriteInt32LittleEndian(face.AsSpan(62), 1);
+        var files = IdlePapBuilder.Files("c0801", "f0002", new(Pap()), new(Pap()), new(face),
+            new byte[8], new byte[8], new byte[8], new byte[8]);
+        Assert.Equal(4, files.Count);
+        for (int i = 2; i < 4; i++)
+        {
+            Assert.StartsWith("chara/human/c0801/animation/f0002/nonresident/emot/poser_pose01_", files[i].GamePath);
+            var document = new PapAnimationDocument(files[i].Bytes);
+            Assert.True(Assert.Single(document.Clips).IsFace);
+            Assert.Equal(0, document.Clips[0].BindingIndex);
+            int timeline = BinaryPrimitives.ReadInt32LittleEndian(files[i].Bytes.AsSpan(22));
+            Assert.Equal(i == 2 ? 45 : 70, BinaryPrimitives.ReadInt16LittleEndian(files[i].Bytes.AsSpan(timeline + 24)));
+        }
+        Assert.DoesNotContain(files, f => f.GamePath.Contains("/resident/face.pap") || f.GamePath.EndsWith(".tmb"));
     }
 
     [Theory]

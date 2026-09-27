@@ -311,6 +311,9 @@ public sealed partial class DebugBridge : IDisposable
             case "/idleexport":
                 return ExportIdle(query);
             case "/idlecheck":
+                if (query.TryGetValue("repackage", out var destination))
+                    return _framework.RunOnFrameworkThread(() => Json(Game.Animation.IdleModDiagnostics.Repackage(
+                        query["path"], destination, query["race"], query["face"], _framework, _idleData, _idleScanner)));
                 return _framework.RunOnFrameworkThread(() => Json(Game.Animation.IdleModDiagnostics.Inspect(
                     query["path"], query["race"], query["face"], _framework, _idleData, _idleScanner)));
             case "/peek":
