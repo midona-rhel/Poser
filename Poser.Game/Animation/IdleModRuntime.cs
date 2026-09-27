@@ -156,13 +156,12 @@ public sealed class IdleModRuntime(
                     throw new InvalidOperationException("The actor is missing required bone " + layout.Bones[i]);
                 // LastRawTransform is the refreshed update-phase pose BEFORE
                 // render-phase Customize+ changes; reusing it avoids baking C+ twice.
-                var local = bone.LastRawTransform.ToMatrix();
+                Transform? parentTransform = null;
                 if (layout.Parents[i] >= 0)
                 {
-                    if (!source.TryGetValue(layout.Bones[layout.Parents[i]], out var parent) ||
-                        !Matrix4x4.Invert(parent.LastRawTransform.ToMatrix(), out var inverse))
-                        throw new InvalidOperationException("The pose contains a singular parent transform.");
-                    local *= inverse;
+                    if (!source.TryGetValue(layout.Bones[layout.Parents[i]], out var parent))
+                        throw new InvalidOperationException($"Idle export: missing parent of bone '{bone.BoneName}'.");
+                    parentTransform = parent.LastRawTransform;
                 }
                 else if (partial != 0)
                 {
@@ -172,9 +171,8 @@ public sealed class IdleModRuntime(
                     tracks.Add(new(i, idle[i], idle[i]));
                     continue;
                 }
-                if (!Matrix4x4.Decompose(local, out var scale, out var rotation, out var position))
-                    throw new InvalidOperationException("The pose contains a local transform that cannot be represented in animation.");
-                tracks.Add(new(i, idle[i], PoseTransform.CreateChecked(position, rotation, scale)));
+                tracks.Add(new(i, idle[i], IdlePoseLocalTransform.FromModel(
+                    bone.BoneName, bone.LastRawTransform, parentTransform)));
             }
             return new(layout.Name, layout.Bones.Length, tracks.MoveToImmutable());
         }
