@@ -62,6 +62,8 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ITextureReadbackProvider _readback;
     private readonly ISceneWorkflow _scenes;
     private readonly IIdleModExport _idleExport;
+    private readonly IDataManager _idleData;
+    private readonly ISigScanner _idleScanner;
     private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
@@ -116,10 +118,11 @@ public sealed partial class DebugBridge : IDisposable
         Application.Transforms.TransformParenting parenting,
         Application.Transforms.IParentingRuntime parentingRuntime,
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
-        IIdleModExport idleExport)
+        IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
         _configuration = configuration;
         _idleExport = idleExport;
+        _idleData = idleData; _idleScanner = idleScanner;
         _parenting = parenting; _parentingRuntime = parentingRuntime;
         _sceneSession = sceneSession; _bodyColliders = bodyColliders;
         _textures = textures;
@@ -307,6 +310,9 @@ public sealed partial class DebugBridge : IDisposable
                 return CreateBodyColliders(query);
             case "/idleexport":
                 return ExportIdle(query);
+            case "/idlecheck":
+                return _framework.RunOnFrameworkThread(() => Json(Game.Animation.IdleModDiagnostics.Inspect(
+                    query["path"], query["race"], query["face"], _framework, _idleData, _idleScanner)));
             case "/peek":
                 return Task.FromResult(Peek(query));
             case "/poke":
