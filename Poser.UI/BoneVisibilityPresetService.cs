@@ -51,7 +51,10 @@ public sealed class BoneVisibilityPresetService
             int at = store.FindIndex(preset =>
                 string.Equals(preset.Name, stock.Name, StringComparison.OrdinalIgnoreCase));
             if (at >= 0)
+            {
+                stock.ShowByDefault = store[at].ShowByDefault;
                 store[at] = stock;
+            }
             else
                 store.Add(stock);
         }
@@ -63,6 +66,21 @@ public sealed class BoneVisibilityPresetService
         _config().Skeleton.BoneVisibilityPresets;
 
     public IReadOnlyList<BoneVisibilityPreset> Presets => Store;
+
+    public void ShowDefaultsOrAll(IReadOnlyList<BoneId> bones)
+    {
+        var wanted = Application.Presentation.BoneVisibilityDefaults.Resolve(_config().Skeleton, bones);
+        _presentation.SetVisible(bones, false);
+        _presentation.SetVisible(wanted, true);
+    }
+
+    public void ToggleSkeleton(string key, IReadOnlyList<BoneId> bones)
+    {
+        if (_config().Skeleton.UseDefaultBonePresetsOnShow && _presentation.Resolve(bones) == OverlayVisibility.None)
+            ShowDefaultsOrAll(bones);
+        else
+            _presentation.ToggleVisibleWithMemory(key, bones);
+    }
 
     /// <summary>Whether every bone of the preset that this actor actually
     /// carries is shown. A preset none of whose bones exist here is off — an

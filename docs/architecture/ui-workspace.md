@@ -92,6 +92,13 @@ including position, and uses the same application transform/history path as
 ordinary edits. Bone and skeleton/category menus use Select, Visibility and
 Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
+Skeleton Settings can opt into default presets for broad show actions. The
+character skeleton eye and Show all actor bones then reveal only the union of
+checked presets within that scope; no checked matches means no visible bones.
+Individual bone/category and weapon-slot controls remain independent. With the
+option off (the compatibility default), the skeleton eye restores its remembered
+subset and Show all actor bones shows everything. Preset default checks persist
+across stock-list updates; saving Settings does not mutate the current mask.
 Save actions, Create collider,
 Export Idle Pose and category-wide destruction live under More when there are
 multiple secondary actions; sidebar and viewport use the same composition. Inspector surfaces
