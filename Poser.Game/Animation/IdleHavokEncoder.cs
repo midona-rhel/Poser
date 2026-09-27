@@ -72,9 +72,10 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         var skeleton = rig.Container->Skeletons[0].ptr;
         var binding = motion.Container->Bindings[index].ptr;
         if (skeleton == null || binding == null || binding->Animation.ptr == null ||
-            skeleton->Bones.Length is < 1 or > 1024 || skeleton->FloatSlots.Length is < 0 or > 1024 ||
-            !SameSkeleton(binding->OriginalSkeletonName.String, skeleton->Name.String))
+            skeleton->Bones.Length is < 1 or > 1024 || skeleton->FloatSlots.Length is < 0 or > 1024)
             throw new InvalidDataException("Animation and skeleton are incompatible.");
+        if (!SameSkeleton(binding->OriginalSkeletonName.String, skeleton->Name.String))
+            throw new InvalidDataException($"Animation skeleton '{binding->OriginalSkeletonName.String}' does not match '{skeleton->Name.String}' (root '{skeleton->Bones[0].Name.String}').");
         for (int i = 0; i < binding->TransformTrackToBoneIndices.Length; i++)
             if (binding->TransformTrackToBoneIndices[i] < -1 || binding->TransformTrackToBoneIndices[i] >= skeleton->Bones.Length)
                 throw new InvalidDataException("Animation references a missing bone.");
