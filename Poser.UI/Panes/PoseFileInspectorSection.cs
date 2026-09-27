@@ -2203,7 +2203,7 @@ public sealed class PoseFileInspectorSection
     {
         if (!_libraryExportOpen || _libraryExportActor is not { } actorId)
             return;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##export-to-library",
             _libraryExportOpen,
             next => _libraryExportOpen = next,

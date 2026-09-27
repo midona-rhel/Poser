@@ -263,7 +263,7 @@ public sealed class ScenePane
     {
         if (!_librarySaveOpen)
             return;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##scene-library-save",
             _librarySaveOpen,
             next => _librarySaveOpen = next,
@@ -310,9 +310,9 @@ public sealed class ScenePane
         },
             footer: () =>
         {
-            bool submit =
+            bool submit = Crystarium.DialogHasKeyboardFocus() && (
                 ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
-                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
             if (Crystarium.Button("Cancel", id: "scene-library-save-cancel"))
                 _librarySaveOpen = false;
             ImGui.SameLine(0f, 8f *

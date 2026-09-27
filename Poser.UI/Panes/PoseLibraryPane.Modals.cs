@@ -33,7 +33,7 @@ public sealed partial class PoseLibraryPane
     {
         if (!_deleteOpen)
             return;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##library-delete",
             _deleteOpen,
             next => _deleteOpen = next,

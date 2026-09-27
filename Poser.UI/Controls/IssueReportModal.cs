@@ -50,12 +50,12 @@ public sealed class IssueReportModal
         float scale = ImGuiHelpers.GlobalScale;
         var style = new TextStyle { Size = theme.Typography.LabelSize, Color = theme.Text };
         var hint = new TextStyle { Size = theme.Typography.CaptionSize, Color = theme.FormHint };
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##issue-report",
             _open,
             next => _open = next,
             "Report an issue",
-            size: ModalSize.Medium,
+            size: DialogSize.Medium,
             body: () =>
             {
                 Paragraph(Intro, style, scale);

@@ -73,7 +73,7 @@ public sealed class EntityRemovalDialog
 
     public void DrawBulkDestroyModal()
     {
-        Crystarium.Modal("##bulk-destroy", _bulkDestroyOpen,
+        Crystarium.Dialog("##bulk-destroy", _bulkDestroyOpen,
             open =>
             {
                 _bulkDestroyOpen = open;
@@ -86,11 +86,6 @@ public sealed class EntityRemovalDialog
                 Crystarium.Text(_bulkDestroyDescription, default,
                     TextConstraint.Wrap(ImGui.GetContentRegionAvail().X,
                         whitespace: TextWhitespace.PreLine));
-                if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-                {
-                    _bulkDestroyOpen = false;
-                    _bulkDestroy = null;
-                }
             },
             footer: () =>
             {
@@ -108,8 +103,6 @@ public sealed class EntityRemovalDialog
                     _bulkDestroy = null;
                     destroy?.Invoke();
                 }
-                if (!_bulkDestroyOpen)
-                    ImGui.CloseCurrentPopup();
             });
     }
 }
