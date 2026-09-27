@@ -7,6 +7,7 @@
 - Right-click equipment or facewear to remove it, and dye or custom-colour swatches to clear them.
 - Keep appearance colours in stable rows while editing or resizing the panel.
 - Enter custom-colour brightness values above 1 in the colour picker.
+- See every missed update on upgrade and browse release history from Settings.
 
 ## 0.9.12-beta — idle-pose export, bone presets and movable dialogs
 

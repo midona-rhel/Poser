@@ -8,18 +8,13 @@ namespace Poser.UI.Views;
 
 public sealed class ReleaseNotesView(ReleaseNotesSession session)
 {
-    private static readonly string[] Highlights =
-    [
-        "Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.",
-        "Find Jaw and Jaw Only directly under Head in the skeleton tree.",
-        "Right-click equipment or facewear to remove it, and dye or custom-colour swatches to clear them.",
-        "Keep appearance colours in stable rows while editing or resizing the panel.",
-        "Enter custom-colour brightness values above 1 in the colour picker.",
-    ];
+    private int _shownRevision = -1;
 
     public void Draw()
     {
         if (!session.IsOpen) return;
+        if (session.ShowingHistory && _shownRevision != session.ViewRevision)
+            ImGui.SetNextWindowFocus();
         float scale = ImGuiHelpers.GlobalScale;
         ImGui.SetNextWindowSize(new Vector2(560, 380) * scale, ImGuiCond.Appearing);
         ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Appearing, new Vector2(.5f));
@@ -43,8 +38,13 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
                 {
                     var frame = Crystarium.WindowFrame("release-notes", min, size, new WindowFrameProps
                     {
-                        Title = "What's new", OnClose = session.Dismiss,
-                        FooterRight = bar => bar.Button("Close", session.Dismiss),
+                        Title = session.ShowingHistory ? "Release notes" : "What's new",
+                        OnClose = session.Dismiss,
+                        FooterRight = bar =>
+                        {
+                            if (!session.ShowingHistory) bar.Button("All releases", session.Open);
+                            bar.Button("Close", session.Dismiss);
+                        },
                     });
                     ImGui.SetCursorScreenPos(frame.Body.Min);
                     ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16) * scale);
@@ -52,7 +52,19 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
                     {
                         bool bodyVisible = ImGui.BeginChild("##release-notes-body", frame.Body.Size,
                             false, ImGuiWindowFlags.AlwaysUseWindowPadding);
-                        try { if (bodyVisible) { DrawBody(); session.MarkPresented(); } }
+                        try
+                        {
+                            if (bodyVisible)
+                            {
+                                if (_shownRevision != session.ViewRevision)
+                                {
+                                    ImGui.SetScrollY(0);
+                                    _shownRevision = session.ViewRevision;
+                                }
+                                DrawBody();
+                                session.MarkPresented();
+                            }
+                        }
                         finally { ImGui.EndChild(); }
                     }
                     finally { ImGui.PopStyleVar(); }
@@ -67,14 +79,21 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
     private void DrawBody()
     {
         var theme = Crystarium.ActiveTheme;
-        Crystarium.Text($"Poser {System.Version.Parse(session.Version).ToString(3)}",
-            new TextStyle { Color = theme.TextDim });
-        ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
-        foreach (var highlight in Highlights)
+        if (session.Entries.Count == 0)
+            Crystarium.Text("No release notes are bundled for this version.");
+        foreach (var release in session.Entries)
         {
-            Crystarium.Text($"• {highlight}", default,
+            Crystarium.Text($"Poser {release.Version.ToString(3)} — {release.Title}",
+                new TextStyle { Color = theme.Text },
                 TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));
             ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
+            foreach (var highlight in release.Highlights)
+            {
+                Crystarium.Text($"• {highlight}", default,
+                    TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));
+                ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
+            }
+            ImGui.Dummy(new Vector2(0, 12 * ImGuiHelpers.GlobalScale));
         }
     }
 }

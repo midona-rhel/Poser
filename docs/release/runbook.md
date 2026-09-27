@@ -10,9 +10,13 @@ Never rebuild an existing release from a later main commit.
    root `repo.json` on the release branch. Update the changelog and all three
    download URLs to the exact new tag. Beta tags use `v<version>-beta`;
    for 0.9.6 this is `v0.9.6-beta`, assembly version `0.9.6.0`.
-   Review `ReleaseNotesView`'s in-app highlights for this release: short,
-   user-focused bullets, at most one sentence each. The popup takes its version
-   from the host assembly and appears on the first load of a newer version.
+   Add an entry to `ReleaseNotesHistory` with short, user-focused bullets,
+   at most one sentence each; retain previous entries. The host assembly
+   caps which releases are visible. On upgrade, the non-blocking window shows
+   every entry newer than the persisted last-presented version, newest first.
+   Snapshot that range before presentation advances the marker; hidden UI must
+   not consume it. Settings → About → Release notes opens the complete bundled
+   history through the installed version without lowering a newer seen marker.
 2. Commit and push the release head. Refuse packaging from main, a dirty
    checkout, mismatched versions/URLs, or an existing mismatched tag.
 3. Build and test that head with `dotnet build Poser.slnx -c Release` and

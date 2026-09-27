@@ -193,6 +193,7 @@ public sealed class SettingsViewModel
     public Action? OnClose;
     public Action? OnOpenRepository;
     public Action? OnReportIssue;
+    public Action? OnOpenReleaseNotes;
     public Action<string>? OnOpenUrl;
     public Action<LibrarySourceDraft>? OnOpenSource;
     /// <summary>Opens a folder picker seeded at the first argument and
@@ -1419,6 +1420,10 @@ public static partial class SettingsView
         page.Section("About", form =>
         {
             form.ReadOnly("Poser", vm.Version);
+            form.Actions("Updates", actions => actions.Button(
+                "Release notes",
+                () => vm.OnOpenReleaseNotes?.Invoke(),
+                help: "Browse all release notes through your installed version"));
             form.ReadOnly("Stack", "Crystarium · Poser.UI");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
