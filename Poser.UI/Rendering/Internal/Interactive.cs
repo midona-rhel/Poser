@@ -39,6 +39,8 @@ public readonly struct InteractionResult
     public readonly PseudoState State;
     public readonly bool Clicked;
     public readonly bool Activated;
+    /// <summary>Right press while enabled, hovered and not occluded.</summary>
+    public readonly bool RightClicked;
     /// <summary>Left double-click while hovered — same gating as
     /// <see cref="Clicked"/>.</summary>
     public readonly bool DoubleClicked;
@@ -66,13 +68,15 @@ public readonly struct InteractionResult
         bool dragBegan,
         bool dragEnded,
         Vector2 dragDelta,
-        InteractionOwner owner)
+        InteractionOwner owner,
+        bool rightClicked = false)
     {
         ScreenMin = min;
         ScreenMax = max;
         State = state;
         Clicked = clicked;
         Activated = activated;
+        RightClicked = rightClicked;
         DoubleClicked = doubleClicked;
         DragBegan = dragBegan;
         DragEnded = dragEnded;
@@ -431,6 +435,7 @@ public static class Interactive
         bool hovered = ImGui.IsItemHovered() && inside && !disabled && !occluded;
         bool active = ImGui.IsItemActive() && !disabled && !occluded;
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
+        bool rightClicked = hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right);
         bool doubleClicked = hovered
             && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
         // Drag handshake: ImGui's own activation edges, gated by drag
@@ -483,7 +488,7 @@ public static class Interactive
 
         return new InteractionResult(
             min, max, state, clicked, activated,
-            doubleClicked, dragBegan, dragEnded, dragDelta, owner);
+            doubleClicked, dragBegan, dragEnded, dragDelta, owner, rightClicked);
     }
 
     private static Occluder? HighestAt(

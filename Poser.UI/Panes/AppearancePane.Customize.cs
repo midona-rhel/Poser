@@ -15,10 +15,10 @@ namespace Poser.UI;
 /// plus the faces and hairs found by probing the model files, as Ktisis
 /// lists them. Body: race and clan on one row with the gender symbol as
 /// a swap, then height beside the bust or muscle slider. Face: the four
-/// tiles (face, hair, tail or ears, face paint) in one row, each with a
+/// tiles (face, hair, tail or ears, face paint) on fixed rows, each with a
 /// plus and minus that step only through valid values; the named options
-/// three per row as plus and minus wells; the features as one row of
-/// small tiles. Colours wrap as compact palette groups, with the switches
+/// on fixed rows as plus and minus wells; the features as one row of
+/// small tiles. Colours keep two columns, with the switches
 /// under them. Every value is a journal step; a slider folds while it
 /// drags. Without Glamourer everything disables in place and says why.
 /// </summary>
@@ -91,7 +91,7 @@ public sealed partial class AppearancePane
                 cells.Cell("Brows", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Eyebrows, live, why));
                 cells.Cell("Eyes", cell => OptionCell(cell, actor, menu, state, CustomizeKey.EyeShape, live, why));
                 cells.Cell("Nose", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Nose, live, why));
-            }, help: "Step through the shapes the clan offers");
+            }, help: "Step through the shapes the clan offers", fixedColumns: 2);
             form.Cells(cells =>
             {
                 cells.Cell("Jaw", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Jaw, live, why));
@@ -100,7 +100,7 @@ public sealed partial class AppearancePane
                     (state?.Value(CustomizeKey.SmallIris) ?? 0) != 0,
                     on => Set(actor, CustomizeKey.SmallIris, on ? Flag(CustomizeKey.SmallIris) : 0, on ? "Small iris" : "Large iris"),
                     !live, live ? "Smaller irises" : why));
-            }, help: "Step through the shapes the clan offers");
+            }, help: "Step through the shapes the clan offers", fixedColumns: 2);
             FeatureRow(form, actor, menu, state, live, why);
         });
 
@@ -122,8 +122,8 @@ public sealed partial class AppearancePane
                 ("Paint", CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
             };
             var theme = Crystarium.ActiveTheme;
-            float paletteWidth = theme.Controls.WorkspaceHeight * 2f + theme.Page.ActionGap;
-            ResponsiveColourGroups(form, "appearance-palette-colour", entries.Length,
+            float paletteWidth = theme.Controls.ColorWellSize;
+            FixedColourGroups(form, "appearance-palette-colour", entries.Length,
                 index => entries[index].Label, paletteWidth, (index, origin, _) =>
                 {
                     var entry = entries[index];
@@ -217,8 +217,8 @@ public sealed partial class AppearancePane
 
     // ── tiles ───────────────────────────────────────────────────────────
 
-    /// <summary>Face, hair, tail or ears, and face paint as cards two per
-    /// line, the equipment card's shape: the icon two rows tall opens the
+    /// <summary>Face, hair, tail or ears, and face paint as two cards per
+    /// line, preserving the minimum-window layout: the icon two rows tall opens the
     /// grid; beside it the feature's own name on the first line and the
     /// plus and minus well on the second, stepping only through the
     /// values the clan has.</summary>

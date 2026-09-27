@@ -52,6 +52,8 @@ Body and baked facial expression use separate destination-skeleton bindings;
 a missing expression is a failure, not a silently body-only export. Native
 capture refreshes the solved, pre-Customize+ pose; local tracks are mapped by
 name to the game's destination skeleton, not by the modded actor's indices.
+Model-to-local conversion uses skeletal quaternion/scale components rather than
+matrix decomposition, preserving rotated non-uniform and signed bone scales.
 The source-race export includes extra body/face bones from the loaded skeleton
 and requires the same face, skeleton mods and Customize+ profile in the receiving collection.
 Vanilla entry samples map by name; extra bones start at their reference pose.

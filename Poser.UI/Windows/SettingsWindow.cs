@@ -28,6 +28,7 @@ public class SettingsWindow : Window
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly IPoseLibraryService _library;
     private readonly UserNotices _notices;
+    private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
     private bool _openLibrary;
     private bool _openSkeleton;
 
@@ -41,7 +42,8 @@ public class SettingsWindow : Window
         IIntegrationRuntimePort integrations,
         Controls.IssueReportModal issueReport,
         IPoseLibraryService library,
-        UserNotices notices)
+        UserNotices notices,
+        global::Poser.Application.Settings.ReleaseNotesSession releaseNotes)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -55,6 +57,7 @@ public class SettingsWindow : Window
         _log = log;
         _library = library;
         _notices = notices;
+        _releaseNotes = releaseNotes;
         WireRuntime();
         RespectCloseHotkey = false;
     }
@@ -312,6 +315,7 @@ public class SettingsWindow : Window
                 },
                 string.IsNullOrWhiteSpace(start) ? null : start);
         vm.OnReportIssue = _issueReport.Open;
+        vm.OnOpenReleaseNotes = _releaseNotes.Open;
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
