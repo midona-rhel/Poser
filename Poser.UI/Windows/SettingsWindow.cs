@@ -2,6 +2,7 @@ using Poser.Domain.Scene;
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -234,6 +235,8 @@ public class SettingsWindow : Window
             HideSkeletonOnActorSelection =
                 c.Skeleton.HideSkeletonOnActorSelection,
             OnlyActiveActorBones = c.Skeleton.OnlyActiveActorBones,
+            UseDefaultBonePresetsOnShow = c.Skeleton.UseDefaultBonePresetsOnShow,
+            DefaultBonePresets = c.Skeleton.BoneVisibilityPresets.ToDictionary(p => p.Name, p => p.ShowByDefault, StringComparer.OrdinalIgnoreCase),
             DimInactiveActors = c.Skeleton.DimInactiveActors,
             InactiveActorOpacity = c.Skeleton.InactiveActorOpacity,
             ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
@@ -481,6 +484,9 @@ public class SettingsWindow : Window
         c.Skeleton.HideSkeletonOnActorSelection =
             _vm.HideSkeletonOnActorSelection;
         c.Skeleton.OnlyActiveActorBones = _vm.OnlyActiveActorBones;
+        c.Skeleton.UseDefaultBonePresetsOnShow = _vm.UseDefaultBonePresetsOnShow;
+        foreach (var preset in c.Skeleton.BoneVisibilityPresets)
+            if (_vm.DefaultBonePresets.TryGetValue(preset.Name, out var show)) preset.ShowByDefault = show;
         c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
         c.Skeleton.InactiveActorOpacity =
             Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);

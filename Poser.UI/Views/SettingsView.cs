@@ -76,6 +76,8 @@ public sealed class SettingsViewModel
     public bool HideSkeletonWhileDragging;
     public bool HideSkeletonOnActorSelection = true;
     public bool OnlyActiveActorBones;
+    public bool UseDefaultBonePresetsOnShow;
+    public Dictionary<string, bool> DefaultBonePresets = new(StringComparer.OrdinalIgnoreCase);
 
     public bool DimInactiveActors;
     public float InactiveActorOpacity = 0.5f;
@@ -822,6 +824,15 @@ public static partial class SettingsView
                 next => vm.ShowAllVieraEars = next,
                 "Every Viera ear set is listed, not only the one the character wears");
         }, divider: false);
+        page.Section("Default bone presets", form =>
+        {
+            form.Switch("Use presets when showing bones", vm.UseDefaultBonePresetsOnShow,
+                next => vm.UseDefaultBonePresetsOnShow = next,
+                "Showing the character skeleton or all actor bones uses the checked presets; no checks means no bones");
+            foreach (var name in new List<string>(vm.DefaultBonePresets.Keys))
+                form.Checkboxes(name, disabled: !vm.UseDefaultBonePresetsOnShow,
+                    new Crystarium.CheckItem("Default", vm.DefaultBonePresets[name], next => vm.DefaultBonePresets[name] = next));
+        });
         page.Section("Colors", form =>
             form.ColorWells("Bones", wells =>
             {

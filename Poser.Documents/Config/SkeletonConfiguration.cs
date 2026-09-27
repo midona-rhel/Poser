@@ -14,6 +14,7 @@ public class BoneVisibilityPreset
 {
     public string Name { get; set; } = string.Empty;
     public List<string> Bones { get; set; } = new();
+    public bool ShowByDefault { get; set; } = true;
 }
 
 /// <summary>
@@ -82,6 +83,8 @@ public class SkeletonConfiguration
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();
+
+    public bool UseDefaultBonePresetsOnShow { get; set; }
 
     /// <summary>The stock preset version last seeded. A user who deletes a
     /// stock preset does not get it back until the stock lists change, and
