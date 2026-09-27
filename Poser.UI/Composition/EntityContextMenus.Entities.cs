@@ -345,58 +345,72 @@ internal sealed partial class EntityContextMenus
             return;
         var actor = _presetActorId is { } id ? _scene.Snapshot.FindActor(id.LogicalId) : null;
         float gap = 8f * ImGuiHelpers.GlobalScale;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##bone-presets-manage",
             _presetManagerOpen,
             next => _presetManagerOpen = next,
             "Bone visibility presets",
             () =>
         {
-            Crystarium.TextInput(
-                "##bone-preset-name",
-                _presetNameValue,
-                next => _presetNameValue = next,
-                placeholder: "New preset name");
-            ImGui.Dummy(new Vector2(0f, gap));
-            if (Crystarium.Button(
-                    "Save what this actor shows",
-                    variant: ButtonVariant.Primary,
-                    id: "bone-preset-save",
-                    disabled: actor == null,
-                    help: "Store every bone currently shown in the overlay under that name"))
-            {
-                _presetSaveNote =
-                    _bonePresets.SaveCurrent(_presetNameValue, actor!);
-                if (_presetSaveNote == null)
-                    _presetNameValue = string.Empty;
-            }
-            if (_presetSaveNote is { Length: > 0 } note)
-                Crystarium.Text(note);
-
-            ImGui.Dummy(new Vector2(0f, gap));
             var presets = _bonePresets.Presets;
             if (presets.Count == 0)
-            {
                 Crystarium.Text("No presets stored yet.");
-                return;
-            }
+            var theme = Crystarium.ActiveTheme;
+            float rowHeight = theme.Controls.ShellIconAction * ImGuiHelpers.GlobalScale;
+            var countStyle = new TextStyle { Color = theme.TextDim };
+            float countWidth = Crystarium.MeasureText("99999 bones", countStyle).X;
             string? doomed = null;
             for (int i = 0; i < presets.Count; i++)
             {
                 var preset = presets[i];
                 var name = preset.Name;
+                var row = ImGui.GetCursorScreenPos();
+                float width = ImGui.GetContentRegionAvail().X;
+                float nameWidth = MathF.Max(0f, width - rowHeight - countWidth - gap * 2f);
+                Crystarium.TextInBand(row, new Vector2(nameWidth, rowHeight), name,
+                    default, TextConstraint.Truncate(nameWidth));
+                Crystarium.TextInBand(
+                    row + new Vector2(width - rowHeight - gap - countWidth, 0f),
+                    new Vector2(countWidth, rowHeight), $"{preset.Bones.Count} bones",
+                    countStyle, TextAlign.End);
+                ImGui.SetCursorScreenPos(row + new Vector2(width - rowHeight, 0f));
                 if (Crystarium.IconButton(
                         TablerIcon.Trash,
+                        style: ControlStyle.Square(theme.Controls.ShellIconAction),
                         id: $"bone-preset-delete-{i}",
                         help: $"Delete '{name}'"))
                     doomed = name;
-                ImGui.SameLine(0f, gap);
-                Crystarium.Text($"{name} — {preset.Bones.Count} bones");
+                ImGui.SetCursorScreenPos(row + new Vector2(0f, rowHeight + gap));
             }
             if (doomed != null)
             {
                 _bonePresets.Delete(doomed);
                 _presetSaveNote = null;
+            }
+            ImGui.Dummy(new Vector2(0f, gap));
+            Crystarium.TextInput(
+                "##bone-preset-name",
+                _presetNameValue,
+                next => _presetNameValue = next,
+                placeholder: "New preset name");
+            if (_presetSaveNote is { Length: > 0 } note)
+                Crystarium.Text(note);
+        },
+        footer: () =>
+        {
+            if (Crystarium.Button("Close", id: "bone-preset-close"))
+                _presetManagerOpen = false;
+            ImGui.SameLine(0f, gap);
+            if (Crystarium.Button(
+                    "Save preset",
+                    variant: ButtonVariant.Primary,
+                    id: "bone-preset-save",
+                    disabled: actor == null || string.IsNullOrWhiteSpace(_presetNameValue),
+                    help: "Store every bone currently shown in the overlay under that name"))
+            {
+                _presetSaveNote = _bonePresets.SaveCurrent(_presetNameValue, actor!);
+                if (_presetSaveNote == null)
+                    _presetNameValue = string.Empty;
             }
         });
     }
@@ -619,7 +633,11 @@ internal sealed partial class EntityContextMenus
             new(visible ? "Hide from overlay" : "Show in overlay", visible ? TablerIcon.EyeOff : TablerIcon.Eye)
             { OnInvoke = () =>
                 {
-                    if (_ctxOverlayMemoryKey is { } memoryKey) _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
+                    if (_ctxOverlayMemoryKey is { } memoryKey)
+                    {
+                        if (_ctxBranchSkeleton?.Slot == PoseSlot.Character) _bonePresets.ToggleSkeleton(memoryKey, bones);
+                        else _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
+                    }
                     else _overlayPresentation.SetVisible(bones, !visible);
                 }
             },
@@ -632,7 +650,7 @@ internal sealed partial class EntityContextMenus
             [
                 new("Show only " + scope, TablerIcon.Crosshair)
                 { OnInvoke = () => { _overlayPresentation.SetVisible(ownerBones, false); _overlayPresentation.SetVisible(bones, true); } },
-                new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, true) },
+                new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _bonePresets.ShowDefaultsOrAll(ownerBones) },
                 new("Hide all actor bones", TablerIcon.EyeOff) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, false) },
             ]),
             new("Reset", TablerIcon.Refresh, submenuItems:

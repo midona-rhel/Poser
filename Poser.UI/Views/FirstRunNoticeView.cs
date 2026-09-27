@@ -7,11 +7,8 @@ using Poser.Config;
 namespace Poser.UI.Views;
 
 /// <summary>
-/// The first-run acceptance gate. Drawn by the shell as an undismissable
-/// Crystarium modal: ImGui's modal layer dims and blocks every other window in
-/// the context, so the workspace behind it — attached or detached, plus the
-/// part windows, settings and pop-outs — is visible and inert until the notice
-/// is accepted.
+/// The first-run notice is an ordinary dismissible window. Closing it does
+/// not accept the notice; it remains pending and returns next plugin session.
 ///
 /// <para>The gate holds no plugin state and owns no resources: it reads the
 /// live config through <see cref="configuration"/> and writes
@@ -27,35 +24,30 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
     private const float ConfirmationFieldWidth = 180f;
 
     private string _typed = string.Empty;
+    private bool _dismissed;
 
     /// <summary>Opens the browser on a credited project. Assigned by the host
     /// so the view keeps no Dalamud dependency of its own.</summary>
     public Action<string>? OnOpenUrl;
 
-    /// <summary>True while the workspace is gated. The host suppresses
-    /// workspace input paths that do not travel through ImGui (keybinds) while
-    /// this holds.</summary>
+    /// <summary>Closing the window never writes acceptance.</summary>
     public bool Pending =>
         !FirstRunNotice.IsAccepted(configuration.Config);
 
     public void Draw()
     {
-        if (!Pending)
+        if (!Pending || _dismissed)
             return;
 
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##first-run-notice",
             true,
-            // The gate closes by acceptance alone. ImGui's own dismissals
-            // (Escape, a click outside) reach this and are answered by the
-            // next frame reopening the modal, so there is nothing to record.
-            _ => { },
+            open => _dismissed = !open,
             "Before you use Poser",
             DrawBody,
             DrawFooter,
-            ModalSize.Large,
-            DialogHeight,
-            dismissible: false);
+            DialogSize.Large,
+            DialogHeight);
     }
 
     private void DrawBody()

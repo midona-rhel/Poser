@@ -73,8 +73,8 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
         string? problem = string.IsNullOrWhiteSpace(_name) || _name.Length > 128 ? "Enter a mod name (up to 128 characters)."
             : _races.Count == 0 ? "Select a race and gender."
             : slots.Length == 0 ? "No shared standing pose slot is available." : null;
-        Crystarium.Modal(ModalId, _open, value => _open = value, ModalTitle,
-            size: ModalSize.Medium, height: 650f,
+        Crystarium.Dialog(ModalId, _open, value => _open = value, ModalTitle,
+            size: DialogSize.Medium, height: 650f,
             body: () => Crystarium.Page("idle-export-options", ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail(), page =>
             {
                 page.Section("Mod", form =>
@@ -111,13 +111,11 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
                     _choosePath = true;
                 }
             });
-        Crystarium.FloatingSurface.ReleaseWhenClosed($"{ModalTitle}##{ModalId}", _open);
     }
 
     private void CloseOptions()
     {
         _open = false;
-        ImGui.CloseCurrentPopup();
     }
 
     private async Task Save(ActorId actor, string path, IdleModOptions options)

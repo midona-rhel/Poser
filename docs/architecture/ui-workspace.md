@@ -92,14 +92,21 @@ including position, and uses the same application transform/history path as
 ordinary edits. Bone and skeleton/category menus use Select, Visibility and
 Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
+Skeleton Settings can opt into default presets for broad show actions. The
+character skeleton eye and Show all actor bones then reveal only the union of
+checked presets within that scope; no checked matches means no visible bones.
+Individual bone/category and weapon-slot controls remain independent. With the
+option off (the compatibility default), the skeleton eye restores its remembered
+subset and Show all actor bones shows everything. Preset default checks persist
+across stock-list updates; saving Settings does not mutate the current mask.
 Save actions, Create collider,
 Export Idle Pose and category-wide destruction live under More when there are
 multiple secondary actions; sidebar and viewport use the same composition. Inspector surfaces
 keep a lone save action direct. More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
-destruction (lights, cameras, objects, and overlays) opens a modal with the target count
+destruction (lights, cameras, objects, and overlays) opens a dialog with the target count
 and what is released or protected; only its explicit confirmation runs the
-captured operation. Cancel, Escape, and closing the modal do nothing. Single
+captured operation. Cancel, Escape, and closing the dialog do nothing. Single
 entity actions and automatic session teardown retain their existing routes.
 
 Context menus use the clicked target; only right-clicking a member of an
@@ -186,6 +193,13 @@ controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.
+
+Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
+the game or claim full-screen/exclusive input; only their visible bounds
+participate in window interaction. Enter/Escape shortcuts belong to the focused
+dialog, not another window or a nested picker. Closing the first-run notice
+does not accept it or disable shortcuts; the unaccepted notice returns next
+plugin session. Separate naming-dialog instances have distinct window IDs.
 
 Diagnostics stay with the surface whose state they describe. Completed actions
 use `UserNotices`, while visible state changes do not need a second success

@@ -12,6 +12,7 @@ namespace Poser.UI.Controls;
 /// name that can be unset.</summary>
 public sealed class EntityNameModal
 {
+    private readonly string _windowId = $"##name-entity-{Guid.NewGuid():N}";
     private bool _open;
     private string _title = string.Empty;
     private string _value = string.Empty;
@@ -59,8 +60,8 @@ public sealed class EntityNameModal
         float height = NamePromptHeight + (_validate is null ? 0f : ProblemLineHeight);
         // Footer idiom, not body buttons: the footer bar right-aligns its
         // children, and the height fits one input with no dead band.
-        Crystarium.Modal(
-            "##name-entity",
+        Crystarium.Dialog(
+            _windowId,
             _open,
             next => _open = next,
             _title,
@@ -91,7 +92,7 @@ public sealed class EntityNameModal
             {
                 // Enter is the blue button: the modal is one input, and
                 // done is done.
-                bool submit = problem is null && (
+                bool submit = problem is null && Crystarium.DialogHasKeyboardFocus() && (
                     ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
                     ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
                 if (_clear is { } clear)
