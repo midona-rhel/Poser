@@ -15,6 +15,9 @@ public record struct ContextMenuItem
     public bool Disabled;
     public bool IsSeparator;
     public ContextMenuItem[]? SubmenuItems;
+    // Optional UI command binding. Legacy callers may still consume indices;
+    // composed menus keep a child callback attached to its visible row.
+    public Action? OnInvoke;
 
     /// <summary>Explanatory hover help for the row — the same card every
     /// control's <c>help</c> shows. The one row shape that NEEDS it is a

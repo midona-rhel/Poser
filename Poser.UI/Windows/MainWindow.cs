@@ -572,7 +572,7 @@ public partial class MainWindow : Window
             _overlayControl, _overlayPresentation, _referenceImages, _scene,
             _scenePane, _selection, _sidebar, _poseFileSection,
             _duplication, _entityCommands, _entityActions, _playback,
-            _cameraTargets, _names, _issueReport, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement);
+            _cameraTargets, _names, _issueReport, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms);
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;

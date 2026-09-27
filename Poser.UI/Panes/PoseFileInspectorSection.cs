@@ -39,6 +39,7 @@ public sealed class PoseFileInspectorSection
     private readonly IPoseLibraryService _library;
 
     private readonly IPoseFileCapture _capture;
+    private readonly IdleModExportDialog _idleExport;
     private readonly PosePreviewController _importPreview;
 
     private readonly UserNotices _notices;
@@ -99,9 +100,11 @@ public sealed class PoseFileInspectorSection
         IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,
-        UserNotices notices)
+        UserNotices notices,
+        IdleModExportDialog idleExport)
     {
         _notices = notices;
+        _idleExport = idleExport;
         _imports = imports;
         _scene = scene;
         _capture = capture;
@@ -159,6 +162,7 @@ public sealed class PoseFileInspectorSection
         DrawExportLibraryModal();
         _importBrowser.Draw();
         _exportBrowser.Draw();
+        _idleExport.Draw();
         DrawMenus();
         ReleaseImportPreview();
     }
@@ -168,6 +172,9 @@ public sealed class PoseFileInspectorSection
     private Action? _pendingBrowserOpen;
 
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
+
+    public bool IdleExportBusy => _idleExport.Busy;
+    public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
 
     public void RequestImportMenu(bool withPresets, Vector2? anchor = null,
         Domain.Identity.ActorId? target = null)
