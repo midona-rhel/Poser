@@ -98,7 +98,7 @@ id is Glamourer's: a sheet row, zero for nothing, a sentinel under the
 packed model id (model, weapon type, variant), which is how a slot wears
 what no item names and how a weapon wears a prop. Every change is one
 journal step whose inverse is the slot's previous state, read before the
-write. The cards carry no verbs: Ctrl-click on an item's icon, a dye box
+write. The cards carry no verbs: right-click on an item's icon, a dye box
 or the facewear removes it, "None" leads the dye and facewear lists, and
 Remove all takes everything off. Without Glamourer the view disables in
 place and says why.
@@ -142,8 +142,11 @@ slot capability; it does not implicitly copy the source attachment.
 Custom colours are nullable intent, separate from observed shader readings.
 Opening their picker claims nothing; an edit enables that channel. Like Brio's
 explicit shader override, it remains enforced over palette edits until Reset.
-RGB uses the shared standard picker; mouth also exposes linear alpha. No
-material, specular, muscle, HDR, or exposure controls are part of this contract.
+RGB uses the shared HDR-capable picker, allowing numeric brightness above one;
+mouth also exposes linear alpha. Right-click a custom swatch to reset its
+override. Palette and custom-colour groups retain two columns as the panel
+resizes, spreading the available width without changing row membership.
+No material, specular, muscle, or separate exposure controls are included.
 
 A channel Reset synchronously writes its captured incoming colour into the
 current shader buffer, then relinquishes only that channel. No redraw or provider

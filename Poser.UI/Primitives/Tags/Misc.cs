@@ -24,7 +24,8 @@ public static partial class Crystarium
     public static bool ImageTile(
         string id, nint texture, float side, Action? onClick = null,
         TablerIcon fallback = TablerIcon.Photo, string? help = null,
-        bool disabled = false, bool selected = false, bool disruptive = false)
+        bool disabled = false, bool selected = false, bool disruptive = false,
+        Action? onRightClick = null)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -64,6 +65,8 @@ public static partial class Crystarium
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
             onClick?.Invoke();
+        if (hit.RightClicked)
+            onRightClick?.Invoke();
         return hit.Activated;
     }
 
@@ -73,7 +76,7 @@ public static partial class Crystarium
     public static bool ColorTile(
         string id, Vector4? color, float width, float height,
         Action? onClick = null, string? label = null, string? help = null,
-        bool disabled = false)
+        bool disabled = false, Action? onRightClick = null)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -109,6 +112,8 @@ public static partial class Crystarium
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
             onClick?.Invoke();
+        if (hit.RightClicked)
+            onRightClick?.Invoke();
         return hit.Activated;
     }
 

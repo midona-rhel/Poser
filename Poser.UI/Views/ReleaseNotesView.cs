@@ -10,13 +10,11 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
 {
     private static readonly string[] Highlights =
     [
-        "Export your posed actor and baked expression as a Penumbra idle-pose mod.",
-        "Choose the standing pose slot, mod name and target races, with experimental cross-race retargeting.",
-        "Save and export the PMP in one flow, then import it into Penumbra.",
-        "Find common controls first in consistent entity menus, without unnecessary one-item submenus.",
-        "Toggle facial-detail bones separately from the Head preset.",
-        "Choose which bone presets appear when you show the skeleton, and manage them in a tidier list.",
-        "Move dialogs freely and keep using the game or other windows without a blocking backdrop.",
+        "Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.",
+        "Find Jaw and Jaw Only directly under Head in the skeleton tree.",
+        "Right-click equipment or facewear to remove it, and dye or custom-colour swatches to clear them.",
+        "Keep appearance colours in stable rows while editing or resizing the panel.",
+        "Enter custom-colour brightness values above 1 in the colour picker.",
     ];
 
     public void Draw()

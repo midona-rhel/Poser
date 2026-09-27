@@ -122,8 +122,8 @@ public sealed partial class AppearancePane
                 ("Paint", CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
             };
             var theme = Crystarium.ActiveTheme;
-            float paletteWidth = theme.Controls.WorkspaceHeight * 2f + theme.Page.ActionGap;
-            ResponsiveColourGroups(form, "appearance-palette-colour", entries.Length,
+            float paletteWidth = theme.Controls.ColorWellSize;
+            FixedColourGroups(form, "appearance-palette-colour", entries.Length,
                 index => entries[index].Label, paletteWidth, (index, origin, _) =>
                 {
                     var entry = entries[index];

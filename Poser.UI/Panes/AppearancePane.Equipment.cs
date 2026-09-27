@@ -173,8 +173,8 @@ public sealed partial class AppearancePane
     /// <summary>The slot's card: the icon two rows tall opens the item
     /// picker; beside it the item's name reads on the first line and the
     /// two dyes fill the second as colour boxes that open the dye picker.
-    /// The card holds no verbs: Ctrl-click on the icon takes the item
-    /// off and Ctrl-click on a dye box clears that dye (the rule), "None"
+    /// The card holds no verbs: right-click on the icon takes the item
+    /// off and right-click on a dye box clears that dye, "None"
     /// leads the dye list, and clothes come off through Remove all.</summary>
     private void ItemRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot,
@@ -199,19 +199,15 @@ public sealed partial class AppearancePane
                 $"wardrobe-{slot}-tile",
                 ResolveIcon(item?.Icon ?? FallbackIcon(slot)),
                 tile,
-                () =>
+                () => OpenItemPicker(actor, slot),
+                help: ready ? "Choose an item. Right-click to remove it." : blocked,
+                disabled: !ready,
+                onRightClick: () =>
                 {
-                    if (ImGui.GetIO().KeyCtrl)
-                    {
-                        if (worn is { } w4 && !WardrobeIds.IsNothing(w4.ItemId))
-                            SetItem(actor, slot, 0, w4.Dye1, w4.Dye2,
-                                $"Remove {SlotName(slot).ToLowerInvariant()}");
-                    }
-                    else
-                        OpenItemPicker(actor, slot);
-                },
-                help: ready ? "Choose an item" : blocked,
-                disabled: !ready);
+                    if (worn is { } w4 && !WardrobeIds.IsNothing(w4.ItemId))
+                        SetItem(actor, slot, 0, w4.Dye1, w4.Dye2,
+                            $"Remove {SlotName(slot).ToLowerInvariant()}");
+                });
 
             float x = origin.X + side + gap;
             float width = MathF.Max(1f, row.ControlWidth - side - gap);
@@ -245,19 +241,15 @@ public sealed partial class AppearancePane
                     dye is { } paint ? DyeColor(paint.Color) : null,
                     dyeW / s,
                     square,
-                    () =>
-                    {
-                        if (ImGui.GetIO().KeyCtrl)
-                        {
-                            if (dyeId != 0)
-                                SetDye(actor, slot, index, 0);
-                        }
-                        else
-                            OpenDyePicker(actor, slot, index);
-                    },
+                    () => OpenDyePicker(actor, slot, index),
                     label: dye is null ? "None" : null,
-                    help: dyeable ? (dye?.Name ?? (which == 0 ? "Choose the first dye" : "Choose the second dye")) : why,
-                    disabled: !dyeable);
+                    help: dyeable ? (dye?.Name ?? (which == 0 ? "Choose the first dye" : "Choose the second dye"))
+                        + ". Right-click to clear this dye." : why,
+                    disabled: !dyeable,
+                    onRightClick: () =>
+                    {
+                        if (dyeId != 0) SetDye(actor, slot, index, 0);
+                    });
             }
         }, help: SlotHelp(slot));
     }
@@ -301,18 +293,14 @@ public sealed partial class AppearancePane
                 "wardrobe-facewear-tile",
                 ResolveIcon(entry?.Icon ?? FallbackIcon(null)),
                 tile,
-                () =>
+                () => OpenFacewearPicker(actor),
+                help: ready ? "Choose facewear. Right-click to remove it." : blocked,
+                disabled: !ready,
+                onRightClick: () =>
                 {
-                    if (ImGui.GetIO().KeyCtrl)
-                    {
-                        if (entry is not null)
-                            SetFacewear(actor, 0, "Remove facewear");
-                    }
-                    else
-                        OpenFacewearPicker(actor);
-                },
-                help: ready ? "Choose a facewear" : blocked,
-                disabled: !ready);
+                    if (!WardrobeIds.IsNoFacewear(worn))
+                        SetFacewear(actor, 0, "Remove facewear");
+                });
 
             float x = origin.X + side + gap;
             float width = MathF.Max(1f, row.ControlWidth - side - gap);

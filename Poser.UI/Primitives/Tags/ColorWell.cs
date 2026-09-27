@@ -54,7 +54,8 @@ public static partial class Crystarium
         string? help = null,
         bool hdr = false,
         Action? onBegin = null,
-        Action? onCommit = null)
+        Action? onCommit = null,
+        Action? onRightClick = null)
     {
         var theme = ActiveTheme;
         float side = ControlSizing.Height(
@@ -66,6 +67,8 @@ public static partial class Crystarium
         var wellMax = wellMin + new Vector2(side * scale);
 
         PaintColorWellBox(hit, color, disabled);
+        if (hit.RightClicked)
+            onRightClick?.Invoke();
 
         if (hit.Clicked && !disabled)
         {
