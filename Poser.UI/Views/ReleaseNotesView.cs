@@ -10,13 +10,11 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
 {
     private static readonly string[] Highlights =
     [
-        "Attach scene objects to actors or bones so they follow your pose.",
-        "Generated body colliders now follow the actor's bones.",
-        "Drawing colliders is much faster, especially with several on screen.",
-        "Duplicated colliders keep their settings and bone attachments.",
-        "Switch duplicated actors to a different Penumbra collection.",
-        "MCDF actors can now use your modded animations.",
-        "New free cameras preserve the view you're looking through.",
+        "Export your posed actor and baked expression as a Penumbra idle-pose mod.",
+        "Choose the standing pose slot, mod name and target races, with experimental cross-race retargeting.",
+        "Save and export the PMP in one flow, then import it into Penumbra.",
+        "Find common controls first in consistent entity menus, without unnecessary one-item submenus.",
+        "Toggle facial-detail bones separately from the Head preset.",
     ];
 
     public void Draw()
