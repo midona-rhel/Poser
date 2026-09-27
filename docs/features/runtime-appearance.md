@@ -146,7 +146,7 @@ RGB uses the shared HDR-capable picker, allowing numeric brightness above one;
 mouth also exposes linear alpha. Right-click a custom swatch to reset its
 override. Palette and custom-colour groups retain two columns as the panel
 resizes, spreading the available width without changing row membership.
-Face cards and shape controls retain their minimum-width single-column rows.
+Face cards and shape controls retain their minimum-window two-column rows.
 No material, specular, muscle, or separate exposure controls are included.
 
 A channel Reset synchronously writes its captured incoming colour into the
