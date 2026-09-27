@@ -19,7 +19,7 @@ namespace Poser.Game.Animation;
 public sealed class IdleModRuntime(
     IFramework framework, IDataManager data, ISigScanner scanner,
     StableBindingRegistry bindings, ISkeletonService skeletons, PoseExportCapture capture,
-    IPoseImportCommands imports, IBonePosingService posing, IIntegrationRuntimePort integration) : IIdleModRuntime
+    IPoseImportCommands imports, IIntegrationRuntimePort integration) : IIdleModRuntime
 {
     private readonly IdleHavokEncoder _encoder = new(framework, scanner);
 
@@ -73,8 +73,17 @@ public sealed class IdleModRuntime(
         byte[] Read(string path) => data.GetFile(path)?.Data ?? throw new FileNotFoundException("Unsupported idle resource: " + path);
         var bodySkeleton = Read(basePath);
         var faceSkeleton = Read(facePath);
-        var bodyLayout = _encoder.ReadSkeleton(bodySkeleton);
-        var faceLayout = _encoder.ReadSkeleton(faceSkeleton);
+        byte[] ReadLoaded(string path)
+        {
+            var resolved = paths.Value!.Where(entry => entry.Value.Contains(path, StringComparer.Ordinal))
+                .Select(entry => entry.Key).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (resolved.Length != 1) throw new InvalidOperationException("The loaded skeleton path is ambiguous: " + path);
+            return Path.IsPathFullyQualified(resolved[0]) ? File.ReadAllBytes(resolved[0]) : Read(resolved[0]);
+        }
+        var vanillaBodyLayout = _encoder.ReadSkeleton(bodySkeleton);
+        var vanillaFaceLayout = _encoder.ReadSkeleton(faceSkeleton);
+        var bodyLayout = _encoder.ReadSkeleton(ReadLoaded(basePath));
+        var faceLayout = _encoder.ReadSkeleton(ReadLoaded(facePath));
         string prefix = $"chara/human/{raceName}/animation/a0001/bt_common/emote/pose01_";
         var start = new PapAnimationDocument(Read(prefix + "start.pap"));
         var loop = new PapAnimationDocument(Read(prefix + "loop.pap"));
@@ -88,8 +97,8 @@ public sealed class IdleModRuntime(
         var facePartial = skeleton.Bones.Where(b => b.BoneName.StartsWith("j_f_", StringComparison.Ordinal))
             .Select(b => b.PartialId).Distinct().ToArray();
         if (facePartial.Length != 1) throw new InvalidOperationException("The actor does not have one identifiable face skeleton.");
-        var bodyPose = Tracks(bodyLayout, bodyIdle, 0);
-        var expression = Tracks(faceLayout, faceIdle, facePartial[0]);
+        var bodyPose = Tracks(bodyLayout, RemapIdle(vanillaBodyLayout, bodyIdle, bodyLayout), 0);
+        var expression = Tracks(faceLayout, RemapIdle(vanillaFaceLayout, faceIdle, faceLayout), facePartial[0]);
         // Standing pose 1 has a 45-frame entry and 70-frame loop in the game.
         // Keep its native timelines: no shared ActionTimeline edits or custom exit.
         var samples = IdleAnimationSamples.Create(bodyPose, expression, 45f / 30f);
@@ -99,16 +108,15 @@ public sealed class IdleModRuntime(
         var faceHold = _encoder.Encode(faceTemplate.HavokBytes, 0, samples.Expression, samples.Expression.Hold with { DurationSeconds = 70f / 30f });
         return new(name + " static pose", $"Experimental standing pose 1 replacement for {raceName}, face {face}. " +
             "Body/IK and facial pose are baked. Use only in this character's Penumbra collection with the same appearance and Customize+ profile. " +
-            "Custom extra skeleton bones, equipment, hair/cloth physics and gaze tracking are not exported. Entry is sine-eased; exit uses the game's normal blend-out.",
+            "Requires the same body and face skeleton mods. Equipment, hair/cloth partials and gaze tracking are not exported. Entry is sine-eased; exit uses the game's normal blend-out.",
             [new(prefix + "start.pap", IdlePapBuilder.BuildPair(start, _encoder.Combine(bodyEntry, faceEntry), 45)),
              new(prefix + "loop.pap", IdlePapBuilder.BuildPair(loop, _encoder.Combine(bodyHold, faceHold), 70))]);
 
         IdleSkeletonPose Tracks(IdleHavokEncoder.SkeletonLayout layout, PoseTransform[] idle, int partial)
         {
             var source = skeleton.Bones.Where(b => b.PartialId == partial).ToDictionary(b => b.BoneName, StringComparer.Ordinal);
-            var supported = layout.Bones.ToHashSet(StringComparer.Ordinal);
-            if (source.Values.Any(b => !supported.Contains(b.BoneName) && posing.HasModifications(b)))
-                throw new InvalidOperationException("This pose edits custom skeleton bones; the initial idle exporter supports standard humanoid bones only.");
+            if (!source.Keys.ToHashSet(StringComparer.Ordinal).SetEquals(layout.Bones))
+                throw new InvalidOperationException("The actor's loaded skeleton changed; redraw it before exporting.");
             var tracks = ImmutableArray.CreateBuilder<IdleBoneTrack>(layout.Bones.Length);
             for (short i = 0; i < layout.Bones.Length; i++)
             {
@@ -138,5 +146,20 @@ public sealed class IdleModRuntime(
             }
             return new(layout.Name, layout.Bones.Length, tracks.MoveToImmutable());
         }
+    }
+
+    private static PoseTransform[] RemapIdle(IdleHavokEncoder.SkeletonLayout vanilla, PoseTransform[] idle,
+        IdleHavokEncoder.SkeletonLayout destination)
+    {
+        var source = vanilla.Bones.Select((name, index) => (name, index)).ToDictionary(x => x.name, x => x.index);
+        return destination.Bones.Select((name, i) =>
+        {
+            if (!source.TryGetValue(name, out int original)) return destination.ReferencePose[i];
+            string? Parent(IdleHavokEncoder.SkeletonLayout layout, int bone) =>
+                layout.Parents[bone] < 0 ? null : layout.Bones[layout.Parents[bone]];
+            if (Parent(vanilla, original) != Parent(destination, i))
+                throw new InvalidOperationException("The custom skeleton reparents a standard bone; this idle layout is not supported.");
+            return idle[original];
+        }).ToArray();
     }
 }

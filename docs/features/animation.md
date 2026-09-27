@@ -47,8 +47,10 @@ Body and baked facial expression use separate destination-skeleton bindings;
 a missing expression is a failure, not a silently body-only export. Native
 capture refreshes the solved, pre-Customize+ pose; local tracks are mapped by
 name to the game's destination skeleton, not by the modded actor's indices.
-The initial version refuses authored custom extra bones and requires the
-same race, face and Customize+ profile in the receiving character collection.
+The export includes extra body/face bones from the loaded skeleton and requires
+the same race, face, skeleton mods and Customize+ profile in the receiving collection.
+Vanilla entry samples map by name; extra bones start at their reference pose.
+Reparented standard bones refuse rather than applying incompatible local samples.
 Hair/cloth physics, equipment and gaze tracking are not exported.
 
 Entry uses sine easing and shortest-path quaternion interpolation. Only the

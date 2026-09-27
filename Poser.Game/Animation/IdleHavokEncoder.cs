@@ -22,7 +22,7 @@ namespace Poser.Game.Animation;
 // animation control or binding. Native allocations exist only during Save.
 internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner scanner)
 {
-    internal sealed record SkeletonLayout(string Name, string[] Bones, short[] Parents);
+    internal sealed record SkeletonLayout(string Name, string[] Bones, short[] Parents, PoseTransform[] ReferencePose);
 
     private static byte[] SkeletonData(byte[] bytes)
     {
@@ -46,14 +46,19 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         if (loaded.Container->Skeletons.Length != 1 || loaded.Container->Skeletons[0].ptr == null)
             throw new InvalidDataException("Expected one destination skeleton.");
         var skeleton = loaded.Container->Skeletons[0].ptr;
-        if (skeleton->Bones.Length is < 1 or > 1024 || skeleton->ParentIndices.Length != skeleton->Bones.Length)
+        if (skeleton->Bones.Length is < 1 or > 1024 || skeleton->ParentIndices.Length != skeleton->Bones.Length ||
+            skeleton->ReferencePose.Length != skeleton->Bones.Length)
             throw new InvalidDataException("Invalid destination skeleton layout.");
         var names = new string[skeleton->Bones.Length];
         var parents = new short[names.Length];
+        var reference = new PoseTransform[names.Length];
         for (int i = 0; i < names.Length; i++)
         {
             names[i] = skeleton->Bones[i].Name.String ?? throw new InvalidDataException("Missing bone name.");
             parents[i] = skeleton->ParentIndices[i];
+            var t = skeleton->ReferencePose[i];
+            reference[i] = PoseTransform.CreateChecked(new(t.Translation.X, t.Translation.Y, t.Translation.Z),
+                new(t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W), new(t.Scale.X, t.Scale.Y, t.Scale.Z));
             if (string.IsNullOrEmpty(names[i]) || parents[i] < -1 || parents[i] >= i)
                 throw new InvalidDataException("Invalid skeleton bone hierarchy.");
         }
@@ -61,7 +66,7 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
             throw new InvalidDataException("Ambiguous destination bone names.");
         // SKLB's container is generically named "skeleton"; PAP identifies the
         // root bone instead. The known resource path determines race/face identity.
-        return new(names[0], names, parents);
+        return new(names[0], names, parents, reference);
     }
 
     public PoseTransform[] SampleStart(byte[] havok, byte[] sklb, int index)
