@@ -59,7 +59,9 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         }
         if (names.Distinct(StringComparer.Ordinal).Count() != names.Length)
             throw new InvalidDataException("Ambiguous destination bone names.");
-        return new(skeleton->Name.String ?? throw new InvalidDataException("Missing skeleton name."), names, parents);
+        // SKLB's container is generically named "skeleton"; PAP identifies the
+        // root bone instead. The known resource path determines race/face identity.
+        return new(names[0], names, parents);
     }
 
     public PoseTransform[] SampleStart(byte[] havok, byte[] sklb, int index)
@@ -74,7 +76,7 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         if (skeleton == null || binding == null || binding->Animation.ptr == null ||
             skeleton->Bones.Length is < 1 or > 1024 || skeleton->FloatSlots.Length is < 0 or > 1024)
             throw new InvalidDataException("Animation and skeleton are incompatible.");
-        if (!SameSkeleton(binding->OriginalSkeletonName.String, skeleton->Name.String))
+        if (!SameSkeleton(binding->OriginalSkeletonName.String, skeleton->Bones[0].Name.String))
             throw new InvalidDataException($"Animation skeleton '{binding->OriginalSkeletonName.String}' does not match '{skeleton->Name.String}' (root '{skeleton->Bones[0].Name.String}').");
         for (int i = 0; i < binding->TransformTrackToBoneIndices.Length; i++)
             if (binding->TransformTrackToBoneIndices[i] < -1 || binding->TransformTrackToBoneIndices[i] >= skeleton->Bones.Length)
@@ -269,8 +271,8 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
     }
 
     // Vanilla PAP bindings retain DCC namespaces (e.g. c0801_0:mdl:n_root),
-    // while SKLB names are just n_root. Bone maps are validated separately.
-    private static bool SameSkeleton(string? binding, string? skeleton) =>
+    // while SKLB root bone names are just n_root. Bone maps are validated separately.
+    internal static bool SameSkeleton(string? binding, string? skeleton) =>
         !string.IsNullOrEmpty(binding) && !string.IsNullOrEmpty(skeleton) &&
         binding[(binding.LastIndexOf(':') + 1)..] == skeleton[(skeleton.LastIndexOf(':') + 1)..];
 
