@@ -60,10 +60,9 @@ public static partial class Crystarium
             _ => Crystarium.ActiveTheme.Floating.SmallWidth,
         } * scale;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
-        // No stated height: the modal is as tall as its body. The body's
-        // content height is what the previous frame measured; a modal that
-        // has never been measured draws one transparent, non-interactive
-        // frame, so the user only sees its final size.
+        // Auto-height settles after the first visible frame. Do not hide the
+        // measurement frame with Alpha=0: ImGui skips that window's contents,
+        // so no height is recorded and the dialog would stay invisible forever.
         bool measured = _modalBodyHeights.TryGetValue(popupId, out float measuredBody);
         bool measuringFrame = height is null && !measured;
         float totalHeight = height is { } stated
@@ -86,7 +85,6 @@ public static partial class Crystarium
         ImGui.SetNextWindowSize(new Vector2(width, totalHeight));
 
         ImGui.PushStyleColor(ImGuiCol.WindowBg, Vector4.Zero);
-        ImGui.PushStyleVar(ImGuiStyleVar.Alpha, measuringFrame ? 0f : ImGui.GetStyle().Alpha);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, rounding);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f); // border trio drawn manually
@@ -96,8 +94,7 @@ public static partial class Crystarium
         bool visible = ImGui.Begin(popupId, ref keepOpen,
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.NoFocusOnAppearing
-            | (measuringFrame ? ImGuiWindowFlags.NoInputs : ImGuiWindowFlags.None));
+            | ImGuiWindowFlags.NoFocusOnAppearing);
         // The unwind is unconditional (PBI-013 class): a throw in the body
         // or footer callback must not skip End or strand the
         // style entries on the global stack for every window drawn after.
@@ -109,7 +106,7 @@ public static partial class Crystarium
         finally
         {
             ImGui.End();
-            ImGui.PopStyleVar(4);
+            ImGui.PopStyleVar(3);
             ImGui.PopStyleColor(1);
         }
         if (!keepOpen)
