@@ -1,7 +1,6 @@
-// Generated from Ktisis Data/Schema/Categories.xml (clone @ origin/main,
-// read 2026-08-11) by a one-off transcription; regenerate rather than edit.
-// The sidebar's bone tree states THIS hierarchy (user 2026-08-11: Ktisis'
-// categories and arrangement, verbatim).
+// Transcribed from Ktisis Data/Schema/Categories.xml (clone @ origin/main,
+// read 2026-08-11). Poser places Jaw and Jaw Only directly under Head;
+// preserve this presentation override when refreshing the upstream hierarchy.
 using System.Collections.Generic;
 
 namespace Poser.Core.BoneInfo;
@@ -18,7 +17,7 @@ public static class KtisisBoneCategories
     public static readonly KtisisBoneCategory[] Roots =
     [
         new("Head", "Head",
-            ["j_kao", "j_kubi", "j_head"],
+            ["j_kao", "j_kubi", "j_head", "j_ago", "j_f_ago", "j_f_dago"],
             [
             new("Hair", "Hair",
                 ["j_kami_a", "j_kami_b", "j_kami_f_l", "j_kami_f_r"],
@@ -78,7 +77,7 @@ public static class KtisisBoneCategories
                         []),
                     ]),
                 new("Mouth", "Mouth",
-                    ["j_ago", "j_f_lip_l", "j_f_lip_r"],
+                    ["j_f_lip_l", "j_f_lip_r"],
                     [
                     new("UpperMouth", "Upper Mouth",
                         ["j_f_hagukiup"],
@@ -88,7 +87,7 @@ public static class KtisisBoneCategories
                             []),
                         ]),
                     new("LowerMouth", "Lower Mouth",
-                        ["j_f_ago", "j_f_dago", "j_f_hagukidn"],
+                        ["j_f_hagukidn"],
                         [
                         new("LowerLip", "Lower Lip",
                             ["j_f_dlip_a", "j_f_dlip_b", "j_f_dlip_01_l", "j_f_dlip_02_l", "j_f_dlip_01_r", "j_f_dlip_02_r", "j_f_dmlip_01_l", "j_f_dmlip_02_l", "j_f_dmlip_01_r", "j_f_dmlip_02_r", "j_f_dslip_l", "j_f_dslip_r"],

@@ -92,6 +92,8 @@ including position, and uses the same application transform/history path as
 ordinary edits. Bone and skeleton/category menus use Select, Visibility and
 Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
+Jaw and Jaw Only sit directly under Head in the tree and stock presets; other
+mouth bones keep their existing categories. This does not change native parenting.
 Skeleton Settings can opt into default presets for broad show actions. The
 character skeleton eye and Show all actor bones then reveal only the union of
 checked presets within that scope; no checked matches means no visible bones.
