@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — idle export and appearance controls
+## 0.9.13-beta — idle export, appearance controls and release history
 
 - Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.
 - Find Jaw and Jaw Only directly under Head in the skeleton tree.
