@@ -322,8 +322,7 @@ public sealed class UIManager : IUIManager
 
     private void HandleKeybinds()
     {
-        if (!FirstRunNotice.IsAccepted(_configService.Config)
-            || !_gPoseService.IsGPosing
+        if (!_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)
         {
             foreach (var bind in _keybinds)
@@ -383,8 +382,7 @@ public sealed class UIManager : IUIManager
     private bool OnKeyEvent(Config.KeyCode code, global::Poser.Services.KeyEventKind kind)
     {
         var key = (VirtualKey)code;
-        if (!FirstRunNotice.IsAccepted(_configService.Config)
-            || !_gPoseService.IsGPosing
+        if (!_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)
             return false;
         bool handled = false;
