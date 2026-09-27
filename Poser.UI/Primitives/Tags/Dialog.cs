@@ -6,8 +6,8 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-/// <summary>picto GlassModal size presets (widths 440/560/680).</summary>
-public enum ModalSize
+/// <summary>Dialog width presets (440/560/680).</summary>
+public enum DialogSize
 {
     Small,
     Medium,
@@ -20,60 +20,50 @@ public static partial class Crystarium
     // ImGui trick — avoids double-rendering children and their ID collisions).
     private static readonly Dictionary<string, float> _modalBodyHeights = new();
     private static readonly Dictionary<string, float> _modalFooterWidths = new();
+    private static readonly HashSet<string> _dialogNeedsPlacement = new();
 
     /// <summary>
-    /// Glass modal — pixel transcription of picto shared/ui/GlassModal/GlassModal.module.css:
-    /// backdrop rgba(0,0,0,.55); glass panel (blur in-game via GlassChrome) with border
-    /// trio, radius 8; 44px header (14px/500 title, 24px close button, inset bottom
-    /// border); 16px body padding; 44px footer (black@.10, inset top border,
-    /// right-aligned children). Real ImGui modal popup — blocks input behind it.
+    /// A normal, movable window with the shared glass header, body and footer.
+    /// It never claims exclusive input or dims the game behind it.
     /// <code>
     ///   if (Crystarium.Button("Open")) modalOpen = true;
-    ///   Crystarium.Modal("##import", modalOpen,
+    ///   Crystarium.Dialog("##import", modalOpen,
     ///       next => modalOpen = next, "Import pose",
     ///       body: () => { ... },
     ///       footer: () => Crystarium.Button("Import", Import,
     ///           ButtonVariant.Primary));
     /// </code>
     /// </summary>
-    /// <param name="dismissible">False draws no close affordance: a GATE modal
-    /// (one whose own body carries the only way out) must not offer a corner
-    /// X that its caller reopens on the next frame.</param>
     /// <returns>True on the frame the modal closes.</returns>
-    public static bool Modal(
+    public static bool Dialog(
         string id,
         bool open,
         Action<bool> onOpenChanged,
         string title,
         Action body,
-        Action? footer = null, ModalSize size = ModalSize.Small, float? height = null,
-        Vector2? position = null,
-        bool dismissible = true)
+        Action? footer = null, DialogSize size = DialogSize.Small, float? height = null,
+        Vector2? position = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         string popupId = $"{title}##{id}";
 
-        if (open && !ImGui.IsPopupOpen(popupId))
-            OpenPopover(popupId);
-        if (FloatingSurface.ReleaseWhenClosed(popupId, open))
-            return false;
-        if (!FloatingSurface.SyncExclusive(popupId))
+        if (!open)
         {
-            onOpenChanged(false);
-            return true;
+            _dialogNeedsPlacement.Remove(popupId);
+            return false;
         }
 
         float width = size switch
         {
-            ModalSize.Medium => Crystarium.ActiveTheme.Floating.MediumWidth,
-            ModalSize.Large => Crystarium.ActiveTheme.Floating.LargeWidth,
+            DialogSize.Medium => Crystarium.ActiveTheme.Floating.MediumWidth,
+            DialogSize.Large => Crystarium.ActiveTheme.Floating.LargeWidth,
             _ => Crystarium.ActiveTheme.Floating.SmallWidth,
         } * scale;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
         // No stated height: the modal is as tall as its body. The body's
         // content height is what the previous frame measured; a modal that
-        // has never been measured draws its first frame off screen (ImGui's
-        // own auto-resize rule), so the user only ever sees the final size.
+        // has never been measured draws one transparent, non-interactive
+        // frame, so the user only sees its final size.
         bool measured = _modalBodyHeights.TryGetValue(popupId, out float measuredBody);
         bool measuringFrame = height is null && !measured;
         float totalHeight = height is { } stated
@@ -85,29 +75,31 @@ public static partial class Crystarium
                 : Crystarium.ActiveTheme.Floating.DefaultModalHeight * scale;
         float rounding = Crystarium.ActiveTheme.Radii.Surface * scale;
 
+        // After measurement, place once. Subsequent content
+        // changes must not recenter the window or undo the user's dragging.
+        bool placeAfterMeasurement = _dialogNeedsPlacement.Remove(popupId);
+        if (measuringFrame)
+            _dialogNeedsPlacement.Add(popupId);
         ImGui.SetNextWindowPos(
-            measuringFrame
-                ? new Vector2(-4f * width, -4f * totalHeight)
-                : position ?? FloatingSurface.PlaceCentered(new Vector2(width, totalHeight)),
-            height is null ? ImGuiCond.Always : ImGuiCond.Appearing);
+            position ?? FloatingSurface.PlaceCentered(new Vector2(width, totalHeight)),
+            measuringFrame || placeAfterMeasurement ? ImGuiCond.Always : ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(new Vector2(width, totalHeight));
 
-        // Persistent, not pushed: ImGui draws the modal dim outside this call's
-        // push/pop bracket. rgba(0,0,0,.55) is the design constant (GlassModal backdrop).
-        ImGui.GetStyle().Colors[(int)ImGuiCol.ModalWindowDimBg] = Crystarium.ActiveTheme.Chrome.ModalDim;
-
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, Vector4.Zero);
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupRounding, rounding);
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, Vector4.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.Alpha, measuringFrame ? 0f : ImGui.GetStyle().Alpha);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, rounding);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.PushStyleVar(ImGuiStyleVar.PopupBorderSize, 0f); // border trio drawn manually
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f); // border trio drawn manually
 
         bool closedThisFrame = false;
         bool keepOpen = open;
-        bool visible = ImGui.BeginPopupModal(popupId, ref keepOpen,
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar);
+        bool visible = ImGui.Begin(popupId, ref keepOpen,
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
+            | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoFocusOnAppearing
+            | (measuringFrame ? ImGuiWindowFlags.NoInputs : ImGuiWindowFlags.None));
         // The unwind is unconditional (PBI-013 class): a throw in the body
-        // or footer callback must not skip EndPopup or strand the five
+        // or footer callback must not skip End or strand the
         // style entries on the global stack for every window drawn after.
         try
         {
@@ -116,10 +108,14 @@ public static partial class Crystarium
         }
         finally
         {
-            if (visible)
-                ImGui.EndPopup();
+            ImGui.End();
             ImGui.PopStyleVar(4);
             ImGui.PopStyleColor(1);
+        }
+        if (!keepOpen)
+        {
+            onOpenChanged(false);
+            closedThisFrame = true;
         }
         return closedThisFrame;
 
@@ -130,9 +126,9 @@ public static partial class Crystarium
             var winMax = winMin + ImGui.GetWindowSize();
             var modalOwner = Interactive.BeginOwner(
                 popupId,
-                InteractionLayer.Modal,
-                Vector2.Zero,
-                ImGui.GetIO().DisplaySize);
+                InteractionLayer.Window,
+                winMin,
+                winMax);
             try
             {
                 DrawModalContent(dl, winMin, winMax);
@@ -146,6 +142,7 @@ public static partial class Crystarium
         void DrawModalContent(
             ImDrawListPtr dl, Vector2 winMin, Vector2 winMax)
         {
+            bool canDismissWithEscape = DialogHasKeyboardFocus();
             FloatingSurface.DrawChrome(
                 dl,
                 winMin,
@@ -169,15 +166,20 @@ public static partial class Crystarium
                     Color = theme.Text,
                 });
 
-            if (dismissible)
-            {
-                float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
-                ImGui.SetCursorScreenPos(new Vector2(
-                    winMax.X - Crystarium.ActiveTheme.Floating.CloseInset * scale - closeSize,
-                    winMin.Y + (barHeight - closeSize) * 0.5f));
-                if (FloatingSurface.CloseButton($"{id}##close"))
-                    keepOpen = false;
-            }
+            float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
+            ImGui.SetCursorScreenPos(winMin);
+            var titleDrag = Interactive.Reserve(
+                $"{id}##move",
+                new Vector2(width - closeSize - theme.Floating.CloseInset * scale, barHeight),
+                disabled: false);
+            if (titleDrag.DragDelta != Vector2.Zero)
+                ImGui.SetWindowPos(winMin + titleDrag.DragDelta);
+
+            ImGui.SetCursorScreenPos(new Vector2(
+                winMax.X - Crystarium.ActiveTheme.Floating.CloseInset * scale - closeSize,
+                winMin.Y + (barHeight - closeSize) * 0.5f));
+            if (FloatingSurface.CloseButton($"{id}##close"))
+                keepOpen = false;
 
             dl.AddRectFilled(
                 new Vector2(winMin.X, winMin.Y + barHeight - 1f * scale),
@@ -246,14 +248,13 @@ public static partial class Crystarium
                 _modalFooterWidths[popupId] = ImGui.GetItemRectSize().X;
             }
 
-            if (!keepOpen)
-            {
-                ImGui.CloseCurrentPopup();
-                open = false;
-                onOpenChanged(false);
-                Interactive.ReleaseExclusive(popupId);
-                closedThisFrame = true;
-            }
+            if (canDismissWithEscape && DialogHasKeyboardFocus()
+                && ImGui.IsKeyPressed(ImGuiKey.Escape, repeat: false))
+                keepOpen = false;
         }
     }
+
+    internal static bool DialogHasKeyboardFocus() =>
+        ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows)
+        && !ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopup);
 }

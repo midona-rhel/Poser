@@ -77,7 +77,7 @@ internal sealed class LibraryMetadataEditor(
     {
         if (!_metaOpen)
             return;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##library-metadata",
             _metaOpen,
             next => _metaOpen = next,

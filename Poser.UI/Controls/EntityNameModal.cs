@@ -59,7 +59,7 @@ public sealed class EntityNameModal
         float height = NamePromptHeight + (_validate is null ? 0f : ProblemLineHeight);
         // Footer idiom, not body buttons: the footer bar right-aligns its
         // children, and the height fits one input with no dead band.
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##name-entity",
             _open,
             next => _open = next,
@@ -91,7 +91,7 @@ public sealed class EntityNameModal
             {
                 // Enter is the blue button: the modal is one input, and
                 // done is done.
-                bool submit = problem is null && (
+                bool submit = problem is null && Crystarium.DialogHasKeyboardFocus() && (
                     ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
                     ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
                 if (_clear is { } clear)

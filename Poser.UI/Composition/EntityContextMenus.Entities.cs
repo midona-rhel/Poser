@@ -345,7 +345,7 @@ internal sealed partial class EntityContextMenus
             return;
         var actor = _presetActorId is { } id ? _scene.Snapshot.FindActor(id.LogicalId) : null;
         float gap = 8f * ImGuiHelpers.GlobalScale;
-        Crystarium.Modal(
+        Crystarium.Dialog(
             "##bone-presets-manage",
             _presetManagerOpen,
             next => _presetManagerOpen = next,

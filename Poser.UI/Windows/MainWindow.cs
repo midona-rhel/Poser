@@ -896,8 +896,7 @@ public partial class MainWindow : Window
         // background walk over three sheets — so the attach picker never
         // opens against a catalog still building.
         _companionCatalog.EnsureLoaded();
-        // Last, and over everything: until the notice is accepted the shell
-        // has drawn a workspace that is visible but not interactive.
+        // The notice is non-modal like other dialogs; it never locks the game.
         _firstRunNotice.Draw();
     }
 
