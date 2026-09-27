@@ -198,7 +198,8 @@ Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
 the game or claim full-screen/exclusive input; only their visible bounds
 participate in window interaction. Enter/Escape shortcuts belong to the focused
 dialog, not another window or a nested picker. Closing the first-run notice
-does not accept it; the unaccepted notice returns next plugin session.
+does not accept it or disable shortcuts; the unaccepted notice returns next
+plugin session. Separate naming-dialog instances have distinct window IDs.
 
 Diagnostics stay with the surface whose state they describe. Completed actions
 use `UserNotices`, while visible state changes do not need a second success

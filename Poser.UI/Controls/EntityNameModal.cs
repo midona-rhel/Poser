@@ -12,6 +12,7 @@ namespace Poser.UI.Controls;
 /// name that can be unset.</summary>
 public sealed class EntityNameModal
 {
+    private readonly string _windowId = $"##name-entity-{Guid.NewGuid():N}";
     private bool _open;
     private string _title = string.Empty;
     private string _value = string.Empty;
@@ -60,7 +61,7 @@ public sealed class EntityNameModal
         // Footer idiom, not body buttons: the footer bar right-aligns its
         // children, and the height fits one input with no dead band.
         Crystarium.Dialog(
-            "##name-entity",
+            _windowId,
             _open,
             next => _open = next,
             _title,

@@ -211,6 +211,11 @@ public sealed class SettingsViewModel
                 hash.Add(field.GetValue(this));
         }
         hash.Add(Library.Root);
+        foreach (var preset in DefaultBonePresets)
+        {
+            hash.Add(preset.Key, StringComparer.OrdinalIgnoreCase);
+            hash.Add(preset.Value);
+        }
         foreach (var source in Library.Sources)
         {
             hash.Add(source.Name);
