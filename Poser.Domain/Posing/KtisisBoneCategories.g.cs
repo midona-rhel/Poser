@@ -17,7 +17,7 @@ public static class KtisisBoneCategories
     public static readonly KtisisBoneCategory[] Roots =
     [
         new("Head", "Head",
-            ["j_kao", "j_kubi", "j_head", "j_ago", "j_f_ago", "j_f_dago"],
+            ["j_kao", "j_kubi", "j_head", "j_f_ago", "j_f_dago"],
             [
             new("Hair", "Hair",
                 ["j_kami_a", "j_kami_b", "j_kami_f_l", "j_kami_f_r"],
@@ -77,7 +77,7 @@ public static class KtisisBoneCategories
                         []),
                     ]),
                 new("Mouth", "Mouth",
-                    ["j_f_lip_l", "j_f_lip_r"],
+                    ["j_ago", "j_f_lip_l", "j_f_lip_r"],
                     [
                     new("UpperMouth", "Upper Mouth",
                         ["j_f_hagukiup"],

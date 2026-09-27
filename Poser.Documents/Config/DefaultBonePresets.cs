@@ -17,7 +17,7 @@ public static class DefaultBonePresets
 {
     /// <summary>Bumped when a stock list changes; the seed then replaces
     /// the stock presets by name.</summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     public static IReadOnlyList<BoneVisibilityPreset> Build() =>
     [
