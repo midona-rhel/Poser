@@ -73,7 +73,7 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         var binding = motion.Container->Bindings[index].ptr;
         if (skeleton == null || binding == null || binding->Animation.ptr == null ||
             skeleton->Bones.Length is < 1 or > 1024 || skeleton->FloatSlots.Length is < 0 or > 1024 ||
-            binding->OriginalSkeletonName.String != skeleton->Name.String)
+            !SameSkeleton(binding->OriginalSkeletonName.String, skeleton->Name.String))
             throw new InvalidDataException("Animation and skeleton are incompatible.");
         for (int i = 0; i < binding->TransformTrackToBoneIndices.Length; i++)
             if (binding->TransformTrackToBoneIndices[i] < -1 || binding->TransformTrackToBoneIndices[i] >= skeleton->Bones.Length)
@@ -202,7 +202,7 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         var originalAnimation = container->Animations[bindingIndex];
         if (originalBinding.ptr == null || originalAnimation.ptr == null ||
             originalBinding.ptr->Animation.ptr != originalAnimation.ptr ||
-            originalBinding.ptr->OriginalSkeletonName.String != binding.SkeletonName ||
+            !SameSkeleton(originalBinding.ptr->OriginalSkeletonName.String, binding.SkeletonName) ||
             originalBinding.ptr->PartitionIndices.Length != 0)
             throw new InvalidDataException("The template binding does not match the captured skeleton, or uses unsupported partitions.");
 
@@ -266,6 +266,12 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
             container->Bindings[bindingIndex] = originalBinding;
         }
     }
+
+    // Vanilla PAP bindings retain DCC namespaces (e.g. c0801_0:mdl:n_root),
+    // while SKLB names are just n_root. Bone maps are validated separately.
+    private static bool SameSkeleton(string? binding, string? skeleton) =>
+        !string.IsNullOrEmpty(binding) && !string.IsNullOrEmpty(skeleton) &&
+        binding[(binding.LastIndexOf(':') + 1)..] == skeleton[(skeleton.LastIndexOf(':') + 1)..];
 
     private sealed class ExportMemory : IDisposable
     {
