@@ -39,3 +39,21 @@ Entering Advanced is a view change; it does not reset or replay the actor.
 Leaving Advanced restores outgoing ownership before changing the mode flag.
 That multi-layer restore is intentionally non-atomic: if a later restore fails,
 the prior mode remains selected, while earlier successful restores stay applied.
+
+## Static idle export (in development, #304)
+
+Pose → Export → Idle mod writes a Penumbra PMP replacing standing `/cpose` 1.
+Body and baked facial expression use separate destination-skeleton bindings;
+a missing expression is a failure, not a silently body-only export. Native
+capture refreshes the solved, pre-Customize+ pose; local tracks are mapped by
+name to the game's destination skeleton, not by the modded actor's indices.
+The initial version refuses authored custom extra bones and requires the
+same race, face and Customize+ profile in the receiving character collection.
+Hair/cloth physics, equipment and gaze tracking are not exported.
+
+Entry uses sine easing and shortest-path quaternion interpolation. Only the
+constant hold loops; exit uses the game's normal blend-out. The application
+owns export completion independently of UI drawing; Documents writes the PMP
+atomically without replacing an existing file. Game serialization operates
+on independently loaded resources, never a live actor's animation container.
+Facial-layer routing and game interruption require live acceptance.

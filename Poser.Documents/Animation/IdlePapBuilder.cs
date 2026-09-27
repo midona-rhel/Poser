@@ -1,0 +1,75 @@
+using System.Text;
+
+namespace Poser.Documents.Animation;
+
+internal static class IdlePapBuilder
+{
+    public static byte[] BuildPair(PapAnimationDocument source, byte[] combinedHavok, int frames)
+    {
+        if (source.Clips.Count != 1 || source.Clips[0].BindingIndex != 0 || source.Clips[0].IsFace)
+            throw new InvalidDataException("Expected a single body idle clip.");
+        var body = source.Clips[0];
+        const string faceName = "cfxf_grin";
+        var timelines = new[] { Timeline(body.Name, frames, faceName), Timeline(faceName, frames) };
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
+        writer.Write("pap "u8); writer.Write(0x00020001); writer.Write((short)2);
+        writer.Write(source.ModelId); writer.Write(source.ModelType); writer.Write(source.Variant);
+        writer.Write(26); writer.Write(106); writer.Write(0);
+        Clip(body.Name, body.Type, 0, false);
+        Clip(faceName, 17, 1, true);
+        writer.Write(combinedHavok);
+        while ((stream.Position & 3) != 0) writer.Write((byte)0);
+        int timelineOffset = checked((int)stream.Position);
+        writer.Write(timelines[0]);
+        while ((stream.Position & 3) != 0) writer.Write((byte)0);
+        writer.Write(timelines[1]);
+        stream.Position = 22; writer.Write(timelineOffset);
+        var bytes = stream.ToArray();
+        _ = new PapAnimationDocument(bytes);
+        return bytes;
+
+        void Clip(string name, short type, short binding, bool face)
+        {
+            var text = Encoding.ASCII.GetBytes(name);
+            if (text.Length is < 1 or > 31) throw new InvalidDataException("Invalid idle motion name.");
+            writer.Write(text); writer.Write(new byte[32 - text.Length]);
+            writer.Write(type); writer.Write(binding); writer.Write(face ? 1 : 0);
+        }
+    }
+
+    internal static byte[] Timeline(string motion, int frames, string? expression = null)
+    {
+        if (frames is < 1 or > short.MaxValue) throw new ArgumentOutOfRangeException(nameof(frames));
+        if (string.IsNullOrEmpty(motion) || motion.Any(c => c < 32 || c > 126) ||
+            expression is { } e && (e.Length == 0 || e.Any(c => c < 32 || c > 126)))
+            throw new ArgumentException("Invalid timeline motion name.");
+        using var stream = new MemoryStream();
+        using var w = new BinaryWriter(stream, Encoding.ASCII, true);
+        var lists = new List<(long Field, long Origin, short[] Values)>();
+        var strings = new List<(long Field, long Origin, string Value)>();
+        w.Write("TMLB"u8); w.Write(0); w.Write(expression == null ? 5 : 7);
+        Item("TMDH", 16); w.Write((short)1); w.Write((short)0); w.Write((short)frames); w.Write((short)3);
+        var root = Item("TMAL", 16); List(root, [2]);
+        var actor = Item("TMAC", 28); Id(2); w.Write(0); w.Write(0); List(actor, expression == null ? [3] : [3, 4]);
+        var track = Item("TMTR", 24); Id(3); List(track, [expression == null ? (short)4 : (short)5]); w.Write(0);
+        if (expression != null) { var faceTrack = Item("TMTR", 24); Id(4); List(faceTrack, [6]); w.Write(0); }
+        var anim = Item("C009", 24); Id(expression == null ? (short)4 : (short)5); w.Write(frames); w.Write(0); String(anim, motion);
+        if (expression != null)
+        {
+            var face = Item("C010", 40); Id(6); w.Write(frames); w.Write(0);
+            w.Write(1); w.Write(0f); w.Write((float)frames); String(face, expression); w.Write(0);
+        }
+        foreach (var list in lists) { Patch(list.Field, checked((int)(stream.Position - list.Origin))); foreach (var id in list.Values) w.Write(id); }
+        foreach (var str in strings) { Patch(str.Field, checked((int)(stream.Position - str.Origin))); w.Write(Encoding.ASCII.GetBytes(str.Value)); w.Write((byte)0); }
+        Patch(4, checked((int)stream.Length));
+        return stream.ToArray();
+
+        // TMB offsets are relative to their ITEM's payload start, not the offset field.
+        long Item(string type, int size) { var pos = stream.Position; w.Write(Encoding.ASCII.GetBytes(type)); w.Write(size); return pos + 8; }
+        void Id(short id) { w.Write(id); w.Write((short)0); }
+        void List(long origin, short[] ids) { lists.Add((stream.Position, origin, ids)); w.Write(0); w.Write(ids.Length); }
+        void String(long origin, string value) { strings.Add((stream.Position, origin, value)); w.Write(0); }
+        void Patch(long field, int value) { long end = stream.Position; stream.Position = field; w.Write(value); stream.Position = end; }
+    }
+}

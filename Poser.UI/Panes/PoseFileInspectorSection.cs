@@ -39,6 +39,7 @@ public sealed class PoseFileInspectorSection
     private readonly IPoseLibraryService _library;
 
     private readonly IPoseFileCapture _capture;
+    private readonly IdleModExportDialog _idleExport;
     private readonly PosePreviewController _importPreview;
 
     private readonly UserNotices _notices;
@@ -99,9 +100,11 @@ public sealed class PoseFileInspectorSection
         IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,
-        UserNotices notices)
+        UserNotices notices,
+        IdleModExportDialog idleExport)
     {
         _notices = notices;
+        _idleExport = idleExport;
         _imports = imports;
         _scene = scene;
         _capture = capture;
@@ -159,6 +162,7 @@ public sealed class PoseFileInspectorSection
         DrawExportLibraryModal();
         _importBrowser.Draw();
         _exportBrowser.Draw();
+        _idleExport.Draw();
         DrawMenus();
         ReleaseImportPreview();
     }
@@ -291,6 +295,9 @@ public sealed class PoseFileInspectorSection
             ContextMenuItem.Separator,
             new("To clipboard", TablerIcon.FileText),
             new("To stash", TablerIcon.Stack2),
+            ContextMenuItem.Separator,
+            new("Idle mod (.pmp)…", TablerIcon.DeviceFloppy, disabled: _idleExport.Busy,
+                help: "Experimental standing /cpose 1 replacement, including the facial pose."),
         ];
     }
 
@@ -391,6 +398,12 @@ public sealed class PoseFileInspectorSection
                 break;
             case 4:
                 StashPose();
+                break;
+            case 6:
+                if (SelectedActor() is { } idleActor)
+                    OpenBrowser(() => _idleExport.Open(idleActor, _folder));
+                else
+                    _notices.Refused(NoActorText);
                 break;
         }
     }

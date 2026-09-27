@@ -61,6 +61,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
     private readonly ISceneWorkflow _scenes;
+    private readonly IIdleModExport _idleExport;
     private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IGPoseService _gpose;
@@ -114,9 +115,11 @@ public sealed partial class DebugBridge : IDisposable
         Application.Viewport.ICameraProjection cameraProjection,
         Application.Transforms.TransformParenting parenting,
         Application.Transforms.IParentingRuntime parentingRuntime,
-        SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders)
+        SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
+        IIdleModExport idleExport)
     {
         _configuration = configuration;
+        _idleExport = idleExport;
         _parenting = parenting; _parentingRuntime = parentingRuntime;
         _sceneSession = sceneSession; _bodyColliders = bodyColliders;
         _textures = textures;
@@ -302,6 +305,8 @@ public sealed partial class DebugBridge : IDisposable
                 return Screenshot();
             case "/bodycolliders":
                 return CreateBodyColliders(query);
+            case "/idleexport":
+                return ExportIdle(query);
             case "/peek":
                 return Task.FromResult(Peek(query));
             case "/poke":
@@ -309,6 +314,18 @@ public sealed partial class DebugBridge : IDisposable
             default:
                 return _framework.RunOnFrameworkThread(() => RouteOnFramework(path, query));
         }
+    }
+
+    private async Task<string> ExportIdle(Dictionary<string, string> query)
+    {
+        var actor = await _framework.RunOnFrameworkThread(() =>
+        {
+            var live = FindActor(query.GetValueOrDefault("actor", "0"));
+            return live == null ? (ActorId?)null : _bindings.GetActorId(live);
+        });
+        if (actor == null) return Json(new { error = "No such actor." });
+        await _idleExport.ExportAsync(actor.Value, query["path"]);
+        return Json(new { ok = true, path = query["path"] });
     }
 
     private object History() => new

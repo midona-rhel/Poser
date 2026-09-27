@@ -13,8 +13,9 @@ Glamourer designs, Customize+ profiles, MCDF import/export, and Open in
 Glamourer. Poser does not own Glamourer equipment, customization, dyes,
 materials, or saved designs.
 
-Animation authoring, arbitrary actor-to-bone attachment, and VFX authoring are
-not supported. Character Select+ actor application is not supported until its
+General animation authoring and VFX authoring are not supported; the bounded
+[static idle export](../features/animation.md) captures a single pose, not a
+timeline editor. Character Select+ actor application is not supported until its
 public IPC can target arbitrary actors and restore them. General IPC and web
 APIs are not product features.
 

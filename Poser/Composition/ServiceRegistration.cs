@@ -445,6 +445,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Func<Game.Posing.IPoseImportLifecycleControl>>(sp =>
             () => sp.GetRequiredService<Game.Posing.PoseImportCapture>());
         services.AddSingleton<Game.Posing.PoseExportCapture>();
+        services.AddSingleton<Application.Animation.IIdleModRuntime, Game.Animation.IdleModRuntime>();
+        services.AddSingleton<Application.Animation.IIdleModExport, Application.Animation.IdleModExport>();
+        services.AddSingleton<IdleModExportDialog>();
         // The pose library's CharaView preview. No force-resolve: the pane
         // holds it, and it only subscribes the framework tick while open.
         services.AddSingleton<Game.Preview.PosePreviewService>();
