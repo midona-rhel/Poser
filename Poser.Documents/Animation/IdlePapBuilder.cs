@@ -6,16 +6,18 @@ internal static class IdlePapBuilder
 {
     public static IReadOnlyList<IdleModFile> Files(string race, string face,
         PapAnimationDocument start, PapAnimationDocument loop, PapAnimationDocument expression,
-        byte[] bodyEntry, byte[] bodyHold, byte[] faceEntry, byte[] faceHold)
+        byte[] bodyEntry, byte[] bodyHold, byte[] faceEntry, byte[] faceHold,
+        int slot = 1, int entryFrames = 45, int holdFrames = 70)
     {
-        string bodyPrefix = $"chara/human/{race}/animation/a0001/bt_common/emote/pose01_";
+        if (slot is < 1 or > 6) throw new ArgumentOutOfRangeException(nameof(slot));
+        string bodyPrefix = $"chara/human/{race}/animation/a0001/bt_common/emote/pose{slot:00}_";
         string facePrefix = $"chara/human/{race}/animation/{face}/nonresident/";
-        const string entryLibrary = "emot/poser_pose01_start";
-        const string holdLibrary = "emot/poser_pose01_loop";
-        return [new(bodyPrefix + "start.pap", BuildClip(start, bodyEntry, 45, entryLibrary)),
-            new(bodyPrefix + "loop.pap", BuildClip(loop, bodyHold, 70, holdLibrary)),
-            new(facePrefix + entryLibrary + ".pap", BuildClip(expression, faceEntry, 45)),
-            new(facePrefix + holdLibrary + ".pap", BuildClip(expression, faceHold, 70))];
+        string entryLibrary = $"emot/poser_pose{slot:00}_start";
+        string holdLibrary = $"emot/poser_pose{slot:00}_loop";
+        return [new(bodyPrefix + "start.pap", BuildClip(start, bodyEntry, entryFrames, entryLibrary)),
+            new(bodyPrefix + "loop.pap", BuildClip(loop, bodyHold, holdFrames, holdLibrary)),
+            new(facePrefix + entryLibrary + ".pap", BuildClip(expression, faceEntry, entryFrames)),
+            new(facePrefix + holdLibrary + ".pap", BuildClip(expression, faceHold, holdFrames))];
     }
 
     public static byte[] BuildClip(PapAnimationDocument source, byte[] havok, int frames, string? faceLibrary = null)

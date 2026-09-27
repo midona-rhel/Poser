@@ -1,5 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 using System.Threading.Tasks;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Identity;
@@ -8,27 +13,119 @@ namespace Poser.UI;
 
 public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notices, IFramework framework)
 {
-    private readonly Crystarium.FileDialog _dialog =
-        new("Export experimental standing pose 1 mod", new[] { ".pmp" }, isSaveMode: true);
+    private const string ModalId = "##idle-export", ModalTitle = "Export idle mod";
+    private readonly Crystarium.FileDialog _dialog = new("Save idle mod", new[] { ".pmp" }, isSaveMode: true);
+    private readonly HashSet<int> _races = [];
+    private IdleModChoices? _choices;
+    private ActorId _actor;
+    private Controls.RememberedFolder? _folder;
+    private string _name = string.Empty, _path = string.Empty;
+    private int _slot = 1;
+    private bool _open, _loading, _choosePath, _choosingPath;
+    public bool Busy => export.Busy || _loading;
 
-    public bool Busy => export.Busy;
-    public void Draw() => _dialog.Draw();
-    public void Open(ActorId actor, Controls.RememberedFolder folder)
+    public async void Open(ActorId actor, Controls.RememberedFolder folder)
     {
-        notices.Note("Experimental: replaces standing /cpose 1, including the face. Import into this character's Penumbra collection only, with the same face and Customize+ profile.");
-        folder.Open(_dialog, path => _ = Save(actor, path));
+        if (Busy) return;
+        _loading = true;
+        try
+        {
+            var choices = await export.DescribeAsync(actor);
+            await framework.RunOnFrameworkThread(() =>
+            {
+                _actor = actor;
+                _folder = folder;
+                _choices = choices;
+                _name = choices.Name;
+                _path = string.Empty;
+                _races.Clear();
+                _races.Add(choices.SourceRaceSexId);
+                _slot = 1;
+                _open = true;
+            });
+        }
+        catch (Exception ex) { await framework.RunOnFrameworkThread(() => notices.Failed("Idle export", ex.Message)); }
+        finally { _loading = false; }
     }
 
-    private async Task Save(ActorId actor, string path)
+    public void Draw()
+    {
+        // Open the browser after the options modal has relinquished its surface.
+        if (_choosePath && _folder != null)
+        {
+            _choosePath = false;
+            _choosingPath = true;
+            _folder.Open(_dialog, path => _path = path);
+        }
+        _dialog.Draw();
+        if (_choosingPath && !_dialog.IsOpen) { _choosingPath = false; _open = true; }
+        if (!_open || _choices is not { } choices) return;
+        var slots = Enumerable.Range(1, 6).Where(s => _races.Count > 0 && choices.Targets
+            .Where(t => _races.Contains(t.RaceSexId)).All(t => t.Slots.Contains(s))).ToArray();
+        if (!slots.Contains(_slot)) _slot = slots.FirstOrDefault();
+        string? problem = string.IsNullOrWhiteSpace(_name) || _name.Length > 128 ? "Enter a mod name (up to 128 characters)."
+            : _races.Count == 0 ? "Select a race and gender."
+            : slots.Length == 0 ? "No shared standing pose slot is available."
+            : string.IsNullOrWhiteSpace(_path) ? "Choose where to save the PMP." : null;
+        Crystarium.Modal(ModalId, _open, value => _open = value, ModalTitle,
+            size: ModalSize.Medium, height: 650f,
+            body: () => Crystarium.Page("idle-export-options", ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail(), page =>
+            {
+                page.Section("Mod", form =>
+                {
+                    form.TextInput("Name", _name, next => _name = next);
+                    form.Dropdown("Replaces", slots.Select(s => $"Standing pose {s} (/cpose)").ToArray(),
+                        Math.Max(0, Array.IndexOf(slots, _slot)), next => { if (next >= 0 && next < slots.Length) _slot = slots[next]; },
+                        disabled: slots.Length == 0);
+                    form.Picker("Save as", string.IsNullOrEmpty(_path) ? "Choose a .pmp file…" : _path,
+                        () => { CloseOptions(); _choosePath = true; }, help: _path);
+                }, divider: false);
+                page.Section("Race and gender", form =>
+                {
+                    for (int i = 0; i < choices.Targets.Length; i += 2)
+                    {
+                        var male = choices.Targets[i];
+                        var female = choices.Targets[i + 1];
+                        form.Checkboxes(male.Label[..^5], Item(male, "Male"), Item(female, "Female"));
+                    }
+                    Crystarium.CheckItem Item(IdleModTarget target, string label) => new(label,
+                        _races.Contains(target.RaceSexId), value =>
+                        { if (value) _races.Add(target.RaceSexId); else _races.Remove(target.RaceSexId); },
+                        target.RaceSexId == choices.SourceRaceSexId ? "Source actor's race and gender; preserves the captured pose and skeleton."
+                            : "Experimental retarget to standard player faces; proportions and contacts may differ.");
+                });
+            }, labelColumnWidth: 125f),
+            footer: () =>
+            {
+                if (Crystarium.Button("Cancel", id: "idle-export-cancel")) CloseOptions();
+                ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
+                if (Crystarium.Button("Export", variant: ButtonVariant.Primary, disabled: problem != null || Busy,
+                    help: problem, id: "idle-export-save"))
+                {
+                    var options = new IdleModOptions(_name.Trim(), _slot, _races.Order().ToImmutableArray());
+                    CloseOptions();
+                    _ = Save(_actor, _path, options);
+                }
+            });
+        Crystarium.FloatingSurface.ReleaseWhenClosed($"{ModalTitle}##{ModalId}", _open);
+    }
+
+    private void CloseOptions()
+    {
+        _open = false;
+        ImGui.CloseCurrentPopup();
+    }
+
+    private async Task Save(ActorId actor, string path, IdleModOptions options)
     {
         try
         {
-            await export.ExportAsync(actor, path);
+            await export.ExportAsync(actor, path, options);
             await framework.RunOnFrameworkThread(() => notices.Done($"Idle mod saved to {path}. Import the PMP in Penumbra."));
         }
         catch (Exception ex)
         {
-            await framework.RunOnFrameworkThread(() => notices.Failed("Idle export", ex.Message));
+            await framework.RunOnFrameworkThread(() => { notices.Failed("Idle export", ex.Message); _open = true; });
         }
     }
 }

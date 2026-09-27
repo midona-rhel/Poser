@@ -173,6 +173,9 @@ public sealed class PoseFileInspectorSection
 
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
+    public bool IdleExportBusy => _idleExport.Busy;
+    public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
+
     public void RequestImportMenu(bool withPresets, Vector2? anchor = null,
         Domain.Identity.ActorId? target = null)
     {
@@ -295,9 +298,6 @@ public sealed class PoseFileInspectorSection
             ContextMenuItem.Separator,
             new("To clipboard", TablerIcon.FileText),
             new("To stash", TablerIcon.Stack2),
-            ContextMenuItem.Separator,
-            new("Idle mod (.pmp)…", TablerIcon.DeviceFloppy, disabled: _idleExport.Busy,
-                help: "Experimental standing /cpose 1 replacement, including the facial pose."),
         ];
     }
 
@@ -398,12 +398,6 @@ public sealed class PoseFileInspectorSection
                 break;
             case 4:
                 StashPose();
-                break;
-            case 6:
-                if (SelectedActor() is { } idleActor)
-                    OpenBrowser(() => _idleExport.Open(idleActor, _folder));
-                else
-                    _notices.Refused(NoActorText);
                 break;
         }
     }

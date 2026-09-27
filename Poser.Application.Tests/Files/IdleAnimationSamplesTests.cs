@@ -85,12 +85,22 @@ public sealed class IdleAnimationSamplesTests
     [InlineData(-1, 30)]
     [InlineData(float.NaN, 30)]
     [InlineData(float.PositiveInfinity, 30)]
-    [InlineData(6, 30)]
+    [InlineData(11, 30)]
     [InlineData(0.3f, 0)]
     [InlineData(0.3f, 121)]
     public void Rejects_invalid_or_unbounded_sampling(float duration, int rate)
     {
         var pose = Pose("body", Target(1));
         Assert.Throws<ArgumentOutOfRangeException>(() => IdleAnimationSamples.Create(pose, pose, duration, rate));
+    }
+
+    [Fact]
+    public void Long_native_entry_keeps_its_full_duration()
+    {
+        var pose = Pose("body", Target(1));
+        var samples = IdleAnimationSamples.Create(pose, pose, 215f / 30f);
+        Assert.Equal(215f / 30f, samples.Body.Entry.DurationSeconds);
+        Assert.Equal(216, samples.Body.Entry.Frames.Length);
+        Assert.Equal(samples.Body.Hold.Frames[0], samples.Body.Entry.Frames[^1]);
     }
 }

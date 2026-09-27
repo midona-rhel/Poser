@@ -116,6 +116,11 @@ internal sealed partial class EntityContextMenus
             disabled: !(actor.CharacterSkeleton != null) || _actorColliderCapture.Busy));
         actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(_configuration, actorId, actor.Name)));
 
+        items.Add(new ContextMenuItem("Export idle mod…", TablerIcon.Upload,
+            disabled: actor.CharacterSkeleton == null || _poseFileSection.IdleExportBusy,
+            help: "Bake body and expression into a Penumbra PMP"));
+        actions.Add(() => _poseFileSection.OpenIdleExport(actorId));
+
         items.Add(new ContextMenuItem("Tree", TablerIcon.Folder,
             submenuItems: BuildTreeSubmenu("actor:" + actorId, out var treeActions)));
         actions.Add(null);
@@ -558,6 +563,14 @@ internal sealed partial class EntityContextMenus
             new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Remove", TablerIcon.Trash, danger: true),
         };
+        var actions = new Action?[]
+        {
+            () => _referenceImages.SetHidden(image, !hidden),
+            () => OpenEntityRename("Rename reference image", image.Name, next => image.Entry.Name = next),
+            () => _referenceImages.Duplicate(image),
+            () => _referenceImages.Close(image),
+        };
+        MoveMoreActions(ref items, ref actions);
         if (_referenceCtxOpenRequested)
         {
             _referenceCtxOpenRequested = false;
@@ -567,24 +580,7 @@ internal sealed partial class EntityContextMenus
         int clicked = Crystarium.FloatingMenu.Draw("##reference-ctx");
         if (clicked < 0)
             return;
-        switch (clicked)
-        {
-            case 0:
-                _referenceImages.SetHidden(image, !hidden);
-                break;
-            case 1:
-                OpenEntityRename(
-                    "Rename reference image",
-                    image.Name,
-                    next => image.Entry.Name = next);
-                break;
-            case 2:
-                _referenceImages.Duplicate(image);
-                break;
-            case 3:
-                _referenceImages.Close(image);
-                break;
-        }
+        if (clicked < actions.Length) actions[clicked]?.Invoke();
         _ctxReferenceImage = null;
     }
 

@@ -29,11 +29,6 @@ internal sealed partial class EntityContextMenus
     // giving its secondary actions the same home across every context menu.
     private static List<Action?> MoveMoreActions(List<ContextMenuItem> items, List<Action?> actions)
     {
-        if (items.Count(item => item.Label.StartsWith("Save to file", StringComparison.Ordinal)
-                || item.Label == "Save to library"
-                || item.Label.StartsWith("Destroy all", StringComparison.Ordinal)) < 2
-            && !items.Any(item => item.Label.StartsWith("Destroy all", StringComparison.Ordinal)))
-            return [];
         var more = new List<ContextMenuItem>();
         var callbacks = new List<Action?>();
         for (int i = 0; i < items.Count;)
@@ -41,6 +36,7 @@ internal sealed partial class EntityContextMenus
             string label = items[i].Label;
             if (label.StartsWith("Save to file", StringComparison.Ordinal)
                 || label == "Save to library"
+                || label is "Create collider" or "Export idle mod…"
                 || label.StartsWith("Destroy all", StringComparison.Ordinal))
             {
                 more.Add(items[i]);
@@ -51,8 +47,6 @@ internal sealed partial class EntityContextMenus
             else
                 i++;
         }
-        if (more.Count == 0)
-            return callbacks;
         var lifetime = new List<ContextMenuItem>();
         var lifetimeActions = new List<Action?>();
         for (int i = 0; i < items.Count;)
@@ -67,16 +61,24 @@ internal sealed partial class EntityContextMenus
             else
                 i++;
         }
-        for (int i = items.Count - 1; i >= 0; i--)
-            if (items[i].IsSeparator && (i == 0 || i == items.Count - 1 || items[i - 1].IsSeparator))
-            {
-                items.RemoveAt(i);
-                actions.RemoveAt(i);
-            }
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray()));
-        actions.Add(null);
+        // One composition rule for actor, camera, light, scenery, prop, collider
+        // and group menus; keep callbacks paired while arranging their sections.
+        var rows = items.Select((item, i) => (Item: item, Action: actions[i]))
+            .Where(row => !row.Item.IsSeparator).OrderBy(row => Section(row.Item.Label)).ToArray();
+        items.Clear(); actions.Clear();
+        int previous = -1;
+        foreach (var row in rows)
+        {
+            int section = Section(row.Item.Label);
+            if (previous >= 0 && previous != section) { items.Add(ContextMenuItem.Separator); actions.Add(null); }
+            items.Add(row.Item); actions.Add(row.Action); previous = section;
+        }
+        if (more.Count > 0)
+        {
+            if (items.Count > 0) { items.Add(ContextMenuItem.Separator); actions.Add(null); }
+            items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray()));
+            actions.Add(null);
+        }
         if (lifetime.Count > 0)
         {
             items.Add(ContextMenuItem.Separator);
@@ -86,6 +88,16 @@ internal sealed partial class EntityContextMenus
         }
         return callbacks;
     }
+
+    private static int Section(string label) => label switch
+    {
+        "Show handle" or "Hide handle" or "Show" or "Hide" or "Switch on" or "Switch off"
+            or "Lock" or "Unlock" or "Lock transform" or "Unlock transform"
+            or "Enable collision" or "Disable collision" => 0,
+        "Rename" or "Duplicate" => 2,
+        "Reset" or "Tree" or "Bone presets" or "Pose" or "Companion" or "Attachment" => 3,
+        _ => 1,
+    };
 
     private static List<Action?> MoveMoreActions(ref ContextMenuItem[] items, ref Action?[] actions)
     {

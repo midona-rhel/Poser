@@ -16,7 +16,9 @@ internal sealed record IdleAnimationSamples(IdleAnimationBinding Body, IdleAnima
     public static IdleAnimationSamples Create(IdleSkeletonPose body, IdleSkeletonPose expression,
         float transitionSeconds = 0.3f, int samplesPerSecond = 30)
     {
-        if (!float.IsFinite(transitionSeconds) || transitionSeconds <= 0 || transitionSeconds > 5)
+        // Some native standing entries exceed five seconds (e.g. Hrothgar
+        // female pose 3: 215 frames). Still bound sampling and allocation.
+        if (!float.IsFinite(transitionSeconds) || transitionSeconds <= 0 || transitionSeconds > 10)
             throw new ArgumentOutOfRangeException(nameof(transitionSeconds));
         if (samplesPerSecond is < 1 or > 120)
             throw new ArgumentOutOfRangeException(nameof(samplesPerSecond));

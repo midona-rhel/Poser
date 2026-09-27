@@ -42,16 +42,28 @@ the prior mode remains selected, while earlier successful restores stay applied.
 
 ## Static idle export (in development, #304)
 
-Pose → Export → Idle mod writes a Penumbra PMP replacing standing `/cpose` 1.
+Actor context menu → More → Export idle mod opens name, standing `/cpose` slot,
+race/gender and destination choices. Only the source race/gender starts selected.
+The slot list is the intersection available in game data for all selected targets;
+each target retains its native entry/hold duration. Existing PMP files are not overwritten.
 Body and baked facial expression use separate destination-skeleton bindings;
 a missing expression is a failure, not a silently body-only export. Native
 capture refreshes the solved, pre-Customize+ pose; local tracks are mapped by
 name to the game's destination skeleton, not by the modded actor's indices.
-The export includes extra body/face bones from the loaded skeleton and requires
-the same race, face, skeleton mods and Customize+ profile in the receiving collection.
+The source-race export includes extra body/face bones from the loaded skeleton
+and requires the same face, skeleton mods and Customize+ profile in the receiving collection.
 Vanilla entry samples map by name; extra bones start at their reference pose.
 Reparented standard bones refuse rather than applying incompatible local samples.
 Hair/cloth physics, equipment and gaze tracking are not exported.
+
+Other races are explicitly opt-in, experimental retargets onto their vanilla body
+and available player-face skeletons (face resources 1–8). Local reference-pose
+deltas map by bone and parent name; translation offsets scale by reference bone
+length. Unmatched or reparented target bones keep their target idle. This does
+not solve contact or guarantee identical proportions, facial shape or custom rigs.
+The face attachment root stays at its target idle, avoiding a second head rotation.
+One detached source capture feeds all targets; serialization yields between face
+batches and never recaptures a changed live pose midway through the package.
 
 Entry uses sine easing and shortest-path quaternion interpolation. Only the
 constant hold loops; exit uses the game's normal blend-out. The application

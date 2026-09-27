@@ -109,6 +109,18 @@ public sealed class IdleModPackageTests
     }
 
     [Fact]
+    public void Chosen_slot_paths_and_durations_are_used_for_body_and_face_together()
+    {
+        var face = Pap();
+        BinaryPrimitives.WriteInt32LittleEndian(face.AsSpan(62), 1);
+        var files = IdlePapBuilder.Files("c0101", "f0002", new(Pap()), new(Pap()), new(face),
+            new byte[8], new byte[8], new byte[8], new byte[8], 4, 90, 120);
+        Assert.All(files, file => Assert.Contains("pose04_", file.GamePath));
+        Assert.All(files, file => Assert.StartsWith("chara/human/c0101/", file.GamePath));
+        Assert.Equal(new[] { 90, 120, 90, 120 }, files.Select(f => new PapAnimationDocument(f.Bytes).DurationFrames));
+    }
+
+    [Fact]
     public void Pmp_maps_both_files_and_never_overwrites_existing_output()
     {
         var directory = Directory.CreateTempSubdirectory("poser-idle-test-");
@@ -157,6 +169,7 @@ public sealed class IdleModPackageTests
 
     private sealed class Runtime(Task<IdleModPackage> result) : IIdleModRuntime
     {
-        public Task<IdleModPackage> CaptureAsync(ActorId actor) => result;
+        public Task<IdleModChoices> DescribeAsync(ActorId actor) => Task.FromResult(new IdleModChoices("Test", 801, [new(801, "Miqo'te female", [1])]));
+        public Task<IdleModPackage> CaptureAsync(ActorId actor, IdleModOptions options) => result;
     }
 }

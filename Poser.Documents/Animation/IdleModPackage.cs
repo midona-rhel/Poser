@@ -9,7 +9,7 @@ public sealed record IdleModPackage(string Name, string Description, IReadOnlyLi
 {
     public void WriteNew(string destination)
     {
-        if (string.IsNullOrWhiteSpace(Name) || Files.Count is < 1 or > 16)
+        if (string.IsNullOrWhiteSpace(Name) || Files.Count is < 1 or > 512)
             throw new InvalidDataException("An idle mod must have a name and bounded file set.");
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in Files)
