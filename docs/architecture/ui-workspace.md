@@ -84,7 +84,13 @@ reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
 are independent and remain usable.
 
 Entity context menus share the camera's sections: visibility/locking, everyday
-actions, rename/duplicate, and related submenus. Save actions, Create collider,
+actions, rename/duplicate, and related submenus. Placement, Playback and Reset
+group the supported commands consistently; unsupported capabilities are not
+invented to fill rows. Rotation/scale reset preserves the other components,
+including position, and uses the same application transform/history path as
+ordinary edits. Bone and skeleton/category menus use Select, Visibility and
+Reset submenus, with whole-actor pose/preset actions explicitly labelled.
+Save actions, Create collider,
 Export idle mod and category-wide destruction live under More, including a lone
 save action; sidebar and viewport use the same composition. Inspector surfaces
 keep a lone save action direct. More uses

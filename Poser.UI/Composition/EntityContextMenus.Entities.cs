@@ -230,7 +230,7 @@ internal sealed partial class EntityContextMenus
         }
 
         AddHandleAction(items, actions, SelectionId.ForActor(actorId));
-        var moreActions = MoveMoreActions(items, actions);
+        var moreActions = MoveMoreActions(items, actions, SelectionId.ForActor(actorId));
         if (_ctxOpenRequested)
         {
             _ctxOpenRequested = false;
@@ -245,6 +245,7 @@ internal sealed partial class EntityContextMenus
         // Route each submenu click through its parent row.
         int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
+        if (InvokeComposedAction(items, subParent, subClicked)) return;
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count)
         {
             var submenu = items[subParent].Label switch
@@ -407,126 +408,57 @@ internal sealed partial class EntityContextMenus
     /// </summary>
     public void DrawBoneContextMenu()
     {
-        if (!_boneCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##bone-ctx")) return;
-        if (_ctxBoneId is not { } boneId)
-            return;
-
-        var owner = _scene.Snapshot.FindActor(boneId.Skeleton.Actor.LogicalId);
+        const string menu = "##bone-ctx";
+        if (!_boneCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen(menu)) return;
+        if (_ctxBoneId is not { } boneId) return;
+        var owner = _scene.Snapshot.FindActor(boneId.Skeleton.Actor);
         var bones = owner?.GetSkeleton(boneId.Slot)?.Bones;
-        var descriptor = bones?.FirstOrDefault(candidate => candidate.Id.Equals(boneId));
-        if (bones == null || descriptor == null)
+        var descriptor = bones?.FirstOrDefault(b => b.Id == boneId);
+        if (owner == null || bones == null || descriptor == null)
         {
             _ctxBoneId = null;
-            _ctxBoneOverlayBones = null;
-            Crystarium.FloatingMenu.Dismiss("##bone-ctx");
+            Crystarium.FloatingMenu.Dismiss(menu);
             return;
         }
-
         var mirrorName = PoseMath.GetMirrorBoneName(boneId.CanonicalName);
-        var mirror = mirrorName == null
-            ? null
-            : bones.FirstOrDefault(candidate =>
-                candidate.Id.CanonicalName == mirrorName &&
-                candidate.Id.PartialId == boneId.PartialId);
-        bool hasChildren = bones.Any(candidate => candidate.Parent?.Equals(boneId) == true);
-
+        var mirror = bones.FirstOrDefault(b => b.Id.CanonicalName == mirrorName && b.Id.PartialId == boneId.PartialId);
+        var branch = new List<BoneId> { boneId };
+        var byId = bones.ToDictionary(b => b.Id);
+        foreach (var candidate in bones)
+            for (var parent = candidate.Parent; parent is { } parentId; parent = byId.TryGetValue(parentId, out var node) ? node.Parent : null)
+                if (parentId == boneId) { branch.Add(candidate.Id); break; }
         var overlayBones = _ctxBoneOverlayBones ?? new[] { boneId };
-        bool overlayVisible =
-            _overlayPresentation.AreVisible(overlayBones);
-        var items = new[]
-        {
-            new ContextMenuItem("Select parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null),
-            new ContextMenuItem("Select bone and descendants", TablerIcon.SelectChildren, disabled: !hasChildren),
-            new ContextMenuItem("Select mirrored bone", TablerIcon.SelectMirror, disabled: mirror == null),
-            new ContextMenuItem(
-                overlayVisible
-                    ? "Hide from overlay"
-                    : "Show in overlay",
-                overlayVisible
-                    ? TablerIcon.EyeOff
-                    : TablerIcon.Eye),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Flip bone", TablerIcon.Rotate),
-            new ContextMenuItem("Reset bone", TablerIcon.Refresh, disruptive: true),
-        };
-
-        var tree = BuildTreeSubmenu(_ctxBoneExpandKey, out var treeActions);
-        var pose = BuildActorPoseSubmenu(owner!.Id, out var poseActions);
-        items = items.Concat(new[]
-        {
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Tree", TablerIcon.Folder, submenuItems: tree),
-            new ContextMenuItem("Actor bone presets", TablerIcon.Eye,
-                help: "Overlay visibility for the whole owning actor",
-                submenuItems: BuildBonePresetSubmenu(owner.Id)),
-            new ContextMenuItem("Actor pose", TablerIcon.Walk,
-                help: "Import, export and stash the whole owning actor, not just this bone",
-                submenuItems: pose),
-        }).ToArray();
-
-        if (_boneCtxOpenRequested)
-        {
-            _boneCtxOpenRequested = false;
-            OpenContextMenu("##bone-ctx", items);
-        }
-        Crystarium.FloatingMenu.Refresh("##bone-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##bone-ctx");
-        switch (clicked)
-        {
-            case 0 when descriptor.Parent is { } parent:
-                _selection.Select(SelectionId.ForBone(parent));
-                break;
-            case 1:
-            {
-                _selection.Select(SelectionId.ForBone(boneId));
-                var byId = bones.ToDictionary(candidate => candidate.Id);
-                foreach (var candidate in bones)
-                {
-                    for (var parent = candidate.Parent;
-                         parent is { } parentId;
-                         parent = byId.TryGetValue(parentId, out var parentDescriptor)
-                             ? parentDescriptor.Parent
-                             : null)
-                    {
-                        if (!parentId.Equals(boneId))
-                            continue;
-                        _selection.Add(SelectionId.ForBone(candidate.Id));
-                        break;
-                    }
-                }
-                break;
-            }
-            case 2 when mirror != null:
-                _selection.Select(SelectionId.ForBone(mirror.Id));
-                break;
-            case 3:
-                _overlayPresentation.SetVisible(
-                    overlayBones,
-                    !overlayVisible);
-                break;
-            case 5:
-                _cleanPose.FlipBone(
-                    TransformTargetId.ForBone(boneId),
-                    descriptor.DisplayName);
-                break;
-            case 6:
-                _cleanPose.ResetBone(
-                    TransformTargetId.ForBone(boneId),
-                    descriptor.DisplayName);
-                break;
-        }
-        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parentRow);
-        if (sub >= 0 && parentRow >= 0 && parentRow < items.Length)
-        {
-            var actions = items[parentRow].Label switch
-            {
-                "Tree" => treeActions,
-                "Actor bone presets" => _bonePresetActions,
-                "Actor pose" => poseActions,
-                _ => null,
-            };
-            if (actions != null && sub < actions.Count) actions[sub]?.Invoke();
-        }
+        bool visible = _overlayPresentation.AreVisible(overlayBones);
+        var tree = BindSubmenu(BuildTreeSubmenu(_ctxBoneExpandKey, out var treeActions), treeActions);
+        var pose = BindSubmenu(BuildActorPoseSubmenu(owner.Id, out var poseActions), poseActions);
+        var presets = BindSubmenu(BuildBonePresetSubmenu(owner.Id), _bonePresetActions);
+        ContextMenuItem[] items =
+        [
+            new(visible ? "Hide from overlay" : "Show in overlay", visible ? TablerIcon.EyeOff : TablerIcon.Eye)
+            { OnInvoke = () => _overlayPresentation.SetVisible(overlayBones, !visible) },
+            new("Select", TablerIcon.Crosshair, submenuItems:
+            [
+                new("Parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null)
+                { OnInvoke = () => { if (descriptor.Parent is { } parent) _selection.Select(SelectionId.ForBone(parent)); } },
+                new("Bone and descendants", TablerIcon.SelectChildren, disabled: branch.Count == 1)
+                { OnInvoke = () => { _selection.Select(SelectionId.ForBone(boneId)); foreach (var child in branch.Skip(1)) _selection.Add(SelectionId.ForBone(child)); } },
+                new("Mirrored bone", TablerIcon.SelectMirror, disabled: mirror == null)
+                { OnInvoke = () => { if (mirror != null) _selection.Select(SelectionId.ForBone(mirror.Id)); } },
+            ]),
+            new("Flip bone", TablerIcon.Rotate)
+            { OnInvoke = () => _cleanPose.FlipBone(TransformTargetId.ForBone(boneId), descriptor.DisplayName) },
+            new("Reset", TablerIcon.Refresh, submenuItems:
+            [
+                new("Bone", TablerIcon.Refresh, disruptive: true)
+                { OnInvoke = () => _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), descriptor.DisplayName) },
+                new("Bone and descendants", TablerIcon.Refresh, disruptive: true, disabled: branch.Count == 1)
+                { OnInvoke = () => _cleanPose.ResetBones(branch.Select(TransformTargetId.ForBone).ToArray(), "Reset bone branch") },
+            ]),
+            new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
+            new("Actor bone presets", TablerIcon.Eye, submenuItems: presets),
+            new("Tree", TablerIcon.Folder, submenuItems: tree),
+        ];
+        DrawComposedMenu(menu, ref _boneCtxOpenRequested, items);
     }
 
     private ReferenceImageInstance? _ctxReferenceImage;
@@ -648,7 +580,7 @@ internal sealed partial class EntityContextMenus
                 .Concat(actions).ToArray();
         }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
-        var moreActions = MoveMoreActions(ref items, ref actions);
+        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForOverlay(overlayId));
         if (_overlayNodeCtxOpenRequested)
         {
             _overlayNodeCtxOpenRequested = false;
@@ -663,86 +595,61 @@ internal sealed partial class EntityContextMenus
 
     public void DrawOverlayContextMenu()
     {
-        if (!_overlayCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-ctx")) return;
+        const string menu = "##overlay-ctx";
+        if (!_overlayCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen(menu)) return;
         if (_ctxOverlayBones is not { Count: > 0 } captured) return;
         var ownerId = _ctxBranchSkeleton?.Actor ?? captured[0].Skeleton.Actor;
-        var owner = _scene.Snapshot.FindActor(ownerId.LogicalId);
+        var owner = _scene.Snapshot.FindActor(ownerId);
         var slot = _ctxBranchSkeleton is { } skeletonId ? owner?.GetSkeleton(skeletonId.Slot) : null;
         if (owner == null || (_ctxBranchSkeleton != null && slot == null))
         {
             _ctxOverlayBones = null;
-            Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
+            Crystarium.FloatingMenu.Dismiss(menu);
             return;
         }
         var bones = slot != null ? slot.Bones.Select(b => b.Id).ToArray() : captured;
         var ownerBones = owner.Skeletons.SelectMany(s => s.Bones).Select(b => b.Id).ToArray();
-        var state = _overlayPresentation.Resolve(bones);
+        bool visible = _overlayPresentation.Resolve(bones) != OverlayVisibility.None;
         string scope = _ctxBranchLabel;
-        var items = new[]
+        var tree = BindSubmenu(BuildTreeSubmenu(_ctxBranchExpandKey, out var treeActions), treeActions);
+        var pose = BindSubmenu(BuildActorPoseSubmenu(owner.Id, out var poseActions), poseActions);
+        var presets = BindSubmenu(BuildBonePresetSubmenu(owner.Id), _bonePresetActions);
+        ContextMenuItem[] items =
+        [
+            new(visible ? "Hide from overlay" : "Show in overlay", visible ? TablerIcon.EyeOff : TablerIcon.Eye)
+            { OnInvoke = () =>
+                {
+                    if (_ctxOverlayMemoryKey is { } memoryKey) _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
+                    else _overlayPresentation.SetVisible(bones, !visible);
+                }
+            },
+            new("Select", TablerIcon.Crosshair, submenuItems:
+            [
+                new("Bones in " + scope, TablerIcon.SelectChildren) { OnInvoke = () => SelectBones(bones) },
+                new("All actor bones", TablerIcon.SelectChildren) { OnInvoke = () => SelectBones(ownerBones) },
+            ]),
+            new("Visibility", TablerIcon.Eye, submenuItems:
+            [
+                new("Show only " + scope, TablerIcon.Crosshair)
+                { OnInvoke = () => { _overlayPresentation.SetVisible(ownerBones, false); _overlayPresentation.SetVisible(bones, true); } },
+                new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, true) },
+                new("Hide all actor bones", TablerIcon.EyeOff) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, false) },
+            ]),
+            new("Reset", TablerIcon.Refresh, submenuItems:
+            [
+                new("Bones in " + scope, TablerIcon.Refresh, disruptive: true)
+                { OnInvoke = () => _cleanPose.ResetBones(bones.Select(TransformTargetId.ForBone).ToArray(), "Reset " + scope) },
+            ]),
+            new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
+            new("Actor bone presets", TablerIcon.Eye, submenuItems: presets),
+            new("Tree", TablerIcon.Folder, submenuItems: tree),
+        ];
+        DrawComposedMenu(menu, ref _overlayCtxOpenRequested, items);
+
+        void SelectBones(IReadOnlyList<BoneId> selected)
         {
-            new ContextMenuItem("Select bones in " + scope, TablerIcon.SelectChildren),
-            new ContextMenuItem(state == OverlayVisibility.None ? "Show in overlay" : "Hide from overlay",
-                state == OverlayVisibility.None ? TablerIcon.Eye : TablerIcon.EyeOff),
-            new ContextMenuItem("Show only " + scope, TablerIcon.Crosshair,
-                help: "Isolate this branch within the owning actor"),
-            new ContextMenuItem("Show all actor bones", TablerIcon.Eye),
-            new ContextMenuItem("Hide all actor bones", TablerIcon.EyeOff),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Tree", TablerIcon.Folder,
-                submenuItems: BuildTreeSubmenu(_ctxBranchExpandKey, out var treeActions)),
-            new ContextMenuItem("Actor bone presets", TablerIcon.Eye,
-                help: "Overlay visibility for the whole owning actor",
-                submenuItems: BuildBonePresetSubmenu(owner.Id)),
-            new ContextMenuItem("Actor pose", TablerIcon.Walk,
-                help: "Import, export and stash the whole owning actor, including equipment",
-                submenuItems: BuildActorPoseSubmenu(owner.Id, out var poseActions)),
-            new ContextMenuItem("Reset bones in " + scope, TablerIcon.Refresh, disruptive: true,
-                help: "Reset only this branch's bones; undo restores the pose"),
-        };
-        if (_overlayCtxOpenRequested)
-        {
-            _overlayCtxOpenRequested = false;
-            OpenContextMenu("##overlay-ctx", items);
-        }
-        Crystarium.FloatingMenu.Refresh("##overlay-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##overlay-ctx");
-        switch (clicked)
-        {
-            case 0:
-                _selection.Clear();
-                foreach (var bone in bones) _selection.Add(SelectionId.ForBone(bone));
-                break;
-            case 1:
-                if (_ctxOverlayMemoryKey is { } memoryKey)
-                    _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
-                else
-                    _overlayPresentation.SetVisible(bones, state == OverlayVisibility.None);
-                break;
-            case 2:
-                _overlayPresentation.SetVisible(ownerBones, false);
-                _overlayPresentation.SetVisible(bones, true);
-                break;
-            case 3:
-                _overlayPresentation.SetVisible(ownerBones, true);
-                break;
-            case 4:
-                _overlayPresentation.SetVisible(ownerBones, false);
-                break;
-            case 9:
-                _cleanPose.ResetBones(bones.Select(TransformTargetId.ForBone).ToArray(), "Reset " + scope);
-                break;
-        }
-        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
-        if (sub >= 0 && parent >= 0 && parent < items.Length)
-        {
-            var actions = items[parent].Label switch
-            {
-                "Tree" => treeActions,
-                "Actor bone presets" => _bonePresetActions,
-                "Actor pose" => poseActions,
-                _ => null,
-            };
-            if (actions != null && sub < actions.Count) actions[sub]?.Invoke();
+            _selection.Clear();
+            foreach (var bone in selected) _selection.Add(SelectionId.ForBone(bone));
         }
     }
 
@@ -839,7 +746,7 @@ internal sealed partial class EntityContextMenus
         actions.Add(_removalDialog.ConfirmDestroyAllLights);
 
         AddHandleAction(items, actions, SelectionId.ForLight(lightId));
-        var moreActions = MoveMoreActions(items, actions);
+        var moreActions = MoveMoreActions(items, actions, SelectionId.ForLight(lightId));
         if (_lightCtxOpenRequested)
         {
             _lightCtxOpenRequested = false;
@@ -909,7 +816,7 @@ internal sealed partial class EntityContextMenus
         };
 
         AddHandleAction(ref items, ref actions, SelectionId.ForProp(propId));
-        var moreActions = MoveMoreActions(ref items, ref actions);
+        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForProp(propId));
         if (_propCtxOpenRequested)
         {
             _propCtxOpenRequested = false;
@@ -1008,6 +915,7 @@ internal sealed partial class EntityContextMenus
         int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
         if (parent >= 0 && parent < items.Count)
         {
+            if (InvokeComposedAction(items, parent, sub)) return;
             if (items[parent].Label == "More" && sub >= 0 && sub < moreActions.Count)
                 moreActions[sub]?.Invoke();
             else if (items[parent].Label == "Reset")
@@ -1115,7 +1023,7 @@ internal sealed partial class EntityContextMenus
         items = stateItems.Concat(items).ToArray();
         actions = stateActions.Concat(actions).ToArray();
         AddHandleAction(ref items, ref actions, SelectionId.ForWorldObject(worldObjectId));
-        var moreActions = MoveMoreActions(ref items, ref actions);
+        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForWorldObject(worldObjectId));
         if (_worldObjectCtxOpenRequested)
         {
             _worldObjectCtxOpenRequested = false;
@@ -1200,6 +1108,9 @@ internal sealed partial class EntityContextMenus
             // emptied group dissolves through the scene prune.
             () => _ = RemoveEntitiesSafely(group.Members.ToArray()),
         };
+        items = items.Append(new ContextMenuItem("Move to camera", TablerIcon.Camera,
+            disabled: locked || !_groups.Descendants(group).Any(_placement.CanPlace))).ToArray();
+        actions = actions.Append((Action?)(() => ReportPlacement(_placement.MoveToCamera(_groups.Descendants(group).ToArray())))).ToArray();
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_groupCtxOpenRequested)
         {
@@ -1212,6 +1123,8 @@ internal sealed partial class EntityContextMenus
             actions[clicked]?.Invoke();
         int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
+            && InvokeComposedAction(items, subParent, subClicked)) return;
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
             && items[subParent].Label == "Duplicate")
             DuplicateGroup(group, withPose: subClicked == 1);
@@ -1327,6 +1240,8 @@ internal sealed partial class EntityContextMenus
             actions[clicked]?.Invoke();
         int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
+            && InvokeComposedAction(items, subParent, subClicked)) return;
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
             && items[subParent].Label == "Duplicate")
             DuplicateSelection(withPose: subClicked == 1);
