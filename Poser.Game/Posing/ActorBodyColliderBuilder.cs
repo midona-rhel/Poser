@@ -1,181 +1,173 @@
 using System.Numerics;
+using Poser.Core.BoneInfo;
 using Poser.Domain.Posing;
+using static Poser.Game.Posing.ActorColliderMeshBuilder;
 
 namespace Poser.Game.Posing;
 
 internal static class ActorBodyColliderBuilder
 {
-    internal sealed record Joint(Vector3 Position, string? Parent);
+    internal const int MaximumParts = 48;
+    internal sealed record Joint(Vector3 Position, string? Parent, Quaternion Rotation = default);
     internal sealed record Fitted(string Name, IkCollider Collider, string BoneName);
-    private sealed record Span(string Name, string Start, string End, bool FitEnds = false, bool Sphere = false);
+    private sealed record Span(string Name, string Start, string End, bool Volume = false, bool Sphere = false);
+    private static readonly HashSet<string> ExcludedNames = ExcludedCategories();
 
     private static List<Span> BodySpans(IReadOnlyDictionary<string, Joint> joints)
     {
         var spans = new List<Span> {
-            new("Waist", "j_kosi", "j_sebo_a"),
-            new("Lower back", "j_sebo_a", "j_sebo_b"),
-            new("Middle back", "j_sebo_b", "j_sebo_c"),
-            new("Upper back", "j_sebo_c", "j_kubi"), new("Neck", "j_kubi", "j_kao"),
-            new("Head", "j_kao", "j_kubi", true, true) };
+            new("Waist", "j_kosi", "j_sebo_a", true),
+            new("Lower back", "j_sebo_a", "j_sebo_b", true),
+            new("Middle back", "j_sebo_b", "j_sebo_c", true),
+            new("Upper back", "j_sebo_c", "j_kubi", true),
+            new("Neck", "j_kubi", "j_kao"),
+            new("Head", "j_kao", "j_kubi", true) };
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
             spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true, true),
                 new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
-                new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"), new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
-                new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true, true), new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
-                // The knee is a separate joint; the calf drives the shin. Use
-                // its span for both surface fitting and the generated parent.
-                new($"{label} lower leg", $"j_asi_c_{side}", $"j_asi_d_{side}"), new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
+                new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"),
+                new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
+                new($"{label} hand", $"j_te_{side}", $"j_naka_a_{side}", true),
+                new($"{label} thigh", $"j_asi_a_{side}", $"j_asi_b_{side}"),
+                // Ktisis distinguishes the knee helper from the calf driver.
+                new($"{label} lower leg", $"j_asi_c_{side}", $"j_asi_d_{side}"),
+                new($"{label} foot", $"j_asi_d_{side}", $"j_asi_e_{side}", true)]);
         }
         spans.RemoveAll(s => !joints.ContainsKey(s.Start) || !joints.ContainsKey(s.End) ||
-            (!s.Sphere && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
-        if (spans.Count == 0) throw new InvalidDataException("This actor has no supported humanoid body chains.");
+            (!s.Volume && Vector3.DistanceSquared(joints[s.Start].Position, joints[s.End].Position) < 1e-10f));
+        if (spans.Count == 0)
+            throw new InvalidDataException("This skeleton has no recognized body chains; automatic fitting cannot identify its anatomy safely.");
+        // Tail chains have their own regions, never waist ownership. Keep each
+        // articulated segment on its actual driver rather than bridging joints
+        // with a capsule rigidly parented to the tail root.
+        foreach (var (name, joint) in joints.Where(p => Tail(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            var children = joints.Where(p => p.Value.Parent == name && Tail(p.Key)).Select(p => p.Key).ToArray();
+            if (children.Length > 1)
+                throw new InvalidDataException("A branching tail requires manual collider placement.");
+            string end = children.FirstOrDefault() ?? (joint.Parent is { } parent && Tail(parent) ? parent : name);
+            spans.Add(new($"Tail / {name}", name, end, children.Length == 0));
+        }
+        if (spans.Count > MaximumParts)
+            throw new InvalidDataException($"This skeleton exceeds the {MaximumParts}-part collider budget; no partial body was generated.");
         return spans;
     }
 
-    internal static HashSet<string> BodyBones(IReadOnlyDictionary<string, Joint> joints)
+    private static bool Tail(string name) => name.StartsWith("n_sippo", StringComparison.Ordinal) ||
+        name.StartsWith("j_sippo", StringComparison.Ordinal) || name == "j_tail" ||
+        name.StartsWith("rf_centaur_tail_", StringComparison.Ordinal);
+
+    private static HashSet<string> ExcludedCategories()
     {
-        var roots = BodySpans(joints).Select(s => s.Start).ToHashSet();
-        if (roots.Contains("j_kosi")) roots.Add("n_hara");
-        return joints.Keys.Where(name =>
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Walk(KtisisBoneCategory category, bool excluded)
         {
-            string? current = name;
-            for (int depth = 0; current != null && depth < joints.Count; depth++)
-            {
-                if (Excluded(current)) return false;
-                if (roots.Contains(current)) return true;
-                current = joints.TryGetValue(current, out var joint) ? joint.Parent : null;
-            }
-            return false;
-        }).ToHashSet();
+            excluded |= category.Id is "Hair" or "Ears" or "Clothing" or "Weapons" or "GenitalsIvcs";
+            if (excluded) names.UnionWith(category.Bones);
+            foreach (var child in category.Children) Walk(child, excluded);
+        }
+        foreach (var root in KtisisBoneCategories.Roots) Walk(root, false);
+        return names;
     }
 
-    private static bool Excluded(string name) =>
+    private static bool Excluded(string name) => ExcludedNames.Contains(name) ||
         name.StartsWith("j_kami", StringComparison.Ordinal) ||
         name.StartsWith("j_ex_h", StringComparison.Ordinal) ||
-        name.StartsWith("j_sippo", StringComparison.Ordinal) ||
         name.StartsWith("j_sk_", StringComparison.Ordinal);
 
-    internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
-        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences)
+    private static Dictionary<string, int> Owners(IReadOnlyDictionary<string, Joint> joints, List<Span> spans)
     {
-        var spans = BodySpans(joints);
         var roots = spans.Select((s, i) => (s.Start, i)).ToDictionary(x => x.Start, x => x.i);
         if (roots.TryGetValue("j_kosi", out int waist)) roots["n_hara"] = waist;
-        var samples = spans.Select(_ => new List<Vector3>()).ToArray();
-        var owners = new Dictionary<string, int>();
-        int Owner(string name)
+        var owners = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string name in joints.Keys)
         {
-            if (owners.TryGetValue(name, out int cached)) return cached;
             string? current = name;
-            int result = -1;
+            int owner = -1;
             for (int depth = 0; current != null && depth < joints.Count; depth++)
             {
-                // Hair, tails and skirt chains are not body volume. Do not let
-                // a long accessory inflate the head or waist.
                 if (Excluded(current)) break;
-                if (roots.TryGetValue(current, out result)) break;
-                result = -1;
+                if (roots.TryGetValue(current, out var region)) { owner = region; break; }
                 current = joints.TryGetValue(current, out var joint) ? joint.Parent : null;
             }
-            return owners[name] = result;
+            owners[name] = owner;
         }
-        foreach (int index in indices.Distinct())
-            if (influences[index] is { } bone && Owner(bone) is var part && part >= 0)
-                samples[part].Add(vertices[index]);
-        var triangles = spans.Select(_ => new List<(Vector3 A, Vector3 B, Vector3 C)>()).ToArray();
-        for (int i = 0; i + 2 < indices.Count; i += 3)
+        return owners;
+    }
+
+    internal static HashSet<string> BodyBones(IReadOnlyDictionary<string, Joint> joints) =>
+        Owners(joints, BodySpans(joints)).Where(p => p.Value >= 0).Select(p => p.Key).ToHashSet();
+
+    internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
+        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<string?> influences) =>
+        Fit(joints, vertices, indices, influences.Select(name => name == null ? Array.Empty<BoneWeight>() : new[] { new BoneWeight(name, 1) }).ToArray());
+
+    internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
+        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<BoneWeight[]> influences)
+    {
+        if (vertices.Count != influences.Count || indices.Count % 3 != 0)
+            throw new InvalidDataException("Body fitting requires an indexed weighted triangle surface.");
+        var spans = BodySpans(joints);
+        var owners = Owners(joints, spans);
+        var areas = new float[vertices.Count];
+        for (int i = 0; i < indices.Count; i += 3)
         {
-            var ownersOfTriangle = new[] { indices[i], indices[i + 1], indices[i + 2] }
-                .Select(v => influences[v] is { } name ? Owner(name) : -1).Where(p => p >= 0).Distinct();
-            foreach (int part in ownersOfTriangle)
-                triangles[part].Add((vertices[indices[i]], vertices[indices[i + 1]], vertices[indices[i + 2]]));
+            int a = indices[i], b = indices[i + 1], c = indices[i + 2];
+            if ((uint)a >= vertices.Count || (uint)b >= vertices.Count || (uint)c >= vertices.Count)
+                throw new InvalidDataException("Body surface contains an invalid vertex index.");
+            float share = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).Length() / 6;
+            if (!float.IsFinite(share)) throw new InvalidDataException("Body surface contains non-finite coordinates.");
+            areas[a] += share; areas[b] += share; areas[c] += share;
+        }
+        var samples = spans.Select(_ => new List<BodySurfaceFit.Sample>()).ToArray();
+        var regionWeights = new float[spans.Count];
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            if (areas[i] <= 0) continue;
+            Array.Clear(regionWeights);
+            foreach (var influence in influences[i])
+                if (owners.TryGetValue(influence.Bone, out int region) && region >= 0 && influence.Weight > 0)
+                    regionWeights[region] += influence.Weight;
+            for (int region = 0; region < regionWeights.Length; region++)
+            {
+                // Sum helper-bone weights BEFORE thresholding. A 40/35/25 split
+                // within one limb is still fully owned by that limb.
+                float weight = regionWeights[region];
+                if (weight < .15f) continue;
+                var span = spans[region];
+                var a = joints[span.Start].Position;
+                var delta = joints[span.End].Position - a;
+                if (!span.Volume && delta.LengthSquared() > 1e-10f)
+                {
+                    float t = Vector3.Dot(vertices[i] - a, delta) / delta.LengthSquared();
+                    if (t < -.25f || t > 1.25f) continue;
+                }
+                samples[region].Add(new(vertices[i], areas[i] * weight));
+            }
         }
         var fitted = new List<Fitted>();
         for (int i = 0; i < spans.Count; i++)
         {
-            var points = samples[i];
-            if (points.Count == 0) continue;
+            if (samples[i].Count < 4) continue;
             var span = spans[i];
-            var start = joints[span.Start].Position;
-            var end = joints[span.End].Position;
-            var axis = Vector3.DistanceSquared(start, end) > 1e-10f ? Vector3.Normalize(end - start) : Vector3.UnitY;
-            if (span.Sphere)
-            {
-                // Head/hand meshes contain internal eyes, mouth and dense finger
-                // detail. Their nearest hits/mean vertex radius measure those
-                // details, not the part's size. Average the three surface extents.
-                var uSphere = Vector3.Normalize(Vector3.Cross(axis, MathF.Abs(axis.Y) < .9f ? Vector3.UnitY : Vector3.UnitX));
-                var vSphere = Vector3.Cross(axis, uSphere);
-                var sphereCenter = Vector3.Zero;
-                float sphereRadius = 0;
-                foreach (var direction in new[] { uSphere, vSphere, axis })
-                {
-                    var values = points.Select(p => Vector3.Dot(p, direction)).Order().ToArray();
-                    float low = values[(int)((values.Length - 1) * .02f)];
-                    float high = values[(int)((values.Length - 1) * .98f)];
-                    sphereCenter += direction * ((low + high) * .5f);
-                    sphereRadius += (high - low) / 6;
-                }
-                if (sphereRadius >= .0001f)
-                    fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Sphere,
-                        Transform = new(sphereCenter, Quaternion.Identity, new(sphereRadius * 2)) }, span.Start));
-                continue;
-            }
-            var axial = points.Select(p => Vector3.Dot(p - start, axis)).Order().ToArray();
-            if (span.FitEnds)
-            {
-                end = start + axis * axial[(int)((axial.Length - 1) * .98f)];
-                start += axis * axial[(int)((axial.Length - 1) * .02f)];
-            }
-            var u = Vector3.Normalize(Vector3.Cross(axis, MathF.Abs(axis.Y) < .9f ? Vector3.UnitY : Vector3.UnitX));
-            var v = Vector3.Cross(axis, u);
-            var center = (start + end) * .5f;
-            if (span.FitEnds)
-            {
-                // Center head/hands/feet on the surface, not the attachment
-                // joint. Feet keep the ankle-to-toe direction of the posed rig.
-                Vector3 Middle(Vector3 direction)
-                {
-                    var values = points.Select(p => Vector3.Dot(p - center, direction)).Order().ToArray();
-                    return direction * (values[(int)((values.Length - 1) * .05f)] + values[(int)((values.Length - 1) * .95f)]) * .5f;
-                }
-                center += Middle(u) + Middle(v);
-            }
-            var widths = new List<float>();
-            foreach (float t in new[] { .25f, .5f, .75f })
-            {
-                var origin = center + axis * ((t - .5f) * Vector3.Distance(start, end));
-                var directions = new[] { u, -u, v, -v };
-                var distances = directions.Select(d => NearestSurface(origin, d, triangles[i])).ToArray();
-                if (distances.All(float.IsFinite)) widths.Add(distances.Average());
-            }
-            // Average the sampled surface distances rather than choosing the
-            // narrowest side. Open surfaces use mean vertex distance instead.
-            float radius = widths.Count > 0 ? widths.Average()
-                : points.Select(p => (p - center - axis * Vector3.Dot(p - center, axis)).Length()).Average();
-            float length = Vector3.Distance(start, end);
-            // Bone joints are cap CENTERS, not outer tips: keep the full bone
-            // span as the stem so the rounded ends overlap adjacent parts.
-            // Surface-fitted feet instead retain their measured tip-to-tip size.
-            if (span.FitEnds) radius = MathF.Min(radius, length * .5f);
-            else length += radius * 2;
-            if (radius < .0001f) continue;
-            var cross = Vector3.Cross(Vector3.UnitY, axis);
-            var rotation = axis.Y < -.999999f
-                ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI) : Quaternion.Normalize(new Quaternion(cross, 1 + axis.Y));
-            fitted.Add(new(span.Name, new IkCollider { Shape = IkColliderShape.Capsule,
-                Transform = new(center, rotation, new(radius * 2, length, radius * 2)) }, span.Start));
+            var start = joints[span.Start];
+            var collider = BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
+                joints[span.End].Position - start.Position, span.Sphere, span.Volume);
+            fitted.Add(new(span.Name, collider, span.Start));
         }
-        // Joint spheres add coverage around bent knees/elbows. Derive their
-        // size from the neighbouring fitted limbs.
+
         void JointSphere(string name, string bone, params string[] neighbours)
         {
             if (!joints.TryGetValue(bone, out var joint)) return;
-            var radii = fitted.Where(p => neighbours.Contains(p.Name)).Select(p => p.Collider.RoundDimensions().Radius).ToArray();
-            if (radii.Length == 0) return;
-            float radius = radii.Average();
+            var adjacent = fitted.Where(p => neighbours.Contains(p.Name)).ToArray();
+            if (adjacent.Length == 0) return;
+            float radius = adjacent.Min(p => p.Collider.RoundDimensions().Radius);
+            // Do not add a second bulb where endcaps already cover the joint.
+            if (adjacent.Any(p => BodySurfaceFit.Distance(p.Collider, joint.Position) <= -radius * .5f)) return;
+            if (fitted.Count >= MaximumParts)
+                throw new InvalidDataException($"Joint coverage exceeds the {MaximumParts}-part collider budget.");
             fitted.Add(new(name, new IkCollider { Shape = IkColliderShape.Sphere,
                 Transform = new(joint.Position, Quaternion.Identity, new(radius * 2)) }, bone));
         }
@@ -185,30 +177,9 @@ internal static class ActorBodyColliderBuilder
             JointSphere($"{label} hip", $"j_asi_a_{side}", $"{label} thigh");
             JointSphere($"{label} elbow", $"j_ude_b_{side}", $"{label} upper arm", $"{label} forearm");
             JointSphere($"{label} knee", $"j_asi_b_{side}", $"{label} thigh", $"{label} lower leg");
-            JointSphere($"{label} ankle", $"j_asi_d_{side}", $"{label} lower leg");
+            JointSphere($"{label} ankle", $"j_asi_d_{side}", $"{label} lower leg", $"{label} foot");
         }
-        if (fitted.Count == 0) throw new InvalidDataException("No visible body surface could be fitted to the actor's bones.");
+        if (fitted.Count == 0) throw new InvalidDataException("No supported body surface could be fitted.");
         return fitted.ToArray();
-    }
-
-    private static float NearestSurface(Vector3 origin, Vector3 direction, List<(Vector3 A, Vector3 B, Vector3 C)> triangles)
-    {
-        float nearest = float.PositiveInfinity;
-        foreach (var (a, b, c) in triangles)
-        {
-            var e1 = b - a; var e2 = c - a;
-            var cross = Vector3.Cross(direction, e2);
-            float det = Vector3.Dot(e1, cross);
-            if (MathF.Abs(det) < 1e-10f) continue;
-            var offset = origin - a;
-            float u = Vector3.Dot(offset, cross) / det;
-            if (u < 0 || u > 1) continue;
-            var q = Vector3.Cross(offset, e1);
-            float v = Vector3.Dot(direction, q) / det;
-            if (v < 0 || u + v > 1) continue;
-            float t = Vector3.Dot(e2, q) / det;
-            if (t > .00001f) nearest = MathF.Min(nearest, t);
-        }
-        return nearest;
     }
 }

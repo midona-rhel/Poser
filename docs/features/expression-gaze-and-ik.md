@@ -117,28 +117,32 @@ world gizmo edit their transform. Hiding a collider does not disable collision.
 Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
 seams are not outlined; sharp rims and box/plane edges are.
 An actor's **Create collider** action creates a named group
-of at most 30 ordinary colliders: a short waist capsule and one capsule per spine segment, capsules for the neck,
-shoulders, upper/lower limbs and feet, and spheres for the head, hands, breasts,
-hips, elbows, knees and ankles. Joint spheres use the neighbouring capsules' average radius;
-hip and ankle caps match the thigh and lower-leg radius respectively.
-Feet follow the posed
-ankle-to-toe direction, centered and extended to their surface. Each part can be edited or removed
+of at most 48 ordinary capsules/spheres for recognized humanoid body chains and tails.
+Limbs follow their bone axes; torso, head, hands and feet may use the surface's
+long axis. Breasts remain spheres. Joint spheres are added only where endcaps
+do not already cover the joint, using the smaller adjacent radius.
+Each part can be edited or removed
 individually; creating the group is one undo step. Each part is automatically
 parented to its corresponding bone and follows posing/animation. Dimensions
-remain those fitted at capture time. Use Detach for a static part; relationships
+remain those fitted at capture time, including the final native Customize+ scaling;
+changing proportions afterward requires regenerating the group. Parenting is
+rigid and must not apply the captured bone scale a second time.
+Use Detach for a static part; relationships
 and missing-parent behavior follow [transform parenting](scenes.md#transform-parenting).
-Loaded model weights assign surfaces to body sections; joint positions supply
-limb lengths. Bone joints are capsule endcap centers, so the rounded ends extend
-past the joints and overlap neighbouring parts; surface-fitted feet keep their
-measured outer length. Radius averages the surface distances in both directions of two
-local cross-section axes across three slices. Head/hand/breast spheres use the
-average half-extent across three axes (2nd–98th percentile surface bounds),
-not internal mouth/eye ray hits or density-biased mean vertex distances.
-Incomplete open capsule surfaces use mean vertex distance.
-Hair, tail and skirt chains do not inflate the fit. This is a coarse body approximation, not exact
-clothing collision; unsupported rigs refuse capture. No actor triangles enter
+All skin influences contribute to anatomical ownership, summing helper-bone
+weights before filtering. Triangle-area-weighted, bounded surface samples fit
+center, radius and stem in the bone's rotation frame, balancing penetration
+against excess clearance rather than using extreme or mean vertex bounds.
+For free-axis sections, covariance/bone directions seed a bounded angular
+refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
+Racial deformation uses the original game resource identity, not a mod's disk filename.
+Hair, ears and skirt chains do not inflate the fit; each recognized tail segment
+has its own bone owner. This is a coarse body approximation, not exact clothing
+collision; unknown or over-budget rigs refuse capture. No actor triangles enter
 the physics world. Capsule scale Y is total tip-to-tip length; its round radius
 uses the smallest scale dimension, also used by spheres, never a polygonal hull.
+Analytic physics inputs do not build display meshes; dimension changes rebuild
+only affected obstacle shapes rather than every collider in the chain's world.
 Capsule editing exposes radius and endcap-center spacing instead of independent
 XYZ scale. Radius edits preserve spacing; the local longitudinal handle changes
 spacing while preserving radius, stopping at a sphere. Uniform scaling (Scale

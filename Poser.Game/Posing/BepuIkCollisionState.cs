@@ -143,19 +143,25 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
 
     private void UpdateObstacles(IReadOnlyList<ColliderGeometry> colliders)
     {
-        bool rebuild = _obstacles.Length != colliders.Count || _obstacles.Where((o, i) =>
-            o.Collider.Shape != colliders[i].Description.Shape ||
-            !ReferenceEquals(o.Collider.Mesh, colliders[i].Description.Mesh) ||
-            o.Collider.Transform.Scale != colliders[i].Description.Transform.Scale).Any();
-        if (!rebuild) return;
-        foreach (var obstacle in _obstacles)
+        for (int i = colliders.Count; i < _obstacles.Length; i++)
         {
+            var obstacle = _obstacles[i];
             _simulation!.Bodies.Remove(obstacle.Body);
             _simulation.Shapes.RemoveAndDispose(obstacle.Shape, _pool);
         }
-        _obstacles = colliders.Select(geometry =>
+        int previousCount = _obstacles.Length;
+        if (previousCount != colliders.Count) Array.Resize(ref _obstacles, colliders.Count);
+        for (int i = 0; i < colliders.Count; i++)
         {
-            var collider = geometry.Description;
+            var collider = colliders[i].Description;
+            if (i < previousCount)
+            {
+                var old = _obstacles[i];
+                if (old.Collider.Shape == collider.Shape && ReferenceEquals(old.Collider.Mesh, collider.Mesh)
+                    && old.Collider.Transform.Scale == collider.Transform.Scale) continue;
+                _simulation!.Bodies.Remove(old.Body);
+                _simulation.Shapes.RemoveAndDispose(old.Shape, _pool);
+            }
             var transform = collider.Transform;
             var scale = Vector3.Max(Vector3.Abs(transform.Scale), new Vector3(.0001f));
             Vector3 center = default;
@@ -166,13 +172,13 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
                 // clothing surfaces collide from either side; Bepu triangles
                 // otherwise generate contacts on only their front face.
                 _pool.Take<Triangle>(captured.Indices.Length / 3 * 2, out var triangles);
-                for (int i = 0; i < captured.Indices.Length; i += 3)
+                for (int t = 0; t < captured.Indices.Length; t += 3)
                 {
-                    var a = captured.Vertices[captured.Indices[i]];
-                    var b = captured.Vertices[captured.Indices[i + 1]];
-                    var c = captured.Vertices[captured.Indices[i + 2]];
-                    triangles[i / 3 * 2] = new Triangle(a, b, c);
-                    triangles[i / 3 * 2 + 1] = new Triangle(a, c, b);
+                    var a = captured.Vertices[captured.Indices[t]];
+                    var b = captured.Vertices[captured.Indices[t + 1]];
+                    var c = captured.Vertices[captured.Indices[t + 2]];
+                    triangles[t / 3 * 2] = new Triangle(a, b, c);
+                    triangles[t / 3 * 2 + 1] = new Triangle(a, c, b);
                 }
                 shape = _simulation!.Shapes.Add(new Mesh(triangles, transform.Scale, _pool));
             }
@@ -195,8 +201,8 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
             var body = _simulation.Bodies.Add(BodyDescription.CreateKinematic(
                 new RigidPose(transform.Position + Vector3.Transform(center, transform.Rotation), transform.Rotation),
                 new CollidableDescription(shape, ContinuousDetection.Continuous()), new BodyActivityDescription(.000001f)));
-            return (collider, body, shape, center);
-        }).ToArray();
+            _obstacles[i] = (collider, body, shape, center);
+        }
     }
 
     private void ReadPositions(Vector3[] positions)

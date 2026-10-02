@@ -93,10 +93,11 @@ public sealed class ActorColliderCapture(
             // Hair can also be weighted to the head, so bone ownership alone
             // cannot classify it. Filter the original resource before resolving
             // arbitrary Penumbra disk filenames.
-            if (!IsBodyModelPath(path) || resourcesForExcludedModel(path)) continue;
+            var original = paths.Value is { } resourcePaths && resourcePaths.TryGetValue(path, out var originals)
+                ? originals.FirstOrDefault(IsBodyModelPath) : path;
+            if (original == null || !IsBodyModelPath(original)) continue;
+            ushort race = ModelRace(original);
             if (replacements.TryGetValue(path, out var resolved)) path = resolved;
-            var raceMatch = Regex.Match(Path.GetFileName(path), "^c([0-9]{4})", RegexOptions.CultureInvariant);
-            ushort race = raceMatch.Success ? ushort.Parse(raceMatch.Groups[1].Value) : (ushort)0;
             models.Add(new(path, race, model->EnabledAttributeIndexMask, model->EnabledShapeKeyIndexMask));
         }
         if (models.Count == 0) throw new InvalidOperationException("The actor has no loaded meshes.");
@@ -122,30 +123,35 @@ public sealed class ActorColliderCapture(
             // Row-vector skinning: bind-model -> bone-local -> posed-model -> world.
             // Read the native final pose, not demand-driven inspector caches or raw baselines.
             bones.TryAdd(bone.BoneName, inverseBind * current.ToMatrix() * world);
-            joints.TryAdd(bone.BoneName, new(Vector3.Transform(current.Position, world) - origin, bone.ParentBone?.BoneName));
+            var frame = global::Poser.Transform.FromMatrix(current.ToMatrix() * world);
+            joints.TryAdd(bone.BoneName, new(frame.Position - origin, bone.ParentBone?.BoneName, frame.Rotation));
             if (bindings.GetBoneId(bone) is { } boneId)
             {
-                var frame = global::Poser.Transform.FromMatrix(current.ToMatrix() * world);
                 frames.TryAdd(bone.BoneName, (boneId, new(frame.Position, frame.Rotation, frame.Scale)));
             }
         }
         ushort skeletonRace = character->GetModelType() == CharacterBase.ModelType.Human ? ((Human*)character)->RaceSexId : (ushort)0;
         var deformerPath = replacements.GetValueOrDefault(ActorColliderDeformation.GamePath, ActorColliderDeformation.GamePath);
         return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath, frames);
+    }
 
-        bool resourcesForExcludedModel(string actual) => paths.Value is { } resourcePaths &&
-            resourcePaths.TryGetValue(actual, out var originals) && originals.Any(p => !IsBodyModelPath(p));
+    // Disk replacements can have arbitrary names. Race deformation belongs
+    // to the original game resource, never to that replacement's filename.
+    internal static ushort ModelRace(string gamePath)
+    {
+        var match = Regex.Match(Path.GetFileName(gamePath.Replace('\\', '/')), "^c([0-9]{4})", RegexOptions.CultureInvariant);
+        return match.Success ? ushort.Parse(match.Groups[1].Value) : (ushort)0;
     }
 
     internal static bool IsBodyModelPath(string path) =>
-        !Regex.IsMatch(path.Replace('\\', '/'), @"(?:/hair/|/tail/|_hir\.mdl$|_til\.mdl$)",
+        !Regex.IsMatch(path.Replace('\\', '/'), @"(?:/hair/|_hir\.mdl$)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private ActorBodyColliderBuilder.Fitted[] Build(Snapshot snapshot)
     {
         var vertices = new List<Vector3>();
         var indices = new List<int>();
-        var influences = new List<string?>();
+        var influences = new List<ActorColliderMeshBuilder.BoneWeight[]>();
         var bodyBones = ActorBodyColliderBuilder.BodyBones(snapshot.Joints);
         byte[] ReadFile(string path) => Path.IsPathRooted(path) ? File.ReadAllBytes(path)
             : data.GetFile(path)?.Data ?? throw new IOException("Could not load actor resource: " + path);
@@ -169,7 +175,7 @@ public sealed class ActorColliderCapture(
                     }
                 }
                 ActorColliderMeshBuilder.Append(bytes, model.Attributes, model.Shapes,
-                    bones, snapshot.World, snapshot.Origin, vertices, indices, influences, bodyBones);
+                    bones, snapshot.World, snapshot.Origin, vertices, indices, bodyBones: bodyBones, skinWeights: influences);
             }
             catch (InvalidDataException ex)
             {

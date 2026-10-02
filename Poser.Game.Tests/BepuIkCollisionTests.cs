@@ -7,6 +7,32 @@ namespace Poser.Game.Tests;
 public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
 {
     [Fact]
+    public void ObstacleAdditionResizeReorderingAndRemovalKeepTheRopeSupported()
+    {
+        var floor = new IkCollider { Shape = IkColliderShape.Box,
+            Transform = new(new(0, .4f, 0), Quaternion.Identity, new(8, 1, 8)) };
+        var remote = new IkCollider { Shape = IkColliderShape.Sphere,
+            Transform = new(new(10, 0, 0), Quaternion.Identity, Vector3.One) };
+        var rest = Enumerable.Range(0, 21).Select(i => new Vector3(-1.5f + i * .15f, 1.4f + .7f * MathF.Sin(i * MathF.PI / 20), 0)).ToArray();
+        using var state = new BepuIkCollisionState();
+        foreach (var obstacles in new IkCollider[][] {
+            [floor], [floor, remote], [floor, remote with { Transform = remote.Transform with { Scale = new(2) } }],
+            [remote, floor], [floor], [floor with { Transform = floor.Transform with { Scale = new(9, 1, 9) } }] })
+        {
+            var geometry = obstacles.Select(p => new ColliderGeometry(p)).ToArray();
+            var positions = rest.ToArray();
+            for (int frame = 0; frame < 240; frame++)
+            {
+                positions = rest.ToArray();
+                state.Solve(positions, 20, geometry, .04f, -Vector3.UnitY, rest);
+            }
+            Assert.InRange(positions.Min(p => p.Y), .935f, .955f);
+            for (int i = 0; i < 20; i++)
+                Assert.InRange(MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - Vector3.Distance(rest[i], rest[i + 1])), 0, .005f);
+        }
+    }
+
+    [Fact]
     public void ChangingWidthOnRestingRopeChangesSurfaceClearance()
     {
         var mesh = new IkColliderMesh([new(-2, 0, -2), new(2, 0, -2), new(2, 0, 2), new(-2, 0, 2)], [0, 1, 2, 0, 2, 3]);
