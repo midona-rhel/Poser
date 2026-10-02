@@ -198,9 +198,11 @@ public sealed partial class AppearancePane
         _setModelKind = chosen => _modelKindIndex = chosen;
     }
 
-    /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
+    /// <summary>Pumps this host's pickers and file dialogs across tab changes.</summary>
     public void DrawBrowsers()
     {
+        // Keep the picker under the same window ID stack as its initiating control.
+        _companions.DrawPicker();
         _mcdfImportBrowser.Draw();
         _mcdfExportBrowser.Draw();
     }

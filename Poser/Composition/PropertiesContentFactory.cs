@@ -36,7 +36,7 @@ internal sealed class PropertiesContentFactory(IServiceProvider services) : IPro
             typeof(AppearancePane), typeof(LightPane), typeof(CameraPane), typeof(EnvironmentPane),
             typeof(ScenePane), typeof(PropsPane), typeof(WorldObjectsPane), typeof(OverlayPane),
             typeof(PoseFileInspectorSection), typeof(GraphicalBonePane), typeof(ExpressionInspectorSection),
-            typeof(ParentingSection), typeof(EntityNameModal), typeof(IdleModExportDialog),
+            typeof(ParentingSection), typeof(CompanionSection), typeof(EntityNameModal), typeof(IdleModExportDialog),
         ];
         private readonly Dictionary<Type, object> _instances = new();
         private bool _disposed;

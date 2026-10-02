@@ -778,9 +778,6 @@ public partial class MainWindow : Window
         }
         DrawShellMenu();
         _contextMenus.DrawActorContextMenu();
-        // Window-level: the attach picker outlives the context menu that
-        // opened it.
-        _companions.DrawPicker();
         // The expression row is drawn on the face surface (the pose rail and
         // the Expression workspace tab), which exists on every tab; its picker
         // is therefore pumped at the shell. A no-op on the frames the
