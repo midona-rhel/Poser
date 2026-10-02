@@ -59,18 +59,16 @@ public readonly struct TextConstraint
     internal float? LineHeight { get; }
     internal TextWhitespace Whitespace { get; }
     internal TextAlign Alignment { get; }
-    internal bool BreakLongWords { get; }
 
     private TextConstraint(
         FitMode mode, float width, float? lineHeight,
-        TextWhitespace whitespace, TextAlign alignment, bool breakLongWords = false)
+        TextWhitespace whitespace, TextAlign alignment)
     {
         Mode = mode;
         Width = width;
         LineHeight = lineHeight;
         Whitespace = whitespace;
         Alignment = alignment;
-        BreakLongWords = breakLongWords;
     }
 
     /// <summary>Natural content width; never cut.</summary>
@@ -95,9 +93,7 @@ public readonly struct TextConstraint
     /// Word wrap inside the pixel width. The run occupies the full width
     /// in layout, like the CSS box; a single over-wide word OVERFLOWS its
     /// line (CSS <c>overflow-wrap: normal</c>) rather than being
-    /// hard-broken unless <paramref name="breakLongWords"/> is enabled.
-    /// That option splits oversized runs only at text-element boundaries.
-    /// Whitespace follows the typed <paramref name="whitespace"/>
+    /// hard-broken. Whitespace follows the typed <paramref name="whitespace"/>
     /// policy. The line advance is the FRACTIONAL CSS line height,
     /// accumulated unrounded so long paragraphs cannot drift; each line's
     /// glyph run sits half-leading-centered inside its explicit line box.
@@ -107,8 +103,7 @@ public readonly struct TextConstraint
         float width,
         float? lineHeight = null,
         TextWhitespace whitespace = TextWhitespace.Normal,
-        TextAlign alignment = TextAlign.Start,
-        bool breakLongWords = false)
+        TextAlign alignment = TextAlign.Start)
     {
         if (!(width > 0f))
             throw new ArgumentOutOfRangeException(
@@ -117,7 +112,7 @@ public readonly struct TextConstraint
             throw new ArgumentOutOfRangeException(
                 nameof(lineHeight), multiplier, "A line height must be positive.");
         return new TextConstraint(
-            FitMode.Wrap, width, lineHeight, whitespace, alignment, breakLongWords);
+            FitMode.Wrap, width, lineHeight, whitespace, alignment);
     }
 }
 
@@ -311,7 +306,7 @@ public static partial class Crystarium
                 : natural;
             int lines = 0;
             foreach (var _ in WrapResolved(
-                Presentation(text), constraint.Width, constraint.Whitespace, constraint.BreakLongWords))
+                Presentation(text), constraint.Width, constraint.Whitespace))
                 lines++;
             return new Vector2(constraint.Width, MathF.Ceiling(advance * lines));
         }
@@ -556,7 +551,7 @@ public static partial class Crystarium
                     float halfLeading = (advance - natural) * 0.5f;
                     float y = origin.Y;
                     foreach (var line in WrapResolved(
-                        text, constraint.Width, constraint.Whitespace, constraint.BreakLongWords))
+                        text, constraint.Width, constraint.Whitespace))
                     {
                         float offset = AlignOffset(
                             constraint.Alignment,
@@ -750,49 +745,16 @@ public static partial class Crystarium
     /// typed whitespace policy documented at
     /// <see cref="TextConstraint.Wrap"/>.</summary>
     private static IEnumerable<string> WrapResolved(
-        string text, float width, TextWhitespace whitespace, bool breakLongWords)
+        string text, float width, TextWhitespace whitespace)
     {
-        IEnumerable<string> lines;
         if (whitespace == TextWhitespace.Normal)
         {
             // CSS normal: newlines and tabs are ordinary collapsible
             // whitespace — ONE paragraph, single-space separated.
-            lines = WrapCollapsed(
+            return WrapCollapsed(
                 text.Replace('\n', ' ').Replace('\t', ' '), width);
         }
-        else
-            lines = WrapParagraphs(text, width, whitespace);
-        return breakLongWords ? BreakWideLines(lines, width) : lines;
-    }
-
-    private static IEnumerable<string> BreakWideLines(IEnumerable<string> lines, float width)
-    {
-        foreach (string line in lines)
-        {
-            if (MeasureLine(line) <= width)
-            {
-                yield return line;
-                continue;
-            }
-            // Never split a surrogate pair or combining sequence. A single
-            // glyph wider than the box still occupies one line and progresses.
-            int[] boundaries = StringInfo.ParseCombiningCharacters(line);
-            int start = 0;
-            float used = 0f;
-            foreach (int next in boundaries)
-            {
-                int end = StringInfo.GetNextTextElementLength(line, next) + next;
-                float advance = FractionalTextWidth(line.AsSpan(next, end - next));
-                if (next > start && used + advance > width)
-                {
-                    yield return line[start..next];
-                    start = next;
-                    used = 0f;
-                }
-                used += advance;
-            }
-            yield return line[start..];
-        }
+        return WrapParagraphs(text, width, whitespace);
     }
 
     private static IEnumerable<string> WrapParagraphs(
