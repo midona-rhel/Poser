@@ -1,3 +1,4 @@
+using Poser.Application.Selection;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -25,6 +26,7 @@ public sealed class AnimationPane : IDisposable
     private readonly IAnimationCatalogLoader _catalogLoader;
     private readonly IExpressionPreview _expressions;
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
 
     // All picker rows share one open feed.
     private readonly Crystarium.SearchPicker<TimelineEntry> _picker =
@@ -129,6 +131,7 @@ public sealed class AnimationPane : IDisposable
         IExpressionPreview expressions,
         ITextureProvider textures,
         SceneSession scene,
+        PropertiesContext properties,
         UserNotices notices)
     {
         _notices = notices;
@@ -139,6 +142,7 @@ public sealed class AnimationPane : IDisposable
         _expressions = expressions;
         _icons = new GameIconResolver(textures);
         _scene = scene;
+        _selection = properties.Selection;
         _timelineKey = RowKey;
         _timelineTexture = entry => _icons.Resolve(entry.Icon);
         _setWeaponFilter = chosen => _weaponFilter = chosen;
@@ -157,7 +161,10 @@ public sealed class AnimationPane : IDisposable
             this, "lips", AnimationPickTarget.Lips, AnimationSlot.Lips,
             AnimationSlot.Lips, kindFilter: null, weaponAware: false,
             entries: LipsEntries);
-        _expressions.Failed += OnExpressionFailed;
+        // Failure reporting belongs to the persistent workspace, not every
+        // editor opened over the same application service.
+        if (!properties.IsPinned)
+            _expressions.Failed += OnExpressionFailed;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -165,7 +172,7 @@ public sealed class AnimationPane : IDisposable
         PrunePaneState();
         Crystarium.Page("animation", origin, size, page =>
         {
-            if (_scene.Selection.PrimaryActor is not { } actor)
+            if (_selection.PrimaryActor is not { } actor)
             {
                 page.EmptyState();
                 return;

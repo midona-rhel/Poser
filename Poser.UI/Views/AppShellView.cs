@@ -299,7 +299,9 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
-    public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnProject;
+    public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnProject, OnPopOut;
+    public string OwnerId = "poser-main-shell";
+    public bool PropertiesOnly;
 
     /// <summary>The content footer's two seats — the sidebar's attach
     /// toggle on the left, the inspector's on the right — and what the
@@ -536,7 +538,7 @@ public static class AppShellView
         var max = origin + size;
         var dl = ImGui.GetWindowDrawList();
         var shellOwner = Interactive.BeginOwner(
-            "poser-main-shell",
+            vm.OwnerId,
             InteractionLayer.Window,
             min,
             max);
@@ -1031,6 +1033,12 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
+        if (vm.OnPopOut is { } popOut)
+        {
+            x -= step;
+            IconAt(new Vector2(x, y), TablerIcon.ExternalLink, side, popOut,
+                "##shell-pop-out", help: "Pop Out");
+        }
         // Armature visibility is controlled by the sidebar and settings, not
         // by this titlebar cluster.
         return x;
@@ -1349,6 +1357,12 @@ public static class AppShellView
         float side = theme.Controls.ShellIconAction;
         float inset = MainHorizontalPadding * s;
         float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
+        if (vm.PropertiesOnly)
+        {
+            vm.DrawFooterMiddle?.Invoke(new Vector2(min.X + inset, min.Y),
+                new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f), max.Y - min.Y));
+            return;
+        }
         IconAt(
             new Vector2(min.X + inset, y), TablerIcon.LayoutSidebarLeft, side,
             vm.OnSidebarAttachToggle, "##footer-sidebar",

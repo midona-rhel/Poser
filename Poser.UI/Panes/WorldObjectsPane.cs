@@ -1,3 +1,4 @@
+using Poser.Application.Selection;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
@@ -29,6 +30,7 @@ namespace Poser.UI;
 public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly IWorldAssetCatalog _assets;
     private readonly IWardrobeCatalog _wardrobe;
     private readonly Controls.DyePicker _stainPicker = new("furniture-stain");
@@ -59,6 +61,7 @@ public sealed class WorldObjectsPane
 
     public WorldObjectsPane(
         SceneSession scene,
+        PropertiesContext properties,
         EntityActions entityActions,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -69,6 +72,7 @@ public sealed class WorldObjectsPane
         _values = values;
         _names = names;
         _scene = scene;
+        _selection = properties.Selection;
         _entityActions = entityActions;
         _scenePane = scenePane;
         _assets = assets;
@@ -391,7 +395,7 @@ public sealed class WorldObjectsPane
 
     private WorldObjectReading? SelectedWorldObject()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } id })
             return null;
         return _values.Read(id);

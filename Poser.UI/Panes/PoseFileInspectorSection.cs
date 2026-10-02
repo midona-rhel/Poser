@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -20,7 +20,7 @@ using Poser.Application.Posing;
 
 namespace Poser.UI;
 
-public sealed class PoseFileInspectorSection
+public sealed class PoseFileInspectorSection : IDisposable
 {
     private const string NoActorText = "Select an actor first.";
 
@@ -31,7 +31,7 @@ public sealed class PoseFileInspectorSection
 
     private readonly IPoseImportCommands _imports;
     private readonly SceneSession _scene;
-    private readonly SelectionSession _selection;
+    private readonly SelectionScope _selection;
     private readonly Config.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
     private readonly IPosePreview _preview;
@@ -94,7 +94,7 @@ public sealed class PoseFileInspectorSection
         SceneSession scene,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
-        SelectionSession selection,
+        PropertiesContext properties,
         Config.ConfigurationService config,
         IAutoSaveService autoSave,
         IPosePreview preview,
@@ -108,7 +108,7 @@ public sealed class PoseFileInspectorSection
         _imports = imports;
         _scene = scene;
         _capture = capture;
-        _selection = selection;
+        _selection = properties.Selection;
         _config = config;
         _autoSave = autoSave;
         _preview = preview;
@@ -167,6 +167,8 @@ public sealed class PoseFileInspectorSection
         ReleaseImportPreview();
     }
 
+    public void Dispose() => _importPreview.Close();
+
     // Browser opens are deferred to the root pump so popup teardown cannot
     // remove the dialog's exclusive claim.
     private Action? _pendingBrowserOpen;
@@ -200,7 +202,7 @@ public sealed class PoseFileInspectorSection
     private Vector2 _libraryMenuSeat;
     private bool _libraryMenuRequested;
     private float _libraryMenuHeight = 400f;
-    private const string LibraryOptionsMenuId = "##library-options-menu";
+    private readonly string LibraryOptionsMenuId = $"##library-options-menu-{Guid.NewGuid():N}";
 
     public void RequestBoneFilterMenu()
     {
@@ -268,9 +270,9 @@ public sealed class PoseFileInspectorSection
     private const float DenseLabelColumn = 64f;
     private const float ImportOptionLabelColumn = 64f;
 
-    private const string ImportMenuId = "##pose-import-menu";
-    private const string ExportMenuId = "##pose-export-menu";
-    private const string BoneFilterMenuId = "##pose-bone-filter-menu";
+    private readonly string ImportMenuId = $"##pose-import-menu-{Guid.NewGuid():N}";
+    private readonly string ExportMenuId = $"##pose-export-menu-{Guid.NewGuid():N}";
+    private readonly string BoneFilterMenuId = $"##pose-bone-filter-menu-{Guid.NewGuid():N}";
     private Vector2 _menuAnchor;
     private bool _exportMenuRequested;
 
@@ -2199,12 +2201,14 @@ public sealed class PoseFileInspectorSection
         _libraryExportOpen = true;
     }
 
+    private readonly string _libraryExportWindowId = $"##export-to-library-{Guid.NewGuid():N}";
+
     private void DrawExportLibraryModal()
     {
         if (!_libraryExportOpen || _libraryExportActor is not { } actorId)
             return;
         Crystarium.Dialog(
-            "##export-to-library",
+            _libraryExportWindowId,
             _libraryExportOpen,
             next => _libraryExportOpen = next,
             "Export to library",

@@ -1,3 +1,4 @@
+using Poser.Application.Selection;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -64,6 +65,7 @@ public sealed partial class AppearancePane
     private readonly IModelCatalogLoader _modelLoader;
     private readonly IActorAppearanceControl _integration;
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly CompanionSection _companions;
     private readonly ITextureProvider _textures;
 
@@ -147,6 +149,7 @@ public sealed partial class AppearancePane
         IModelCatalogLoader modelLoader,
         IActorAppearanceControl integration,
         SceneSession scene,
+        PropertiesContext properties,
         CompanionSection companions,
         ITextureProvider textures,
         Config.ConfigurationService config,
@@ -185,6 +188,7 @@ public sealed partial class AppearancePane
         _modelLoader = modelLoader;
         _integration = integration;
         _scene = scene;
+        _selection = properties.Selection;
         _companions = companions;
         _textures = textures;
         _modelQuery = ComputeModelSearch;
@@ -215,7 +219,7 @@ public sealed partial class AppearancePane
         var theme = Crystarium.ActiveTheme;
         float band = global::Poser.UI.Views.AppShellView.ToolbarHeight * s;
         float pill = theme.Controls.NavigationHeight * s;
-        var selectedId = _scene.Selection.PrimaryActor;
+        var selectedId = _selection.PrimaryActor;
         var selectedDescriptor = selectedId is { } selectedActor
             ? _scene.Snapshot.FindActor(selectedActor)
             : null;
@@ -254,7 +258,7 @@ public sealed partial class AppearancePane
                 Crystarium.Page("appearance", cursor,
                     new Vector2(region.ContentWidth * s, bodyHeight), page =>
                 {
-                    if (_scene.Selection.PrimaryActor is not { } actor)
+                    if (_selection.PrimaryActor is not { } actor)
                     {
                         _accessActor = null;
                         page.EmptyState();

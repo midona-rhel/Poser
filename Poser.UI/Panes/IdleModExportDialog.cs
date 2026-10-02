@@ -13,7 +13,8 @@ namespace Poser.UI;
 
 public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notices, IFramework framework)
 {
-    private const string ModalId = "##idle-export", ModalTitle = "Export Idle Pose";
+    private readonly string ModalId = $"##idle-export-{Guid.NewGuid():N}";
+    private const string ModalTitle = "Export Idle Pose";
     private readonly Crystarium.FileDialog _dialog = new("Save and Export Idle Pose", new[] { ".pmp" }, isSaveMode: true)
         { ConfirmLabel = "Save and Export" };
     private readonly HashSet<int> _races = [];

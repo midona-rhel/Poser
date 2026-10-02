@@ -1,4 +1,4 @@
-﻿using Poser.Domain.Transforms;
+using Poser.Domain.Transforms;
 using System;
 using Poser.Application.Viewport;
 using Poser.Application.Presentation;
@@ -30,7 +30,7 @@ using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 namespace Poser.UI;
 
 /// <summary>Renders Inspector rail and workspace pose controls.</summary>
-public partial class PoseInspectorPane
+public partial class PoseInspectorPane : IDisposable
 {
     private readonly IPoseInteraction _interaction;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
@@ -40,7 +40,7 @@ public partial class PoseInspectorPane
     private readonly IActorResetControl _actorReset;
     private readonly IGazeControl _gazeValues;
     private readonly IEditorState _editorState;
-    private readonly SelectionSession _selection;
+    private readonly SelectionScope _selection;
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
@@ -197,6 +197,7 @@ public partial class PoseInspectorPane
         IGazeControl gazeValues,
         IEditorState editorState,
         SceneSession scene,
+        PropertiesContext properties,
         IViewportReads viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
@@ -220,7 +221,7 @@ public partial class PoseInspectorPane
         _ikBake = ikBake;
         _cameraPane = cameraPane;
         _overlayPane = overlayPane;
-        _selection = scene.Selection;
+        _selection = properties.Selection;
         _scene = scene;
         _viewport = viewport;
         _expressionSection = expressionSection;
@@ -368,7 +369,8 @@ public partial class PoseInspectorPane
         if (!Nullable.Equals(primary, _primary) || selectionChanged)
         {
             _railHeaderPrimed = false;
-            AppShellView.CancelAxisEdit();
+            if (ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
+                AppShellView.CancelAxisEdit();
             bool hadGesture = _cleanGesture != null;
             ClearTransformSession(cancel:
                 _cleanGesture is { } liveGesture &&
@@ -544,7 +546,7 @@ public partial class PoseInspectorPane
                 _multiHeadCounts[i] = counts[i];
                 changed = true;
             }
-        var namedGroup = _groups.ActiveSelection(_selection.Selected);
+        var namedGroup = _groups.MatchingSelection(_selection.Selected);
         if (namedGroup is { } matched
             && !string.Equals(_multiHeadWho, matched.Name, StringComparison.Ordinal))
         {
@@ -3023,7 +3025,7 @@ public partial class PoseInspectorPane
                 ? _configuration.Config.Gizmo.GroupScale
                 : global::Poser.Domain.Transforms.GroupScaleMode.SizesAndSpacing,
             groupId: IsMultiEntitySelection
-                ? _groups.ActiveSelection(_selection.Selected)?.Id
+                ? _groups.MatchingSelection(_selection.Selected)?.Id
                 : null,
             groupTransform: IsMultiEntitySelection);
         if (!begin.Success || begin.GestureId is not { } gesture)
@@ -3081,6 +3083,9 @@ public partial class PoseInspectorPane
         if (_cleanGesture is { } gesture)
             _cleanTransforms.Commit(gesture);
     }
+
+    public void Dispose() => ClearTransformSession(cancel:
+        _cleanGesture is { } gesture && _cleanTransforms.ActiveGesture == gesture);
 
     private void ClearTransformSession(bool cancel = false)
     {

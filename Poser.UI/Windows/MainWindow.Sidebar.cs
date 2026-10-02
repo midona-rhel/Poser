@@ -200,14 +200,4 @@ public partial class MainWindow
         }
     }
 
-    // ── the multiselect page: the anonymous group ────────────────────────
-
-    /// <summary>Per-kind counts, minted only when they change — a warm
-    /// frame restates the same strings.</summary>
-    private readonly int[] _multiCounts = new int[5];
-
-    private readonly string[] _multiCountText = new string[5];
-
-    private static readonly string[] MultiKindLabels =
-        ["Actors", "Objects", "Lights", "Cameras", "Overlays"];
 }

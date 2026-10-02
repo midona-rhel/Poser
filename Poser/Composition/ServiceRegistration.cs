@@ -644,6 +644,9 @@ internal static class ServiceRegistration
         // The one transient-message channel every surface below speaks
         // through, registered ahead of them all.
         services.AddSingleton<UserNotices>();
+        services.AddSingleton<PropertiesContext>();
+        services.AddSingleton<PropertiesContent>();
+        services.AddSingleton<IPropertiesContentFactory, PropertiesContentFactory>();
         services.AddSingleton<EntityRemovalDialog>();
         services.AddSingleton<global::Poser.Diagnostics.IssueReportService>();
         services.AddSingleton<global::Poser.Application.Diagnostics.IIssueReports>(sp => sp.GetRequiredService<global::Poser.Diagnostics.IssueReportService>());

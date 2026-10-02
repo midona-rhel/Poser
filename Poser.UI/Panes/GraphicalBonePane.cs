@@ -29,7 +29,7 @@ public sealed class GraphicalBonePane : IDisposable
 {
     private const float HitRadius = 18f;
 
-    private readonly SelectionSession _selection;
+    private readonly SelectionScope _selection;
     private readonly SceneSession _scene;
 
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
@@ -101,6 +101,7 @@ public sealed class GraphicalBonePane : IDisposable
     public GraphicalBonePane(
         global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
+        PropertiesContext properties,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
         Application.Posing.IIkConfigurationPort ikPort,
@@ -112,7 +113,7 @@ public sealed class GraphicalBonePane : IDisposable
         _editorState = editorState;
         _bonePosing = bonePosing;
         _scene = scene;
-        _selection = scene.Selection;
+        _selection = properties.Selection;
         _textureProvider = textureProvider;
         _customizeRead = customizeRead;
 

@@ -253,6 +253,8 @@ public sealed class ScenePane
     /// choice that changes what the file contains — then the save lands in
     /// the scenes home the tab is already scanning. No file dialog detour.
     /// </summary>
+    private readonly string _librarySaveWindowId = $"##scene-library-save-{Guid.NewGuid():N}";
+
     public void RequestLibrarySave()
     {
         _librarySaveName = string.Empty;
@@ -264,7 +266,7 @@ public sealed class ScenePane
         if (!_librarySaveOpen)
             return;
         Crystarium.Dialog(
-            "##scene-library-save",
+            _librarySaveWindowId,
             _librarySaveOpen,
             next => _librarySaveOpen = next,
             "Save scene to library",

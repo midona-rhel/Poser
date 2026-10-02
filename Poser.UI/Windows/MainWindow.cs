@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Poser.Application.Viewport;
 using Poser.Application.Animation;
 using Poser.Application.Gaze;
@@ -140,16 +140,6 @@ public partial class MainWindow : Window
     private readonly Application.Presentation.ICameraTargetControl _cameraTargets;
 
 
-    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice>
-        _cameraTrackingBonePicker = new("camera-tracking-bones");
-
-    private IReadOnlyList<global::Poser.UI.BoneChoice> _cameraBoneChoices =
-        Array.Empty<global::Poser.UI.BoneChoice>();
-
-    private CameraId? _cameraBonePickerCamera;
-
-    private ActorId? _cameraBonePickerActor;
-
     private readonly EnvironmentPane _environmentPane;
 
     private readonly PoseLibraryPane _libraryPane;
@@ -183,14 +173,8 @@ public partial class MainWindow : Window
     /// built when they read it.</summary>
     internal AppShellViewModel ShellVm => _vm;
 
-    private string _activeTab = "Pose";
-
-    /// <summary>Which selection strip the tab set belongs to, recorded by
-    /// <see cref="BuildTabs"/> from the same switch that picks the strip.
-    /// Joins the tab key in the content scroll identity: strips reuse labels
-    /// ("Light"), and a same-labeled tab on another strip is another place.
-    /// Library mode leaves it untouched, exactly as it leaves the tab.</summary>
-    private string _activeStrip = "actor";
+    private readonly PropertiesContent _properties;
+    private string _activeTab => _properties.ActiveTab;
 
     /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>
     private readonly ShellWorkspaceSelection _workspace;
@@ -280,73 +264,7 @@ public partial class MainWindow : Window
             },
         };
 
-    /// <summary>The actor rows, with the snapshot facts a warm frame needs to
-    /// restate their live flags without walking the scene again.</summary>
-    /// <summary>The ANONYMOUS GROUP's strip: two or more entities selected
-    /// together get one Selection page — a group that was never created.
-    /// </summary>
-    private readonly ShellTab[] _multiselectTabs =
-    [
-        new() { Label = "Selection" },
-    ];
 
-    /// <summary>The selection-typed tab strip, retained like the library's —
-    /// three fresh ShellTabs per frame were pure churn.</summary>
-    private readonly ShellTab[] _selectionTabs =
-    [
-        new() { Label = "Pose" },
-        new() { Label = "Animation" },
-        new() { Label = "Actor" },
-    ];
-
-    /// <summary>A spawned object's strip, the camera strip's sibling: while
-    /// one is selected the single tab is its editor. It shares the label with
-    /// the borrowed object's strip below — one word for one thing — and the
-    /// selection decides which pane the label opens.</summary>
-    private readonly ShellTab[] _propTabs =
-    [
-        new() { Label = "Object" },
-    ];
-
-    /// <summary>A light's whole tab strip, the environment strip's sibling:
-    /// a light has no pose, animation or appearance, so while one is selected
-    /// the tab set is the light editor, split the way the editor's own three
-    /// concerns split — what it emits, what it casts, and where it is. Its
-    /// "Light" label is shared with the environment's lighting tab — two
-    /// strips, never both live — so DrawTabContent settles the two by
-    /// selection, not by label.</summary>
-    private readonly ShellTab[] _lightTabs =
-    [
-        new() { Label = "Light" },
-    ];
-
-    /// <summary>An overlay's tab strip, the prop strip's sibling: while a
-    /// staged game-UI node is selected the one tab is its editor. An overlay
-    /// has no world transform for the inspector rail to own, so its screen
-    /// placement lives on the tab with everything else about it.</summary>
-    private readonly ShellTab[] _overlayTabs =
-    [
-        new() { Label = "Overlay" },
-    ];
-
-    /// <summary>A borrowed map object's strip, the prop strip's sibling: while
-    /// one is selected the single tab is its editor, and its transform lives on
-    /// the inspector rail exactly as a prop's does.</summary>
-    private readonly ShellTab[] _worldObjectTabs =
-    [
-        new() { Label = "Object" },
-    ];
-
-    private readonly ShellTab[] _furnitureTabs = [new() { Label = "Furniture" }];
-
-    /// <summary>A camera's tab strip, the light strip's sibling: while a
-    /// camera is selected the one tab is the camera editor — the camera's
-    /// offset and its bone tracking live on the inspector rail instead.
-    /// </summary>
-    private readonly ShellTab[] _cameraTabs =
-    [
-        new() { Label = "Camera" },
-    ];
 
     /// <summary>The sections are stated in a fixed order — library, scene,
     /// environment, actors, objects, lights, cameras, overlays — so the actors
@@ -375,6 +293,14 @@ public partial class MainWindow : Window
     // overlay window flag.
 
     public event Action? OnSettingsRequested;
+    public event Action<PropertiesContext, int, string>? OnPopOutRequested;
+    public void RequestSettings() => OnSettingsRequested?.Invoke();
+    internal void ConfigurePopOut(PropertiesContent content)
+    {
+        content.BuildBoneChoices = _sidebar.BuildBoneChoices;
+        content.ConfigureNavigation(ShowLibrary);
+        content.Context.Selection.CompanionResolver = ResolveSiblingBone;
+    }
     public event Action? OnSkeletonSettingsRequested;
     public event Action? OnLibrarySettingsRequested;
 
@@ -401,6 +327,7 @@ public partial class MainWindow : Window
     public MainWindow(
         global::Poser.Config.ConfigurationService configuration,
         IGPoseService gPoseService,
+        PropertiesContent properties,
         IActorSceneControl actorControl,
         Application.Presentation.ICameraControl cameraControl,
         Application.Presentation.ILightControl lightControl,
@@ -463,6 +390,10 @@ public partial class MainWindow : Window
             ImGuiWindowFlags.NoBackground)
     {
         _configuration = configuration;
+        _properties = properties;
+        _properties.Bind(_vm);
+        _vm.OnPopOut = () => OnPopOutRequested?.Invoke(
+            _properties.Context.Pin(), _contentMode, _properties.ActiveTab);
         _firstRunNotice = new(configuration) { OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url) };
         _vm.BranchLabel = buildIdentity.Branch is "" or "unknown" or "detached" or "main" or "master"
             ? ""
@@ -523,7 +454,6 @@ public partial class MainWindow : Window
         // Camera tracking consumes this window's already-built actor/category
         // hierarchy; the shared row model keeps disclosure and identities in
         // lockstep with the sidebar instead of minting a second flat tree.
-        _cameraPane.DrawTrackingActors = DrawCameraTrackingActors;
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
         _scenePane = scenePane;
@@ -579,6 +509,7 @@ public partial class MainWindow : Window
         _poseRail = poseRail;
 
         WireShell(graphicalBonePane, animationPane);
+        _properties.BuildBoneChoices = _sidebar.BuildBoneChoices;
     }
 
     public override void PreDraw()
@@ -724,16 +655,6 @@ public partial class MainWindow : Window
     /// selection snaps the inspector back to the Target panel.</summary>
     private Domain.Identity.SelectionId? _lastPrimaryForMode;
 
-    /// <summary>The environment strip: five pages under the Environment
-    /// content mode. Positional against EnvironmentTabFor.</summary>
-    private readonly ShellTab[] _environmentTabs =
-    [
-        new() { Label = "Lighting" },
-        new() { Label = "Sky" },
-        new() { Label = "Atmosphere" },
-        new() { Label = "World" },
-    ];
-
     /// <summary>This frame's content-mode SNAPSHOT: the selector writes
     /// config only, and tabs, layout, and content all read this value —
     /// one coherent frame, no one-frame settle when the mode flips
@@ -876,7 +797,6 @@ public partial class MainWindow : Window
         _contextMenus.DrawGroupContextMenu();
         _contextMenus.DrawSelectionContextMenu();
         DrawEntityRenameModal();
-        _removalDialog.DrawBulkDestroyModal();
         _contextMenus.DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives subsequent selection changes.

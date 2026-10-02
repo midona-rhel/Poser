@@ -8,7 +8,7 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    private static string? _axisEditId;
+    private static uint? _axisEditId;
     private static float _axisEditValue;
     private static bool _axisEditNeedsFocus;
 
@@ -34,7 +34,7 @@ public static partial class Crystarium
         var pos = ImGui.GetCursorScreenPos();
         var size = metrics.Size;
 
-        if (_axisEditId == id && !disabled)
+        if (_axisEditId == ImGui.GetID(id) && !disabled)
             return EditAxisWell(
                 id, axis, value, onChange, onCommit, accent,
                 adaptiveDisplay ? "0.######" : format,
@@ -57,7 +57,7 @@ public static partial class Crystarium
         }
         else if (hit.DoubleClicked)
         {
-            _axisEditId = id;
+            _axisEditId = ImGui.GetID(id);
             _axisEditValue = value;
             _axisEditNeedsFocus = true;
         }

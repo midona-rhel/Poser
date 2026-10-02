@@ -39,6 +39,16 @@ Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
 selection, not the target it last displayed.
 
+Properties pop-outs reuse the same content presenter with a private, explicit
+selection context; they never redirect the workspace selection. Each host owns
+tabs, scroll, drafts, picker identities and gestures, while commands and history
+remain application-owned. A pin keeps its logical target through removal and
+rebinds only through the scene's identity rules; a missing bone never falls back
+to its actor. Missing targets cannot dispatch edits or silently follow selection.
+Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
+are discarded on GPose exit or plugin disposal. Closing a host releases only its
+own gesture and preview claim; submitted application operations continue.
+
 Creation receipts, deferred pose application and group duplication progress on
 framework updates under Application ownership. Closing their initiating window
 neither cancels nor retargets them; session exit invalidates pending receipts.

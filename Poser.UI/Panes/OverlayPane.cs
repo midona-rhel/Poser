@@ -1,4 +1,5 @@
-﻿using System;
+using Poser.Application.Selection;
+using System;
 using Poser.Application.Presentation;
 using System.Collections.Generic;
 using System.Numerics;
@@ -28,6 +29,7 @@ namespace Poser.UI;
 public sealed class OverlayPane
 {
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly IStatusIconCatalog _statusIcons;
 
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
@@ -70,6 +72,7 @@ public sealed class OverlayPane
 
     public OverlayPane(
         SceneSession scene,
+        PropertiesContext properties,
         IStatusIconCatalog statusIcons,
         ISceneCreation creation,
         IPendingSceneCreation pendingCreation,
@@ -81,6 +84,7 @@ public sealed class OverlayPane
     {
         _values = values;
         _scene = scene;
+        _selection = properties.Selection;
         _statusIcons = statusIcons;
         _creation = creation;
         _pendingCreation = pendingCreation;
@@ -550,7 +554,7 @@ public sealed class OverlayPane
 
     private OverlayReading? SelectedNode()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
             return null;
         return _values.Read(overlayId);

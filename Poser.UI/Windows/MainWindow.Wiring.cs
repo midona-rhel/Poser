@@ -27,21 +27,6 @@ public partial class MainWindow
 {
     private void WireShell(GraphicalBonePane graphicalBonePane, AnimationPane animationPane)
     {
-        _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
-        _poseInspector.BuildBoneChoices = _sidebar.BuildBoneChoices;
-        _lightPane.BuildBoneChoices = _sidebar.BuildBoneChoices;
-        _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
-        graphicalBonePane.SidesSwapped =
-            _configuration.Config.UI.MapMirrorSelection;
-        _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
-        _poseInspector.SetMapMirror = on =>
-        {
-            graphicalBonePane.SidesSwapped = on;
-            _configuration.Config.UI.MapMirrorSelection = on;
-            _configuration.Save();
-        };
-        _poseInspector.GetSwapRotationXY = () =>
-            _configuration.Config.UI.SwapRotationXY;
         _selection.Live.CompanionResolver = ResolveSiblingBone;
         _vm.OnCollapse = collapsed =>
         {

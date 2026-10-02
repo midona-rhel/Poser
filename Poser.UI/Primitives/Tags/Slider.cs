@@ -115,7 +115,7 @@ public static partial class Crystarium
         void Clamped(float next) =>
             onChange(Math.Clamp(next, minimum, maximum));
 
-        if (_axisEditId == id && !disabled)
+        if (_axisEditId == ImGui.GetID(id) && !disabled)
             return EditAxisWell(
                 id, string.Empty, value, Clamped, onCommit,
                 ActiveTheme.FormValue, format ?? "0.###", pos, size, uiScale);
@@ -124,7 +124,7 @@ public static partial class Crystarium
         bool changed = false;
         if (hit.DoubleClicked)
         {
-            _axisEditId = id;
+            _axisEditId = ImGui.GetID(id);
             _axisEditValue = value;
             _axisEditNeedsFocus = true;
         }

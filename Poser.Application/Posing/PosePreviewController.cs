@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Poser.Domain.Identity;
 using Poser.Files;
 
@@ -8,6 +9,11 @@ namespace Poser.Application.Posing;
 /// <summary>Shared baseline/rebase workflow for pose import and library previews.</summary>
 public sealed class PosePreviewController
 {
+    // The runtime renders one preview actor. A replaced surface must not
+    // close that actor or reuse a baseline captured for another surface.
+    private sealed class PreviewSeat { public PosePreviewController? Owner; }
+    private static readonly ConditionalWeakTable<IPosePreviewRuntime, PreviewSeat> Seats = new();
+    private readonly PreviewSeat _seat;
     private const string BaselineKey = "##preview-baseline";
 
     private const int BaselineRetryFrames = 60;
@@ -37,6 +43,7 @@ public sealed class PosePreviewController
     public PosePreviewController(IPosePreviewRuntime preview, IPoseFileCapture poses)
     {
         _preview = preview;
+        _seat = Seats.GetOrCreateValue(preview);
         _poses = poses;
     }
 
@@ -47,6 +54,12 @@ public sealed class PosePreviewController
     /// <summary>Returns true when the caller must build options and call Pose. Frame is the UI clock.</summary>
     public bool Begin(ActorId source, string path, PoseImportOptions candidate, int frame)
     {
+        if (_seat.Owner != this)
+        {
+            _seat.Owner?.StandDown();
+            _seat.Owner = this;
+            InvalidateBaseline();
+        }
         if (source != _source)
         {
             // A different appearance means a different hidden body: the pose
@@ -117,7 +130,11 @@ public sealed class PosePreviewController
     }
 
     // Another surface owns the single native preview; forget our baseline without closing it.
-    public void StandDown() => InvalidateBaseline();
+    public void StandDown()
+    {
+        if (_seat.Owner == this) _seat.Owner = null;
+        InvalidateBaseline();
+    }
 
     public void Close()
     {
@@ -125,7 +142,11 @@ public sealed class PosePreviewController
             return;
         _source = null;
         InvalidateBaseline();
-        _preview.Close();
+        if (_seat.Owner == this)
+        {
+            _seat.Owner = null;
+            _preview.Close();
+        }
     }
 
     private void TakeCapture()
