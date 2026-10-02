@@ -76,21 +76,41 @@ public sealed class ColliderGeometry
         : PhysicsCache.GetValue(collider, static c => new(c));
     public IkCollider Description { get; }
     private Vector3[]? _vertices;
-    public Vector3[] Vertices => _vertices ??= Description.Mesh!.Vertices.Select(v =>
-        Vector3.Transform(v * Description.Transform.Scale, Description.Transform.Rotation) + Description.Transform.Position).ToArray();
-    public int[][] Faces { get; }
-    public (int A, int B)[] Edges { get; }
-    private readonly Plane[] _planes;
+    public Vector3[] Vertices
+    {
+        get
+        {
+            EnsureGeometry();
+            return _vertices ??= Description.Mesh!.Vertices.Select(v =>
+                Vector3.Transform(v * Description.Transform.Scale, Description.Transform.Rotation) + Description.Transform.Position).ToArray();
+        }
+    }
+    private int[][]? _faces;
+    private (int A, int B)[]? _edges;
+    private Plane[]? _planes;
+    public int[][] Faces { get { EnsureGeometry(); return _faces!; } }
+    public (int A, int B)[] Edges { get { EnsureGeometry(); return _edges!; } }
+    private readonly int _sides;
 
     public ColliderGeometry(IkCollider collider, int sides = 32)
     {
         Description = collider;
+        _sides = sides;
+    }
+
+    // Bepu consumes primitive dimensions directly. A moving parent must not
+    // tessellate its capsule just to pass a new transform to the solver.
+    private void EnsureGeometry()
+    {
+        if (_faces != null) return;
+        var collider = Description;
+        int sides = _sides;
         if (collider.Shape == IkColliderShape.Mesh)
         {
             // Physics consumes the local mesh directly. Do not transform all
             // vertices on every solve just to hand Bepu the same snapshot.
-            Faces = [];
-            Edges = [];
+            _faces = [];
+            _edges = [];
             _planes = [];
             return;
         }
@@ -161,8 +181,8 @@ public sealed class ColliderGeometry
         var transform = collider.Transform;
         Vector3 World(Vector3 v) => Vector3.Transform(collider.Shape is IkColliderShape.Capsule or IkColliderShape.Sphere ? v : v * transform.Scale, transform.Rotation) + transform.Position;
         _vertices = vertices.Select(World).ToArray();
-        Faces = faces.ToArray();
-        Edges = edges.ToArray();
+        _faces = faces.ToArray();
+        _edges = edges.ToArray();
         var planes = new List<Plane>();
         // A finite plane has two coincident faces plus four bounded edges.
         if (collider.Shape == IkColliderShape.Plane)
@@ -192,11 +212,12 @@ public sealed class ColliderGeometry
     /// <summary>Clip the whole thick segment against the convex shape, not just its endpoints.</summary>
     public bool Contact(Vector3 a, Vector3 b, float radius, out float t, out Vector3 correction)
     {
+        EnsureGeometry();
         // A zero-width link still collides with a plane instead of silently
         // crossing its zero-volume surface. This skin is below visible precision.
         radius = MathF.Max(radius, .0001f);
         float enter = 0, exit = 1;
-        foreach (var plane in _planes)
+        foreach (var plane in _planes!)
         {
             float start = Plane.DotCoordinate(plane, a) - radius;
             float delta = Vector3.Dot(plane.Normal, b - a);

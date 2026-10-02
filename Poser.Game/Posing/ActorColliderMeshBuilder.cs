@@ -11,10 +11,11 @@ namespace Poser.Game.Posing;
 
 internal static class ActorColliderMeshBuilder
 {
+    internal readonly record struct BoneWeight(string Bone, float Weight);
     internal static void Append(byte[] bytes, uint attributes, uint shapes,
         IReadOnlyDictionary<string, Matrix4x4> bones, Matrix4x4 world, Vector3 origin,
         List<Vector3> vertices, List<int> indices, List<string?>? influences = null,
-        IReadOnlySet<string>? bodyBones = null)
+        IReadOnlySet<string>? bodyBones = null, List<BoneWeight[]>? skinWeights = null)
     {
         var file = Read(bytes);
         Span<float> weightValues = stackalloc float[8];
@@ -54,6 +55,8 @@ internal static class ActorColliderMeshBuilder
                 float strongest = 0;
                 string? influence = null;
                 string? missingBone = null;
+                var vertexWeights = skinWeights != null ? new List<BoneWeight>() : null;
+                float bodyWeight = 0;
                 for (int set = 0; set < weights.Length; set++)
                 {
                     int count = ReadBlend(bytes, file, mesh, weights[set], v, weightValues);
@@ -62,6 +65,7 @@ internal static class ActorColliderMeshBuilder
                     for (int component = 0; component < count; component++)
                     {
                         float weight = weightValues[component];
+                        if (!float.IsFinite(weight)) throw new InvalidDataException("Non-finite actor skin weight.");
                         if (weight <= 0) continue;
                         int localBone = checked((int)indexValues[component]);
                         if ((uint)localBone >= (uint)palette.Length || palette[localBone] >= boneNames.Length)
@@ -71,16 +75,21 @@ internal static class ActorColliderMeshBuilder
                         else posed += Vector3.Transform(position, skin) * weight;
                         if (weight > strongest) { strongest = weight; influence = boneNames[palette[localBone]]; }
                         total += weight;
+                        string boneName = boneNames[palette[localBone]];
+                        vertexWeights?.Add(new(boneName, weight));
+                        if (bodyBones == null || bodyBones.Contains(boneName)) bodyWeight += weight;
                     }
                 }
                 // Classify before requiring transforms: hair/accessory vertices
                 // are not body-fit samples. Retained vertices still need every
                 // weighted transform; never substitute bind pose for missing data.
-                included[v] = bodyBones == null || influence != null && bodyBones.Contains(influence);
+                included[v] = bodyBones == null || total > 0 && bodyWeight / total >= .5f;
                 if (included[v] && missingBone != null)
                     throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{missingBone}' has no captured transform.");
                 vertices.Add((total > 0 ? posed / total : Vector3.Transform(position, world)) - origin);
                 influences?.Add(included[v] ? influence : null);
+                skinWeights?.Add(included[v] && vertexWeights != null && total > 0
+                    ? vertexWeights.Select(w => w with { Weight = w.Weight / total }).ToArray() : []);
             }
             var meshIndices = new int[checked((int)mesh.IndexCount)];
             int indexOffset = checked((int)(file.FileHeader.IndexOffset[0] + mesh.StartIndex * 2));

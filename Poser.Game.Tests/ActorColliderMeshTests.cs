@@ -33,22 +33,19 @@ public class ActorColliderMeshTests
     }
 
     [Fact]
-    public void BodyFitUsesBoneLengthAndAverageSurfaceWidth()
+    public void BodyFitUsesIndexedSurfaceAndRoundTripsThroughSceneStorage()
     {
-        var vertices = new List<Vector3>();
-        for (int i = 0; i < 100; i++) vertices.Add(new(.2f * MathF.Cos(i), i / 100f, .2f * MathF.Sin(i)));
-        vertices.Add(new(10, .5f, 0));
+        var mesh = new BodySurfaceFitTests.Mesh();
+        mesh.Add(BodySurfaceFitTests.Capsule(new(0, .5f, 0), .2f, .7f), [new("j_ude_a_l", 1)]);
         var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
             ["j_ude_a_l"] = new(Vector3.Zero, null), ["j_ude_b_l"] = new(Vector3.UnitY, "j_ude_a_l") };
-        var fitted = ActorBodyColliderBuilder.Fit(joints, vertices, Enumerable.Range(0, vertices.Count).ToArray(),
-            Enumerable.Repeat<string?>("j_ude_a_l", vertices.Count).ToArray());
-        var capsule = Assert.Single(fitted.Where(p => p.Name == "Left upper arm"));
+        var fitted = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
+        var capsule = Assert.Single(fitted, p => p.Name == "Left upper arm");
         Assert.Equal("Left upper arm", capsule.Name);
         Assert.Equal(IkColliderShape.Capsule, capsule.Collider.Shape);
-        float averageRadius = (100 * .2f + 10) / 101;
-        Assert.InRange(capsule.Collider.RoundDimensions().Radius, averageRadius - .0001f, averageRadius + .0001f);
-        Assert.Equal(new Vector3(0, .5f, 0), capsule.Collider.Transform.Position);
-        Assert.InRange(capsule.Collider.Transform.Scale.Y, 1 + averageRadius * 2 - .0001f, 1 + averageRadius * 2 + .0001f);
+        Assert.InRange(capsule.Collider.RoundDimensions().Radius, .19f, .21f);
+        Assert.InRange(Vector3.Distance(new(0, .5f, 0), capsule.Collider.Transform.Position), 0, .015f);
+        Assert.InRange(capsule.Collider.Transform.Scale.Y, 1.07f, 1.13f);
         var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(capsule.Collider, global::Poser.Files.SceneFile.JsonOptions),
             global::Poser.Files.SceneFile.JsonOptions)!;
         Assert.Equal(capsule.Collider, restored);
@@ -63,14 +60,13 @@ public class ActorColliderMeshTests
         var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
             [knee] = new(new(0, 1.2f, .1f), null),
             [calf] = new(Vector3.UnitY, knee), [ankle] = new(Vector3.Zero, calf) };
-        var vertices = Enumerable.Range(0, 100)
-            .Select(i => new Vector3(.2f * MathF.Cos(i), i / 100f, .2f * MathF.Sin(i))).ToArray();
-        var fitted = ActorBodyColliderBuilder.Fit(joints, vertices, Enumerable.Range(0, vertices.Length).ToArray(),
-            Enumerable.Repeat<string?>(calf, vertices.Length).ToArray());
+        var mesh = new BodySurfaceFitTests.Mesh();
+        mesh.Add(BodySurfaceFitTests.Capsule(new(0, .5f, 0), .2f, .7f), [new(calf, 1)]);
+        var fitted = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
         var shin = Assert.Single(fitted, p => p.Name == $"{label} lower leg");
         Assert.Equal(calf, shin.BoneName);
-        Assert.Equal(new Vector3(0, .5f, 0), shin.Collider.Transform.Position);
-        Assert.InRange(shin.Collider.Transform.Scale.Y, 1.3999f, 1.4001f);
+        Assert.InRange(Vector3.Distance(new(0, .5f, 0), shin.Collider.Transform.Position), 0, .015f);
+        Assert.InRange(shin.Collider.Transform.Scale.Y, 1.07f, 1.13f);
         var kneeSphere = Assert.Single(fitted, p => p.Name == $"{label} knee");
         Assert.Equal(knee, kneeSphere.BoneName);
         Assert.Equal(joints[knee].Position, kneeSphere.Collider.Transform.Position);
@@ -81,7 +77,7 @@ public class ActorColliderMeshTests
         var offset = Poser.Domain.Transforms.TransformParent.Local(shin.Collider.Transform, frame);
         var rotated = frame with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2) };
         var followed = Poser.Domain.Transforms.TransformParent.World(offset, rotated);
-        Assert.True(Vector3.Distance(new Vector3(.5f, 1, 0), followed.Position) < .0001f);
+        Assert.True(Vector3.Distance(new Vector3(.5f, 1, 0), followed.Position) < .015f);
         Assert.True(Vector3.Distance(Vector3.UnitX, Vector3.Transform(Vector3.UnitY, followed.Rotation)) < .0001f);
     }
 
@@ -117,15 +113,50 @@ public class ActorColliderMeshTests
     {
         var vertices = new List<Vector3>();
         var indices = new List<int>();
+        var weights = new List<ActorColliderMeshBuilder.BoneWeight[]>();
         ActorColliderMeshBuilder.Append(Model(true, true), 1, 0,
             new Dictionary<string, Matrix4x4>
             {
                 ["arm"] = Matrix4x4.Identity,
                 ["tip"] = Matrix4x4.CreateTranslation(8, 0, 0),
-            }, Matrix4x4.Identity, Vector3.Zero, vertices, indices);
+            }, Matrix4x4.Identity, Vector3.Zero, vertices, indices, skinWeights: weights);
         Assert.Equal(new[] { 0, 1, 2 }, indices);
         Assert.True(Vector3.Distance(vertices[0], new(8f * 191 / 255, 0, 0)) < .0001f);
         Assert.True(Vector3.Distance(vertices[1], vertices[0] + Vector3.UnitX) < .0001f);
+        Assert.Equal(vertices.Count, weights.Count);
+        Assert.All(weights, w =>
+        {
+            Assert.InRange(w.Sum(p => p.Weight), .99999f, 1.00001f);
+            Assert.InRange(w.Where(p => p.Bone == "tip").Sum(p => p.Weight), 191f / 255 - .00001f, 191f / 255 + .00001f);
+        });
+    }
+
+    [Theory]
+    [InlineData("chara/equipment/e0000/model/c0201e0000_top.mdl", 201)]
+    [InlineData("chara/human/c0801/obj/tail/t0001/model/c0801t0001_til.mdl", 801)]
+    [InlineData("arbitrary-replacement-name.mdl", 0)]
+    public void ModelRaceComesFromTheOriginalResource(string path, ushort expected)
+    {
+        Assert.Equal(expected, ActorColliderCapture.ModelRace(path));
+        Assert.True(ActorColliderCapture.IsBodyModelPath(path));
+    }
+
+    [Fact]
+    public void BodyMembershipSumsAllInfluencesBeforeFiltering()
+    {
+        var bones = new Dictionary<string, Matrix4x4> { ["arm"] = Matrix4x4.Identity, ["tip"] = Matrix4x4.Identity };
+        var vertices = new List<Vector3>();
+        var indices = new List<int>();
+        var weights = new List<ActorColliderMeshBuilder.BoneWeight[]>();
+        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0, bones, Matrix4x4.Identity,
+            Vector3.Zero, vertices, indices, bodyBones: new HashSet<string> { "tip" }, skinWeights: weights);
+        Assert.Equal(3, indices.Count);
+        Assert.All(weights, w => Assert.InRange(w.Sum(p => p.Weight), .99999f, 1.00001f));
+        vertices.Clear(); indices.Clear(); weights.Clear();
+        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0, bones, Matrix4x4.Identity,
+            Vector3.Zero, vertices, indices, bodyBones: new HashSet<string> { "arm" }, skinWeights: weights);
+        Assert.Empty(indices);
+        Assert.All(weights, w => Assert.Empty(w));
     }
 
     [Fact]
