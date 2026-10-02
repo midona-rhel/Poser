@@ -107,6 +107,7 @@ public sealed partial class PropertiesContent
     public void Bind(AppShellViewModel vm)
     {
         _vm = vm;
+        vm.SectionDisclosure = new(_configuration.Config.UI.SectionDisclosure);
         vm.DrawContent = DrawTabContent;
         vm.OnTab = OnTabClicked;
         vm.DrawFooterMiddle = DrawFooterMiddle;

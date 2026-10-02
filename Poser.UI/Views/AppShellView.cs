@@ -301,6 +301,7 @@ public sealed class AppShellViewModel
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnProject, OnPopOut;
     public string OwnerId = "poser-main-shell";
+    public Dictionary<string, bool>? SectionDisclosure;
     public bool PropertiesOnly;
 
     /// <summary>The content footer's two seats — the sidebar's attach
@@ -532,6 +533,7 @@ public static class AppShellView
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
         ArgumentNullException.ThrowIfNull(vm);
+        using var disclosure = Crystarium.UseSectionDisclosure(vm.SectionDisclosure);
         EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
         var min = origin;
@@ -1419,6 +1421,7 @@ public static class AppShellView
     internal static void DrawRailContent(
         AppShellViewModel vm, Vector2 min, Vector2 max)
     {
+        using var disclosure = Crystarium.UseSectionDisclosure(vm.SectionDisclosure);
         float s = ImGuiHelpers.GlobalScale;
         RailScrollSeam(vm, min, max, (max.X - min.X) / s, s);
     }

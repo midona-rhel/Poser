@@ -227,13 +227,6 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_lastSignature?.ContentEquals(signature) == true
                 && !_bindings.AuxiliaryBindingsChanged(staged))
             {
-                // ABSENCE IS THE FINDING. Bone bindings are republished only
-                // by CommitCandidate below, so every early return here leaves
-                // whatever instances the last commit bound. If a scene-spawned
-                // actor's bones never resolve, this line is where to look.
-                _log?.Debug(
-                    "Scene bindings: refresh coalesced, nothing published " +
-                    $"({candidate.Actors.Count} actors, retry pending: {_retryPending})");
                 return;
             }
 

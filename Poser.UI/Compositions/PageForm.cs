@@ -13,6 +13,22 @@ public static partial class Crystarium
     // window/actor ID stack. The renderer remains usable without a config host.
     public static Func<string, bool>? ReadSectionOpen { get; set; }
     public static Action<string, bool>? WriteSectionOpen { get; set; }
+    private static Dictionary<string, bool>? _sectionDisclosure;
+
+    // A host snapshots the saved defaults when it opens. Writes still remember
+    // the preference for future hosts, but cannot collapse an existing sibling.
+    internal static SectionDisclosureScope UseSectionDisclosure(Dictionary<string, bool>? state) => new(state);
+
+    internal readonly struct SectionDisclosureScope : IDisposable
+    {
+        private readonly Dictionary<string, bool>? _previous;
+        public SectionDisclosureScope(Dictionary<string, bool>? state)
+        {
+            _previous = _sectionDisclosure;
+            _sectionDisclosure = state;
+        }
+        public void Dispose() => _sectionDisclosure = _previous;
+    }
     /// <summary>Logical section-rule thickness.</summary>
     private const float SectionRuleThickness = 1f;
 
@@ -300,6 +316,8 @@ public static partial class Crystarium
             bool searching = SectionFilter != null || RowFilter != null;
             bool remembered = ReadSectionOpen != null && WriteSectionOpen != null;
             if (searching) open = true;
+            else if (_sectionDisclosure is { } local)
+                open = !local.TryGetValue(disclosureKey, out var stored) || stored;
             else if (remembered) open = ReadSectionOpen!(disclosureKey);
 
             // Dense sections omit header padding.
@@ -320,6 +338,7 @@ public static partial class Crystarium
                 if (hit.Clicked)
                 {
                     open = !open;
+                    if (_sectionDisclosure is { } localState) localState[disclosureKey] = open;
                     if (remembered) WriteSectionOpen!(disclosureKey, open);
                     onOpenChanged?.Invoke(open);
                 }

@@ -69,9 +69,10 @@ Opening Settings normally starts at General, scrolled to the top, with no search
 Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
 open their named category at the top.
 
-Form section headers start expanded. Their disclosure preferences persist in
-configuration under stable page/section keys, independent of actors, entity ids,
-and attached/detached hosts. Reopening a window or restarting does not reset them.
+Form section headers default to expanded. Disclosure preferences persist under
+stable page/section keys. Properties hosts snapshot those defaults when created;
+each then keeps its own disclosure state across actor changes. Toggling one
+host updates the saved default for future hosts, never another open window.
 Settings categories have separate keys even when section titles match. Search
 temporarily reveals matching content without changing saved disclosure.
 Inspector rail headers use this same contract, including IK, Gaze, Expression,
@@ -207,6 +208,8 @@ controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.
+Popup input ownership uses the caller's ImGui-scoped identity, so identical
+controls in different windows cannot release or take each other's popup claim.
 
 Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
 the game or claim full-screen/exclusive input; only their visible bounds
