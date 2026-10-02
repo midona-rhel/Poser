@@ -174,6 +174,7 @@ public partial class MainWindow : Window
     internal AppShellViewModel ShellVm => _vm;
 
     private readonly PropertiesContent _properties;
+    internal void PumpPropertiesInteraction(bool pointerHeld) => _properties.PumpInteraction(pointerHeld);
     private string _activeTab => _properties.ActiveTab;
 
     /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>

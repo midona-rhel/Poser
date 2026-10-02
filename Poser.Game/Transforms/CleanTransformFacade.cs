@@ -64,16 +64,18 @@ public sealed class CleanTransformFacade : ITransformFacade
         bool relativeSecondaryBones = false,
         GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
         Guid? groupId = null,
-        bool groupTransform = false)
+        bool groupTransform = false,
+        IReadOnlyList<SelectionId>? selection = null)
     {
         // All entity multi-target entry points (rail, world gizmo and move
         // commands) share admission and metadata, including old callers.
+        var selected = selection ?? _scene.Selection.Selected;
         groupTransform |= (targetIds.Count > 1
-            || Poser.Application.Selection.EntitySelection.IsMultiEntity(_scene.Selection.Selected))
+            || Poser.Application.Selection.EntitySelection.IsMultiEntity(selected))
             && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
         if (groupTransform)
         {
-            if (!_groups.Admit(targetIds, groupScale, out groupId, out var refusal))
+            if (!_groups.Admit(selected, targetIds, groupScale, out groupId, out var refusal))
                 return GestureResult.Fail(refusal ?? "The group cannot be transformed.");
             pivotMode = PivotMode.Centroid;
             space = TransformSpace.World;

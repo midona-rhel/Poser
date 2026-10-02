@@ -37,8 +37,15 @@ may still require a second click. Pose also provides Bake into pose history.
 
 Entering Advanced is a view change; it does not reset or replay the actor.
 Leaving Advanced restores outgoing ownership before changing the mode flag.
+The mode belongs to the exact actor generation and is shared by all Properties
+hosts. Catalog drafts and picker disclosure remain window-local.
 That multi-layer restore is intentionally non-atomic: if a later restore fails,
 the prior mode remains selected, while earlier successful restores stay applied.
+
+Scrub writes and release belong to the initiating host. A stale host cannot
+write or end another host's drag, even for the same actor. Mouse release and
+hidden UI release the claim independently of whether the scrub row is drawn;
+closing the host or losing the actor releases it too. Release leaves playback paused.
 
 ## Static idle export (in development, #304)
 

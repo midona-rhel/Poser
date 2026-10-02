@@ -78,11 +78,16 @@ public sealed class GroupTransformCoordinator : IDisposable
     }
     public Guid? NamedSelection(IEnumerable<TransformTargetId> targets)
     {
-        if (_groups.ActiveGroupId is not { } id || _groups.Find(id) is not { } group) return null;
-        var members = _groups.Descendants(group).Select(Target).ToArray();
-        return members.All(target => target != null)
-            && GroupTransformKey.For(null, members.Select(target => target!.Value))
-                == GroupTransformKey.For(null, targets) ? id : null;
+        var key = GroupTransformKey.For(null, targets);
+        bool Matches(SceneGroup group)
+        {
+            var members = _groups.Descendants(group).Select(Target).ToArray();
+            return members.All(target => target != null)
+                && GroupTransformKey.For(null, members.Select(target => target!.Value)) == key;
+        }
+        if (_groups.ActiveGroupId is { } id && _groups.Find(id) is { } active && Matches(active))
+            return id;
+        return _groups.All.FirstOrDefault(Matches)?.Id;
     }
     public void InitializeSelection()
     {
@@ -190,16 +195,20 @@ public sealed class GroupTransformCoordinator : IDisposable
     }
     public bool TryReadSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error,
         bool requireEditable = true)
-        => TryReadPresentation(mode, false, out display, out error, requireEditable);
+        => TryReadSelection(_scene.Selection.Selected, mode, out display, out error, requireEditable);
 
-    private bool TryReadPresentation(GroupScaleMode mode, bool world,
+    public bool TryReadSelection(IReadOnlyList<SelectionId> selected, GroupScaleMode mode,
+        out GroupTransformDisplay display, out string? error, bool requireEditable = true)
+        => TryReadPresentation(selected, mode, false, out display, out error, requireEditable);
+
+    private bool TryReadPresentation(IReadOnlyList<SelectionId> selected, GroupScaleMode mode, bool world,
         out GroupTransformDisplay display, out string? error, bool requireEditable = true)
     {
         display = default;
         TransformTargetId[] targets;
         if (requireEditable
-            ? !Resolve(_scene.Selection.Selected, out targets, out error)
-            : !ResolveMembership(_scene.Selection.Selected, out targets, out error)) return false;
+            ? !Resolve(selected, out targets, out error)
+            : !ResolveMembership(selected, out targets, out error)) return false;
         var named = NamedSelection(targets);
         var presentation = ReadPresentation?.Invoke(named, targets) ?? new(true, null);
         var snapshot = presentation.UseCommitted ? _state.Snapshot(named, targets) : presentation.Snapshot;
@@ -217,22 +226,29 @@ public sealed class GroupTransformCoordinator : IDisposable
         return true;
     }
     public GroupTransformFrame? SelectionFrame(bool requireEditable = true)
+        => SelectionFrame(_scene.Selection.Selected, requireEditable);
+
+    public GroupTransformFrame? SelectionFrame(IReadOnlyList<SelectionId> selected, bool requireEditable = true)
     {
         TransformTargetId[] targets;
         if (requireEditable
-            ? !Resolve(_scene.Selection.Selected, out targets, out _)
-            : !ResolveMembership(_scene.Selection.Selected, out targets, out _)) return null;
+            ? !Resolve(selected, out targets, out _)
+            : !ResolveMembership(selected, out targets, out _)) return null;
         return _state.Snapshot(NamedSelection(targets), targets)?.Baseline.Frame;
     }
     public bool TryReadWorldSelection(GroupScaleMode mode, out GroupTransformDisplay display, out string? error)
-        => TryReadPresentation(mode, true, out display, out error);
+        => TryReadPresentation(_scene.Selection.Selected, mode, true, out display, out error);
     public bool Admit(IReadOnlyList<TransformTargetId> requested, GroupScaleMode mode,
         out Guid? named, out string? error)
+        => Admit(_scene.Selection.Selected, requested, mode, out named, out error);
+
+    public bool Admit(IReadOnlyList<SelectionId> selected, IReadOnlyList<TransformTargetId> requested,
+        GroupScaleMode mode, out Guid? named, out string? error)
     {
         named = null;
         // No surface may silently omit a camera, overlay, locked or stale
         // member when it enters a multi-entity gesture.
-        if (!Resolve(_scene.Selection.Selected, out var targets, out error)) return false;
+        if (!Resolve(selected, out var targets, out error)) return false;
         if (!targets.ToHashSet().SetEquals(requested))
         { error = "The gesture does not contain the complete selection."; return false; }
         named = NamedSelection(targets);

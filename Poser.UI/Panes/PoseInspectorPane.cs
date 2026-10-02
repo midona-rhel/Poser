@@ -444,7 +444,7 @@ public partial class PoseInspectorPane : IDisposable
         if (IsMultiEntitySelection)
         {
             var (group, groupCanEdit) = ReadTransform();
-            var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame(requireEditable: false);
+            var groupFrame = _cleanGroupFrame ?? _groupCoordinator.SelectionFrame(_selection.Selected, requireEditable: false);
             return groupFrame is { } value
                 ? (value.ToWorldOrientation(group.Rotation), value.Rotation, groupCanEdit)
                 : (Quaternion.Identity, Quaternion.Identity, false);
@@ -579,10 +579,11 @@ public partial class PoseInspectorPane : IDisposable
     {
         if (!_groupCoordinator.Resolve(_selection.Selected, out var targets, out _)
             || !_groupCoordinator.TryReadSelection(
-                _configuration.Config.Gizmo.GroupScale, out var current, out _))
+                _selection.Selected, _configuration.Config.Gizmo.GroupScale, out var current, out _))
             return;
         var begin = _cleanTransforms.Begin(targets, DomainOperation.Translate,
-            DomainSpace.World, DomainPivot.Centroid, description: "Move to camera");
+            DomainSpace.World, DomainPivot.Centroid, description: "Move to camera",
+            selection: _selection.Selected);
         if (!begin.Success || begin.GestureId is not { } gestureId) return;
         var update = _cleanTransforms.Update(gestureId,
             new DomainDelta(goal - current.Position, Quaternion.Identity, Vector3.One));
@@ -2879,7 +2880,7 @@ public partial class PoseInspectorPane : IDisposable
         if (IsMultiEntitySelection)
         {
             var scaleMode = _configuration.Config.Gizmo.GroupScale;
-            if (_groupCoordinator.TryReadSelection(scaleMode, out var group, out var error, requireEditable: false))
+            if (_groupCoordinator.TryReadSelection(_selection.Selected, scaleMode, out var group, out var error, requireEditable: false))
             {
                 bool editable = _groupCoordinator.Resolve(_selection.Selected, out _, out var refusal);
                 _groupTransformUnavailableReason = refusal;
@@ -3027,7 +3028,8 @@ public partial class PoseInspectorPane : IDisposable
             groupId: IsMultiEntitySelection
                 ? _groups.MatchingSelection(_selection.Selected)?.Id
                 : null,
-            groupTransform: IsMultiEntitySelection);
+            groupTransform: IsMultiEntitySelection,
+            selection: _selection.Selected);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
 
@@ -3035,7 +3037,7 @@ public partial class PoseInspectorPane : IDisposable
         _cleanModelStart = modelStart;
         _cleanDisplayedCurrent = displayedStart;
         _cleanGesture = gesture;
-        _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame() : null;
+        _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame(_selection.Selected) : null;
         _cleanGroupScale = _configuration.Config.Gizmo.GroupScale;
     }
 

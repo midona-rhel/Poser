@@ -45,6 +45,9 @@ range selection and highlights use the global workspace selection in every host.
 An actor pin edits that actor's currently selected bones, but never follows
 selection to another actor. Each host owns tabs, searches, scroll, drafts,
 picker identities and gestures; commands and history remain application-owned.
+A pinned group supplies the same complete membership to transform readings,
+frame lookup and edit admission. The active workspace group cannot substitute
+its baseline or members; locks and stale-member refusal still apply.
 A pin keeps its logical target through removal and rebinds only through the
 scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
 Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and

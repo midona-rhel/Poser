@@ -282,6 +282,13 @@ public sealed class UiWindowSet : IDisposable
         _referenceImages.DrawDialogs();
     }
 
+    public void PumpPropertiesInteractions(bool pointerHeld)
+    {
+        Main.PumpPropertiesInteraction(pointerHeld);
+        foreach (var window in _propertiesWindows)
+            window.PumpInteraction(pointerHeld && window.IsOpen);
+    }
+
     private void AddReferenceWindow(ReferenceImageInstance image)
     {
         FlushDismissedReference();

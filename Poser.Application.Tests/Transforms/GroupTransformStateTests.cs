@@ -11,6 +11,54 @@ namespace Poser.Application.Tests.Transforms;
 
 public sealed class GroupTransformStateTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Explicit_group_read_and_edit_stay_on_the_pin_when_workspace_selection_changes(bool named)
+    {
+        using var f = new Fixture(4);
+        var pinned = f.Selected.Take(2).ToArray();
+        var targets = f.Targets.Take(2).ToArray();
+        f.Selection.Clear();
+        foreach (var member in pinned) f.Selection.Add(member);
+        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
+        var group = named ? steps.Create("Pinned", pinned) : null;
+        var baseline = f.State.Snapshot(group?.Id, targets)!;
+        var other = steps.Create("Other", f.Selected.Skip(2).ToArray())!;
+        f.SelectNamed(other);
+        var untouched = f.Live.Where(pair => !targets.Contains(pair.Key)).ToDictionary();
+
+        Assert.True(f.Coordinator.TryReadSelection(pinned, GroupScaleMode.SizesAndSpacing,
+            out var display, out var error), error);
+        Assert.Equal(baseline.Controls.Position, display.Position);
+        Assert.Equal(baseline.Baseline.Frame, f.Coordinator.SelectionFrame(pinned));
+        Assert.True(f.Coordinator.Admit(pinned, targets, GroupScaleMode.SizesAndSpacing,
+            out var admitted, out error), error);
+        Assert.Equal(group?.Id, admitted);
+        Assert.False(f.Coordinator.Admit(pinned, [targets[0]], GroupScaleMode.SpacingOnly, out _, out _));
+        f.Refused = targets[0];
+        Assert.False(f.Coordinator.Admit(pinned, targets, GroupScaleMode.SpacingOnly, out _, out _));
+        f.Refused = null;
+
+        var begin = f.Service.Begin(new(targets, TransformOperation.Translate, TransformSpace.World,
+            PivotMode.Centroid, GroupId: admitted, IsGroupTransform: true));
+        Assert.True(begin.Success, begin.Detail);
+        Assert.True(f.Service.Update(begin.GestureId!.Value,
+            new(Vector3.UnitY, Quaternion.Identity, Vector3.One)).Success);
+        Assert.True(f.Service.Commit(begin.GestureId.Value).Success);
+        Assert.Equal(untouched, f.Live.Where(pair => !targets.Contains(pair.Key)).ToDictionary());
+        Assert.Equal(other.Id, f.Groups.ActiveGroupId);
+        Assert.Equal(other.Members, f.Selection.Selected);
+        Assert.True(f.Service.Undo().Success);
+        foreach (var target in targets) Assert.Equal(baseline.Expected[target], f.Live[target]);
+        Assert.True(f.Service.Redo().Success);
+        foreach (var target in targets)
+            Assert.Equal(baseline.Expected[target].Position + Vector3.UnitY, f.Live[target].Position);
+        f.Targets = f.Targets.Skip(1).ToArray();
+        f.Publish();
+        Assert.False(f.Coordinator.Admit(pinned, targets, GroupScaleMode.SpacingOnly, out _, out _));
+    }
+
     [Fact]
     public void Captured_structure_survives_live_edits_and_restores_its_nested_baseline()
     {

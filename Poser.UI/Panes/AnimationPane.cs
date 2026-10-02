@@ -34,8 +34,6 @@ public sealed class AnimationPane : IDisposable
 
     private bool _openGeneral = true;
     private bool _openAnimationLayers = true;
-    // Advanced mode is actor-local; a transition restores outgoing ownership.
-    private readonly HashSet<ActorId> _advancedActors = new();
     private bool _playEmoteStart = true;
     // Commands report through the shared notification sink.
     private readonly UserNotices _notices;
@@ -53,6 +51,7 @@ public sealed class AnimationPane : IDisposable
     // A Base scrub keeps one captured control identity until release.
     private ActorId? _scrubActor;
     private ScrubControlId? _scrubControl;
+    private readonly Guid _scrubOwner = Guid.NewGuid();
 
     // Each row keeps one memoized catalog feed.
     private readonly TimelineFeed _baseFeed;
@@ -196,7 +195,7 @@ public sealed class AnimationPane : IDisposable
                     divider: false);
                 return;
             }
-            bool advanced = _advancedActors.Contains(actor);
+            bool advanced = _animation.IsAdvanced(actor);
             page.Section(
                 "General",
                 _openGeneral,
@@ -561,41 +560,23 @@ public sealed class AnimationPane : IDisposable
 
     private void SetAdvanced(ActorId actor, bool enabled)
     {
-        bool current = _advancedActors.Contains(actor);
+        bool current = _animation.IsAdvanced(actor);
         if (enabled == current)
             return;
 
-        if (enabled)
+        var changed = _steps.SetAdvanced(actor, enabled);
+        if (!changed.Success)
         {
-            // ENTERING advanced is a pure view change (ruled 2026-09-01):
-            // it must not reset, replay, or release ANYTHING — the old
-            // restore-Base-first handoff restarted the base (losing scrub
-            // points and layered animations, worst on a fresh clone). The
-            // layer rows simply adopt whatever state the actor holds.
-            _generalSelections.Remove(actor);
-            _layerSelections.Remove((actor, AnimationSlot.Base));
-            _advancedActors.Add(actor);
+            Report(changed, "Animation mode");
             return;
         }
-
-        var expression = _expressions.Reset(actor);
-        if (!expression.Success)
+        _generalSelections.Remove(actor);
+        if (enabled) _layerSelections.Remove((actor, AnimationSlot.Base));
+        else
         {
-            Report(expression, "Animation mode");
-            return;
+            _expressionSelections.Remove(actor);
+            RemoveLayerSelections(actor);
         }
-        _expressionSelections.Remove(actor);
-        _layerSelections.Remove((actor, AnimationSlot.Facial));
-
-        // Advanced releases every layer before Basic can issue Base commands.
-        var reset = _steps.ResetLayers(actor);
-        if (!reset.Success)
-        {
-            Report(reset, "Basic animation");
-            return;
-        }
-        RemoveLayerSelections(actor);
-        _advancedActors.Remove(actor);
     }
 
     private void DrawGeneral(
@@ -706,18 +687,16 @@ public sealed class AnimationPane : IDisposable
                 style: actionStyle,
                 disabled: disabled || !available),
             id: $"anim-{slot}-scrub");
+    }
 
-        if (_scrubActor is { } scrubActor && scrubActor.Equals(actor) &&
-            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            _animation.EndScrub();
-            _scrubActor = null;
-            _scrubControl = null;
-        }
-        // A gesture the session refused stays refused until the mouse is
-        // released; without this every remaining drag frame re-reported.
-        if (_scrubBlocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            _scrubBlocked = false;
+    // Called by the host frame pump even when its content is hidden.
+    public void PumpInteraction(bool pointerHeld)
+    {
+        if (pointerHeld) return;
+        _animation.EndScrub(_scrubOwner);
+        _scrubActor = null;
+        _scrubControl = null;
+        _scrubBlocked = false;
     }
 
     private bool _scrubBlocked;
@@ -730,7 +709,7 @@ public sealed class AnimationPane : IDisposable
         if (_scrubActor is not { } scrubActor || !scrubActor.Equals(actor) ||
             _scrubControl != control.Id)
         {
-            var begun = _animation.BeginScrub(actor, control.Id);
+            var begun = _animation.BeginScrub(actor, control.Id, _scrubOwner);
             if (!begun.Success)
             {
                 Report(begun, "Animation scrub");
@@ -740,14 +719,14 @@ public sealed class AnimationPane : IDisposable
             _scrubActor = actor;
             _scrubControl = control.Id;
         }
-        var updated = _animation.UpdateScrub(actor, time);
+        var updated = _animation.UpdateScrub(actor, time, _scrubOwner);
         if (!updated.Success)
         {
             // The session dropped the gesture (the control died mid-drag,
             // the timeline ended): report ONCE, end the pane's gesture, and
             // stay quiet until the next press.
             Report(updated, "Animation scrub");
-            _animation.EndScrub();
+            _animation.EndScrub(_scrubOwner);
             _scrubActor = null;
             _scrubControl = null;
             _scrubBlocked = true;
@@ -755,7 +734,7 @@ public sealed class AnimationPane : IDisposable
         }
         if (finish)
         {
-            _animation.EndScrub();
+            _animation.EndScrub(_scrubOwner);
             _scrubActor = null;
             _scrubControl = null;
         }
@@ -1260,7 +1239,7 @@ public sealed class AnimationPane : IDisposable
         }
         if (_scrubActor is { } scrubActor && !ActorPresent(scrubActor))
         {
-            _animation.EndScrub();
+            _animation.EndScrub(_scrubOwner);
             _scrubActor = null;
             _scrubControl = null;
         }
@@ -1273,7 +1252,6 @@ public sealed class AnimationPane : IDisposable
         foreach (var key in _layerSelections.Keys.ToArray())
             if (!ActorPresent(key.Actor))
                 _layerSelections.Remove(key);
-        _advancedActors.RemoveWhere(actor => !ActorPresent(actor));
     }
 
     private void RemoveLayerSelections(ActorId actor)
@@ -1291,6 +1269,7 @@ public sealed class AnimationPane : IDisposable
 
     public void Dispose()
     {
+        PumpInteraction(false);
         _expressions.Failed -= OnExpressionFailed;
     }
 

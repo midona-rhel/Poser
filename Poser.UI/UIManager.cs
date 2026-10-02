@@ -129,6 +129,7 @@ public sealed class UIManager : IUIManager
     private void DrawUI()
     {
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
         if (!Crystarium.AdvanceTheme())
             return;
 

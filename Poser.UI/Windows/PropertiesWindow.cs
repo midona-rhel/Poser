@@ -80,4 +80,5 @@ public sealed class PropertiesWindow : Window, IDisposable
     }
 
     public void Dispose() => _lease.Dispose();
+    internal void PumpInteraction(bool pointerHeld) => _lease.Content.PumpInteraction(pointerHeld);
 }

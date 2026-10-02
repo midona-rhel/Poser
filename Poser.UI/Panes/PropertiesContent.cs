@@ -159,6 +159,8 @@ public sealed partial class PropertiesContent
         _names.Draw();
     }
 
+    public void PumpInteraction(bool pointerHeld) => _animationPane.PumpInteraction(pointerHeld);
+
     private void OpenEntityRename(string title, string current, Action<string> apply) =>
         _names.Open(title, current, apply);
 }

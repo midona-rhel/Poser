@@ -69,7 +69,7 @@ public sealed class SelectionPlacement(
         if (look.LengthSquared() < 1e-6f) look = Vector3.UnitZ;
         var goal = camera.GetCameraPosition() + Vector3.Normalize(look) * 2.5f;
         var begin = transforms.Begin(targets.Targets, TransformOperation.Translate,
-            TransformSpace.World, description: "Move to camera");
+            TransformSpace.World, description: "Move to camera", selection: targetsToMove);
         if (!begin.Success || begin.GestureId is not { } gesture) return begin;
         var updated = transforms.Update(gesture,
             new TransformDelta(goal - sum / count, Quaternion.Identity, Vector3.One));

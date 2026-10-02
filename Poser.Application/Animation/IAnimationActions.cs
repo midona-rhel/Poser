@@ -6,6 +6,7 @@ namespace Poser.Application.Animation;
 /// <summary>Animation actions that share the application's value history.</summary>
 public interface IAnimationActions
 {
+    AnimationResult SetAdvanced(ActorId actor, bool enabled);
     AnimationResult Play(ActorId actor, AnimationSlot slot, TimelineEntry? entry,
         bool playFromStart, bool resume = true);
     AnimationResult ResetSlot(ActorId actor, AnimationSlot slot);
