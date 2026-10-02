@@ -254,13 +254,19 @@ public static partial class Crystarium
                 return;
 
             float top = _origin.Y + _y * _scale;
-            DrawText(new(_origin.X, top), _width,
-                ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
-                FormHintColor, text);
-            float height = ActiveTheme.Page.StatusLineHeight * _scale;
+            var style = new TextStyle
+            {
+                Size = ActiveTheme.Typography.CaptionSize,
+                Color = FormHintColor,
+            };
+            var wrap = TextConstraint.Wrap(MathF.Max(1f, _width),
+                whitespace: TextWhitespace.PreLine, breakLongWords: true);
+            float height = WrappedLabelHeight(text, _width, _scale,
+                ActiveTheme.Page.StatusLineHeight, style);
+            Crystarium.TextAt(new(_origin.X, top), text, style, wrap);
             RegisterHelp(Ids.Join(_id, "-status"), new(_origin.X, top),
-                new(_origin.X + _width, top + height), help);
-            _y += ActiveTheme.Page.StatusLineHeight;
+                new(_origin.X + _width, top + height * _scale), help);
+            _y += height;
         }
 
         /// <param name="divider">Draws the leading separator.</param>
@@ -419,11 +425,12 @@ public static partial class Crystarium
             if (_twoTrack && _track == 1)
                 x += _trackWidth + ActiveTheme.Page.ActionGap * _scale;
             float top = _origin.Y + _y * _scale;
-            bool visible = top <= _clipBottom && top >= _clipTop;
             float column = LabelColumn(label, _trackWidth, _scale, _labelWidth);
+            float height = FormLabelHeight(label, column, _scale, RowHeight);
+            bool visible = IsRowVisible(new(x, top), height);
             var row = new FormRowScope(
                 new(x, top), _trackWidth, _scale, column / _scale,
-                RowHeight, visible)
+                height, visible)
             {
                 HasLabel = !string.IsNullOrEmpty(label),
                 Label = label,
@@ -435,10 +442,13 @@ public static partial class Crystarium
                     row.LabelWidth,
                     _scale,
                     label,
-                    RowHeight);
+                    height);
             _pendingFullLine = fullLine;
             return row;
         }
+
+        internal bool IsRowVisible(Vector2 origin, float height) =>
+            origin.Y <= _clipBottom && origin.Y + height * _scale >= _clipTop;
 
         /// <summary>A row the search dropped: laid far off screen so a
         /// widget that paints regardless paints nothing anyone sees, and
@@ -458,6 +468,8 @@ public static partial class Crystarium
             if (row.Skipped)
                 return;
             float height = logicalHeight ?? RowHeight;
+            if (row.HasLabel)
+                height = MathF.Max(height, row.RowHeight);
             if (row.Visible)
             {
                 _anyPainted = true;
@@ -660,7 +672,7 @@ public static partial class Crystarium
                 DrawTextRight(
                     bandOrigin,
                     ActiveTheme.Form.ValueColumnWidth * row.Scale,
-                    ActiveTheme.Controls.FormRowHeight * row.Scale,
+                    row.RowHeight * row.Scale,
                     ActiveTheme.Typography.CaptionSize,
                     FontFamily.Mono,
                     FormLabelColor,
@@ -886,21 +898,11 @@ public static partial class Crystarium
         {
             string id = Id(Ids.Join("check-", caption));
             var row = _page.BeginRow(string.Empty);
-            if (!row.Visible)
-            {
-                _page.EndRow(row, id, help, ActiveTheme.Controls.ListRowHeight);
+            if (row.Skipped)
                 return;
-            }
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
-            // Checklists use the compact row height.
-            float rowHeight =
-                ActiveTheme.Controls.ListRowHeight * row.Scale;
             float x = row.Origin.X + (indent ? gap * 2f : 0f);
-            ImGui.SetCursorScreenPos(new(
-                x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
-            Crystarium.Checkbox(
-                id, value, onChange, default, disabled, help, partial);
             var captionStyle = new TextStyle
             {
                 Size = ActiveTheme.Typography.LabelSize,
@@ -909,13 +911,24 @@ public static partial class Crystarium
                 Disabled = disabled,
             };
             float captionX = x + boxSide + gap * 0.75f;
-            LabelInBand(
+            float captionWidth = row.Origin.X + row.Width - captionX;
+            float height = WrappedLabelHeight(caption, captionWidth, row.Scale,
+                ActiveTheme.Controls.ListRowHeight, captionStyle);
+            if (!_page.IsRowVisible(row.Origin, height))
+            {
+                _page.EndRow(row, id, help, height);
+                return;
+            }
+            ImGui.SetCursorScreenPos(new(
+                x, row.Origin.Y + (height * row.Scale - boxSide) * 0.5f));
+            Crystarium.Checkbox(
+                id, value, onChange, default, disabled, help, partial);
+            WrappedLabelInBand(
                 new(captionX, row.Origin.Y),
-                new(row.Origin.X + row.Width - captionX, rowHeight),
+                new(captionWidth, height * row.Scale),
                 caption,
                 captionStyle);
-            _page.EndRow(row, id, help,
-                ActiveTheme.Controls.ListRowHeight);
+            _page.EndRow(row, id, help, height);
         }
 
         /// <summary>Draws an inline checklist separator.</summary>
@@ -1146,7 +1159,7 @@ public static partial class Crystarium
             ProgressBar(fraction, barWidth / row.Scale);
             DrawTextRight(
                 new(row.ControlOrigin.X + barWidth + gap, row.Origin.Y),
-                readoutWidth, ActiveTheme.Controls.FormRowHeight * row.Scale,
+                readoutWidth, row.RowHeight * row.Scale,
                 ActiveTheme.Typography.CaptionSize, FontFamily.Mono,
                 FormLabelColor, readout);
             if (cancel != null)
@@ -1428,7 +1441,7 @@ public static partial class Crystarium
                 _page.EndRow(row, id, help);
                 return;
             }
-            float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            float band = row.RowHeight * row.Scale;
             float left = row.ControlOrigin.X;
             float width = row.ControlWidth;
             if (icon != 0)
@@ -1487,7 +1500,7 @@ public static partial class Crystarium
             LabelInBand(
                 row.ControlOrigin,
                 new(MathF.Max(0f, row.ControlWidth - actionWidth - gap),
-                    ActiveTheme.Controls.FormRowHeight * row.Scale),
+                    row.RowHeight * row.Scale),
                 value,
                 new TextStyle
                 {
@@ -1505,53 +1518,32 @@ public static partial class Crystarium
             string text, string? help = null, bool warning = false)
         {
             string id = UnlabelledId("status", ref _statusRows);
-            var row = _page.BeginRow(string.Empty);
-            if (!row.Visible)
-            {
-                _page.EndRow(row, id, help);
-                return;
-            }
-            LabelInBand(
-                row.Origin,
-                new(row.Width, ActiveTheme.Controls.FormRowHeight * row.Scale),
-                text,
-                new TextStyle
-                {
-                    Size = ActiveTheme.Typography.CaptionSize,
-                    Color = warning ? ActiveTheme.Warning : FormHintColor,
-                });
-            _page.EndRow(row, id, help);
+            WrappedStatus(id, text, help, warning);
         }
 
-        /// <summary>
-        /// A WRAPPED status run across the row's whole width, growing the row
-        /// to as many lines as it takes. <see cref="Status"/> is the one-line
-        /// form and truncates; this is the form for a sentence the user has to
-        /// be able to READ — a refusal reason, a next step — where cutting the
-        /// text off would delete the only thing the row exists to say.
-        /// </summary>
+        /// <summary>A wrapped explanation across the row's whole width.</summary>
         /// <param name="warning">Uses the warning colour.</param>
         public void Paragraph(
             string text, string? help = null, bool warning = false)
         {
             string id = UnlabelledId("paragraph", ref _paragraphRows);
+            WrappedStatus(id, text, help, warning);
+        }
+
+        private void WrappedStatus(string id, string text, string? help, bool warning)
+        {
             var row = _page.BeginRow(string.Empty);
+            if (row.Skipped)
+                return;
             var style = new TextStyle
             {
                 Size = ActiveTheme.Typography.CaptionSize,
                 Color = warning ? ActiveTheme.Warning : FormHintColor,
             };
-            var wrap = TextConstraint.Wrap(row.Width);
-            float height = Crystarium.MeasureText(text, style, wrap).Y;
-            float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
-            // One line seats exactly as a Status row does; more lines start at
-            // that same seat and run on, so a paragraph beside single-line
-            // rows shares their first baseline.
-            Crystarium.TextInBand(
-                row.Origin, new(row.Width, band), text, style, wrap);
-            _page.EndRow(
-                row, id, help,
-                MathF.Max(ActiveTheme.Controls.FormRowHeight, height / row.Scale));
+            float height = WrappedLabelHeight(text, row.Width, row.Scale, row.RowHeight, style);
+            if (_page.IsRowVisible(row.Origin, height))
+                WrappedLabelInBand(row.Origin, new(row.Width, height * row.Scale), text, style);
+            _page.EndRow(row, id, help, height);
         }
 
         private int _paragraphRows;
@@ -1632,27 +1624,31 @@ public static partial class Crystarium
             ArgumentNullException.ThrowIfNull(drawRight);
             string id = Id(Ids.Join(leftLabel, "-", rightLabel));
             var row = _page.BeginRow(string.Empty);
-            if (!row.Visible)
-            {
-                _page.EndRow(row, id, help);
+            if (row.Skipped)
                 return;
-            }
             // The same inter-cell MARGIN Cells uses — two columns never
             // sit pixel-adjacent.
             float cellMargin = ActiveTheme.Spacing.Six * row.Scale;
             float half = (row.Width - cellMargin) * 0.5f;
-            DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
+            float column = LabelColumn(leftLabel, half, row.Scale, row.LabelWidth / row.Scale);
+            float height = MathF.Max(
+                FormLabelHeight(leftLabel, column, row.Scale, row.RowHeight),
+                FormLabelHeight(rightLabel, column, row.Scale, row.RowHeight));
+            if (!_page.IsRowVisible(row.Origin, height))
+            {
+                _page.EndRow(row, id, null, height);
+                return;
+            }
+            DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft, height);
             DrawHalf(
                 in row, row.Origin.X + half + cellMargin, half,
-                rightLabel, drawRight);
+                rightLabel, drawRight, height);
             // The pair's help anchors on the LABEL bands, so each cell's
             // control keeps its own hover.
             if (help is not null)
             {
-                float column = LabelColumn(
-                    leftLabel, half, row.Scale, row.LabelWidth / row.Scale);
                 var band = new Vector2(
-                    column, ActiveTheme.Controls.FormRowHeight * row.Scale);
+                    column, height * row.Scale);
                 RegisterHelp(Ids.Join(id, "-left"),
                     row.Origin, row.Origin + band, help);
                 var rightOrigin = new Vector2(
@@ -1660,7 +1656,7 @@ public static partial class Crystarium
                 RegisterHelp(Ids.Join(id, "-right"),
                     rightOrigin, rightOrigin + band, help);
             }
-            _page.EndRow(row, id, null);
+            _page.EndRow(row, id, null, height);
         }
 
         /// <summary>Draws multiple controls on one row.</summary>
@@ -1678,6 +1674,8 @@ public static partial class Crystarium
                 return;
             string id = Id(scope.Key());
             var row = _page.BeginRow(string.Empty);
+            if (row.Skipped)
+                return;
             // Leave a gap between adjacent tracks.
             float gap = ActiveTheme.Spacing.Six * row.Scale;
             // Responsive pages retain room for a label and a stepper before
@@ -1689,21 +1687,32 @@ public static partial class Crystarium
             float track =
                 (row.Width - gap * (columns - 1)) / columns;
             float column = MathF.Min(row.LabelWidth, track * FormCellLabelShare);
-            float bandHeight = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            float y = row.Origin.Y;
+            float height = 0f;
             for (int i = 0; i < items.Count; i++)
             {
+                if (i % columns == 0)
+                {
+                    y += height * row.Scale;
+                    height = ActiveTheme.Controls.FormRowHeight;
+                    for (int j = i; j < Math.Min(i + columns, items.Count); j++)
+                        height = MathF.Max(height,
+                            FormLabelHeight(items[j].Label, column, row.Scale,
+                                ActiveTheme.Controls.FormRowHeight));
+                }
                 var item = items[i];
+                if (!_page.IsRowVisible(new(row.Origin.X, y), height))
+                    continue;
                 float x = row.Origin.X + i % columns * (track + gap);
-                float y = row.Origin.Y + i / columns * bandHeight;
                 float cellMargin = ActiveTheme.Spacing.Three * row.Scale;
                 if (!string.IsNullOrEmpty(item.Label))
                     FormLabel(
                         new Vector2(x, y), column, row.Scale,
-                        item.Label);
+                        item.Label, height);
                 item.Draw(new FormPairCell(
                     new Vector2(x + column + cellMargin, y),
                     MathF.Max(0f, track - column - cellMargin),
-                    row.Scale));
+                    row.Scale) { RowHeight = height });
                 // The hover answers for exactly what the pointer is on:
                 // a cell's own help, else the row's shared help — either
                 // way anchored on THAT cell's label band, never the whole
@@ -1717,28 +1726,25 @@ public static partial class Crystarium
                 RegisterHelp(
                     Ids.Join(id, "-", item.Label),
                     new Vector2(x, y),
-                    new Vector2(x + column, y + bandHeight),
+                    new Vector2(x + column, y + height * row.Scale),
                     cellHelp);
             }
-            _page.EndRow(row, id, null,
-                _page.Responsive
-                    ? (items.Count + columns - 1) / columns * ActiveTheme.Controls.FormRowHeight
-                    : null);
+            _page.EndRow(row, id, null, (y - row.Origin.Y) / row.Scale + height);
         }
 
         private static void DrawHalf(
             in FormRowScope row, float x, float span, string label,
-            Action<FormPairCell> draw)
+            Action<FormPairCell> draw, float height)
         {
             float column = LabelColumn(
                 label, span, row.Scale, row.LabelWidth / row.Scale);
             float margin = ActiveTheme.Spacing.Three * row.Scale;
             if (!string.IsNullOrEmpty(label))
-                FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
+                FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label, height);
             draw(new FormPairCell(
                 new Vector2(x + column + margin, row.Origin.Y),
                 MathF.Max(0f, span - column - margin),
-                row.Scale));
+                row.Scale) { RowHeight = height });
         }
 
         /// <param name="actions">Optional trailing actions.</param>
@@ -1791,7 +1797,7 @@ public static partial class Crystarium
             float width = (wells - gap * 2f) / 3f;
             float controlY = stacked
                 ? row.Origin.Y
-                    + ActiveTheme.Controls.FormRowHeight * row.Scale
+                    + row.RowHeight * row.Scale
                     + (ActiveTheme.Controls.FormRowHeight
                         - ActiveTheme.Controls.WorkspaceHeight)
                     * 0.5f * row.Scale
@@ -1841,7 +1847,7 @@ public static partial class Crystarium
                     // Stacked actions align with the axis wells.
                     stacked
                         ? row.Origin.Y
-                            + ActiveTheme.Controls.FormRowHeight * row.Scale
+                            + row.RowHeight * row.Scale
                         : row.Origin.Y,
                     true,
                     id);
@@ -1850,7 +1856,7 @@ public static partial class Crystarium
                 id,
                 help,
                 stacked
-                    ? ActiveTheme.Controls.FormRowHeight * 2f
+                    ? row.RowHeight + ActiveTheme.Controls.FormRowHeight
                     : null);
         }
 
@@ -2086,9 +2092,11 @@ public static partial class Crystarium
     public readonly record struct FormPairCell(
         Vector2 Origin, float Width, float Scale)
     {
+        public float RowHeight { get; init; } = ActiveTheme.Controls.FormRowHeight;
+
         public Vector2 Center(float controlHeight) => new(
             Origin.X,
-            Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
+            Origin.Y + (RowHeight - controlHeight)
                 * 0.5f * Scale);
 
         /// <summary>Draws a slider with a right-aligned value.</summary>
@@ -2134,7 +2142,7 @@ public static partial class Crystarium
                 DrawTextRight(
                     bandOrigin,
                     readoutWidth,
-                    ActiveTheme.Controls.FormRowHeight * Scale,
+                    RowHeight * Scale,
                     ActiveTheme.Typography.CaptionSize,
                     FontFamily.Mono,
                     FormLabelColor,
@@ -2248,7 +2256,7 @@ public static partial class Crystarium
         {
             LabelInBand(
                 Origin,
-                new Vector2(Width, ActiveTheme.Controls.FormRowHeight * Scale),
+                new Vector2(Width, RowHeight * Scale),
                 value,
                 new TextStyle
                 {
@@ -2643,12 +2651,9 @@ public static partial class Crystarium
             TextConstraint.Truncate(width));
     }
 
-    /// <summary>Calculates the scaled label-column width.</summary>
     /// <summary>The label column is FIXED: every label reserves the same
     /// space regardless of its text, so controls align down the page —
-    /// text-measured growth made slider starts wander row to row. A label
-    /// too long for the column truncates; that is a naming problem, not a
-    /// layout one.</summary>
+    /// longer labels grow the row vertically instead of moving controls.</summary>
     private static float LabelColumn(
         string label, float width, float scale, float baseColumn)
     {
@@ -2656,20 +2661,60 @@ public static partial class Crystarium
         return MathF.Min(baseColumn * scale, width * 0.5f);
     }
 
-    /// <summary>Draws a form label.</summary>
+    private static TextStyle FormLabelStyle => new()
+    {
+        Size = ActiveTheme.Typography.LabelSize,
+        Color = FormLabelColor,
+    };
+
+    private static float FormLabelHeight(string label, float width, float scale, float minimum)
+        => WrappedLabelHeight(label, width, scale, minimum, FormLabelStyle);
+
+    private static float WrappedLabelHeight(
+        string text, float width, float scale, float minimum, in TextStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || width <= 0f)
+            return minimum;
+        var natural = Crystarium.MeasureText(text, style);
+        bool multiline = text.Contains('\n');
+        if (natural.X <= width && !multiline)
+            return minimum;
+        float wrapped = Crystarium.MeasureText(text, style,
+            TextConstraint.Wrap(width, whitespace: TextWhitespace.PreLine, breakLongWords: true)).Y;
+        // Retain the single-line padding instead of packing successive
+        // multiline labels against each other.
+        float lineHeight = multiline ? Crystarium.MeasureText("Mg", style).Y : natural.Y;
+        return minimum + MathF.Max(0f, wrapped - lineHeight) / scale;
+    }
+
+    private static void WrappedLabelInBand(
+        Vector2 origin, Vector2 band, string text, in TextStyle style)
+    {
+        if (band.X <= 0f)
+            return;
+        var natural = Crystarium.MeasureText(text, style);
+        if (natural.X <= band.X && !text.Contains('\n'))
+        {
+            Crystarium.TextInBand(origin, band, text, style);
+            return;
+        }
+        var constraint = TextConstraint.Wrap(band.X,
+            whitespace: TextWhitespace.PreLine, breakLongWords: true);
+        float height = Crystarium.MeasureText(text, style, constraint).Y;
+        Crystarium.TextAt(new(origin.X, InkSeatY(origin.Y, band.Y, height, style)),
+            text, style, constraint);
+    }
+
+    /// <summary>Draws a label in the height reserved by FormLabelHeight.</summary>
     private static void FormLabel(
         Vector2 origin, float columnWidth, float scale, string label,
         float? rowHeight = null) =>
-        LabelInBand(
+        WrappedLabelInBand(
             origin,
             new(columnWidth,
                 (rowHeight ?? ActiveTheme.Controls.FormRowHeight) * scale),
             label,
-            new TextStyle
-            {
-                Size = ActiveTheme.Typography.LabelSize,
-                Color = FormLabelColor,
-            });
+            FormLabelStyle);
 
     private static void DrawTextRight(Vector2 position, float width,
         float height, float size, FontFamily family, Vector4 color,

@@ -182,6 +182,14 @@ when each label/control track would become too narrow. Paired rows stack at
 their shared minimum width. Fixed-size icons stay fixed within those tracks;
 text-oriented pages retain their existing width policy.
 
+Form labels retain a shared column width so controls align vertically. Long
+labels wrap, including oversized words, and grow the row without reducing the
+single-line padding. Paired/cell rows reserve their tallest label; help regions,
+control centering, and scroll extents use that same height, even offscreen.
+Form status text and checklist captions follow the same measured wrapping rule.
+Single-line labels and the appearance grid's ordering and column policy stay
+unchanged. This form policy does not make other fixed-row lists wrapping layouts.
+
 A sequence of peer controls uses a responsive grid when hardcoded semantic
 row breaks would leave uneven or wasted space. This does not flatten content
 whose pairing or hierarchy carries meaning. The grid preserves source and
