@@ -56,9 +56,7 @@ public sealed class GroupSteps
             while (_history.PeekUndo() is { } inner && !ReferenceEquals(inner, top))
                 _history.Drop(inner);
         }
-        _groupCoordinator?.SynchronizeNamed();
-        _groupTransforms?.ForgetMissingGroups(_groups.All.Select(group => group.Id));
-        var after = Capture();
+        var after = CaptureFinalMembership();
         bool deferredCapture = false;
         if (!before.Equals(after))
             _history.Append(new JournalStep(
@@ -71,10 +69,19 @@ public sealed class GroupSteps
         return result;
     }
 
-    private GroupsSnapshot Capture() =>
+    public GroupsSnapshot Capture() =>
         _groups.Capture().WithTransforms(
             _groupTransforms?.CaptureNamed()
                 ?? new Dictionary<GroupTransformKey, GroupTransformSnapshot>());
+
+    /// <summary>Seal a structure command after its final members and bindings exist.
+    /// Lifecycle commands use the same boundary without adding a second history entry.</summary>
+    public GroupsSnapshot CaptureFinalMembership()
+    {
+        _groupCoordinator?.SynchronizeNamed();
+        _groupTransforms?.ForgetMissingGroups(_groups.All.Select(group => group.Id));
+        return Capture();
+    }
 
     public void Run(string description, Action act) =>
         Run(description, () => { act(); return true; });
@@ -106,7 +113,7 @@ public sealed class GroupSteps
         return true;
     }
 
-    private void Restore(GroupsSnapshot snapshot)
+    public void Restore(GroupsSnapshot snapshot)
     {
         snapshot = snapshot.Remap(_history);
         _groups.Restore(snapshot);

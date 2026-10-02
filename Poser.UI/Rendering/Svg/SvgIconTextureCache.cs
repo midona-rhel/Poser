@@ -812,7 +812,6 @@ internal static class SvgIconTextureCache
             // remains an optimization rather than a correctness mechanism.
             _syncPaints++;
             var paintClock = System.Diagnostics.Stopwatch.StartNew();
-            double bakeMs;
             try
             {
                 // Baked at FULL alpha always; the fade rides the quad tint.
@@ -820,7 +819,6 @@ internal static class SvgIconTextureCache
                     Vector2.Zero, max - min, tint, flipX, strokeWidth,
                     groupOpacity, groupBackground, 1f,
                     out var baked);
-                bakeMs = paintClock.Elapsed.TotalMilliseconds;
                 entry = !bakeable
                     ? new Entry(0, default, default, null, true)
                     : baked is not { } bakedMask
@@ -829,17 +827,11 @@ internal static class SvgIconTextureCache
             }
             catch (Exception)
             {
-                bakeMs = paintClock.Elapsed.TotalMilliseconds;
                 entry = new Entry(0, default, default, null, true);
             }
             paintClock.Stop();
             double paintMs = paintClock.Elapsed.TotalMilliseconds;
             _syncPaintMs += paintMs;
-            if (_startupRemaining == 0 && _missLogged.Add(key))
-                Crystarium.Log?.Invoke(
-                    $"Icon painted on first use: {Tabler.NameOf(doc)} at " +
-                    $"{(max - min).Y:0}px (bake {bakeMs:F1}ms, upload " +
-                    $"{paintMs - bakeMs:F1}ms)");
             entry.LastDraw = _drawTick;
             if (Cache.Count >= MaxEntries)
                 EvictStale();
@@ -849,9 +841,7 @@ internal static class SvgIconTextureCache
         {
             if (Repeated(key) && Pending.Add(key))
             {
-                // Post-startup misses ARE the pop-in: each unique one is a
-                // key the warm list does not cover. Logged once per key so a
-                // single first-open pass enumerates the whole gap.
+                // Queue uncached variants outside the synchronous frame budget.
                 Inbox.Enqueue(new RasterJob
                 {
                     Generation = _generation,
@@ -914,8 +904,6 @@ internal static class SvgIconTextureCache
         }
         return true;
     }
-
-    private static readonly HashSet<ulong> _missLogged = new();
 
     private static bool Repeated(ulong key)
     {

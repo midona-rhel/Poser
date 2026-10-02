@@ -29,7 +29,8 @@ public interface IAnimationPlayback
     AnimationResult SetWeaponDrawn(ActorId actor, bool drawn);
     AnimationResult SetPositionLock(ActorId actor, bool locked);
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot);
-    AnimationResult BeginScrub(ActorId actor, ScrubControlId control);
-    AnimationResult UpdateScrub(ActorId actor, float time);
-    void EndScrub();
+    bool IsAdvanced(ActorId actor);
+    AnimationResult BeginScrub(ActorId actor, ScrubControlId control, Guid owner);
+    AnimationResult UpdateScrub(ActorId actor, float time, Guid owner);
+    void EndScrub(Guid owner);
 }

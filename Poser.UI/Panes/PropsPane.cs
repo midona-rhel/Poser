@@ -1,3 +1,4 @@
+using Poser.Application.Selection;
 using System;
 using Poser.Services;
 using Poser.Application.Presentation;
@@ -21,6 +22,7 @@ public sealed class PropsPane
 {
     public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly IWardrobeCatalog _stains;
 
     /// <summary>The dye sheet's picker; the owner string carries which of
@@ -45,6 +47,7 @@ public sealed class PropsPane
 
     public PropsPane(
         SceneSession scene,
+        PropertiesContext properties,
         EntityActions entityActions,
         IWardrobeCatalog stains,
         ScenePane scenePane,
@@ -52,6 +55,7 @@ public sealed class PropsPane
         ISceneObjectControl values)
     {
         _scene = scene;
+        _selection = properties.Selection;
         _entityActions = entityActions;
         _stains = stains;
         _values = values;
@@ -210,7 +214,7 @@ public sealed class PropsPane
 
     private PropReading? SelectedProp()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.Prop, Prop: { } propId })
             return null;
         return _values.Read(propId);

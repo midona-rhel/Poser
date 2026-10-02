@@ -115,5 +115,17 @@ public sealed class GroupTransformRoutingTests
                 Assert.Equal(before, live);
             }
         }
+        // A pinned single entity remains editable while the workspace holds
+        // a group; a pinned group remains editable with a different selection.
+        var single = facade.Begin([targets[0]], operation, TransformSpace.World,
+            selection: [SelectionId.ForActor(actor)]);
+        Assert.True(single.Success, single.Detail);
+        Assert.True(facade.Cancel(single.GestureId!.Value).Success);
+        var pinned = selection.Selected.ToArray();
+        selection.Select(SelectionId.ForActor(other));
+        var group = facade.Begin(targets, operation, TransformSpace.World, selection: pinned);
+        Assert.True(group.Success, group.Detail);
+        Assert.True(facade.Cancel(group.GestureId!.Value).Success);
+        Assert.Equal(SelectionId.ForActor(other), selection.Primary);
     }
 }

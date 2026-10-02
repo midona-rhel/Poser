@@ -3,6 +3,7 @@ using Poser.Config;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
+using Poser.Application.Selection;
 
 namespace Poser.UI.Composition;
 
@@ -37,6 +38,10 @@ public sealed class UiWindowSet : IDisposable
 
     private readonly List<ReferenceImageWindow> _referenceWindows = new();
     private readonly List<ReferenceImageWindow> _dismissedReference = new();
+    private readonly IPropertiesContentFactory _propertiesFactory;
+    private readonly EntityRemovalDialog _removalDialog;
+    private readonly List<PropertiesWindow> _propertiesWindows = new();
+    private readonly List<(PropertiesContext Context, int Mode, string Tab)> _pendingProperties = new();
 
     public UiWindowSet(
         IGPoseService gPoseService,
@@ -49,8 +54,12 @@ public sealed class UiWindowSet : IDisposable
         SpawnBrowserWindow spawnBrowser,
         SkeletonOverlayPresentation overlayPresentation,
         WorldAdoptionSource worldAdoption,
-        ReferenceImageSession referenceImages)
+        ReferenceImageSession referenceImages,
+        IPropertiesContentFactory propertiesFactory,
+        EntityRemovalDialog removalDialog)
     {
+        _removalDialog = removalDialog;
+        _propertiesFactory = propertiesFactory;
         _referenceImages = referenceImages;
         _referenceImages.OnAdded += AddReferenceWindow;
         _referenceImages.OnRemoved += DismissReferenceWindow;
@@ -75,6 +84,7 @@ public sealed class UiWindowSet : IDisposable
         System.AddWindow(SkeletonOverlay);
 
         Main = main;
+        Main.OnPopOutRequested += QueueProperties;
         System.AddWindow(Main);
 
         SidebarPart = new SidebarPartWindow(main, configService);
@@ -262,12 +272,21 @@ public sealed class UiWindowSet : IDisposable
 
     public void PumpReferenceImages()
     {
+        PumpProperties();
+        _removalDialog.DrawBulkDestroyModal();
         FlushDismissedReference();
         if (Main.IsOpen)
             foreach (var window in _referenceWindows)
                 window.IsOpen = !ReferenceImageSession.IsHidden(window.Image);
         _referenceImages.Tick();
         _referenceImages.DrawDialogs();
+    }
+
+    public void PumpPropertiesInteractions(bool pointerHeld)
+    {
+        Main.PumpPropertiesInteraction(pointerHeld);
+        foreach (var window in _propertiesWindows)
+            window.PumpInteraction(pointerHeld && window.IsOpen);
     }
 
     private void AddReferenceWindow(ReferenceImageInstance image)
@@ -305,6 +324,9 @@ public sealed class UiWindowSet : IDisposable
 
     public void Dispose()
     {
+        Main.OnPopOutRequested -= QueueProperties;
+        CloseProperties();
+        PumpProperties();
         Crystarium.ReadSectionOpen = null;
         Crystarium.WriteSectionOpen = null;
         _referenceImages.OnAdded -= AddReferenceWindow;
@@ -318,5 +340,45 @@ public sealed class UiWindowSet : IDisposable
         Main.OnInspectorWindowToggleRequested -= ToggleInspectorWindow;
         _overlayPresentation.Clear();
         System.RemoveAllWindows();
+    }
+
+    private void QueueProperties(PropertiesContext context, int mode, string tab) =>
+        _pendingProperties.Add((context, mode, tab));
+
+    public void CloseProperties()
+    {
+        foreach (var pending in _pendingProperties) pending.Context.Dispose();
+        _pendingProperties.Clear();
+        foreach (var window in _propertiesWindows)
+        {
+            window.IsOpen = false;
+            window.Dispose();
+        }
+    }
+
+    private void PumpProperties()
+    {
+        // WindowSystem is not being enumerated here: both additions and
+        // disposal happen after its draw pass.
+        for (int i = _propertiesWindows.Count - 1; i >= 0; i--)
+        {
+            var window = _propertiesWindows[i];
+            if (window.IsOpen) continue;
+            System.RemoveWindow(window);
+            window.Dispose();
+            _propertiesWindows.RemoveAt(i);
+        }
+        while (_pendingProperties.Count > 0)
+        {
+            var pending = _pendingProperties[0];
+            _pendingProperties.RemoveAt(0);
+            var lease = _propertiesFactory.Create(pending.Context);
+            lease.Content.ContentMode = pending.Mode;
+            lease.Content.ActiveTab = pending.Tab;
+            Main.ConfigurePopOut(lease.Content);
+            var window = new PropertiesWindow(lease, Main.RequestSettings);
+            _propertiesWindows.Add(window);
+            System.AddWindow(window);
+        }
     }
 }

@@ -38,6 +38,8 @@ public sealed class SelectionScope
 
     public SelectionId? Anchor => _anchor;
 
+    public ActorId? PrimaryActor => Primary?.OwningActor;
+
     /// <summary>
     /// A persistent companion for every selection — Ktisis' sibling link
     /// (SelectManager.cs:209-223), which resolves a bone's <c>_l</c>/<c>_r</c>

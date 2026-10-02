@@ -466,15 +466,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // it is what keeps the hook walking while the overlay shows.
         _viewport.RequestBoneSnapshot();
         using var profile = FrameProfiler.Scope("Window · Bone overlay");
-        // First line of the frame, before every gate: a left press ALWAYS
-        // logs, so a missing line means this method never ran that frame.
-        // Debug, not Information: these are standing breadcrumbs for the
-        // world-click path, and every user click would otherwise spam the
-        // Dalamud log forever.
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Debug(
-                $"[Overlay] frame-press mouse={ImGui.GetIO().MousePos} "
-                + $"alt={ImGui.GetIO().KeyAlt}");
         try
         {
             DrawCore();
@@ -1177,15 +1168,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             ImGui.SetNextFrameWantCaptureMouse(true);
         }
 
-        // Diagnostic breadcrumb for dead world clicks: one line per press
-        // naming every gate that can swallow it.
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Debug(
-                $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
-                + $"blocked={pointerBlocked} listTravel={listTravel} "
-                + $"hasWorldBone={hasWorldBone} "
-                + $"gizmo={Controls.GizmoPointerOwnership.Owned} "
-                + $"hoverL={hasHoveredLight} hoverA={hasHoveredActor}");
         UpdateWorldPress(
             worldTarget,
             pointerBlocked || dotsSuppressed

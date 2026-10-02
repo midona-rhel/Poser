@@ -16,12 +16,32 @@ public sealed class AnimationSteps : IAnimationActions
     private readonly AnimationSession _animation;
     private readonly ValueJournal _journal;
     private readonly SceneSession _scene;
+    private readonly IExpressionPreview _expressions;
 
-    public AnimationSteps(AnimationSession animation, ValueJournal journal, SceneSession scene)
+    public AnimationSteps(AnimationSession animation, ValueJournal journal, SceneSession scene,
+        IExpressionPreview expressions)
     {
         _animation = animation;
         _journal = journal;
         _scene = scene;
+        _expressions = expressions;
+    }
+
+    public AnimationResult SetAdvanced(ActorId actor, bool enabled)
+    {
+        if (!Alive(actor)) return AnimationResult.Fail("The actor is no longer available.");
+        if (_animation.IsAdvanced(actor) == enabled) return AnimationResult.Ok();
+        if (!enabled)
+        {
+            var expression = _expressions.Reset(actor);
+            if (!expression.Success) return expression;
+            var reset = ResetLayers(actor);
+            if (!reset.Success) return reset;
+        }
+        // Entering only exposes the existing layers. Leaving keeps the prior
+        // non-atomic restore policy, and publishes Basic only after success.
+        _animation.SetAdvanced(actor, enabled);
+        return AnimationResult.Ok();
     }
 
     private bool Alive(ActorId actor) => _scene.Snapshot.FindActor(actor) is not null;

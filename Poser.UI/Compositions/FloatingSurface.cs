@@ -64,9 +64,12 @@ public static partial class Crystarium
                 id: id);
         internal static void OpenPopup(string id)
         {
-            Interactive.ClaimExclusive(id);
+            Interactive.ClaimExclusive(PopupOwner(id));
             ImGui.OpenPopup(id);
         }
+        // ImGui scopes popup IDs to the caller's window/ID stack. The input
+        // owner must use that same identity, not a label shared by other hosts.
+        private static string PopupOwner(string id) => $"popup:{ImGui.GetID(id):X8}";
         internal static bool SyncExclusive(string id)
         {
             Interactive.TouchExclusive(id);
@@ -89,6 +92,7 @@ public static partial class Crystarium
             in FloatingSurfaceProps props,
             Action body)
         {
+            string ownerId = PopupOwner(id);
             float scale = ImGuiHelpers.GlobalScale;
             var size = new Vector2(props.Width, props.Height) * scale;
             var position = PlaceAnchored(
@@ -119,7 +123,7 @@ public static partial class Crystarium
             {
                 if (open)
                 {
-                    bool owns = SyncExclusive(id);
+                    bool owns = SyncExclusive(ownerId);
                     var min = ImGui.GetWindowPos();
                     var max = min + ImGui.GetWindowSize();
                     if (!owns)
@@ -129,7 +133,7 @@ public static partial class Crystarium
                     else
                     {
                         var owner = Interactive.BeginOwner(
-                            id, InteractionLayer.Popup, min, max);
+                            ownerId, InteractionLayer.Popup, min, max);
                         try
                         {
                             if (props.Treatment == FloatingSurfaceTreatment.Glass)
@@ -151,7 +155,7 @@ public static partial class Crystarium
             {
                 if (open)
                     ImGui.EndPopup();
-                ReleaseWhenClosed(id, ImGui.IsPopupOpen(id));
+                ReleaseWhenClosed(ownerId, ImGui.IsPopupOpen(id));
                 ImGui.PopStyleColor();
                 ImGui.PopStyleVar(3);
             }

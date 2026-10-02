@@ -23,6 +23,13 @@ public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
+    private readonly HashSet<ActorId> _advancedActors = new();
+    public bool IsAdvanced(ActorId actor) => _advancedActors.Contains(actor);
+    internal void SetAdvanced(ActorId actor, bool enabled)
+    {
+        if (enabled) _advancedActors.Add(actor);
+        else _advancedActors.Remove(actor);
+    }
     /// <summary>Tracks the scene physics hold.</summary>
     private bool _sceneOwnsPhysics;
 
@@ -1226,6 +1233,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// user chose — resuming is a separate, deliberate act.
     /// </summary>
     private sealed record ScrubGesture(
+        Guid Owner,
         ActorId Actor,
         ScrubControlId Control,
         float Duration,
@@ -1243,10 +1251,10 @@ public sealed class AnimationSession : IAnimationPlayback
     /// the control is not present, so a scrub never starts against
     /// geometry that is already gone.
     /// </summary>
-    public AnimationResult BeginScrub(ActorId actor, ScrubControlId control) =>
-        BeginScrubCore(actor, control);
+    public AnimationResult BeginScrub(ActorId actor, ScrubControlId control, Guid owner) =>
+        BeginScrubCore(actor, control, owner);
 
-    private AnimationResult BeginScrubCore(ActorId actor, ScrubControlId control)
+    private AnimationResult BeginScrubCore(ActorId actor, ScrubControlId control, Guid owner)
     {
         var controls = _port.EnumerateControls(actor, out var token);
         ScrubControlReading? target = null;
@@ -1256,10 +1264,6 @@ public sealed class AnimationSession : IAnimationPlayback
         if (target == null)
             return AnimationResult.Fail("That animation control is no longer present.");
 
-        // A scrub never retargets to a different actor.
-        if (_scrub is { } existing && !existing.Actor.Equals(actor))
-            EndScrub();
-
         bool wasPaused = IsPaused(actor);
         if (!wasPaused)
         {
@@ -1268,7 +1272,7 @@ public sealed class AnimationSession : IAnimationPlayback
                 return freeze;
         }
 
-        _scrub = new ScrubGesture(actor, control, target.Duration, token, wasPaused);
+        _scrub = new ScrubGesture(owner, actor, control, target.Duration, token, wasPaused);
         return AnimationResult.Ok();
     }
 
@@ -1276,13 +1280,15 @@ public sealed class AnimationSession : IAnimationPlayback
     /// Writes a frame clamped to the duration captured at Begin. Actor and
     /// skeleton mismatches end the drag instead of retargeting the write.
     /// </summary>
-    public AnimationResult UpdateScrub(ActorId actor, float time) =>
-        UpdateScrubCore(actor, time);
+    public AnimationResult UpdateScrub(ActorId actor, float time, Guid owner) =>
+        UpdateScrubCore(actor, time, owner);
 
-    private AnimationResult UpdateScrubCore(ActorId actor, float time)
+    private AnimationResult UpdateScrubCore(ActorId actor, float time, Guid owner)
     {
         if (_scrub is not { } gesture)
             return AnimationResult.Fail("No scrub is active.");
+        if (gesture.Owner != owner)
+            return AnimationResult.Fail("The scrub in flight belongs to another control.");
         if (!gesture.Actor.Equals(actor))
             return AnimationResult.Fail(
                 "The scrub in flight belongs to a different actor.");
@@ -1302,9 +1308,9 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Ends the drag, leaving the actor paused on the released
     /// frame. That pause is an ordinary speed override, so Resume
     /// continues from exactly there.</summary>
-    public void EndScrub()
+    public void EndScrub(Guid owner)
     {
-        if (_scrub == null)
+        if (_scrub?.Owner != owner)
             return;
         _scrub = null;
     }
@@ -1700,6 +1706,8 @@ public sealed class AnimationSession : IAnimationPlayback
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
+        _advancedActors.RemoveWhere(actor => !present.Contains(actor));
+        if (_scrub is { } scrub && !present.Contains(scrub.Actor)) _scrub = null;
         // Physics is deliberately absent here: the freeze is held by the
         // scene, which cannot depart, so no actor leaving can retire it.
         var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();

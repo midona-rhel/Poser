@@ -616,11 +616,12 @@ public sealed partial class DebugBridge : IDisposable
                 var control = _animation.FindSlotControl(id, Slot());
                 if (control == null)
                     return Json(new { ok = false, error = "no live control on that slot" });
-                var begun = _animation.BeginScrub(id, control.Id);
+                var scrubOwner = Guid.NewGuid();
+                var begun = _animation.BeginScrub(id, control.Id, scrubOwner);
                 if (!begun.Success)
                     return Json(new { ok = false, step = "begin", begun.Detail });
-                var moved = _animation.UpdateScrub(id, time);
-                _animation.EndScrub();
+                var moved = _animation.UpdateScrub(id, time, scrubOwner);
+                _animation.EndScrub(scrubOwner);
                 return Json(new { ok = moved.Success, moved.Detail, state = State(id, actor) });
             }
             case "/loop":

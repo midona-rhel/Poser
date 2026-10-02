@@ -50,7 +50,7 @@ public static class BoneMatrixBuilder
     public static BoneMatrixViewModel Build(
         bool showNsfw,
         SkeletonDescriptor skeleton,
-        SelectionSession selection,
+        SelectionScope selection,
         Action<SelectionId, bool, bool> onBone,
         Action<IReadOnlyList<SelectionId>, bool> onGroup,
         string? filter = null)
@@ -111,7 +111,7 @@ public static class BoneMatrixBuilder
     private static BoneMatrixPill MakePill(
         BoneDescriptor bone,
         string label,
-        SelectionSession selection)
+        SelectionScope selection)
     {
         var id = SelectionId.ForBone(bone.Id);
         return new BoneMatrixPill
@@ -125,7 +125,7 @@ public static class BoneMatrixBuilder
     private static void AppendGenerated(
         BoneMatrixViewModel vm,
         SkeletonDescriptor skeleton,
-        SelectionSession selection,
+        SelectionScope selection,
         HashSet<(string BoneName, int PartialId)> covered, bool showNsfw)
     {
         // cluster: (category, subcategory, base name) → pills
@@ -229,7 +229,7 @@ public static class BoneMatrixBuilder
 
     /// <summary>Refreshes only the Selected flags from the selection session
     /// (cheap per-frame sync).</summary>
-    public static void SyncSelection(BoneMatrixViewModel vm, SelectionSession selection)
+    public static void SyncSelection(BoneMatrixViewModel vm, SelectionScope selection)
     {
         foreach (var section in vm.Sections)
             foreach (var row in section.Rows)

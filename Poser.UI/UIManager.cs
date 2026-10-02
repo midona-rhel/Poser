@@ -120,6 +120,7 @@ public sealed class UIManager : IUIManager
             // Reference images are the session's; they go with it whether
             // or not the windows do.
             _windows.CloseReferenceImages();
+            _windows.CloseProperties();
             if (config.CloseWithGPose)
                 _windows.CloseAll();
         }
@@ -128,6 +129,7 @@ public sealed class UIManager : IUIManager
     private void DrawUI()
     {
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
         if (!Crystarium.AdvanceTheme())
             return;
 

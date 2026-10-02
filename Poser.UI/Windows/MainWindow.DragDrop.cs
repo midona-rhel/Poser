@@ -24,6 +24,8 @@ namespace Poser.UI;
 /// <summary>Drag and drop between rows and groups, and the tree collapse state.</summary>
 public partial class MainWindow
 {
+    private int _multiTitleCount;
+    private string _multiTitle = string.Empty;
     /// <summary>A tree drag released. The root list is the USER'S order —
     /// any entity or group head re-seats at the caret, kinds interleaved.
     /// Group structure rides the same gesture: INTO a head joins, beside a

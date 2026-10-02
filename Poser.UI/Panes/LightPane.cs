@@ -1,4 +1,5 @@
-﻿using Poser.Domain.Transforms;
+using Poser.Application.Selection;
+using Poser.Domain.Transforms;
 using System;
 using Poser.Application.Viewport;
 using System.Collections.Generic;
@@ -23,6 +24,7 @@ public sealed class LightPane
 {
     public Action? RequestDestroyAll { get; set; }
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly ISceneCreation _creation;
 
     private readonly EntityActions _entityActions;
@@ -92,6 +94,7 @@ public sealed class LightPane
 
     public LightPane(
         SceneSession scene,
+        PropertiesContext properties,
         ISceneCreation creation,
         IPendingSceneCreation pendingCreation,
         EntityActions entityActions,
@@ -111,6 +114,7 @@ public sealed class LightPane
         _names = names;
         _notices = notices;
         _scene = scene;
+        _selection = properties.Selection;
         _creation = creation;
         _pendingCreation = pendingCreation;
         _scenePane = scenePane;
@@ -654,7 +658,7 @@ public sealed class LightPane
     /// selection is absent, stale, or already destroyed.</summary>
     private (LightId Id, LightReading? Light) TargetLight()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.Light, Light: { } lightId })
             return (default, null);
         return (lightId, _values.Read(lightId));

@@ -1,4 +1,5 @@
-﻿using System;
+using Poser.Application.Selection;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -26,6 +27,7 @@ public sealed class CameraPane
     private const float Deg2Rad = MathF.PI / 180f;
 
     private readonly SceneSession _scene;
+    private readonly SelectionScope _selection;
     private readonly ICameraTargetControl _targets;
 
     private readonly EntityActions _entityActions;
@@ -72,6 +74,7 @@ public sealed class CameraPane
     public CameraPane(
         global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
+        PropertiesContext properties,
         ICameraTargetControl targets,
         EntityActions entityActions,
         ICameraFiles cameraFiles,
@@ -88,6 +91,7 @@ public sealed class CameraPane
         _pendingCreation = pendingCreation;
         _names = names;
         _scene = scene;
+        _selection = properties.Selection;
         _scenePane = scenePane;
         _targets = targets;
         _entityActions = entityActions;
@@ -130,7 +134,7 @@ public sealed class CameraPane
     /// <summary>Resets the exact selected camera from the inspector rail.</summary>
     public void ResetSelectedCameraTransform()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
             return;
         ResetCameraTransform(cameraId);
@@ -486,7 +490,7 @@ public sealed class CameraPane
                     row.CenterControl(controlHeight).Y));
                 Crystarium.Button(
                     "Recenter",
-                    () => ReportTarget(_targets.Recenter(cameraId, _scene.Selection.Primary)),
+                    () => ReportTarget(_targets.Recenter(cameraId, _selection.Primary)),
                     style: buttonStyle,
                     disabled: locked,
                     help: "Center the followed actor",
@@ -744,7 +748,7 @@ public sealed class CameraPane
 
     private (CameraId Id, CameraReading? Camera) TargetCamera()
     {
-        if (_scene.Selection.Primary is not
+        if (_selection.Primary is not
             { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
             return (default, null);
         return (cameraId, _values.Read(cameraId));

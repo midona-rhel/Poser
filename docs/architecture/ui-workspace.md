@@ -39,6 +39,21 @@ Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
 selection, not the target it last displayed.
 
+Properties pop-outs pin their displayed entity, not a private selection cursor.
+Bone and gaze selections pin their owning actor. Bone clicks, clear,
+range selection and highlights use the global workspace selection in every host.
+An actor pin edits that actor's currently selected bones, but never follows
+selection to another actor. Each host owns tabs, searches, scroll, drafts,
+picker identities and gestures; commands and history remain application-owned.
+A pinned group supplies the same complete membership to transform readings,
+frame lookup and edit admission. The active workspace group cannot substitute
+its baseline or members; locks and stale-member refusal still apply.
+A pin keeps its logical target through removal and rebinds only through the
+scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
+Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
+are discarded on GPose exit or plugin disposal. Closing a host releases only its
+own gesture and preview claim; submitted application operations continue.
+
 Creation receipts, deferred pose application and group duplication progress on
 framework updates under Application ownership. Closing their initiating window
 neither cancels nor retargets them; session exit invalidates pending receipts.
@@ -57,9 +72,10 @@ Opening Settings normally starts at General, scrolled to the top, with no search
 Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
 open their named category at the top.
 
-Form section headers start expanded. Their disclosure preferences persist in
-configuration under stable page/section keys, independent of actors, entity ids,
-and attached/detached hosts. Reopening a window or restarting does not reset them.
+Form section headers default to expanded. Disclosure preferences persist under
+stable page/section keys. Properties hosts snapshot those defaults when created;
+each then keeps its own disclosure state across actor changes. Toggling one
+host updates the saved default for future hosts, never another open window.
 Settings categories have separate keys even when section titles match. Search
 temporarily reveals matching content without changing saved disclosure.
 Inspector rail headers use this same contract, including IK, Gaze, Expression,
@@ -195,6 +211,8 @@ controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.
+Popup input ownership uses the caller's ImGui-scoped identity, so identical
+controls in different windows cannot release or take each other's popup claim.
 
 Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
 the game or claim full-screen/exclusive input; only their visible bounds

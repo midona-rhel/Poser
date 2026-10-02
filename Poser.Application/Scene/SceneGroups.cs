@@ -520,6 +520,14 @@ public sealed class SceneGroups
         return null;
     }
 
+    /// <summary>Read a selection's group without changing the workspace's active group.</summary>
+    public SceneGroup? MatchingSelection(IReadOnlyList<SelectionId> selected)
+    {
+        if (ActiveGroupId is { } id && Find(id) is { } active && SelectionEquals(active, selected))
+            return active;
+        return All.FirstOrDefault(group => SelectionEquals(group, selected));
+    }
+
     private bool SelectionEquals(
         SceneGroup group, IReadOnlyList<SelectionId> selected)
     {

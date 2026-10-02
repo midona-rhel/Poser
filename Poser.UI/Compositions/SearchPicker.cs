@@ -122,7 +122,7 @@ public static partial class Crystarium
 
         public SearchPicker(string id)
         {
-            _popupId = $"##search-picker-{id}";
+            _popupId = $"##search-picker-{id}-{Guid.NewGuid():N}";
             _filterId = $"{_popupId}-filter";
             _listId = $"{_popupId}-list";
             _body = DrawBody;

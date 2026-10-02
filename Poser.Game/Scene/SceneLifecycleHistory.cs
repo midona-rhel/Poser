@@ -873,10 +873,11 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     internal Poser.Application.Scene.SceneGroup SpawnOverlayGroup(string name,
         IReadOnlyList<OverlayNodeState> states, Poser.Application.Scene.SceneGroups groups,
+        Poser.Application.Scene.GroupSteps groupSteps,
         Func<object, Poser.Domain.Identity.SelectionId?> selection,
         Action<Poser.Domain.Identity.SelectionId, int>? initialize = null)
     {
-        var before = groups.Capture();
+        var before = groupSteps.Capture();
         var slots = new List<OverlaySlot>();
         Poser.Domain.Identity.SelectionId[] Members() => slots.Select(s => selection(_overlayOwner.CurrentInstance(s)!)
             ?? throw new InvalidOperationException("A collider has not joined the scene.")).ToArray();
@@ -894,28 +895,24 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         catch
         {
             RemoveOverlays(slots);
-            groups.Restore(before);
+            groupSteps.Restore(before);
             throw;
         }
-        var after = groups.Capture();
-        var oldMembers = Members();
+        var after = groupSteps.CaptureFinalMembership();
         _history.Append(new SceneLifecyclePatch("Create body colliders",
             () =>
             {
-                after = groups.Capture();
-                oldMembers = Members();
+                after = groupSteps.Capture();
                 bool removed = RemoveOverlays(slots);
-                groups.Restore(before);
+                groupSteps.Restore(before);
                 return removed;
             },
             () =>
             {
                 if (!RestoreOverlays(slots)) return false;
-                var members = Members();
-                var remap = oldMembers.Select((id, i) => (id, current: members[i])).ToDictionary(x => x.id, x => x.current);
-                groups.Restore(after);
-                groups.RemapTransformMembers(target => remap.TryGetValue(target.ToSelectionId(), out var current)
-                    ? Poser.Application.Transforms.GroupTransformCoordinator.Target(current) : target);
+                // Lifecycle owners publish replacement identities before the shared
+                // group restore remaps both membership and the retained creation frame.
+                groupSteps.Restore(after);
                 return true;
             }));
         return group;

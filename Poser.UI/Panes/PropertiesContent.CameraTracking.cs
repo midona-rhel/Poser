@@ -23,7 +23,7 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>The camera tracking picker: tracked actors and bones, and the bone choice list.</summary>
-public partial class MainWindow
+public sealed partial class PropertiesContent
 {
     /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
     private void DrawCameraTrackingActors(
@@ -100,7 +100,7 @@ public partial class MainWindow
             currentActor?.Id == actorId &&
             _scene.Snapshot.FindActor(actorId) is { } actor)
         {
-            _cameraBoneChoices = _sidebar.BuildBoneChoices(actor);
+            _cameraBoneChoices = BuildBoneChoices(actor);
             _cameraTrackingBonePicker.UpdateItems(_cameraBoneChoices);
             _cameraTrackingBonePicker.UpdateSelection(
                 TrackedBoneKeys(camera, actorId));
@@ -124,7 +124,7 @@ public partial class MainWindow
             return;
         _cameraBonePickerCamera = cameraId;
         _cameraBonePickerActor = actorId;
-        _cameraBoneChoices = _sidebar.BuildBoneChoices(actor);
+        _cameraBoneChoices = BuildBoneChoices(actor);
         var options = new PickerOptions<global::Poser.UI.BoneChoice>
         {
             Query = CameraBoneSearch,

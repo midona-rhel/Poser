@@ -9,6 +9,21 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class PosePreviewControllerTests
 {
     [Fact]
+    public void Closing_replaced_surface_does_not_close_current_preview()
+    {
+        var runtime = new Runtime();
+        var first = new PosePreviewController(runtime, new Capture());
+        var second = new PosePreviewController(runtime, new Capture());
+        var actor = ActorId.New();
+        first.Begin(ActorId.New(), "first.pose", new(), 0);
+        second.Begin(actor, "second.pose", new(), 1);
+        first.Close();
+        Assert.Equal(actor, runtime.Source);
+        second.Close();
+        Assert.Null(runtime.Source);
+    }
+
+    [Fact]
     public void FileWaitsForAuthoredBaselineAndRebasesBeforeApplying()
     {
         var runtime = new Runtime();
