@@ -39,12 +39,14 @@ Changing selection retargets both panels; collapsing, hiding or switching tabs
 in one must not stop the other from updating. Reopening a panel reads the current
 selection, not the target it last displayed.
 
-Properties pop-outs reuse the same content presenter with a private, explicit
-selection context; they never redirect the workspace selection. Each host owns
-tabs, scroll, drafts, picker identities and gestures, while commands and history
-remain application-owned. A pin keeps its logical target through removal and
-rebinds only through the scene's identity rules; a missing bone never falls back
-to its actor. Missing targets cannot dispatch edits or silently follow selection.
+Properties pop-outs pin their displayed entity, not a private selection cursor.
+Bone and gaze selections pin their owning actor. Bone clicks, clear,
+range selection and highlights use the global workspace selection in every host.
+An actor pin edits that actor's currently selected bones, but never follows
+selection to another actor. Each host owns tabs, searches, scroll, drafts,
+picker identities and gestures; commands and history remain application-owned.
+A pin keeps its logical target through removal and rebinds only through the
+scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
 Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
 are discarded on GPose exit or plugin disposal. Closing a host releases only its
 own gesture and preview claim; submitted application operations continue.

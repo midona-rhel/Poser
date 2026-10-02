@@ -400,7 +400,7 @@ public sealed partial class PropertiesContent
                                     name, groupTargets)));
                     }
                     actions.Button("Move to camera", MoveSelectionToCamera);
-                    actions.Button("Deselect", () => _selection.Clear());
+                    actions.Button("Deselect", () => Context.WorkspaceSelection.Clear());
                 });
             }, divider: false);
         });

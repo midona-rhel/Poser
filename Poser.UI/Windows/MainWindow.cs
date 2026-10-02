@@ -299,7 +299,6 @@ public partial class MainWindow : Window
     {
         content.BuildBoneChoices = _sidebar.BuildBoneChoices;
         content.ConfigureNavigation(ShowLibrary);
-        content.Context.Selection.CompanionResolver = ResolveSiblingBone;
     }
     public event Action? OnSkeletonSettingsRequested;
     public event Action? OnLibrarySettingsRequested;

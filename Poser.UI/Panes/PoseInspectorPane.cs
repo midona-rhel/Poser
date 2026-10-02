@@ -41,6 +41,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly IGazeControl _gazeValues;
     private readonly IEditorState _editorState;
     private readonly SelectionScope _selection;
+    private readonly SelectionScope _workspaceSelection;
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
@@ -222,6 +223,7 @@ public partial class PoseInspectorPane : IDisposable
         _cameraPane = cameraPane;
         _overlayPane = overlayPane;
         _selection = properties.Selection;
+        _workspaceSelection = properties.WorkspaceSelection;
         _scene = scene;
         _viewport = viewport;
         _expressionSection = expressionSection;
@@ -588,7 +590,7 @@ public partial class PoseInspectorPane : IDisposable
         else _cleanTransforms.Cancel(gestureId);
     }
 
-    public void GroupDeselect() => _selection.Clear();
+    public void GroupDeselect() => _workspaceSelection.Clear();
 
     private struct SectionStack
     {
@@ -1108,9 +1110,7 @@ public partial class PoseInspectorPane : IDisposable
             "Search",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Region(MathF.Min(
-                    theme.Matrix.FilterWidth,
-                    (max.X - min.X) / s)),
+                Width = UiWidth.Region((max.X - min.X) / s),
             });
 
         // The fixed filter header closes with a separator, so what stays
@@ -1139,23 +1139,23 @@ public partial class PoseInspectorPane : IDisposable
             _matrixVm = BoneMatrixBuilder.Build(
                 _configuration.Config.Display.ShowNsfwBones,
                 matrixSkeleton,
-                _selection,
+                _workspaceSelection,
                 (id, additive, range) =>
                 {
-                    if (range && _selection.Anchor is { } anchor)
+                    if (range && _workspaceSelection.Anchor is { } anchor)
                     {
-                        _selection.SelectRange(
+                        _workspaceSelection.SelectRange(
                             anchor,
                             id,
                             BoneMatrixBuilder.EnumerateSelectionIds(_matrixVm!));
                     }
                     else if (additive)
                     {
-                        _selection.Toggle(id);
+                        _workspaceSelection.Toggle(id);
                     }
                     else
                     {
-                        _selection.Select(id);
+                        _workspaceSelection.Select(id);
                     }
                 },
                 (ids, additive) =>
@@ -1163,16 +1163,16 @@ public partial class PoseInspectorPane : IDisposable
                     if (ids.Count == 0)
                         return;
                     if (!additive)
-                        _selection.Select(ids[0]);
+                        _workspaceSelection.Select(ids[0]);
                     foreach (var id in ids.Skip(additive ? 0 : 1))
-                        _selection.Add(id);
+                        _workspaceSelection.Add(id);
                 },
                 _matrixFilter);
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
         }
         using (FrameProfiler.Scope("Matrix · selection sync"))
-            BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
+            BoneMatrixBuilder.SyncSelection(_matrixVm, _workspaceSelection);
         InsetScrollSurface(
             "##pose-matrix-scroll", viewMin, viewMax, s,
             (contentOrigin, contentWidth) =>
@@ -1238,7 +1238,7 @@ public partial class PoseInspectorPane : IDisposable
                 // the parenting flags.
                 bar.Button(
                     "Clear selection",
-                    _selection.Clear,
+                    _workspaceSelection.Clear,
                     "Deselect everything");
             },
             separator: ActionBarSeparator.None);
@@ -1351,7 +1351,7 @@ public partial class PoseInspectorPane : IDisposable
         float scalePx =
             canvasSize.Y * camera.ProjectionScale * _orbitZoom;
         var mid = (min + max) * 0.5f + _orbitPan;
-        var selectedIds = _selection.Selected.ToHashSet();
+        var selectedIds = _workspaceSelection.Selected.ToHashSet();
 
         Vector2 Project(Vector3 p)
         {
@@ -1395,9 +1395,9 @@ public partial class PoseInspectorPane : IDisposable
             }
             var hoveredId = SelectionId.ForBone(hovered.Id);
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.GetIO().KeyCtrl)
-                _selection.Select(hoveredId);
+                _workspaceSelection.Select(hoveredId);
             else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                _selection.Toggle(hoveredId);
+                _workspaceSelection.Toggle(hoveredId);
         }
         Crystarium.TextAt(min + new Vector2( Crystarium.ActiveTheme.Page.Inset, canvasSize.Y / s - Crystarium.ActiveTheme.Page.Inset - Crystarium.ActiveTheme.Typography.CaptionSize) * s, "left drag: orbit · middle drag: pan · wheel: zoom · click: select", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.FormHint });
         dl.PopClipRect();
@@ -1704,12 +1704,12 @@ public partial class PoseInspectorPane : IDisposable
             if (previous == current)
                 return;
             if (current == GazeTargetMode.Position)
-                _selection.Select(SelectionId.ForGazeTarget(actor));
+                _workspaceSelection.Select(SelectionId.ForGazeTarget(actor));
             else if (previous == GazeTargetMode.Position &&
-                     _selection.Primary is
+                     _workspaceSelection.Primary is
                          { Kind: SceneEntityKind.GazeTarget } stranded &&
                      stranded.ActorLineage == actor.LogicalId)
-                _selection.Select(SelectionId.ForActor(actor));
+                _workspaceSelection.Select(SelectionId.ForActor(actor));
         }
 
         (string[] Items, int Selected) TargetItems()
@@ -1867,7 +1867,7 @@ public partial class PoseInspectorPane : IDisposable
                 TablerIcon.GazePoint,
                 () =>
                 {
-                    _selection.Select(SelectionId.ForGazeTarget(actor, part switch
+                    _workspaceSelection.Select(SelectionId.ForGazeTarget(actor, part switch
                     {
                         GazeTargetType.Eyes => GazePart.Eyes,
                         GazeTargetType.Head => GazePart.Head,
@@ -2863,7 +2863,7 @@ public partial class PoseInspectorPane : IDisposable
                          : null)
                 {
                     if (!selectedSet.Contains(parentId)) continue;
-                    _selection.Add(SelectionId.ForBone(candidate.Id));
+                    _workspaceSelection.Add(SelectionId.ForBone(candidate.Id));
                     break;
                 }
             }

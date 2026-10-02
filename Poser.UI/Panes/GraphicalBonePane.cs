@@ -30,6 +30,7 @@ public sealed class GraphicalBonePane : IDisposable
     private const float HitRadius = 18f;
 
     private readonly SelectionScope _selection;
+    private readonly SelectionScope _targets;
     private readonly SceneSession _scene;
 
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
@@ -113,7 +114,8 @@ public sealed class GraphicalBonePane : IDisposable
         _editorState = editorState;
         _bonePosing = bonePosing;
         _scene = scene;
-        _selection = properties.Selection;
+        _selection = properties.WorkspaceSelection;
+        _targets = properties.Selection;
         _textureProvider = textureProvider;
         _customizeRead = customizeRead;
 
@@ -171,8 +173,7 @@ public sealed class GraphicalBonePane : IDisposable
             "Search",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Region(MathF.Min(
-                    theme.Matrix.FilterWidth, contentArea.X / scale)),
+                Width = UiWidth.Region(contentArea.X / scale),
             });
         float ruleY = bandOrigin.Y
             + theme.Controls.WorkspaceHeight * scale
@@ -762,7 +763,7 @@ public sealed class GraphicalBonePane : IDisposable
 
     private ActorDescriptor? GetSelectedActor()
     {
-        if (_selection.PrimaryActor is not { } id)
+        if (_targets.PrimaryActor is not { } id)
             return _scene.Snapshot.Actors.FirstOrDefault();
         var actor = _scene.Snapshot.FindActor(id);
         // Maps are Character-only. Auxiliary bones with the same name must

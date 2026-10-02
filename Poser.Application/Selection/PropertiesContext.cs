@@ -4,12 +4,15 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Selection;
 
-/// <summary>An explicit editor target. Pinned editors share commands and scene reads,
-/// not the workspace's selection cursor.</summary>
+/// <summary>A pinned subject with shared workspace selection, or a live editor.</summary>
 public sealed class PropertiesContext : IDisposable
 {
     private readonly SceneSession _scene;
+    private readonly SelectionScope? _targets;
+    /// <summary>Effective command targets: the pinned subject, or its globally selected bones.</summary>
     public SelectionScope Selection { get; }
+    /// <summary>The only cursor for selection actions and viewport highlights.</summary>
+    public SelectionScope WorkspaceSelection => _scene.Selection.Live;
     public bool IsPinned { get; }
 
     public PropertiesContext(SceneSession scene)
@@ -23,21 +26,40 @@ public sealed class PropertiesContext : IDisposable
         _scene = scene;
         IsPinned = true;
         Selection = new SelectionScope(() => { });
+        _targets = new SelectionScope(() => { });
         foreach (var target in targets)
-            Selection.Add(target);
+            _targets.Add(target.OwningActor is { } actor ? SelectionId.ForActor(actor) : target);
+        RefreshSelection(WorkspaceSelection.Selected);
         _scene.SceneChanged += Refresh;
+        _scene.Selection.SelectionChanged += RefreshSelection;
     }
 
-    public PropertiesContext Pin() => new(_scene, Selection.Selected.ToArray());
+    public PropertiesContext Pin() => new(_scene, (_targets ?? Selection).Selected.ToArray());
 
-    public bool IsAvailable => Selection.Selected.Count > 0 &&
-        Selection.Selected.All(id => Resolve(id) == id);
+    public bool IsAvailable => (_targets ?? Selection).Selected.Count > 0 &&
+        (_targets ?? Selection).Selected.All(id => Resolve(id) == id);
 
     private void Refresh(SceneSnapshot snapshot)
     {
         // Keep a missing logical target, rather than replacing it with another
         // selected object. Undo may publish a new generation of the same target.
-        Selection.Reconcile(id => Resolve(id) ?? id);
+        _targets!.Reconcile(id => Resolve(id) ?? id);
+        RefreshSelection(WorkspaceSelection.Selected);
+    }
+
+    private void RefreshSelection(IReadOnlyList<SelectionId> selected)
+    {
+        var targets = _targets!.Selected;
+        // Pin the actor, not a second bone cursor. Another actor's selection
+        // must never retarget this editor or leak into its commands.
+        var next = targets.Count == 1 && targets[0].Actor is { } actor &&
+            selected.Count > 0 && selected.All(id => id.OwningActor == actor)
+                ? selected : targets;
+        if (Selection.Selected.SequenceEqual(next))
+            return;
+        Selection.Clear();
+        foreach (var id in next)
+            Selection.Add(id);
     }
 
     private SelectionId? Resolve(SelectionId id) =>
@@ -48,6 +70,9 @@ public sealed class PropertiesContext : IDisposable
     public void Dispose()
     {
         if (IsPinned)
+        {
             _scene.SceneChanged -= Refresh;
+            _scene.Selection.SelectionChanged -= RefreshSelection;
+        }
     }
 }
