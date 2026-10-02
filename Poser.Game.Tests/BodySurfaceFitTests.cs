@@ -62,33 +62,38 @@ public class BodySurfaceFitTests
     }
 
     [Theory]
-    [InlineData(.6f)]
-    [InlineData(1f)]
-    [InlineData(2.4f)]
-    public void ActorRotationAndUniformScalingDoNotChangeProportions(float scale)
+    [InlineData(.6f, false)]
+    [InlineData(1f, false)]
+    [InlineData(2.4f, false)]
+    [InlineData(.6f, true)]
+    [InlineData(1f, true)]
+    [InlineData(2.4f, true)]
+    public void ActorRotationAndUniformScalingDoNotChangeProportions(float scale, bool freeAxis)
     {
         var mesh = new Mesh();
         mesh.Add(Capsule(new(.12f, .5f, -.04f), .2f, .7f), []);
         var surface = mesh.Surface();
-        var baseline = BodySurfaceFit.Fit(surface, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, false);
+        var baseline = BodySurfaceFit.Fit(surface, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, freeAxis);
         var rotation = Quaternion.CreateFromYawPitchRoll(.93f, -.74f, 1.4f);
         var translation = new Vector3(6, -2, 1);
         var moved = surface.Select(p => new BodySurfaceFit.Sample(translation + Vector3.Transform(p.Position * scale, rotation), p.Area * scale * scale)).ToArray();
-        var fit = BodySurfaceFit.Fit(moved, translation, rotation, Vector3.Transform(Vector3.UnitY, rotation), false, false);
+        var fit = BodySurfaceFit.Fit(moved, translation, rotation, Vector3.Transform(Vector3.UnitY, rotation), false, freeAxis);
         Assert.InRange(Vector3.Distance(fit.Transform.Position, translation + Vector3.Transform(baseline.Transform.Position * scale, rotation)), 0, .003f * scale);
         Assert.InRange(MathF.Abs(fit.RoundDimensions().Radius - baseline.RoundDimensions().Radius * scale), 0, .003f * scale);
         Assert.InRange(MathF.Abs(fit.RoundDimensions().Stem - baseline.RoundDimensions().Stem * scale), 0, .003f * scale);
     }
 
-    [Fact]
-    public void NonuniformFinalBoneScaleIsMeasuredOnceAndLocalAttachmentDoesNotApplyItAgain()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NonuniformFinalBoneScaleIsMeasuredOnceAndLocalAttachmentDoesNotApplyItAgain(bool freeAxis)
     {
         var mesh = new Mesh();
         // Final C+ output can include uneven model-space scaling as well as
         // changed joint translations; feed that geometry, not the saved profile.
         var scale = Matrix4x4.CreateScale(1.6f, 1.3f, 1.6f);
         mesh.Add(Capsule(new(.1f, .5f, 0), .2f, .7f), [], scale);
-        var fit = BodySurfaceFit.Fit(mesh.Surface(), Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, false);
+        var fit = BodySurfaceFit.Fit(mesh.Surface(), Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, freeAxis);
         Assert.InRange(fit.RoundDimensions().Radius, .30f, .34f);
         Assert.InRange(fit.Transform.Position.X, .15f, .17f);
         Assert.InRange(fit.Transform.Position.Y, .63f, .67f);
@@ -123,6 +128,29 @@ public class BodySurfaceFitTests
         var fit = BodySurfaceFit.Fit(noisy, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, false);
         Assert.InRange(fit.RoundDimensions().Radius, .19f, .21f);
         Assert.InRange(fit.RoundDimensions().Stem, .67f, .73f);
+    }
+
+    [Fact]
+    public void UnevenSurfaceSupportDoesNotLockTheFitToABiasedPrincipalAxis()
+    {
+        var rotation = Quaternion.CreateFromYawPitchRoll(.4f, .35f, -.5f);
+        var expected = Capsule(new(.1f, .4f, -.08f), .14f, .65f, rotation);
+        var mesh = new Mesh();
+        mesh.Add(expected, []);
+        // A section's skin weights can supply much more of one side near one
+        // end. The covariance direction then differs from the capsule axis.
+        var inverse = Quaternion.Conjugate(rotation);
+        var surface = mesh.Surface().Select(p =>
+        {
+            var local = Vector3.Transform(p.Position - expected.Transform.Position, inverse);
+            return p with { Area = p.Area * (local.X * local.Y > 0 ? 1 : .15f) };
+        }).ToArray();
+        var fit = BodySurfaceFit.Fit(surface, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, true);
+        float alignment = MathF.Abs(Vector3.Dot(Vector3.Transform(Vector3.UnitY, fit.Transform.Rotation),
+            Vector3.Transform(Vector3.UnitY, rotation)));
+        float worst = mesh.Vertices.Max(v => MathF.Abs(BodySurfaceFit.Distance(fit, v)));
+        Assert.True(alignment > .999f, $"Axis alignment: {alignment}; worst surface error: {worst}");
+        Assert.InRange(worst, 0, .012f);
     }
 
     [Fact]

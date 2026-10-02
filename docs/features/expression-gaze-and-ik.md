@@ -133,6 +133,8 @@ All skin influences contribute to anatomical ownership, summing helper-bone
 weights before filtering. Triangle-area-weighted, bounded surface samples fit
 center, radius and stem in the bone's rotation frame, balancing penetration
 against excess clearance rather than using extreme or mean vertex bounds.
+For free-axis sections, covariance/bone directions seed a bounded angular
+refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
 Racial deformation uses the original game resource identity, not a mod's disk filename.
 Hair, ears and skirt chains do not inflate the fit; each recognized tail segment
 has its own bone owner. This is a coarse body approximation, not exact clothing

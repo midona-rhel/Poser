@@ -55,33 +55,15 @@ internal static class BodySurfaceFit
                 : Quantile(points.Select(p => (p - axisCenter - axis * Vector3.Dot(p - axisCenter, axis)).Length()), .7f);
             radius = MathF.Max(radius, extent * .01f);
             var candidate = new Capsule(axisCenter, axis, radius, roundOnly ? 0 : MathF.Max(0, (b - a) * .5f - radius));
-            float cost = Cost(points, candidate, extent);
-            float step = extent * .08f;
-            for (int iteration = 0; iteration < 12; iteration++)
-            {
-                for (int component = 0; component < (roundOnly ? 4 : 5); component++)
-                {
-                    var seed = candidate;
-                    foreach (float sign in new[] { -1f, 1f })
-                    {
-                        var trial = seed;
-                        if (component < 3)
-                        {
-                            var c = seed.Center;
-                            c[component] += step * sign;
-                            trial = trial with { Center = c };
-                        }
-                        else if (component == 3)
-                            trial = trial with { Radius = Math.Clamp(seed.Radius + step * sign, extent * .005f, extent) };
-                        else trial = trial with { HalfStem = Math.Clamp(seed.HalfStem + step * sign, 0, extent) };
-                        float next = Cost(points, trial, extent);
-                        if (next < cost) { cost = next; candidate = trial; }
-                    }
-                }
-                if ((iteration & 1) != 0) step *= .5f;
-            }
+            var (refined, cost) = Refine(points, candidate, extent, roundOnly, false, 12);
+            candidate = refined;
             if (cost < bestCost) { bestCost = cost; best = candidate; }
         }
+        // Covariance and bone axes are only seeds, not the final orientation.
+        // A bounded final search corrects unevenly weighted/open surfaces without
+        // tilting limb drivers or splitting sections into additional shapes.
+        if (freeAxis && !roundOnly)
+            (best, _) = Refine(points, best, extent, false, true, 24);
         bool sphere = roundOnly || best.HalfStem < best.Radius * .08f;
         var worldAxis = Vector3.Transform(best.Axis, frame);
         var cross = Vector3.Cross(Vector3.UnitY, worldAxis);
@@ -96,6 +78,44 @@ internal static class BodySurfaceFit
         };
         if (!result.Transform.IsValid) throw new InvalidDataException("A body section produced an invalid collider.");
         return result;
+    }
+
+    private static (Capsule Fit, float Cost) Refine(Vector3[] points, Capsule candidate,
+        float extent, bool roundOnly, bool rotate, int iterations)
+    {
+        float cost = Cost(points, candidate, extent);
+        float step = extent * (rotate ? .04f : .08f), angle = .12f;
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            for (int component = 0; component < (rotate ? 8 : roundOnly ? 4 : 5); component++)
+            {
+                var seed = candidate;
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    var trial = seed;
+                    if (component < 3)
+                    {
+                        var center = seed.Center;
+                        center[component] += step * sign;
+                        trial = trial with { Center = center };
+                    }
+                    else if (component == 3)
+                        trial = trial with { Radius = Math.Clamp(seed.Radius + step * sign, extent * .005f, extent) };
+                    else if (component == 4)
+                        trial = trial with { HalfStem = Math.Clamp(seed.HalfStem + step * sign, 0, extent) };
+                    else
+                    {
+                        var around = component == 5 ? Vector3.UnitX : component == 6 ? Vector3.UnitY : Vector3.UnitZ;
+                        trial = trial with { Axis = Vector3.Normalize(Vector3.Transform(seed.Axis,
+                            Quaternion.CreateFromAxisAngle(around, angle * sign))) };
+                    }
+                    float next = Cost(points, trial, extent);
+                    if (next < cost) { cost = next; candidate = trial; }
+                }
+            }
+            if ((iteration + 1) % (rotate ? 4 : 2) == 0) { step *= .5f; angle *= .5f; }
+        }
+        return (candidate, cost);
     }
 
     private static float Cost(Vector3[] points, Capsule capsule, float extent)
