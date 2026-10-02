@@ -130,6 +130,9 @@ native scale limits. Every output is validated before the first native write.
 
 Named state is captured after a command's final effective membership is assembled;
 nesting and duplicate assembly include descendants in that same history step.
+Generated collider groups use this same boundary after bone parenting is installed.
+Their lifecycle history retains and remaps both membership and transform metadata;
+Redo preserves the creation frame instead of capturing the current camera again.
 For an existing group, adding/removing/nesting members updates only membership,
 member snapshots and the average world position. Authored rotation, both scale
 factors and the exact creation frame persist; no member moves, rotates or scales

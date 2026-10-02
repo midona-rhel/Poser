@@ -19,7 +19,7 @@ namespace Poser.Game.Posing;
 public sealed class ActorColliderCapture(
     IEntityBindings bindings, IIntegrationRuntimePort integration, IDataManager data,
     Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
-    Application.Transforms.TransformParenting parenting) : Application.Posing.IActorColliderCapture
+    Application.Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
 {
     private sealed record ModelSnapshot(string Path, ushort Race, uint Attributes, uint Shapes);
     private sealed record Snapshot(ModelSnapshot[] Models, Dictionary<string, Matrix4x4> Bones,
@@ -52,7 +52,7 @@ public sealed class ActorColliderCapture(
                         Transform = part.Collider.Transform with { Position = part.Collider.Transform.Position + snapshot.Origin },
                     },
                 }).ToArray();
-                var group = lifecycle.SpawnOverlayGroup(name + " colliders", states, groups,
+                var group = lifecycle.SpawnOverlayGroup(name + " colliders", states, groups, groupSteps,
                     node => bindings.GetOverlayId((IOverlayNode)node) is { } id ? SelectionId.ForOverlay(id) : null,
                     (child, index) =>
                     {

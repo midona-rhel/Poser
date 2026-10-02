@@ -1,5 +1,8 @@
 using System.Numerics;
 using System.Reflection;
+using NSubstitute;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
@@ -26,6 +29,85 @@ namespace Poser.Game.Tests.Scene;
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
+    [Fact]
+    public void Generated_collider_group_seals_final_transforms_and_restores_its_frame_on_redo()
+    {
+        var world = new World();
+        var scene = new SceneSession(new SelectionSession());
+        var groups = new SceneGroups();
+        var state = new GroupTransformState();
+        var source = Substitute.For<IGroupTransformSource>();
+        source.Refusal(Arg.Any<TransformTargetId>()).Returns((string?)null);
+        FakeOverlay? Find(TransformTargetId target) => world.Overlays.Live.Cast<FakeOverlay>()
+            .FirstOrDefault(node => TransformTargetId.ForCollider(node.StableId) == target);
+        source.Read(Arg.Any<TransformTargetId>()).Returns(call => Find((TransformTargetId)call[0])?.State.Collider?.Transform);
+        source.CurrentTarget(Arg.Any<TransformTargetId>()).Returns(call =>
+            Find((TransformTargetId)call[0]) != null ? (TransformTargetId?)call[0] : null);
+        var heading = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
+        source.TryFrame(Arg.Any<Vector3>(), out Arg.Any<GroupTransformFrame>()).Returns(call =>
+        {
+            call[1] = new GroupTransformFrame((Vector3)call[0], heading);
+            return true;
+        });
+        using var coordinator = new GroupTransformCoordinator(scene, groups, state, source);
+        var steps = new GroupSteps(groups, world.History, new ValueJournal(world.History), state, coordinator);
+        void Publish() => scene.Refresh(new SceneSnapshot(1, [], [], [], [],
+            Overlays: world.Overlays.Live.Cast<FakeOverlay>()
+                .Select(node => new OverlayDescriptor(node.StableId, node.Name, node.Kind)).ToArray()));
+        var group = world.Lifecycle.SpawnOverlayGroup("Generated", [
+            new() { Kind = OverlayNodeKind.Collider, Collider = new() },
+            new() { Kind = OverlayNodeKind.Collider, Collider = new() }
+        ], groups, steps, node =>
+        {
+            Publish();
+            return SelectionId.ForOverlay(((FakeOverlay)node).StableId);
+        }, (id, index) =>
+        {
+            var node = Find(GroupTransformCoordinator.Target(id)!.Value)!;
+            node.State = node.State with { Collider = node.State.Collider! with
+                { Transform = PoseTransform.Identity with { Position = new(index * 2, 3, 0) } } };
+        });
+        var initial = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
+        Assert.Equal(new Vector3(1, 3, 0), initial.Controls.Position);
+        Assert.True(MathF.Abs(Quaternion.Dot(heading, initial.Baseline.Frame.Rotation)) > .99999f);
+        Assert.Equal("Create body colliders", world.History.UndoDescription);
+        heading = Quaternion.Identity; // Redo must not capture a new camera frame.
+        for (int i = 0; i < 2; i++)
+        {
+            var members = groups.Find(group.Id)!.Members.ToArray();
+            var targets = members.Select(id => GroupTransformCoordinator.Target(id)!.Value).ToArray();
+            Assert.True(coordinator.Admit(members, targets, GroupScaleMode.SizesAndSpacing, out var named, out var error), error);
+            Assert.Equal(group.Id, named);
+            Assert.True(world.Undo());
+            Assert.Empty(world.Overlays.Live);
+            Assert.Empty(groups.All);
+            Assert.Null(state.NamedSnapshot(group.Id));
+            Assert.False(world.History.CanUndo); // Creation is exactly one step.
+            Assert.True(world.Redo());
+            Publish();
+            var restored = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
+            Assert.Equal(initial.Baseline.Frame, restored.Baseline.Frame);
+            Assert.Equal(initial.Controls, restored.Controls);
+            Assert.All(restored.Expected.Keys, target => Assert.NotNull(Find(target)));
+        }
+    }
+
+    [Fact]
+    public void Failed_collider_parent_initialization_leaves_no_group_or_history()
+    {
+        var world = new World();
+        var groups = new SceneGroups();
+        var steps = new GroupSteps(groups, world.History, new ValueJournal(world.History));
+        Assert.Throws<InvalidOperationException>(() => world.Lifecycle.SpawnOverlayGroup("Failed", [
+            new() { Kind = OverlayNodeKind.Collider, Collider = new() },
+            new() { Kind = OverlayNodeKind.Collider, Collider = new() }
+        ], groups, steps, node => SelectionId.ForOverlay(((FakeOverlay)node).StableId),
+            (_, _) => throw new InvalidOperationException("Parent disappeared")));
+        Assert.Empty(groups.All);
+        Assert.Empty(world.Overlays.Live);
+        Assert.False(world.History.CanUndo);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
