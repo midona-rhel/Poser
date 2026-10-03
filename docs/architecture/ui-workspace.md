@@ -182,6 +182,13 @@ when each label/control track would become too narrow. Paired rows stack at
 their shared minimum width. Fixed-size icons stay fixed within those tracks;
 text-oriented pages retain their existing width policy.
 
+Built-in form labels stay on one line and must fit at the supported minimum
+window size and UI scale. Truncation remains a defensive fallback, not a layout
+strategy; do not introduce word wrapping or taller label rows to hide sizing
+errors. Right-aligned switches leave the intervening space available to their
+labels. Paired rows budget for the page's label-column width before forming
+two tracks, and paired cells share enough label space for both labels.
+
 A sequence of peer controls uses a responsive grid when hardcoded semantic
 row breaks would leave uneven or wasted space. This does not flatten content
 whose pairing or hierarchy carries meaning. The grid preserves source and

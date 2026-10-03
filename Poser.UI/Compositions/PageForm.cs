@@ -388,7 +388,9 @@ public static partial class Crystarium
         internal void BeginPairedRows()
         {
             CloseLine();
-            if (_width / _scale < TwoTrackMinimum)
+            float minimum = TwoTrackMinimum
+                + 2f * MathF.Max(0f, _labelWidth - ActiveTheme.Form.LabelColumnWidth);
+            if (_width / _scale < minimum)
                 return;
             _twoTrack = true;
             _trackWidth =
@@ -402,7 +404,8 @@ public static partial class Crystarium
             _trackWidth = _width;
         }
 
-        internal FormRowScope BeginRow(string label, string? help = null)
+        internal FormRowScope BeginRow(
+            string label, string? help = null, float? trailingControlWidth = null)
         {
             if (Probe != null)
             {
@@ -421,6 +424,11 @@ public static partial class Crystarium
             float top = _origin.Y + _y * _scale;
             bool visible = top <= _clipBottom && top >= _clipTop;
             float column = LabelColumn(label, _trackWidth, _scale, _labelWidth);
+            // A trailing control does not consume the intervening space.
+            // Keep its existing position and let the label use that space.
+            if (trailingControlWidth is { } trailing)
+                column = MathF.Max(0f, _trackWidth
+                    - (trailing + ActiveTheme.Spacing.Three) * _scale);
             var row = new FormRowScope(
                 new(x, top), _trackWidth, _scale, column / _scale,
                 RowHeight, visible)
@@ -707,7 +715,12 @@ public static partial class Crystarium
             ControlStyle style = default)
         {
             string id = Id(label);
-            var row = _page.BeginRow(label, help);
+            float switchHeight = ControlSizing.Height(
+                style.Height, ActiveTheme.Controls.SwitchHeight);
+            float logicalSwitchWidth = ActiveTheme.Controls.SwitchWidth
+                * (switchHeight / ActiveTheme.Controls.SwitchHeight);
+            var row = _page.BeginRow(label, help,
+                trailingControlWidth: logicalSwitchWidth * 2f);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
@@ -715,12 +728,8 @@ public static partial class Crystarium
             }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
-            float switchHeight = ControlSizing.Height(
-                controlStyle.Height, ActiveTheme.Controls.SwitchHeight);
             // Toggles RIGHT-ALIGN in their cell (the standard).
-            float switchWidth = ActiveTheme.Controls.SwitchWidth
-                * (switchHeight / ActiveTheme.Controls.SwitchHeight)
-                * row.Scale;
+            float switchWidth = logicalSwitchWidth * row.Scale;
             // One toggle-width of right MARGIN: the switch sits its own
             // width in from the edge.
             ImGui.SetCursorScreenPos(new Vector2(
@@ -1641,16 +1650,18 @@ public static partial class Crystarium
             // sit pixel-adjacent.
             float cellMargin = ActiveTheme.Spacing.Six * row.Scale;
             float half = (row.Width - cellMargin) * 0.5f;
-            DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
+            float column = MathF.Min(half * FormCellLabelShare,
+                MathF.Max(row.LabelWidth, MathF.Max(
+                    MeasureText(leftLabel, ActiveTheme.Typography.LabelSize, FontWeight.Regular).X,
+                    MeasureText(rightLabel, ActiveTheme.Typography.LabelSize, FontWeight.Regular).X)));
+            DrawHalf(in row, row.Origin.X, half, column, leftLabel, drawLeft);
             DrawHalf(
-                in row, row.Origin.X + half + cellMargin, half,
+                in row, row.Origin.X + half + cellMargin, half, column,
                 rightLabel, drawRight);
             // The pair's help anchors on the LABEL bands, so each cell's
             // control keeps its own hover.
             if (help is not null)
             {
-                float column = LabelColumn(
-                    leftLabel, half, row.Scale, row.LabelWidth / row.Scale);
                 var band = new Vector2(
                     column, ActiveTheme.Controls.FormRowHeight * row.Scale);
                 RegisterHelp(Ids.Join(id, "-left"),
@@ -1727,11 +1738,9 @@ public static partial class Crystarium
         }
 
         private static void DrawHalf(
-            in FormRowScope row, float x, float span, string label,
+            in FormRowScope row, float x, float span, float column, string label,
             Action<FormPairCell> draw)
         {
-            float column = LabelColumn(
-                label, span, row.Scale, row.LabelWidth / row.Scale);
             float margin = ActiveTheme.Spacing.Three * row.Scale;
             if (!string.IsNullOrEmpty(label))
                 FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
@@ -2643,12 +2652,11 @@ public static partial class Crystarium
             TextConstraint.Truncate(width));
     }
 
-    /// <summary>Calculates the scaled label-column width.</summary>
     /// <summary>The label column is FIXED: every label reserves the same
     /// space regardless of its text, so controls align down the page —
-    /// text-measured growth made slider starts wander row to row. A label
-    /// too long for the column truncates; that is a naming problem, not a
-    /// layout one.</summary>
+    /// text-measured growth made slider starts wander row to row. Built-in
+    /// labels must fit at the supported minimum size; truncation remains
+    /// a fallback, not the intended layout.</summary>
     private static float LabelColumn(
         string label, float width, float scale, float baseColumn)
     {
