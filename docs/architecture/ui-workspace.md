@@ -53,6 +53,10 @@ scene's identity rules. Missing targets cannot dispatch edits or silently follow
 Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
 are discarded on GPose exit or plugin disposal. Closing a host releases only its
 own gesture and preview claim; submitted application operations continue.
+New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
+size and cascade by a small offset, wrapping at the viewport work-area edges.
+This session-only placement memory survives closing individual hosts; collapsed
+height and unrelated windows' draw order never replace the remembered size.
 
 Creation receipts, deferred pose application and group duplication progress on
 framework updates under Application ownership. Closing their initiating window
