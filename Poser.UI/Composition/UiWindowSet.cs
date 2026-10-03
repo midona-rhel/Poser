@@ -41,6 +41,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly IPropertiesContentFactory _propertiesFactory;
     private readonly EntityRemovalDialog _removalDialog;
     private readonly List<PropertiesWindow> _propertiesWindows = new();
+    private PropertiesWindowPlacement? _lastPropertiesPlacement;
     private readonly List<(PropertiesContext Context, int Mode, string Tab)> _pendingProperties = new();
 
     public UiWindowSet(
@@ -376,7 +377,10 @@ public sealed class UiWindowSet : IDisposable
             lease.Content.ContentMode = pending.Mode;
             lease.Content.ActiveTab = pending.Tab;
             Main.ConfigurePopOut(lease.Content);
-            var window = new PropertiesWindow(lease, Main.RequestSettings);
+            var placement = PropertiesWindow.Cascade(_lastPropertiesPlacement, Main.LastPosition);
+            _lastPropertiesPlacement = placement;
+            var window = new PropertiesWindow(lease, Main.RequestSettings, placement,
+                next => _lastPropertiesPlacement = next);
             _propertiesWindows.Add(window);
             System.AddWindow(window);
         }
