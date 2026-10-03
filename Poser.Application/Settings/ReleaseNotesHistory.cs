@@ -9,6 +9,17 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 14), "Pinned Properties and better body colliders",
+        [
+            "Pop out Properties into separate windows that stay pinned to their original actors, objects or groups.",
+            "Edit the same target from multiple windows while keeping bone selection and actor state in sync.",
+            "Keep sections, pickers and animation scrubbing independent between Properties windows.",
+            "Move pinned groups without accidentally editing the current selection instead.",
+            "Generate better-fitting body and tail colliders that account for the current pose and Customize+ scaling.",
+            "Keep generated colliders lightweight and preserve their group placement and bone attachments through Undo/Redo.",
+            "Read Settings and Properties labels at minimum window widths without word wrapping.",
+            "Reduce routine debug-log noise.",
+        ]),
         new(new(0, 9, 13), "Idle export and appearance controls",
         [
             "Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.",
