@@ -9,6 +9,11 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 15), "Smarter Properties pop-out placement",
+        [
+            "Open new Properties pop-outs at the size of your last adjusted window, with a small offset from its position.",
+            "Keep new pop-outs on-screen and reuse the expanded size even after collapsing or closing the previous window.",
+        ]),
         new(new(0, 9, 14), "Pinned Properties and better body colliders",
         [
             "Pop out Properties into separate windows that stay pinned to their original actors, objects or groups.",
