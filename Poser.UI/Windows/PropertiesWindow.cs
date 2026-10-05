@@ -117,7 +117,11 @@ public sealed class PropertiesWindow : Window, IDisposable
         }
         _vm.Collapsed = _collapsed;
         _lease.Content.Refresh();
-        AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        if (!ManipulationHide.Hidden || ManipulationDrag.ShellHeld)
+        {
+            using var manipulationFade = ManipulationHide.FadeScope();
+            AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        }
         _lease.Content.DrawDialogs();
     }
 

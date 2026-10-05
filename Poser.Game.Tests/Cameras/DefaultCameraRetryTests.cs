@@ -12,6 +12,36 @@ namespace Poser.Game.Tests.Cameras;
 public sealed unsafe class DefaultCameraRetryTests : IDisposable
 {
     [Theory]
+    [InlineData(MouseState.None, false, false)]
+    [InlineData(MouseState.Left, false, false)]
+    [InlineData(MouseState.Middle, false, false)]
+    [InlineData(MouseState.Right, false, true)]
+    [InlineData(MouseState.Left | MouseState.Right, false, true)]
+    [InlineData(MouseState.Right, true, false)]
+    public void Free_camera_looks_only_on_unlocked_right_drag(MouseState buttons, bool locked, bool looks)
+    {
+        var setup = NewService(new NativeGate(), true);
+        using var service = setup.Service;
+        var camera = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false)
+        {
+            Position = new Vector3(1, 2, 3),
+            Rotation = new Vector3(0.2f, 0.1f, 0),
+            MouseSensitivity = 1f,
+            IsLocked = locked,
+        };
+        var before = camera.Rotation;
+        MouseFrame mouse = new() { ButtonsPressed = buttons, DeltaX = 12, DeltaY = 8 };
+        service.HandleFreeCameraInput(camera, &mouse, null);
+        service.UpdateFreeCamera(camera);
+        Assert.Equal(new Vector3(1, 2, 3), camera.Position);
+        Assert.Equal(looks, camera.Rotation != before);
+        Assert.Equal(looks ? Vector2.Zero : new Vector2(12, 8), mouse.Delta);
+        var after = camera.Rotation;
+        service.UpdateFreeCamera(camera);
+        Assert.Equal(after, camera.Rotation);
+    }
+
+    [Theory]
     [InlineData(VirtualKey.W, VirtualKey.A)]
     [InlineData(VirtualKey.A, VirtualKey.W)]
     public void Held_keys_move_together_even_when_native_input_was_consumed(VirtualKey first, VirtualKey second)

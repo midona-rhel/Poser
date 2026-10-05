@@ -53,11 +53,14 @@ scene's identity rules. Missing targets cannot dispatch edits or silently follow
 Pop-outs contain no workspace sidebar/Inspector detachment controls, remain non-modal, and
 are discarded on GPose exit or plugin disposal. Closing a host releases only its
 own gesture and preview claim; submitted application operations continue.
-Each pop-out includes the shared Inspector rail with its own bottom-right
-collapse control. The rail pins entity targets (always the actor root), while
+Each pop-out includes the shared Inspector rail, toggled by an arrow at the
+Properties area's bottom-right; the Inspector has no separate footer.
+The rail pins entity targets (always the actor root), while
 posing content still follows that actor's globally selected bones. Separate
 presentation graphs share commands/history, never mutable selection or gesture
 state. Collapsing the rail preserves content width and does not change other hosts.
+Pop-outs follow the workspace's manipulation fade, retaining live shell-drag
+items while hidden so an Inspector gesture can complete normally.
 New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
 size and cascade by a small offset, wrapping at the viewport work-area edges.
 This session-only placement memory survives closing individual hosts; collapsed

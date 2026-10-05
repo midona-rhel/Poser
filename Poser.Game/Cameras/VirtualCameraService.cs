@@ -804,12 +804,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         // A locked camera holds its shot: the look-drag stops accumulating
         // (the lock block below eats the delta itself).
-        // Either button looks: the orbit camera turns on both, and a press
-        // over the UI never reaches this hook, so a drag that arrives here
-        // began on empty space.
+        // Free-camera look uses right-drag, as in Brio. Left-drag remains
+        // available for selection and manipulation without changing the shot.
         if (!live.IsLocked && mouse != null
-            && (mouse->IsButtonDown(MouseState.Right)
-                || mouse->IsButtonDown(MouseState.Left)))
+            && mouse->IsButtonDown(MouseState.Right))
         {
             if (mouse->Delta != Vector2.Zero)
                 FlightActive = true;
