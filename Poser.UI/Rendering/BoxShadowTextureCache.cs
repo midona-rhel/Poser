@@ -331,10 +331,14 @@ internal static class BoxShadowTextureCache
             || bottomExtent > MaxExtent)
             return false;
 
-        // Keep the exposed area inside each rectangular corner. Previously
-        // slices stopped at the panel rectangle, cutting square holes in a
-        // rounded window's shadow. The baked rounded cutout excludes its body.
-        int inset = (int)MathF.Ceiling(panelRadius) + 1;
+        // Stretch only after BOTH the rounded panel cutout and the offset
+        // shadow core become straight. Cutting at panelRadius alone joins a
+        // still-curving corner to a flat strip (blur can exceed the radius).
+        float cornerReach = coreRadius + blur - spread
+            + MathF.Max(MathF.Abs(offsetX), MathF.Abs(offsetY));
+        if (!float.IsFinite(cornerReach) || cornerReach > MaxExtent)
+            return false;
+        int inset = (int)MathF.Ceiling(MathF.Max(panelRadius, cornerReach)) + 1;
         if (boxWidth <= inset * 2f || boxHeight <= inset * 2f)
             return false;
         int left = Math.Max(1, (int)MathF.Ceiling(leftExtent)) + inset;

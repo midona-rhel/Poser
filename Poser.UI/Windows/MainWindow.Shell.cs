@@ -53,6 +53,7 @@ public partial class MainWindow
     {
         // Pose-file commands need the selected actor's skeleton.
         bool poseTarget = SelectedSkeleton() != null;
+        var poseActor = _selection.PrimaryActor;
         var uiConfig = _configuration.Config.UI;
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
         bool inspectorOpen = GetInspectorWindowOpen?.Invoke() ?? true;
@@ -63,10 +64,12 @@ public partial class MainWindow
             | (inspectorOpen ? 16 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
+            && poseActor == _shellMenuActor
             && layoutState == _shellMenuLayoutState)
             return;
         _shellMenuRowsBuilt = true;
         _shellMenuPoseTarget = poseTarget;
+        _shellMenuActor = poseActor;
         _shellMenuLayoutState = layoutState;
 
         FillShellMenuItems(
@@ -77,6 +80,8 @@ public partial class MainWindow
             _contentHidden,
             uiConfig.SplitInspector,
             inspectorOpen);
+        _shellMenuItems[(int)ShellCommand.Pose].SubmenuItems![1].SubmenuItems =
+            _poseFileSection.BuildExportSubmenu(poseActor);
     }
 
     /// <summary>Fills the shell menu rows for the current UI state.</summary>
@@ -167,9 +172,6 @@ public partial class MainWindow
                 {
                     case 0:
                         _poseFileSection.RequestImportMenu(withPresets: true);
-                        break;
-                    case 1:
-                        _poseFileSection.RequestExportMenu();
                         break;
                     case 2:
                         _poseFileSection.OpenAutoSaves(actorId);

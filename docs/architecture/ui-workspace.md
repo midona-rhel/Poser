@@ -154,6 +154,9 @@ target replaces the old menu. Removal drops that target from selection, not
 unrelated entities. Library list rebuilds dismiss index-based menus.
 Equivalent commands share labels and current capability gates; a changed
 menu shape dismisses stale rows rather than dispatching their old indices.
+Nested branches share one menu lifetime and retain their ancestors while the
+pointer enters descendants. Deeper leaves bind explicit target commands rather
+than reinterpreting a two-level row index; Pose export uses this same path.
 
 Tree disclosure belongs to the clicked branch, including descendants that
 have not been drawn yet. Search temporarily reveals matches and disables

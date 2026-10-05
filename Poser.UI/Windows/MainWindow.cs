@@ -114,6 +114,7 @@ public partial class MainWindow : Window
 
     /// <summary>Whether the rows were last built with a posable target.</summary>
     private bool _shellMenuPoseTarget;
+    private ActorId? _shellMenuActor;
 
     private bool _shellMenuRowsBuilt;
 
