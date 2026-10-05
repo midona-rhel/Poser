@@ -191,7 +191,7 @@ public readonly record struct Theme
             RailWidth = 280f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
-        Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
+        Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f, HeadingSize = 16f },
         Radii = new() { None = 0f, Small = 2f, Medium = 4f, Control = 6f, Surface = 8f, Window = 10f, Large = 12f, Pill = 999f },
         Shadows = new()
         {
@@ -634,6 +634,7 @@ public readonly record struct Theme
         public float LabelSize { get; init; }
         public float BodySize { get; init; }
         public float SurfaceTitleSize { get; init; }
+        public float HeadingSize { get; init; }
     }
 
     public readonly record struct RadiusTokens

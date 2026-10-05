@@ -254,6 +254,10 @@ public static class FontRegistry
         AddRequired(
             required, FontFamily.Italic, FontWeight.Regular,
             theme.Typography.LabelSize);
+        // First-open headings must not request a new asynchronous atlas bake
+        // after layout has already measured them with the fallback font.
+        AddRequired(required, FontFamily.Default, FontWeight.SemiBold,
+            theme.Typography.HeadingSize);
         return required;
     }
 

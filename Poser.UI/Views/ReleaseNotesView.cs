@@ -87,7 +87,7 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
                 new TextStyle
                 {
                     Color = theme.Text,
-                    Size = theme.Typography.BodySize + 3f,
+                    Size = theme.Typography.HeadingSize,
                     Weight = FontWeight.SemiBold,
                 },
                 TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));

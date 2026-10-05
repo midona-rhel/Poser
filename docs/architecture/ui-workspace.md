@@ -242,6 +242,9 @@ controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.
+Theme typography, including semibold release headings, belongs to the font
+registry's startup and theme-switch warm set so first-open layout does not
+measure fallback fonts while requesting a new atlas bake.
 Popup input ownership uses the caller's ImGui-scoped identity, so identical
 controls in different windows cannot release or take each other's popup claim.
 
