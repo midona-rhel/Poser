@@ -355,7 +355,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         if (_exportMenuRequested)
         {
             _exportMenuRequested = false;
-            _menuActor = SelectedActor();
+            _menuActor ??= SelectedActor();
             Crystarium.FloatingMenu.Open(
                 ExportMenuId, _menuAnchor, BuildExportSubmenu(SelectedActor()),
                 ExportMenuWidth);
