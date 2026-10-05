@@ -55,7 +55,8 @@ public static partial class Crystarium
         bool hdr = false,
         Action? onBegin = null,
         Action? onCommit = null,
-        Action? onRightClick = null)
+        Action? onRightClick = null,
+        bool fillWidth = false)
     {
         var theme = ActiveTheme;
         float side = ControlSizing.Height(
@@ -64,9 +65,9 @@ public static partial class Crystarium
         float scale = metrics.Scale;
         var hit = Interactive.Reserve(id, metrics.Size, disabled);
         var wellMin = hit.ScreenMin;
-        var wellMax = wellMin + new Vector2(side * scale);
+        var wellMax = fillWidth ? hit.ScreenMax : wellMin + new Vector2(side * scale);
 
-        PaintColorWellBox(hit, color, disabled);
+        PaintColorWellBox(hit, wellMax, color, disabled);
         if (hit.RightClicked)
             onRightClick?.Invoke();
 
@@ -84,14 +85,14 @@ public static partial class Crystarium
         return changed;
     }
 
-    /// <summary>Paints the leading square of the reserved control.</summary>
+    /// <summary>Paints the swatch bounds; rows default to a leading square,
+    /// while explicit rectangular swatches use their full reserved width.</summary>
     private static void PaintColorWellBox(
-        in InteractionResult hit, Vector4 color, bool disabled)
+        in InteractionResult hit, Vector2 wellMax, Vector4 color, bool disabled)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var wellMin = hit.ScreenMin;
-        var wellMax = wellMin + new Vector2(hit.ScreenMax.Y - hit.ScreenMin.Y);
 
         var dl = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control;
