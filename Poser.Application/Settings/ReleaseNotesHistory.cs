@@ -9,6 +9,22 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 16), "Pinned Inspectors and clearer controls",
+        [
+            "Keep an entity's Inspector beside its pinned Properties, with a separate collapse button and actor-root transforms.",
+            "Keep pop-out Properties the same minimum width as the main panel and identify pinned windows with a filled pin.",
+            "Hide pop-outs and section separators consistently while transforming.",
+            "Use right-drag to turn the free camera without left-click interfering with selection.",
+            "Center the camera on an actor without changing your zoom or view angle.",
+            "Reach camera, light and scenery file actions directly from buttons instead of a More dropdown.",
+            "Find pose import, export and library actions under Actor > General.",
+            "Choose pose export destinations from a nested submenu without losing the parent menu.",
+            "Enjoy continuous rounded-window shadows that stay neutral across colour themes.",
+            "Spot the main Properties title and release headings more easily.",
+            "See character colours and custom colours in wider rectangular swatches without rearranging their rows.",
+            "Open release notes with their heading font ready instead of briefly reflowing after display.",
+            "Known limitation: Deselect in a pinned group Inspector can clear an unrelated global selection; avoid that action for now.",
+        ]),
         new(new(0, 9, 15), "Smarter Properties pop-out placement",
         [
             "Open new Properties pop-outs at the size of your last adjusted window, with a small offset from its position.",
