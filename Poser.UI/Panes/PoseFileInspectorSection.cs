@@ -286,10 +286,10 @@ public sealed class PoseFileInspectorSection : IDisposable
         _exportMenuRequested = true;
     }
 
-    private ContextMenuItem[] BuildExportMenuItems()
+    public ContextMenuItem[] BuildExportSubmenu(ActorId? actorId)
     {
         bool noSources = ExportableSources().Count == 0;
-        return
+        ContextMenuItem[] items =
         [
             new("Export to file", TablerIcon.DeviceFloppy),
             new("To library", TablerIcon.Folder,
@@ -301,6 +301,29 @@ public sealed class PoseFileInspectorSection : IDisposable
             new("To clipboard", TablerIcon.FileText),
             new("To stash", TablerIcon.Stack2),
         ];
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (items[i].IsSeparator) continue;
+            int choice = i;
+            items[i].OnInvoke = () => ExecuteExport(choice, actorId);
+        }
+        return items;
+    }
+
+    private void ExecuteExport(int choice, ActorId? target)
+    {
+        if (target is not { } actorId || !_imports.HasPosableSkeleton(actorId))
+        {
+            _notices.Refused(NoActorText);
+            return;
+        }
+        switch (choice)
+        {
+            case 0: OpenExport(actorId); break;
+            case 1: OpenExportToLibrary(actorId); break;
+            case 3: CopyToClipboard(actorId); break;
+            case 4: StashPose(actorId); break;
+        }
     }
 
     private List<LibrarySourceConfig> ExportableSources()
@@ -332,8 +355,9 @@ public sealed class PoseFileInspectorSection : IDisposable
         if (_exportMenuRequested)
         {
             _exportMenuRequested = false;
+            _menuActor ??= SelectedActor();
             Crystarium.FloatingMenu.Open(
-                ExportMenuId, _menuAnchor, BuildExportMenuItems(),
+                ExportMenuId, _menuAnchor, BuildExportSubmenu(SelectedActor()),
                 ExportMenuWidth);
         }
         if (_libraryMenuRequested)
@@ -384,24 +408,8 @@ public sealed class PoseFileInspectorSection : IDisposable
         }
 
         int exportClicked = Crystarium.FloatingMenu.Draw(ExportMenuId);
-        switch (exportClicked)
-        {
-            case 0:
-                if (SelectedActor() is { } exportActor)
-                    OpenExport(exportActor);
-                else
-                    _notices.Refused(NoActorText);
-                break;
-            case 1:
-                OpenExportToLibrary();
-                break;
-            case 3:
-                CopyToClipboard();
-                break;
-            case 4:
-                StashPose();
-                break;
-        }
+        if (exportClicked >= 0)
+            ExecuteExport(exportClicked, SelectedActor());
     }
 
     private float _importMenuHeightPlain = 430f;
@@ -2095,13 +2103,8 @@ public sealed class PoseFileInspectorSection : IDisposable
         ImportLoadedPose(actorId, pose, "Import stashed pose", "Stash");
     }
 
-    private void StashPose()
+    private void StashPose(ActorId actorId)
     {
-        if (SelectedActor() is not { } actorId)
-        {
-            _notices.Refused(NoActorText);
-            return;
-        }
         var armed = _capture.CapturePoseFile(actorId, pose =>
         {
             if (pose == null)
@@ -2160,13 +2163,8 @@ public sealed class PoseFileInspectorSection : IDisposable
                 .ToArray());
     }
 
-    private void OpenExportToLibrary()
+    private void OpenExportToLibrary(ActorId actorId)
     {
-        if (SelectedActor() is not { } actorId)
-        {
-            _notices.Refused(NoActorText);
-            return;
-        }
         var sources = ExportableSources();
         if (sources.Count == 0)
             return;
@@ -2439,13 +2437,8 @@ public sealed class PoseFileInspectorSection : IDisposable
             actorId, pose, "Import pose from clipboard", "Clipboard");
     }
 
-    private void CopyToClipboard()
+    private void CopyToClipboard(ActorId actorId)
     {
-        if (SelectedActor() is not { } actorId)
-        {
-            _notices.Refused(NoActorText);
-            return;
-        }
         var armed = _capture.CapturePoseFile(actorId, pose =>
         {
             if (pose == null || PoseClipboard.Encode(pose) is not { } payload)

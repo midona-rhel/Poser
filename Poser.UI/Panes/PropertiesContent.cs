@@ -46,6 +46,9 @@ public sealed partial class PropertiesContent
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly GraphicalBonePane _map;
     private AppShellViewModel _vm = new();
+    private PropertiesContext? _inspectorContext;
+    private PoseInspectorPane? _pinnedInspector;
+    private PoseRailPane? _pinnedRail;
     private string _activeTab = "Pose", _activeStrip = "actor";
     private int _contentMode;
     public string ActiveTab { get => _activeTab; set => _activeTab = value; }
@@ -109,6 +112,7 @@ public sealed partial class PropertiesContent
         _vm = vm;
         vm.SectionDisclosure = new(_configuration.Config.UI.SectionDisclosure);
         vm.DrawContent = DrawTabContent;
+        if (_pinnedRail != null) vm.DrawRail = DrawPinnedInspector;
         vm.OnTab = OnTabClicked;
         vm.DrawFooterMiddle = DrawFooterMiddle;
         vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
@@ -118,6 +122,37 @@ public sealed partial class PropertiesContent
             if (on) _animation.ClearSpeed(actor);
             else _animation.SetSpeed(actor, 0f);
         };
+    }
+
+    public void AttachInspector(PropertiesContext context, PoseInspectorPane inspector, PoseRailPane rail,
+        CameraPane cameraPane)
+    {
+        _inspectorContext = context;
+        _pinnedInspector = inspector;
+        _pinnedRail = rail;
+        inspector.BuildBoneChoices = actor => BuildBoneChoices(actor);
+        inspector.GetSwapRotationXY = () => _configuration.Config.UI.SwapRotationXY;
+        inspector.DrawExpressionRow = _animationPane.DrawExpressionRow;
+        cameraPane.DrawTrackingActors = DrawCameraTrackingActors;
+    }
+
+    private void DrawPinnedInspector(Vector2 origin, Vector2 size)
+    {
+        if (_inspectorContext?.IsAvailable != true)
+        {
+            _pinnedInspector?.CancelInteraction();
+            Crystarium.TextAt(origin, "Target unavailable", new TextStyle());
+            return;
+        }
+        _pinnedRail!.Draw(origin, size);
+    }
+
+    public void PumpInspectorInteraction(bool pointerHeld, bool visible)
+    {
+        if (!visible || _inspectorContext?.IsAvailable != true)
+            _pinnedInspector?.CancelInteraction();
+        else
+            _pinnedInspector?.PumpInteraction(pointerHeld);
     }
 
     public void Refresh()

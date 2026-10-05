@@ -49,7 +49,6 @@ public partial class PoseInspectorPane : IDisposable
     private GroupScaleMode _cleanGroupScale;
     private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
-    private readonly PoseFileInspectorSection _poseFileSection;
     private readonly ParentingSection _parentingSection;
     private bool _openParenting = true;
 
@@ -130,7 +129,6 @@ public partial class PoseInspectorPane : IDisposable
     private bool _openSurfaceExpression = true;
     private bool _openSurfaceGaze = true;
     private bool _openSurfacePose = true;
-    private bool _openSurfaceFiles = true;
 
     // Reuse gaze picker buffers across frames.
     private readonly List<Domain.Scene.ActorDescriptor> _gazeOthers = new();
@@ -201,7 +199,6 @@ public partial class PoseInspectorPane : IDisposable
         PropertiesContext properties,
         IViewportReads viewport,
         ExpressionInspectorSection expressionSection,
-        PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,
         IIkBake ikBake,
         CameraPane cameraPane,
@@ -227,7 +224,6 @@ public partial class PoseInspectorPane : IDisposable
         _scene = scene;
         _viewport = viewport;
         _expressionSection = expressionSection;
-        _poseFileSection = poseFileSection;
         _interaction = interaction;
         _cleanTransforms = cleanTransforms;
         _actorReset = actorReset;
@@ -1042,18 +1038,6 @@ public partial class PoseInspectorPane : IDisposable
                         next => _openSurfaceActorIk = next,
                         form => DrawActorIk(form),
                         divider: stack.Any);
-                if (actor != null && OwningActorId() is { } actorId)
-                    stack.Section(
-                        "camera",
-                        "Camera",
-                        open: true,
-                        _ => { },
-                        form => form.Actions("Frame", actions =>
-                            actions.Button(
-                                "Center camera on actor",
-                                () => _cameraPane.CenterOnActor(actorId),
-                                help: "Move the current orbit view to this actor without following it")),
-                        divider: stack.Any);
                 if (actor != null && !IsCreature(actor))
                     stack.Section(
                         "gaze",
@@ -1070,16 +1054,6 @@ public partial class PoseInspectorPane : IDisposable
                         _openSurfacePose,
                         next => _openSurfacePose = next,
                         form => DrawPoseActions(form, skeleton, wide: true),
-                        divider: stack.Any);
-                    stack.Section(
-                        "files",
-                        "Files",
-                        _openSurfaceFiles,
-                        next => _openSurfaceFiles = next,
-                        form =>
-                        {
-                            _poseFileSection.Draw(form, skeleton.Id.Actor);
-                        },
                         divider: stack.Any);
                 }
                 return stack.Bottom - origin.Y;
@@ -2660,8 +2634,7 @@ public partial class PoseInspectorPane : IDisposable
         if (!_railHeaderConfigHooked)
         {
             _railHeaderConfigHooked = true;
-            _configuration.OnConfigurationChanged +=
-                () => _railHeaderPrimed = false;
+            _configuration.OnConfigurationChanged += InvalidateRailHeader;
         }
         bool linked = _interaction.LinkedBonesEnabled;
         bool hasOverride = HasActorTransformOverride;
@@ -2677,6 +2650,8 @@ public partial class PoseInspectorPane : IDisposable
         _railHeader = ComputeRailHeader();
         return _railHeader;
     }
+
+    private void InvalidateRailHeader() => _railHeaderPrimed = false;
 
     private (string Who, string Sub, int Linked) ComputeRailHeader()
     {
@@ -3086,8 +3061,32 @@ public partial class PoseInspectorPane : IDisposable
             _cleanTransforms.Commit(gesture);
     }
 
-    public void Dispose() => ClearTransformSession(cancel:
+    public void CancelInteraction() => ClearTransformSession(cancel:
         _cleanGesture is { } gesture && _cleanTransforms.ActiveGesture == gesture);
+
+    public void Dispose()
+    {
+        CancelInteraction();
+        if (_railHeaderConfigHooked)
+        {
+            _configuration.OnConfigurationChanged -= InvalidateRailHeader;
+            _railHeaderConfigHooked = false;
+        }
+    }
+
+    // A pinned inspector can stop drawing while a numeric/ring drag is held.
+    // Finish only this pane's gesture; never seal another host's interaction.
+    public void PumpInteraction(bool pointerHeld)
+    {
+        if (_cleanGesture is not { } gesture) return;
+        if (_cleanTransforms.ActiveGesture != gesture)
+            ClearTransformSession();
+        else if (!pointerHeld)
+        {
+            CommitTransformSession();
+            ClearTransformSession();
+        }
+    }
 
     private void ClearTransformSession(bool cancel = false)
     {

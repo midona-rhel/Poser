@@ -84,7 +84,12 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
         foreach (var release in session.Entries)
         {
             Crystarium.Text($"Poser {release.Version.ToString(3)} — {release.Title}",
-                new TextStyle { Color = theme.Text },
+                new TextStyle
+                {
+                    Color = theme.Text,
+                    Size = theme.Typography.HeadingSize,
+                    Weight = FontWeight.SemiBold,
+                },
                 TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));
             ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
             foreach (var highlight in release.Highlights)

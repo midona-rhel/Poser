@@ -8,6 +8,61 @@ namespace Poser.Application.Tests.Selection;
 public sealed class PropertiesContextTests
 {
     [Fact]
+    public void Entity_inspector_stays_on_actor_root_without_changing_shared_bone_selection()
+    {
+        var (scene, first, second) = TwoActors();
+        var bones = scene.Snapshot.Actors[0].Skeletons[0].Bones;
+        scene.Selection.Select(SelectionId.ForBone(bones[0].Id));
+        using var live = new PropertiesContext(scene);
+        using var properties = live.Pin();
+        using var inspector = properties.PinEntities();
+        Assert.Equal(SelectionId.ForActor(first), inspector.Selection.Primary);
+        Assert.Equal(SelectionId.ForBone(bones[0].Id), properties.Selection.Primary);
+
+        scene.Selection.Select(SelectionId.ForBone(bones[1].Id));
+        Assert.Equal(SelectionId.ForActor(first), inspector.Selection.Primary);
+        Assert.Equal(SelectionId.ForBone(bones[1].Id), properties.Selection.Primary);
+        Assert.Equal(properties.Selection.Primary, inspector.WorkspaceSelection.Primary);
+
+        scene.Selection.Select(SelectionId.ForActor(second));
+        Assert.Equal(SelectionId.ForActor(first), inspector.Selection.Primary);
+        Assert.Equal(SelectionId.ForActor(second), scene.Selection.Primary);
+    }
+
+    [Fact]
+    public void Entity_inspector_rebinds_only_its_original_actor_after_removal_and_restore()
+    {
+        var (scene, first, second) = TwoActors();
+        scene.Selection.Select(SelectionId.ForActor(first));
+        using var live = new PropertiesContext(scene);
+        using var properties = live.Pin();
+        using var inspector = properties.PinEntities();
+        properties.Dispose(); // The inspector owns its own observation lifetime.
+        scene.Refresh(new SceneSnapshot(2, [new(second, "Other", [])], [], [], []));
+        scene.Selection.Select(SelectionId.ForActor(second));
+        Assert.False(inspector.IsAvailable);
+        Assert.Equal(first, inspector.Selection.PrimaryActor);
+        var restored = new ActorId(first.LogicalId, first.Generation + 1);
+        scene.Refresh(new SceneSnapshot(3, [new(restored, "Restored", []), new(second, "Other", [])], [], [], []));
+        Assert.True(inspector.IsAvailable);
+        Assert.Equal(SelectionId.ForActor(restored), inspector.Selection.Primary);
+        Assert.Equal(second, scene.Selection.PrimaryActor);
+    }
+
+    [Fact]
+    public void Entity_inspector_keeps_pinned_group_members_instead_of_the_live_selection()
+    {
+        var (scene, first, second) = TwoActors();
+        SelectionId[] members = [SelectionId.ForActor(first), SelectionId.ForActor(second)];
+        foreach (var member in members) scene.Selection.Add(member);
+        using var live = new PropertiesContext(scene);
+        using var inspector = live.PinEntities();
+        scene.Selection.Select(SelectionId.ForBone(scene.Snapshot.Actors[0].Skeletons[0].Bones[0].Id));
+        Assert.Equal(members, inspector.Selection.Selected);
+        Assert.Single(scene.Selection.Selected);
+    }
+
+    [Fact]
     public void Reading_pinned_group_does_not_clear_the_workspace_active_group()
     {
         var groups = new SceneGroups();

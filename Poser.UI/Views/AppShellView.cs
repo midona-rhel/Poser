@@ -273,13 +273,14 @@ public sealed class AppShellViewModel
     public bool SidebarCollapsed;
     public Action<bool>? OnSidebarCollapse;
 
-    /// <summary>The rail lives in its own Inspector window. The inspector
-    /// never merely FOLDS (ruled 2026-08-31): it is either in the shell
-    /// or in its own window.</summary>
+    /// <summary>The workspace rail lives in its separate Inspector window.
+    /// Pinned hosts use independent collapse state instead of detachment.</summary>
     public bool InspectorSplit;
+    public bool InspectorCollapsed;
+    public Action? OnInspectorCollapseToggle;
 
     /// <summary>Whether the rail column renders inside THIS window.</summary>
-    internal bool RailShown => DrawRail != null && !InspectorSplit;
+    internal bool RailShown => DrawRail != null && !InspectorSplit && !InspectorCollapsed;
 
     /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
@@ -487,6 +488,9 @@ public static class AppShellView
     public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
     public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
+    public const float MinimumWorkspaceWidth = 1110f;
+    public static float MinimumPropertiesWidth => MinimumWorkspaceWidth
+        - Crystarium.ActiveTheme.Shell.SidebarDefaultWidth - RailWidth;
 
     /// <summary>Hoists the model-forwarding callbacks once per model, per the
     /// codebase's own idiom (PoseLibraryView, SpawnBrowserView, ShellSidebar):
@@ -686,32 +690,7 @@ public static class AppShellView
                 U32(BorderPrimary));
         }
 
-        if (vm.Detached)
-        {
-            // The detached main window is the properties window — an
-            // INTERNAL name: the user just sees the name of whatever they
-            // have selected. The rail below is the inspector.
-            string title = vm.TitleEntity == "Poser"
-                ? "Properties"
-                : vm.TitleEntity;
-            // The title stands on the content column's own inset, so the
-            // window's left side reads as one aligned edge: title, tab
-            // strips and content.
-            Crystarium.TextInBand(
-                new Vector2(min.X + MainHorizontalPadding * s, min.Y),
-                new Vector2(
-                    MathF.Max(1f, max.X - min.X
-                        - MainHorizontalPadding * 2f * s),
-                    height),
-                title,
-                new TextStyle
-                {
-                    Size = theme.Typography.BodySize,
-                    Weight = FontWeight.SemiBold,
-                    Color = theme.Chrome.Text,
-                });
-        }
-        else
+        if (!vm.Detached)
         {
             // The pill stays on the toolbar window — the cell carries no
             // duplicate of anything the toolbar already states. The
@@ -719,6 +698,8 @@ public static class AppShellView
             float brandEnd = DrawBrandPill(
                 vm, min.X + TitleInset * s, min.Y, height, s, dl,
                 pill: false);
+            DrawMainTitleOutline(new Vector2(min.X + TitleInset * s, min.Y),
+                brandEnd - min.X - TitleInset * s, height, s, dl);
             // The burger LEFT-aligns by the brand; the Library text
             // button keeps the cell's right.
             float burgerSide = theme.Controls.ShellIconAction;
@@ -748,6 +729,7 @@ public static class AppShellView
             // own window — never in this titlebar.
         }
         float clusterLeft = DrawTitleActions(vm, max.X, min.Y, height, s);
+        float titleRight = clusterLeft - theme.Page.ActionGap * s;
 
         // The CONTENT selector lives in the TITLEBAR, beside the window
         // action icons and measured against their cluster: Target shows
@@ -781,6 +763,7 @@ public static class AppShellView
             // split, the cluster's own left edge is the bound.
             float selectorRight = MathF.Min(
                 max.X - railEdge, clusterLeft);
+            titleRight = selectorRight - (theme.Page.ActionGap * 2f) * s - fixedWidth;
             ImGui.SetCursorScreenPos(new Vector2(
                 selectorRight - theme.Page.ActionGap * s - fixedWidth,
                 min.Y + (height - segSize.Y) * 0.5f));
@@ -801,6 +784,43 @@ public static class AppShellView
                     _ => null,
                 });
         }
+        if (vm.Detached)
+        {
+            string title = vm.TitleEntity == "Poser" ? "Properties" : vm.TitleEntity;
+            var titleStyle = new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            };
+            var titleMin = new Vector2(min.X + MainHorizontalPadding * s, min.Y);
+            if (vm.PropertiesOnly)
+            {
+                float pinSize = theme.Controls.SmallIconSize * s;
+                var pinMin = titleMin + new Vector2(0f, (height - pinSize) * 0.5f);
+                Crystarium.IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text,
+                    flipX: true);
+                titleMin.X += pinSize + theme.Page.ActionGap * s;
+            }
+            float titleWidth = MathF.Max(0f, titleRight - titleMin.X - theme.Spacing.Four * s);
+            if (titleWidth > 0f)
+            {
+                if (!vm.PropertiesOnly)
+                    DrawMainTitleOutline(titleMin,
+                        MathF.Min(titleWidth, Crystarium.MeasureText(title, titleStyle).X), height, s, dl);
+                Crystarium.TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle);
+            }
+        }
+    }
+
+    private static void DrawMainTitleOutline(
+        Vector2 textMin, float textWidth, float height, float s, ImDrawListPtr dl)
+    {
+        var theme = Crystarium.ActiveTheme;
+        var padding = new Vector2(theme.Spacing.Four * s, theme.Spacing.Four * s);
+        dl.AddRect(new Vector2(textMin.X - padding.X, textMin.Y + padding.Y),
+            new Vector2(textMin.X + textWidth + padding.X, textMin.Y + height - padding.Y),
+            U32(BorderPrimary), theme.Radii.Control * s, ImDrawFlags.None, 1f);
     }
 
     /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in
@@ -1361,8 +1381,14 @@ public static class AppShellView
         float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
         if (vm.PropertiesOnly)
         {
+            float inspectorSeat = vm.OnInspectorCollapseToggle != null ? (side + theme.Page.ActionGap) * s : 0f;
             vm.DrawFooterMiddle?.Invoke(new Vector2(min.X + inset, min.Y),
-                new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f), max.Y - min.Y));
+                new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f - inspectorSeat), max.Y - min.Y));
+            if (vm.OnInspectorCollapseToggle != null)
+                NamedIconAt(new Vector2(max.X - inset - side * s, y),
+                    vm.InspectorCollapsed ? "chevron-right" : "chevron-left",
+                    side, vm.OnInspectorCollapseToggle, "##pinned-inspector-toggle",
+                    help: vm.InspectorCollapsed ? "Show inspector" : "Collapse inspector");
             return;
         }
         IconAt(

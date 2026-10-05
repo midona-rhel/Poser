@@ -40,6 +40,11 @@ in one must not stop the other from updating. Reopening a panel reads the curren
 selection, not the target it last displayed.
 
 Properties pop-outs pin their displayed entity, not a private selection cursor.
+Window drop shadows keep the same neutral color, opacity, offset and softness
+across application color themes; surface colors do not redefine elevation.
+The main window's title has a one-pixel outline; pinned pop-out titles use a
+filled pin instead. Title text and its outline stay within the band left by
+the mode selector and window actions.
 Bone and gaze selections pin their owning actor. Bone clicks, clear,
 range selection and highlights use the global workspace selection in every host.
 An actor pin edits that actor's currently selected bones, but never follows
@@ -50,9 +55,19 @@ frame lookup and edit admission. The active workspace group cannot substitute
 its baseline or members; locks and stale-member refusal still apply.
 A pin keeps its logical target through removal and rebinds only through the
 scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
-Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
+Pop-outs contain no workspace sidebar/Inspector detachment controls, remain non-modal, and
 are discarded on GPose exit or plugin disposal. Closing a host releases only its
 own gesture and preview claim; submitted application operations continue.
+Each pop-out includes the shared Inspector rail, toggled by an arrow at the
+Properties area's bottom-right; the Inspector has no separate footer.
+The rail pins entity targets (always the actor root), while
+posing content still follows that actor's globally selected bones. Separate
+presentation graphs share commands/history, never mutable selection or gesture
+state. Collapsing the rail preserves content width and does not change other hosts.
+Main and popped-out Properties use the same minimum content width, adding
+only their currently attached Sidebar/Inspector columns to the outer width.
+Pop-outs follow the workspace's manipulation fade, retaining live shell-drag
+items while hidden so an Inspector gesture can complete normally.
 New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
 size and cascade by a small offset, wrapping at the viewport work-area edges.
 This session-only placement memory survives closing individual hosts; collapsed
@@ -121,10 +136,12 @@ Individual bone/category and weapon-slot controls remain independent. With the
 option off (the compatibility default), the skeleton eye restores its remembered
 subset and Show all actor bones shows everything. Preset default checks persist
 across stock-list updates; saving Settings does not mutate the current mask.
-Save actions, Create collider,
+In context menus, Save actions, Create collider,
 Export Idle Pose and category-wide destruction live under More when there are
-multiple secondary actions; sidebar and viewport use the same composition. Inspector surfaces
-keep a lone save action direct. More uses
+multiple secondary actions; sidebar and viewport use the same composition.
+Properties panels expose file, library and lifetime actions as direct buttons,
+not a More dropdown; bulk destruction stays separate from file actions.
+In context menus, More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
 destruction (lights, cameras, objects, and overlays) opens a dialog with the target count
 and what is released or protected; only its explicit confirmation runs the
@@ -137,6 +154,9 @@ target replaces the old menu. Removal drops that target from selection, not
 unrelated entities. Library list rebuilds dismiss index-based menus.
 Equivalent commands share labels and current capability gates; a changed
 menu shape dismisses stale rows rather than dispatching their old indices.
+Nested branches share one menu lifetime and retain their ancestors while the
+pointer enters descendants. Deeper leaves bind explicit target commands rather
+than reinterpreting a two-level row index; Pose export uses this same path.
 
 Tree disclosure belongs to the clicked branch, including descendants that
 have not been drawn yet. Search temporarily reveals matches and disables
@@ -222,6 +242,9 @@ controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.
+Theme typography, including semibold release headings, belongs to the font
+registry's startup and theme-switch warm set so first-open layout does not
+measure fallback fonts while requesting a new atlas bake.
 Popup input ownership uses the caller's ImGui-scoped identity, so identical
 controls in different windows cannot release or take each other's popup claim.
 

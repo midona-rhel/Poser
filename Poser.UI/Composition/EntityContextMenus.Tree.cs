@@ -45,14 +45,15 @@ internal sealed partial class EntityContextMenus
         [
             () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
             () => _poseFileSection.OpenImportFromFile(actorId),
-            () => _poseFileSection.RequestExportMenu(actorId),
+            null,
             () => _cleanPose.Stash(actorId, sourceLabel),
         ];
         var items = new List<ContextMenuItem>
         {
             new("Import", TablerIcon.Download),
             new("Import from file", TablerIcon.FileText),
-            new("Export", TablerIcon.Upload),
+            new("Export", TablerIcon.Upload,
+                submenuItems: _poseFileSection.BuildExportSubmenu(actorId)),
             new("Stash", TablerIcon.Stack2),
         };
         if (_cleanPose.HasStash)

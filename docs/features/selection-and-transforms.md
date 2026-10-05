@@ -152,6 +152,10 @@ never replaced with a plausible identity baseline.
 
 ## Camera movement
 
+Center camera on actor translates the current orbit shot to the actor's drawn
+mid-body pivot without changing zoom, FOV, orientation, or its follow target.
+It does not refit the actor to the frame; bone-specific close framing is separate.
+
 New free cameras take position, direction and roll from the same rendered view,
 not a mixture of rendered position and native orbit angles. This also preserves
 the view when spawning from another free camera or a panned/rolled Main Camera.

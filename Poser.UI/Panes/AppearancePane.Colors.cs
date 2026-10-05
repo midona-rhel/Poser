@@ -27,7 +27,7 @@ public sealed partial class AppearancePane
             if (!reading.Success) form.Status(reading.Detail ?? "Custom colours are unavailable.");
             var theme = Crystarium.ActiveTheme;
             bool disabled = !reading.Success || !_appearanceAccess.CanEdit;
-            float controlsWidth = theme.Controls.ColorWellSize;
+            float controlsWidth = theme.Controls.ColorWellSize * 2f;
             FixedColourGroups(form, "custom-colour", CustomColourRows.Length,
                 index => CustomColourRows[index].Label, controlsWidth, (index, origin, scale) =>
                 {
@@ -40,7 +40,13 @@ public sealed partial class AppearancePane
                     ImGui.BeginGroup();
                     Crystarium.ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
                         next => ReportColour(_colors.Set(actor, channel, next)),
+                        new ControlStyle
+                        {
+                            Width = UiWidth.Fixed(controlsWidth),
+                            Height = UiHeight.Fixed(theme.Controls.ColorWellSize),
+                        },
                         rgbOnly: channel != AppearanceColorChannel.Mouth, disabled: disabled, hdr: true,
+                        fillWidth: true,
                         help: owned.HasValue
                             ? "Custom colour active. Right-click to restore the incoming colour."
                             : "No custom colour. Edit to enable an override.",
@@ -51,7 +57,7 @@ public sealed partial class AppearancePane
                         });
                     if (owned.HasValue)
                         ImGui.GetWindowDrawList().AddRect(origin - new Vector2(scale),
-                            origin + new Vector2(side + scale),
+                            origin + new Vector2(controlsWidth * scale + scale, side + scale),
                             ImGui.ColorConvertFloat4ToU32(theme.Accent),
                             theme.Radii.Control * scale, ImDrawFlags.None, scale);
                     ImGui.EndGroup();

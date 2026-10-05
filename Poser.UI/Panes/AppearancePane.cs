@@ -142,6 +142,7 @@ public sealed partial class AppearancePane
     private string _mcdfPath;
 
     private readonly Config.ConfigurationService _configuration;
+    private readonly PoseFileInspectorSection _poseFiles;
 
     public AppearancePane(
         ActorPresentationSession presentation,
@@ -164,8 +165,10 @@ public sealed partial class AppearancePane
         ICustomizeCatalog customize,
         ICustomizeControl customizeSession,
         IAppearanceColorControl colors,
-        ICharacterFiles characterFiles)
+        ICharacterFiles characterFiles,
+        PoseFileInspectorSection poseFiles)
     {
+        _poseFiles = poseFiles;
         _configuration = config;
         _characterFiles = characterFiles;
         _customize = customize;
@@ -308,6 +311,7 @@ public sealed partial class AppearancePane
                     if (supported && _presentation.Read(actor) is { } r)
                         GeneralRows(form, actor,
                             _presentation.OverridesFor(actor), r);
+                    _poseFiles.Draw(form, actor);
                 },
                 divider: false);
             DrawAttachmentSection(page, actor);
@@ -367,6 +371,7 @@ public sealed partial class AppearancePane
                 if (supported && _presentation.Read(actor) is { } reading)
                     BasicPresentationRows(
                         form, actor, _presentation.OverridesFor(actor), reading);
+                _poseFiles.Draw(form, actor);
             }, divider: false);
 
         if (supported && _presentation.Read(actor) is { } present)

@@ -191,7 +191,7 @@ public readonly record struct Theme
             RailWidth = 280f,
         },
         Scrollbar = new() { GutterWidth = 12f, Radius = 4f },
-        Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f },
+        Typography = new() { ShortcutSize = 10f, CaptionSize = 11f, LabelSize = 12f, BodySize = 13f, SurfaceTitleSize = 14f, HeadingSize = 16f },
         Radii = new() { None = 0f, Small = 2f, Medium = 4f, Control = 6f, Surface = 8f, Window = 10f, Large = 12f, Pill = 999f },
         Shadows = new()
         {
@@ -342,22 +342,19 @@ public readonly record struct Theme
         PictoDark,
         PictoTokens.Blue.BgApp,
         PictoTokens.Blue.Surface1,
-        PictoTokens.Blue.Surface2,
-        wideShadow: true);
+        PictoTokens.Blue.Surface2);
 
     public static Theme PictoPurple => DarkSurface(
         PictoDark,
         PictoTokens.Purple.BgApp,
         PictoTokens.Purple.Surface1,
-        PictoTokens.Purple.Surface2,
-        wideShadow: true);
+        PictoTokens.Purple.Surface2);
 
     public static Theme PictoGray => DarkSurface(
         PictoDark,
         PictoTokens.Gray.BgApp,
         PictoTokens.Gray.Surface1,
-        PictoTokens.Gray.Surface2,
-        wideShadow: true);
+        PictoTokens.Gray.Surface2);
 
     public static Theme PictoLight => LightSurface(
         PictoDark,
@@ -406,8 +403,7 @@ public readonly record struct Theme
         Theme theme,
         Vector4 surface,
         Vector4 raised,
-        Vector4 sunken,
-        bool wideShadow)
+        Vector4 sunken)
     {
         return theme with
         {
@@ -424,14 +420,6 @@ public readonly record struct Theme
                 PickerWell = surface,
                 SegmentSelected = sunken,
             },
-            Shadows = wideShadow
-                ? theme.Shadows with
-                {
-                    Panel = new(
-                        0f, 8f, 32f,
-                        new(0f, 0f, 0f, 0.40f)),
-                }
-                : theme.Shadows,
         };
     }
 
@@ -510,12 +498,6 @@ public readonly record struct Theme
             Palette = theme.Palette with
             {
                 Primary = primary,
-            },
-            Shadows = theme.Shadows with
-            {
-                Panel = new(
-                    0f, 8f, 32f,
-                    new(0f, 0f, 0f, 0.15f)),
             },
         };
     }
@@ -652,6 +634,7 @@ public readonly record struct Theme
         public float LabelSize { get; init; }
         public float BodySize { get; init; }
         public float SurfaceTitleSize { get; init; }
+        public float HeadingSize { get; init; }
     }
 
     public readonly record struct RadiusTokens

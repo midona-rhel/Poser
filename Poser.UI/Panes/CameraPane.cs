@@ -651,27 +651,19 @@ public sealed class CameraPane
 
     private void FileRows(Crystarium.FormScope form, CameraReading camera)
     {
-        form.ActionDropdown("More", _scene.Snapshot.Cameras.Any(candidate => !candidate.IsDefault)
-                ? ["Save to file…", "Save to library", "Destroy all cameras…"]
-                : ["Save to file…", "Save to library"], -1, "More",
-            choice =>
-            {
-                if (choice == 0)
-                    OpenSave(camera.Id);
-                else if (choice == 2)
-                    RequestDestroyAll?.Invoke();
-                else
-                    _names.Open(
-                        "Save camera to library", camera.Name,
-                        name =>
-                        {
-                            if (_values.Read(camera.Id) is not null)
-                                _scenePane.SaveEntry(SelectionId.ForCamera(camera.Id), name);
-                        });
-            }, icon: TablerIcon.Dots);
         form.Actions("Camera file", actions =>
+        {
             actions.Button("Load", OpenLoad,
-                help: "Add a camera from a file to the scene"));
+                help: "Add a camera from a file to the scene");
+            actions.Button("Save to file…", () => OpenSave(camera.Id));
+            actions.Button("Save to library", () => _names.Open(
+                "Save camera to library", camera.Name,
+                name =>
+                {
+                    if (_values.Read(camera.Id) is not null)
+                        _scenePane.SaveEntry(SelectionId.ForCamera(camera.Id), name);
+                }));
+        });
     }
 
     private void ActionRows(Crystarium.FormScope form, CameraReading camera)
@@ -700,7 +692,9 @@ public sealed class CameraPane
                     help: "Remove this camera from the scene",
                     variant: ButtonVariant.Danger);
         });
-
+        if (_scene.Snapshot.Cameras.Any(candidate => !candidate.IsDefault))
+            form.Actions("All cameras", actions => actions.Button("Destroy all cameras…",
+                () => RequestDestroyAll?.Invoke(), variant: ButtonVariant.Danger), alignRight: true);
     }
 
     private void TrackingRows(Crystarium.FormScope form, CameraReading camera)

@@ -458,7 +458,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     }
 
     /// <summary>Centers the current live orbit camera on the actor's drawn
-    /// mid-body pivot while retaining its orientation. Validation completes
+    /// mid-body pivot while retaining its orientation and zoom. Validation completes
     /// before the first camera setter: stale, hidden, or undrawn actors leave
     /// the shot untouched.</summary>
     public CameraCenterResult CenterOnActor(IActor actor)
@@ -491,25 +491,30 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
         // CameraOffset is the client's character-aware framing measure. Some
         // non-character draw objects report zero, so use a conservative human
-        // height rather than aiming at their feet or producing zero zoom.
+        // height rather than aiming at their feet.
         float height = reportedHeight is >= 0.5f and <= 5f
             ? reportedHeight
             : 1.7f;
         Vector3 pivot = drawOrigin + Vector3.UnitY * (height * 0.5f);
         var scene = &native->Camera.CameraBase.SceneCamera;
         Vector3 baseLookAt = scene->LookAtVector;
-        Vector2 zoomLimits = camera.ZoomLimits;
-        if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(baseLookAt) ||
-            !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
-            zoomLimits.X > zoomLimits.Y)
-            return CameraCenterResult.Refused("Center: no usable actor or camera pivot.");
-
         // The UI runs after the camera-update detour, so LookAtVector already
         // includes the current position/target offsets. Add only the delta
         // from that effective pivot; TargetOffset stays untouched and the
         // existing follow relationship remains exactly as it was.
-        camera.PositionOffset += pivot - baseLookAt;
-        camera.Zoom = Math.Clamp(height * 2f, zoomLimits.X, zoomLimits.Y);
+        return TranslateOrbitPivot(camera, pivot, baseLookAt);
+    }
+
+    internal static CameraCenterResult TranslateOrbitPivot(
+        IVirtualCamera camera, Vector3 pivot, Vector3 currentPivot)
+    {
+        var offset = camera.PositionOffset + (pivot - currentPivot);
+        if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(currentPivot)
+            || !TransformMath.IsFinite(offset))
+            return CameraCenterResult.Refused("Center: no usable actor or camera pivot.");
+        // PositionOffset translates both the eye and look-at in the camera
+        // detour. Do not refit distance/FOV: this command moves the current shot.
+        camera.PositionOffset = offset;
         return CameraCenterResult.Centered();
     }
 
@@ -804,12 +809,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         // A locked camera holds its shot: the look-drag stops accumulating
         // (the lock block below eats the delta itself).
-        // Either button looks: the orbit camera turns on both, and a press
-        // over the UI never reaches this hook, so a drag that arrives here
-        // began on empty space.
+        // Free-camera look uses right-drag, as in Brio. Left-drag remains
+        // available for selection and manipulation without changing the shot.
         if (!live.IsLocked && mouse != null
-            && (mouse->IsButtonDown(MouseState.Right)
-                || mouse->IsButtonDown(MouseState.Left)))
+            && mouse->IsButtonDown(MouseState.Right))
         {
             if (mouse->Delta != Vector2.Zero)
                 FlightActive = true;

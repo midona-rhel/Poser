@@ -9,6 +9,7 @@ public sealed class PropertiesContext : IDisposable
 {
     private readonly SceneSession _scene;
     private readonly SelectionScope? _targets;
+    private readonly bool _followWorkspaceBones = true;
     /// <summary>Effective command targets: the pinned subject, or its globally selected bones.</summary>
     public SelectionScope Selection { get; }
     /// <summary>The only cursor for selection actions and viewport highlights.</summary>
@@ -21,10 +22,11 @@ public sealed class PropertiesContext : IDisposable
         Selection = scene.Selection.Live;
     }
 
-    private PropertiesContext(SceneSession scene, IReadOnlyList<SelectionId> targets)
+    private PropertiesContext(SceneSession scene, IReadOnlyList<SelectionId> targets, bool followWorkspaceBones = true)
     {
         _scene = scene;
         IsPinned = true;
+        _followWorkspaceBones = followWorkspaceBones;
         Selection = new SelectionScope(() => { });
         _targets = new SelectionScope(() => { });
         foreach (var target in targets)
@@ -35,6 +37,9 @@ public sealed class PropertiesContext : IDisposable
     }
 
     public PropertiesContext Pin() => new(_scene, (_targets ?? Selection).Selected.ToArray());
+
+    /// <summary>An entity-only inspector pin; actor roots never follow bone selection.</summary>
+    public PropertiesContext PinEntities() => new(_scene, (_targets ?? Selection).Selected.ToArray(), false);
 
     public bool IsAvailable => (_targets ?? Selection).Selected.Count > 0 &&
         (_targets ?? Selection).Selected.All(id => Resolve(id) == id);
@@ -52,7 +57,7 @@ public sealed class PropertiesContext : IDisposable
         var targets = _targets!.Selected;
         // Pin the actor, not a second bone cursor. Another actor's selection
         // must never retarget this editor or leak into its commands.
-        var next = targets.Count == 1 && targets[0].Actor is { } actor &&
+        var next = _followWorkspaceBones && targets.Count == 1 && targets[0].Actor is { } actor &&
             selected.Count > 0 && selected.All(id => id.OwningActor == actor)
                 ? selected : targets;
         if (Selection.Selected.SequenceEqual(next))
