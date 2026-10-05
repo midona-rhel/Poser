@@ -50,9 +50,14 @@ frame lookup and edit admission. The active workspace group cannot substitute
 its baseline or members; locks and stale-member refusal still apply.
 A pin keeps its logical target through removal and rebinds only through the
 scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
-Pop-outs contain no sidebar/Inspector layout controls, remain non-modal, and
+Pop-outs contain no workspace sidebar/Inspector detachment controls, remain non-modal, and
 are discarded on GPose exit or plugin disposal. Closing a host releases only its
 own gesture and preview claim; submitted application operations continue.
+Each pop-out includes the shared Inspector rail with its own bottom-right
+collapse control. The rail pins entity targets (always the actor root), while
+posing content still follows that actor's globally selected bones. Separate
+presentation graphs share commands/history, never mutable selection or gesture
+state. Collapsing the rail preserves content width and does not change other hosts.
 New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
 size and cascade by a small offset, wrapping at the viewport work-area edges.
 This session-only placement memory survives closing individual hosts; collapsed

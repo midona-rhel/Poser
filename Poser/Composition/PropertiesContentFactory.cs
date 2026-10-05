@@ -16,13 +16,24 @@ internal sealed class PropertiesContentFactory(IServiceProvider services) : IPro
     public PropertiesContentLease Create(PropertiesContext context)
     {
         var presentation = new PresentationServices(services, context);
+        var inspectorPresentation = new PresentationServices(services, context.PinEntities());
         try
         {
             var content = (PropertiesContent)presentation.GetService(typeof(PropertiesContent))!;
-            return new(content, presentation.Dispose);
+            content.AttachInspector(
+                (PropertiesContext)inspectorPresentation.GetService(typeof(PropertiesContext))!,
+                (PoseInspectorPane)inspectorPresentation.GetService(typeof(PoseInspectorPane))!,
+                (PoseRailPane)inspectorPresentation.GetService(typeof(PoseRailPane))!,
+                (CameraPane)inspectorPresentation.GetService(typeof(CameraPane))!);
+            return new(content, () =>
+            {
+                inspectorPresentation.Dispose();
+                presentation.Dispose();
+            });
         }
         catch
         {
+            inspectorPresentation.Dispose();
             presentation.Dispose();
             throw;
         }
@@ -37,6 +48,7 @@ internal sealed class PropertiesContentFactory(IServiceProvider services) : IPro
             typeof(ScenePane), typeof(PropsPane), typeof(WorldObjectsPane), typeof(OverlayPane),
             typeof(PoseFileInspectorSection), typeof(GraphicalBonePane), typeof(ExpressionInspectorSection),
             typeof(ParentingSection), typeof(CompanionSection), typeof(EntityNameModal), typeof(IdleModExportDialog),
+            typeof(PoseRailPane), typeof(SelectionSection),
         ];
         private readonly Dictionary<Type, object> _instances = new();
         private bool _disposed;

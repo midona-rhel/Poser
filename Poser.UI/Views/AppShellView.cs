@@ -273,13 +273,14 @@ public sealed class AppShellViewModel
     public bool SidebarCollapsed;
     public Action<bool>? OnSidebarCollapse;
 
-    /// <summary>The rail lives in its own Inspector window. The inspector
-    /// never merely FOLDS (ruled 2026-08-31): it is either in the shell
-    /// or in its own window.</summary>
+    /// <summary>The workspace rail lives in its separate Inspector window.
+    /// Pinned hosts use independent collapse state instead of detachment.</summary>
     public bool InspectorSplit;
+    public bool InspectorCollapsed;
+    public Action? OnInspectorCollapseToggle;
 
     /// <summary>Whether the rail column renders inside THIS window.</summary>
-    internal bool RailShown => DrawRail != null && !InspectorSplit;
+    internal bool RailShown => DrawRail != null && !InspectorSplit && !InspectorCollapsed;
 
     /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
@@ -629,6 +630,8 @@ public static class AppShellView
                 dl);
             if (railW > 0f)
                 DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
+            if (vm.PropertiesOnly && vm.OnInspectorCollapseToggle != null)
+                DrawPinnedInspectorToggle(vm, max, s);
 
             if (!vm.Detached && !vm.SidebarCollapsed)
                 DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
@@ -1361,8 +1364,9 @@ public static class AppShellView
         float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
         if (vm.PropertiesOnly)
         {
+            float inspectorSeat = vm.RailShown ? 0f : (side + theme.Page.ActionGap) * s;
             vm.DrawFooterMiddle?.Invoke(new Vector2(min.X + inset, min.Y),
-                new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f), max.Y - min.Y));
+                new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f - inspectorSeat), max.Y - min.Y));
             return;
         }
         IconAt(
@@ -1385,6 +1389,21 @@ public static class AppShellView
     }
 
     // ── rail ─────────────────────────────────────────────────────────────
+
+    private static void DrawPinnedInspectorToggle(AppShellViewModel vm, Vector2 max, float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float footer = theme.Floating.ModalBarHeight * s;
+        float side = theme.Controls.ShellIconAction;
+        if (vm.RailShown)
+            ImGui.GetWindowDrawList().AddRectFilled(
+                new Vector2(max.X - RailWidth * s, max.Y - footer),
+                new Vector2(max.X, max.Y - footer + MathF.Max(1f, s)), U32(BorderSecondary));
+        IconAt(new Vector2(max.X - (MainHorizontalPadding + side) * s,
+                max.Y - footer + (footer - side * s) * 0.5f),
+            TablerIcon.LayoutSidebarRight, side, vm.OnInspectorCollapseToggle,
+            "##pinned-inspector-toggle", help: vm.InspectorCollapsed ? "Show inspector" : "Collapse inspector");
+    }
 
     /// <summary>
     /// The rail's chassis — surface-1 continuous with the titlebar's tb-right
@@ -1410,7 +1429,9 @@ public static class AppShellView
         dl.AddRectFilled(
             railMin, new Vector2(railMin.X + 1f * s, max.Y), U32(BorderPrimary));
 
-        RailScrollSeam(vm, railMin, max, railWidth, s);
+        var contentMax = vm.PropertiesOnly
+            ? max - new Vector2(0f, theme.Floating.ModalBarHeight * s) : max;
+        RailScrollSeam(vm, railMin, contentMax, railWidth, s);
     }
 
     /// <summary>The rail's scroll seam and content invocation, shared by the

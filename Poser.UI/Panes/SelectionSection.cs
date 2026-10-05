@@ -32,6 +32,7 @@ namespace Poser.UI;
 public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
+    private readonly SelectionScope _targets;
     private readonly SelectionEntityCommands _entityCommands;
     private readonly EntityActions _entityActions;
 
@@ -43,11 +44,13 @@ public sealed class SelectionSection
 
     public SelectionSection(
         SceneSession scene,
+        PropertiesContext context,
         SelectionEntityCommands entityCommands,
         EntityActions entityActions)
     {
         _entityCommands = entityCommands;
         _scene = scene;
+        _targets = context.Selection;
         _entityActions = entityActions;
     }
 
@@ -56,7 +59,7 @@ public sealed class SelectionSection
     /// </summary>
     public float Draw(Vector2 origin, float width)
     {
-        var selected = _scene.Selection.Selected;
+        var selected = _targets.Selected;
         if (selected.Count < 2)
         {
             _armed = Array.Empty<SelectionId>();

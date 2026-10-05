@@ -2660,8 +2660,7 @@ public partial class PoseInspectorPane : IDisposable
         if (!_railHeaderConfigHooked)
         {
             _railHeaderConfigHooked = true;
-            _configuration.OnConfigurationChanged +=
-                () => _railHeaderPrimed = false;
+            _configuration.OnConfigurationChanged += InvalidateRailHeader;
         }
         bool linked = _interaction.LinkedBonesEnabled;
         bool hasOverride = HasActorTransformOverride;
@@ -2677,6 +2676,8 @@ public partial class PoseInspectorPane : IDisposable
         _railHeader = ComputeRailHeader();
         return _railHeader;
     }
+
+    private void InvalidateRailHeader() => _railHeaderPrimed = false;
 
     private (string Who, string Sub, int Linked) ComputeRailHeader()
     {
@@ -3086,8 +3087,32 @@ public partial class PoseInspectorPane : IDisposable
             _cleanTransforms.Commit(gesture);
     }
 
-    public void Dispose() => ClearTransformSession(cancel:
+    public void CancelInteraction() => ClearTransformSession(cancel:
         _cleanGesture is { } gesture && _cleanTransforms.ActiveGesture == gesture);
+
+    public void Dispose()
+    {
+        CancelInteraction();
+        if (_railHeaderConfigHooked)
+        {
+            _configuration.OnConfigurationChanged -= InvalidateRailHeader;
+            _railHeaderConfigHooked = false;
+        }
+    }
+
+    // A pinned inspector can stop drawing while a numeric/ring drag is held.
+    // Finish only this pane's gesture; never seal another host's interaction.
+    public void PumpInteraction(bool pointerHeld)
+    {
+        if (_cleanGesture is not { } gesture) return;
+        if (_cleanTransforms.ActiveGesture != gesture)
+            ClearTransformSession();
+        else if (!pointerHeld)
+        {
+            CommitTransformSession();
+            ClearTransformSession();
+        }
+    }
 
     private void ClearTransformSession(bool cancel = false)
     {
