@@ -281,7 +281,7 @@ public sealed class LibraryWindow : Window
         float actionY = min.Y + (height - closeSide * s) * 0.5f;
         ImGui.SetCursorScreenPos(new Vector2(actionX, actionY));
         Crystarium.IconButton(
-            _collapsed ? "chevron-down" : "chevron-up",
+            _collapsed ? "chevron-right" : "chevron-left",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
             help: _collapsed

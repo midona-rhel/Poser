@@ -191,7 +191,7 @@ public sealed class SidebarPartWindow : Window
             chevronX,
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
-            _collapsed ? "chevron-down" : "chevron-up",
+            _collapsed ? "chevron-right" : "chevron-left",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
             help: _collapsed
@@ -515,7 +515,7 @@ public sealed class InspectorPartWindow : Window
             chevronX,
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
-            _collapsed ? "chevron-down" : "chevron-up",
+            _collapsed ? "chevron-right" : "chevron-left",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
             help: _collapsed

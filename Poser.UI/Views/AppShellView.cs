@@ -798,7 +798,8 @@ public static class AppShellView
             {
                 float pinSize = theme.Controls.SmallIconSize * s;
                 var pinMin = titleMin + new Vector2(0f, (height - pinSize) * 0.5f);
-                Crystarium.IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text);
+                Crystarium.IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text,
+                    flipX: true);
                 titleMin.X += pinSize + theme.Page.ActionGap * s;
             }
             float titleWidth = MathF.Max(0f, titleRight - titleMin.X - theme.Spacing.Four * s);
@@ -1041,7 +1042,7 @@ public static class AppShellView
 
         NamedIconAt(
             new Vector2(x, y),
-            vm.Collapsed ? "chevron-down" : "chevron-up",
+            vm.Collapsed ? "chevron-right" : "chevron-left",
             side,
             vm.CollapseToggled,
             "##shell-collapse",
