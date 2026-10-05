@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.9.16-beta — pinned Inspectors and clearer controls
+
+- Keep an entity's Inspector beside its pinned Properties, with a separate collapse button and actor-root transforms.
+- Keep pop-out Properties the same minimum width as the main panel and identify pinned windows with a filled pin.
+- Hide pop-outs and section separators consistently while transforming.
+- Use right-drag to turn the free camera without left-click interfering with selection.
+- Center the camera on an actor without changing your zoom or view angle.
+- Reach camera, light and scenery file actions directly from buttons instead of a More dropdown.
+- Find pose import, export and library actions under Actor > General.
+- Choose pose export destinations from a nested submenu without losing the parent menu.
+- Enjoy continuous rounded-window shadows that stay neutral across colour themes.
+- Spot the main Properties title and release headings more easily.
+- See character colours and custom colours in wider rectangular swatches without rearranging their rows.
+- Open release notes with their heading font ready instead of briefly reflowing after display.
+- Known limitation: Deselect in a pinned group Inspector can clear an unrelated global selection; avoid that action for now.
+
+## 0.9.15-beta — smarter Properties pop-out placement
+
+- Open new Properties pop-outs at the size of your last adjusted window, with a small offset from its position.
+- Keep new pop-outs on-screen and reuse the expanded size even after collapsing or closing the previous window.
+
+## 0.9.14-beta — pinned Properties and better body colliders
+
+- Pop out Properties into separate windows that stay pinned to their original actors, objects or groups.
+- Edit the same target from multiple windows while keeping bone selection and actor state in sync.
+- Keep sections, pickers and animation scrubbing independent between Properties windows.
+- Move pinned groups without accidentally editing the current selection instead.
+- Generate better-fitting body and tail colliders that account for the current pose and Customize+ scaling.
+- Keep generated colliders lightweight and preserve their group placement and bone attachments through Undo/Redo.
+- Read Settings and Properties labels at minimum window widths without word wrapping.
+- Reduce routine debug-log noise.
+
 ## 0.9.13-beta — idle export, appearance controls and release history
 
 - Export idle poses with rotated, unevenly scaled bones without the transform-conversion error.
