@@ -1042,7 +1042,7 @@ public static class AppShellView
 
         NamedIconAt(
             new Vector2(x, y),
-            vm.Collapsed ? "chevron-right" : "chevron-left",
+            vm.Collapsed ? "chevron-down" : "chevron-up",
             side,
             vm.CollapseToggled,
             "##shell-collapse",
@@ -1385,8 +1385,8 @@ public static class AppShellView
             vm.DrawFooterMiddle?.Invoke(new Vector2(min.X + inset, min.Y),
                 new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f - inspectorSeat), max.Y - min.Y));
             if (vm.OnInspectorCollapseToggle != null)
-                IconAt(new Vector2(max.X - inset - side * s, y),
-                    vm.InspectorCollapsed ? TablerIcon.ArrowLeft : TablerIcon.ArrowRight,
+                NamedIconAt(new Vector2(max.X - inset - side * s, y),
+                    vm.InspectorCollapsed ? "chevron-left" : "chevron-right",
                     side, vm.OnInspectorCollapseToggle, "##pinned-inspector-toggle",
                     help: vm.InspectorCollapsed ? "Show inspector" : "Collapse inspector");
             return;
