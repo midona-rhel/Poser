@@ -16,12 +16,8 @@ internal static class ControlPaint
     /// (<c>max(1, scale)</c>, so it never vanishes below 1x and never
     /// blurs into a half-pixel above it).
     ///
-    /// <para>The color is packed RAW — <see cref="ColorEx.ApplyAlpha"/> is
-    /// deliberately NOT applied, preserving the behavior of every call
-    /// site this was extracted from. Whether hairlines should honor the
-    /// ImGui style alpha like the rest of the chrome is a normalization
-    /// decision, not part of this extraction.</para>
-    /// </summary>
+    /// <para>Like the surrounding controls, separators honor the current
+    /// style alpha, including the hide-while-manipulating fade.</para>
     /// <para>The right edge is taken as an ABSOLUTE x, not a width: every
     /// call site already knows where the line ends, and passing the end
     /// directly avoids the <c>left + (right − left)</c> round-trip, which
@@ -31,7 +27,7 @@ internal static class ControlPaint
     /// <param name="topLeft">Left end of the hairline, at its top edge.</param>
     /// <param name="right">Absolute x of the hairline's right end.</param>
     /// <param name="scale">Global UI scale.</param>
-    /// <param name="color">Separator color, packed without style alpha.</param>
+    /// <param name="color">Separator color before style alpha is applied.</param>
     public static void Separator(
         ImDrawListPtr drawList,
         Vector2 topLeft,
@@ -41,7 +37,7 @@ internal static class ControlPaint
         => drawList.AddRectFilled(
             topLeft,
             new Vector2(right, topLeft.Y + MathF.Max(1f, scale)),
-            ImGui.ColorConvertFloat4ToU32(color));
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)));
 
     /// <summary>
     /// THE bordered-control disabled group (<c>.btn:disabled { opacity:
