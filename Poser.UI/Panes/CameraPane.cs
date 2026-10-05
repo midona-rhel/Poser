@@ -656,15 +656,14 @@ public sealed class CameraPane
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(camera.Id));
-        });
-        form.Actions("Library", actions =>
             actions.Button("Save to library", () => _names.Open(
                 "Save camera to library", camera.Name,
                 name =>
                 {
                     if (_values.Read(camera.Id) is not null)
                         _scenePane.SaveEntry(SelectionId.ForCamera(camera.Id), name);
-                })));
+                }));
+        });
     }
 
     private void ActionRows(Crystarium.FormScope form, CameraReading camera)

@@ -534,15 +534,14 @@ public sealed class LightPane
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(light.Id));
-        });
-        form.Actions("Library", actions =>
             actions.Button("Save to library", () => _names.Open(
                 "Save light to library", light.Name,
                 name =>
                 {
                     if (_values.Read(light.Id) is not null)
                         _scenePane.SaveEntry(SelectionId.ForLight(light.Id), name);
-                })));
+                }));
+        });
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.

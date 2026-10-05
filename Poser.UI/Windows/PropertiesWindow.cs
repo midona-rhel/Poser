@@ -79,7 +79,7 @@ public sealed class PropertiesWindow : Window, IDisposable
         float height = _collapsed ? AppShellView.CollapsedBarHeight : 340f;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new(520f + InspectorWidth, height),
+            MinimumSize = new(AppShellView.MinimumPropertiesWidth + InspectorWidth, height),
             MaximumSize = new(float.MaxValue, _collapsed ? height : float.MaxValue),
         };
         if (_resize)
@@ -138,7 +138,7 @@ public sealed class PropertiesWindow : Window, IDisposable
     {
         float scale = ImGuiHelpers.GlobalScale;
         var viewport = ImGui.GetMainViewport();
-        var minimum = new Vector2(520f, 340f);
+        var minimum = new Vector2(AppShellView.MinimumPropertiesWidth, 340f);
         var size = Vector2.Clamp(previous?.Size ?? new(660f, 640f),
             minimum, Vector2.Max(minimum, viewport.WorkSize / scale - new Vector2(AppShellView.RailWidth, 0f)));
         var offset = new Vector2(24f * scale);

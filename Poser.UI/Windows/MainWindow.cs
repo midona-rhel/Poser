@@ -33,7 +33,7 @@ public partial class MainWindow : Window
 {
     // One minimum for every tab: the right column is always spent, either
     // on the Pose rail or on Animation content.
-    private const float MinimumWidth = 1110f;
+    private const float MinimumWidth = AppShellView.MinimumWorkspaceWidth;
 
     private const float DefaultWidth = MinimumWidth + 50f;
 

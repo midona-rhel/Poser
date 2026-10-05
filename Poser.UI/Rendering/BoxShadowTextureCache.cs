@@ -146,6 +146,7 @@ internal static class BoxShadowTextureCache
         public int Top;
         public int Right;
         public int Bottom;
+        public int Inset;
         public int LastDraw;
     }
 
@@ -162,6 +163,11 @@ internal static class BoxShadowTextureCache
         if (_uploader is null || shadow.Inset || shadow.Blur <= 0f)
             return false;
 
+        // Validate small/collapsed panels even on cache hits: corner slices
+        // must fit without overlapping before they can share the same asset.
+        if (!TryDescribe(min, max, shadow, baseRadius, scale, out var description))
+            return false;
+
         var key = new ShadowKey(shadow, baseRadius, scale, styleAlpha);
         _drawTick++;
         if (Cache.TryGetValue(key, out var entry))
@@ -171,15 +177,6 @@ internal static class BoxShadowTextureCache
             DrawSlices(sink, entry, min, max);
             return true;
         }
-
-        if (!TryDescribe(
-                min,
-                max,
-                shadow,
-                baseRadius,
-                scale,
-                out var description))
-            return false;
 
         byte[] pixels;
         try
@@ -222,6 +219,7 @@ internal static class BoxShadowTextureCache
             Top = description.Top,
             Right = description.Right,
             Bottom = description.Bottom,
+            Inset = description.Inset,
             LastDraw = _drawTick,
         };
         Cache.Add(key, entry);
@@ -245,6 +243,8 @@ internal static class BoxShadowTextureCache
         public readonly int Top;
         public readonly int Right;
         public readonly int Bottom;
+        public readonly int Inset;
+        public readonly float PanelRadius;
         public readonly float CoreMinX;
         public readonly float CoreMinY;
         public readonly float CoreMaxOffsetX;
@@ -257,6 +257,8 @@ internal static class BoxShadowTextureCache
             int top,
             int right,
             int bottom,
+            int inset,
+            float panelRadius,
             float boxWidth,
             float boxHeight,
             float coreMinX,
@@ -270,6 +272,8 @@ internal static class BoxShadowTextureCache
             Top = top;
             Right = right;
             Bottom = bottom;
+            Inset = inset;
+            PanelRadius = panelRadius;
             Width = left + 1 + right;
             Height = top + 1 + bottom;
             CoreMinX = coreMinX;
@@ -300,6 +304,7 @@ internal static class BoxShadowTextureCache
         float offsetX = shadow.OffsetX * scale;
         float offsetY = shadow.OffsetY * scale;
         float radius = (baseRadius + shadow.Spread) * scale;
+        float panelRadius = MathF.Max(0f, baseRadius * scale);
         float coreRadius = MathF.Max(0f, radius - blur);
         if (!float.IsFinite(boxWidth)
             || !float.IsFinite(boxHeight)
@@ -308,6 +313,8 @@ internal static class BoxShadowTextureCache
             || !float.IsFinite(offsetX)
             || !float.IsFinite(offsetY)
             || !float.IsFinite(radius)
+            || !float.IsFinite(panelRadius)
+            || panelRadius > MaxExtent
             || blur <= 0f
             || blur > MaxExtent
             || boxWidth <= 2f * MathF.Max(0f, radius) + 1f
@@ -324,10 +331,16 @@ internal static class BoxShadowTextureCache
             || bottomExtent > MaxExtent)
             return false;
 
-        int left = Math.Max(1, (int)MathF.Ceiling(leftExtent));
-        int top = Math.Max(1, (int)MathF.Ceiling(topExtent));
-        int right = Math.Max(1, (int)MathF.Ceiling(rightExtent));
-        int bottom = Math.Max(1, (int)MathF.Ceiling(bottomExtent));
+        // Keep the exposed area inside each rectangular corner. Previously
+        // slices stopped at the panel rectangle, cutting square holes in a
+        // rounded window's shadow. The baked rounded cutout excludes its body.
+        int inset = (int)MathF.Ceiling(panelRadius) + 1;
+        if (boxWidth <= inset * 2f || boxHeight <= inset * 2f)
+            return false;
+        int left = Math.Max(1, (int)MathF.Ceiling(leftExtent)) + inset;
+        int top = Math.Max(1, (int)MathF.Ceiling(topExtent)) + inset;
+        int right = Math.Max(1, (int)MathF.Ceiling(rightExtent)) + inset;
+        int bottom = Math.Max(1, (int)MathF.Ceiling(bottomExtent)) + inset;
 
         float coreMinX = offsetX - spread + blur;
         float coreMinY = offsetY - spread + blur;
@@ -345,6 +358,8 @@ internal static class BoxShadowTextureCache
             top,
             right,
             bottom,
+            inset,
+            panelRadius,
             boxWidth,
             boxHeight,
             coreMinX,
@@ -379,79 +394,22 @@ internal static class BoxShadowTextureCache
         {
             for (int x = 0; x < description.Width; x++)
             {
-                float alpha;
-                if (x == description.Left && y == description.Top)
-                {
-                    // The box background is painted after the shadow. Keep
-                    // the center transparent so the asset is safe to reuse.
-                    alpha = 0f;
-                }
-                else if (y < description.Top && x == description.Left)
-                {
-                    alpha = AlphaAt(
-                        representativeWidth * 0.5f,
-                        y + 0.5f - description.Top,
-                        description.CoreMinX,
-                        description.CoreMinY,
-                        coreMaxX,
-                        coreMaxY,
-                        description.CoreRadius,
-                        description.Blur);
-                }
-                else if (y > description.Top && x == description.Left)
-                {
-                    alpha = AlphaAt(
-                        representativeWidth * 0.5f,
-                        representativeHeight + y + 0.5f - description.Top - 1f,
-                        description.CoreMinX,
-                        description.CoreMinY,
-                        coreMaxX,
-                        coreMaxY,
-                        description.CoreRadius,
-                        description.Blur);
-                }
-                else if (x < description.Left && y == description.Top)
-                {
-                    alpha = AlphaAt(
-                        x + 0.5f - description.Left,
-                        representativeHeight * 0.5f,
-                        description.CoreMinX,
-                        description.CoreMinY,
-                        coreMaxX,
-                        coreMaxY,
-                        description.CoreRadius,
-                        description.Blur);
-                }
-                else if (x > description.Left && y == description.Top)
-                {
-                    alpha = AlphaAt(
-                        representativeWidth + x + 0.5f - description.Left - 1f,
-                        representativeHeight * 0.5f,
-                        description.CoreMinX,
-                        description.CoreMinY,
-                        coreMaxX,
-                        coreMaxY,
-                        description.CoreRadius,
-                        description.Blur);
-                }
-                else
-                {
-                    float localX = x + 0.5f - description.Left;
-                    float localY = y + 0.5f - description.Top;
-                    if (x > description.Left)
-                        localX += representativeWidth - 1f;
-                    if (y > description.Top)
-                        localY += representativeHeight - 1f;
-                    alpha = AlphaAt(
-                        localX,
-                        localY,
-                        description.CoreMinX,
-                        description.CoreMinY,
-                        coreMaxX,
-                        coreMaxY,
-                        description.CoreRadius,
-                        description.Blur);
-                }
+                float localX = x < description.Left
+                    ? x + 0.5f - description.Left + description.Inset
+                    : x > description.Left
+                        ? representativeWidth + x + 0.5f - description.Left - 1f - description.Inset
+                        : representativeWidth * 0.5f;
+                float localY = y < description.Top
+                    ? y + 0.5f - description.Top + description.Inset
+                    : y > description.Top
+                        ? representativeHeight + y + 0.5f - description.Top - 1f - description.Inset
+                        : representativeHeight * 0.5f;
+                float alpha = AlphaAt(localX, localY, description.CoreMinX, description.CoreMinY,
+                    coreMaxX, coreMaxY, description.CoreRadius, description.Blur);
+                // A translucent panel must not reveal its own outset shadow.
+                // Remove only the rounded body, not the whole rectangular box.
+                alpha *= Math.Clamp(RoundedDistance(localX, localY, 0f, 0f,
+                    representativeWidth, representativeHeight, description.PanelRadius) + 0.5f, 0f, 1f);
 
                 pixels[index++] = ToByte(color.X);
                 pixels[index++] = ToByte(color.Y);
@@ -472,6 +430,19 @@ internal static class BoxShadowTextureCache
         float radius,
         float blur)
     {
+        float distance = MathF.Max(0f, RoundedDistance(x, y,
+            coreMinX, coreMinY, coreMaxX, coreMaxY, radius));
+        float t = distance / (2f * blur);
+        if (t >= 1f)
+            return 0f;
+        if (t <= 0f)
+            return 1f;
+        return 1f - t * t * (3f - 2f * t);
+    }
+
+    private static float RoundedDistance(float x, float y, float coreMinX, float coreMinY,
+        float coreMaxX, float coreMaxY, float radius)
+    {
         float halfX = (coreMaxX - coreMinX) * 0.5f;
         float halfY = (coreMaxY - coreMinY) * 0.5f;
         float centerX = (coreMinX + coreMaxX) * 0.5f;
@@ -480,17 +451,10 @@ internal static class BoxShadowTextureCache
         float qy = MathF.Abs(y - centerY) - halfY + radius;
         float outsideX = MathF.Max(qx, 0f);
         float outsideY = MathF.Max(qy, 0f);
-        float signedDistance =
+        return
             MathF.Sqrt(outsideX * outsideX + outsideY * outsideY)
             + MathF.Min(MathF.Max(qx, qy), 0f)
             - radius;
-        float distance = MathF.Max(0f, signedDistance);
-        float t = distance / (2f * blur);
-        if (t >= 1f)
-            return 0f;
-        if (t <= 0f)
-            return 1f;
-        return 1f - t * t * (3f - 2f * t);
     }
 
     private static byte ToByte(float value) =>
@@ -503,6 +467,8 @@ internal static class BoxShadowTextureCache
         Vector2 max)
         where TSink : IShadowDrawSink
     {
+        min += new Vector2(entry.Inset);
+        max -= new Vector2(entry.Inset);
         float width = entry.Width;
         float height = entry.Height;
         var uvLeft = entry.Left / width;

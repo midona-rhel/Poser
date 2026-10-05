@@ -488,6 +488,9 @@ public static class AppShellView
     public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
     public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
+    public const float MinimumWorkspaceWidth = 1110f;
+    public static float MinimumPropertiesWidth => MinimumWorkspaceWidth
+        - Crystarium.ActiveTheme.Shell.SidebarDefaultWidth - RailWidth;
 
     /// <summary>Hoists the model-forwarding callbacks once per model, per the
     /// codebase's own idiom (PoseLibraryView, SpawnBrowserView, ShellSidebar):
@@ -687,37 +690,7 @@ public static class AppShellView
                 U32(BorderPrimary));
         }
 
-        if (vm.Detached)
-        {
-            // The detached main window is the properties window — an
-            // INTERNAL name: the user just sees the name of whatever they
-            // have selected. The rail below is the inspector.
-            string title = vm.TitleEntity == "Poser"
-                ? "Properties"
-                : vm.TitleEntity;
-            var titleStyle = new TextStyle
-            {
-                Size = theme.Typography.BodySize,
-                Weight = FontWeight.SemiBold,
-                Color = theme.Chrome.Text,
-            };
-            var titleMin = new Vector2(min.X + MainHorizontalPadding * s, min.Y);
-            if (!vm.PropertiesOnly)
-                DrawMainTitleOutline(titleMin, Crystarium.MeasureText(title, titleStyle).X,
-                    height, s, dl);
-            // The title stands on the content column's own inset, so the
-            // window's left side reads as one aligned edge: title, tab
-            // strips and content.
-            Crystarium.TextInBand(
-                titleMin,
-                new Vector2(
-                    MathF.Max(1f, max.X - min.X
-                        - MainHorizontalPadding * 2f * s),
-                    height),
-                title,
-                titleStyle);
-        }
-        else
+        if (!vm.Detached)
         {
             // The pill stays on the toolbar window — the cell carries no
             // duplicate of anything the toolbar already states. The
@@ -756,6 +729,7 @@ public static class AppShellView
             // own window — never in this titlebar.
         }
         float clusterLeft = DrawTitleActions(vm, max.X, min.Y, height, s);
+        float titleRight = clusterLeft - theme.Page.ActionGap * s;
 
         // The CONTENT selector lives in the TITLEBAR, beside the window
         // action icons and measured against their cluster: Target shows
@@ -789,6 +763,7 @@ public static class AppShellView
             // split, the cluster's own left edge is the bound.
             float selectorRight = MathF.Min(
                 max.X - railEdge, clusterLeft);
+            titleRight = selectorRight - (theme.Page.ActionGap * 2f) * s - fixedWidth;
             ImGui.SetCursorScreenPos(new Vector2(
                 selectorRight - theme.Page.ActionGap * s - fixedWidth,
                 min.Y + (height - segSize.Y) * 0.5f));
@@ -808,6 +783,32 @@ public static class AppShellView
                     2 => "Save and load the scene",
                     _ => null,
                 });
+        }
+        if (vm.Detached)
+        {
+            string title = vm.TitleEntity == "Poser" ? "Properties" : vm.TitleEntity;
+            var titleStyle = new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            };
+            var titleMin = new Vector2(min.X + MainHorizontalPadding * s, min.Y);
+            if (vm.PropertiesOnly)
+            {
+                float pinSize = theme.Controls.SmallIconSize * s;
+                var pinMin = titleMin + new Vector2(0f, (height - pinSize) * 0.5f);
+                Crystarium.IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text);
+                titleMin.X += pinSize + theme.Page.ActionGap * s;
+            }
+            float titleWidth = MathF.Max(0f, titleRight - titleMin.X - theme.Spacing.Four * s);
+            if (titleWidth > 0f)
+            {
+                if (!vm.PropertiesOnly)
+                    DrawMainTitleOutline(titleMin,
+                        MathF.Min(titleWidth, Crystarium.MeasureText(title, titleStyle).X), height, s, dl);
+                Crystarium.TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle);
+            }
         }
     }
 

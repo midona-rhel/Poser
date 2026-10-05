@@ -40,7 +40,9 @@ in one must not stop the other from updating. Reopening a panel reads the curren
 selection, not the target it last displayed.
 
 Properties pop-outs pin their displayed entity, not a private selection cursor.
-The main window's title has a one-pixel outline; pinned pop-out titles do not.
+The main window's title has a one-pixel outline; pinned pop-out titles use a
+filled pin instead. Title text and its outline stay within the band left by
+the mode selector and window actions.
 Bone and gaze selections pin their owning actor. Bone clicks, clear,
 range selection and highlights use the global workspace selection in every host.
 An actor pin edits that actor's currently selected bones, but never follows
@@ -60,6 +62,8 @@ The rail pins entity targets (always the actor root), while
 posing content still follows that actor's globally selected bones. Separate
 presentation graphs share commands/history, never mutable selection or gesture
 state. Collapsing the rail preserves content width and does not change other hosts.
+Main and popped-out Properties use the same minimum content width, adding
+only their currently attached Sidebar/Inspector columns to the outer width.
 Pop-outs follow the workspace's manipulation fade, retaining live shell-drag
 items while hidden so an Inspector gesture can complete normally.
 New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
