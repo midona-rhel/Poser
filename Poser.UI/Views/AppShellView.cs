@@ -1386,7 +1386,7 @@ public static class AppShellView
                 new Vector2(MathF.Max(0f, max.X - min.X - inset * 2f - inspectorSeat), max.Y - min.Y));
             if (vm.OnInspectorCollapseToggle != null)
                 NamedIconAt(new Vector2(max.X - inset - side * s, y),
-                    vm.InspectorCollapsed ? "chevron-left" : "chevron-right",
+                    vm.InspectorCollapsed ? "chevron-right" : "chevron-left",
                     side, vm.OnInspectorCollapseToggle, "##pinned-inspector-toggle",
                     help: vm.InspectorCollapsed ? "Show inspector" : "Collapse inspector");
             return;
