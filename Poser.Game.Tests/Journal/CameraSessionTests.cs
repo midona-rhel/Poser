@@ -5,12 +5,52 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Journal;
+using Poser.Game.Cameras;
 using Poser.Services;
 
 namespace Poser.Game.Tests.Journal;
 
 public sealed class CameraSessionTests
 {
+    [Fact]
+    public void Centering_an_actor_translates_the_shot_without_refitting_it()
+    {
+        var camera = new FakeCamera
+        {
+            PositionOffset = new(1, 2, 3), Zoom = 17f, FoV = 0.8f,
+            Angle = new(0.4f, 0.7f), Pan = new(2, 4), Roll = 0.2f,
+            Orthographic = true, OrthographicZoom = 12f,
+            TargetOffset = new(7, 8, 9), TargetActorName = "Followed actor",
+            IsTargetLocked = true,
+        };
+        var pivot = new Vector3(20, 30, 40);
+        Assert.True(VirtualCameraService.TranslateOrbitPivot(camera, pivot, new(10, 10, 10)).Success);
+        Assert.Equal(new Vector3(11, 22, 33), camera.PositionOffset);
+        Assert.Equal(17f, camera.Zoom);
+        Assert.Equal(0.8f, camera.FoV);
+        Assert.Equal(new Vector2(0.4f, 0.7f), camera.Angle);
+        Assert.Equal(new Vector2(2, 4), camera.Pan);
+        Assert.Equal(0.2f, camera.Roll);
+        Assert.True(camera.Orthographic);
+        Assert.Equal(12f, camera.OrthographicZoom);
+        Assert.Equal(new Vector3(7, 8, 9), camera.TargetOffset);
+        Assert.Equal("Followed actor", camera.TargetActorName);
+        Assert.True(camera.IsTargetLocked);
+        Assert.True(VirtualCameraService.TranslateOrbitPivot(camera, pivot, pivot).Success);
+        Assert.Equal(new Vector3(11, 22, 33), camera.PositionOffset);
+    }
+
+    [Theory]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void Invalid_centering_pivots_leave_the_shot_untouched(float invalid)
+    {
+        var camera = new FakeCamera { PositionOffset = new(1, 2, 3), Zoom = 17f };
+        Assert.False(VirtualCameraService.TranslateOrbitPivot(camera, new(invalid, 0, 0), Vector3.Zero).Success);
+        Assert.Equal(new Vector3(1, 2, 3), camera.PositionOffset);
+        Assert.Equal(17f, camera.Zoom);
+    }
+
     [Fact]
     public void A_locked_camera_takes_no_value_and_journals_nothing()
     {
