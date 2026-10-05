@@ -529,25 +529,20 @@ public sealed class LightPane
     /// bound it.</summary>
     private void FileRows(Crystarium.FormScope form, LightReading light)
     {
-        form.ActionDropdown("More", ["Save to file…", "Save to library", "Destroy all lights…"], -1, "More",
-            choice =>
-            {
-                if (choice == 0)
-                    OpenSave(light.Id);
-                else if (choice == 2)
-                    RequestDestroyAll?.Invoke();
-                else
-                    _names.Open(
-                        "Save light to library", light.Name,
-                        name =>
-                        {
-                            if (_values.Read(light.Id) is not null)
-                                _scenePane.SaveEntry(SelectionId.ForLight(light.Id), name);
-                        });
-            }, icon: TablerIcon.Dots);
         form.Actions("Light file", actions =>
+        {
             actions.Button("Load", OpenLoad,
-                help: "Add a light from a file to the scene"));
+                help: "Add a light from a file to the scene");
+            actions.Button("Save to file…", () => OpenSave(light.Id));
+        });
+        form.Actions("Library", actions =>
+            actions.Button("Save to library", () => _names.Open(
+                "Save light to library", light.Name,
+                name =>
+                {
+                    if (_values.Read(light.Id) is not null)
+                        _scenePane.SaveEntry(SelectionId.ForLight(light.Id), name);
+                })));
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
@@ -599,7 +594,8 @@ public sealed class LightPane
                     },
                     help: "Hand it back to the game");
         });
-
+        form.Actions("All lights", actions => actions.Button("Destroy all lights…",
+            () => RequestDestroyAll?.Invoke(), variant: ButtonVariant.Danger), alignRight: true);
     }
 
     /// <summary>Uses the same camera-relative placement as a new light,

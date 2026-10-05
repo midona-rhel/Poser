@@ -695,22 +695,27 @@ public static class AppShellView
             string title = vm.TitleEntity == "Poser"
                 ? "Properties"
                 : vm.TitleEntity;
+            var titleStyle = new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            };
+            var titleMin = new Vector2(min.X + MainHorizontalPadding * s, min.Y);
+            if (!vm.PropertiesOnly)
+                DrawMainTitleOutline(titleMin, Crystarium.MeasureText(title, titleStyle).X,
+                    height, s, dl);
             // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
             // strips and content.
             Crystarium.TextInBand(
-                new Vector2(min.X + MainHorizontalPadding * s, min.Y),
+                titleMin,
                 new Vector2(
                     MathF.Max(1f, max.X - min.X
                         - MainHorizontalPadding * 2f * s),
                     height),
                 title,
-                new TextStyle
-                {
-                    Size = theme.Typography.BodySize,
-                    Weight = FontWeight.SemiBold,
-                    Color = theme.Chrome.Text,
-                });
+                titleStyle);
         }
         else
         {
@@ -720,6 +725,8 @@ public static class AppShellView
             float brandEnd = DrawBrandPill(
                 vm, min.X + TitleInset * s, min.Y, height, s, dl,
                 pill: false);
+            DrawMainTitleOutline(new Vector2(min.X + TitleInset * s, min.Y),
+                brandEnd - min.X - TitleInset * s, height, s, dl);
             // The burger LEFT-aligns by the brand; the Library text
             // button keeps the cell's right.
             float burgerSide = theme.Controls.ShellIconAction;
@@ -802,6 +809,16 @@ public static class AppShellView
                     _ => null,
                 });
         }
+    }
+
+    private static void DrawMainTitleOutline(
+        Vector2 textMin, float textWidth, float height, float s, ImDrawListPtr dl)
+    {
+        var theme = Crystarium.ActiveTheme;
+        var padding = new Vector2(theme.Spacing.Four * s, theme.Spacing.Four * s);
+        dl.AddRect(new Vector2(textMin.X - padding.X, textMin.Y + padding.Y),
+            new Vector2(textMin.X + textWidth + padding.X, textMin.Y + height - padding.Y),
+            U32(BorderPrimary), theme.Radii.Control * s, ImDrawFlags.None, 1f);
     }
 
     /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in

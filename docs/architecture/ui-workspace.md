@@ -40,6 +40,7 @@ in one must not stop the other from updating. Reopening a panel reads the curren
 selection, not the target it last displayed.
 
 Properties pop-outs pin their displayed entity, not a private selection cursor.
+The main window's title has a one-pixel outline; pinned pop-out titles do not.
 Bone and gaze selections pin their owning actor. Bone clicks, clear,
 range selection and highlights use the global workspace selection in every host.
 An actor pin edits that actor's currently selected bones, but never follows
@@ -129,10 +130,12 @@ Individual bone/category and weapon-slot controls remain independent. With the
 option off (the compatibility default), the skeleton eye restores its remembered
 subset and Show all actor bones shows everything. Preset default checks persist
 across stock-list updates; saving Settings does not mutate the current mask.
-Save actions, Create collider,
+In context menus, Save actions, Create collider,
 Export Idle Pose and category-wide destruction live under More when there are
-multiple secondary actions; sidebar and viewport use the same composition. Inspector surfaces
-keep a lone save action direct. More uses
+multiple secondary actions; sidebar and viewport use the same composition.
+Properties panels expose file, library and lifetime actions as direct buttons,
+not a More dropdown; bulk destruction stays separate from file actions.
+In context menus, More uses
 the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
 destruction (lights, cameras, objects, and overlays) opens a dialog with the target count
 and what is released or protected; only its explicit confirmation runs the

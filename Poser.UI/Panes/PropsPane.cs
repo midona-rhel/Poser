@@ -176,23 +176,13 @@ public sealed class PropsPane
             });
         if (_status.Length > 0)
             form.Status(_status, warning: true);
-        form.ActionDropdown("More", ["Save to library", "Destroy all objects…"], -1, "More",
-                choice =>
-                {
-                    if (choice == 1)
-                    {
-                        RequestDestroyAll?.Invoke();
-                        return;
-                    }
-                    _names.Open(
-                    "Save prop to library", prop.Name,
-                    name =>
-                    {
-                        if (_values.Read(prop.Id) is not null)
-                            _scenePane.SaveEntry(SelectionId.ForProp(prop.Id), name);
-                    });
-                },
-                help: "Save a spawnable copy of this prop", icon: TablerIcon.Dots);
+        form.Actions("Library", actions => actions.Button("Save to library", () => _names.Open(
+            "Save prop to library", prop.Name,
+            name =>
+            {
+                if (_values.Read(prop.Id) is not null)
+                    _scenePane.SaveEntry(SelectionId.ForProp(prop.Id), name);
+            }), help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
             // Destroy is THE destruction verb — Delete and Remove were
@@ -205,7 +195,9 @@ public sealed class PropsPane
                 },
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
-        });
+            actions.Button("Destroy all objects…", () => RequestDestroyAll?.Invoke(),
+                variant: ButtonVariant.Danger);
+        }, alignRight: true);
     }
 
     // ── state ────────────────────────────────────────────────────────────
