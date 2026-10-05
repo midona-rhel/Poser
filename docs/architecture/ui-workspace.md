@@ -40,6 +40,8 @@ in one must not stop the other from updating. Reopening a panel reads the curren
 selection, not the target it last displayed.
 
 Properties pop-outs pin their displayed entity, not a private selection cursor.
+Window drop shadows keep the same neutral color, opacity, offset and softness
+across application color themes; surface colors do not redefine elevation.
 The main window's title has a one-pixel outline; pinned pop-out titles use a
 filled pin instead. Title text and its outline stay within the band left by
 the mode selector and window actions.
