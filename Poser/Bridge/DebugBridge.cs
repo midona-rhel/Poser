@@ -882,6 +882,8 @@ public sealed partial class DebugBridge : IDisposable
                                 ChildDepth = query.TryGetValue("childDepth", out var cd) ? int.Parse(cd) : current.ChildDepth,
                                 TargetMode = query.TryGetValue("targetMode", out var tm) ? Enum.Parse<Domain.Posing.IkTargetMode>(tm, true) : current.TargetMode,
                                 Collisions = query.TryGetValue("collisions", out var collisions) ? collisions != "0" : current.Collisions,
+                                EnforceEndRotation = query.TryGetValue("endRotation", out var endRotation) ? endRotation != "0" : current.EnforceEndRotation,
+                                HoldRotation = query.TryGetValue("keepRotation", out var keepRotation) ? keepRotation != "0" : current.HoldRotation,
                                 CcdIterations = query.TryGetValue("iterations", out var it) ? int.Parse(it) : current.CcdIterations,
                                 SwivelDegrees = query.TryGetValue("swivel", out var sw) ? float.Parse(sw, CultureInfo.InvariantCulture) : current.SwivelDegrees,
                             };

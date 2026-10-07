@@ -9,6 +9,24 @@ public sealed class IkAnchorAndSpanTests
 {
     private static readonly JsonSerializerOptions Json = new() { IncludeFields = true };
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Two_joint_end_rotation_is_the_only_rotation_authority_in_every_target_mode(bool end, bool keep)
+    {
+        foreach (var mode in Enum.GetValues<IkTargetMode>())
+        {
+            var config = IkChainConfig.DefaultsFor(true, true) with
+            { TargetMode = mode, EnforceEndRotation = end, HoldRotation = keep };
+            Assert.Equal(end, config.HoldsEndRotation);
+            Assert.Equal(keep, (config with { Solver = IkSolver.Ccd }).HoldsEndRotation);
+            Assert.Equal(keep, (config with { Solver = IkSolver.Fabrik }).HoldsEndRotation);
+            Assert.Equal(keep, (config with { Solver = IkSolver.Rope }).HoldsEndRotation);
+        }
+    }
+
     [Fact]
     public void Actor_anchor_uses_captured_model_point_and_only_subsequent_handle_edits()
     {

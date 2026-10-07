@@ -875,7 +875,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         var currentRotation = new Quaternion(
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
-        bool holdRotation = ik.Config.HoldRotation;
+        bool holdRotation = ik.Config.HoldsEndRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
             target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
@@ -950,7 +950,7 @@ public unsafe partial class BonePosingService : IBonePosingService
                     is { } held)
             {
                 target = held.Position;
-                if (ik.Config.HoldRotation)
+                if (ik.Config.HoldsEndRotation)
                 {
                     requestedRotation = held.Rotation;
                     heldRotation = held.Rotation;

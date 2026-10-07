@@ -64,6 +64,10 @@ public sealed record IkChainConfig(
     public FabrikControl? Fabrik { get; init; }
     public IkActorAnchor? ActorAnchor { get; init; }
     public bool Collisions { get; init; }
+    /// <summary>Two Joint has one rotation authority: End rotation. A saved
+    /// Keep rotation value belongs to other solvers and must not override it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HoldsEndRotation => Solver == IkSolver.TwoJoint ? EnforceEndRotation : HoldRotation;
     /// <summary>World-space segment radius in yalms, independent of actor scale.</summary>
     public float CollisionRadius { get; init; } = .02f;
     public const int MinDepth = 1;

@@ -2318,12 +2318,13 @@ public partial class PoseInspectorPane : IDisposable
             DrawIkBoneTarget(form, boneId, ikTarget);
         else if (config.TargetMode == Domain.Posing.IkTargetMode.Entity)
             DrawIkEntityTarget(form, ikTarget);
-        form.Switch(
-            "Keep rotation",
-            config.HoldRotation,
-            next => Apply(config with { HoldRotation = next }),
-            disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
-            help: "The tip keeps its rotation to the held spot or bone as well");
+        if (config.Solver != Domain.Posing.IkSolver.TwoJoint)
+            form.Switch(
+                "Keep rotation",
+                config.HoldRotation,
+                next => Apply(config with { HoldRotation = next }),
+                disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
+                help: "The tip keeps its rotation to the held spot or bone as well");
         }
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
@@ -2337,7 +2338,7 @@ public partial class PoseInspectorPane : IDisposable
                 "End rotation",
                 config.EnforceEndRotation,
                 next => Apply(config with { EnforceEndRotation = next }),
-                help: "Make the solver keep this bone's own rotation, not just its position");
+                help: "Keep the hand or foot's authored target rotation; off lets it rotate with the solved limb");
 
             var definition =
                 Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName);
