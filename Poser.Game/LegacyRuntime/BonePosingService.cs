@@ -1225,9 +1225,9 @@ public unsafe partial class BonePosingService : IBonePosingService
             && !ReferenceEquals(other.Endpoint, bone) && other.Endpoint.PartialId == bone.PartialId
             && ChainMemberNames(bone, config).Any(name => other.Bones.Contains(name))))
             return "This chain overlaps an active FABRIK chain. Reduce Depth or disable the other chain.";
+        config = PrepareIkConfiguration(bone, config);
         if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope))
         {
-            config = PrepareIkConfiguration(bone, config);
             if (config.Fabrik == null && config.Enabled && config.ParentDepth + config.ChildDepth > 0)
                 return "This depth reaches no bones. Increase Parent depth or Child depth.";
             if (config.Fabrik != null && FabrikOverlap(bone, config))
@@ -1249,11 +1249,6 @@ public unsafe partial class BonePosingService : IBonePosingService
             || state.HeldCapture == null;
         if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
             config = config with { ActorAnchor = null };
-        else if (config.ActorAnchor == null || previous != null && config.ActorAnchor == previous.Config.ActorAnchor
-            && (config.Solver != previous.Config.Solver || config.CcdDepth != previous.Config.CcdDepth))
-        {
-            config = config with { ActorAnchor = CaptureActorAnchor(bone, config) };
-        }
         state.Config = config.Normalized();
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {

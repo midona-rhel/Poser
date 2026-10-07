@@ -288,7 +288,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
-                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
+                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",

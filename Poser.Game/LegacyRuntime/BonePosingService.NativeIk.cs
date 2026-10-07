@@ -58,6 +58,10 @@ public unsafe partial class BonePosingService
             var native = pose->AccessBoneModelSpace(parent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
             return native == null ? null : AnchorPose(ReadTransform(native));
         }
+        // An off-screen parent need not have a recent display cache. Mark it
+        // wanted before refreshing, including on the first drag after rotation.
+        _ = parent.LastTransform;
+        RefreshCache(parent);
         return AnchorPose(ToApplySpace(parent, parent.LastTransform));
     }
 

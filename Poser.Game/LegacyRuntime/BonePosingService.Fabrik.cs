@@ -36,8 +36,16 @@ public unsafe partial class BonePosingService
 
     public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config)
     {
-        if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return config;
         var previous = GetIkConfiguration(endpoint);
+        if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
+        {
+            // Prepare before the value journal captures its after-state too:
+            // changing CCD depth changes which parent owns the target frame.
+            return config.Enabled && config.TargetMode == IkTargetMode.Actor
+                && (config.ActorAnchor == null || previous != null && config.ActorAnchor == previous.ActorAnchor
+                    && (config.Solver != previous.Solver || config.CcdDepth != previous.CcdDepth))
+                ? config with { ActorAnchor = CaptureActorAnchor(endpoint, config) } : config;
+        }
         if (config.Fabrik == null && config.Enabled
             || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
                 && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
