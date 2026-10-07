@@ -66,10 +66,11 @@ A bone is eligible when it has a non-hidden parent; FABRIK and Rope also allow
 a bone with same-partial children. Two Joint uses its slot-local limb; other
 eligible bones default to FABRIK. Chain settings cannot change during a gesture.
 
-Actor targets keep a captured actor-model point in every solver: rotating any
-ancestor, including one outside the IK chain, does not move that point. Moving,
-rotating or scaling the actor carries it through the actor frame. Handle edits
-move the target relative to its captured authored baseline. Native Actor captures
+Two Joint/CCD Actor targets follow the first parent outside the solved chain.
+Rotating or moving that parent, or any of its ancestors, carries the target;
+changing a joint inside the chain does not feed back into it. Actor-root motion
+also carries the target. Existing handle offsets follow the captured parent frame,
+while new drags are converted from current model axes. Native Actor captures
 are configuration state retained by undo/redo; disabling clears them and a fresh
 enable captures the current point. World/Bone/Entity anchors retain their existing
 coordinate frames. IK bake disables the
@@ -77,6 +78,12 @@ chain, waits for the pose to settle, and writes affected bones as one
 raw-baseline history entry. Disabling keeps tuning and clears only fixed
 capture. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset All
 disables and clears every chain.
+
+Constrained Two Joint/CCD handle translation is clipped to the live chain's
+reach before it enters authored state or the gizmo's drag accumulator. Two Joint
+also applies the configured hinge-angle reach limits. Excess travel is discarded,
+including old out-of-reach offsets, so the first reverse step moves inward.
+With constraints disabled, translation remains unrestricted.
 
 Scene entity targets follow props, scenery/world objects, lights and VFX through
 their exact stable scene IDs; they do not need a skeleton. Attachment captures

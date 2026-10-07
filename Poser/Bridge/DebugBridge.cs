@@ -931,7 +931,7 @@ public sealed partial class DebugBridge : IDisposable
                 // inspector well issues, so the step lands in the history the
                 // way a drag does. /rotatebone below writes the runtime directly.
                 string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
-                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                float deg = float.Parse(query.GetValueOrDefault("deg", "0"), CultureInfo.InvariantCulture);
                 var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
                 foreach (var skeleton in _skeletons.GetSkeletons(actor))
                     foreach (var bone in skeleton.Bones)
@@ -943,7 +943,9 @@ public sealed partial class DebugBridge : IDisposable
                                 return Json(new { error = "bone has no model transform this frame" });
                             var turned = System.Numerics.Quaternion.Normalize(
                                 current.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f));
-                            var desired = new global::Poser.Domain.Transforms.PoseTransform(current.Position, turned, current.Scale);
+                            float Move(string component) => float.Parse(query.GetValueOrDefault(component, "0"), CultureInfo.InvariantCulture);
+                            var desired = new global::Poser.Domain.Transforms.PoseTransform(
+                                current.Position + new System.Numerics.Vector3(Move("dx"), Move("dy"), Move("dz")), turned, current.Scale);
                             var written = _transforms.SetAbsolute(
                                 global::Poser.Domain.Identity.TransformTargetId.ForBone(boneId), desired, $"Bridge {name}");
                             return Json(new { ok = written.Success, written.Detail, modified = _bonePosing.HasModifications(bone), history = History() });

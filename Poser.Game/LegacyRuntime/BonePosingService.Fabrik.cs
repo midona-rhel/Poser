@@ -191,6 +191,8 @@ public unsafe partial class BonePosingService
 
     public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false)
     {
+        if (GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } native)
+            return ClampNativeIkTranslation(bone, native, delta, fromAuthoredBaseline);
         if (GetIkConfiguration(bone) is not
             { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control } config
             || control.Bones.Length < 2) return delta;

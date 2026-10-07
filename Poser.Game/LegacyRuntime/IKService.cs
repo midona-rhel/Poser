@@ -433,6 +433,8 @@ public unsafe class IKService : IIKService
         var current = bone.ParentBone;
         while (current != null && result.Count < depth + 1)
         {
+            // Native indices belong to the endpoint's one Havok pose.
+            if (current.PartialId != bone.PartialId || !ReferenceEquals(current.Skeleton, bone.Skeleton)) break;
             result.Add(current);
             current = current.ParentBone;
         }

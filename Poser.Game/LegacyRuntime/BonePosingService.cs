@@ -868,7 +868,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// <summary>Solve the held target after applying the pose-only stack values.</summary>
     private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik, Transform authored)
     {
-        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation) is not { } held)
+        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation, pose) is not { } held)
             return;
         var target = held.Position;
         var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -946,7 +946,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             // A held target brings its own rotation when the chain holds
             // rotation: the solver aims at it and the write below keeps it.
             if (fixedMode
-                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation)
+                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation, pose)
                     is { } held)
             {
                 target = held.Position;
@@ -1053,7 +1053,17 @@ public unsafe partial class BonePosingService : IBonePosingService
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        bonePoseInfo.Apply(ToApplySpace(bone, newTransform), ToApplySpace(bone, originalTransform));
+        var applied = ToApplySpace(bone, newTransform);
+        var original = ToApplySpace(bone, originalTransform);
+        if (!_ikImports.Contains(SkeletonKey.Of(bone.Skeleton).Actor)
+            && GetIkConfiguration(bone) is { Enabled: true, TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
+        {
+            // Keep existing handle edits attached to the external parent, but
+            // interpret each new drag in the current model axes, not old axes.
+            applied.Position = original.Position + anchor.ToReferenceDelta(
+                applied.Position - original.Position, ActorParentFrame(bone, anchor));
+        }
+        bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest
         // of the link set. Re-entrancy guard stops link chains from ping-ponging.
@@ -1239,13 +1249,10 @@ public unsafe partial class BonePosingService : IBonePosingService
             || state.HeldCapture == null;
         if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
             config = config with { ActorAnchor = null };
-        else if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope) && config.ActorAnchor == null)
+        else if (config.ActorAnchor == null || previous != null && config.ActorAnchor == previous.Config.ActorAnchor
+            && (config.Solver != previous.Config.Solver || config.CcdDepth != previous.Config.CcdDepth))
         {
-            RefreshCache(bone);
-            var model = bone.LastTransform;
-            var authored = GetIkModification(bone) ?? Transform.Identity;
-            config = config with { ActorAnchor = new(model.Position, model.Rotation,
-                authored.Position, authored.Rotation) };
+            config = config with { ActorAnchor = CaptureActorAnchor(bone, config) };
         }
         state.Config = config.Normalized();
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
@@ -1425,7 +1432,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// space through the skeleton's matrix, then moved and turned by what
     /// was authored since capture. Null when it cannot be resolved.</summary>
     private (Vector3 Position, Quaternion Rotation)? ResolveHeld(
-        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation)
+        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null)
     {
         if (ik.HeldCapture is not { } capture)
             return null;
@@ -1433,13 +1440,9 @@ public unsafe partial class BonePosingService : IBonePosingService
             return (capture.Target + authoredPosition - capture.Translation,
                 Quaternion.Normalize(capture.Rotation
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
-        if (ik.Config.TargetMode == IkTargetMode.Actor)
+        if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
         {
-            // Store the visible model point, but solve before partial reparenting.
-            // Parent-bone propagation must never become the next target baseline.
-            var applied = ToApplySpace(endpoint, new Transform(capture.Target, capture.Rotation, Vector3.One));
-            return new IkActorAnchor(applied.Position, applied.Rotation,
-                capture.Translation, capture.RotationDelta).Resolve(authoredPosition, authoredRotation);
+            return actorAnchor.Resolve(authoredPosition, authoredRotation, ActorParentFrame(endpoint, actorAnchor, pose));
         }
         Vector3 worldPosition;
         Quaternion worldRotation;

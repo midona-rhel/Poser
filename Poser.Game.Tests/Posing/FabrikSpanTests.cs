@@ -7,6 +7,29 @@ namespace Poser.Game.Tests.Posing;
 public sealed class FabrikSpanTests
 {
     [Fact]
+    public void Two_joint_external_parent_excludes_shoulder_and_spine_from_the_solved_chain()
+    {
+        var nodes = Chain(5);
+        string[] names = ["j_sebo_c", "j_sako_l", "j_ude_a_l", "j_ude_b_l", "j_te_l"];
+        for (int i = 0; i < nodes.Length; i++) nodes[i].Name = names[i];
+        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
+        Assert.Equal(nodes.Skip(2).Select(n => n.Bone), members);
+        Assert.Same(nodes[1].Bone, members[0].ParentBone);
+    }
+
+    [Fact]
+    public void Ccd_external_parent_is_above_configured_depth_and_does_not_cross_partials()
+    {
+        var nodes = Chain(6);
+        var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = 2 };
+        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, config);
+        Assert.Equal(nodes.Skip(3).Select(n => n.Bone), members);
+        Assert.Same(nodes[2].Bone, members[0].ParentBone);
+        nodes[3].Partial = 1;
+        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[^1].Bone, config));
+    }
+
+    [Fact]
     public void Selected_bone_is_between_parent_and_child_spans_in_native_order()
     {
         var nodes = Chain(7);
@@ -58,8 +81,9 @@ public sealed class FabrikSpanTests
 
     private static Node[] Chain(int count)
     {
-        var skeleton = Proxy<ISkeleton>(_ => null);
-        var nodes = Enumerable.Range(0, count).Select(_ => new Node(skeleton)).ToArray();
+        Node[] nodes = [];
+        var skeleton = Proxy<ISkeleton>(method => method.Name == "get_Bones" ? nodes.Select(n => n.Bone).ToArray() : null);
+        nodes = Enumerable.Range(0, count).Select(_ => new Node(skeleton)).ToArray();
         for (int i = 1; i < count; i++)
         {
             nodes[i].Parent = nodes[i - 1].Bone;
@@ -76,12 +100,14 @@ public sealed class FabrikSpanTests
         public List<IBone> Children = new();
         public int Partial;
         public bool Hidden;
+        public string Name = "bone";
         public Node(ISkeleton skeleton)
         {
             Skeleton = skeleton;
             Bone = Proxy<IBone>(method => method.Name switch
             {
                 "get_Skeleton" => Skeleton,
+                "get_BoneName" => Name,
                 "get_ParentBone" => Parent,
                 "get_ChildBones" => Children,
                 "get_PartialId" => Partial,
