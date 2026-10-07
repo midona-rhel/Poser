@@ -602,8 +602,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// hierarchy — mirroring <c>IKService.GetBonesToDepth</c> — not the
     /// definition. Ordered root-first, deduplicated.
     /// </summary>
-    private static List<IBone> AffectedBones(IBone endpoint, IkChainConfig config)
+    internal static List<IBone> AffectedBones(IBone endpoint, IkChainConfig config)
     {
+        if (config.Solver == IkSolver.Ccd)
+            return BonePosingService.NativeIkMembers(endpoint, config);
         var result = new List<IBone>();
         void Add(IBone? bone)
         {

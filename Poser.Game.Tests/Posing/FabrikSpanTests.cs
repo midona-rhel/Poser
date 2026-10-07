@@ -1,11 +1,35 @@
 using System.Reflection;
 using Poser.Domain.Posing;
 using Poser.Entities;
+using Poser.Game.Posing;
 
 namespace Poser.Game.Tests.Posing;
 
 public sealed class FabrikSpanTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    public void Ccd_affected_bones_stop_at_the_connected_partial_root(int depth)
+    {
+        // Skeleton.BuildBones connects partial roots back to partial 0.
+        // That display hierarchy continues beyond the native CCD pose.
+        var nodes = Chain(5);
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            nodes[i].Name = $"bone_{i}";
+            nodes[i].Partial = i < 2 ? 0 : 1;
+        }
+        nodes[2].Hidden = true; // Structural partial root remains part of the native pose.
+        var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = depth };
+        var expected = nodes.Skip(Math.Max(2, 4 - depth)).ToArray();
+
+        Assert.Equal(expected.Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[4].Bone, config));
+        Assert.Equal(expected.Select(n => n.Bone), IkBakeCapture.AffectedBones(nodes[4].Bone, config));
+        Assert.Equal(expected.Reverse().Select(n => n.Name), BonePosingService.ChainMemberNames(nodes[4].Bone, config));
+    }
+
     [Theory]
     [InlineData("same-pose", true)]
     [InlineData("no-parent", false)]

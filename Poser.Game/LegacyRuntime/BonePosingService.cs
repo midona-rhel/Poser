@@ -1153,7 +1153,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// the endpoint's own parents to the configured depth — the same walk
     /// IKService.GetBonesToDepth and IkBakeCapture.AffectedBones make, because
     /// the chain is not declared anywhere to read it from.</summary>
-    private static IReadOnlyList<string> ChainMemberNames(
+    internal static IReadOnlyList<string> ChainMemberNames(
         IBone endpoint,
         Poser.Domain.Posing.IkChainConfig config)
     {
@@ -1163,15 +1163,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             return FabrikMembers(endpoint, config).Select(b => b.BoneName).ToArray();
         var names = new List<string> { endpoint.BoneName };
         if (config.Solver != Poser.Domain.Posing.IkSolver.TwoJoint)
-        {
-            var current = endpoint.ParentBone;
-            while (current != null && names.Count < config.CcdDepth + 1)
-            {
-                names.Add(current.BoneName);
-                current = current.ParentBone;
-            }
-            return names;
-        }
+            return NativeIkMembers(endpoint, config).AsEnumerable().Reverse().Select(b => b.BoneName).ToArray();
 
         if (Poser.Domain.Posing.IkChains.ForEndpoint(endpoint.BoneName)
             is not { } definition)
