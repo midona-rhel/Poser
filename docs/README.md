@@ -15,8 +15,14 @@ user-visible behavior that must stay consistent.
 - [Scenes](features/scenes.md)
 - [Runtime appearance](features/runtime-appearance.md)
 
-Supporting material: [process](process/external-implementation-review-loop.md),
+Current supporting guidance: [process](process/external-implementation-review-loop.md),
 [testing](process/testing.md), [dependency updates](process/dependency-currency.md),
-[licenses](../THIRD-PARTY-LICENSES.md), [release](release/runbook.md),
-[Brio notes](brio/known-brio-bugs.md), [validation snapshots](validation/),
-and the [backlog](backlog/).
+[licenses](../THIRD-PARTY-LICENSES.md), and [release](release/runbook.md).
+
+The [architecture review and cleanup plan](validation/architecture-review-2026-10-07.md)
+records the 2026-10-07 evidence, proposed changes, and documentation cleanup.
+It is not a replacement for the current contracts above.
+
+Historical/reference material: [validation snapshots and older proposals](validation/),
+[Brio notes](brio/known-brio-bugs.md), and [legacy PBI records](backlog/).
+Their dates and status belong to those snapshots; track current work in GitHub issues.
