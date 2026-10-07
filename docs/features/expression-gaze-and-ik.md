@@ -66,8 +66,13 @@ A bone is eligible when it has a non-hidden parent; FABRIK and Rope also allow
 a bone with same-partial children. Two Joint uses its slot-local limb; other
 eligible bones default to FABRIK. Chain settings cannot change during a gesture.
 
-Two Joint/CCD relative targets follow animation. Fixed targets keep the captured target and
-authored translation, so changing mode does not jump. IK bake disables the
+Actor targets keep a captured actor-model point in every solver: rotating any
+ancestor, including one outside the IK chain, does not move that point. Moving,
+rotating or scaling the actor carries it through the actor frame. Handle edits
+move the target relative to its captured authored baseline. Native Actor captures
+are configuration state retained by undo/redo; disabling clears them and a fresh
+enable captures the current point. World/Bone/Entity anchors retain their existing
+coordinate frames. IK bake disables the
 chain, waits for the pose to settle, and writes affected bones as one
 raw-baseline history entry. Disabling keeps tuning and clears only fixed
 capture. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset All
@@ -91,8 +96,14 @@ Child traversal stops at a fork rather than choosing a branch; both walks stop
 at hidden bones or a partial boundary. Active chains cannot overlap another
 active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
 
-Depth edits capture the visible span and anchors before entering history.
-The seed is authored state; collision continuation is described below. The handle
+Depth edits select from a bounded reference captured before solving: up to 50
+parents and 50 unambiguous children around the handle. Removed members retain
+their original geometry and actor-model anchors, so decreasing then increasing
+depth cannot recapture shortened Rope chords or accumulate display-frame offsets.
+The reference is authored configuration carried by history, not a global cache;
+copies/previews start their own reference. Existing saved spans without a reference
+retain their authored members when first expanded. Collision continuation is
+described below. The handle
 is constrained to the reach of both spans; taut spans cannot be stretched by a
 drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve
 on each side. Swivel rotates the bend of each span without moving its endpoints.

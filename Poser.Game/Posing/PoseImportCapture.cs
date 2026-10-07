@@ -597,7 +597,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                 _posing.GetPoseInfo(bone.Skeleton)
                     .GetPoseInfo(bone.BoneName, bone.PartialId)
                     .ResetForImport(_posing.GetIkConfiguration(bone) is
-                        { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
+                        { Enabled: true });
             }
 
             if (model is { } modelEdit &&
@@ -1116,7 +1116,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             _posing.GetPoseInfo(bone.Skeleton)
                 .GetPoseInfo(bone.BoneName, bone.PartialId)
                 .ResetForImport(_posing.GetIkConfiguration(bone) is
-                    { Enabled: true, TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor });
+                    { Enabled: true });
         }
 
         import.Slots = flattenSlots;

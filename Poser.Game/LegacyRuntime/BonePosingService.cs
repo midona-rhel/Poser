@@ -620,7 +620,6 @@ public unsafe partial class BonePosingService : IBonePosingService
                 bool fixedHold = chainState is
                 {
                     Config.Enabled: true,
-                    Config.TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor,
                     HeldCapture: not null,
                 };
                 // Brio visits every bone unconditionally (SkeletonService.cs:98-127)
@@ -922,9 +921,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             ? Vector3.Transform(info.Transform.Position, headRotation) : framedDelta.Position;
         var tempPos = beforePos + positionDelta;
         bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
-        bool fixedMode = armed &&
-            ik!.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Actor &&
-            ik.HeldCapture != null;
+        bool fixedMode = armed && ik!.HeldCapture != null;
         bool rotationEnforcedByIk = false;
         Quaternion? heldRotation = null;
         if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
@@ -1240,10 +1237,22 @@ public unsafe partial class BonePosingService : IBonePosingService
             || previous.Config.TargetMode != mode
             || !previous.Config.Enabled
             || state.HeldCapture == null;
+        if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+            config = config with { ActorAnchor = null };
+        else if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope) && config.ActorAnchor == null)
+        {
+            RefreshCache(bone);
+            var model = bone.LastTransform;
+            var authored = GetIkModification(bone) ?? Transform.Identity;
+            config = config with { ActorAnchor = new(model.Position, model.Rotation,
+                authored.Position, authored.Rotation) };
+        }
         state.Config = config.Normalized();
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
-            state.HeldCapture = null;
+            state.HeldCapture = config.ActorAnchor is { } actorAnchor
+                ? new(actorAnchor.Position, actorAnchor.Rotation,
+                    actorAnchor.AuthoredPosition, actorAnchor.AuthoredRotation) : null;
             state.TargetBone = null;
             state.TargetEntity = null;
         }
@@ -1424,6 +1433,14 @@ public unsafe partial class BonePosingService : IBonePosingService
             return (capture.Target + authoredPosition - capture.Translation,
                 Quaternion.Normalize(capture.Rotation
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
+        if (ik.Config.TargetMode == IkTargetMode.Actor)
+        {
+            // Store the visible model point, but solve before partial reparenting.
+            // Parent-bone propagation must never become the next target baseline.
+            var applied = ToApplySpace(endpoint, new Transform(capture.Target, capture.Rotation, Vector3.One));
+            return new IkActorAnchor(applied.Position, applied.Rotation,
+                capture.Translation, capture.RotationDelta).Resolve(authoredPosition, authoredRotation);
+        }
         Vector3 worldPosition;
         Quaternion worldRotation;
         switch (ik.Config.TargetMode)
@@ -1528,11 +1545,8 @@ public unsafe partial class BonePosingService : IBonePosingService
                 }
                 // A frozen model-space target rotates/pans with CharaView, not
                 // with the live light/bone it was sampled from.
-                bool held = summary.Config.TargetMode != IkTargetMode.Actor;
                 if (SetIkConfiguration(tip, summary.Config with
-                    { TargetMode = held ? IkTargetMode.World : IkTargetMode.Actor }) != null)
-                    continue;
-                if (!held)
+                    { TargetMode = IkTargetMode.Actor, ActorAnchor = null }) != null)
                     continue;
                 var copied = _ikChains[ChainKey(tip)];
                 copied.PreviewModelSpace = true;

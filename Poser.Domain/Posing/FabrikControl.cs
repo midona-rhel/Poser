@@ -15,11 +15,26 @@ public sealed record FabrikBonePose(
     string Name, int Partial, Vector3 Position, Quaternion Rotation,
     Vector3 AuthoredPosition, Quaternion AuthoredRotation);
 
+public sealed record FabrikReferenceBone(FabrikBonePose Pose, FabrikTarget Anchor);
+
 /// <summary>Root-first authored span, anchored at its far ends around one selected handle.</summary>
 public sealed record FabrikControl(
     FabrikBonePose[] Bones, FabrikTarget Root, FabrikTarget Tip, float SwivelBaseline,
     int HandleIndex, FabrikTarget Handle)
 {
+    /// <summary>Bounded, unsolved capture of both potential spans. Depth changes
+    /// select from this reference, never from the previous solver output.</summary>
+    public FabrikReferenceBone[]? ReferenceBones { get; init; }
+
+    public FabrikControl SelectSpan(IReadOnlyList<(string Name, int Partial)> members, int handleIndex)
+    {
+        var reference = ReferenceBones ?? throw new InvalidOperationException("The chain has no reference span.");
+        var selected = members.Select(key => reference.Single(b =>
+            b.Pose.Name == key.Name && b.Pose.Partial == key.Partial)).ToArray();
+        return this with { Bones = selected.Select(b => b.Pose).ToArray(), HandleIndex = handleIndex,
+            Root = selected[0].Anchor, Tip = selected[^1].Anchor };
+    }
+
     public string? Validate()
     {
         if (Bones is null || Bones.Length is < 1 or > IkChainConfig.MaxDepth + 1
@@ -36,6 +51,17 @@ public sealed record FabrikControl(
                 || !RotationValid(target.Rotation) || !TransformMath.IsFinite(target.AuthoredPosition)
                 || !RotationValid(target.AuthoredRotation))
                 return "FABRIK contains an invalid target.";
+        if (ReferenceBones is { } reference)
+        {
+            if (reference.Length is < 1 or > IkChainConfig.MaxDepth * 2 + 1
+                || reference.Any(b => b is null || b.Pose is null || b.Anchor is null)
+                || reference.Select(b => (b.Pose.Name, b.Pose.Partial)).Distinct().Count() != reference.Length)
+                return "FABRIK contains an invalid reference span.";
+            foreach (var item in reference)
+                if (item.Anchor.Mode != IkTargetMode.Actor
+                    || new FabrikControl([item.Pose], item.Anchor, item.Anchor, 0, 0, item.Anchor).Validate() != null)
+                    return "FABRIK contains an invalid reference pose.";
+        }
         return null;
     }
 

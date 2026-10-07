@@ -647,11 +647,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return result;
     }
 
-    /// <summary>The runtime's own per-frame solve condition: a Fixed chain
-    /// holds its captured target with or without an authored delta, a
-    /// Relative one solves only for a translation.</summary>
+    /// <summary>Captured targets solve even without an authored translation.</summary>
     private bool HasSolveInput(IBone endpoint, IkChainConfig config) =>
         config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null } ||
+        config.ActorAnchor != null ||
         config.TargetMode != IkTargetMode.Actor ||
         _posing.GetModification(endpoint) is { } modification &&
         modification.Position != System.Numerics.Vector3.Zero;

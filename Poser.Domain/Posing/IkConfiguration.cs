@@ -18,8 +18,8 @@ public enum IkSolver
 
 public enum IkTargetMode
 {
-    /// <summary>The target moves with the actor: the animated endpoint
-    /// plus the authored translation, evaluated every frame.</summary>
+    /// <summary>A captured actor-model point. Actor movement carries it;
+    /// animation and ancestor-bone edits do not. A drag moves the point.</summary>
     Actor,
 
     /// <summary>The target holds a WORLD point captured when the mode was
@@ -62,6 +62,7 @@ public sealed record IkChainConfig(
     public int ParentDepth { get; init; } = 3;
     public int ChildDepth { get; init; }
     public FabrikControl? Fabrik { get; init; }
+    public IkActorAnchor? ActorAnchor { get; init; }
     public bool Collisions { get; init; }
     /// <summary>World-space segment radius in yalms, independent of actor scale.</summary>
     public float CollisionRadius { get; init; } = .02f;
@@ -87,6 +88,8 @@ public sealed record IkChainConfig(
         if (ParentDepth < 0 || ChildDepth < 0 || ParentDepth + ChildDepth > MaxDepth)
             return $"FABRIK parent and child depth must total at most {MaxDepth} links.";
         if (Fabrik?.Validate() is { } fabrikError) return fabrikError;
+        if (ActorAnchor is { } anchor && !anchor.IsValid)
+            return "The actor IK target must contain finite transforms.";
         if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
         if (!float.IsFinite(SwivelDegrees)

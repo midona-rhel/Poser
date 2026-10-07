@@ -41,7 +41,7 @@ public unsafe partial class BonePosingService
         if (config.Fabrik == null && config.Enabled
             || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
                 && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
-            return config with { Fabrik = CaptureFabrikControl(endpoint, config) };
+            return config with { Fabrik = CaptureFabrikReference(endpoint, config) };
         return config;
     }
 
@@ -76,6 +76,46 @@ public unsafe partial class BonePosingService
         return new(poses, Point(0) with { HoldRotation = false },
             Point(poses.Length - 1) with { HoldRotation = false }, config.SwivelDegrees,
             members.IndexOf(tip), handle);
+    }
+
+    private FabrikControl? CaptureFabrikReference(IBone tip, IkChainConfig config)
+    {
+        var members = FabrikMembers(tip, config);
+        if (members.Count == 0) return null;
+        var control = config.Fabrik;
+        if (control?.ReferenceBones == null)
+        {
+            // Capture at most 50 parents + handle + 50 children once, before
+            // solving. In particular Rope's arc samples have shorter chords:
+            // recapturing them on a depth edit silently shortens the rest span.
+            var potential = FabrikMembers(tip, config with { ParentDepth = IkChainConfig.MaxDepth, ChildDepth = 0 })
+                .Concat(FabrikMembers(tip, config with { ParentDepth = 0, ChildDepth = IkChainConfig.MaxDepth }).Skip(1))
+                .ToArray();
+            foreach (var bone in potential) _ = bone.LastTransform; // Enrol uncached bones before the native refresh.
+            RefreshCache(tip);
+            var reference = potential.Select(bone =>
+            {
+                var displayed = bone.LastTransform;
+                var applied = ToApplySpace(bone, displayed);
+                var authored = GetIkModification(bone) ?? Transform.Identity;
+                var saved = control?.Bones.FirstOrDefault(b => b.Name == bone.BoneName && b.Partial == bone.PartialId);
+                var pose = saved ?? new FabrikBonePose(bone.BoneName, bone.PartialId,
+                    applied.Position, applied.Rotation, authored.Position, authored.Rotation);
+                if (saved != null)
+                    displayed = FromApplySpace(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
+                var anchor = new FabrikTarget(IkTargetMode.Actor, displayed.Position, displayed.Rotation,
+                    pose.AuthoredPosition, pose.AuthoredRotation, HoldRotation: false);
+                // Old saved controls have no reference span: retain their exact
+                // authored endpoints and seed rather than recapturing solved bones.
+                if (saved != null && ReferenceEquals(saved, control!.Bones[0])) anchor = control.Root;
+                if (saved != null && ReferenceEquals(saved, control!.Bones[^1])) anchor = control.Tip;
+                return new FabrikReferenceBone(pose, anchor);
+            }).ToArray();
+            control ??= CaptureFabrikControl(tip, config);
+            if (control == null) return null;
+            control = control with { ReferenceBones = reference };
+        }
+        return control.SelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(), members.IndexOf(tip));
     }
 
     public FabrikTarget? CaptureFabrikTarget(IBone endpoint, IkTargetMode mode,
@@ -241,6 +281,7 @@ public unsafe partial class BonePosingService
         }
         return config with { Fabrik = control with
         {
+            ReferenceBones = null, // A copy/preview starts a new skeleton-local reference capture.
             Root = Capture(members[0], control.Root, false),
             Tip = Capture(members[^1], control.Tip, false),
             Handle = Capture(tip, control.Handle, true),
