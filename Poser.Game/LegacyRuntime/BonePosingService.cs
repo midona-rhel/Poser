@@ -1105,11 +1105,12 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     /// <summary>Brio's <c>EligibleForIK</c> — a parent for the solver to walk
     /// into, and not a hidden one (<c>Brio/Game/Posing/Skeletons/Bone.cs:68</c>).
-    /// A bone that heads no declared chain is armable on this rule alone,
-    /// because CCD needs nothing but the parent walk.</summary>
-    private static bool IsCcdEligible(IBone bone) =>
+    /// Native CCD also requires that parent to belong to the same Havok pose,
+    /// matching the partial/skeleton boundary in its parent traversal.</summary>
+    internal static bool IsCcdEligible(IBone bone) =>
         bone is not VirtualBone &&
-        bone.ParentBone is { IsHiddenBone: false };
+        bone.ParentBone is { IsHiddenBone: false } parent &&
+        parent.PartialId == bone.PartialId && ReferenceEquals(parent.Skeleton, bone.Skeleton);
 
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
@@ -1189,6 +1190,8 @@ public unsafe partial class BonePosingService : IBonePosingService
     {
         if (bone is VirtualBone)
             return "Virtual bones cannot use IK.";
+        if (config.Solver == IkSolver.Ccd && !IsCcdEligible(bone))
+            return $"{bone.BoneName} has no parent in the same skeleton partial for CCD to bend.";
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
         if (definition == null)
         {
