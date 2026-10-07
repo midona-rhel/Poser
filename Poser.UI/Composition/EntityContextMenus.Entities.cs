@@ -314,7 +314,7 @@ internal sealed partial class EntityContextMenus
         _bonePresetItems.Add(ContextMenuItem.Separator);
         _bonePresetActions.Add(null);
         _bonePresetItems.Add(new ContextMenuItem(
-            "Show uncovered bones", TablerIcon.Crosshair,
+            "Toggle other", TablerIcon.Crosshair,
             disabled: presets.Count == 0,
             help: "Hide everything the presets claim and show the rest"));
         _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
