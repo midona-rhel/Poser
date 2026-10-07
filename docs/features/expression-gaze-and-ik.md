@@ -66,6 +66,8 @@ A bone is eligible when it has a non-hidden parent in the same skeleton and
 partial, matching native CCD's pose boundary; FABRIK and Rope also allow
 a bone with same-partial children. Two Joint uses its slot-local limb; other
 eligible bones default to FABRIK. Chain settings cannot change during a gesture.
+CCD affected-bone reporting uses that same pose-bounded chain, not the display
+hierarchy's links between partials; structural roots inside the pose remain included.
 
 Two Joint/CCD Actor targets follow the first parent outside the solved chain.
 Rotating or moving that parent, or any of its ancestors, carries the target;
