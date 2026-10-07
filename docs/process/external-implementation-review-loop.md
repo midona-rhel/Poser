@@ -6,6 +6,9 @@ as GitHub issues, not PBIs. Subtasks are opt-in at the user's request.
 
 ## Scope and ownership
 
+Create issues with the [work-item template](../../.github/ISSUE_TEMPLATE/work_item.md).
+Change its default P2 title and label together when another priority applies.
+
 Start from the issue's evidence, reproduction, and acceptance criteria.
 Record the base commit and use a purpose-named branch. Inspect the working
 tree before editing and preserve unrelated changes; do not require a clean

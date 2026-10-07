@@ -124,7 +124,8 @@ mode alone changes no members and cancels a held gesture. Sizes-and-spacing appl
 both current offsets and current member sizes, while spacing-only changes
 offsets alone. Group writes still use the existing frozen-baseline gesture and
 journal recovery path. Native snapshots, metadata and the history cursor finish
-together, including delayed recovery and whole-actor snapshot fallback.
+together, including delayed recovery. Whole-actor fallback availability is
+defined by [the journal contract](#the-journal).
 Authored factors need only be finite and nonzero; member poses separately obey
 native scale limits. Every output is validated before the first native write.
 
@@ -203,14 +204,11 @@ Gaze drags use the same deferred journal; switches and other discrete actions
 append immediately and never merge separate clicks. Transport is excluded
 for actors and world effects alike.
 
-Each step remembers the state of every actor it touched: the exact actor
-and skeleton generations, the timeline and loop choices, and the
-disruption epoch that a redraw, a character file or an appearance apply
-bumps. When an actor's state no longer matches, the step is invalid: undo
-does not apply its delta to a body that is not the one it was recorded
-on. It restores the actor's whole pose from the snapshot the step kept,
-and says so in one notice. A restore is a pose import, so an animating
-actor pauses for it.
+Undo/redo runs each entry's recorded inverse or forward operation. Actor or
+animation changes do not select automatic whole-pose snapshot fallback.
+Explicit multi-frame restoration waits for completion before advancing history;
+it is separate from automatic fallback. Individual runtime writes still enforce
+their own identity and availability checks.
 
 A step that came from a file (a pose import, a scene load) checks the
 file before redo and refuses with one notice when it is gone.
