@@ -6,6 +6,31 @@ namespace Poser.Game.Tests.Posing;
 
 public sealed class FabrikSpanTests
 {
+    [Theory]
+    [InlineData("same-pose", true)]
+    [InlineData("no-parent", false)]
+    [InlineData("hidden-parent", false)]
+    [InlineData("different-partial", false)]
+    [InlineData("different-skeleton", false)]
+    public void Ccd_eligibility_requires_a_visible_parent_in_the_same_native_pose(string scenario, bool expected)
+    {
+        var nodes = Chain(2);
+        switch (scenario)
+        {
+            case "no-parent": nodes[1].Parent = null; break;
+            case "hidden-parent": nodes[0].Hidden = true; break;
+            case "different-partial": nodes[0].Partial = 1; break;
+            case "different-skeleton": nodes[0].Skeleton = Chain(1)[0].Skeleton; break;
+        }
+        Assert.Equal(expected, BonePosingService.IsCcdEligible(nodes[1].Bone));
+        if (scenario != "hidden-parent")
+        {
+            var members = BonePosingService.NativeIkMembers(nodes[1].Bone,
+                IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd });
+            Assert.Equal(expected ? 2 : 1, members.Count);
+        }
+    }
+
     [Fact]
     public void Two_joint_external_parent_excludes_shoulder_and_spine_from_the_solved_chain()
     {

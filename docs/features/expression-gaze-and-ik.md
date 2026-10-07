@@ -62,7 +62,8 @@ file, then resumes the existing constraints. Descendants are imported against
 the unconstrained parent pose, so they remain relative when IK resumes.
 Held handle translations are solver targets, never direct pre-solve tip writes.
 
-A bone is eligible when it has a non-hidden parent; FABRIK and Rope also allow
+A bone is eligible when it has a non-hidden parent in the same skeleton and
+partial, matching native CCD's pose boundary; FABRIK and Rope also allow
 a bone with same-partial children. Two Joint uses its slot-local limb; other
 eligible bones default to FABRIK. Chain settings cannot change during a gesture.
 
