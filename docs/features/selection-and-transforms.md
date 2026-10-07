@@ -3,6 +3,9 @@
 All surfaces share one ordered selection list. Changing mode does not clear it.
 Ctrl toggles compatible targets, Shift selects the visible range, and symmetry,
 linked lookup, ancestry, and parent traversal stay within a slot.
+Overlay bone dots have no list range: Shift-click toggles individual bones in
+both picking modes; Ktisis mode also retains Ctrl-click. Plain clicks replace
+selection. Gizmo pointer ownership still takes precedence over bone picking.
 
 `Block game mouse targeting` defaults on in General settings. Like Brio's
 `DisableGPoseMouseSelect`, it blocks native mouse targeting only in GPose;
