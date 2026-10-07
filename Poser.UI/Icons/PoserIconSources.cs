@@ -12,6 +12,8 @@ internal static class PoserIconSources
     // an inverted V with dots at the apex and both leg ends.
     public static readonly System.Collections.Generic.Dictionary<string, string> Sources = new()
     {
+        // Preset toggle: a solid center remains legible at menu size without changing the outer ring.
+        ["circle-dot"] = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>""",
         ["ik-collider"] = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L21 8V17L12 22L3 17V8Z M3 8L12 13L21 8 M12 13V22"/></svg>""",
         // The owner keeps the normal person silhouette, with one stroke-width
         // clearance before the bottom-right slot badge (no extra layout cell).
