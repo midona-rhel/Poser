@@ -58,12 +58,12 @@ public static partial class SettingsView
                     }
                     if (source.IsCustom)
                     {
-                        form.TextInput("Name", source.Name, next => source.Name = next);
+                        form.TextInputActions("Name", source.Name, next => source.Name = next,
+                            actions => actions.IconButton(TablerIcon.Trash, () => removing = source,
+                                help: "Delete this source from the library on Save; files are untouched"));
                         form.TextInputActions("Folder", source.Path, next => source.Path = next,
                             FolderActions, help: source.Path);
-                        form.SwitchActions("Enabled", source.Enabled, next => source.Enabled = next,
-                            actions => actions.IconButton(TablerIcon.Trash, () => removing = source,
-                                help: "Remove this custom source when Settings is saved"));
+                        form.Switch("Enabled", source.Enabled, next => source.Enabled = next);
                     }
                     else
                     {
