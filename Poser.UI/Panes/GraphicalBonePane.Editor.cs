@@ -72,26 +72,46 @@ public sealed partial class GraphicalBonePane
         if (_draft == null) return;
         var actor = _editActor is { } id ? _scene.Snapshot.FindActor(id) : null;
         if (actor != null && !IsHumanoid(actor.Id)) actor = null;
-        Crystarium.Dialog(_editorId, true, open => { if (!open) CloseEditor(); },
-            $"Edit {_draft.Kind} map",
-            () => DrawEditorBody(actor),
-            footer: () =>
+        bool open = true;
+        float scale = ImGuiHelpers.GlobalScale;
+        Crystarium.FloatingSurface.Window(_editorId, ref open,
+            MathF.Min(1040f, ImGui.GetIO().DisplaySize.X / scale - 24f),
+            MathF.Min(670f, ImGui.GetIO().DisplaySize.Y / scale - 24f), frame =>
             {
-                if (Crystarium.Button("Cancel", id: "cancel-map")) CloseEditor();
-                ImGui.SameLine();
-                if (Crystarium.Button("Save preset", variant: ButtonVariant.Primary,
-                    disabled: _editDefault || actor == null || string.IsNullOrWhiteSpace(_draft?.Name), id: "save-map")
-                    && _draft is { } draft)
+                if (_draft == null) return;
+                var rects = Crystarium.WindowFrame(_editorId, frame.Min, frame.Size, new WindowFrameProps
                 {
-                    _editError = draft.Save(_configuration.Config.Skeleton.BoneMapPresets, out var saved);
-                    if (_editError == null)
+                    Title = $"Edit {_draft.Kind} map",
+                    OnClose = CloseEditor,
+                    HostPaintsChrome = true,
+                    BandHeight = 44f,
+                    RailWidth = 284f,
+                    FooterLeft = left => left.Label(_editError ?? (_editDefault
+                        ? "Default is locked. Choose New to create a copy."
+                        : "Drag points to arrange them. Right-click for actions.")),
+                    FooterRight = right =>
                     {
-                        _selectedPresets[(int)draft.Kind] = saved;
-                        _configuration.Save();
-                        CloseEditor();
-                    }
-                }
-            }, size: DialogSize.Large, height: 670f, logicalWidth: 1040f);
+                        right.Button("Cancel", CloseEditor, style: ControlStyle.Comfortable);
+                        right.Button("Save preset", SaveEditor, style: ControlStyle.Comfortable,
+                            variant: ButtonVariant.Primary,
+                            disabled: _editDefault || actor == null || string.IsNullOrWhiteSpace(_draft?.Name));
+                    },
+                });
+                if (_draft == null) return;
+                DrawEditorPresetToolbar(rects.Band);
+                DrawEditorBody(actor, rects.Rail, rects.Body);
+            }, exclusive: false);
+        if (!open) CloseEditor();
+    }
+
+    private void SaveEditor()
+    {
+        if (_editDefault || _draft is not { } draft) return;
+        _editError = draft.Save(_configuration.Config.Skeleton.BoneMapPresets, out var saved);
+        if (_editError != null) return;
+        _selectedPresets[(int)draft.Kind] = saved;
+        _configuration.Save();
+        CloseEditor();
     }
 
     private void CloseEditor()
@@ -104,23 +124,19 @@ public sealed partial class GraphicalBonePane
         Crystarium.FloatingMenu.Dismiss(_editorId + "-point");
     }
 
-    private void DrawEditorBody(ActorDescriptor? actor)
+    private void DrawEditorBody(ActorDescriptor? actor, WindowFrameRect rail, WindowFrameRect body)
     {
         if (_draft is not { } draft) return;
-        DrawEditorPresetToolbar();
-        draft = _draft!;
-        Crystarium.TextInput("##map-preset-name", _editDefault ? "Default (locked)" : draft.Name, value => draft.Name = value,
-            placeholder: "Preset name", disabled: _editDefault);
+        float s = ImGuiHelpers.GlobalScale;
+        var origin = rail.Min + new Vector2(12f * s);
+        ImGui.SetCursorScreenPos(origin);
         if (actor == null)
         {
             Crystarium.Text("The original actor is no longer available. Close and reopen the editor.");
             return;
         }
-        float s = ImGuiHelpers.GlobalScale;
-        var origin = ImGui.GetCursorScreenPos();
-        var available = ImGui.GetContentRegionAvail();
-        float left = 260f * s;
-        float height = MathF.Max(100f * s, available.Y - 28f * s);
+        float left = rail.Size.X - 24f * s;
+        float height = MathF.Max(100f * s, rail.Size.Y - 24f * s);
         Crystarium.FilterPill("##available-bones", _editFilter, value => _editFilter = value, "Search bones",
             ControlStyle.Workspace with { Width = UiWidth.Region(left / s) });
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, 36f * s));
@@ -138,37 +154,35 @@ public sealed partial class GraphicalBonePane
             {
                 var key = PortableBoneId.From(bone.Id);
                 var row = ImGui.GetCursorScreenPos();
+                float inset = Crystarium.ActiveTheme.Controls.InputPaddingX * s;
+                float rowHeight = 28f * s;
+                var checkbox = Crystarium.MeasureCheckbox();
+                ImGui.SetCursorScreenPos(row + new Vector2(scroll.ContentWidth * s - checkbox.X - inset,
+                    (rowHeight - checkbox.Y) * 0.5f));
                 ImGui.PushID(bone.Id.ToString());
                 Crystarium.Checkbox("include", draft.Contains(key), on =>
                 { if (on) draft.Add(key); else draft.Remove(key); }, disabled: _editDefault);
-                var nameOrigin = row + new Vector2(24f * s, 0f);
-                float nameWidth = scroll.ContentWidth * s - 24f * s;
-                Crystarium.TextInBand(nameOrigin, new Vector2(nameWidth, 26f * s), bone.DisplayName,
+                var nameOrigin = row + new Vector2(inset, 0f);
+                float nameWidth = scroll.ContentWidth * s - 2f * inset - checkbox.X - 8f * s;
+                string label = $"{bone.DisplayName} — {bone.Id.CanonicalName}";
+                if (duplicates.Contains(bone.DisplayName)) label += $" · {bone.Id.Slot}/{bone.Id.PartialId}";
+                Crystarium.TextInBand(nameOrigin, new Vector2(nameWidth, rowHeight), label,
                     default, TextConstraint.Truncate(nameWidth));
                 if (ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s)))
                     Crystarium.HoverHelp.Preview("bone-name", nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s),
                         $"{bone.DisplayName} · {bone.Id.CanonicalName} · {bone.Id.Slot}/{bone.Id.PartialId}");
-                bool duplicate = duplicates.Contains(bone.DisplayName);
-                if (duplicate)
-                    Crystarium.TextInBand(nameOrigin + new Vector2(0, 22f * s), new Vector2(nameWidth, 18f * s),
-                        $"{bone.Id.CanonicalName} · {bone.Id.Slot}/{bone.Id.PartialId}",
-                        new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.FormHint },
-                        TextConstraint.Truncate(nameWidth));
                 ImGui.PopID();
-                ImGui.SetCursorScreenPos(row + new Vector2(0f, (duplicate ? 44f : 28f) * s));
+                ImGui.SetCursorScreenPos(row + new Vector2(0f, rowHeight));
             }
         });
-        ImGui.SetCursorScreenPos(origin + new Vector2(left + 12f * s, 0f));
-        var canvas = new Vector2(MathF.Max(1f, available.X - left - 12f * s), height);
+        ImGui.SetCursorScreenPos(body.Min + new Vector2(12f * s));
+        var canvas = Vector2.Max(Vector2.One, body.Size - new Vector2(24f * s));
         ImGui.BeginChild("##map-preview", canvas, false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         try { DrawMap((int)draft.Kind, canvas, actor); }
         finally { ImGui.EndChild(); }
-        ImGui.SetCursorScreenPos(origin + new Vector2(0f, height + 4f * s));
-        Crystarium.Text(_editError ?? (_editDefault ? "Default is locked. Choose New to create an editable copy."
-            : "Drag points to arrange them. Right-click for reset and remove."));
     }
 
-    private void DrawEditorPresetToolbar()
+    private void DrawEditorPresetToolbar(WindowFrameRect band)
     {
         if (_draft is not { } draft) return;
         var presets = _configuration.Config.Skeleton.BoneMapPresets
@@ -176,16 +190,27 @@ public sealed partial class GraphicalBonePane
         string[] names = new[] { "Default (locked)" }.Concat(presets.Select(item => item.Name)).ToArray();
         int selected = Array.FindIndex(presets, item => item.Id == draft.SourceId) + 1;
         bool dirty = !_editDefault && draft.HasChanges;
-        var row = ImGui.GetCursorScreenPos();
         float s = ImGuiHelpers.GlobalScale;
-        float width = ImGui.GetContentRegionAvail().X;
+        float height = Crystarium.ActiveTheme.Controls.WorkspaceHeight;
+        var row = band.Min + new Vector2(12f * s, (band.Size.Y - height * s) * 0.5f);
+        float width = band.Size.X / s - 24f;
+        float selectorWidth = MathF.Min(220f, (width - 256f) * 0.42f);
+        float nameWidth = MathF.Min(280f, width - selectorWidth - 256f);
+        var style = ControlStyle.Workspace;
+        ImGui.SetCursorScreenPos(row);
         string preview = _editDefault ? "Default (locked)" : draft.SourceId == null ? "New preset" : draft.Name;
         Crystarium.ActionDropdown("##edit-map-preset", names, selected, preview,
             index => LoadEditorPreset(index == 0 ? null : presets[index - 1]),
-            ControlStyle.Workspace with { Width = UiWidth.Region(MathF.Max(120f, width / s - 248f)) }, disabled: dirty,
+            style with { Width = UiWidth.Fixed(selectorWidth) }, disabled: dirty,
             help: dirty ? "Save or discard these edits before switching presets" : null);
-        ImGui.SetCursorScreenPos(row + new Vector2(width - 236f * s, 0));
-        if (Crystarium.Button("New", disabled: dirty, id: "new-map-preset"))
+        // The selector may have replaced the draft on this frame.
+        draft = _draft!;
+        ImGui.SetCursorScreenPos(row + new Vector2((selectorWidth + 8f) * s, 0));
+        Crystarium.TextInput("##map-preset-name", _editDefault ? "Default" : draft.Name, value => draft.Name = value,
+            style with { Width = UiWidth.Fixed(nameWidth) }, placeholder: "Preset name", disabled: _editDefault);
+        float next = selectorWidth + nameWidth + 16f;
+        ImGui.SetCursorScreenPos(row + new Vector2(next * s, 0));
+        if (Crystarium.Button("New", style: style with { Width = UiWidth.Fixed(56f) }, disabled: dirty, id: "new-map-preset"))
         {
             _draft = new(draft.Kind, _editorDefaults, initial: draft.Points);
             _editDefault = false;
@@ -194,11 +219,11 @@ public sealed partial class GraphicalBonePane
             _contextPoint = null;
             Crystarium.FloatingMenu.Dismiss(_editorId + "-point");
         }
-        ImGui.SetCursorScreenPos(row + new Vector2(width - 173f * s, 0));
-        if (Crystarium.Button("Discard edits", disabled: !dirty, id: "discard-map-edits"))
+        ImGui.SetCursorScreenPos(row + new Vector2((next + 64f) * s, 0));
+        if (Crystarium.Button("Discard edits", style: style with { Width = UiWidth.Fixed(112f) }, disabled: !dirty, id: "discard-map-edits"))
             LoadEditorPreset(presets.FirstOrDefault(item => item.Id == draft.SourceId));
-        ImGui.SetCursorScreenPos(row + new Vector2(width - 32f * s, 0));
-        if (Crystarium.IconButton(TablerIcon.Trash, disabled: _editDefault || dirty || draft.SourceId == null,
+        ImGui.SetCursorScreenPos(row + new Vector2((width - 64f) * s, 0));
+        if (Crystarium.Button("Delete", style: style with { Width = UiWidth.Fixed(64f) }, disabled: _editDefault || dirty || draft.SourceId == null,
             id: "delete-map-preset", help: "Delete this custom map preset"))
         {
             _editError = draft.Delete(_configuration.Config.Skeleton.BoneMapPresets);
@@ -208,7 +233,6 @@ public sealed partial class GraphicalBonePane
                 LoadEditorPreset(null);
             }
         }
-        ImGui.SetCursorScreenPos(row + new Vector2(0, 36f * s));
     }
 
     private void LoadEditorPreset(BoneMapPreset? preset)
@@ -261,7 +285,7 @@ public sealed partial class GraphicalBonePane
         if (_dragPoint is { } drag)
         {
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) _dragPoint = null;
-            else if (ImGui.IsMousePosValid())
+            else if (ImGui.IsMousePosValid() && ImGui.IsMouseHoveringRect(_mapOrigin, _mapOrigin + _mapSize, false))
             {
                 var position = (ImGui.GetMousePos() - _dragOffset - _mapOrigin) / _mapSize;
                 draft.Move(drag.Bone, drag.Section, position.X, position.Y);

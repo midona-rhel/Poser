@@ -42,7 +42,7 @@ public static partial class Crystarium
         string title,
         Action body,
         Action? footer = null, DialogSize size = DialogSize.Small, float? height = null,
-        Vector2? position = null, float? logicalWidth = null)
+        Vector2? position = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         string popupId = $"{title}##{id}";
@@ -53,13 +53,12 @@ public static partial class Crystarium
             return false;
         }
 
-        float width = (logicalWidth ?? (size switch
+        float width = size switch
         {
             DialogSize.Medium => Crystarium.ActiveTheme.Floating.MediumWidth,
             DialogSize.Large => Crystarium.ActiveTheme.Floating.LargeWidth,
             _ => Crystarium.ActiveTheme.Floating.SmallWidth,
-        })) * scale;
-        width = MathF.Min(width, MathF.Max(1f, ImGui.GetIO().DisplaySize.X - 24f * scale));
+        } * scale;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight * scale;
         // Auto-height settles after the first visible frame. Do not hide the
         // measurement frame with Alpha=0: ImGui skips that window's contents,
@@ -74,7 +73,6 @@ public static partial class Crystarium
                     ImGui.GetIO().DisplaySize.Y - 2f * barHeight)
                 : Crystarium.ActiveTheme.Floating.DefaultModalHeight * scale;
         float rounding = Crystarium.ActiveTheme.Radii.Surface * scale;
-        totalHeight = MathF.Min(totalHeight, MathF.Max(1f, ImGui.GetIO().DisplaySize.Y - 24f * scale));
 
         // After measurement, place once. Subsequent content
         // changes must not recenter the window or undo the user's dragging.
