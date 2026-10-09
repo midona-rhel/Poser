@@ -86,7 +86,7 @@ public static class GazeEvaluationProbe
                     new(t->Rotation.X, t->Rotation.Y, t->Rotation.Z, t->Rotation.W),
                     new(t->Scale.X, t->Scale.Y, t->Scale.Z)));
             }
-            Samples.Add(new(Samples.Count, phase, Environment.CurrentManagedThreadId,
+            Samples.Add(new(Samples.Count, phase, System.Environment.CurrentManagedThreadId,
                 System.Diagnostics.Stopwatch.GetTimestamp(), values.ToArray()));
         }
     }
