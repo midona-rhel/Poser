@@ -268,8 +268,9 @@ public static partial class Crystarium
 
         /// <param name="divider">Draws the leading separator.</param>
         public void Section(
-            string title, Action<FormScope> content, bool divider = true) =>
-            DrawSection(title, true, null, content, divider);
+            string title, Action<FormScope> content, bool divider = true,
+            bool allowDisclosure = true) =>
+            DrawSection(title, true, null, content, divider, allowDisclosure);
 
         /// <param name="divider">Draws the leading separator.</param>
         public void Section(string title, bool open, Action<bool> onOpenChanged,
@@ -279,7 +280,7 @@ public static partial class Crystarium
         /// <summary>Draws one form section.</summary>
         private void DrawSection(string title, bool open,
             Action<bool>? onOpenChanged, Action<FormScope> content,
-            bool divider = true)
+            bool divider = true, bool allowDisclosure = true)
         {
             EndPairedRows();
             _section = title;
@@ -317,8 +318,9 @@ public static partial class Crystarium
 
             string disclosureKey = Ids.Join(DisclosureScope ?? _id, "/", title);
             bool searching = SectionFilter != null || RowFilter != null;
-            bool remembered = AllowDisclosure && ReadSectionOpen != null && WriteSectionOpen != null;
-            if (searching || !AllowDisclosure) open = true;
+            bool canDisclose = AllowDisclosure && allowDisclosure;
+            bool remembered = canDisclose && ReadSectionOpen != null && WriteSectionOpen != null;
+            if (searching || !canDisclose) open = true;
             else if (_sectionDisclosure is { } local)
                 open = !local.TryGetValue(disclosureKey, out var stored) || stored;
             else if (remembered) open = ReadSectionOpen!(disclosureKey);
@@ -331,7 +333,7 @@ public static partial class Crystarium
             float headerHeight = page.SectionHeaderHeight * _scale;
             var hit = default(InteractionResult);
             uint headerIdentity = 0;
-            if (AllowDisclosure && !searching && (onOpenChanged != null || remembered))
+            if (canDisclose && !searching && (onOpenChanged != null || remembered))
             {
                 string headerId = Ids.Join(_id, "-section-", title);
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));

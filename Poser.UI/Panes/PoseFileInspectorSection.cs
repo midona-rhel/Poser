@@ -1852,9 +1852,15 @@ public sealed class PoseFileInspectorSection : IDisposable
         form.Actions("Pose", actions =>
         {
             actions.Button("Import", () => RequestImportMenu(withPresets: true, target: actorId));
-            actions.Button("Export", () => RequestExportMenu(actorId));
-            actions.Button("Library", () => RequestLibrary(actorId));
+            actions.Button("Import from file", () => OpenImportFromFile(actorId));
         });
+        form.Actions(string.Empty, actions =>
+        {
+            actions.Button("Export", () => RequestExportMenu(actorId));
+            actions.Button("Export to file", () => OpenExport(actorId));
+        });
+        form.Actions(string.Empty, actions =>
+            actions.Button("Open library", () => RequestLibrary(actorId)));
     }
 
     public void OpenImport(ActorId actorId)

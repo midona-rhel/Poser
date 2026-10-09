@@ -84,7 +84,7 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
                     form.Dropdown("Replaces", slots.Select(s => $"Standing pose {s} (/cpose)").ToArray(),
                         Math.Max(0, Array.IndexOf(slots, _slot)), next => { if (next >= 0 && next < slots.Length) _slot = slots[next]; },
                         disabled: slots.Length == 0);
-                }, divider: false);
+                }, divider: false, allowDisclosure: false);
                 page.Section("Race and gender", form =>
                 {
                     for (int i = 0; i < choices.Targets.Length; i += 2)
@@ -98,7 +98,7 @@ public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notic
                         { if (value) _races.Add(target.RaceSexId); else _races.Remove(target.RaceSexId); },
                         target.RaceSexId == choices.SourceRaceSexId ? "Source actor's race and gender; preserves the captured pose and skeleton."
                             : "Experimental retarget to standard player faces; proportions and contacts may differ.");
-                });
+                }, allowDisclosure: false);
             }, labelColumnWidth: 125f),
             footer: () =>
             {
