@@ -238,6 +238,7 @@ remain global: deleting the selected entity must not strand its opposite
 shortcut without a live target. Known lifecycle footprints still allow skipping
 those entries when replaying unrelated entities' edits. Removal batches resolve
 the union of all child footprints at lookup time; any unknown child keeps the
-whole batch a barrier.
+whole batch a barrier. Any new history append cancels a pending deferred replay,
+even when the new edit belongs to a different entity.
 
 The depth is 500 steps by default (Settings › Undo steps).

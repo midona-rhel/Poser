@@ -35,6 +35,7 @@ public sealed class UndoJournal
     private readonly Action<string> _notice;
     private HistoryEntry? _restoring;
     private CancellationTokenSource? _replayCancellation;
+    private ulong _historyRevision;
 
     public UndoJournal(
         TransformHistory history,
@@ -46,10 +47,18 @@ public sealed class UndoJournal
         _runner = runner;
         _assetExists = assetExists;
         _notice = notice;
+        _history.PatchAppended += () =>
+        {
+            _historyRevision++;
+            _replayCancellation?.Cancel();
+        };
         _history.Cleared += () =>
         {
+            _historyRevision++;
             _restoring = null;
-            _replayCancellation?.Cancel();
+            var cancellation = _replayCancellation;
+            _replayCancellation = null;
+            cancellation?.Cancel();
         };
     }
 
@@ -140,13 +149,16 @@ public sealed class UndoJournal
 
     private GestureResult ReplayUntilComplete(JournalStep step, bool before, SelectionId? entity)
     {
+        var revision = _historyRevision;
         var started = entity is { } scope ? _runner.Replay(step, before, scope) : _runner.Replay(step, before);
         if (!started.Success) return GiveUpOnRepeat(step, started);
+        if (revision != _historyRevision) return Refuse(Dropped);
         _restoring = step;
         var cancellation = new CancellationTokenSource();
         _replayCancellation = cancellation;
         GestureResult? completed = null;
         bool Current() => _restoring == step
+            && revision == _historyRevision
             && (before ? _history.PeekUndo(entity) : _history.PeekRedo(entity))?.Id == step.Id;
         void Finish(GestureResult result)
         {
