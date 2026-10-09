@@ -31,8 +31,9 @@ and model assignment, within the original deferred-draw window. Slot-based nativ
 names can retain a previous occupant's model override even when the requested
 native model ID is correct. This initialization precedes scene appearance/pose
 restoration; it is not a later corrective redraw. It targets only the exact owned
-spawn, never its source, and never unlocks foreign state. Duplicates keep their
-copied appearance instead of running the fresh-spawn reset.
+spawn, never its source, and never unlocks foreign state. Duplicates also clear
+retained slot state after native appearance copy and self-identification; copying
+native equipment/customization alone does not replace an old IPC model override.
 
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.

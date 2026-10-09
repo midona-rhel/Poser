@@ -1243,12 +1243,14 @@ public unsafe class ActorSpawnService : IActorSpawnService
             {
                 if (!IsCallbackCurrent(ownership.Token, seeded)) return;
                 InheritSourceCollection(ownership, sourceAddress, seeded, inheritSource);
-                if (!inheritSource && _spawnAppearance is not null)
+                if (_spawnAppearance is not null)
                 {
                     EnsureCurrent(ownership);
                     // Names are slot-based, but Glamourer state outlives the slot's
                     // occupant. Clear the old look after self-identification and
                     // model assignment, inside the original deferred-draw window.
+                    // Duplicates need this too: copied native customize/equipment
+                    // does not replace the previous occupant's IPC ModelData.
                     var reset = _spawnAppearance.ResetSpawnAppearance(seeded.Address);
                     if (!reset.Success)
                         _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {reset.Detail}");

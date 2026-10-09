@@ -85,19 +85,25 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
-    public void Duplicate_does_not_revert_the_copied_appearance()
+    public void Duplicate_resets_only_its_retained_state_before_first_draw()
     {
         var source = Actor(0x901);
         var actor = Actor(0x900);
         var native = new FakeNative(new(9, actor.Address, 900))
         { SourceDescriptor = new(5, source.Address, 901) };
         var framework = new FakeFramework();
-        var appearance = new FakeSpawnAppearance(_ => IntegrationPortResult.Ok());
+        var appearance = new FakeSpawnAppearance(address =>
+        {
+            Assert.Equal(actor.Address, address);
+            Assert.NotEqual(source.Address, address);
+            Assert.Null(native.DrawEnabled);
+            return IntegrationPortResult.Ok();
+        });
         using var service = NewService(native, new FakeActorManager(actor),
             framework: framework, appearance: appearance);
         Assert.Same(actor, service.CloneActor(source));
         for (var i = 0; i < 3; i++) framework.RaiseUpdate();
-        Assert.Equal(0, appearance.Calls);
+        Assert.Equal(1, appearance.Calls);
         Assert.True(native.DrawEnabled);
     }
 
