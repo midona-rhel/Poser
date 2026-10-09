@@ -26,6 +26,14 @@ or a temporary saved Customize+ profile. Incoming state is captured once per
 component. Reset and teardown restore it. Foreign locks and unreadable
 temporary profiles are refused before changes.
 
+Fresh spawns reset retained Glamourer appearance after native self-identification
+and model assignment, within the original deferred-draw window. Slot-based native
+names can retain a previous occupant's model override even when the requested
+native model ID is correct. This initialization precedes scene appearance/pose
+restoration; it is not a later corrective redraw. It targets only the exact owned
+spawn, never its source, and never unlocks foreign state. Duplicates keep their
+copied appearance instead of running the fresh-spawn reset.
+
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.
 Saved source profiles are read through the same active-ID/JSON API Brio uses;

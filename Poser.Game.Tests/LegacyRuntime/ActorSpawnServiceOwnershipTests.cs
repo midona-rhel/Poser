@@ -17,6 +17,100 @@ public sealed class ActorSpawnServiceOwnershipTests
 {
     private const ushort GPoseObjectTableBase = 200;
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4962)]
+    public void Fresh_spawn_clears_retained_appearance_inside_deferred_draw_window(int model)
+    {
+        var actor = Actor(0x900);
+        var native = new FakeNative(new(9, actor.Address, 900));
+        var framework = new FakeFramework();
+        var order = new List<string>();
+        var appearance = new FakeSpawnAppearance(address =>
+        {
+            Assert.Equal(actor.Address, address);
+            Assert.Null(native.DrawEnabled);
+            order.Add("reset");
+            return IntegrationPortResult.Ok();
+        });
+        using var service = NewService(native, new FakeActorManager(actor),
+            framework: framework, appearance: appearance,
+            mutate: (_, _, requested, _) => { Assert.Equal(model, requested); order.Add("model"); });
+
+        Assert.Same(actor, service.SpawnNewActor(false, model));
+        Assert.Equal(new[] { "model" }, order);
+        framework.RaiseUpdate();
+        Assert.Equal(new[] { "model", "reset" }, order);
+        Assert.Null(native.DrawEnabled);
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+        Assert.True(native.DrawEnabled);
+        Assert.Equal(1, appearance.Calls);
+    }
+
+    [Fact]
+    public void Delayed_spawn_reset_never_touches_a_replacement_in_the_same_slot()
+    {
+        var actor = Actor(0x900);
+        var native = new FakeNative(new(9, actor.Address, 900));
+        var framework = new FakeFramework();
+        var appearance = new FakeSpawnAppearance(_ => IntegrationPortResult.Ok());
+        using var service = NewService(native, new FakeActorManager(actor),
+            framework: framework, appearance: appearance);
+        Assert.Same(actor, service.SpawnNewActor(false, 4962));
+        native.ExternallyDestroyCurrent();
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+        framework.RaiseUpdate();
+        Assert.Equal(0, appearance.Calls);
+        Assert.Null(native.DrawEnabled);
+    }
+
+    [Fact]
+    public void Appearance_refusal_is_reported_once_without_unlocking_or_repeated_reset()
+    {
+        var actor = Actor(0x900);
+        var native = new FakeNative(new(9, actor.Address, 900));
+        var framework = new FakeFramework();
+        var log = new RecordingLog();
+        var appearance = new FakeSpawnAppearance(_ =>
+            IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld));
+        using var service = NewService(native, new FakeActorManager(actor),
+            framework: framework, appearance: appearance, log: log.Proxy());
+        Assert.Same(actor, service.SpawnNewActor(false, 4962));
+        for (var i = 0; i < 5; i++) framework.RaiseUpdate();
+        Assert.Equal(1, appearance.Calls);
+        Assert.Contains("appearance could not be initialized", Assert.Single(log.Warnings));
+        Assert.True(native.DrawEnabled);
+    }
+
+    [Fact]
+    public void Duplicate_does_not_revert_the_copied_appearance()
+    {
+        var source = Actor(0x901);
+        var actor = Actor(0x900);
+        var native = new FakeNative(new(9, actor.Address, 900))
+        { SourceDescriptor = new(5, source.Address, 901) };
+        var framework = new FakeFramework();
+        var appearance = new FakeSpawnAppearance(_ => IntegrationPortResult.Ok());
+        using var service = NewService(native, new FakeActorManager(actor),
+            framework: framework, appearance: appearance);
+        Assert.Same(actor, service.CloneActor(source));
+        for (var i = 0; i < 3; i++) framework.RaiseUpdate();
+        Assert.Equal(0, appearance.Calls);
+        Assert.True(native.DrawEnabled);
+    }
+
+    private sealed class FakeSpawnAppearance(Func<nint, IntegrationPortResult> reset) : ISpawnAppearancePort
+    {
+        public int Calls { get; private set; }
+        public IntegrationPortResult ResetSpawnAppearance(nint address)
+        {
+            Calls++;
+            return reset(address);
+        }
+    }
+
     [Fact]
     public void Model_redraw_invalidates_cached_skeletons_while_draw_is_down_not_after_address_reuse()
     {
@@ -280,7 +374,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         Func<long>? clock = null,
         Func<nint, EntityId?>? expectedIdentity = null,
         IPluginLog? log = null,
-        FakeCollections? collections = null) =>
+        FakeCollections? collections = null,
+        ISpawnAppearancePort? appearance = null) =>
         new(
             new FakeGPoseService(),
             manager ?? new FakeActorManager(),
@@ -292,7 +387,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             mutate ?? ((_, _, _, _) => { }),
             expectedIdentity ?? (address => new EntityId($"test-{address}")),
             clock,
-            collections);
+            collections, spawnAppearance: appearance);
 
     private static void ThrowNativeDelete() =>
         throw new InvalidOperationException("native delete");
@@ -746,7 +841,16 @@ public sealed class ActorSpawnServiceOwnershipTests
     {
         public event IFramework.OnUpdateDelegate? Update;
         public bool InThread { get; set; } = true;
-        public void RaiseUpdate() => Update?.Invoke(this);
+        private readonly List<(Action Action, int Ticks)> _queued = new();
+        public void RaiseUpdate()
+        {
+            var pending = _queued.ToArray();
+            _queued.Clear();
+            foreach (var (action, ticks) in pending)
+                if (ticks <= 1) action();
+                else _queued.Add((action, ticks - 1));
+            Update?.Invoke(this);
+        }
 
         public DateTime LastUpdate => DateTime.MinValue;
         public DateTime LastUpdateUTC => DateTime.MinValue;
@@ -774,8 +878,11 @@ public sealed class ActorSpawnServiceOwnershipTests
             throw new NotSupportedException();
         public Task<T> RunOnFrameworkThread<T>(Func<Task<T>> func) =>
             throw new NotSupportedException();
-        public Task RunOnTick(Action action, TimeSpan delay = default, int delayTicks = 0, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task RunOnTick(Action action, TimeSpan delay = default, int delayTicks = 0, CancellationToken cancellationToken = default)
+        {
+            _queued.Add((action, delayTicks));
+            return Task.CompletedTask;
+        }
         public Task<T> RunOnTick<T>(Func<T> func, TimeSpan delay = default, int delayTicks = 0, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task RunOnTick(Func<Task> func, TimeSpan delay = default, int delayTicks = 0, CancellationToken cancellationToken = default) =>

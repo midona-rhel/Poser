@@ -401,6 +401,8 @@ internal static class ServiceRegistration
         // no binding yet at the moment it needs the source's collection.
         services.AddSingleton<Game.Integration.ISpawnCollectionPort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
+        services.AddSingleton<Game.Integration.ISpawnAppearancePort>(
+            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
         services.AddSingleton<Application.Integration.ActorIntegrationSession>(sp =>
         {
             // The session owns the concrete McdfTransaction; the session

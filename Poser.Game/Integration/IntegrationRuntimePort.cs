@@ -30,7 +30,7 @@ namespace Poser.Game.Integration;
 /// 0f3dfba (API 6.x). Glamourer flag words: Once 0x1, Equipment 0x2,
 /// Customization 0x4, Lock 0x8.
 /// </summary>
-public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort, IDisposable
+public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort, ISpawnAppearancePort, IDisposable
 {
     /// <summary>Poser's MCDF recovery key ("POSR"). Ordinary editing uses
     /// zero, so it cannot bypass our own MCDF hold. A keyed read may
@@ -1174,6 +1174,23 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int ec = _revertState.InvokeFunc(index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return GlamourerResult(ec, "reverting the state", actor);
         });
+
+    public IntegrationPortResult ResetSpawnAppearance(nint address)
+    {
+        // A missing optional provider has no retained state to clear.
+        if (!Glamourer.Available) return IntegrationPortResult.Ok();
+        return Guarded(Glamourer, "Initialize spawn appearance", () =>
+        {
+            if (AddressPair(address, address) is { } refusal) return refusal;
+            // Reused Poser names retain Glamourer ModelData independently of the
+            // native model ID. Key zero deliberately cannot unlock a foreign hold.
+            int ec = _revertState.InvokeFunc(IndexOf(address), 0u,
+                ApplyOnce | ApplyEquipment | ApplyCustomization);
+            // No previous state is also a clean spawn.
+            return ec == GlamourerEcActorNotFound ? IntegrationPortResult.Ok()
+                : GlamourerResult(ec, "initializing the spawned actor's appearance");
+        });
+    }
 
     public IntegrationValue<Guid> AddDesign(string stateJson, string name) =>
         Guarded<Guid>(Glamourer, "Save design", () =>
