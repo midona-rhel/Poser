@@ -86,7 +86,8 @@ Constrained Two Joint/CCD handle translation is clipped to the live chain's
 reach before it enters authored state or the gizmo's drag accumulator. Two Joint
 also applies the configured hinge-angle reach limits. Excess travel is discarded,
 including old out-of-reach offsets, so the first reverse step moves inward.
-With constraints disabled, translation remains unrestricted.
+With constraints disabled, translation remains unrestricted. Zero-translation
+edits never clamp an existing target; rotation and scale cannot move the handle.
 
 Scene entity targets follow props, scenery/world objects, lights and VFX through
 their exact stable scene IDs; they do not need a skeleton. Attachment captures
@@ -112,7 +113,10 @@ their original geometry and actor-model anchors, so decreasing then increasing
 depth cannot recapture shortened Rope chords or accumulate display-frame offsets.
 The reference is authored configuration carried by history, not a global cache;
 copies/previews start their own reference. Existing saved spans without a reference
-retain their authored members when first expanded. Collision continuation is
+retain their authored members when first expanded. If a skeleton rebuild adds a
+requested member outside the captured reference, the depth edit is rejected
+without changing configuration/history. Reset IK and reselect its solver to capture
+the new skeleton deliberately; never silently recapture solved geometry. Collision continuation is
 described below. The handle
 is constrained to the reach of both spans; taut spans cannot be stretched by a
 drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve

@@ -14,7 +14,7 @@ public readonly record struct IkReach(Vector3 Root, float Min, float Max, Vector
         return Root + direction * Math.Clamp(length, Min, Max);
     }
 
-    public Vector3 Move(Vector3 target, Vector3 step) => Clamp(Clamp(target) + step);
+    public Vector3 Move(Vector3 target, Vector3 step) => step == Vector3.Zero ? target : Clamp(Clamp(target) + step);
 
     public static IkReach FromChain(IReadOnlyList<Vector3> points, IkChainConfig config)
     {

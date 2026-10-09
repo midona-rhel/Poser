@@ -26,13 +26,22 @@ public sealed record FabrikControl(
     /// select from this reference, never from the previous solver output.</summary>
     public FabrikReferenceBone[]? ReferenceBones { get; init; }
 
-    public FabrikControl SelectSpan(IReadOnlyList<(string Name, int Partial)> members, int handleIndex)
+    public bool TrySelectSpan(IReadOnlyList<(string Name, int Partial)> members, int handleIndex, out FabrikControl selected)
     {
-        var reference = ReferenceBones ?? throw new InvalidOperationException("The chain has no reference span.");
-        var selected = members.Select(key => reference.Single(b =>
-            b.Pose.Name == key.Name && b.Pose.Partial == key.Partial)).ToArray();
-        return this with { Bones = selected.Select(b => b.Pose).ToArray(), HandleIndex = handleIndex,
-            Root = selected[0].Anchor, Tip = selected[^1].Anchor };
+        selected = this;
+        if (ReferenceBones is not { } reference || members.Count == 0
+            || handleIndex < 0 || handleIndex >= members.Count) return false;
+        var span = new FabrikReferenceBone[members.Count];
+        for (int i = 0; i < members.Count; i++)
+        {
+            var key = members[i];
+            var match = reference.FirstOrDefault(b => b.Pose.Name == key.Name && b.Pose.Partial == key.Partial);
+            if (match == null) return false;
+            span[i] = match;
+        }
+        selected = this with { Bones = span.Select(b => b.Pose).ToArray(), HandleIndex = handleIndex,
+            Root = span[0].Anchor, Tip = span[^1].Anchor };
+        return true;
     }
 
     public string? Validate()
