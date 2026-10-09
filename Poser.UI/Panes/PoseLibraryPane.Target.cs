@@ -39,7 +39,7 @@ public sealed partial class PoseLibraryPane
 
     // Preview, options and Apply must resolve the same dropdown choice.
     private ActorId? CurrentApplyTarget() =>
-        _applyChoice is { } chosen && IsApplyTarget(chosen) ? chosen
+        _applyChoice is { } chosen ? IsApplyTarget(chosen) ? chosen : null
         : TargetActor() is { } selected && IsApplyTarget(selected) ? selected
         : FirstApplyTarget();
 
@@ -113,18 +113,21 @@ public sealed partial class PoseLibraryPane
         foreach (var actor in _scene.Snapshot.Actors)
             if (_type == LibraryType.Mcdf || actor.CharacterSkeleton is not null)
                 _applyTargets.Add(actor.Id);
+        // Keep an explicit vanished target visible instead of silently selecting
+        // someone else. Choosing a different dropdown entry is the retarget action.
+        if (_applyChoice is { } explicitTarget && !_applyTargets.Contains(explicitTarget))
+            _applyTargets.Add(explicitTarget);
         if (_vm.ApplyTargetNames.Length != _applyTargets.Count)
             _vm.ApplyTargetNames = new string[_applyTargets.Count];
         for (int i = 0; i < _applyTargets.Count; i++)
         {
             var actor = _applyTargets[i];
-            _vm.ApplyTargetNames[i] = _scene.Snapshot.FindActor(actor) is { } described
-                ? ActorNames.Display(_config, described) : "Actor";
+            _vm.ApplyTargetNames[i] = IsApplyTarget(actor) && _scene.Snapshot.FindActor(actor) is { } described
+                ? ActorNames.Display(_config, described) : "Actor unavailable";
         }
         int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice.Value) : -1;
         if (index < 0)
         {
-            _applyChoice = null;
             var selected = TargetActor();
             index = selected != null ? _applyTargets.IndexOf(selected.Value) : -1;
         }
