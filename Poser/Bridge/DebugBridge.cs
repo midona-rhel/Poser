@@ -436,15 +436,15 @@ public sealed partial class DebugBridge : IDisposable
                 if (query.TryGetValue("actors", out var actorKeys) || query.GetValueOrDefault("clear") == "1")
                 {
                     var ids = new List<SelectionId>();
-                    foreach (var actorKey in (actorKeys ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    foreach (var selectionKey in (actorKeys ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
                     {
-                        var target = FindActor(actorKey);
+                        var target = FindActor(selectionKey);
                         if (target == null || _bindings.GetActorId(target) is not { } targetId)
                             return Json(new { error = "No such actor." });
                         ids.Add(SelectionId.ForActor(targetId));
                     }
                     _sceneSession.Selection.Clear();
-                    foreach (var id in ids) _sceneSession.Selection.Add(id);
+                    foreach (var selectedId in ids) _sceneSession.Selection.Add(selectedId);
                 }
                 return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
             }
