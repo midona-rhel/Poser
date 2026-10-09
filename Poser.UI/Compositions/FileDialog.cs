@@ -160,6 +160,7 @@ public static partial class Crystarium
         /// <summary>Opt-in open-dialog behavior: one activation navigates a
         /// folder or confirms a file. Save dialogs retain explicit confirmation.</summary>
         public bool SingleClickActivation { get; set; }
+        private bool _suppressSingleClickRelease;
 
         /// <summary>The draft the path editor holds. It is the FIELD's value
         /// every frame; committing it is what navigates.</summary>
@@ -350,6 +351,11 @@ public static partial class Crystarium
         private void RenderFrame(
             Vector2 origin, Vector2 size, bool hostPaintsChrome = false)
         {
+            // ImGui exposes the click count on press only; retain it until
+            // release, including when the first click navigated to new rows.
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                _suppressSingleClickRelease =
+                    ImGui.GetMouseClickedCount(ImGuiMouseButton.Left) > 1;
             Theme theme = Crystarium.ActiveTheme;
             float scale = ImGuiHelpers.GlobalScale;
             ResolvePreview();
@@ -758,7 +764,7 @@ public static partial class Crystarium
                         // A double-click's second release must not activate the
                         // row now under the pointer after entering a folder.
                         if (singleClick && ImGui.IsMouseReleased(ImGuiMouseButton.Left)
-                            && ImGui.GetMouseClickedCount(ImGuiMouseButton.Left) > 1)
+                            && _suppressSingleClickRelease)
                             continue;
                         if (!hit.Activated && !(hit.DoubleClicked && !singleClick))
                             continue;
