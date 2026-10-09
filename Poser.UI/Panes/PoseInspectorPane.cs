@@ -1701,43 +1701,25 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         const string atHelp = "Choose which actor this one looks at";
-
-        if (wide)
-        {
-            form.Pair(
-                "Mode",
-                cell =>
+        form.Custom("Mode", Crystarium.ActiveTheme.Controls.WorkspaceHeight, row =>
+            Crystarium.ActionBar("gaze-mode-row", row.ControlOrigin,
+                new Vector2(row.ControlWidth, Crystarium.ActiveTheme.Controls.WorkspaceHeight * row.Scale),
+                actions =>
                 {
-                    ImGui.SetCursorScreenPos(cell.Center(
-                        Crystarium.ActiveTheme.Controls.WorkspaceHeight));
-                    Crystarium.Dropdown(
-                        "##gaze-mode",
-                        GazeModeOptions,
-                        ModeIndex(),
-                        PickMode,
-                        cell.Constrain(ControlStyle.Workspace));
-                },
-                "At",
-                cell =>
-                {
-                    var (items, selected) = TargetItems();
-                    ImGui.SetCursorScreenPos(cell.Center(
-                        Crystarium.ActiveTheme.Controls.WorkspaceHeight));
-                    Crystarium.Dropdown(
-                        "##gaze-at",
-                        items,
-                        selected,
-                        PickTarget,
-                        cell.Constrain(ControlStyle.Workspace),
-                        disabled: state.Settings.Mode != GazeTargetMode.Entity
-                            || others.Count == 0,
-                        help: atHelp);
-                });
-        }
-        else
-        {
-            form.Dropdown("Mode", GazeModeOptions, ModeIndex(), PickMode);
-        }
+                    actions.Dropdown("Mode", GazeModeOptions, ModeIndex(), PickMode,
+                        style: ControlStyle.Workspace with { Width = UiWidth.Fixed(wide ? 94f : 76f) });
+                    if (wide)
+                    {
+                        var (items, selected) = TargetItems();
+                        actions.Label("At");
+                        actions.Dropdown("At", items, selected, PickTarget, help: atHelp,
+                            disabled: state.Settings.Mode != GazeTargetMode.Entity || others.Count == 0,
+                            style: ControlStyle.Workspace with { Width = UiWidth.Fixed(128f) });
+                    }
+                    actions.Checkbox("Pose-aware", state.Settings.PoseAware,
+                        enabled => Record(_gazeValues.SetPoseAware(actor, enabled)),
+                        help: "Compensate posed bones for Camera and Point targets, including locked points. Native gaze limits still apply; Actor and Forward keep their normal behavior.");
+                }, separator: ActionBarSeparator.None));
 
         if (_gazeActorUnavailableNote && others.Count == 0)
             form.Status("Actor mode needs another actor in the scene.");
@@ -1749,9 +1731,6 @@ public partial class PoseInspectorPane : IDisposable
         if (_gazeRefusal is { } refusal && refusal.Actor == actor)
             form.Status(refusal.Text);
 
-        form.Switch("Pose-aware", state.Settings.PoseAware,
-            enabled => Record(_gazeValues.SetPoseAware(actor, enabled)),
-            help: "Compensate posed bones for Camera and Point targets, including locked points. Native gaze limits still apply; Actor and Forward keep their normal behavior.");
         DrawGazeParts(form, actor, state, wide, Record);
 
         if (!wide)

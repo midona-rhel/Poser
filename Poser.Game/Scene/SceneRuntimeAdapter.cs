@@ -1093,7 +1093,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// </summary>
     public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
     {
-        if (data.Gaze is not { } saved || saved.Mode == GazeTargetMode.None)
+        if (data.Gaze is not { } saved || (saved.Mode == GazeTargetMode.None && !saved.PoseAware))
             return null;
         if (!_gaze.IsAvailable)
             return _gaze.UnavailableDetail ?? "Gaze control is unavailable.";
