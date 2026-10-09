@@ -79,7 +79,7 @@ public sealed class LibraryWindow : Window
 
     public LibraryWindow(MainWindow main)
         : base($"Library###{PluginConstants.PluginName}_library",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
@@ -325,13 +325,14 @@ public sealed class LibraryWindow : Window
         // gesture twin, the shell's own rule. The title actions above keep
         // their clicks.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
+        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 

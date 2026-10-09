@@ -181,6 +181,7 @@ public sealed partial class DebugBridge : IDisposable
         try
         {
             _listener.Start();
+            _framework.Update += AdvanceUiDrag;
             _ = Task.Run(AcceptLoop);
             _log.Information($"[Bridge] listening on http://127.0.0.1:{Port}/");
         }
@@ -199,6 +200,13 @@ public sealed partial class DebugBridge : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
+        // ImGui cleanup belongs to the framework thread, including unload.
+        // Do not block plugin disposal waiting for a tick that may own unload.
+        _ = _framework.RunOnFrameworkThread(() =>
+        {
+            FinishUiDrag();
+            _framework.Update -= AdvanceUiDrag;
+        });
         try { _listener.Stop(); } catch { }
         try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
         try { _stop.Dispose(); } catch { }
@@ -300,6 +308,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
+                        "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
+                        "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&x=SCREEN_X&y=SCREEN_Y restores a test window position",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
@@ -439,6 +449,25 @@ public sealed partial class DebugBridge : IDisposable
                     foreach (var selectedId in ids) _sceneSession.Selection.Add(selectedId);
                 }
                 return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
+            }
+            case "/uidrag":
+                return UiDrag(query);
+            case "/uiwindows":
+            {
+                var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
+                var result = new List<object>();
+                foreach (var window in windows.System.Windows)
+                {
+                    var native = Dalamud.Bindings.ImGui.ImGuiP.FindWindowByName(window.WindowName);
+                    if (native.IsNull) continue;
+                    if (query.GetValueOrDefault("name") == window.WindowName
+                        && query.TryGetValue("x", out var px) && query.TryGetValue("y", out var py))
+                        Dalamud.Bindings.ImGui.ImGui.SetWindowPos(window.WindowName,
+                            new System.Numerics.Vector2(float.Parse(px, CultureInfo.InvariantCulture), float.Parse(py, CultureInfo.InvariantCulture)));
+                    result.Add(new { name = window.WindowName, x = native.Pos.X, y = native.Pos.Y,
+                        width = native.Size.X, height = native.Size.Y, open = window.IsOpen });
+                }
+                return Json(result);
             }
             case "/uiinput":
             {

@@ -46,7 +46,7 @@ public class SettingsWindow : Window
         UserNotices notices,
         global::Poser.Application.Settings.ReleaseNotesSession releaseNotes)
         : base($"Settings###{PluginConstants.PluginName}_settings",
-            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {

@@ -143,7 +143,7 @@ public sealed class ReferenceImageWindow : Window
     public ReferenceImageWindow(
         ReferenceImageSession session, ReferenceImageInstance image)
         : base(WindowNameFor(image),
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoSavedSettings)
     {

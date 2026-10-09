@@ -345,6 +345,11 @@ measure fallback fonts while requesting a new atlas bake.
 Popup input ownership uses the caller's ImGui-scoped identity, so identical
 controls in different windows cannot release or take each other's popup claim.
 
+Movable hosts disable native background dragging and reserve only their actual
+title strip after drawing its controls. That pointer owner keeps a drag until
+release, including outside the strip. Content, tabs, inspector and footer never
+initiate movement. This is local to Poser; global ImGui preferences are unchanged.
+
 Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
 the game or claim full-screen/exclusive input; only their visible bounds
 participate in window interaction. Enter/Escape shortcuts belong to the focused

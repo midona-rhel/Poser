@@ -30,7 +30,7 @@ public sealed class PropertiesWindow : Window, IDisposable
     internal PropertiesWindow(PropertiesContentLease lease, Action settings,
         PropertiesWindowPlacement placement, Action<PropertiesWindowPlacement> rememberPlacement)
         : base($"Properties###poser-properties-{Guid.NewGuid():N}",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoBackground)
     {
         _lease = lease;

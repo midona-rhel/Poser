@@ -28,7 +28,7 @@ public sealed class SidebarPartWindow : Window
 
     public SidebarPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
@@ -240,13 +240,14 @@ public sealed class SidebarPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
+        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 
@@ -267,7 +268,7 @@ public sealed class ToolbarPartWindow : Window
 
     public ToolbarPartWindow(MainWindow main)
         : base($"Toolbar###{PluginConstants.PluginName}_split_toolbar",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoResize)
     {
@@ -347,6 +348,7 @@ public sealed class ToolbarPartWindow : Window
                 && mouse.Y >= min.Y && mouse.Y < max.Y;
             if (overBrand && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 _compact = !_compact;
+            Crystarium.WindowTitleDrag(min, max);
         }
         finally
         {
@@ -371,7 +373,7 @@ public sealed class InspectorPartWindow : Window
 
     public InspectorPartWindow(MainWindow main, Config.ConfigurationService configuration)
         : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
@@ -543,13 +545,14 @@ public sealed class InspectorPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
+        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 

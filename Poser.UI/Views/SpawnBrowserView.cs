@@ -110,7 +110,6 @@ public sealed class SpawnBrowserViewModel
 
     /// <summary>The frame's footer band, published for the window's drag
     /// grab.</summary>
-    public WindowFrameRect FooterRect;
 
     /// <summary>The footer caption: the honest count, or the note explaining
     /// why the last activation did nothing.</summary>
@@ -329,7 +328,6 @@ public static class SpawnBrowserView
 
         DrawTabs(vm, rects.Band, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
-        vm.FooterRect = rects.Footer;
 
         if (submit)
         {

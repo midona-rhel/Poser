@@ -53,7 +53,7 @@ public sealed class FrameProfilerWindow : Window
 
     public FrameProfilerWindow(ConfigurationService configuration)
         : base($"Frame profiler###{PluginConstants.PluginName}_frameprofiler",
-            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {

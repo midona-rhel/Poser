@@ -193,6 +193,7 @@ public static partial class Crystarium
                 id,
                 ref open,
                 ImGuiWindowFlags.NoTitleBar
+                | ImGuiWindowFlags.NoMove
                 | ImGuiWindowFlags.NoCollapse
                 | ImGuiWindowFlags.NoScrollbar
                 | ImGuiWindowFlags.NoScrollWithMouse
