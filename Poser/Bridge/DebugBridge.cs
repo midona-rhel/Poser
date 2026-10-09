@@ -291,7 +291,7 @@ public sealed partial class DebugBridge : IDisposable
                     {
                         "/actors",
                         "/selection?actors=INDEX,INDEX (omit to read; empty to clear)",
-                        "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released; ?action=Import%20pose&primary=Ctrl%2BI (session-only binding)",
+                        "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
@@ -409,20 +409,11 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/shortcut":
             {
-                // Binding edits here are session-only; Settings remains the
-                // persistence owner. Resolve UI lazily, after startup wiring.
-                if (query.TryGetValue("action", out var action))
-                {
-                    if (!global::Poser.Config.KeybindRegistry.Actions.Any(item => item.Id == action))
-                        return Json(new { error = "Unknown shortcut action." });
-                    if (query.GetValueOrDefault("reset") == "1")
-                        _configuration.Config.UI.Bindings.Remove(action);
-                    else if (query.GetValueOrDefault("clear") == "1")
-                        _configuration.Config.UI.Bindings[action] = new("");
-                    else if (query.TryGetValue("primary", out var primary))
-                        _configuration.Config.UI.Bindings[action] = new(primary,
-                            query.GetValueOrDefault("secondary", ""));
-                }
+                // Configuration is saved on unrelated edits and shutdown too.
+                // Never mutate it under a purported session-only diagnostic.
+                if (query.ContainsKey("action") || query.ContainsKey("primary") ||
+                    query.ContainsKey("secondary") || query.ContainsKey("reset") || query.ContainsKey("clear"))
+                    return Json(new { error = "Change bindings in Settings. This endpoint only probes configured shortcuts." });
                 if (query.TryGetValue("chord", out var chord))
                 {
                     var ui = (global::Poser.UI.UIManager)_services.GetService(typeof(IUIManager))!;
