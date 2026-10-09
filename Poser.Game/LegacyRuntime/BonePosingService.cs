@@ -620,7 +620,6 @@ public unsafe partial class BonePosingService : IBonePosingService
                 bool fixedHold = chainState is
                 {
                     Config.Enabled: true,
-                    Config.TargetMode: not Poser.Domain.Posing.IkTargetMode.Actor,
                     HeldCapture: not null,
                 };
                 // Brio visits every bone unconditionally (SkeletonService.cs:98-127)
@@ -869,7 +868,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// <summary>Solve the held target after applying the pose-only stack values.</summary>
     private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik, Transform authored)
     {
-        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation) is not { } held)
+        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation, pose) is not { } held)
             return;
         var target = held.Position;
         var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
@@ -922,9 +921,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             ? Vector3.Transform(info.Transform.Position, headRotation) : framedDelta.Position;
         var tempPos = beforePos + positionDelta;
         bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
-        bool fixedMode = armed &&
-            ik!.Config.TargetMode != Poser.Domain.Posing.IkTargetMode.Actor &&
-            ik.HeldCapture != null;
+        bool fixedMode = armed && ik!.HeldCapture != null;
         bool rotationEnforcedByIk = false;
         Quaternion? heldRotation = null;
         if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
@@ -949,7 +946,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             // A held target brings its own rotation when the chain holds
             // rotation: the solver aims at it and the write below keeps it.
             if (fixedMode
-                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation)
+                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation, pose)
                     is { } held)
             {
                 target = held.Position;
@@ -1056,7 +1053,17 @@ public unsafe partial class BonePosingService : IBonePosingService
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
 
-        bonePoseInfo.Apply(ToApplySpace(bone, newTransform), ToApplySpace(bone, originalTransform));
+        var applied = ToApplySpace(bone, newTransform);
+        var original = ToApplySpace(bone, originalTransform);
+        if (!_ikImports.Contains(SkeletonKey.Of(bone.Skeleton).Actor)
+            && GetIkConfiguration(bone) is { Enabled: true, TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
+        {
+            // Keep existing handle edits attached to the external parent, but
+            // interpret each new drag in the current model axes, not old axes.
+            applied.Position = original.Position + anchor.ToReferenceDelta(
+                applied.Position - original.Position, ActorParentFrame(bone, anchor));
+        }
+        bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest
         // of the link set. Re-entrancy guard stops link chains from ping-ponging.
@@ -1098,11 +1105,12 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     /// <summary>Brio's <c>EligibleForIK</c> — a parent for the solver to walk
     /// into, and not a hidden one (<c>Brio/Game/Posing/Skeletons/Bone.cs:68</c>).
-    /// A bone that heads no declared chain is armable on this rule alone,
-    /// because CCD needs nothing but the parent walk.</summary>
-    private static bool IsCcdEligible(IBone bone) =>
+    /// Native CCD also requires that parent to belong to the same Havok pose,
+    /// matching the partial/skeleton boundary in its parent traversal.</summary>
+    internal static bool IsCcdEligible(IBone bone) =>
         bone is not VirtualBone &&
-        bone.ParentBone is { IsHiddenBone: false };
+        bone.ParentBone is { IsHiddenBone: false } parent &&
+        parent.PartialId == bone.PartialId && ReferenceEquals(parent.Skeleton, bone.Skeleton);
 
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
@@ -1145,7 +1153,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// the endpoint's own parents to the configured depth — the same walk
     /// IKService.GetBonesToDepth and IkBakeCapture.AffectedBones make, because
     /// the chain is not declared anywhere to read it from.</summary>
-    private static IReadOnlyList<string> ChainMemberNames(
+    internal static IReadOnlyList<string> ChainMemberNames(
         IBone endpoint,
         Poser.Domain.Posing.IkChainConfig config)
     {
@@ -1155,15 +1163,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             return FabrikMembers(endpoint, config).Select(b => b.BoneName).ToArray();
         var names = new List<string> { endpoint.BoneName };
         if (config.Solver != Poser.Domain.Posing.IkSolver.TwoJoint)
-        {
-            var current = endpoint.ParentBone;
-            while (current != null && names.Count < config.CcdDepth + 1)
-            {
-                names.Add(current.BoneName);
-                current = current.ParentBone;
-            }
-            return names;
-        }
+            return NativeIkMembers(endpoint, config).AsEnumerable().Reverse().Select(b => b.BoneName).ToArray();
 
         if (Poser.Domain.Posing.IkChains.ForEndpoint(endpoint.BoneName)
             is not { } definition)
@@ -1182,6 +1182,8 @@ public unsafe partial class BonePosingService : IBonePosingService
     {
         if (bone is VirtualBone)
             return "Virtual bones cannot use IK.";
+        if (config.Solver == IkSolver.Ccd && !IsCcdEligible(bone))
+            return $"{bone.BoneName} has no parent in the same skeleton partial for CCD to bend.";
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
         if (definition == null)
         {
@@ -1218,9 +1220,17 @@ public unsafe partial class BonePosingService : IBonePosingService
             && !ReferenceEquals(other.Endpoint, bone) && other.Endpoint.PartialId == bone.PartialId
             && ChainMemberNames(bone, config).Any(name => other.Bones.Contains(name))))
             return "This chain overlaps an active FABRIK chain. Reduce Depth or disable the other chain.";
+        if (config is { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope,
+                Fabrik.ReferenceBones: not null })
+        {
+            var members = FabrikMembers(bone, config);
+            if (!config.Fabrik.TrySelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(),
+                    members.IndexOf(bone), out _))
+                return "The skeleton changed beyond this IK reference. Reset IK and reselect its solver before changing its depth.";
+        }
+        config = PrepareIkConfiguration(bone, config);
         if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope))
         {
-            config = PrepareIkConfiguration(bone, config);
             if (config.Fabrik == null && config.Enabled && config.ParentDepth + config.ChildDepth > 0)
                 return "This depth reaches no bones. Increase Parent depth or Child depth.";
             if (config.Fabrik != null && FabrikOverlap(bone, config))
@@ -1240,10 +1250,14 @@ public unsafe partial class BonePosingService : IBonePosingService
             || previous.Config.TargetMode != mode
             || !previous.Config.Enabled
             || state.HeldCapture == null;
+        if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+            config = config with { ActorAnchor = null };
         state.Config = config.Normalized();
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
-            state.HeldCapture = null;
+            state.HeldCapture = config.ActorAnchor is { } actorAnchor
+                ? new(actorAnchor.Position, actorAnchor.Rotation,
+                    actorAnchor.AuthoredPosition, actorAnchor.AuthoredRotation) : null;
             state.TargetBone = null;
             state.TargetEntity = null;
         }
@@ -1416,7 +1430,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// space through the skeleton's matrix, then moved and turned by what
     /// was authored since capture. Null when it cannot be resolved.</summary>
     private (Vector3 Position, Quaternion Rotation)? ResolveHeld(
-        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation)
+        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null)
     {
         if (ik.HeldCapture is not { } capture)
             return null;
@@ -1424,6 +1438,10 @@ public unsafe partial class BonePosingService : IBonePosingService
             return (capture.Target + authoredPosition - capture.Translation,
                 Quaternion.Normalize(capture.Rotation
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
+        if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
+        {
+            return actorAnchor.Resolve(authoredPosition, authoredRotation, ActorParentFrame(endpoint, actorAnchor, pose));
+        }
         Vector3 worldPosition;
         Quaternion worldRotation;
         switch (ik.Config.TargetMode)
@@ -1528,11 +1546,8 @@ public unsafe partial class BonePosingService : IBonePosingService
                 }
                 // A frozen model-space target rotates/pans with CharaView, not
                 // with the live light/bone it was sampled from.
-                bool held = summary.Config.TargetMode != IkTargetMode.Actor;
                 if (SetIkConfiguration(tip, summary.Config with
-                    { TargetMode = held ? IkTargetMode.World : IkTargetMode.Actor }) != null)
-                    continue;
-                if (!held)
+                    { TargetMode = IkTargetMode.Actor, ActorAnchor = null }) != null)
                     continue;
                 var copied = _ikChains[ChainKey(tip)];
                 copied.PreviewModelSpace = true;

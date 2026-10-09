@@ -1,11 +1,83 @@
 using System.Reflection;
 using Poser.Domain.Posing;
 using Poser.Entities;
+using Poser.Game.Posing;
 
 namespace Poser.Game.Tests.Posing;
 
 public sealed class FabrikSpanTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    public void Ccd_affected_bones_stop_at_the_connected_partial_root(int depth)
+    {
+        // Skeleton.BuildBones connects partial roots back to partial 0.
+        // That display hierarchy continues beyond the native CCD pose.
+        var nodes = Chain(5);
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            nodes[i].Name = $"bone_{i}";
+            nodes[i].Partial = i < 2 ? 0 : 1;
+        }
+        nodes[2].Hidden = true; // Structural partial root remains part of the native pose.
+        var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = depth };
+        var expected = nodes.Skip(Math.Max(2, 4 - depth)).ToArray();
+
+        Assert.Equal(expected.Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[4].Bone, config));
+        Assert.Equal(expected.Select(n => n.Bone), IkBakeCapture.AffectedBones(nodes[4].Bone, config));
+        Assert.Equal(expected.Reverse().Select(n => n.Name), BonePosingService.ChainMemberNames(nodes[4].Bone, config));
+    }
+
+    [Theory]
+    [InlineData("same-pose", true)]
+    [InlineData("no-parent", false)]
+    [InlineData("hidden-parent", false)]
+    [InlineData("different-partial", false)]
+    [InlineData("different-skeleton", false)]
+    public void Ccd_eligibility_requires_a_visible_parent_in_the_same_native_pose(string scenario, bool expected)
+    {
+        var nodes = Chain(2);
+        switch (scenario)
+        {
+            case "no-parent": nodes[1].Parent = null; break;
+            case "hidden-parent": nodes[0].Hidden = true; break;
+            case "different-partial": nodes[0].Partial = 1; break;
+            case "different-skeleton": nodes[0].Skeleton = Chain(1)[0].Skeleton; break;
+        }
+        Assert.Equal(expected, BonePosingService.IsCcdEligible(nodes[1].Bone));
+        if (scenario != "hidden-parent")
+        {
+            var members = BonePosingService.NativeIkMembers(nodes[1].Bone,
+                IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd });
+            Assert.Equal(expected ? 2 : 1, members.Count);
+        }
+    }
+
+    [Fact]
+    public void Two_joint_external_parent_excludes_shoulder_and_spine_from_the_solved_chain()
+    {
+        var nodes = Chain(5);
+        string[] names = ["j_sebo_c", "j_sako_l", "j_ude_a_l", "j_ude_b_l", "j_te_l"];
+        for (int i = 0; i < nodes.Length; i++) nodes[i].Name = names[i];
+        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
+        Assert.Equal(nodes.Skip(2).Select(n => n.Bone), members);
+        Assert.Same(nodes[1].Bone, members[0].ParentBone);
+    }
+
+    [Fact]
+    public void Ccd_external_parent_is_above_configured_depth_and_does_not_cross_partials()
+    {
+        var nodes = Chain(6);
+        var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = 2 };
+        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, config);
+        Assert.Equal(nodes.Skip(3).Select(n => n.Bone), members);
+        Assert.Same(nodes[2].Bone, members[0].ParentBone);
+        nodes[3].Partial = 1;
+        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[^1].Bone, config));
+    }
+
     [Fact]
     public void Selected_bone_is_between_parent_and_child_spans_in_native_order()
     {
@@ -58,8 +130,9 @@ public sealed class FabrikSpanTests
 
     private static Node[] Chain(int count)
     {
-        var skeleton = Proxy<ISkeleton>(_ => null);
-        var nodes = Enumerable.Range(0, count).Select(_ => new Node(skeleton)).ToArray();
+        Node[] nodes = [];
+        var skeleton = Proxy<ISkeleton>(method => method.Name == "get_Bones" ? nodes.Select(n => n.Bone).ToArray() : null);
+        nodes = Enumerable.Range(0, count).Select(_ => new Node(skeleton)).ToArray();
         for (int i = 1; i < count; i++)
         {
             nodes[i].Parent = nodes[i - 1].Bone;
@@ -76,12 +149,14 @@ public sealed class FabrikSpanTests
         public List<IBone> Children = new();
         public int Partial;
         public bool Hidden;
+        public string Name = "bone";
         public Node(ISkeleton skeleton)
         {
             Skeleton = skeleton;
             Bone = Proxy<IBone>(method => method.Name switch
             {
                 "get_Skeleton" => Skeleton,
+                "get_BoneName" => Name,
                 "get_ParentBone" => Parent,
                 "get_ChildBones" => Children,
                 "get_PartialId" => Partial,

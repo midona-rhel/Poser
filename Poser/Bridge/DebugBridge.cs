@@ -53,6 +53,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
+    private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
     private readonly ITransformFacade _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
     private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
@@ -96,6 +97,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Services.IBonePosingService bonePosing,
+        Application.Posing.IIkConfigurationPort ikConfiguration,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Services.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
@@ -148,6 +150,7 @@ public sealed partial class DebugBridge : IDisposable
         _worldObjects = worldObjects;
         _library = library;
         _bonePosing = bonePosing;
+        _ikConfiguration = ikConfiguration;
         _integration = integration;
         _session = session;
         _appearance = appearance;
@@ -285,7 +288,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
-                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
+                        "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
+                        "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
@@ -860,19 +864,33 @@ public sealed partial class DebugBridge : IDisposable
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && bone.PartialId == part)
                         {
-                            var current = _bonePosing.GetIkConfiguration(bone);
+                            if (_bindings.GetBoneId(bone) is not { } boneId)
+                                return Json(new { error = "bone has no stable id" });
+                            var target = TransformTargetId.ForBone(boneId);
+                            var current = _ikConfiguration.Get(target);
                             if (current == null)
                                 return Json(new { error = "bone cannot use IK" });
+                            if (query.GetValueOrDefault("action") == "read")
+                                return JsonSerializer.Serialize(new { actorId = id.ToString(), config = current },
+                                    new JsonSerializerOptions { IncludeFields = true });
                             var next = current with
                             {
                                 Enabled = !query.TryGetValue("enabled", out var en) || en != "0",
                                 Solver = query.TryGetValue("solver", out var sv) ? Enum.Parse<global::Poser.Domain.Posing.IkSolver>(sv, true) : current.Solver,
                                 CcdDepth = query.TryGetValue("depth", out var dp) ? int.Parse(dp) : current.CcdDepth,
+                                ParentDepth = query.TryGetValue("parentDepth", out var pd) ? int.Parse(pd) : current.ParentDepth,
+                                ChildDepth = query.TryGetValue("childDepth", out var cd) ? int.Parse(cd) : current.ChildDepth,
+                                TargetMode = query.TryGetValue("targetMode", out var tm) ? Enum.Parse<Domain.Posing.IkTargetMode>(tm, true) : current.TargetMode,
+                                Collisions = query.TryGetValue("collisions", out var collisions) ? collisions != "0" : current.Collisions,
                                 CcdIterations = query.TryGetValue("iterations", out var it) ? int.Parse(it) : current.CcdIterations,
                                 SwivelDegrees = query.TryGetValue("swivel", out var sw) ? float.Parse(sw, CultureInfo.InvariantCulture) : current.SwivelDegrees,
                             };
-                            var error = _bonePosing.SetIkConfiguration(bone, next);
-                            return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
+                            // Discrete diagnostics use the same journaled configuration owner
+                            // as the inspector, including depth recapture and mode transitions.
+                            var result = _ikConfiguration.Set(target, next);
+                            return JsonSerializer.Serialize(new { ok = result.Success, result.Detail,
+                                actorId = id.ToString(), config = _ikConfiguration.Get(target), history = History() },
+                                new JsonSerializerOptions { IncludeFields = true });
                         }
                 return Json(new { error = "no such bone" });
             }
@@ -913,7 +931,7 @@ public sealed partial class DebugBridge : IDisposable
                 // inspector well issues, so the step lands in the history the
                 // way a drag does. /rotatebone below writes the runtime directly.
                 string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
-                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                float deg = float.Parse(query.GetValueOrDefault("deg", "0"), CultureInfo.InvariantCulture);
                 var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
                 foreach (var skeleton in _skeletons.GetSkeletons(actor))
                     foreach (var bone in skeleton.Bones)
@@ -925,7 +943,9 @@ public sealed partial class DebugBridge : IDisposable
                                 return Json(new { error = "bone has no model transform this frame" });
                             var turned = System.Numerics.Quaternion.Normalize(
                                 current.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f));
-                            var desired = new global::Poser.Domain.Transforms.PoseTransform(current.Position, turned, current.Scale);
+                            float Move(string component) => float.Parse(query.GetValueOrDefault(component, "0"), CultureInfo.InvariantCulture);
+                            var desired = new global::Poser.Domain.Transforms.PoseTransform(
+                                current.Position + new System.Numerics.Vector3(Move("dx"), Move("dy"), Move("dz")), turned, current.Scale);
                             var written = _transforms.SetAbsolute(
                                 global::Poser.Domain.Identity.TransformTargetId.ForBone(boneId), desired, $"Bridge {name}");
                             return Json(new { ok = written.Success, written.Detail, modified = _bonePosing.HasModifications(bone), history = History() });
