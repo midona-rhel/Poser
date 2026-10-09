@@ -652,6 +652,29 @@ public sealed class EnvironmentPane
 
     private void LightingRows(Crystarium.FormScope form)
     {
+        bool housing = _reading.IsHousingInterior;
+        form.Slider("Interior brightness",
+            _reading.InteriorBrightness ?? 0f,
+            0f, 1f,
+            _values.SetInteriorBrightness,
+            help: housing
+                ? "Adjust this housing interior without changing its saved lighting level"
+                : "Available only inside a housing interior",
+            disabled: !housing,
+            onBegin: _values.Seal,
+            actions: actions =>
+            {
+                actions.Button("Reset", _values.ResetInteriorBrightness,
+                    disabled: !housing,
+                    help: "Return to the saved housing lighting level");
+                actions.Button("Release", _values.ReleaseInteriorBrightness,
+                    disabled: !housing || !_reading.IsInteriorBrightnessOverridden,
+                    help: "Restore the brightness from before Poser took control");
+            },
+            id: "##env-interior-brightness");
+        if (!housing)
+            form.Status("Interior brightness is available only inside a housing interior.");
+
         SectionSwitch(form, "Natural", EnvSection.Lighting,
             "Let the game run the ambient lighting. Changing any value below "
                 + "holds it for Poser.");

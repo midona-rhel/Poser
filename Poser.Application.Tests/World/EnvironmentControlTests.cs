@@ -76,6 +76,48 @@ public sealed class EnvironmentControlTests
         Assert.False(history.CanUndo);
     }
 
+    [Fact]
+    public void Interior_brightness_is_guarded_clamped_and_stale_history_is_refused()
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+
+        control.SetInteriorBrightness(3f);
+        Assert.Equal(1f, runtime.InteriorBrightness);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        runtime.HousingInteriorBinding++;
+        Assert.True(step.Undo());
+        history.CommitUndo(step);
+        Assert.Equal(1f, runtime.InteriorBrightness);
+
+        var outside = new Runtime();
+        var outsideHistory = new TransformHistory();
+        new EnvironmentControl(new(outsideHistory), outside, outside, outside)
+            .SetInteriorBrightness(0.7f);
+        Assert.False(outsideHistory.CanUndo);
+    }
+
+    [Fact]
+    public void Interior_brightness_release_restores_baseline_and_replays()
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+        control.SetInteriorBrightness(0.7f);
+        control.Seal();
+        control.ReleaseInteriorBrightness();
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+
+        var release = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(release.Undo());
+        history.CommitUndo(release);
+        Assert.Equal(0.7f, runtime.InteriorBrightness);
+        Assert.True(release.Redo());
+        history.CommitRedo(release);
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+    }
+
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
     {
         private int _minute;
@@ -102,6 +144,32 @@ public sealed class EnvironmentControlTests
         public void SetSectionHeld(EnvSection section, bool held) { if (held) _held.Add(section); else _held.Remove(section); }
         public void ReleaseAllSections() => _held.Clear();
         public bool ResetSectionsOnGPoseExit { get; set; }
+        public bool IsHousingInterior { get; set; }
+        public float? InteriorBrightnessValue { get; set; }
+        public float? InteriorBrightness => IsHousingInterior ? InteriorBrightnessValue : null;
+        public bool IsInteriorBrightnessOverridden { get; private set; }
+        private float? InteriorBrightnessBaseline { get; set; }
+        public ulong HousingInteriorBinding { get; set; } = 1;
+        public bool TrySetInteriorBrightness(float value, ulong binding)
+        {
+            if (!IsHousingInterior || binding != HousingInteriorBinding)
+                return false;
+            InteriorBrightnessBaseline ??= InteriorBrightnessValue;
+            InteriorBrightnessValue = value;
+            IsInteriorBrightnessOverridden = true;
+            return true;
+        }
+        public bool TryResetInteriorBrightness(ulong binding) =>
+            TrySetInteriorBrightness(0.8f, binding);
+        public bool ReleaseInteriorBrightness(ulong binding)
+        {
+            if (!IsHousingInterior || binding != HousingInteriorBinding || !IsInteriorBrightnessOverridden)
+                return false;
+            InteriorBrightnessValue = InteriorBrightnessBaseline;
+            InteriorBrightnessBaseline = null;
+            IsInteriorBrightnessOverridden = false;
+            return true;
+        }
         private EnvSkyValues _sky;
         public EnvSkyValues Sky { get => _sky; set { _sky = value; _held.Add(EnvSection.Sky); } }
         private EnvCloudsValues _clouds;

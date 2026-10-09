@@ -74,6 +74,50 @@ public sealed class EnvironmentControl : IEnvironmentControl
 
     public void SetResetSectionsOnGPoseExit(bool v) => Set("ResetSectionsOnGPoseExit", "Set section restore", () => _environment.ResetSectionsOnGPoseExit, x => _environment.ResetSectionsOnGPoseExit = x, v);
 
+    // ── housing interior brightness ──────────────────────────
+    public void SetInteriorBrightness(float v)
+    {
+        if (!float.IsFinite(v) || _environment.InteriorBrightness is null)
+            return;
+        ulong binding = _environment.HousingInteriorBinding;
+        float value = Math.Clamp(v, 0f, 1f);
+        _journal.Set((_environment, "InteriorBrightness", binding),
+            "Set interior brightness",
+            () => _environment.HousingInteriorBinding == binding &&
+                _environment.InteriorBrightness is { } current ? current : value,
+            next => _environment.TrySetInteriorBrightness(next, binding), value);
+    }
+
+    public void ResetInteriorBrightness()
+    {
+        if (_environment.InteriorBrightness is not { } before)
+            return;
+        ulong binding = _environment.HousingInteriorBinding;
+        if (!_environment.TryResetInteriorBrightness(binding) ||
+            _environment.InteriorBrightness is not { } reset || before == reset)
+            return;
+        _journal.Record("Reset interior brightness", before, reset,
+            next => _environment.TrySetInteriorBrightness(next, binding));
+    }
+
+    public void ReleaseInteriorBrightness()
+    {
+        if (!_environment.IsInteriorBrightnessOverridden ||
+            _environment.InteriorBrightness is not { } before)
+            return;
+        ulong binding = _environment.HousingInteriorBinding;
+        if (!_environment.ReleaseInteriorBrightness(binding) ||
+            _environment.InteriorBrightness is not { } restored)
+            return;
+        _journal.Record("Release interior brightness", before, restored, next =>
+        {
+            if (next == restored)
+                _environment.ReleaseInteriorBrightness(binding);
+            else
+                _environment.TrySetInteriorBrightness(next, binding);
+        });
+    }
+
     public void SetSky(EnvSkyValues v) => Set("Sky", "Set sky", () => _environment.Sky, x => _environment.Sky = x, v);
     public void SetClouds(EnvCloudsValues v) => Set("Clouds", "Set clouds", () => _environment.Clouds, x => _environment.Clouds = x, v);
     public void SetLighting(EnvLightingValues v) => Set("Lighting", "Set lighting", () => _environment.Lighting, x => _environment.Lighting = x, v);
@@ -142,6 +186,9 @@ public sealed class EnvironmentControl : IEnvironmentControl
         ResetWeatherOnGPoseExit = _environment.ResetWeatherOnGPoseExit,
         IsSectionHoldAvailable = _environment.IsSectionHoldAvailable,
         ResetSectionsOnGPoseExit = _environment.ResetSectionsOnGPoseExit,
+        IsHousingInterior = _environment.IsHousingInterior,
+        InteriorBrightness = _environment.InteriorBrightness,
+        IsInteriorBrightnessOverridden = _environment.IsInteriorBrightnessOverridden,
         CurrentWeatherId = _environment.CurrentWeatherId,
         TransitionTime = _environment.TransitionTime,
         Sky = _environment.Sky,

@@ -130,11 +130,49 @@ public sealed class EnvironmentHoldReleaseTests
         Assert.False(service.IsTimeFrozen);
         Assert.False(service.IsWeatherOverrideEnabled);
     }
+
+    [Fact]
+    public void Interior_brightness_captures_once_and_restores_on_gpose_exit()
+    {
+        var bus = new TestEventBus();
+        var housing = new TestHousingBrightness { State = new(0.3f, 0.4f, 0.8f) };
+        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _),
+            bus: bus, housing: housing);
+
+        ulong binding = service.HousingInteriorBinding;
+        Assert.True(service.TrySetInteriorBrightness(0.7f, binding));
+        housing.State = housing.State!.Value with { Current = 0.6f };
+        Assert.True(service.TrySetInteriorBrightness(0.9f, binding));
+        bus.Publish(new GPoseStateChangedEvent(false));
+
+        Assert.Equal([0.7f, 0.9f, 0.4f], housing.Writes);
+        Assert.False(service.IsInteriorBrightnessOverridden);
+        Assert.False(service.TrySetInteriorBrightness(0.6f, binding));
+    }
+
+    [Fact]
+    public void Territory_change_invalidates_history_without_writing_the_new_room()
+    {
+        var housing = new TestHousingBrightness { State = new(0.3f, 0.4f, 0.8f) };
+        var client = ClientStateProxy.Create(out var events);
+        using var service = Create(new TestFactory(), client, housing: housing);
+        ulong oldBinding = service.HousingInteriorBinding;
+        Assert.True(service.TrySetInteriorBrightness(0.7f, oldBinding));
+
+        housing.State = new(0.2f, 0.2f, 0.6f); // the newly resolved room
+        events.RaiseTerritoryChanged(8);
+
+        Assert.False(service.TrySetInteriorBrightness(0.9f, oldBinding));
+        Assert.False(service.ReleaseInteriorBrightness(oldBinding));
+        Assert.Equal([0.7f], housing.Writes);
+        Assert.Equal(0.2f, service.InteriorBrightness);
+    }
 private static EnvironmentService Create(
         TestFactory factory,
         IClientState clientState,
         RecordingLog? log = null,
-        TestEventBus? bus = null)
+        TestEventBus? bus = null,
+        IHousingBrightnessNative? housing = null)
     {
         return new EnvironmentService(
             clientState,
@@ -143,7 +181,8 @@ private static EnvironmentService Create(
             NewProxy<IDataManager>(),
             (log ?? new RecordingLog()).Proxy(),
             bus ?? new TestEventBus(),
-            factory);
+            factory,
+            housing);
     }
 
     private static T NewProxy<T>() where T : class =>
@@ -280,6 +319,25 @@ private static EnvironmentService Create(
         }
 
         public void Dispose() => DisposeCount++;
+    }
+
+    private sealed class TestHousingBrightness : IHousingBrightnessNative
+    {
+        public HousingBrightnessState? State { get; set; }
+        public List<float> Writes { get; } = [];
+        public bool TryRead(out HousingBrightnessState state)
+        {
+            state = State.GetValueOrDefault();
+            return State.HasValue;
+        }
+        public bool TryWrite(float target)
+        {
+            if (State is not { } state)
+                return false;
+            Writes.Add(target);
+            State = state with { Target = target };
+            return true;
+        }
     }
 
     private sealed unsafe class TestWeatherHook : TestEnvHook, IEnvWeatherHook

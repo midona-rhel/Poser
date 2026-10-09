@@ -79,6 +79,22 @@ public interface IEnvironmentRuntimePort
 
     bool ResetSectionsOnGPoseExit { get; set; }
 
+    // ── Housing interior brightness ───────────────────────────
+
+    bool IsHousingInterior { get; }
+    float? InteriorBrightness { get; }
+    bool IsInteriorBrightnessOverridden { get; }
+    ulong HousingInteriorBinding { get; }
+
+    /// <summary>Writes only when <paramref name="binding"/> still names the
+    /// current indoor territory. The first write captures its live target.</summary>
+    bool TrySetInteriorBrightness(float value, ulong binding);
+    bool TryResetInteriorBrightness(ulong binding);
+
+    /// <summary>Restores the captured target only while its binding remains
+    /// current, then releases ownership. Never changes saved housing lighting.</summary>
+    bool ReleaseInteriorBrightness(ulong binding);
+
     // Setting any of these implies holding that section.
     EnvSkyValues Sky { get; set; }
     EnvCloudsValues Clouds { get; set; }
