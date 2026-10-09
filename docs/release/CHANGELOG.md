@@ -2,28 +2,36 @@
 
 ## 0.9.17-beta — Bone maps, IK fixes and pose-aware gaze
 
-- Create and edit separate Body and Face map presets, with mirroring, live previews and race/gender defaults.
-- Copy locked templates, choose map backgrounds, and add bones directly from their context menus.
-- Find Abdomen in the default Body map and use clearer generated maps for non-humanoid actors.
-- Highlight map bones in the skeleton overlay and use Shift-click to change the overlay selection.
-- Apply default visibility presets with the new Wand button, and find uncovered bones under Toggle other.
-- Keep Actor-anchored IK targets relative to parent bones outside the solved chain.
-- Change Rope and Fabric chain lengths without accumulating changes to their reference shape.
-- Reverse IK drags immediately at their limits and preserve hand orientation with Two Joint End rotation.
-- Enable opt-in Pose-aware gaze for Camera and Point targets, including locked points, within native gaze limits.
-- Undo the selected entity with Alt+Z and redo with Alt+Y or Alt+Shift+Z without changing global Ctrl shortcuts.
-- Prevent stale appearance state when spawning creatures, duplicating actors or reloading scenes into reused slots.
-- Preserve actor display names through scene saves, loads and Undo/Redo.
-- Refresh Viera ear-bone visibility when the rendered ear shape changes.
-- Keep Gaze and Expression in their Properties pages and deselect pinned groups without clearing unrelated selections.
-- Keep pose import and preview attached to the chosen actor when selection changes.
-- Use a movable import panel with expanded sections and grouped Import, Export and Library actions.
-- Add source folders through Name and Browse controls, and remove sources without deleting their files.
-- Sort files by name or date and optionally navigate folders and import poses with a single click.
-- Configure pose, clipboard and playback shortcuts with binding-conflict feedback that does not shift the layout.
-- Drag windows only from their title bars and keep Settings search results visually stable.
-- Improve keybind reset spacing, place camera Limits before Target, and animate submenus.
-- Adjust temporary interior brightness.
+- Added editable Body and Face map presets with searchable bone lists, draggable points and mirrored placement.
+- Added locked default templates, selectable preview backgrounds and race/gender preset defaults.
+- Added Abdomen to the default Body map and adjusted Lumbar and Waist spacing.
+- Improved non-humanoid bone maps, including layouts for long bone chains.
+- Added skeleton-overlay highlighting when hovering over map bones.
+- Added Shift-click bone selection in the skeleton overlay.
+- Added a Wand button to apply default bone-visibility presets.
+- Renamed the uncovered-bones action to Toggle other and enlarged filled preset indicators.
+- Fixed Actor-anchored IK targets not following parent bones outside the chain.
+- Fixed Rope and Fabric behaviour changing when increasing and decreasing the active bone count.
+- Fixed excess IK drag distance delaying movement back from a constraint.
+- Fixed Two Joint End rotation not preserving the end bone's orientation.
+- Added optional Pose-aware gaze for Camera and Point targets, including locked points, within native gaze limits.
+- Moved Gaze and Expression controls out of the Inspector and kept them in Properties.
+- Added selected-entity undo with Alt+Z and redo with Alt+Y or Alt+Shift+Z; creation and removal still use global undo.
+- Fixed pinned-group deselection clearing unrelated selections.
+- Fixed stale appearance when spawning creatures, duplicating actors and reloading scenes into reused slots.
+- Fixed actor display names not surviving scene saves, loads and Undo/Redo.
+- Fixed Viera ear-bone visibility not refreshing after changing ear shape.
+- Fixed pose import and preview switching actors when the selection changes.
+- Updated the import panel with movable, scrollable content and separate Import and Export rows.
+- Added a Name and Browse row for source folders, with removal that leaves files untouched.
+- Added file sorting by name or date and optional single-click pose import and folder navigation.
+- Added configurable pose, clipboard and playback shortcuts with inline binding-conflict feedback.
+- Improved keybind reset-button spacing.
+- Restricted window dragging to title bars.
+- Fixed Settings search results flashing while typing.
+- Added animated submenus.
+- Moved camera Limits above Target.
+- Added temporary interior-brightness controls.
 
 ## 0.9.16-beta — pinned Inspectors and clearer controls
 
