@@ -192,6 +192,24 @@ folders, after extension filtering; it never walks subfolders or rescans per
 keystroke. Navigation and reopening clear the query. A filtered-out selection
 clears its preview and confirmation state; a separately typed save name stays.
 
+Pose import options use a movable, explicitly closable window. Import/export
+option and file section labels never disclose or inherit saved collapse state.
+The file browser reserves
+the face-warning row so changing files cannot move the list or confirmation bar.
+Properties group Import, Import from file, and Library in a labelled Import row,
+with Export and Export to file in a labelled Export row. The file shortcuts open their browsers directly;
+Import and Export open their general options/menus. These actions capture their host actor; opening the library
+from that host seeds its explicit apply target without changing scene selection.
+Every pose-import entry point supplies its actor explicitly. The import window
+names and retains that exact actor generation through preview and application;
+selection changes cannot retarget it, and a missing actor never falls back to
+another. Library preview, import options and Apply share its resolved target.
+
+Library source creation uses one name-and-Browse row. Browse requires a nonblank
+name; choosing a folder immediately adds that named source to the Settings draft.
+Cancelling the chooser leaves the name untouched and adds nothing. Settings Save
+applies the draft; Settings Cancel discards it.
+
 Spawn browsing keeps predefined actions first, library entries second, then
 the existing catalog order. With an active search, each source group orders
 categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.

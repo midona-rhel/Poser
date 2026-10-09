@@ -132,7 +132,6 @@ public sealed class SettingsViewModel
     public bool UseLibraryWhenImporting;
     public bool LibraryShowExtensions;
     public string LibraryNewName = "";
-    public string LibraryNewPath = "";
     public Dictionary<string, KeybindSlots> Bindings =
         KeybindRegistry.Bindings(KeybindPreset.Poser);
     public string? RebindingAction;

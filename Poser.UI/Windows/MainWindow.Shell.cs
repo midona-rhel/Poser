@@ -171,7 +171,7 @@ public partial class MainWindow
                 switch (index)
                 {
                     case 0:
-                        _poseFileSection.RequestImportMenu(withPresets: true);
+                        _poseFileSection.RequestImportMenu(withPresets: true, target: actorId);
                         break;
                     case 2:
                         _poseFileSection.OpenAutoSaves(actorId);

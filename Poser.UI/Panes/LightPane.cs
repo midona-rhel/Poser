@@ -47,7 +47,6 @@ public sealed class LightPane
     private bool _openLight = true;
     private bool _openShadows = true;
     private bool _openAttach = true;
-    private bool _openFile = true;
     private bool _openActions = true;
 
     /// <summary>The gobo library's visual surface: the shared texture grid,
@@ -213,8 +212,7 @@ public sealed class LightPane
                 form => ShadowRows(form, light));
             page.Section("Attach", _openAttach, next => _openAttach = next,
                 form => AttachRows(form, light));
-            page.Section("File", _openFile, next => _openFile = next,
-                form => FileRows(form, light));
+            page.Section("File", form => FileRows(form, light), allowDisclosure: false);
             page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
         });

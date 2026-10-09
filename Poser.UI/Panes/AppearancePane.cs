@@ -82,7 +82,6 @@ public sealed partial class AppearancePane
     private string _modelText = "0";
     private bool _openWetSurface = true;
     private bool _openExternalAppearance = true;
-    private bool _openCharacterFile = true;
 
     private readonly Crystarium.SearchPicker<ExternalItem> _picker =
         new("appearance-external");
@@ -342,9 +341,8 @@ public sealed partial class AppearancePane
                 form => ExternalAppearanceRows(form, actor, external),
                 divider: !first);
             first = false;
-            page.Section("Character file (MCDF)", _openCharacterFile,
-                next => _openCharacterFile = next,
-                form => CharacterFileRows(form, actor, external));
+            page.Section("Character file (MCDF)",
+                form => CharacterFileRows(form, actor, external), allowDisclosure: false);
             // A body taken from the world is handed back from its own page,
             // as a borrowed light is from its page.
             if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })

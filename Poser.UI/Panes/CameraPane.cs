@@ -44,7 +44,6 @@ public sealed class CameraPane
     private bool _openMovement = true;
     private bool _openTarget = true;
     private bool _openLimits = true;
-    private bool _openFile = true;
     private bool _openActions = true;
 
     /// <summary>MainWindow supplies the actor and bone picker state because it
@@ -175,8 +174,7 @@ public sealed class CameraPane
             if (camera.Kind != CameraKind.Free)
                 page.Section("Target", _openTarget, next => _openTarget = next,
                     form => TargetRows(form, camera));
-            page.Section("File", _openFile, next => _openFile = next,
-                form => FileRows(form, camera));
+            page.Section("File", form => FileRows(form, camera), allowDisclosure: false);
             page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, camera));
         });

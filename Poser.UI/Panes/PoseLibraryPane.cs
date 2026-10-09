@@ -409,7 +409,7 @@ public sealed partial class PoseLibraryPane
         // The rail's "Options" is a BUTTON, so the menu hangs off it — the
         // same seat rule the Apply menu below already follows.
         _vm.OnImportMenu = () => _files.RequestImportMenu(
-            withPresets: false, anchor: Crystarium.ButtonSeat);
+            withPresets: false, target: CurrentApplyTarget(), anchor: Crystarium.ButtonSeat);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
@@ -501,8 +501,8 @@ public sealed partial class PoseLibraryPane
         SyncQuery();
         if (_refilter)
             Refilter();
-        SyncTarget();
         SyncApplyTargets();
+        SyncTarget();
         SyncImportToggles();
         SyncStatus();
         SyncPreview();

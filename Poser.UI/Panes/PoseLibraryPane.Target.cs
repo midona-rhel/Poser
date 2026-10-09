@@ -33,6 +33,16 @@ public sealed partial class PoseLibraryPane
     private ActorId? TargetActor() =>
         _selection.PrimaryActor is { } id && _scene.Snapshot.FindActor(id) is not null ? id : null;
 
+    private bool IsApplyTarget(ActorId id) =>
+        _scene.Snapshot.FindActor(id) is { } actor
+        && (_type == LibraryType.Mcdf || actor.CharacterSkeleton is not null);
+
+    // Preview, options and Apply must resolve the same dropdown choice.
+    private ActorId? CurrentApplyTarget() =>
+        _applyChoice is { } chosen ? IsApplyTarget(chosen) ? chosen : null
+        : TargetActor() is { } selected && IsApplyTarget(selected) ? selected
+        : FirstApplyTarget();
+
     /// <summary>The apply gates. The picker chooses the target, so applying
     /// only needs an ELIGIBLE ACTOR TO EXIST — the sidebar selection is
     /// irrelevant, and nothing here touches it (the old label-minting tail
@@ -40,17 +50,9 @@ public sealed partial class PoseLibraryPane
     /// true with nothing selected).</summary>
     private void SyncTarget()
     {
-        _vm.CanApply = FirstApplyTarget() is not null;
+        _vm.CanApply = CurrentApplyTarget() is not null;
 
-        // The options rail this pane hosts resolves its commands through the
-        // SCENE selection, which in library mode is routinely empty — the
-        // library picks its own target. Push that target (and the fact that
-        // the library is the host) every frame, the same way the preview seat
-        // is pushed, so "From file", the presets and the export commands act
-        // on the actor the tiles would apply to instead of silently eating
-        // the click.
-        var host = TargetActor() is { } selected && _imports.HasPosableSkeleton(selected)
-            ? selected : FirstApplyTarget();
+        var host = CurrentApplyTarget();
         _files.SetHostImportTarget(
             host,
             inLibrary: true);
@@ -90,6 +92,17 @@ public sealed partial class PoseLibraryPane
     /// by default, a chosen one until the choice leaves the scene.</summary>
     private ActorId? _applyChoice;
 
+    public void SetApplyTarget(ActorId? actor) => _applyChoice = actor;
+#if DEBUG
+    public object DebugTargetState => new
+    {
+        chosen = _applyChoice?.ToString(),
+        resolved = CurrentApplyTarget()?.ToString(),
+        previewSource = PreviewSource()?.ToString(),
+        selected = TargetActor()?.ToString(),
+    };
+#endif
+
     private void SyncApplyTargets()
     {
         bool shows = _type is LibraryType.Poses or LibraryType.Mcdf;
@@ -100,18 +113,21 @@ public sealed partial class PoseLibraryPane
         foreach (var actor in _scene.Snapshot.Actors)
             if (_type == LibraryType.Mcdf || actor.CharacterSkeleton is not null)
                 _applyTargets.Add(actor.Id);
+        // Keep an explicit vanished target visible instead of silently selecting
+        // someone else. Choosing a different dropdown entry is the retarget action.
+        if (_applyChoice is { } explicitTarget && !_applyTargets.Contains(explicitTarget))
+            _applyTargets.Add(explicitTarget);
         if (_vm.ApplyTargetNames.Length != _applyTargets.Count)
             _vm.ApplyTargetNames = new string[_applyTargets.Count];
         for (int i = 0; i < _applyTargets.Count; i++)
         {
             var actor = _applyTargets[i];
-            _vm.ApplyTargetNames[i] = _scene.Snapshot.FindActor(actor) is { } described
-                ? ActorNames.Display(_config, described) : "Actor";
+            _vm.ApplyTargetNames[i] = IsApplyTarget(actor) && _scene.Snapshot.FindActor(actor) is { } described
+                ? ActorNames.Display(_config, described) : "Actor unavailable";
         }
         int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice.Value) : -1;
         if (index < 0)
         {
-            _applyChoice = null;
             var selected = TargetActor();
             index = selected != null ? _applyTargets.IndexOf(selected.Value) : -1;
         }
@@ -120,13 +136,12 @@ public sealed partial class PoseLibraryPane
 
     private void ApplyToChosen(int index)
     {
-        if (_applyTargets.Count == 0)
+        if (CurrentApplyTarget() is not { } actor)
         {
             _notices.Refused("No actor to apply to.");
             return;
         }
-        int choice = Math.Clamp(_vm.ApplyTargetIndex, 0, _applyTargets.Count - 1);
-        ApplyTo(index, _applyTargets[choice]);
+        ApplyTo(index, actor);
     }
 
     /// <summary>The first actor this tab's apply could land on, in scene order

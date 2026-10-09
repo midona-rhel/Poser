@@ -306,7 +306,7 @@ public class SettingsWindow : Window
         vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
         vm.OnBrowseFolder = (start, chosen) =>
             _folderDialog.OpenFolderDialog(
-                "Choose the Poser folder",
+                "Choose folder",
                 (ok, path) =>
                 {
                     if (ok && !string.IsNullOrWhiteSpace(path))

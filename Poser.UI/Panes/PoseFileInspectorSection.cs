@@ -84,7 +84,7 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private bool HasLastImport => _lastImportPath != null || _lastImportPose != null;
 
-    public event Action? OnLibraryRequested;
+    public event Action<ActorId?>? OnLibraryRequested;
 
     public PoseFileInspectorSection(
         IPoseImportCommands imports,
@@ -173,12 +173,25 @@ public sealed class PoseFileInspectorSection : IDisposable
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
     public bool IdleExportBusy => _idleExport.Busy;
+#if DEBUG
+    public object DebugImportState => new
+    {
+        menuOpen = _importMenuOpen,
+        menuTarget = _importMenuActor?.ToString(),
+        browserOpen = _importBrowser.IsOpen,
+        browserTarget = _importTarget?.ToString(),
+    };
+#endif
     public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
 
-    public void RequestImportMenu(bool withPresets, Vector2? anchor = null,
-        Domain.Identity.ActorId? target = null)
+    public void RequestImportMenu(bool withPresets, ActorId? target, Vector2? anchor = null)
     {
-        _menuActor = target;
+        if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
+        {
+            _notices.Refused("The import target is unavailable. Open Import from an actor.");
+            return;
+        }
+        _importMenuActor = actor;
         _importMenuWithPresets = withPresets;
         _menuAnchor = anchor ?? ImGui.GetMousePos();
         _importMenuRequested = true;
@@ -214,11 +227,13 @@ public sealed class PoseFileInspectorSection : IDisposable
             options, _disabledCategories);
 
     // Context menus target the clicked actor; dialogs freeze that exact generation.
-    // Ordinary controls follow selection, with the library's live host as fallback.
+    // An open import never falls back to selection or another window's host.
     private ActorId? SelectedActor()
     {
         if (_drawingMenu && _menuActor is { } clicked)
             return _imports.HasPosableSkeleton(clicked) ? clicked : null;
+        if (InLibrary && _hostTarget is { } libraryTarget)
+            return _imports.HasPosableSkeleton(libraryTarget) ? libraryTarget : null;
         foreach (var id in _selection.Selected)
         {
             var candidate = id switch
@@ -274,11 +289,14 @@ public sealed class PoseFileInspectorSection : IDisposable
     private bool _exportMenuRequested;
 
     private Domain.Identity.ActorId? _menuActor;
+    private ActorId? _importMenuActor;
+    private ActorId? _exportMenuActor;
+    private bool _importMenuOpen;
     private bool _drawingMenu;
 
     public void RequestExportMenu(Domain.Identity.ActorId? target = null)
     {
-        _menuActor = target;
+        _exportMenuActor = target ?? SelectedActor();
         _menuAnchor = ImGui.GetMousePos();
         _exportMenuRequested = true;
     }
@@ -347,14 +365,14 @@ public sealed class PoseFileInspectorSection : IDisposable
         {
             _importMenuRequested = false;
             _referenceArmed = false;
-            Crystarium.OpenPopover(ImportMenuId);
+            _importMenuOpen = true;
+            Crystarium.FloatingSurface.OpenWindow(ImportMenuId);
         }
         if (_exportMenuRequested)
         {
             _exportMenuRequested = false;
-            _menuActor ??= SelectedActor();
             Crystarium.FloatingMenu.Open(
-                ExportMenuId, _menuAnchor, BuildExportSubmenu(SelectedActor()),
+                ExportMenuId, _menuAnchor, BuildExportSubmenu(_exportMenuActor),
                 ExportMenuWidth);
         }
         if (_libraryMenuRequested)
@@ -379,24 +397,15 @@ public sealed class PoseFileInspectorSection : IDisposable
                 },
                 DrawLibraryOptionsMenuBody);
         }
-        Crystarium.FloatingSurface.Popup(
-            ImportMenuId,
-            new FloatingSurfaceProps
-            {
-                Width = MenuWidth,
-                Height = _importMenuWithPresets
-                    ? _importMenuHeightPresets
-                    : _importMenuHeightPlain,
-                Padding = MenuPadding,
-                AnchorMin = _menuAnchor,
-                AnchorMax = _menuAnchor,
-                Treatment = FloatingSurfaceTreatment.Glass,
-            },
-            DrawImportMenuBody);
+        _menuActor = _importMenuActor;
+        Crystarium.FloatingSurface.Window(
+            ImportMenuId, ref _importMenuOpen, 380f, 560f,
+            DrawImportMenuFrame);
+        _menuActor = null;
 
-        if (!_importBrowser.IsOpen)
+        if (!_importBrowser.IsOpen && !_importMenuOpen)
         {
-            if (_boneFilterRequested && !ImGui.IsPopupOpen(ImportMenuId))
+            if (_boneFilterRequested)
             {
                 _boneFilterRequested = false;
                 Crystarium.OpenPopover(BoneFilterMenuId);
@@ -406,11 +415,9 @@ public sealed class PoseFileInspectorSection : IDisposable
 
         int exportClicked = Crystarium.FloatingMenu.Draw(ExportMenuId);
         if (exportClicked >= 0)
-            ExecuteExport(exportClicked, SelectedActor());
+            ExecuteExport(exportClicked, _exportMenuActor);
     }
 
-    private float _importMenuHeightPlain = 430f;
-    private float _importMenuHeightPresets = 480f;
     private float _boneFilterHeight = 520f;
 
     /// <summary>Options only, left-aligned in its own surface — the
@@ -431,22 +438,27 @@ public sealed class PoseFileInspectorSection : IDisposable
         DrawNestedBoneFilter();
     }
 
-    private void DrawImportMenuBody()
+    private void DrawImportMenuFrame(Crystarium.FloatingSurfaceFrame frame)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var origin = ImGui.GetCursorScreenPos();
-        float width = ImGui.GetContentRegionAvail().X;
-        float top = origin.Y - MenuTitleOffset(scale);
-
-        float y = DrawOptionsSections(
-            new Vector2(origin.X, top), width, _importMenuWithPresets);
-
-        float measured = (y - origin.Y) / scale
-            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
-        if (_importMenuWithPresets)
-            _importMenuHeightPresets = measured;
-        else
-            _importMenuHeightPlain = measured;
+        var actorName = _importMenuActor is { } target && _scene.Snapshot.FindActor(target) is { } actor
+            ? ActorNames.Display(_config, actor) : "Actor unavailable";
+        var rects = Crystarium.WindowFrame(ImportMenuId, frame.Min, frame.Size,
+            new WindowFrameProps
+            {
+                Title = $"Import pose — {actorName}",
+                OnClose = () => _importMenuOpen = false,
+                HostPaintsChrome = true,
+            });
+        ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(MenuPadding * scale, 0f));
+        Crystarium.ScrollRegion("##import-options", rects.Body.Size.X / scale - MenuPadding * 2f,
+            rects.Body.Size.Y / scale, region =>
+            {
+                var origin = ImGui.GetCursorScreenPos();
+                float y = DrawOptionsSections(origin, region.ContentWidth * scale, _importMenuWithPresets);
+                ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
+                ImGui.Dummy(new Vector2(1f, MenuPadding * scale));
+            });
 
         if (_boneFilterRequested)
         {
@@ -534,8 +546,8 @@ public sealed class PoseFileInspectorSection : IDisposable
         ConfigureImportBand();
     }
 
-    private int ImportStatusRows() =>
-        _faceWarning is null ? 0 : 1;
+    // Keep the list, preview and footer stationary when a face-only warning appears.
+    private static int ImportStatusRows() => 1;
 
     private void DrawImportOptionsBand(
         Vector2 origin, Vector2 size, string? highlighted)
@@ -850,7 +862,8 @@ public sealed class PoseFileInspectorSection : IDisposable
             divider: divider,
             labelColumnWidth: labelColumnWidth
                 ?? (dense ? DenseLabelColumn : MenuLabelColumn),
-            dense: dense);
+            dense: dense,
+            allowDisclosure: false);
 
     /// <summary>The preview alone — the library window's plain right
     /// column. Not a rail and not styled as one. With the seat, the
@@ -948,12 +961,18 @@ public sealed class PoseFileInspectorSection : IDisposable
                     actions.Button("From file", () =>
                     {
                         if (SelectedActor() is { } actorId)
-                            OpenImport(actorId);
+                            OpenImportFromFile(actorId);
                         else
                             _notices.Refused(NoActorText);
                     });
                     actions.Button("From library",
-                        () => OnLibraryRequested?.Invoke(),
+                        () =>
+                        {
+                            if (SelectedActor() is { } actorId)
+                                RequestLibrary(actorId);
+                            else
+                                _notices.Refused("The import target is no longer available.");
+                        },
                         disabled: InLibrary,
                         help: InLibrary ? "The library is already open" : null);
                 });
@@ -1851,11 +1870,16 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         SetHostImportTarget(actorId, inLibrary: false);
 
-        form.Actions("Pose", actions =>
+        form.Actions("Import", actions =>
         {
-            actions.Button("Import", () => RequestImportMenu(withPresets: true));
-            actions.Button("Export", () => RequestExportMenu());
-            actions.Button("Library", () => OnLibraryRequested?.Invoke());
+            actions.Button("Import", () => RequestImportMenu(withPresets: true, target: actorId));
+            actions.Button("Import from file", () => OpenImportFromFile(actorId));
+            actions.Button("Library", () => RequestLibrary(actorId));
+        });
+        form.Actions("Export", actions =>
+        {
+            actions.Button("Export", () => RequestExportMenu(actorId));
+            actions.Button("Export to file", () => OpenExport(actorId));
         });
     }
 
@@ -1863,7 +1887,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (_config.Config.Library.UseLibraryWhenImporting)
         {
-            OnLibraryRequested?.Invoke();
+            RequestLibrary(actorId);
             return;
         }
 
@@ -1876,6 +1900,12 @@ public sealed class PoseFileInspectorSection : IDisposable
     public void OpenImportFromFile(ActorId actorId) =>
         BrowseAndImport(actorId, _folder.Path, rememberPath: true);
 
+    private void RequestLibrary(ActorId? actor)
+    {
+        _importMenuOpen = false;
+        OnLibraryRequested?.Invoke(actor);
+    }
+
     public void OpenAutoSaves(ActorId actorId)
     {
         BrowseAndImport(actorId, _autoSave.RootDirectory, rememberPath: false);
@@ -1886,6 +1916,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         string initialPath,
         bool rememberPath)
     {
+        _importMenuOpen = false;
         ConfigureImportBand();
         _importTarget = actorId;
         _importPreviewPosed = false;

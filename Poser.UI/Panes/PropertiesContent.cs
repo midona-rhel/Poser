@@ -168,10 +168,10 @@ public sealed partial class PropertiesContent
         ApplyTabLayout(_contentMode == 2 ? "Scene" : _activeTab);
     }
 
-    public void ConfigureNavigation(Action openLibrary)
+    public void ConfigureNavigation(Action openLibrary, Action<ActorId?> openActorLibrary)
     {
         _scenePane.OpenLibrary = openLibrary;
-        _poseFiles.OnLibraryRequested += openLibrary;
+        _poseFiles.OnLibraryRequested += openActorLibrary;
     }
 
     public void DrawFooterMiddle(Vector2 origin, Vector2 size)
