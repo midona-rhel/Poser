@@ -295,6 +295,7 @@ public sealed class SceneCaptureService
                 Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
                     ?? Poser.Config.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
+                NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
                 // A live attachment proves the slot exists even when the

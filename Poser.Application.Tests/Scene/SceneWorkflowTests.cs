@@ -22,6 +22,23 @@ namespace Poser.Application.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restores_name_even_when_pose_is_refused(bool terminal)
+    {
+        var actor = Actor("Named actor", out _);
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        if (terminal) runtime.PoseTerminalFailure = _ => "Missing bone";
+        else runtime.PoseFailure = _ => "Missing bone";
+        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        Assert.True(workflow.BeginLoad("named.xivs").Success);
+        await workflow.Drain;
+        Assert.Equal("Named actor", runtime.RestoredNames[actor.Key]);
+        Assert.DoesNotContain("PlaceActor:Named actor", runtime.Calls);
+        Assert.Contains("ArmPoseImport:Named actor", runtime.Calls);
+    }
+
     private sealed class ParentRuntime : IParentingRuntime
     {
         public Dictionary<SelectionId, PoseTransform> Values = new();
@@ -666,6 +683,13 @@ public sealed class SceneWorkflowTests
             if (CompanionPoseFailure?.Invoke(data) is { } refusal)
                 return refusal;
             PublishPoseReceipts(description, onReceipt, null);
+            return null;
+        }
+
+        public readonly Dictionary<Guid, string> RestoredNames = new();
+        public string? RestoreActorName(SceneEntityHandle actor, SceneActor data)
+        {
+            RestoredNames[data.Key] = SceneActorNames.Resolve(data);
             return null;
         }
 

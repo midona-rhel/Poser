@@ -993,18 +993,18 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             : result.Detail ?? "The companion pose import refused.";
     }
 
-    public string? PlaceActor(SceneEntityHandle actor, SceneActor data)
+    public string? RestoreActorName(SceneEntityHandle actor, SceneActor data)
     {
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         if (_bindings.GetActorId(target) is not { } id)
             return "The actor is no longer bound.";
-        var detail = PlaceModel(target, data.ModelTransform, data.Pose);
-        if (detail is null)
-            // Placement runs after readiness, so the new lineage is bound.
-            // Keep native names untouched: Penumbra/Glamourer identify by them.
-            _configuration.SetNickname(id.LogicalId, data.Name);
-        return detail;
+        // Native names remain untouched: appearance providers identify by them.
+        _configuration.SetNickname(id.LogicalId, SceneActorNames.Resolve(data));
+        return null;
     }
+
+    public string? PlaceActor(SceneEntityHandle actor, SceneActor data) =>
+        PlaceModel(_handles.Require<IActor>(actor, SceneEntityKind.Actor), data.ModelTransform, data.Pose);
 
     public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion

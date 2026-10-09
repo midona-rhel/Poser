@@ -1175,6 +1175,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     // the pose it had just applied to it. Stated here so no
                     // later change to how an actor hides can bring that back.
                     _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
+                    var nameDetail = _runtime.RestoreActorName(actorTokens[actor.Key], actor);
+                    if (nameDetail != null)
+                        entities.Add(new SceneEntityOutcome("Actor name", actor.Name, false, nameDetail));
                     var detail = _runtime.FreezeActor(actorTokens[actor.Key]);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(

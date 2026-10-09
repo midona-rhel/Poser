@@ -289,6 +289,10 @@ public class SceneActor
 
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Older captures stored native names with temporary object-index suffixes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NameIsDisplayName { get; set; }
+
     /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
     public int ModelCharaId { get; set; }
 
