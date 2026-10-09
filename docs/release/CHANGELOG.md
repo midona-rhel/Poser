@@ -2,36 +2,42 @@
 
 ## 0.9.17-beta — Bone maps, IK fixes and pose-aware gaze
 
-- Added editable Body and Face map presets with searchable bone lists, draggable points and mirrored placement.
-- Added locked default templates, selectable preview backgrounds and race/gender preset defaults.
-- Added Abdomen to the default Body map and adjusted Lumbar and Waist spacing.
-- Improved non-humanoid bone maps, including layouts for long bone chains.
-- Added skeleton-overlay highlighting when hovering over map bones.
+- Added editable Body and Face map presets.
+- Added default map presets for each race and gender.
+- Added Abdomen to the default Body map.
+- Improved spacing around Lumbar and Waist in the Body map.
+- Improved bone-map layouts for creatures.
+- Added skeleton highlighting when hovering over bones in a map.
 - Added Shift-click bone selection in the skeleton overlay.
-- Added a Wand button to apply default bone-visibility presets.
-- Renamed the uncovered-bones action to Toggle other and enlarged filled preset indicators.
-- Fixed Actor-anchored IK targets not following parent bones outside the chain.
-- Fixed Rope and Fabric behaviour changing when increasing and decreasing the active bone count.
-- Fixed excess IK drag distance delaying movement back from a constraint.
-- Fixed Two Joint End rotation not preserving the end bone's orientation.
-- Added optional Pose-aware gaze for Camera and Point targets, including locked points, within native gaze limits.
-- Moved Gaze and Expression controls out of the Inspector and kept them in Properties.
-- Added selected-entity undo with Alt+Z and redo with Alt+Y or Alt+Shift+Z; creation and removal still use global undo.
-- Fixed pinned-group deselection clearing unrelated selections.
-- Fixed stale appearance when spawning creatures, duplicating actors and reloading scenes into reused slots.
-- Fixed actor display names not surviving scene saves, loads and Undo/Redo.
-- Fixed Viera ear-bone visibility not refreshing after changing ear shape.
-- Fixed pose import and preview switching actors when the selection changes.
-- Updated the import panel with movable, scrollable content and separate Import and Export rows.
-- Added a Name and Browse row for source folders, with removal that leaves files untouched.
-- Added file sorting by name or date and optional single-click pose import and folder navigation.
-- Added configurable pose, clipboard and playback shortcuts with inline binding-conflict feedback.
-- Improved keybind reset-button spacing.
+- Added a button to load default bone-visibility presets.
+- Renamed Show uncovered bones to Toggle other.
+- Made active bone-preset indicators easier to see.
+- Fixed Actor-anchored IK targets not following parent-bone rotations.
+- Fixed inconsistent Rope and Fabric behaviour when changing the bone count.
+- Fixed IK targets needing repeated drags to move back from their limits.
+- Fixed Two Joint End rotation.
+- Added pose-aware gaze for Camera and Point targets.
+- Removed duplicate Gaze and Expression controls from the Inspector.
+- Added selected-entity undo and redo with Alt-based shortcuts.
+- Fixed popped-out group Inspectors clearing unrelated selections.
+- Fixed spawned and duplicated actors sometimes using the wrong appearance.
+- Fixed actors loading with the wrong appearance in saved scenes.
+- Fixed actor names being lost when saving and loading scenes.
+- Fixed Viera ear-bone visibility after changing ear shape.
+- Fixed pose imports and previews switching to the wrong actor.
+- Made the pose import window movable and scrollable.
+- Separated pose Import and Export buttons into their own rows.
+- Added a folder picker and removal button for library folders.
+- Added file sorting by name and date.
+- Added optional single-click folder navigation and pose import.
+- Added customizable pose and animation shortcuts.
+- Made shortcut conflicts easier to identify.
+- Improved spacing in shortcut settings.
 - Restricted window dragging to title bars.
 - Fixed Settings search results flashing while typing.
-- Added animated submenus.
-- Moved camera Limits above Target.
-- Added temporary interior-brightness controls.
+- Added submenu animations.
+- Moved Limits above Target in camera Properties.
+- Added indoor brightness controls.
 
 ## 0.9.16-beta — pinned Inspectors and clearer controls
 
