@@ -37,6 +37,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         _dotCandidates = new();
     private readonly ITextureProvider _textureProvider;
     private readonly ICustomizeReadRuntimePort _customizeRead;
+    private readonly IReferenceSkeletonReadPort _referenceSkeleton;
 
     private readonly GraphicalBoneConfig _config;
     private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
@@ -102,6 +103,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         PropertiesContext properties,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
+        IReferenceSkeletonReadPort referenceSkeleton,
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
         IEditorState editorState,
@@ -117,6 +119,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         _targets = properties.Selection;
         _textureProvider = textureProvider;
         _customizeRead = customizeRead;
+        _referenceSkeleton = referenceSkeleton;
 
         _config = GraphicalBoneReader.ReadEmbeddedResource();
 
@@ -184,9 +187,16 @@ public sealed partial class GraphicalBonePane : IDisposable
             "Search",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Region(MathF.Max(60f, contentArea.X / scale - (humanoid ? 206f : 0f))),
+                Width = UiWidth.Region(MathF.Max(60f, contentArea.X / scale - (humanoid ? 206f : 164f))),
             });
         if (!editing && humanoid) DrawPresetActions(page, actor, bandOrigin, contentArea.X);
+        if (!humanoid)
+        {
+            ImGui.SetCursorScreenPos(bandOrigin + new Vector2(contentArea.X - 158f * scale, 0));
+            Crystarium.Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top"], _generatedView,
+                value => { _generatedView = value; _generatedLayoutSize = Vector2.Zero; },
+                ControlStyle.Workspace with { Width = UiWidth.Fixed(158f) });
+        }
         float ruleY = bandOrigin.Y
             + theme.Controls.WorkspaceHeight * scale
             + theme.Page.ActionGap * scale - 1f * scale;
@@ -207,11 +217,11 @@ public sealed partial class GraphicalBonePane : IDisposable
         }
         if (!humanoid)
         {
-            EnsureGeneratedBones(actor);
+            EnsureGeneratedBones(actor, mapArea / scale);
             ImGui.SetCursorScreenPos(origin);
             Crystarium.ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
                 scope => DrawCanvas(ImGui.GetCursorScreenPos(), new(scope.ContentWidth * scale,
-                    MathF.Max(mapArea.Y, (_generatedPoints.Count * 28f + 40f) * scale))));
+                    MathF.Max(mapArea.Y, _generatedHeight * scale))));
             return true;
         }
         return DrawCanvas(origin, mapArea);

@@ -373,6 +373,8 @@ internal static class ServiceRegistration
         services.AddSingleton<
             Application.Presentation.ICustomizeReadRuntimePort,
             Game.Presentation.CustomizeReadRuntimePort>();
+        services.AddSingleton<Application.Presentation.IReferenceSkeletonReadPort,
+            Game.Presentation.ReferenceSkeletonReadPort>();
         services.AddSingleton<
             Application.Appearance.IModelIdRuntimePort,
             Game.Appearance.ModelIdRuntimePort>();

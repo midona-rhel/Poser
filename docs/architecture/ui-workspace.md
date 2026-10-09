@@ -39,8 +39,13 @@ Editing uses a detached draft. Reset position uses its initial layout; default
 position uses the built-in layout. Save checks that the source preset has not
 changed or disappeared in another editor before replacing it. These edits do
 not alter a pose or enter the scene transform journal. Standard-race humanoid
-NPCs share these presets. Other rigs get a stable, scrollable hierarchy map
-without presets. Map hover publishes an exact bone for one frame of overlay
+NPCs share these presets. Other rigs get a reference-pose projection map
+without presets. Reference joints are read once per skeleton generation without
+applying a pose. Best view picks the least-overlapping front/side/top projection;
+the user can select another view. Nearby projected joints get separate hit seats
+while retaining actual parent connectors. Layout work runs only for rig, view or
+viewport changes, never animation. Dense rigs use compact scrollable capacity,
+not one row per bone. Map hover publishes an exact bone for one frame of overlay
 feedback; it neither changes selection nor the persistent visibility mask.
 Mirroring swaps map interaction targets, never the saved layout identities.
 The editor's separate mirror-placement action adds or repositions the actual
