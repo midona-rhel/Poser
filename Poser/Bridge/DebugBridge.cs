@@ -981,6 +981,14 @@ public sealed partial class DebugBridge : IDisposable
                 var state = _session.GetStateJson(id);
                 return state.Success ? state.Value! : Json(new { error = state.Detail });
             }
+            case "/actorname":
+            {
+                if (query.TryGetValue("name", out var name))
+                    _configuration.SetNickname(id.LogicalId, name);
+                return Json(new { nativeName = actor.Name,
+                    nickname = _configuration.GetNickname(id.LogicalId),
+                    displayName = _configuration.GetDisplayName(id.LogicalId, actor.Name) });
+            }
             case "/setitem":
             {
                 var slot = (global::Poser.Domain.Integration.EquipSlot)byte.Parse(query["slot"]);

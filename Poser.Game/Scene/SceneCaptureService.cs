@@ -62,6 +62,7 @@ public sealed class SceneCaptureService
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly World.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
+    private readonly Poser.Config.ConfigurationService _configuration;
 
     public SceneCaptureService(
         IFramework framework,
@@ -85,8 +86,10 @@ public sealed class SceneCaptureService
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingRuntimePort rendering,
         World.WorldService worldObjects,
-        PlacementAnchorSource anchors)
+        PlacementAnchorSource anchors,
+        Poser.Config.ConfigurationService configuration)
     {
+        _configuration = configuration;
         _anchors = anchors;
         _worldObjects = worldObjects;
         _rendering = rendering;
@@ -287,7 +290,10 @@ public sealed class SceneCaptureService
             var entry = new SceneActor
             {
                 Key = key,
-                Name = Bounded(actor.Name, $"Actor {key:N}"),
+                // Save the authored nickname, not a transient anonymous UI mask
+                // or the generated native name needed by appearance providers.
+                Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
+                    ?? Poser.Config.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),

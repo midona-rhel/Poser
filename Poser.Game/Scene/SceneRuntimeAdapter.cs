@@ -44,6 +44,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly ISceneDocumentStore _documents;
     private readonly ISessionGenerationSource _sessions;
     private readonly SceneCaptureService _capture;
+    private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseImportCommands _poses;
     private readonly IActorSpawnService _spawns;
     private readonly ISkeletonService _skeletons;
@@ -113,8 +114,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         IEntityHistoryBinding<IWorldObject> worldHistory,
         IEntityHistoryBinding<ILight> lightHistory,
         IEntityHistoryBinding<IVirtualCamera> cameraHistory,
+        Poser.Config.ConfigurationService configuration,
         IPluginLog? log = null)
     {
+        _configuration = configuration;
         _actorHistory = actorHistory;
         _propHistory = propHistory;
         _overlayHistory = overlayHistory;
@@ -990,8 +993,18 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             : result.Detail ?? "The companion pose import refused.";
     }
 
-    public string? PlaceActor(SceneEntityHandle actor, SceneActor data) =>
-        PlaceModel(_handles.Require<IActor>(actor, SceneEntityKind.Actor), data.ModelTransform, data.Pose);
+    public string? PlaceActor(SceneEntityHandle actor, SceneActor data)
+    {
+        var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
+        if (_bindings.GetActorId(target) is not { } id)
+            return "The actor is no longer bound.";
+        var detail = PlaceModel(target, data.ModelTransform, data.Pose);
+        if (detail is null)
+            // Placement runs after readiness, so the new lineage is bound.
+            // Keep native names untouched: Penumbra/Glamourer identify by them.
+            _configuration.SetNickname(id.LogicalId, data.Name);
+        return detail;
+    }
 
     public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion
