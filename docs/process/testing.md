@@ -22,6 +22,9 @@
   releasing its button and restoring native event admission on completion,
   cancellation or disposal. Its bounded trace verifies the injected input,
   not whether the target control behaved correctly; measure that separately.
+  `/gazeprobe` samples native head-chain transforms around gaze and authored-pose
+  passes for one live skeleton, bounded to 128 samples or two seconds. Rebuilding
+  that skeleton cancels capture; no transforms or target settings are changed.
 
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,

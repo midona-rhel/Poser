@@ -205,6 +205,7 @@ public sealed partial class DebugBridge : IDisposable
         _ = _framework.RunOnFrameworkThread(() =>
         {
             FinishUiDrag();
+            Game.Diagnostics.GazeEvaluationProbe.Stop();
             _framework.Update -= AdvanceUiDrag;
         });
         try { _listener.Stop(); } catch { }
@@ -317,6 +318,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
+                        "/gazeprobe?actor&start=1  (at most 128 native phase samples / two seconds)",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
                         "/play?actor&slot=1", "/pause?actor&slot=1",
@@ -1120,6 +1122,18 @@ public sealed partial class DebugBridge : IDisposable
                             return Json(new { ok = true, raw = new { raw.Scale.X, raw.Rotation.W }, modification = _bonePosing.GetModification(bone)?.Scale.X });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/gazeprobe":
+            {
+                if (query.GetValueOrDefault("cancel") == "1") Game.Diagnostics.GazeEvaluationProbe.Stop();
+                if (query.GetValueOrDefault("start") == "1")
+                {
+                    var skeleton = _skeletons.GetSkeletons(actor).OfType<Skeleton>()
+                        .FirstOrDefault(s => s.Slot == PoseSlot.Character && s.IsValid);
+                    if (skeleton == null) return Json(new { error = "No live character skeleton." });
+                    Game.Diagnostics.GazeEvaluationProbe.Start(skeleton);
+                }
+                return Json(Game.Diagnostics.GazeEvaluationProbe.Read());
             }
             case "/gazemode":
             {

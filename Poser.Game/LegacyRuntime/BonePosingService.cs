@@ -530,6 +530,10 @@ public unsafe partial class BonePosingService : IBonePosingService
             return;
 
         // STEP 1: Apply transforms AND update LastTransform per-bone (like Brio ApplyBrioTransforms)
+#if DEBUG
+        if (slotKey.Slot == Poser.Domain.Identity.PoseSlot.Character)
+            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-before");
+#endif
         _transitiveActions.TryGetValue(slotKey, out var actions);
         ApplyTransformsWithPerBoneUpdate(
             slotKey,
@@ -553,6 +557,10 @@ public unsafe partial class BonePosingService : IBonePosingService
 
         // STEP 4: Full cache update after reparent (like Brio line 244)
         UpdateAllLastTransforms(skeleton, gameSkeleton);
+#if DEBUG
+        if (slotKey.Slot == Poser.Domain.Identity.PoseSlot.Character)
+            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-after");
+#endif
     }
 
     /// <summary>

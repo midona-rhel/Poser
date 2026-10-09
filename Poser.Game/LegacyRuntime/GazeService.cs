@@ -546,7 +546,14 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
 
         // Call original - this runs gaze IK and modifies bones
+#if DEBUG
+        Diagnostics.GazeEvaluationProbe.Capture((nint)args->OwnerObject, "gaze-before");
+        var result = _actorLookAtLoop!.Original(args);
+        Diagnostics.GazeEvaluationProbe.Capture((nint)args->OwnerObject, "gaze-after");
+        return result;
+#else
         return _actorLookAtLoop!.Original(args);
+#endif
     }
 
     private GazeResult Unavailable() =>
