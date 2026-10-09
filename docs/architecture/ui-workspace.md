@@ -25,10 +25,8 @@ for positions. Expanding a tree does not change selection.
 
 Body and Face each expose a locked built-in Default map; it is never stored
 as an editable preset. The editor selects, creates and deletes custom presets.
-New copies the selected layout into a detached draft, including unavailable
-entries; Save commits it, while Cancel discards it. Switching presets requires
-saving or discarding edits. Concurrent edits and deletes cannot silently
-overwrite a preset changed in another window.
+Switching presets requires saving or discarding edits. Concurrent edits and
+deletes cannot silently overwrite a preset changed in another window.
 
 Bone-map presets are reusable Body or Face layouts, not actor-instance state
 or overlay visibility presets. Entries carry a portable slot/partial/name key,
@@ -57,7 +55,9 @@ The editor's separate mirror-placement action adds or repositions the actual
 same-slot/partial opposite bone horizontally about mapped paired parents,
 the nearest mapped common ancestor, or the panel center in that order. It
 preserves height and refuses out-of-map placements rather than breaking symmetry.
-New/Copy immediately create uniquely named custom presets; Save commits without
+New starts from the base template; Copy duplicates the selected layout, including
+unavailable entries. Both immediately create uniquely named custom presets;
+Cancel discards subsequent draft edits, not that new preset. Save commits without
 closing, Discard restores the saved version, and Confirm saves then closes.
 Default remains immutable. Map/list context actions share the same draft;
 removing a subtree changes only layout entries, never the actor's skeleton.

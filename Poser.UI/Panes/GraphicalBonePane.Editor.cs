@@ -170,11 +170,12 @@ public sealed partial class GraphicalBonePane
             ControlStyle.Workspace with { Width = UiWidth.Region(left / s) });
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, 36f * s));
         var availableBones = AvailableBones(actor);
-        var duplicates = availableBones.Values.GroupBy(bone => bone.DisplayName, StringComparer.OrdinalIgnoreCase)
+        var selectableBones = availableBones.Values.Where(bone => !bone.IsHidden).ToArray();
+        var duplicates = selectableBones.GroupBy(bone => bone.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Crystarium.ScrollRegion("##map-bones", left / s, height / s - 36f, scroll =>
         {
-            foreach (var bone in availableBones.Values
+            foreach (var bone in selectableBones
                 .Where(bone => _configuration.Config.Display.ShowNsfwBones || !Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 .Where(bone => bone.DisplayName.Contains(_editFilter, StringComparison.OrdinalIgnoreCase)
                     || bone.Id.CanonicalName.Contains(_editFilter, StringComparison.OrdinalIgnoreCase))

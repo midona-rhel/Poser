@@ -797,6 +797,7 @@ public sealed partial class GraphicalBonePane : IDisposable
     {
         foreach (var bone in AvailableBones(actor).Values)
         {
+            if (bone.IsHidden) continue;
             bool showNsfw = _configuration.Config.Display.ShowNsfwBones;
             if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 continue;
