@@ -28,6 +28,12 @@ restore every changed value. If restore cannot finish, it keeps recovery
 information and does not add the import to undo history. A successful import is
 one undo step. Copy, stash, and in-memory apply follow the same rule.
 
+The pose file browser defaults to selection/preview followed by Load or a
+double-click. Its optional Single-click mode opens folders and confirms files
+with one activation, using that same import path and options; enabling it does
+not import the current highlight. This browser-local option replaces Apply on
+select and closes after confirmation, so a second Load cannot duplicate an import.
+
 Pose previews rebase onto a snapshot of the destination's authored pose before
 applying the selected file and options. Enabled IK constraints are copied into
 the preview actor's own skeleton; targets are sampled in source model space

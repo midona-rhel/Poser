@@ -157,6 +157,10 @@ public static partial class Crystarium
         private Action<string>? _onSelect;
         public string? ConfirmLabel { get; init; }
 
+        /// <summary>Opt-in open-dialog behavior: one activation navigates a
+        /// folder or confirms a file. Save dialogs retain explicit confirmation.</summary>
+        public bool SingleClickActivation { get; set; }
+
         /// <summary>The draft the path editor holds. It is the FIELD's value
         /// every frame; committing it is what navigates.</summary>
         private string _pathEdit = string.Empty;
@@ -750,10 +754,16 @@ public static partial class Crystarium
                             },
                             TextAlign.End);
 
-                        if (!hit.Activated && !hit.DoubleClicked)
+                        bool singleClick = SingleClickActivation && !_isSaveMode;
+                        // A double-click's second release must not activate the
+                        // row now under the pointer after entering a folder.
+                        if (singleClick && ImGui.IsMouseReleased(ImGuiMouseButton.Left)
+                            && ImGui.GetMouseClickedCount(ImGuiMouseButton.Left) > 1)
+                            continue;
+                        if (!hit.Activated && !(hit.DoubleClicked && !singleClick))
                             continue;
                         picked = i;
-                        second = hit.DoubleClicked;
+                        second = singleClick || hit.DoubleClicked;
                     }
                 },
                 edgePadding: ActiveTheme.Spacing.Two);

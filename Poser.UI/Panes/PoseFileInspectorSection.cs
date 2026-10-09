@@ -59,9 +59,6 @@ public sealed class PoseFileInspectorSection : IDisposable
     private bool _selectiveAnchor;
     // Ear exclusion applies on every supported route.
     private bool _excludeEars;
-    // Apply-on-select is path-guarded on every supported route.
-    private bool _applyOnSelect;
-    private string? _appliedOnSelectPath;
     // Reference preset requires two presses: first shows warning, second
     // applies; reopening or another preset clears the arm.
     private bool _referenceArmed;
@@ -545,7 +542,6 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         SyncCmpComponentLock(highlighted);
         SyncFaceWarning(highlighted);
-        SyncApplyOnSelect(highlighted);
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         var grid = PoseImportOptionsGrid.Create(
@@ -586,8 +582,6 @@ public sealed class PoseFileInspectorSection : IDisposable
     }
 
     private bool _cmpHighlighted;
-
-    private string? _lastHighlighted;
 
     private string? _faceWarning;
     private string? _faceWarningPath;
@@ -630,7 +624,6 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private void SyncCmpComponentLock(string? highlighted)
     {
-        _lastHighlighted = highlighted;
         bool cmp = highlighted is { } path
             && path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
         _cmpHighlighted = cmp;
@@ -646,18 +639,6 @@ public sealed class PoseFileInspectorSection : IDisposable
             (_rotation, _position, _scale) = restored;
             _preCmpComponents = null;
         }
-    }
-
-    private void SyncApplyOnSelect(string? highlighted)
-    {
-        if (!_applyOnSelect || highlighted is null || !IsPoseFile(highlighted))
-            return;
-        if (string.Equals(
-                highlighted, _appliedOnSelectPath, StringComparison.Ordinal))
-            return;
-        _appliedOnSelectPath = highlighted;
-        if (_importTarget is { } actorId)
-            ImportFromPath(actorId, highlighted, fromDialog: true);
     }
 
     private void SyncImportPreview(string? highlighted)
@@ -697,7 +678,6 @@ public sealed class PoseFileInspectorSection : IDisposable
             return;
         _importPreviewOwned = false;
         SyncCmpComponentLock(null);
-        _appliedOnSelectPath = null;
         _faceWarning = null;
         _faceWarningPath = null;
         _importTarget = null;
@@ -1168,16 +1148,9 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: true,
                     new Crystarium.CheckItem(
-                        "Apply on select", _applyOnSelect,
-                        next =>
-                        {
-                            _applyOnSelect = next;
-                            _appliedOnSelectPath = next
-                                ? _lastHighlighted
-                                : null;
-                        },
-                        "Import a file the moment it is highlighted, "
-                            + "instead of waiting for Load"));
+                        "Single-click mode", _importBrowser.SingleClickActivation,
+                        next => _importBrowser.SingleClickActivation = next,
+                        "One click opens a folder or imports a pose and closes the browser"));
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
@@ -1277,14 +1250,9 @@ public sealed class PoseFileInspectorSection : IDisposable
                         "Route face-only files as expression imports automatically"));
                 if (selective)
                     form.Checkbox(
-                        "Apply on select", _applyOnSelect,
-                        next =>
-                        {
-                            _applyOnSelect = next;
-                            _appliedOnSelectPath = next ? _lastHighlighted : null;
-                        },
-                        help: "Import a file the moment it is highlighted, "
-                            + "instead of waiting for Load");
+                        "Single-click mode", _importBrowser.SingleClickActivation,
+                        next => _importBrowser.SingleClickActivation = next,
+                        help: "One click opens a folder or imports a pose and closes the browser");
                 if (dense)
                     form.Canvas("type-gap", Crystarium.ActiveTheme.Spacing.Three,
                         static (_, _) => { });
