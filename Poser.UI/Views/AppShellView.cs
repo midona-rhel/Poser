@@ -63,6 +63,7 @@ public sealed class ShellSidebarRow
     public string? ExpandKey;
     /// <summary>A whole skeleton/weapon-slot menu, independent of left-click selection.</summary>
     public Domain.Identity.SkeletonId? SkeletonContext;
+    public bool DefaultBonePresetAction => SkeletonContext?.Slot == Domain.Identity.PoseSlot.Character;
     /// <summary>Key for this row's hidden bones.</summary>
     public string? OverlayMemoryKey;
     public bool Expanded;
@@ -354,6 +355,8 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
+    public Action<ShellSidebarRow>? OnDefaultBonePresets;
+    public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>? CanApplyDefaultBonePresets;
     /// <summary>A footer world-class glyph was clicked, told its index into
     /// <see cref="WorldClasses"/>.</summary>
     public Action<int>? OnWorldClassToggle;

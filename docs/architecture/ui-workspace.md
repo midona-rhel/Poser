@@ -129,13 +129,14 @@ Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
 Jaw and Jaw Only sit directly under Head in the tree and stock presets; other
 mouth bones keep their existing categories. This does not change native parenting.
-Skeleton Settings can opt into default presets for broad show actions. The
-character skeleton eye and Show all actor bones then reveal only the union of
-checked presets within that scope; no checked matches means no visible bones.
-Individual bone/category and weapon-slot controls remain independent. With the
-option off (the compatibility default), the skeleton eye restores its remembered
-subset and Show all actor bones shows everything. Preset default checks persist
-across stock-list updates; saving Settings does not mutate the current mask.
+Skeleton Settings selects default presets for the character skeleton root's
+Wand action, immediately left of its eye. One click shows exactly the union of
+checked presets within that skeleton's scope; no matching defaults disables the
+action and never clears the mask. The eye only hides/restores its remembered
+subset; Show all actor bones always shows everything. There is no automatic-on-show
+mode. Bone/category and weapon-slot rows have no default-preset action. Preset
+default checks persist across stock-list updates; saving Settings does not mutate
+the current mask. All windows observe the same actor visibility state.
 In context menus, Save actions, Create collider,
 Export Idle Pose and category-wide destruction live under More when there are
 multiple secondary actions; sidebar and viewport use the same composition.

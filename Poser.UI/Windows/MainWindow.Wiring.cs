@@ -353,18 +353,19 @@ public partial class MainWindow
             if (row.OverlayBones is not { } bones)
                 return;
             if (row.OverlayMemoryKey is { } key)
-            {
-                if (row.SkeletonContext?.Slot == PoseSlot.Character)
-                    _bonePresets.ToggleSkeleton(key, bones);
-                else
-                    _overlayPresentation.ToggleVisibleWithMemory(key, bones);
-            }
+                _overlayPresentation.ToggleVisibleWithMemory(key, bones);
             else
                 _overlayPresentation.SetVisible(
                     bones, !_overlayPresentation.AreVisible(bones));
         };
         _vm.OverlayVisibilityOf =
             bones => (int)_overlayPresentation.Resolve(bones);
+        _vm.CanApplyDefaultBonePresets = _bonePresets.CanApplyDefaults;
+        _vm.OnDefaultBonePresets = row =>
+        {
+            if (row.DefaultBonePresetAction && row.OverlayBones is { } bones)
+                _bonePresets.ApplyDefaults(bones);
+        };
         _vm.DrawContent = DrawTabContent;
     }
 }
