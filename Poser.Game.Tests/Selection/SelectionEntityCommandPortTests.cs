@@ -16,6 +16,34 @@ namespace Poser.Game.Tests.Selection;
 public sealed class SelectionEntityCommandPortTests
 {
     [Fact]
+    public async Task Normal_light_removal_keeps_unrelated_actor_history_reachable()
+    {
+        var fixture = new Fixture();
+        var actor = SelectionId.ForActor(ActorId.New());
+        var edit = new JournalStep("Actor edit", () => true, () => true)
+            { AffectedEntities = new[] { actor } };
+        fixture.History.Append(edit);
+        fixture.Release.OnRelease = () => fixture.History.Append(
+            new SceneLifecyclePatch("Release light", () => true, () => true)
+                { AffectedEntities = new[] { fixture.Id } });
+        var pending = fixture.Remove();
+        fixture.Framework.Run();
+        Assert.Equal(1, (await pending).AppliedCount);
+        Assert.False(fixture.Scene.Selection.IsSelected(fixture.Id));
+        var removal = Assert.IsType<SceneLifecyclePatch>(fixture.History.PeekUndo());
+        Assert.Equal(fixture.Id, Assert.Single(removal.ResolveAffectedEntities!()!));
+        Assert.Same(edit, fixture.History.PeekUndo(actor));
+        Assert.Null(fixture.History.PeekUndo(fixture.Id));
+        fixture.History.CommitUndo(edit, actor);
+        Assert.True(removal.Undo());
+        fixture.History.CommitUndo(removal);
+        Assert.Same(edit, fixture.History.PeekRedo(actor));
+        Assert.Null(fixture.History.PeekRedo(fixture.Id));
+        Assert.True(removal.Redo());
+        fixture.History.CommitRedo(removal);
+    }
+
+    [Fact]
     public async Task Group_locked_after_dispatch_is_rechecked_before_release()
     {
         var fixture = new Fixture();
@@ -117,12 +145,14 @@ public sealed class SelectionEntityCommandPortTests
         public int Calls;
         public SelectionId? Requested;
         public bool Throw;
+        public Action? OnRelease;
         public WorldRelease Result = new(WorldCommandStatus.Applied);
 
         public WorldRelease ReleaseCurrent(SelectionId entity)
         {
             Calls++;
             Requested = entity;
+            if (!Throw && Result.Status == WorldCommandStatus.Applied) OnRelease?.Invoke();
             return Throw ? throw new InvalidOperationException("Release failed") : Result;
         }
     }

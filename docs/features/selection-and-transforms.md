@@ -236,6 +236,8 @@ any new edit clears redo as usual. Replay uses the normal recovery and asynchron
 completion barriers. Creation, removal and relationship-changing operations
 remain global: deleting the selected entity must not strand its opposite
 shortcut without a live target. Known lifecycle footprints still allow skipping
-those entries when replaying unrelated entities' edits.
+those entries when replaying unrelated entities' edits. Removal batches resolve
+the union of all child footprints at lookup time; any unknown child keeps the
+whole batch a barrier.
 
 The depth is 500 steps by default (Settings › Undo steps).

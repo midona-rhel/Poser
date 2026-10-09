@@ -1,3 +1,5 @@
+using Poser.Domain.Identity;
+
 namespace Poser.Application.Transforms;
 
 /// <summary>One removal command's already-recorded inverses, with per-child
@@ -22,7 +24,22 @@ internal sealed class LifecycleHistoryBatch(string description)
     {
         FailureDetail = () => _failure,
         DropOnFailure = () => _children.All(child => child.Dropped),
+        ResolveAffectedEntities = ResolveAffectedEntities,
     };
+
+    private IReadOnlyList<SelectionId>? ResolveAffectedEntities()
+    {
+        var entities = new HashSet<SelectionId>();
+        foreach (var child in _children)
+        {
+            // Resolve on each lookup: lifecycle restoration can replace IDs.
+            // One unknown child makes the entire batch an ordering barrier.
+            var affected = TransformHistory.EntitiesOf(child.Entry);
+            if (affected is null || affected.Count == 0) return null;
+            entities.UnionWith(affected);
+        }
+        return entities.Count == 0 ? null : entities.ToArray();
+    }
 
     private bool Run(bool undo)
     {

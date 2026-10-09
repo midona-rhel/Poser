@@ -1,9 +1,76 @@
 using Poser.Application.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Application.Tests.Transforms;
 
 public sealed class LifecycleHistoryBatchTests
 {
+    [Fact]
+    public void Removal_batch_preserves_dynamic_union_without_becoming_scoped_replayable()
+    {
+        var history = new TransformHistory();
+        var actor = SelectionId.ForActor(ActorId.New());
+        var first = SelectionId.ForLight(LightId.New());
+        var second = SelectionId.ForLight(LightId.New());
+        var edit = new JournalStep("Actor edit", () => true, () => true)
+            { AffectedEntities = new[] { actor } };
+        history.Append(edit);
+        history.RecordLifecycleBatch("Remove lights", () =>
+        {
+            history.Append(new SceneLifecyclePatch("First", () => true, () => true)
+                { ResolveAffectedEntities = () => new[] { first } });
+            history.Append(new SceneLifecyclePatch("Second", () => true, () => true)
+                { AffectedEntities = new[] { second } });
+        });
+        var batch = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
+        Assert.Equal(new[] { first, second }.ToHashSet(), batch.ResolveAffectedEntities!()!.ToHashSet());
+        Assert.Same(edit, history.PeekUndo(actor));
+        Assert.Null(history.PeekUndo(first));
+        Assert.Null(history.PeekUndo(second));
+        history.CommitUndo(edit, actor);
+        history.CommitUndo(batch);
+        Assert.Same(edit, history.PeekRedo(actor));
+        Assert.Null(history.PeekRedo(first));
+        first = SelectionId.ForLight(LightId.New());
+        Assert.Contains(first, batch.ResolveAffectedEntities!()!);
+        Assert.Null(history.PeekRedo(first));
+        Assert.Same(batch, history.PeekRedo());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Any_unknown_child_keeps_the_whole_batch_as_a_barrier(bool empty)
+    {
+        var history = new TransformHistory();
+        var actor = SelectionId.ForActor(ActorId.New());
+        var light = SelectionId.ForLight(LightId.New());
+        bool known = true;
+        var edit = new JournalStep("Actor edit", () => true, () => true)
+            { AffectedEntities = new[] { actor } };
+        history.Append(edit);
+        history.RecordLifecycleBatch("Remove", () =>
+        {
+            history.Append(new SceneLifecyclePatch("Known", () => true, () => true)
+                { AffectedEntities = new[] { light } });
+            history.Append(new SceneLifecyclePatch("May be unknown", () => true, () => true)
+            {
+                AffectedEntities = new[] { light },
+                ResolveAffectedEntities = () => known ? new[] { light }
+                    : empty ? Array.Empty<SelectionId>() : null,
+            });
+        });
+        var batch = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
+        Assert.Single(batch.ResolveAffectedEntities!()!); // duplicate owners collapse
+        Assert.Same(edit, history.PeekUndo(actor));
+        known = false;
+        Assert.Null(batch.ResolveAffectedEntities!());
+        Assert.Null(history.PeekUndo(actor));
+        history.CommitUndo(edit, actor);
+        history.CommitUndo(batch);
+        Assert.Null(history.PeekRedo(actor));
+    }
+
     [Fact]
     public void Mixed_removals_publish_once_and_replay_reverse_then_forward()
     {
