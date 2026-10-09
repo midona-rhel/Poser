@@ -953,6 +953,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     private readonly IActorSpawnNativeAdapter _native;
     private readonly ISpawnCollectionPort? _collections;
+    private readonly ISpawnAppearancePort? _spawnAppearance;
     private readonly Action<SpawnOwnershipRecord, nint, int, string?> _applySpawnMutations;
     private readonly SpawnOwnershipLedger _ownership = new();
 
@@ -979,7 +980,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IFramework framework,
         ISigScanner sigScanner,
         IGameInteropProvider hooking,
-        ISpawnCollectionPort collections)
+        ISpawnCollectionPort collections,
+        ISpawnAppearancePort spawnAppearance)
         : this(
             gPoseService,
             actorManager,
@@ -993,7 +995,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             null,
             collections,
             ownsAdapter: true,
-            objectAddressAt: objectTable.GetObjectAddress)
+            objectAddressAt: objectTable.GetObjectAddress,
+            spawnAppearance: spawnAppearance)
     {
     }
 
@@ -1010,10 +1013,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Func<long>? clock = null,
         ISpawnCollectionPort? collections = null,
         bool ownsAdapter = false,
-        Func<int, nint>? objectAddressAt = null)
+        Func<int, nint>? objectAddressAt = null,
+        ISpawnAppearancePort? spawnAppearance = null)
     {
         _framework = framework;
         _collections = collections;
+        _spawnAppearance = spawnAppearance;
         _gPoseService = gPoseService;
         _actorManager = actorManager;
         _eventBus = eventBus;
@@ -1234,15 +1239,25 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
             }
             var seeded = descriptor.Value;
-            if (_framework is null)
+            void PrepareDraw()
+            {
+                if (!IsCallbackCurrent(ownership.Token, seeded)) return;
                 InheritSourceCollection(ownership, sourceAddress, seeded, inheritSource);
-            else
-                _framework.RunOnTick(() =>
+                if (!inheritSource && _spawnAppearance is not null)
                 {
-                    if (_disposed)
-                        return;
-                    InheritSourceCollection(ownership, sourceAddress, seeded, inheritSource);
-                }, delayTicks: 1);
+                    EnsureCurrent(ownership);
+                    // Names are slot-based, but Glamourer state outlives the slot's
+                    // occupant. Clear the old look after self-identification and
+                    // model assignment, inside the original deferred-draw window.
+                    var reset = _spawnAppearance.ResetSpawnAppearance(seeded.Address);
+                    if (!reset.Success)
+                        _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {reset.Detail}");
+                }
+            }
+            if (_framework is null)
+                PrepareDraw();
+            else
+                _framework.RunOnTick(PrepareDraw, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
             _log?.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
