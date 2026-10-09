@@ -7,8 +7,8 @@ import json, sys, urllib.request, urllib.parse
 BASE = "http://127.0.0.1:47999"
 
 TOOLS = [
-    ("poser_shortcut", "Read configured shortcuts, edit a session-only binding, or inject a parsed chord through the real resolver and deferred dispatch. Release Down with Released; no desktop/game input. Binding edits are not saved.",
-     {"action": "optional exact action name", "primary": "primary binding", "secondary": "secondary binding", "clear": "1 to clear this action", "reset": "1 to restore default for this action", "chord": "optional chord to inject, e.g. Ctrl+I", "kind": "Down, Held, or Released"}),
+    ("poser_shortcut", "Read configured shortcuts or inject a parsed chord through the real resolver and deferred dispatch. Release Down with Released; no desktop/game input. Change bindings in Settings; this tool never edits them.",
+     {"chord": "optional chord to inject, e.g. Ctrl+I", "kind": "Down, Held, or Released"}),
     ("poser_selection", "Read global selection or select existing actors through normal selection commands.",
      {"actors": "comma-separated actor names or indices", "clear": "1 to clear selection"}),
     ("poser_uiinput", "Queue mouse, key, scroll, or text input to the plugin UI only (not desktop/game controls). Separate press/release calls; always release held buttons and keys with down=0. Screenshot pixels are relative to the viewport, input x/y are absolute screen coordinates.",
