@@ -500,7 +500,7 @@ public static class PoseLibraryView
     private const float MaximumIconSize = 200f;
 
     private const float SliderWidth = 120f;
-    private const float SortWidth = 88f;
+    private const float SortWidth = 110f;
 
     private static readonly string[] SortOptions = ["Name", "Newest", "Oldest"];
 

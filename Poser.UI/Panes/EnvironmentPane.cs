@@ -653,7 +653,7 @@ public sealed class EnvironmentPane
     private void LightingRows(Crystarium.FormScope form)
     {
         bool housing = _reading.IsHousingInterior;
-        form.Slider("Interior brightness",
+        form.Slider("Interior",
             _reading.InteriorBrightness ?? 0f,
             0f, 1f,
             _values.SetInteriorBrightness,

@@ -695,7 +695,7 @@ public static partial class Crystarium
             float searchLeft = inset + EntryIconSlot * 0.5f
                 - theme.Controls.InputPaddingX - theme.Controls.SmallIconSize * 0.5f;
             float searchHeight = theme.Controls.WorkspaceHeight;
-            float sortWidth = 88f;
+            float sortWidth = 110f;
             float sortGap = theme.Page.ActionGap;
             ImGui.SetCursorScreenPos(body.Min + new Vector2(searchLeft, inset) * scale);
             FilterPill(_searchId, _search, SetSearch, "Search",
