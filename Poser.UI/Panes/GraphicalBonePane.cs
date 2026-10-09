@@ -193,7 +193,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (!humanoid)
         {
             ImGui.SetCursorScreenPos(bandOrigin + new Vector2(contentArea.X - 158f * scale, 0));
-            Crystarium.Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top"], _generatedView,
+            Crystarium.Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top", "Branches"], _generatedView,
                 value => { _generatedView = value; _generatedLayoutSize = Vector2.Zero; },
                 ControlStyle.Workspace with { Width = UiWidth.Fixed(158f) });
         }

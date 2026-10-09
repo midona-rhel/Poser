@@ -42,7 +42,9 @@ not alter a pose or enter the scene transform journal. Standard-race humanoid
 NPCs share these presets. Other rigs get a reference-pose projection map
 without presets. Reference joints are read once per skeleton generation without
 applying a pose. Best view picks the least-overlapping front/side/top projection;
-the user can select another view. Nearby projected joints get separate hit seats
+the user can select another view. Heavily overlapping reference rigs fall back
+to a radial subtree map: branches own angular sectors and chains keep direction.
+Nearby projected joints get separate hit seats
 while retaining actual parent connectors. Layout work runs only for rig, view or
 viewport changes, never animation. Dense rigs use compact scrollable capacity,
 not one row per bone. Map hover publishes an exact bone for one frame of overlay

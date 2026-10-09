@@ -71,6 +71,7 @@ public sealed partial class GraphicalBonePane
             return (min, Vector2.Max(points.Aggregate(Vector2.Max) - min, new Vector2(.0001f)));
         }
         int view = _generatedView;
+        bool branchLayout = view == 4;
         if (view == 0)
         {
             int best = -1;
@@ -85,6 +86,12 @@ public sealed partial class GraphicalBonePane
                 }).Distinct().Count();
                 if (score > best) { best = score; view = candidate; }
             }
+            branchLayout = best < bones.Length * .75f;
+        }
+        if (branchLayout)
+        {
+            BuildBranchLayout(bones, size);
+            return;
         }
         var box = Bounds(view);
         const float spacing = 26f, margin = 24f;
@@ -123,5 +130,67 @@ public sealed partial class GraphicalBonePane
                 (margin + seat.X * spacing) / size.X,
                 (margin + seat.Y * spacing) / MathF.Max(size.Y, _generatedHeight))));
         }
+    }
+
+    private void BuildBranchLayout(BoneDescriptor[] bones, Vector2 size)
+    {
+        // Allocate contiguous angular sectors to subtrees. Every single-child
+        // chain retains one direction instead of consuming another full row.
+        var ids = bones.Select(bone => bone.Id).ToHashSet();
+        var children = bones.Where(bone => bone.Parent is { } parent && ids.Contains(parent))
+            .ToLookup(bone => bone.Parent!.Value);
+        var visited = new HashSet<BoneId>();
+        var nodes = new List<(BoneDescriptor Bone, int Parent, int Depth)>();
+        var pending = new Stack<(BoneDescriptor Bone, int Parent, int Depth)>();
+        void Visit(BoneDescriptor root)
+        {
+            pending.Push((root, -1, 0));
+            while (pending.TryPop(out var node))
+            {
+                if (!visited.Add(node.Bone.Id)) continue;
+                int index = nodes.Count;
+                nodes.Add(node);
+                foreach (var child in children[node.Bone.Id].Reverse()) pending.Push((child, index, node.Depth + 1));
+            }
+        }
+        foreach (var root in bones.Where(bone => bone.Parent is not { } parent || !ids.Contains(parent))) Visit(root);
+        foreach (var bone in bones) if (!visited.Contains(bone.Id)) Visit(bone);
+        if (nodes.Count == 0) { _generatedHeight = size.Y; return; }
+        var childIndices = Enumerable.Range(0, nodes.Count).ToLookup(index => nodes[index].Parent);
+        var weights = new int[nodes.Count];
+        for (int i = nodes.Count - 1; i >= 0; i--)
+            weights[i] = Math.Max(1, childIndices[i].Sum(child => weights[child]));
+        int total = childIndices[-1].Sum(index => weights[index]);
+        var starts = new float[nodes.Count];
+        var sweeps = new float[nodes.Count];
+        float angle = -MathF.PI * .5f;
+        foreach (int root in childIndices[-1])
+        {
+            starts[root] = angle;
+            sweeps[root] = MathF.Tau * weights[root] / total;
+            angle += sweeps[root];
+        }
+        var placed = new Vector2[nodes.Count];
+        int roots = childIndices[-1].Count();
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            angle = starts[i];
+            foreach (int child in childIndices[i])
+            {
+                starts[child] = angle;
+                sweeps[child] = sweeps[i] * weights[child] / weights[i];
+                angle += sweeps[child];
+            }
+            float center = starts[i] + sweeps[i] * .5f;
+            float radius = nodes[i].Depth + (roots > 1 ? 1 : 0);
+            placed[i] = new Vector2(MathF.Cos(center), MathF.Sin(center)) * radius;
+        }
+        var min = placed.Aggregate(Vector2.Min);
+        var extent = Vector2.Max(placed.Aggregate(Vector2.Max) - min, Vector2.One);
+        _generatedHeight = size.Y;
+        float fit = MathF.Min((size.X - 48) / extent.X, (size.Y - 48) / extent.Y);
+        var offset = (size - extent * fit) * .5f;
+        for (int i = 0; i < nodes.Count; i++)
+            _generatedPoints.Add((nodes[i].Bone, (offset + (placed[i] - min) * fit) / size));
     }
 }
