@@ -49,7 +49,8 @@ public sealed partial class PoseLibraryPane
         // is pushed, so "From file", the presets and the export commands act
         // on the actor the tiles would apply to instead of silently eating
         // the click.
-        var host = TargetActor() is { } selected && _imports.HasPosableSkeleton(selected)
+        var host = _applyChoice is { } chosen && _imports.HasPosableSkeleton(chosen)
+            ? chosen : TargetActor() is { } selected && _imports.HasPosableSkeleton(selected)
             ? selected : FirstApplyTarget();
         _files.SetHostImportTarget(
             host,
@@ -89,6 +90,8 @@ public sealed partial class PoseLibraryPane
     /// eligible actors in a dropdown beside the verb, the selection's actor
     /// by default, a chosen one until the choice leaves the scene.</summary>
     private ActorId? _applyChoice;
+
+    public void SetApplyTarget(ActorId? actor) => _applyChoice = actor;
 
     private void SyncApplyTargets()
     {

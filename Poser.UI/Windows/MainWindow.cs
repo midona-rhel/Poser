@@ -300,7 +300,7 @@ public partial class MainWindow : Window
     internal void ConfigurePopOut(PropertiesContent content)
     {
         content.BuildBoneChoices = _sidebar.BuildBoneChoices;
-        content.ConfigureNavigation(ShowLibrary);
+        content.ConfigureNavigation(ShowLibrary, ShowActorLibrary);
     }
     public event Action? OnSkeletonSettingsRequested;
     public event Action? OnLibrarySettingsRequested;
@@ -823,6 +823,12 @@ public partial class MainWindow : Window
     public event Action? OnLibraryWindowRequested;
 
     public void ShowLibrary() => OnLibraryWindowRequested?.Invoke();
+
+    public void ShowActorLibrary(ActorId? actor)
+    {
+        _libraryPane.SetApplyTarget(actor);
+        ShowLibrary();
+    }
 
     /// <summary>The library window's seams: it draws from the same panes
     /// the shell owns.</summary>

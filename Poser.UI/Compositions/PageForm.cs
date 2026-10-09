@@ -100,10 +100,12 @@ public static partial class Crystarium
         Action<FormScope> content,
         bool divider = true,
         float? labelColumnWidth = null,
-        bool dense = false)
+        bool dense = false,
+        bool allowDisclosure = true)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var page = new PageScope(id, origin, width, scale, labelColumnWidth, dense);
+        var page = new PageScope(id, origin, width, scale, labelColumnWidth, dense)
+            { AllowDisclosure = allowDisclosure };
         page.DrawStandaloneSection(
             title, open, onOpenChanged, content, divider);
         page.Complete(origin, width);
@@ -195,6 +197,7 @@ public static partial class Crystarium
         /// names the page its section came from.</summary>
         public string? SectionPrefix { get; set; }
         public string? DisclosureScope { get; set; }
+        internal bool AllowDisclosure { get; set; } = true;
         private string _section = string.Empty;
 
         /// <summary>Paint hooks: every row and every section header the
@@ -314,8 +317,8 @@ public static partial class Crystarium
 
             string disclosureKey = Ids.Join(DisclosureScope ?? _id, "/", title);
             bool searching = SectionFilter != null || RowFilter != null;
-            bool remembered = ReadSectionOpen != null && WriteSectionOpen != null;
-            if (searching) open = true;
+            bool remembered = AllowDisclosure && ReadSectionOpen != null && WriteSectionOpen != null;
+            if (searching || !AllowDisclosure) open = true;
             else if (_sectionDisclosure is { } local)
                 open = !local.TryGetValue(disclosureKey, out var stored) || stored;
             else if (remembered) open = ReadSectionOpen!(disclosureKey);
@@ -328,7 +331,7 @@ public static partial class Crystarium
             float headerHeight = page.SectionHeaderHeight * _scale;
             var hit = default(InteractionResult);
             uint headerIdentity = 0;
-            if (!searching && (onOpenChanged != null || remembered))
+            if (AllowDisclosure && !searching && (onOpenChanged != null || remembered))
             {
                 string headerId = Ids.Join(_id, "-section-", title);
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));

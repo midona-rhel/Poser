@@ -96,7 +96,7 @@ public sealed class UIManager : IUIManager
         _windows.Main.OnSkeletonSettingsRequested += OpenSkeletonSettings;
         _windows.Main.OnLibrarySettingsRequested += OpenLibrarySettings;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
-        _poseFileSection.OnLibraryRequested += OpenPoseLibrary;
+        _poseFileSection.OnLibraryRequested += OpenActorPoseLibrary;
         _configService.OnConfigurationChanged += ApplyConfiguration;
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
@@ -498,6 +498,12 @@ public sealed class UIManager : IUIManager
         _windows.Main.ShowLibrary();
     }
 
+    private void OpenActorPoseLibrary(Poser.Domain.Identity.ActorId? actor)
+    {
+        _windows.SetPrimaryOpen(true);
+        _windows.Main.ShowActorLibrary(actor);
+    }
+
     private void ApplyConfiguration()
     {
         ThemeSelection.Apply(
@@ -529,7 +535,7 @@ public sealed class UIManager : IUIManager
         _windows.Main.OnSkeletonSettingsRequested -= OpenSkeletonSettings;
         _windows.Main.OnLibrarySettingsRequested -= OpenLibrarySettings;
         _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;
-        _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
+        _poseFileSection.OnLibraryRequested -= OpenActorPoseLibrary;
         _configService.OnConfigurationChanged -= ApplyConfiguration;
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;

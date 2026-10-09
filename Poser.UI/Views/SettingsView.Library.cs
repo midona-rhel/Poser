@@ -45,22 +45,30 @@ public static partial class SettingsView
                 ImGui.PushID(i);
                 try
                 {
+                    var health = vm.SourceSnapshot is { } current
+                        ? vm.Library.RowHealth(source, current, vm.SavedLibrary) : null;
+                    string path = vm.Library.PathFor(source);
+                    void FolderActions(Crystarium.ActionScope actions)
+                    {
+                        actions.IconButton(TablerIcon.Copy, () => ImGui.SetClipboardText(path),
+                            help: "Copy full path");
+                        actions.IconButton(TablerIcon.Folder, () => vm.OnOpenSource?.Invoke(source),
+                            disabled: vm.Library.IsPending(source) || health?.Health != PoseLibrarySourceHealth.Ready,
+                            help: "Open the saved source without creating folders");
+                    }
                     if (source.IsCustom)
                     {
                         form.TextInput("Name", source.Name, next => source.Name = next);
-                        form.TextInput("Folder", source.Path, next => source.Path = next,
-                            help: source.Path);
+                        form.TextInputActions("Folder", source.Path, next => source.Path = next,
+                            FolderActions, help: source.Path);
                         form.SwitchActions("Enabled", source.Enabled, next => source.Enabled = next,
-                            actions => actions.Button("Remove", () => removing = source,
+                            actions => actions.IconButton(TablerIcon.Trash, () => removing = source,
                                 help: "Remove this custom source when Settings is saved"));
                     }
                     else
                     {
-                        form.ReadOnly(source.Name, vm.Library.PathFor(source),
-                            help: vm.Library.PathFor(source));
+                        form.ReadOnlyWithActions(source.Name, path, FolderActions, help: path);
                     }
-                    var health = vm.SourceSnapshot is { } current
-                        ? vm.Library.RowHealth(source, current, vm.SavedLibrary) : null;
                     if (vm.Library.IsPending(source))
                         form.Status("Pending Save — this draft has not been scanned.");
                     else if (LibrarySettingsDraft.IsFailure(health))
@@ -69,13 +77,6 @@ public static partial class SettingsView
                         form.Status("Disabled in saved settings.");
                     else if (health is null || health.Health == PoseLibrarySourceHealth.Unscanned)
                         form.Status("Waiting for saved-source scan.");
-                    form.Actions(string.Empty, actions =>
-                    {
-                        actions.Button("Copy path", () => ImGui.SetClipboardText(vm.Library.PathFor(source)));
-                        actions.Button("Open", () => vm.OnOpenSource?.Invoke(source),
-                            disabled: vm.Library.IsPending(source) || health?.Health != PoseLibrarySourceHealth.Ready,
-                            help: "Open the saved source without creating folders");
-                    });
                 }
                 finally { ImGui.PopID(); }
             }
