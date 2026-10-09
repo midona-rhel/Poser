@@ -79,7 +79,7 @@ public sealed class LibraryWindow : Window
 
     public LibraryWindow(MainWindow main)
         : base($"Library###{PluginConstants.PluginName}_library",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
@@ -332,6 +332,7 @@ public sealed class LibraryWindow : Window
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
+        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 

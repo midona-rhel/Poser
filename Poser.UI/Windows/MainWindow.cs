@@ -386,7 +386,7 @@ public partial class MainWindow : Window
         Application.Selection.SelectionEntityCommands entityCommands,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {

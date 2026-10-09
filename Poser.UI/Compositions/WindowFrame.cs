@@ -184,6 +184,7 @@ public static partial class Crystarium
             ActionBarSeparator.None);
         props.TitleContent?.Invoke(new WindowFrameRect(
             min, new Vector2(max.X, titleBottom)));
+        WindowTitleDrag(min, new Vector2(max.X, titleBottom));
 
         var railRect = default(WindowFrameRect);
         float bodyLeft = min.X;

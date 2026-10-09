@@ -125,7 +125,7 @@ public sealed class SpawnBrowserWindow : Window
         AppearancePane appearancePane,
         Dalamud.Plugin.Services.IPluginLog log)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
-            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {

@@ -609,6 +609,8 @@ public static class AppShellView
                     vm.CollapseToggled?.Invoke();
             }
 
+            Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + TitlebarHeight * s));
+
             if (vm.Collapsed)
             {
                 DrawOuterGlassBorder(min, max);
