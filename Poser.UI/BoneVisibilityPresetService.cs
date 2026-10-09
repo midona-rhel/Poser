@@ -67,19 +67,15 @@ public sealed class BoneVisibilityPresetService
 
     public IReadOnlyList<BoneVisibilityPreset> Presets => Store;
 
-    public void ShowDefaultsOrAll(IReadOnlyList<BoneId> bones)
+    public bool CanApplyDefaults(IReadOnlyList<BoneId> bones) =>
+        Application.Presentation.BoneVisibilityDefaults.CanApply(_config().Skeleton, bones);
+
+    public void ApplyDefaults(IReadOnlyList<BoneId> bones)
     {
         var wanted = Application.Presentation.BoneVisibilityDefaults.Resolve(_config().Skeleton, bones);
+        if (wanted.Count == 0) return;
         _presentation.SetVisible(bones, false);
         _presentation.SetVisible(wanted, true);
-    }
-
-    public void ToggleSkeleton(string key, IReadOnlyList<BoneId> bones)
-    {
-        if (_config().Skeleton.UseDefaultBonePresetsOnShow && _presentation.Resolve(bones) == OverlayVisibility.None)
-            ShowDefaultsOrAll(bones);
-        else
-            _presentation.ToggleVisibleWithMemory(key, bones);
     }
 
     /// <summary>Whether every bone of the preset that this actor actually

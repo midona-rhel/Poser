@@ -252,7 +252,7 @@ public sealed class ShellSidebar
                         : row.CameraActions ? 4
                         : row.LightActions ? (row.ColliderActions ? 4 : row.PauseAction || row.NightAction ? 3 : 2)
                         : row.GroupActions ? 4
-                        : row.OverlayBones != null ? 1 : 0,
+                        : row.OverlayBones != null ? (row.DefaultBonePresetAction ? 2 : 1) : 0,
                     0f,
                     rowHeight));
             }
@@ -1011,6 +1011,16 @@ public sealed class ShellSidebar
             // A filled pupil marks visible descendants on the inactive eye.
             int state = _vm.OverlayVisibilityOf?.Invoke(bones) ?? 2;
             ImGui.SetCursorScreenPos(origin);
+            if (row.DefaultBonePresetAction)
+            {
+                bool canApply = _vm.CanApplyDefaultBonePresets?.Invoke(bones) ?? false;
+                if (Crystarium.IconButton(TablerIcon.Wand, style: square,
+                        disabled: !canApply,
+                        help: canApply ? "Apply default bone presets" : "Choose matching default bone presets in Settings → Skeleton",
+                        id: "##default-bone-presets"))
+                    _vm.OnDefaultBonePresets?.Invoke(row);
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+            }
             string help = state switch
             {
                 0 => "Show bones",
