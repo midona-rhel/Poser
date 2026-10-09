@@ -34,6 +34,12 @@ public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
                 return ICustomizeReadRuntimePort.DefaultHeadSection;
 
             var customize = character->DrawData.CustomizeData;
+            if (customize.Race == 8)
+            {
+                byte ears = RaceFeatureRead.VieraEarSet(legacy.Address);
+                if (Entities.LegacyBoneFilters.IsKnownVieraEarSet(ears))
+                    return $"viera_head_{Entities.LegacyBoneFilters.VieraEarSetFor(ears)}";
+            }
             return HeadSectionForRace(customize.Race);
         }
         catch
