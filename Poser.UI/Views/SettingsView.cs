@@ -269,15 +269,12 @@ public static partial class SettingsView
 
     public static int PageCount => Nav.Length;
 
-    /// <summary>The search settles a moment after the last keystroke and
-    /// the results for the settled text crossfade in — the way a settings
-    /// search behaves everywhere else (VS Code, Chrome, macOS): nothing
-    /// moves, the old set is replaced by the new one in place.</summary>
+    /// <summary>Debounce filtering without replaying presentation animations
+    /// on unchanged results as the user refines the query.</summary>
     private const double SearchSettleSeconds = 0.12;
     private static string _lastSearch = string.Empty;
     private static double _searchChangedAt;
     private static string _settledSearch = string.Empty;
-    private static double _settledAt;
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
@@ -450,8 +447,8 @@ public static partial class SettingsView
 
     /// <summary>Every page is probed for what it would draw; a section
     /// whose title matches shows whole, otherwise the rows whose label or
-    /// hover matches. Section titles carry their page's name, and the
-    /// results fade in from the moment the search changed.</summary>
+    /// hover matches. Section titles carry their page's name; refining the
+    /// query does not fade the result page out and back in.</summary>
     private static void DrawSearch(SettingsViewModel vm, Crystarium.PageScope page)
     {
         double now = ImGui.GetTime();
@@ -465,7 +462,6 @@ public static partial class SettingsView
             && now - _searchChangedAt >= SearchSettleSeconds)
         {
             _settledSearch = _lastSearch;
-            _settledAt = now;
         }
         string needle = _settledSearch;
         if (needle.Length == 0)
@@ -474,11 +470,6 @@ public static partial class SettingsView
             DrawCategory(vm, page);
             return;
         }
-        float fade = Crystarium.ActiveTheme.Motion.Fast;
-        float ease = fade <= 0f
-            ? 1f
-            : Math.Clamp((float)(now - _settledAt) / fade, 0f, 1f);
-        int mark = Crystarium.VertexMark();
         bool Hit(string? text) =>
             text != null && text.Contains(needle, StringComparison.OrdinalIgnoreCase);
         int any = 0;
@@ -519,7 +510,6 @@ public static partial class SettingsView
         }
         if (any == 0)
             page.EmptyState($"Nothing matches \"{needle}\".");
-        Crystarium.FadeSince(mark, ease);
     }
 
     private static void DrawCategory(
@@ -1292,6 +1282,7 @@ public static partial class SettingsView
                     actions => actions.Button(
                         "Reset group",
                         () => ResetKeybindGroup(vm, group, start, count),
+                        variant: ButtonVariant.Danger,
                         help: "Put this group's chords back to Poser's defaults"),
                     alignRight: true);
             });
