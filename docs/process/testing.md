@@ -18,6 +18,10 @@
   external viewports. These probes are diagnostics, not acceptance verdicts.
   `/uiwindows` measures registered Poser windows and can restore a named test
   window's position; it cannot target other plugins' windows.
+  `/uidrag` queues a bounded continuous ImGui gesture (at most eight seconds),
+  releasing its button and restoring native event admission on completion,
+  cancellation or disposal. Its bounded trace verifies the injected input,
+  not whether the target control behaved correctly; measure that separately.
 
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,

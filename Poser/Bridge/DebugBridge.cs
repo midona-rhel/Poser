@@ -303,6 +303,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
+                        "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
                         "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&x=SCREEN_X&y=SCREEN_Y restores a test window position",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",

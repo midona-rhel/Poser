@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Services;
@@ -54,8 +53,7 @@ public sealed partial class DebugBridge
         var io = ImGui.GetIO();
         _uiDragTrace.Add(new { step = probe.Step, frame,
             x = io.MousePos.X, y = io.MousePos.Y, down = ImGui.IsMouseDown(ImGuiMouseButton.Left),
-            focusLost = io.AppFocusLost, dragging = ImGui.IsMouseDragging(ImGuiMouseButton.Left),
-            titles = global::Poser.UI.Crystarium.TitleDragDiagnostics.Values.ToArray() });
+            focusLost = io.AppFocusLost, dragging = ImGui.IsMouseDragging(ImGuiMouseButton.Left) });
         // The desktop backend otherwise replaces each injected position on the
         // following frame. Isolate this bounded diagnostic gesture only; restore
         // native event admission after release, timeout, cancel or plugin disposal.
