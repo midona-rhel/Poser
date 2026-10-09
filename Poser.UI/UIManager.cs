@@ -364,7 +364,10 @@ public sealed class UIManager : IUIManager
         {
             foreach (var bind in _keybinds)
             {
-                bind.Down = false;
+                bind.Sync(PoserKeybinds.Slots(_configService.Config.UI, bind.Name));
+                // A held recording/text-entry chord is not a fresh press when
+                // suppression ends, including the no-native-hook polling path.
+                bind.Down = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
                 bind.Queued = false;
             }
             return;
