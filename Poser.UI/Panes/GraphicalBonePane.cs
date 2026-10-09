@@ -25,7 +25,7 @@ namespace Poser.UI;
 /// Inline Body and Face graphical bone selection surface. This pane owns its
 /// textures and hit-testing state but has no independent window lifecycle.
 /// </summary>
-public sealed class GraphicalBonePane : IDisposable
+public sealed partial class GraphicalBonePane : IDisposable
 {
     private const float HitRadius = 18f;
 
@@ -91,13 +91,14 @@ public sealed class GraphicalBonePane : IDisposable
     // Rebuilt per frame from the selected actor's snapshot descriptors: the
     // maps identify dots by (canonical name, partial) without touching the
     // binding registry.
-    private readonly Dictionary<(string Canonical, int PartialId), SelectionId> _dotIds = new();
+    private readonly Dictionary<BoneId, SelectionId> _dotIds = new();
 
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IEditorState _editorState;
     private readonly IPoseInteraction _bonePosing;
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly SkeletonOverlayPresentation _presentation;
 
     public GraphicalBonePane(
         global::Poser.Config.ConfigurationService configuration,
@@ -105,11 +106,13 @@ public sealed class GraphicalBonePane : IDisposable
         PropertiesContext properties,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
+        SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
         IEditorState editorState,
         IPoseInteraction bonePosing)
     {
         _configuration = configuration;
+        _presentation = presentation;
         _ikPort = ikPort;
         _editorState = editorState;
         _bonePosing = bonePosing;
@@ -134,8 +137,15 @@ public sealed class GraphicalBonePane : IDisposable
     /// surface: the seg swaps the pose surface — no window detour.
     /// Returns false when there is nothing to draw (no actor/skeleton).
     /// </summary>
-    public bool DrawInline(int page, Vector2 contentArea)
+    public bool DrawInline(int page, Vector2 contentArea) => DrawMap(page, contentArea, null);
+
+    private bool DrawMap(int page, Vector2 contentArea, ActorDescriptor? editActor)
     {
+        bool editing = editActor != null;
+        _drawingEditor = editing;
+        object hoverOwner = editing ? _editorHoverOwner : this;
+        _presentation.PublishMapHover(hoverOwner, null);
+        _drawnPoints.Clear();
         _closestHoverDistance = float.MaxValue;
         _hoveredBone = null;
         _hoveredDotIndex = -1;
@@ -143,16 +153,18 @@ public sealed class GraphicalBonePane : IDisposable
         _dotCandidates.Clear();
         _dotKeys.Clear();
         _dotParents.Clear();
-        _currentSection = 0;
         _dotIds.Clear();
 
-        var actor = GetSelectedActor();
+        var actor = editActor ?? GetSelectedActor();
+        if (actor != null) PopulateBoneIds(actor);
         var actorId = actor?.Id;
         if (actor == null)
             return false;
         var skeleton = actor.CharacterSkeleton;
         if (skeleton == null)
             return false;
+        bool humanoid = _customizeRead.IsStandardHumanoid(actor.Id);
+        _layout = !humanoid ? null : editing ? _draft?.Points : SelectedPreset(page)?.Points;
 
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -166,19 +178,20 @@ public sealed class GraphicalBonePane : IDisposable
             + theme.Controls.WorkspaceHeight * scale
             + theme.Page.ActionGap * scale;
         ImGui.SetCursorScreenPos(bandOrigin);
-        Crystarium.FilterPill(
+        if (!editing) Crystarium.FilterPill(
             "##graphical-bone-filter",
             _filter,
             next => _filter = next,
             "Search",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Region(contentArea.X / scale),
+                Width = UiWidth.Region(MathF.Max(60f, contentArea.X / scale - (humanoid ? 206f : 0f))),
             });
+        if (!editing && humanoid) DrawPresetActions(page, actor, bandOrigin, contentArea.X);
         float ruleY = bandOrigin.Y
             + theme.Controls.WorkspaceHeight * scale
             + theme.Page.ActionGap * scale - 1f * scale;
-        ImGui.GetWindowDrawList().AddRectFilled(
+        if (!editing) ImGui.GetWindowDrawList().AddRectFilled(
             new Vector2(bandOrigin.X, ruleY),
             new Vector2(bandOrigin.X + contentArea.X, ruleY + 1f * scale),
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
@@ -188,84 +201,118 @@ public sealed class GraphicalBonePane : IDisposable
             0f, bandHeight - bandPad + 1f * scale);
         var mapArea = new Vector2(
             contentArea.X, MathF.Max(1f, contentArea.Y - bandHeight));
-        ImGui.SetCursorScreenPos(origin);
-        // The canvas is an ITEM: a press on it belongs to the map — the
-        // marquee — never to the window, which used to move instead. The
-        // dots and the pages draw over it and take their own hover.
-        ImGui.InvisibleButton("##bone-map-canvas", mapArea);
-        ImGui.SetItemAllowOverlap();
-        ImGui.SetCursorScreenPos(origin);
-        if (page == 0)
-            DrawBodyPage(skeleton, mapArea);
-        else
-            DrawFacePage(skeleton, actorId, mapArea);
-        ResolveAndDrawDots();
-
-        bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
-            && ImGui.IsMouseHoveringRect(origin, origin + mapArea);
-
-        if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
+        if (editing)
         {
-            // Ctrl AND Shift both extend: the map has no
-            // row order, so there is no range gesture to reserve Shift for.
-            var io = ImGui.GetIO();
-            if (io.KeyCtrl || io.KeyShift)
-                _selection.Toggle(hoveredId);
-            else
-                _selection.Select(hoveredId);
+            origin = bandOrigin - new Vector2(0f, bandPad);
+            mapArea = contentArea;
         }
-
-        // marquee: press on empty canvas + drag = box select (Ctrl adds)
-        if (_hoveredBone == null && hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _marqueeStart = ImGui.GetMousePos();
-
-        if (_marqueeStart is { } start)
+        if (!humanoid)
         {
-            var mouse = ImGui.GetMousePos();
-            var rmin = Vector2.Min(start, mouse);
-            var rmax = Vector2.Max(start, mouse);
-            bool isDrag = (rmax - rmin).LengthSquared() > 16f;
+            EnsureGeneratedBones(actor);
+            ImGui.SetCursorScreenPos(origin);
+            Crystarium.ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
+                scope => DrawCanvas(ImGui.GetCursorScreenPos(), new(scope.ContentWidth * scale,
+                    MathF.Max(mapArea.Y, (_generatedPoints.Count * 28f + 40f) * scale))));
+            return true;
+        }
+        return DrawCanvas(origin, mapArea);
 
-            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            {
-                if (isDrag)
-                {
-                    var fg = ImGui.GetForegroundDrawList();
-                    fg.AddRectFilled(
-                        rmin,
-                        rmax,
-                        ImGui.ColorConvertFloat4ToU32(
-                            Crystarium.ActiveTheme.Chrome.AccentFill));
-                    fg.AddRect(
-                        rmin,
-                        rmax,
-                        ImGui.ColorConvertFloat4ToU32(
-                            Crystarium.ActiveTheme.AccentHover));
-                }
-            }
+        bool DrawCanvas(Vector2 origin, Vector2 mapArea)
+        {
+            _mapOrigin = origin;
+            _mapSize = mapArea;
+            ImGui.SetCursorScreenPos(origin);
+            // The canvas is an ITEM: a press on it belongs to the map — the
+            // marquee — never to the window, which used to move instead. The
+            // dots and the pages draw over it and take their own hover.
+            ImGui.InvisibleButton("##bone-map-canvas", mapArea);
+            ImGui.SetItemAllowOverlap();
+            ImGui.SetCursorScreenPos(origin);
+            var drawList = ImGui.GetWindowDrawList();
+            drawList.PushClipRect(origin, origin + mapArea, true);
+            if (!humanoid)
+                DrawGeneratedBones(actor, origin, mapArea);
+            else if (page == 0)
+                DrawBodyPage(skeleton, mapArea);
             else
+                DrawFacePage(skeleton, actorId, mapArea);
+            DrawAdditionalPoints(actor);
+            ResolveAndDrawDots();
+            drawList.PopClipRect();
+
+            bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
+                && ImGui.IsMouseHoveringRect(origin, origin + mapArea);
+            if (hovered) _presentation.PublishMapHover(hoverOwner, _hoveredBone?.Bone);
+
+            if (editing)
             {
-                if (isDrag)
+                HandleEditorCanvas(hovered);
+                return true;
+            }
+
+            if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
+            {
+                // Ctrl AND Shift both extend: the map has no
+                // row order, so there is no range gesture to reserve Shift for.
+                var io = ImGui.GetIO();
+                if (io.KeyCtrl || io.KeyShift)
+                    _selection.Toggle(hoveredId);
+                else
+                    _selection.Select(hoveredId);
+            }
+
+            // marquee: press on empty canvas + drag = box select (Ctrl adds)
+            if (_hoveredBone == null && hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                _marqueeStart = ImGui.GetMousePos();
+
+            if (_marqueeStart is { } start)
+            {
+                var mouse = ImGui.GetMousePos();
+                var rmin = Vector2.Min(start, mouse);
+                var rmax = Vector2.Max(start, mouse);
+                bool isDrag = (rmax - rmin).LengthSquared() > 16f;
+
+                if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
                 {
-                    // A marquee that catches nothing is not a selection of
-                    // nothing: the selection stands.
-                    var caught = new List<SelectionId>();
-                    foreach (var (dotId, pos) in _frameDots)
-                        if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
-                            caught.Add(dotId);
-                    if (caught.Count > 0)
+                    if (isDrag)
                     {
-                        var io = ImGui.GetIO();
-                        if (!io.KeyCtrl && !io.KeyShift)
-                            _selection.Clear();
-                        foreach (var dotId in caught)
-                            _selection.Add(dotId);
+                        var fg = ImGui.GetForegroundDrawList();
+                        fg.AddRectFilled(
+                            rmin,
+                            rmax,
+                            ImGui.ColorConvertFloat4ToU32(
+                                Crystarium.ActiveTheme.Chrome.AccentFill));
+                        fg.AddRect(
+                            rmin,
+                            rmax,
+                            ImGui.ColorConvertFloat4ToU32(
+                                Crystarium.ActiveTheme.AccentHover));
                     }
                 }
-                _marqueeStart = null;
+                else
+                {
+                    if (isDrag)
+                    {
+                        // A marquee that catches nothing is not a selection of
+                        // nothing: the selection stands.
+                        var caught = new List<SelectionId>();
+                        foreach (var (dotId, pos) in _frameDots)
+                            if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
+                                caught.Add(dotId);
+                        if (caught.Count > 0)
+                        {
+                            var io = ImGui.GetIO();
+                            if (!io.KeyCtrl && !io.KeyShift)
+                                _selection.Clear();
+                            foreach (var dotId in caught)
+                                _selection.Add(dotId);
+                        }
+                    }
+                    _marqueeStart = null;
+                }
             }
+            return true;
         }
-        return true;
     }
 
     private void DrawBodyPage(SkeletonDescriptor skeleton, Vector2 contentArea)
@@ -287,6 +334,8 @@ public sealed class GraphicalBonePane : IDisposable
         var canvasSize = new Vector2(designWidth, designHeight) * fit;
         var canvasOrigin =
             viewportOrigin + (contentArea - canvasSize) * 0.5f;
+        _mapOrigin = canvasOrigin;
+        _mapSize = Vector2.Max(Vector2.One, canvasSize);
 
         Vector4 Slot(float x, float y, float width, float height) =>
             new(
@@ -306,6 +355,7 @@ public sealed class GraphicalBonePane : IDisposable
         // it exactly as any drawn dot.
         if (FindBone(skeleton, "n_root") is { } rootBone)
         {
+            _pointSection = "body";
             var rootSeat = Slot(337f, 1105f, 0f, 0f);
             DrawBoneAt(rootBone, new Vector2(rootSeat.X, rootSeat.Y));
         }
@@ -402,12 +452,13 @@ public sealed class GraphicalBonePane : IDisposable
         var imageSize = sourceSize * fit;
         var imageOrigin =
             viewportOrigin + (contentArea - imageSize) * 0.5f;
+        _mapOrigin = imageOrigin;
+        _mapSize = Vector2.Max(Vector2.One, imageSize);
         if (texture == null)
         {
             // Reserve the map's rect and paint a quiet fill in it: the
             // decode's arrival must not shift a single pixel of layout.
             DrawPendingFill(imageOrigin, imageSize);
-            return;
         }
         _faceSourceSize = sourceSize;
         DrawBoneSectionAt(
@@ -484,17 +535,13 @@ public sealed class GraphicalBonePane : IDisposable
         }
         var scalingFactors = size / sourceSize;
 
-        _currentSection++;
+        _pointSection = sectionName.EndsWith("head", StringComparison.Ordinal)
+            || sectionName.StartsWith("viera_head", StringComparison.Ordinal) ? "face" : sectionName;
         foreach (var graphicBone in section.Bones)
         {
             var bone = FindBone(skeleton, graphicBone.Name);
             var mirrorBoneName = drawMirrors ? GetMirrorBoneName(graphicBone.Name) : null;
             var mirrorBone = mirrorBoneName != null ? FindBone(skeleton, mirrorBoneName) : null;
-
-            // Mirror selection swaps which bone each sided dot addresses;
-            // center bones (no counterpart) are unaffected.
-            if (SidesSwapped && mirrorBone != null)
-                (bone, mirrorBone) = (mirrorBone, bone);
 
             var primaryPosition = min + new Vector2(
                 graphicBone.PositionVector.X * scalingFactors.X,
@@ -517,17 +564,34 @@ public sealed class GraphicalBonePane : IDisposable
     {
         // Selection identity is the stable id from the snapshot table; the
         // descriptor also supplies labels and parent connections without a native read.
-        if (!_dotIds.TryGetValue((bone.Id.CanonicalName, bone.Id.PartialId), out var selectionId))
-            return;
-        bool matches = MatchesFilter(bone.DisplayName, bone.Id.CanonicalName);
+        if (!_dotIds.ContainsKey(bone.Id)) return;
+        var portable = Poser.Domain.Posing.PortableBoneId.From(bone.Id);
+        string section = _pointSection;
+        if (_layout != null && !_addingCustomPoint)
+        {
+            var saved = _layout.FirstOrDefault(item => item.Bone == portable && item.Section == section);
+            if (saved == null) return;
+            screenPos = _mapOrigin + new Vector2(saved.X, saved.Y) * _mapSize;
+        }
+        _drawnPoints.Add((portable, section));
+        // Layout identity stays unswapped; Mirror changes the posing target, never saved positions.
+        if (!_drawingEditor && SidesSwapped && GetMirrorBoneName(bone.Id.CanonicalName) is { } mirrorName)
+        {
+            if (_scene.Snapshot.FindActor(bone.Id.Skeleton.Actor) is { } actor
+                && AvailableBones(actor).TryGetValue(portable with { CanonicalName = mirrorName }, out var mirrored)
+                && _dotIds.ContainsKey(mirrored.Id))
+                bone = mirrored;
+        }
+        var selectionId = _dotIds[bone.Id];
+        bool matches = _drawingEditor || MatchesFilter(bone.DisplayName, bone.Id.CanonicalName);
         // Brio's line rule, copied whole: a connector goes to the DIRECT
         // parent only, and only when that parent has a dot on the SAME
         // panel — an ancestor walk wired panels together into insanity
         // (2026-09-01).
-        (int, string, int)? parentKey = bone.Parent is { } parent
-            ? (_currentSection, parent.CanonicalName, parent.PartialId)
+        (string, PoseSlot, string, int)? parentKey = bone.Parent is { } parent
+            ? (_pointSection, parent.Slot, parent.CanonicalName, parent.PartialId)
             : null;
-        _dotKeys[(_currentSection, bone.Id.CanonicalName, bone.Id.PartialId)] =
+        _dotKeys[(_pointSection, bone.Id.Slot, bone.Id.CanonicalName, bone.Id.PartialId)] =
             screenPos;
         _dotParents.Add(parentKey);
         _dotCandidates.Add((selectionId, screenPos, bone.DisplayName, matches));
@@ -558,10 +622,9 @@ public sealed class GraphicalBonePane : IDisposable
         return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
-    private readonly Dictionary<(int, string, int), Vector2> _dotKeys =
+    private readonly Dictionary<(string, PoseSlot, string, int), Vector2> _dotKeys =
         new();
-    private readonly List<(int, string, int)?> _dotParents = new();
-    private int _currentSection;
+    private readonly List<(string, PoseSlot, string, int)?> _dotParents = new();
 
     private void ResolveAndDrawDots()
     {
@@ -570,7 +633,8 @@ public sealed class GraphicalBonePane : IDisposable
         for (int i = 0; i < _dotCandidates.Count; i++)
         {
             var candidate = _dotCandidates[i];
-            if (!candidate.Matches)
+            if (!candidate.Matches || !ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
+                || !ImGui.IsMouseHoveringRect(candidate.Pos - new Vector2(HitRadius * s), candidate.Pos + new Vector2(HitRadius * s)))
                 continue;
             float distance = Vector2.Distance(mouse, candidate.Pos);
             if (distance < HitRadius * s && distance < _closestHoverDistance)
@@ -589,21 +653,21 @@ public sealed class GraphicalBonePane : IDisposable
         // (selected > hovered > IK > mirror), body and face alike.
         var skeletonColors =
             _configuration.Config.Skeleton;
-        HashSet<string>? armedIk = null;
-        HashSet<string>? mirrorPartners = null;
+        var armedIk = new HashSet<(SkeletonId Skeleton, int Partial, string Name)>();
+        var checkedSkeletons = new HashSet<SkeletonId>();
+        var mirrorPartners = new HashSet<(SkeletonId Skeleton, int Partial, string Name)>();
         foreach (var (id, _, _, _) in _dotCandidates)
         {
             if (id.Bone is not { } fact)
                 continue;
-            if (armedIk == null)
+            if (checkedSkeletons.Add(fact.Skeleton))
             {
-                armedIk = new HashSet<string>();
                 foreach (var chain in _ikPort.Chains(fact.Skeleton))
                 {
                     if (!chain.Config.Enabled)
                         continue;
                     foreach (var chainBone in chain.Bones)
-                        armedIk.Add(chainBone);
+                        armedIk.Add((fact.Skeleton, chain.Endpoint.PartialId, chainBone));
                 }
             }
             if (!_selection.IsSelected(id))
@@ -621,11 +685,11 @@ public sealed class GraphicalBonePane : IDisposable
                     fact.CanonicalName) != SymmetryMode.Off
                 && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
-                (mirrorPartners ??= new HashSet<string>()).Add(mirror);
+                mirrorPartners.Add((fact.Skeleton, fact.PartialId, mirror));
             if (_bonePosing.LinkedBonesEnabled)
                 foreach (var linked in global::Poser.Domain.Posing
                     .BoneLinkCatalog.GetLinked(fact.CanonicalName))
-                    (mirrorPartners ??= new HashSet<string>()).Add(linked);
+                    mirrorPartners.Add((fact.Skeleton, fact.PartialId, linked));
         }
         float circleRadius = skeletonColors.MapDotRadius;
         // Colors resolve FIRST so the connector lines can wear the child
@@ -638,19 +702,17 @@ public sealed class GraphicalBonePane : IDisposable
             var candidate = _dotCandidates[i];
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
-            string? canonical = candidate.Id.Bone?.CanonicalName;
+            var fact = candidate.Id.Bone;
             // Selection is the THEME's primary, not ImGui's style checkmark.
             uint circleColor = isSelected
-                ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                    Crystarium.ActiveTheme.Chrome.Primary))
+                ? skeletonColors.ResolveSelectedBoneColor()
                 : isHovered
-                    ? ImGui.GetColorU32(ImGuiCol.Text)
-                    : canonical != null && armedIk?.Contains(canonical) == true
+                    ? skeletonColors.ResolveHoveredBoneColor()
+                    : fact is { } ikBone && armedIk.Contains((ikBone.Skeleton, ikBone.PartialId, ikBone.CanonicalName))
                         ? skeletonColors.IkChainColor
-                        : canonical != null
-                            && mirrorPartners?.Contains(canonical) == true
+                        : fact is { } paired && mirrorPartners.Contains((paired.Skeleton, paired.PartialId, paired.CanonicalName))
                             ? skeletonColors.MirroredBoneColor
-                            : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                            : skeletonColors.BoneColor;
             // A dot the filter rejects keeps its place — the map is a
             // drawing and its dots ARE the anatomy — and goes faint, which
             // is a map's way of saying what a list says by not listing a row.
@@ -659,7 +721,7 @@ public sealed class GraphicalBonePane : IDisposable
             colors[i] = circleColor;
         }
         // The connector lines the maps were missing (#98): each dot to its
-        // nearest on-map ancestor, in the child's own color, faded so the
+        // direct on-map parent, in the child's own color, faded so the
         // anatomy stays a drawing, under every circle.
         for (int i = 0; i < _dotCandidates.Count
             && i < _dotParents.Count; i++)
@@ -687,10 +749,7 @@ public sealed class GraphicalBonePane : IDisposable
                 drawList.AddCircleFilled(
                     candidate.Pos,
                     (circleRadius - 3f) * s,
-                    isSelected
-                        ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                            Crystarium.ActiveTheme.Chrome.Primary))
-                        : ImGui.GetColorU32(ImGuiCol.TextDisabled));
+                    circleColor);
             }
             if (isHovered)
                 hoveredName = candidate.Name;
@@ -765,20 +824,18 @@ public sealed class GraphicalBonePane : IDisposable
     {
         if (_targets.PrimaryActor is not { } id)
             return _scene.Snapshot.Actors.FirstOrDefault();
-        var actor = _scene.Snapshot.FindActor(id);
-        // Maps are Character-only. Auxiliary bones with the same name must
-        // never become selectable from a body/face dot.
-        if (actor?.CharacterSkeleton is { } skeleton)
+        return _scene.Snapshot.FindActor(id);
+    }
+
+    private void PopulateBoneIds(ActorDescriptor actor)
+    {
+        foreach (var bone in AvailableBones(actor).Values)
         {
             bool showNsfw = _configuration.Config.Display.ShowNsfwBones;
-            foreach (var bone in skeleton.Bones)
-            {
-                if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
-                    continue;
-                _dotIds[(bone.Id.CanonicalName, bone.Id.PartialId)] = SelectionId.ForBone(bone.Id);
-            }
+            if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+                continue;
+            _dotIds[bone.Id] = SelectionId.ForBone(bone.Id);
         }
-        return actor;
     }
 
     private static string? GetMirrorBoneName(string boneName)
@@ -792,6 +849,8 @@ public sealed class GraphicalBonePane : IDisposable
 
     public void Dispose()
     {
+        _presentation.PublishMapHover(this, null);
+        _presentation.PublishMapHover(_editorHoverOwner, null);
         foreach (var texture in _textures.Values)
         {
             texture?.Dispose();

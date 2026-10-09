@@ -22,6 +22,19 @@ public enum OverlayVisibility
 
 public sealed class SkeletonOverlayPresentation
 {
+    private object? _mapHoverOwner;
+    private BoneId? _mapHover;
+    private int _mapHoverFrame = -2;
+    public BoneId? MapHoveredBone => Dalamud.Bindings.ImGui.ImGui.GetFrameCount() - _mapHoverFrame <= 1 ? _mapHover : null;
+
+    public void PublishMapHover(object owner, BoneId? bone)
+    {
+        if (bone == null && !ReferenceEquals(owner, _mapHoverOwner)) return;
+        _mapHoverOwner = owner;
+        _mapHover = bone;
+        _mapHoverFrame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount();
+    }
+
     private readonly ConfigurationService _configuration;
 
     public SkeletonOverlayPresentation(ConfigurationService configuration) =>

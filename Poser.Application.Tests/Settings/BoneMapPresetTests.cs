@@ -9,6 +9,40 @@ namespace Poser.Application.Tests.Settings;
 
 public sealed class BoneMapPresetTests
 {
+    [Theory]
+    [InlineData(BoneMapKind.Body)]
+    [InlineData(BoneMapKind.Face)]
+    public void Built_in_default_name_is_reserved_and_new_copy_does_not_mutate_its_source(BoneMapKind kind)
+    {
+        var points = new[] { Default };
+        var copy = new BoneMapPresetDraft(kind, points, initial: points);
+        Assert.False(copy.HasChanges);
+        copy.Name = "Default";
+        Assert.NotNull(copy.Save(new List<BoneMapPreset>(), out _));
+        copy.Name = "My body";
+        copy.Move(Bone, "body", 0.7f, 0.8f);
+        Assert.Equal(Default, points[0]);
+        Assert.True(copy.HasChanges);
+        Assert.Null(copy.Save(new List<BoneMapPreset>(), out _));
+    }
+
+    [Fact]
+    public void Delete_removes_only_the_selected_custom_preset_and_rejects_stale_edits()
+    {
+        var body = new BoneMapPreset { Name = "Body", Points = [Default] };
+        var face = new BoneMapPreset { Kind = BoneMapKind.Face, Name = "Face", Points = [Default] };
+        var store = new List<BoneMapPreset> { body, face };
+        var draft = new BoneMapPresetDraft(BoneMapKind.Body, [Default], body);
+        var other = new BoneMapPresetDraft(BoneMapKind.Body, [Default], body) { Name = "Changed" };
+        Assert.Null(other.Save(store, out _));
+        Assert.NotNull(draft.Delete(store));
+        Assert.Equal(2, store.Count);
+        draft = new(BoneMapKind.Body, [Default], store[0]);
+        Assert.Null(draft.Delete(store));
+        Assert.Same(face, Assert.Single(store));
+        Assert.NotNull(new BoneMapPresetDraft(BoneMapKind.Face, [Default]).Delete(store));
+        Assert.Same(face, Assert.Single(store));
+    }
     private static readonly PortableBoneId Bone = new(PoseSlot.Character, 0, "j_kubi");
     private static readonly BoneMapPoint Default = new(Bone, "body", 0.2f, 0.3f);
 

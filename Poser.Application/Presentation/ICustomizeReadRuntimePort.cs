@@ -11,6 +11,7 @@ namespace Poser.Application.Presentation;
 /// </summary>
 public interface ICustomizeReadRuntimePort
 {
+    bool IsStandardHumanoid(ActorId actor);
     /// <summary>The face-map section an actor with no readable customize
     /// data uses. Also the pane's fallback when it has no stable id for
     /// the actor at all.</summary>

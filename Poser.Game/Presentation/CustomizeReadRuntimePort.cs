@@ -42,6 +42,16 @@ public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
         }
     }
 
+    public bool IsStandardHumanoid(ActorId actor)
+    {
+        var resolved = _bindings.Resolve(actor);
+        if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero) return false;
+        var model = SlotCharacterBases.Resolve(legacy.Address, PoseSlot.Character);
+        if (model == null || model->GetModelType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+            return false;
+        return ((CSCharacter*)legacy.Address)->DrawData.CustomizeData.Race is >= 1 and <= 8;
+    }
+
     /// <summary>Customize race byte → face-map section key. Only the four
     /// head shapes have distinct maps; every other race shares the human
     /// head, and unknown values fall back to it.</summary>

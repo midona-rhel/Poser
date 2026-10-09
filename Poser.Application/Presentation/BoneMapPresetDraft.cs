@@ -16,9 +16,11 @@ public sealed class BoneMapPresetDraft
     public string Name { get; set; }
     private readonly List<BoneMapPoint> _points;
     public IReadOnlyList<BoneMapPoint> Points => _points;
+    public Guid? SourceId => _sourceId;
+    public bool HasChanges => Name != (_sourceSnapshot?.Name ?? string.Empty) || !_points.SequenceEqual(_initial);
 
     public BoneMapPresetDraft(BoneMapKind kind, IEnumerable<BoneMapPoint> defaults,
-        BoneMapPreset? preset = null)
+        BoneMapPreset? preset = null, IEnumerable<BoneMapPoint>? initial = null)
     {
         if (preset != null && preset.Kind != kind)
             throw new ArgumentException("The preset belongs to another map.", nameof(preset));
@@ -26,7 +28,7 @@ public sealed class BoneMapPresetDraft
         Name = preset?.Name ?? string.Empty;
         _sourceId = preset?.Id;
         _defaults = defaults.ToList();
-        _initial = (preset?.Points ?? _defaults).ToList();
+        _initial = (initial ?? preset?.Points ?? _defaults).ToList();
         _points = _initial.ToList();
         _sourceSnapshot = preset == null ? null : Copy(preset);
     }
@@ -67,6 +69,8 @@ public sealed class BoneMapPresetDraft
         savedId = Guid.Empty;
         string name = Name.Trim();
         if (name.Length == 0) return "Name the preset first.";
+        if (string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase))
+            return "Default is reserved for the built-in map.";
         if (_points.Any(point => !point.Bone.IsValid || string.IsNullOrWhiteSpace(point.Section)
             || !float.IsFinite(point.X) || !float.IsFinite(point.Y)
             || point.X is < 0f or > 1f || point.Y is < 0f or > 1f)
@@ -92,6 +96,18 @@ public sealed class BoneMapPresetDraft
 
     public static BoneMapPreset Copy(BoneMapPreset preset) => new()
         { Id = preset.Id, Name = preset.Name, Kind = preset.Kind, Points = preset.Points.ToList() };
+
+    public string? Delete(IList<BoneMapPreset> store)
+    {
+        if (_sourceSnapshot is not { } snapshot)
+            return "Only saved custom presets can be deleted.";
+        var existing = store.FirstOrDefault(item => item.Id == snapshot.Id);
+        if (existing == null || existing.Kind != snapshot.Kind || existing.Name != snapshot.Name
+            || !existing.Points.SequenceEqual(snapshot.Points))
+            return "This preset changed in another window. Reopen it before deleting.";
+        store.Remove(existing);
+        return null;
+    }
 
     public static IReadOnlyDictionary<PortableBoneId, BoneDescriptor> Available(ActorDescriptor actor)
     {

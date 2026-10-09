@@ -23,6 +23,13 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Body and Face each expose a locked built-in Default map; it is never stored
+as an editable preset. The editor selects, creates and deletes custom presets.
+New copies the selected layout into a detached draft, including unavailable
+entries; Save commits it, while Cancel discards it. Switching presets requires
+saving or discarding edits. Concurrent edits and deletes cannot silently
+overwrite a preset changed in another window.
+
 Bone-map presets are reusable Body or Face layouts, not actor-instance state
 or overlay visibility presets. Entries carry a portable slot/partial/name key,
 map-section identity and normalized UI coordinates; never native indices or
@@ -31,8 +38,11 @@ resolve to an arbitrary native bone. Body and Face names are independent.
 Editing uses a detached draft. Reset position uses its initial layout; default
 position uses the built-in layout. Save checks that the source preset has not
 changed or disappeared in another editor before replacing it. These edits do
-not alter a pose or enter the scene transform journal. The editor UI and
-non-humanoid fallback are tracked by #377 and are not yet shipped.
+not alter a pose or enter the scene transform journal. Standard-race humanoid
+NPCs share these presets. Other rigs get a stable, scrollable hierarchy map
+without presets. Map hover publishes an exact bone for one frame of overlay
+feedback; it neither changes selection nor the persistent visibility mask.
+Mirroring swaps map interaction targets, never the saved layout identities.
 
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and

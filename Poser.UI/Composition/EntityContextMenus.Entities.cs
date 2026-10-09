@@ -472,6 +472,10 @@ internal sealed partial class EntityContextMenus
             new("Bone presets", TablerIcon.Eye, submenuItems: presets),
             new("Tree", TablerIcon.Folder, submenuItems: tree),
         ];
+        var mapTargets = _boneMap.AddToPresetActions(boneId);
+        if (mapTargets.Length > 0)
+            items = items.Append(new ContextMenuItem("More", TablerIcon.Dots, submenuItems:
+                [new("Add bone to preset", TablerIcon.Edit, submenuItems: mapTargets)])).ToArray();
         DrawComposedMenu(menu, ref _boneCtxOpenRequested, items);
     }
 
