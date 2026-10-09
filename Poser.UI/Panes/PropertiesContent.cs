@@ -90,6 +90,7 @@ public sealed partial class PropertiesContent
         _propsPane = propsPane; _worldObjectsPane = worldObjectsPane; _overlayPane = overlayPane;
         _poseFiles = poseFiles; _map = map;
         poseInspector.DrawMapInline = map.DrawInline;
+        poseInspector.HasHumanoidMap = () => _selection.PrimaryActor is { } actor && map.IsHumanoid(actor);
         poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         poseInspector.BuildBoneChoices = actor => BuildBoneChoices(actor);
         lightPane.BuildBoneChoices = actor => BuildBoneChoices(actor);
@@ -185,6 +186,7 @@ public sealed partial class PropertiesContent
 
     public void DrawDialogs()
     {
+        _map.DrawEditor();
         _animationPane.DrawExpressionPicker();
         _appearancePane.DrawBrowsers();
         _lightPane.DrawBrowsers();
@@ -193,6 +195,8 @@ public sealed partial class PropertiesContent
         _scenePane.DrawBrowsers();
         _names.Draw();
     }
+
+    public void DrawBoneMapEditor() => _map.DrawEditor();
 
     public void PumpInteraction(bool pointerHeld) => _animationPane.PumpInteraction(pointerHeld);
 

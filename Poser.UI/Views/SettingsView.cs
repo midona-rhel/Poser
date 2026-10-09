@@ -1,6 +1,8 @@
 using Poser.Domain.Scene;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Poser.Application.Presentation;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -77,6 +79,10 @@ public sealed class SettingsViewModel
     public bool HideSkeletonOnActorSelection = true;
     public bool OnlyActiveActorBones;
     public Dictionary<string, bool> DefaultBonePresets = new(StringComparer.OrdinalIgnoreCase);
+    public List<BoneMapDefaultRule> BoneMapDefaults = new();
+    public List<BoneMapPreset> BoneMapPresets = new();
+    public int BoneMapRace;
+    public int BoneMapGender;
 
     public bool DimInactiveActors;
     public float InactiveActorOpacity = 0.5f;
@@ -215,6 +221,7 @@ public sealed class SettingsViewModel
             hash.Add(preset.Key, StringComparer.OrdinalIgnoreCase);
             hash.Add(preset.Value);
         }
+        foreach (var rule in BoneMapDefaults) hash.Add(rule);
         foreach (var source in Library.Sources)
         {
             hash.Add(source.Name);
@@ -823,6 +830,35 @@ public static partial class SettingsView
             foreach (var name in new List<string>(vm.DefaultBonePresets.Keys))
                 form.Checkboxes(name,
                     new Crystarium.CheckItem("Default", vm.DefaultBonePresets[name], next => vm.DefaultBonePresets[name] = next));
+        });
+        page.Section("Bone map defaults", form =>
+        {
+            form.Status("Choose which actors these defaults apply to.");
+            form.Status("Their Body and Face maps load the presets below.");
+            form.Status("This does not change an actor's race or gender.");
+            form.Dropdown("Race", ["Hyur", "Elezen", "Lalafell", "Miqo’te", "Roegadyn", "Au Ra", "Hrothgar", "Viera"],
+                vm.BoneMapRace, value => vm.BoneMapRace = value);
+            form.Dropdown("Gender", ["Male", "Female"], vm.BoneMapGender, value => vm.BoneMapGender = value);
+            foreach (var kind in new[] { BoneMapKind.Body, BoneMapKind.Face })
+            {
+                byte race = (byte)(vm.BoneMapRace + 1), gender = (byte)vm.BoneMapGender;
+                var choices = BoneMapTemplates.All.Where(item => item.Kind == kind)
+                    .Select(item => (item.Id, item.Name))
+                    .Concat(vm.BoneMapPresets.Where(item => item.Kind == kind).Select(item => (item.Id, item.Name))).ToArray();
+                var rule = vm.BoneMapDefaults.LastOrDefault(item => item.Race == race && item.Gender == gender && item.Kind == kind);
+                int selected = Array.FindIndex(choices, item => item.Id == rule?.PresetId);
+                if (selected < 0)
+                {
+                    var section = kind == BoneMapKind.Body ? "body" : BoneMapTemplates.DefaultFaceSection(race);
+                    selected = Array.FindIndex(choices, item => item.Id == BoneMapTemplates.All.First(template => template.Section == section).Id);
+                }
+                form.Dropdown(kind + " preset", choices.Select(item => item.Name).ToArray(),
+                    selected, value =>
+                    {
+                        vm.BoneMapDefaults.RemoveAll(item => item.Race == race && item.Gender == gender && item.Kind == kind);
+                        vm.BoneMapDefaults.Add(new(race, gender, kind, choices[value].Id));
+                    }, "Default for this race and gender. Manual map selections remain local to their Properties window.");
+            }
         });
         page.Section("Colors", form =>
             form.ColorWells("Bones", wells =>

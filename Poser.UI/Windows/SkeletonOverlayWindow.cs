@@ -49,16 +49,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     // While the stored color still equals its fresh-install default, the
     // selected/hovered family follows the live accent (theme + AccentIndex);
     // an explicit ColorWell override pins the stored value instead.
-    private uint SelectedBoneColor =>
-        Config.SelectedBoneColor == SkeletonConfiguration.DefaultSelectedBoneColor
-            ? ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Palette.Primary)
-            : Config.SelectedBoneColor;
+    private uint SelectedBoneColor => Config.ResolveSelectedBoneColor();
     private uint ModifiedBoneColor => Config.ModifiedBoneColor;
-    private uint HoveredBoneColor =>
-        Config.HoveredBoneColor == SkeletonConfiguration.DefaultHoveredBoneColor
-            ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(
-                Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
-            : Config.HoveredBoneColor;
+    private uint HoveredBoneColor => Config.ResolveHoveredBoneColor();
     private uint IkChainColor => Config.IkChainColor;
     private uint MirroredBoneColor => Config.MirroredBoneColor;
 
@@ -525,7 +518,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         bool picking = global::Poser.UI.Controls.BonePick.Active;
         bool drawArmature =
             (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor()
-            || picking;
+            || picking || _presentation.MapHoveredBone != null;
         // Published for the gizmo's armature-visibility gate: the master
         // toggle alone — the per-skeleton half is the presentation's
         // AnyVisibleFor, asked at the gizmo, so a hidden actor beside a
@@ -770,7 +763,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             // Bones of the active actor only: the one actor the selection
             // belongs to. Several actors selected is not bone work.
             if (Config.OnlyActiveActorBones && !picking
-                && onlyActor != actor.Id.LogicalId)
+                && onlyActor != actor.Id.LogicalId
+                && _presentation.MapHoveredBone?.Skeleton.Actor != actor.Id)
                 continue;
             // A pick limited to one actor shows that actor alone.
             if (picking
@@ -854,7 +848,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 // what stops the switch stranding an edit with no on-screen
                 // handle.
                 bool shown = picking
-                    || (UserVisible && visibleMask[b]);
+                    || (UserVisible && visibleMask[b])
+                    || _presentation.MapHoveredBone == bone.Id;
                 if (bone.IsHidden
                     || (!shown
                         && !selectedMask[b]
@@ -961,8 +956,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // link partners and armed IK chains still move with the
         // selection, so they stay visible (ruled 2026-09-01).
         if (_editorState.ShowSelectedBonesOnly)
-            bones.RemoveAll(static bone =>
-                !bone.IsHovered && !IsPriorityBone(bone));
+            bones.RemoveAll(bone =>
+                !bone.IsHovered && !IsPriorityBone(bone) && bone.Id.Bone != _presentation.MapHoveredBone);
 
         // Draw skeleton
         // A HELD drag, world gizmo or inspector ball: hovering a handle
@@ -997,6 +992,16 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 DrawJoints(drawList, bones);
                 break;
         }
+
+        // A map hover is an exact cross-surface locator, even on an otherwise hidden bone.
+        if (paintArmature && _presentation.MapHoveredBone is { } mapBone)
+            foreach (var bone in bones)
+                if (bone.Id.Bone == mapBone)
+                {
+                    drawList.AddCircle(bone.ScreenPos, (DotRadius + 4f) * ImGuiHelpers.GlobalScale,
+                        HoveredBoneColor, 24, 2f * ImGuiHelpers.GlobalScale);
+                    break;
+                }
 
         // Brio-style model-transform point at each actor origin. This is the
         // world-space route back from bone posing to whole-actor selection.
@@ -2009,6 +2014,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     {
         if (bone.IsSelected)
             return SelectedBoneColor;
+        if (bone.Id.Bone is { } hovered && hovered == _presentation.MapHoveredBone)
+            return HoveredBoneColor;
         if (useHover && bone.IsHovered)
             return HoveredBoneColor;
         if (bone.IsIkChain)

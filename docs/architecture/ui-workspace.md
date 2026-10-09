@@ -23,6 +23,67 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Body and Face each expose a locked built-in Default map; it is never stored
+as an editable preset. The editor selects, creates and deletes custom presets.
+Switching presets requires saving or discarding edits. Concurrent edits and
+deletes cannot silently overwrite a preset changed in another window.
+
+Bone-map presets are reusable Body or Face layouts, not actor-instance state
+or overlay visibility presets. Entries carry a portable slot/partial/name key,
+map-section identity and normalized UI coordinates; never native indices or
+actor generations. Missing entries stay stored. Ambiguous portable keys do not
+resolve to an arbitrary native bone. Body and Face names are independent.
+Editing uses a detached draft. Reset position uses its initial layout; default
+position uses the built-in layout. Save checks that the source preset has not
+changed or disappeared in another editor before replacing it. These edits do
+not alter a pose or enter the scene transform journal. Standard-race humanoid
+NPCs share these presets. Other rigs get a reference-pose projection map
+without presets. Reference joints are read once per skeleton generation without
+applying a pose. Terminal single-child chains of at least twelve bones have
+separate numbered, connected rows; their length cannot shrink the remaining body.
+The chain section repeats its actual parent as a selectable attachment anchor.
+Best view scores front/side/top projections of the remaining body, not outlier
+chains. Degenerate geometry uses a contour-packed tidy tree; the user can also
+choose that view. Bounded proximity relaxation retains the projected body shape,
+followed by hard minimum spacing in logical UI pixels. This is not full PRISM.
+The canvas grows vertically instead of rescaling that spacing away. Connectors
+always use actual direct parents on the same section. Layout runs only for rig,
+view, dot-size or viewport changes, never animation. Map hover publishes an exact bone for one frame of overlay
+feedback; it neither changes selection nor the persistent visibility mask.
+Mirroring swaps map interaction targets, never the saved layout identities.
+The editor's separate mirror-placement action adds or repositions the actual
+same-slot/partial opposite bone horizontally about mapped paired parents,
+the nearest mapped common ancestor, or the panel center in that order. It
+preserves height and refuses out-of-map placements rather than breaking symmetry.
+New starts from the base template; Copy duplicates the selected layout, including
+unavailable entries. Both immediately create uniquely named custom presets;
+Cancel discards subsequent draft edits, not that new preset. Save commits without
+closing, Discard restores the saved version, and Confirm saves then closes.
+Default remains immutable. Map/list context actions share the same draft;
+removing a subtree changes only layout entries, never the actor's skeleton.
+Background selection is saved with the preset but replaces only illustration
+pixels; it never changes coordinates or imports another race's bone list.
+Built-in Body and race/ear-specific Face templates have stable reserved IDs.
+Copies retain their base template (coordinate space and reset baseline).
+Automatic map selection resolves a separate Body/Face assignment for race and
+gender, falling back to native race selection if unset or deleted. Pickers show
+the resolved preset's name, never a selectable "Automatic" placeholder. Explicit
+selection is local to a Properties pane and resets on actor changes; editors
+remain pinned to their original actor/template. Standard humanoid NPCs follow
+the same rules. All built-in templates stay locked, including in persistence.
+Bone context menus expose Preset → Body/Face → Add, Add with mirror, Remove and
+Remove with children. Actions update the selected map immediately, creating a
+uniquely named copy when its template is locked. An already open matching editor
+receives these changes in its draft with live preview; only Save/Confirm commits
+that draft. Context actions never silently save unrelated pending editor changes.
+The shared sidebar finds open drafts across Properties hosts by exact actor and
+map kind, preferring its own editor then the most recently opened or switched
+matching editor. Closing or disposing a host removes it from this lookup; the
+registry does not own windows or share their selection and disclosure state.
+The map editor shares the manipulation/camera fade, including artwork and bone
+markers. Its hidden host remains alive to preserve placement and draft state but
+neither paints nor intercepts input; rearranging map points does not trigger it.
+
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
 menu disclosure stay with the menu composer. Neither owns workflow progression.

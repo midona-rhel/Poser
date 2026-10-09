@@ -167,15 +167,20 @@ public static partial class Crystarium
             ref bool open,
             float width,
             float height,
-            Action<FloatingSurfaceFrame> body)
+            Action<FloatingSurfaceFrame> body,
+            bool exclusive = true,
+            bool hidden = false)
         {
-            if (open && !SyncExclusive(id))
+            if (open && exclusive && !SyncExclusive(id))
             {
                 open = false;
                 return false;
             }
-            if (ReleaseWhenClosed(id, open))
+            if (!open)
+            {
+                if (exclusive) ReleaseWhenClosed(id, false);
                 return false;
+            }
             float scale = ImGuiHelpers.GlobalScale;
             var size = new Vector2(width, height) * scale;
             ImGui.SetNextWindowSize(size, ImGuiCond.Appearing);
@@ -193,16 +198,17 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoScrollWithMouse
                 | ImGuiWindowFlags.NoBackground
                 | ImGuiWindowFlags.NoSavedSettings
-                | ImGuiWindowFlags.NoResize);
+                | ImGuiWindowFlags.NoResize
+                | (hidden ? ImGuiWindowFlags.NoInputs : ImGuiWindowFlags.None));
             // The owner and style stack always unwind with their matching Begin call.
             try
             {
-                if (visible)
+                if (visible && !hidden)
                 {
                     var min = ImGui.GetWindowPos();
                     var max = min + ImGui.GetWindowSize();
                     var owner = Interactive.BeginOwner(
-                        id, InteractionLayer.FloatingWindow, min, max);
+                        id, exclusive ? InteractionLayer.FloatingWindow : InteractionLayer.Window, min, max);
                     try
                     {
                         DrawChrome(
@@ -223,7 +229,7 @@ public static partial class Crystarium
                 ImGui.End();
                 ImGui.PopStyleVar(2);
             }
-            ReleaseWhenClosed(id, open);
+            if (exclusive) ReleaseWhenClosed(id, open);
             return visible;
         }
         public static int HoverList(

@@ -503,7 +503,7 @@ public partial class MainWindow : Window
             _overlayControl, _overlayPresentation, _referenceImages, _scene,
             _scenePane, _selection, _sidebar, _poseFileSection,
             _duplication, _entityCommands, _entityActions, _playback,
-            _cameraTargets, _names, _issueReport, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms);
+            _cameraTargets, _names, _issueReport, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms, graphicalBonePane);
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
@@ -785,6 +785,7 @@ public partial class MainWindow : Window
         // animation pane already drew the surface for its own rows.
         _animationPane.DrawExpressionPicker();
         _contextMenus.DrawBoneContextMenu();
+        _properties.DrawBoneMapEditor();
         _contextMenus.DrawOverlayContextMenu();
         _contextMenus.DrawOverlayNodeContextMenu();
         _contextMenus.DrawReferenceImageContextMenu();

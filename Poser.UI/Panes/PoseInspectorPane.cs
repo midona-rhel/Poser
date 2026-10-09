@@ -53,6 +53,7 @@ public partial class PoseInspectorPane : IDisposable
     private bool _openParenting = true;
 
     public Func<int, Vector2, bool>? DrawMapInline;
+    public Func<bool>? HasHumanoidMap;
 
     // The Expression workspace supplies this window's picker row.
     public Action<Crystarium.FormScope, ActorId>? DrawExpressionRow;
@@ -791,14 +792,18 @@ public partial class PoseInspectorPane : IDisposable
         ImGui.SetCursorScreenPos(cursor + new Vector2(
             0f,
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
+        bool humanoid = HasHumanoidMap?.Invoke() ?? true;
+        if (!humanoid && _poseView == 1) _poseView = 0;
+        int visibleView = !humanoid && _poseView > 1 ? _poseView - 1 : _poseView;
         Crystarium.SegmentedControl(
             "##pose-surface",
-            new[] { "Body", "Face", "Matrix", "3D", "Expression", "Other" },
-            _poseView,
-            selected => _poseView = selected,
+            humanoid ? new[] { "Body", "Face", "Matrix", "3D", "Expression", "Other" }
+                : new[] { "Bones", "Matrix", "3D", "Expression", "Other" },
+            visibleView,
+            selected => _poseView = !humanoid && selected > 0 ? selected + 1 : selected,
             alignFirstTabToCursor: true);
 
-        if (_poseView is 0 or 1)
+        if (humanoid && _poseView is 0 or 1)
         {
             bool swapped = GetMapMirror?.Invoke() ?? false;
             Crystarium.ActionBar(

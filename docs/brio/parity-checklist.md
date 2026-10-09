@@ -636,7 +636,8 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 - Stance/idle-pose control, weapon drawn, position lock, per-layer speed/pause, physics
   freeze: present with real UI (Animation tab / toolbar).
 - Stash/apply pose transfer: parity with Ktisis' stash, including timestamp.
-- Graphical maps: marquee box-select and race-variant faces match Brio; matrix view exceeds
+- Graphical maps: race-variant faces match Brio; selection intentionally omits box-select
+  (see [selection contract](../features/selection-and-transforms.md)); matrix view exceeds
   both (Anamnesis-style).
 - Expression action-unit sliders and gaze per-part locks: no reference equivalent
   (Brio's Actor gaze mode is a stub; Ktisis disables gaze while posing).

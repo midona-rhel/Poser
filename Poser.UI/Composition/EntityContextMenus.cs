@@ -60,6 +60,7 @@ internal sealed partial class EntityContextMenus
     private readonly EntityRemovalDialog _removalDialog;
     private readonly Application.Transforms.ISelectionPlacement _placement;
     private readonly ITransformFacade _transforms;
+    private readonly GraphicalBonePane _boneMap;
     private ActorId? _ctxActorId;
     private bool _ctxOpenRequested;
 
@@ -123,7 +124,7 @@ internal sealed partial class EntityContextMenus
         Controls.EntityNameModal names,
         Controls.IssueReportModal issueReport,
         Action openSkeletonSettings, EntityRemovalDialog removalDialog,
-        Application.Transforms.ISelectionPlacement placement, ITransformFacade transforms)
+        Application.Transforms.ISelectionPlacement placement, ITransformFacade transforms, GraphicalBonePane boneMap)
     {
         _actorColliderCapture = actorColliderCapture;
         _actorControl = actorControl;
@@ -160,6 +161,7 @@ internal sealed partial class EntityContextMenus
         _removalDialog = removalDialog;
         _placement = placement;
         _transforms = transforms;
+        _boneMap = boneMap;
     }
 
     public void OpenFor(ShellSidebarRow row)
