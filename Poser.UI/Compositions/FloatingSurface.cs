@@ -168,7 +168,8 @@ public static partial class Crystarium
             float width,
             float height,
             Action<FloatingSurfaceFrame> body,
-            bool exclusive = true)
+            bool exclusive = true,
+            bool hidden = false)
         {
             if (open && exclusive && !SyncExclusive(id))
             {
@@ -197,11 +198,12 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoScrollWithMouse
                 | ImGuiWindowFlags.NoBackground
                 | ImGuiWindowFlags.NoSavedSettings
-                | ImGuiWindowFlags.NoResize);
+                | ImGuiWindowFlags.NoResize
+                | (hidden ? ImGuiWindowFlags.NoInputs : ImGuiWindowFlags.None));
             // The owner and style stack always unwind with their matching Begin call.
             try
             {
-                if (visible)
+                if (visible && !hidden)
                 {
                     var min = ImGui.GetWindowPos();
                     var max = min + ImGui.GetWindowSize();

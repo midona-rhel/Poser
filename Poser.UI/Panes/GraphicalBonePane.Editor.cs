@@ -69,6 +69,13 @@ public sealed partial class GraphicalBonePane
             _editError = null;
         }
         if (_draft == null) return;
+        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        if (Controls.ManipulationHide.Active)
+        {
+            _presentation.PublishMapHover(_editorHoverOwner, null);
+            Crystarium.FloatingMenu.Dismiss(_editorId + "-point");
+            _contextPoint = null;
+        }
         var actor = _editActor is { } id ? _scene.Snapshot.FindActor(id) : null;
         if (actor != null && !IsHumanoid(actor.Id)) actor = null;
         bool open = true;
@@ -98,7 +105,7 @@ public sealed partial class GraphicalBonePane
                 if (_draft == null) return;
                 DrawEditorPresetToolbar(rects.Band);
                 DrawEditorBody(actor, rects.Rail, rects.Body);
-            }, exclusive: false);
+            }, exclusive: false, hidden: Controls.ManipulationHide.Hidden);
         if (!open) CloseEditor();
     }
 

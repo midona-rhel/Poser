@@ -467,7 +467,8 @@ public sealed partial class GraphicalBonePane : IDisposable
             var preview = face && _mapBackground is "PoseHeadWithEars" or "PoseHeadMiqote"
                 or "PoseHeadVieraFloppy" or "PoseHeadHroth" ? GetTexture(_mapBackground) : texture;
             if (_mapBackground != "none" && preview != null)
-                ImGui.GetWindowDrawList().AddImage(preview.Handle, min, min + size);
+                ImGui.GetWindowDrawList().AddImage(preview.Handle, min, min + size,
+                    Vector2.Zero, Vector2.One, ColorEx.ApplyAlpha(0xFFFFFFFFu));
             sourceSize = new Vector2(texture.Width, texture.Height);
         }
         else if (_pendingTextures.ContainsKey(section.Image)
@@ -667,7 +668,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             // is a map's way of saying what a list says by not listing a row.
             if (!candidate.Matches)
                 circleColor = FadeU32(circleColor, FilteredDotOpacity);
-            colors[i] = circleColor;
+            colors[i] = ColorEx.ApplyAlpha(circleColor);
         }
         // The connector lines the maps were missing (#98): each dot to its
         // direct on-map parent, in the child's own color, faded so the

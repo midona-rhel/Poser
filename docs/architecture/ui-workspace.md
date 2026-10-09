@@ -66,6 +66,9 @@ Remove with children. Actions update the selected map immediately, creating a
 uniquely named copy when its template is locked. An already open matching editor
 receives these changes in its draft with live preview; only Save/Confirm commits
 that draft. Context actions never silently save unrelated pending editor changes.
+The map editor shares the manipulation/camera fade, including artwork and bone
+markers. Its hidden host remains alive to preserve placement and draft state but
+neither paints nor intercepts input; rearranging map points does not trigger it.
 
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
