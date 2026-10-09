@@ -64,6 +64,11 @@ public sealed partial class DebugBridge
 
     private void AdvanceUiDragLocked()
     {
+        if (System.Threading.Volatile.Read(ref _disposed) != 0)
+        {
+            FinishUiDragLocked();
+            return;
+        }
         if (_uiDrag is not { } probe) return;
         if (DateTime.UtcNow >= probe.Deadline) { FinishUiDrag(); return; }
         int frame = ImGui.GetFrameCount();

@@ -200,8 +200,13 @@ public sealed partial class DebugBridge : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
-        _framework.Update -= AdvanceUiDrag;
-        FinishUiDrag();
+        // ImGui cleanup belongs to the framework thread, including unload.
+        // Do not block plugin disposal waiting for a tick that may own unload.
+        _ = _framework.RunOnFrameworkThread(() =>
+        {
+            FinishUiDrag();
+            _framework.Update -= AdvanceUiDrag;
+        });
         try { _listener.Stop(); } catch { }
         try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
         try { _stop.Dispose(); } catch { }
