@@ -13,8 +13,7 @@ public static class ReleaseNotesHistory
         [
             "Added editable Body and Face map presets.",
             "Added default map presets for each race and gender.",
-            "Added Abdomen to the default Body map.",
-            "Improved spacing around Lumbar and Waist in the Body map.",
+            "Added Abdomen to the default Body map and improved spacing around Lumbar and Waist.",
             "Improved bone-map layouts for creatures.",
             "Added skeleton highlighting when hovering over bones in a map.",
             "Added Shift-click bone selection in the skeleton overlay.",
