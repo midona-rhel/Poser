@@ -173,12 +173,25 @@ public sealed class PoseFileInspectorSection : IDisposable
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
     public bool IdleExportBusy => _idleExport.Busy;
+#if DEBUG
+    public object DebugImportState => new
+    {
+        menuOpen = _importMenuOpen,
+        menuTarget = _importMenuActor?.ToString(),
+        browserOpen = _importBrowser.IsOpen,
+        browserTarget = _importTarget?.ToString(),
+    };
+#endif
     public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
 
-    public void RequestImportMenu(bool withPresets, Vector2? anchor = null,
-        Domain.Identity.ActorId? target = null)
+    public void RequestImportMenu(bool withPresets, ActorId? target, Vector2? anchor = null)
     {
-        _importMenuActor = target ?? SelectedActor();
+        if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
+        {
+            _notices.Refused("The import target is unavailable. Open Import from an actor.");
+            return;
+        }
+        _importMenuActor = actor;
         _importMenuWithPresets = withPresets;
         _menuAnchor = anchor ?? ImGui.GetMousePos();
         _importMenuRequested = true;
@@ -214,7 +227,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             options, _disabledCategories);
 
     // Context menus target the clicked actor; dialogs freeze that exact generation.
-    // Ordinary controls follow selection, with the library's live host as fallback.
+    // An open import never falls back to selection or another window's host.
     private ActorId? SelectedActor()
     {
         if (_drawingMenu && _menuActor is { } clicked)
@@ -428,10 +441,12 @@ public sealed class PoseFileInspectorSection : IDisposable
     private void DrawImportMenuFrame(Crystarium.FloatingSurfaceFrame frame)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var actorName = _importMenuActor is { } target && _scene.Snapshot.FindActor(target) is { } actor
+            ? ActorNames.Display(_config, actor) : "Actor unavailable";
         var rects = Crystarium.WindowFrame(ImportMenuId, frame.Min, frame.Size,
             new WindowFrameProps
             {
-                Title = "Import pose",
+                Title = $"Import pose — {actorName}",
                 OnClose = () => _importMenuOpen = false,
                 HostPaintsChrome = true,
             });
@@ -951,7 +966,13 @@ public sealed class PoseFileInspectorSection : IDisposable
                             _notices.Refused(NoActorText);
                     });
                     actions.Button("From library",
-                        () => RequestLibrary(SelectedActor()),
+                        () =>
+                        {
+                            if (SelectedActor() is { } actorId)
+                                RequestLibrary(actorId);
+                            else
+                                _notices.Refused("The import target is no longer available.");
+                        },
                         disabled: InLibrary,
                         help: InLibrary ? "The library is already open" : null);
                 });

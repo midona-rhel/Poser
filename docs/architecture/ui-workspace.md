@@ -200,6 +200,10 @@ Properties group Import, Import from file, and Library in a labelled Import row,
 with Export and Export to file in a labelled Export row. The file shortcuts open their browsers directly;
 Import and Export open their general options/menus. These actions capture their host actor; opening the library
 from that host seeds its explicit apply target without changing scene selection.
+Every pose-import entry point supplies its actor explicitly. The import window
+names and retains that exact actor generation through preview and application;
+selection changes cannot retarget it, and a missing actor never falls back to
+another. Library preview, import options and Apply share its resolved target.
 
 Library source creation uses one name-and-Browse row. Browse requires a nonblank
 name; choosing a folder immediately adds that named source to the Settings draft.

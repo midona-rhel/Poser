@@ -170,12 +170,11 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>The actor the preview borrows an appearance from: the
-    /// selection's actor when it can be posed, else the first actor an apply
-    /// would land on — the picker's own leading candidate.</summary>
+    /// same resolved target used by Apply and the import options.</summary>
     private ActorId? PreviewSource() =>
-        TargetActor() is { } actor && _imports.HasPosableSkeleton(actor)
+        CurrentApplyTarget() is { } actor && _imports.HasPosableSkeleton(actor)
             ? actor
-            : FirstApplyTarget();
+            : null;
 
     /// <summary>Tears the preview down and takes its seat back off the
     /// inspector rail. Idempotent — the frame after a close must not close
