@@ -127,7 +127,7 @@ public sealed partial class GraphicalBonePane
             string help = BoneMapTemplates.IsBuiltIn(preset.Id)
                 ? "Creates and selects an editable copy of this locked template."
                 : "Updates this map immediately; changes in an open editor remain unsaved until Save or Confirm.";
-            actions.Add(new($"{preset.Kind}: {preset.Name}", TablerIcon.Edit, help: help, submenuItems:
+            actions.Add(new(preset.Kind.ToString(), TablerIcon.Edit, help: help, submenuItems:
             [
                 Action("Add", 0, draft.Contains(key)),
                 Action("Add with mirror", 1, mirror == null || (draft.Contains(key) && draft.Contains(mirror.Bone))),
