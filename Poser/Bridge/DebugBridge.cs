@@ -1133,7 +1133,8 @@ public sealed partial class DebugBridge : IDisposable
                     if (skeleton == null) return Json(new { error = "No live character skeleton." });
                     Game.Diagnostics.GazeEvaluationProbe.Start(skeleton);
                 }
-                return Json(Game.Diagnostics.GazeEvaluationProbe.Read());
+                return JsonSerializer.Serialize(Game.Diagnostics.GazeEvaluationProbe.Read(),
+                    new JsonSerializerOptions { IncludeFields = true });
             }
             case "/gazemode":
             {
