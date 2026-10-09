@@ -97,6 +97,8 @@ each then keeps its own disclosure state across actor changes. Toggling one
 host updates the saved default for future hosts, never another open window.
 Settings categories have separate keys even when section titles match. Search
 temporarily reveals matching content without changing saved disclosure.
+Refining Settings search debounces filtering without replaying a page-wide fade;
+unchanged results retain their visibility, focus, pending edits and scroll state.
 Inspector rail headers use this same contract, including IK, Gaze, Expression,
 Pose, Tracking and Placement, whether attached or detached.
 

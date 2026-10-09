@@ -169,11 +169,12 @@ public sealed class CameraPane
             {
                 page.Section("Camera", _openCamera, next => _openCamera = next,
                     form => OrbitRows(form, camera));
-                page.Section("Target", _openTarget, next => _openTarget = next,
-                    form => TargetRows(form, camera));
             }
             page.Section("Limits", _openLimits, next => _openLimits = next,
                 form => LimitRows(form, camera));
+            if (camera.Kind != CameraKind.Free)
+                page.Section("Target", _openTarget, next => _openTarget = next,
+                    form => TargetRows(form, camera));
             page.Section("File", _openFile, next => _openFile = next,
                 form => FileRows(form, camera));
             page.Section("Actions", _openActions, next => _openActions = next,
