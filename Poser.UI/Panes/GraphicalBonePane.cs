@@ -217,11 +217,14 @@ public sealed partial class GraphicalBonePane : IDisposable
         }
         if (!humanoid)
         {
-            EnsureGeneratedBones(actor, mapArea / scale);
             ImGui.SetCursorScreenPos(origin);
             Crystarium.ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
-                scope => DrawCanvas(ImGui.GetCursorScreenPos(), new(scope.ContentWidth * scale,
-                    MathF.Max(mapArea.Y, _generatedHeight * scale))));
+                scope =>
+                {
+                    EnsureGeneratedBones(actor, new(scope.ContentWidth, mapArea.Y / scale));
+                    DrawCanvas(ImGui.GetCursorScreenPos(), new(scope.ContentWidth * scale,
+                        MathF.Max(mapArea.Y, _generatedHeight * scale)));
+                });
             return true;
         }
         return DrawCanvas(origin, mapArea);

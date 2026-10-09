@@ -41,13 +41,16 @@ changed or disappeared in another editor before replacing it. These edits do
 not alter a pose or enter the scene transform journal. Standard-race humanoid
 NPCs share these presets. Other rigs get a reference-pose projection map
 without presets. Reference joints are read once per skeleton generation without
-applying a pose. Best view picks the least-overlapping front/side/top projection;
-the user can select another view. Heavily overlapping reference rigs fall back
-to a radial subtree map: branches own angular sectors and chains keep direction.
-Nearby projected joints get separate hit seats
-while retaining actual parent connectors. Layout work runs only for rig, view or
-viewport changes, never animation. Dense rigs use compact scrollable capacity,
-not one row per bone. Map hover publishes an exact bone for one frame of overlay
+applying a pose. Terminal single-child chains of at least twelve bones have
+separate numbered, connected rows; their length cannot shrink the remaining body.
+The chain section repeats its actual parent as a selectable attachment anchor.
+Best view scores front/side/top projections of the remaining body, not outlier
+chains. Degenerate geometry uses a contour-packed tidy tree; the user can also
+choose that view. Bounded proximity relaxation retains the projected body shape,
+followed by hard minimum spacing in logical UI pixels. This is not full PRISM.
+The canvas grows vertically instead of rescaling that spacing away. Connectors
+always use actual direct parents on the same section. Layout runs only for rig,
+view, dot-size or viewport changes, never animation. Map hover publishes an exact bone for one frame of overlay
 feedback; it neither changes selection nor the persistent visibility mask.
 Mirroring swaps map interaction targets, never the saved layout identities.
 The editor's separate mirror-placement action adds or repositions the actual
