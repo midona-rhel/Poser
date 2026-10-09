@@ -33,6 +33,9 @@ public sealed partial class GraphicalBonePane
     private Vector2 _dragOffset;
     private readonly object _editorHoverOwner = new();
 
+    internal bool EditingMap(ActorId actor, BoneMapKind kind, Guid? preset) =>
+        _editActor == actor && _draft?.Kind == kind && (preset == null || _draft.SourceId == preset);
+
     private void DrawPresetActions(int page, ActorDescriptor actor, Vector2 origin, float width)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -65,6 +68,7 @@ public sealed partial class GraphicalBonePane
             _editorDefaults = BuildDefaults(editingActor, (BoneMapKind)opening, preset?.Template);
             _editDefault = preset == null || BoneMapTemplates.IsBuiltIn(preset.Id);
             _draft = new((BoneMapKind)opening, _editorDefaults, preset);
+            _editors.Register(this);
             _editFilter = string.Empty;
             _editError = null;
         }
@@ -140,6 +144,7 @@ public sealed partial class GraphicalBonePane
 
     private void CloseEditor()
     {
+        _editors.Remove(this);
         _draft = null;
         _editActor = null;
         _dragPoint = null;
@@ -304,6 +309,7 @@ public sealed partial class GraphicalBonePane
         }
         _editDefault = preset == null || BoneMapTemplates.IsBuiltIn(preset.Id);
         _draft = new(draft.Kind, _editorDefaults, preset);
+        _editors.Register(this);
         _selectedPresets[(int)draft.Kind] = preset?.Id ?? Guid.Empty;
         _dragPoint = null;
         _contextPoint = null;

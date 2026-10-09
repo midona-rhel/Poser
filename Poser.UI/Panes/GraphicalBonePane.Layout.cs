@@ -115,7 +115,10 @@ public sealed partial class GraphicalBonePane
         var actions = new List<ContextMenuItem>();
         for (int page = 0; page < 2; page++)
         {
-            if (SelectedPreset(page, actor) is not { } preset) continue;
+            // The sidebar is shared; the active draft may belong to a pinned Properties host.
+            var owner = EditingMap(actor.Id, (BoneMapKind)page, null) ? this
+                : _editors.Find(actor.Id, (BoneMapKind)page) ?? this;
+            if (owner.SelectedPreset(page, actor) is not { } preset) continue;
             var key = PortableBoneId.From(bone);
             var available = AvailableBones(actor);
             var draft = MatchingEditor(actor.Id, preset) ?? new(preset.Kind,
@@ -139,14 +142,16 @@ public sealed partial class GraphicalBonePane
                 operation >= 2 ? TablerIcon.Trash : operation == 1 ? TablerIcon.SelectMirror : TablerIcon.Plus,
                 disabled: disabled, keepOpen: true, help: help)
             {
-                OnInvoke = () => ApplyPresetAction(bone, preset.Id, preset.Kind, operation),
+                OnInvoke = () => owner.ApplyPresetAction(bone, preset.Id, preset.Kind, operation),
             };
         }
         return actions.ToArray();
     }
 
     private BoneMapPresetDraft? MatchingEditor(ActorId actor, BoneMapPreset preset) =>
-        _editActor == actor && !_editDefault && _draft?.SourceId == preset.Id ? _draft : null;
+        BoneMapTemplates.IsBuiltIn(preset.Id) ? null
+            : EditingMap(actor, preset.Kind, preset.Id) ? _draft
+            : _editors.Find(actor, preset.Kind, preset.Id)?._draft;
 
     private void AddPresetBone(BoneMapPresetDraft draft, PortableBoneId key,
         IReadOnlyDictionary<PortableBoneId, BoneDescriptor> available)

@@ -76,6 +76,10 @@ Remove with children. Actions update the selected map immediately, creating a
 uniquely named copy when its template is locked. An already open matching editor
 receives these changes in its draft with live preview; only Save/Confirm commits
 that draft. Context actions never silently save unrelated pending editor changes.
+The shared sidebar finds open drafts across Properties hosts by exact actor and
+map kind, preferring its own editor then the most recently opened or switched
+matching editor. Closing or disposing a host removes it from this lookup; the
+registry does not own windows or share their selection and disclosure state.
 The map editor shares the manipulation/camera fade, including artwork and bone
 markers. Its hidden host remains alive to preserve placement and draft state but
 neither paints nor intercepts input; rearranging map points does not trigger it.

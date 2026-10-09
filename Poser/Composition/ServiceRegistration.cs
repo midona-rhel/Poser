@@ -681,6 +681,7 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<IPoseLibraryService>(), message => sp.GetRequiredService<UserNotices>().Note(message)));
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
+        services.AddSingleton<BoneMapEditorRegistry>();
         services.AddSingleton<SkeletonOverlayPresentation>();
         // ConfigurationService.Reset replaces the configuration instance,
         // so the preset store is reached through the service on every call.

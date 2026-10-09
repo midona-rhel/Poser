@@ -96,6 +96,7 @@ public sealed partial class GraphicalBonePane : IDisposable
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly BoneMapEditorRegistry _editors;
 
     public GraphicalBonePane(
         global::Poser.Config.ConfigurationService configuration,
@@ -105,12 +106,14 @@ public sealed partial class GraphicalBonePane : IDisposable
         ICustomizeReadRuntimePort customizeRead,
         IReferenceSkeletonReadPort referenceSkeleton,
         SkeletonOverlayPresentation presentation,
+        BoneMapEditorRegistry editors,
         Application.Posing.IIkConfigurationPort ikPort,
         IEditorState editorState,
         IPoseInteraction bonePosing)
     {
         _configuration = configuration;
         _presentation = presentation;
+        _editors = editors;
         _ikPort = ikPort;
         _editorState = editorState;
         _bonePosing = bonePosing;
@@ -812,6 +815,7 @@ public sealed partial class GraphicalBonePane : IDisposable
 
     public void Dispose()
     {
+        CloseEditor();
         _presentation.PublishMapHover(this, null);
         _presentation.PublishMapHover(_editorHoverOwner, null);
         foreach (var texture in _textures.Values)
