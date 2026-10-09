@@ -33,12 +33,8 @@ public sealed partial class GraphicalBonePane : IDisposable
     private readonly SelectionScope _targets;
     private readonly SceneSession _scene;
 
-    // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
-    // drag on empty canvas selects everything inside the rectangle.
-    private readonly System.Collections.Generic.List<(SelectionId Id, Vector2 Pos)> _frameDots = new();
     private readonly List<(SelectionId Id, Vector2 Pos, string Name, bool Matches)>
         _dotCandidates = new();
-    private Vector2? _marqueeStart;
     private readonly ITextureProvider _textureProvider;
     private readonly ICustomizeReadRuntimePort _customizeRead;
 
@@ -79,7 +75,7 @@ public sealed partial class GraphicalBonePane : IDisposable
     /// The map's own bone filter — Brio's <c>BoneSearchControl</c>, which its
     /// graphical window reaches from the same top bar. A map cannot hide a dot
     /// by removing a row, so a dot the filter rejects stays where the drawing
-    /// puts it and goes quiet: faint, unhoverable, and outside the marquee.
+    /// puts it and goes quiet: faint and unhoverable.
     /// Held here rather than by the host so both hosts get it, and so it
     /// survives a tab change the way the sidebar's filter does.
     /// </summary>
@@ -149,7 +145,6 @@ public sealed partial class GraphicalBonePane : IDisposable
         _closestHoverDistance = float.MaxValue;
         _hoveredBone = null;
         _hoveredDotIndex = -1;
-        _frameDots.Clear();
         _dotCandidates.Clear();
         _dotKeys.Clear();
         _dotParents.Clear();
@@ -225,9 +220,8 @@ public sealed partial class GraphicalBonePane : IDisposable
             _mapOrigin = origin;
             _mapSize = mapArea;
             ImGui.SetCursorScreenPos(origin);
-            // The canvas is an ITEM: a press on it belongs to the map — the
-            // marquee — never to the window, which used to move instead. The
-            // dots and the pages draw over it and take their own hover.
+            // The canvas owns presses so an empty-space drag does not move
+            // the host window. Selection is click-only; editor points can drag.
             ImGui.InvisibleButton("##bone-map-canvas", mapArea);
             ImGui.SetItemAllowOverlap();
             ImGui.SetCursorScreenPos(origin);
@@ -264,56 +258,6 @@ public sealed partial class GraphicalBonePane : IDisposable
                     _selection.Select(hoveredId);
             }
 
-            // marquee: press on empty canvas + drag = box select (Ctrl adds)
-            if (_hoveredBone == null && hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                _marqueeStart = ImGui.GetMousePos();
-
-            if (_marqueeStart is { } start)
-            {
-                var mouse = ImGui.GetMousePos();
-                var rmin = Vector2.Min(start, mouse);
-                var rmax = Vector2.Max(start, mouse);
-                bool isDrag = (rmax - rmin).LengthSquared() > 16f;
-
-                if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
-                {
-                    if (isDrag)
-                    {
-                        var fg = ImGui.GetForegroundDrawList();
-                        fg.AddRectFilled(
-                            rmin,
-                            rmax,
-                            ImGui.ColorConvertFloat4ToU32(
-                                Crystarium.ActiveTheme.Chrome.AccentFill));
-                        fg.AddRect(
-                            rmin,
-                            rmax,
-                            ImGui.ColorConvertFloat4ToU32(
-                                Crystarium.ActiveTheme.AccentHover));
-                    }
-                }
-                else
-                {
-                    if (isDrag)
-                    {
-                        // A marquee that catches nothing is not a selection of
-                        // nothing: the selection stands.
-                        var caught = new List<SelectionId>();
-                        foreach (var (dotId, pos) in _frameDots)
-                            if (pos.X >= rmin.X && pos.X <= rmax.X && pos.Y >= rmin.Y && pos.Y <= rmax.Y)
-                                caught.Add(dotId);
-                        if (caught.Count > 0)
-                        {
-                            var io = ImGui.GetIO();
-                            if (!io.KeyCtrl && !io.KeyShift)
-                                _selection.Clear();
-                            foreach (var dotId in caught)
-                                _selection.Add(dotId);
-                        }
-                    }
-                    _marqueeStart = null;
-                }
-            }
             return true;
         }
     }
@@ -354,7 +298,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             skeleton);
         // The ROOT selector: the whole-skeleton anchor gets a dot of its
         // own beneath the figure — no map image ever offered it. It goes
-        // through DrawBoneAt, so hover, click, filter and marquee treat
+        // through DrawBoneAt, so hover, click and filter treat
         // it exactly as any drawn dot.
         if (FindBone(skeleton, "n_root") is { } rootBone)
         {
@@ -604,11 +548,6 @@ public sealed partial class GraphicalBonePane : IDisposable
             screenPos;
         _dotParents.Add(parentKey);
         _dotCandidates.Add((selectionId, screenPos, bone.DisplayName, matches));
-        // A filtered-out dot is outside the marquee too: dragging a box over
-        // the map must select what the map is offering, not what it is
-        // greying.
-        if (matches)
-            _frameDots.Add((selectionId, screenPos));
     }
 
     /// <summary>Brio's <c>BoneSearchControl</c> matcher: the friendly name or

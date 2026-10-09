@@ -6,6 +6,9 @@ linked lookup, ancestry, and parent traversal stay within a slot.
 Overlay bone dots have no list range: Shift-click toggles individual bones in
 both picking modes; Ktisis mode also retains Ctrl-click. Plain clicks replace
 selection. Gizmo pointer ownership still takes precedence over bone picking.
+Body, Face and generated Bones maps use click selection, with Ctrl/Shift-click
+to toggle additional bones. Empty-space drags do not box-select or move the
+window. Preset-editor point dragging only changes layout positions.
 
 `Block game mouse targeting` defaults on in General settings. Like Brio's
 `DisableGPoseMouseSelect`, it blocks native mouse targeting only in GPose;
