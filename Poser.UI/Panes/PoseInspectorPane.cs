@@ -1701,43 +1701,41 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         const string atHelp = "Choose which actor this one looks at";
-
-        if (wide)
+        form.Custom("Mode", Crystarium.ActiveTheme.Controls.WorkspaceHeight, row =>
         {
-            form.Pair(
-                "Mode",
-                cell =>
+            var theme = Crystarium.ActiveTheme;
+            float gap = theme.Page.ActionGap * row.Scale;
+            float poseWidth = (theme.Controls.CheckboxSize + theme.Spacing.Three) * row.Scale
+                + Crystarium.MeasureText("Pose-aware", new TextStyle
+                    { Size = theme.Typography.CaptionSize, Weight = FontWeight.Regular }).X;
+            float atWidth = wide
+                ? Crystarium.MeasureText("At", new TextStyle
+                    { Size = theme.Typography.LabelSize, Weight = FontWeight.Regular }).X
+                : 0f;
+            // The choices share the remaining row; the trailing checkbox stays
+            // at the right edge, like the other mixed control rows.
+            float choiceWidth = MathF.Max(1f,
+                (row.ControlWidth - poseWidth - atWidth - gap * (wide ? 3f : 1f))
+                / (wide ? 2f : 1f) / row.Scale);
+            Crystarium.ActionBar("gaze-mode-row", row.ControlOrigin,
+                new Vector2(row.ControlWidth, Crystarium.ActiveTheme.Controls.WorkspaceHeight * row.Scale),
+                actions =>
                 {
-                    ImGui.SetCursorScreenPos(cell.Center(
-                        Crystarium.ActiveTheme.Controls.WorkspaceHeight));
-                    Crystarium.Dropdown(
-                        "##gaze-mode",
-                        GazeModeOptions,
-                        ModeIndex(),
-                        PickMode,
-                        cell.Constrain(ControlStyle.Workspace));
-                },
-                "At",
-                cell =>
-                {
-                    var (items, selected) = TargetItems();
-                    ImGui.SetCursorScreenPos(cell.Center(
-                        Crystarium.ActiveTheme.Controls.WorkspaceHeight));
-                    Crystarium.Dropdown(
-                        "##gaze-at",
-                        items,
-                        selected,
-                        PickTarget,
-                        cell.Constrain(ControlStyle.Workspace),
-                        disabled: state.Settings.Mode != GazeTargetMode.Entity
-                            || others.Count == 0,
-                        help: atHelp);
-                });
-        }
-        else
-        {
-            form.Dropdown("Mode", GazeModeOptions, ModeIndex(), PickMode);
-        }
+                    actions.Dropdown("Mode", GazeModeOptions, ModeIndex(), PickMode,
+                        style: ControlStyle.Workspace with { Width = UiWidth.Fixed(choiceWidth) });
+                    if (wide)
+                    {
+                        var (items, selected) = TargetItems();
+                        actions.Label("At");
+                        actions.Dropdown("At", items, selected, PickTarget, help: atHelp,
+                            disabled: state.Settings.Mode != GazeTargetMode.Entity || others.Count == 0,
+                            style: ControlStyle.Workspace with { Width = UiWidth.Fixed(choiceWidth) });
+                    }
+                    actions.Checkbox("Pose-aware", state.Settings.PoseAware,
+                        enabled => Record(_gazeValues.SetPoseAware(actor, enabled)),
+                        help: "Compensate posed bones for Camera and Point targets, including locked points. Native gaze limits still apply; Actor and Forward keep their normal behavior.");
+                }, separator: ActionBarSeparator.None);
+        });
 
         if (_gazeActorUnavailableNote && others.Count == 0)
             form.Status("Actor mode needs another actor in the scene.");

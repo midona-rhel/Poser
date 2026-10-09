@@ -463,6 +463,7 @@ public class SceneActorMcdf
 [Serializable]
 public class SceneActorGaze
 {
+    public bool PoseAware { get; set; }
     public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
 
     /// <summary>Which parts participate.</summary>

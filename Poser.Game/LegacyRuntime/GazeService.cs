@@ -96,6 +96,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private readonly IPluginLog _log;
     private readonly IFramework? _framework;
     private readonly IGazeNativeFactory _nativeFactory;
+    private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
 
     /// <summary>Spawn/discovery-standard thread refusal (ActorSpawnService
     /// shape) for the members that write natively outside the hooked loop.</summary>
@@ -121,6 +122,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         /// Brio's SetTargetType only rewrites the participation mask and never
         /// touches TargetMode, so re-adding a part resumes the same mode.</summary>
         public GazeTargetMode Mode;
+        public bool PoseAware;
         public GazeTargetType Parts = GazeTargetType.All;
 
         /// <summary>The remembered Entity target GameObjectId; 0 = never
@@ -164,7 +166,8 @@ public unsafe class GazeService : IGazeService, IDisposable
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IPluginLog log,
-        IFramework framework)
+        IFramework framework,
+        Poser.Game.Posing.GazePoseFrames gazeFrames)
         : this(
             gPoseService,
             cameraService,
@@ -174,7 +177,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             hooks,
             log,
             framework,
-            new GazeNativeFactory())
+            new GazeNativeFactory(), gazeFrames)
     {
     }
 
@@ -187,7 +190,8 @@ public unsafe class GazeService : IGazeService, IDisposable
         IGameInteropProvider hooks,
         IPluginLog log,
         IFramework? framework,
-        IGazeNativeFactory nativeFactory)
+        IGazeNativeFactory nativeFactory,
+        Poser.Game.Posing.GazePoseFrames? gazeFrames = null)
     {
         _gPoseService = gPoseService;
         _cameraService = cameraService;
@@ -196,6 +200,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         _log = log;
         _framework = framework;
         _nativeFactory = nativeFactory;
+        _gazeFrames = gazeFrames ?? new();
 
         nint updateLookAtAddress;
         try
@@ -441,6 +446,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     GazeTargetType pendingRelease = GazeTargetType.None;
                     LookAtSource lookAt = default;
                     bool known = false;
+                    bool poseAware = false;
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
                     lock (_sync)
                     {
@@ -448,6 +454,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                         {
                             known = true;
                             mode = EffectiveMode(entry);
+                            poseAware = entry.PoseAware;
                             parts = entry.Parts;
                             pendingRelease = entry.PendingRelease;
                             // Copy to locals (like Brio) — the native calls
@@ -488,6 +495,8 @@ public unsafe class GazeService : IGazeService, IDisposable
                         }
                     }
 
+                    bool compensate = poseAware && mode is GazeTargetMode.Camera or GazeTargetMode.Position;
+                    _gazeFrames.Request(targetActor.Address, compensate);
                     // Off performs no further write: every channel has been
                     // handed back and the game's own update owns them again.
                     if (mode == GazeTargetMode.None)
@@ -535,6 +544,16 @@ public unsafe class GazeService : IGazeService, IDisposable
                             lookAt.Body.LookAtTarget.Position = forwardPos;
                     }
 
+                    if (compensate)
+                    {
+                        lookAt.Body.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
+                            GazeTargetType.Body, lookAt.Body.LookAtTarget.Position);
+                        lookAt.Head.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
+                            GazeTargetType.Head, lookAt.Head.LookAtTarget.Position);
+                        lookAt.Eyes.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
+                            GazeTargetType.Eyes, lookAt.Eyes.LookAtTarget.Position);
+                    }
+
                     if (parts.HasFlag(GazeTargetType.Body))
                         _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
                     if (parts.HasFlag(GazeTargetType.Head))
@@ -545,7 +564,8 @@ public unsafe class GazeService : IGazeService, IDisposable
             }
         }
 
-        // Call original - this runs gaze IK and modifies bones
+        // This advances native gaze inputs. Pose evaluation happens later,
+        // before BonePosingService applies the authored transforms.
         return _actorLookAtLoop!.Original(args);
     }
 
@@ -571,6 +591,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             return _entries.TryGetValue(gameObject.GameObjectId, out var entry)
                 ? new GazeState
                 {
+                    PoseAware = entry.PoseAware,
                     Mode = entry.Mode,
                     Active = EffectiveMode(entry) != GazeTargetMode.None,
                     TargetStale = entry.TargetStale,
@@ -598,6 +619,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (settings.Mode == GazeTargetMode.Entity && entry.TargetId != 0 && entry.TargetStale)
                 return StaleRefusal(entry);
             entry.Mode = settings.Mode;
+            entry.PoseAware = settings.PoseAware;
             entry.Parts = settings.TargetType;
             entry.Position = settings.Position;
             ClearPartLock(entry, GazeTargetType.All);
@@ -616,6 +638,17 @@ public unsafe class GazeService : IGazeService, IDisposable
             pendingTarget = PendingTargetWrite(entry, writable);
         }
         WriteCharacterTarget(gameObject, pendingTarget);
+        _eventBus.Publish(new GazeStateChangedEvent());
+        return GazeResult.Ok();
+    }
+
+    public GazeResult SetPoseAware(IActor actor, bool enabled)
+    {
+        if (!IsAvailable) return Unavailable();
+        if (Resolve(actor) is not { } gameObject)
+            return GazeResult.Refused("This actor is no longer resolvable.");
+        lock (_sync) GetOrCreateEntry(gameObject.GameObjectId).PoseAware = enabled;
+        if (!enabled) _gazeFrames.Request(actor.Address, false);
         _eventBus.Publish(new GazeStateChangedEvent());
         return GazeResult.Ok();
     }
@@ -930,6 +963,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                 entry.AppliedTargetId = 0;
             }
             entry.Mode = GazeTargetMode.None;
+            entry.PoseAware = false;
             entry.Parts = GazeTargetType.All;
             entry.TargetId = 0;
             entry.TargetStale = false;
@@ -1054,6 +1088,7 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
+        _gazeFrames.Clear();
         if (!e.IsGPosing)
         {
             lock (_sync)
@@ -1070,6 +1105,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// </summary>
     private void OnActorListChanged(ActorListChangedEvent _)
     {
+        _gazeFrames.Clear();
         List<(ulong Id, ulong TargetId)> snapshot;
         lock (_sync)
         {

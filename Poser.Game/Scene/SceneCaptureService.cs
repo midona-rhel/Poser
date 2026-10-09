@@ -422,7 +422,7 @@ public sealed class SceneCaptureService
         foreach (var (actor, entry) in captured)
         {
             var state = _gaze.GetGazeState(actor);
-            if (state.Mode == GazeTargetMode.None)
+            if (state.Mode == GazeTargetMode.None && !state.PoseAware)
                 continue;
 
             Guid? target = null;
@@ -455,6 +455,7 @@ public sealed class SceneCaptureService
 
             entry.Gaze = new SceneActorGaze
             {
+                PoseAware = state.PoseAware,
                 // A remembered Entity target that no captured actor answers
                 // for cannot be restored as a follow, so the file states the
                 // mode WITHOUT a target rather than an unfollowable one.

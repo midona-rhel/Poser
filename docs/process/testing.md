@@ -23,6 +23,11 @@
   cancellation or disposal. Its bounded trace verifies the injected input,
   not whether the target control behaved correctly; measure that separately.
 
+- The Debug bridge's `/gazeprobe?actor&start=1` records at most 128 native
+  pre/post-pose samples over two seconds; it never writes bones. `/gazepose`
+  and `/gazeparts` use production gaze commands. `/undo?selected=1` and
+  `/redo?selected=1` use the same scoped facade as the shortcuts.
+
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,
   `transform.actor-components`, `transform.actor-undo-redo`,

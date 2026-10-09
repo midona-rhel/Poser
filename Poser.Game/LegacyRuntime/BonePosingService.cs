@@ -27,6 +27,7 @@ namespace Poser.Game;
 /// </summary>
 public unsafe partial class BonePosingService : IBonePosingService
 {
+    private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Root),
         Poser.Game.Posing.PartialPoseFrame> _partialFrames = new();
     private readonly IPluginLog _log;
@@ -202,8 +203,10 @@ public unsafe partial class BonePosingService : IBonePosingService
         IPosingService posingService,
         Poser.Config.ConfigurationService configuration,
         IGameInteropProvider hooking,
-        ISigScanner scanner)
+        ISigScanner scanner,
+        Poser.Game.Posing.GazePoseFrames gazeFrames)
     {
+        _gazeFrames = gazeFrames;
         _log = log;
         _framework = framework;
         _gPoseService = gPoseService;
@@ -474,6 +477,7 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     private void ApplyAllBoneTransforms()
     {
+        _gazeFrames.BeginPass();
         // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
         // runs, so it iterates a snapshot — a REUSED buffer, because this runs
         // in the physics detour every frame and the old ToArray() charged the
@@ -529,6 +533,11 @@ public unsafe partial class BonePosingService : IBonePosingService
         if (gameSkeleton == null)
             return;
 
+        var gazeFrame = _gazeFrames.Before(skeleton);
+#if DEBUG
+        if (slotKey.Slot == PoseSlot.Character)
+            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-before");
+#endif
         // STEP 1: Apply transforms AND update LastTransform per-bone (like Brio ApplyBrioTransforms)
         _transitiveActions.TryGetValue(slotKey, out var actions);
         ApplyTransformsWithPerBoneUpdate(
@@ -553,6 +562,11 @@ public unsafe partial class BonePosingService : IBonePosingService
 
         // STEP 4: Full cache update after reparent (like Brio line 244)
         UpdateAllLastTransforms(skeleton, gameSkeleton);
+        if (gazeFrame is { } captured) _gazeFrames.After(captured);
+#if DEBUG
+        if (slotKey.Slot == PoseSlot.Character)
+            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-after");
+#endif
     }
 
     /// <summary>

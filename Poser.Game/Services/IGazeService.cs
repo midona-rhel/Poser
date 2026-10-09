@@ -13,6 +13,7 @@ namespace Poser.Services;
 /// </summary>
 public class GazeState
 {
+    public bool PoseAware { get; set; }
     /// <summary>
     /// The CONFIGURED mode, which is remembered across a full untoggle — it is
     /// not a claim that anything is being enforced. Ask <see cref="Active"/>
@@ -67,6 +68,7 @@ public interface IGazeService
     /// <summary>Snapshot of the actor's managed gaze state.</summary>
     GazeState GetGazeState(IActor actor);
     GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings);
+    GazeResult SetPoseAware(IActor actor, bool enabled) => GazeResult.Refused("Pose-aware gaze is unavailable.");
 
     /// <summary>
     /// One mode transition. Entering a non-Off mode with no participating

@@ -665,6 +665,15 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/testlight":
+            {
+                if (query.GetValueOrDefault("spawn") == "1")
+                {
+                    var light = _lifecycle.SpawnLight(LightKind.Spot);
+                    return Json(new { ok = light != null, name = light?.Name });
+                }
+                return Json(_sceneSession.Snapshot.Lights.Select(light => new { id = light.Id.ToString(), light.Name }));
+            }
             case "/releasenotes":
                 _releaseNotes.Open();
                 return Json(new { ok = true });
@@ -1158,6 +1167,30 @@ public sealed partial class DebugBridge : IDisposable
                         }
                 return Json(new { error = "no such bone" });
             }
+            case "/gazeprobe":
+            {
+                if (query.GetValueOrDefault("start") == "1"
+                    && _skeletons.GetSkeleton(actor) is Skeleton liveSkeleton)
+                    Game.Diagnostics.GazeEvaluationProbe.Start(liveSkeleton);
+                return JsonSerializer.Serialize(Game.Diagnostics.GazeEvaluationProbe.Read(),
+                    new JsonSerializerOptions { IncludeFields = true });
+            }
+            case "/gazepose":
+            {
+                var result = _gaze.SetPoseAware(id, query.GetValueOrDefault("enabled") == "1");
+                return Json(new { ok = result.Success, result.Detail });
+            }
+            case "/gazeparts":
+            {
+                var result = _gaze.SetParts(id, Enum.Parse<GazeTargetType>(query["parts"], true));
+                return Json(new { ok = result.Success, result.Detail });
+            }
+            case "/gazelock":
+            {
+                var result = _gaze.SetPartLock(id, Enum.Parse<GazeTargetType>(query["part"], true),
+                    query.GetValueOrDefault("locked") == "1");
+                return Json(new { ok = result.Success, result.Detail });
+            }
             case "/gazemode":
             {
                 var mode = Enum.Parse<GazeTargetMode>(query["mode"], true);
@@ -1187,6 +1220,7 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new
                 {
                     mode = g.Settings.Mode.ToString(), parts = g.Settings.TargetType.ToString(),
+                    poseAware = g.Settings.PoseAware,
                     target = g.Target?.ToString(), active = g.Active, stale = g.TargetStale,
                     anchor = Point(g.Settings.Position), eyes = Point(g.Settings.EyesPosition),
                     head = Point(g.Settings.HeadPosition), body = Point(g.Settings.BodyPosition),
