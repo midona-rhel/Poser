@@ -13,6 +13,20 @@ public sealed class ScopedHistoryTests
         { AffectedEntities = owners };
 
     [Fact]
+    public void Continuous_bone_configuration_is_scoped_to_its_actor()
+    {
+        var history = new TransformHistory();
+        var values = new ValueJournal(history);
+        var target = TransformTargetId.ForBone(new(new(_actor, PoseSlot.Character, 0), 0, 1, "hand"));
+        int value = 0;
+        values.Adjust((target, "IK"), "Set IK", () => value,
+            next => { value = next; return ValueWriteResult.Ok(); }, 3);
+        values.Seal();
+        var step = Assert.IsType<JournalStep>(history.PeekUndo(Actor));
+        Assert.True(step.Undo()); Assert.Equal(0, value);
+    }
+
+    [Fact]
     public void Scoped_undo_skips_light_and_global_redo_restores_actual_replay_order()
     {
         var history = new TransformHistory();
@@ -110,4 +124,3 @@ public sealed class ScopedHistoryTests
         Assert.True(step.Redo()); Assert.Equal(2, a); Assert.Equal(3, b);
     }
 }
-

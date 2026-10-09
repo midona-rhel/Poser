@@ -174,7 +174,7 @@ public sealed class CameraSession
         var result = center();
         if (!result.Success || camera is null)
             return result;
-        _journal.Record(
+        _journal.RecordFor(camera,
             "Centre camera", before, (camera.PositionOffset, camera.Zoom),
             next => { if (_values.Current(camera) is { } live) { live.PositionOffset = next.Item1; live.Zoom = next.Item2; } },
             () => _values.Current(camera) is not null);
