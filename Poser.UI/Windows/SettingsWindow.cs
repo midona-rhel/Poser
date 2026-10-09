@@ -20,6 +20,7 @@ namespace Poser.UI;
 public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
+    public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
     private readonly IIntegrationRuntimePort _integrations;

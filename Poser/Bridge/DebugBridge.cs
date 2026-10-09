@@ -81,8 +81,10 @@ public sealed partial class DebugBridge : IDisposable
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly IServiceProvider _services;
 
     public DebugBridge(
+        IServiceProvider services,
         global::Poser.Config.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
         IEnvironmentControl environmentControl,
@@ -128,6 +130,7 @@ public sealed partial class DebugBridge : IDisposable
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
         IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
+        _services = services;
         _configuration = configuration;
         _environmentControl = environmentControl;
         _poseFiles = poseFiles;
@@ -287,6 +290,8 @@ public sealed partial class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/selection?actors=INDEX,INDEX (omit to read; empty to clear)",
+                        "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released; ?action=Import%20pose&primary=Ctrl%2BI (session-only binding)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
@@ -401,6 +406,47 @@ public sealed partial class DebugBridge : IDisposable
                 var reading = _environmentControl.Read();
                 return Json(new { reading.IsHousingInterior, reading.InteriorBrightness,
                     reading.IsInteriorBrightnessOverridden, binding = _environment.HousingInteriorBinding, history = History() });
+            }
+            case "/shortcut":
+            {
+                // Binding edits here are session-only; Settings remains the
+                // persistence owner. Resolve UI lazily, after startup wiring.
+                if (query.TryGetValue("action", out var action))
+                {
+                    if (!global::Poser.Config.KeybindRegistry.Actions.Any(item => item.Id == action))
+                        return Json(new { error = "Unknown shortcut action." });
+                    if (query.GetValueOrDefault("reset") == "1")
+                        _configuration.Config.UI.Bindings.Remove(action);
+                    else if (query.GetValueOrDefault("clear") == "1")
+                        _configuration.Config.UI.Bindings[action] = new("");
+                    else if (query.TryGetValue("primary", out var primary))
+                        _configuration.Config.UI.Bindings[action] = new(primary,
+                            query.GetValueOrDefault("secondary", ""));
+                }
+                if (query.TryGetValue("chord", out var chord))
+                {
+                    var ui = (global::Poser.UI.UIManager)_services.GetService(typeof(IUIManager))!;
+                    return Json(ui.DebugShortcut(chord,
+                        Enum.Parse<KeyEventKind>(query.GetValueOrDefault("kind", "Down"), true)));
+                }
+                return Json(global::Poser.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
+            }
+            case "/selection":
+            {
+                if (query.TryGetValue("actors", out var actorKeys) || query.GetValueOrDefault("clear") == "1")
+                {
+                    var ids = new List<SelectionId>();
+                    foreach (var actorKey in (actorKeys ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var target = FindActor(actorKey);
+                        if (target == null || _bindings.GetActorId(target) is not { } targetId)
+                            return Json(new { error = "No such actor." });
+                        ids.Add(SelectionId.ForActor(targetId));
+                    }
+                    _sceneSession.Selection.Clear();
+                    foreach (var id in ids) _sceneSession.Selection.Add(id);
+                }
+                return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
             }
             case "/uiinput":
             {

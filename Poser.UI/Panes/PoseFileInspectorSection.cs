@@ -173,6 +173,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private void OpenBrowser(Action open) => _pendingBrowserOpen = open;
 
     public bool IdleExportBusy => _idleExport.Busy;
+    public bool HasPosableTarget(ActorId actor) => _imports.HasPosableSkeleton(actor);
 #if DEBUG
     public object DebugImportState => new
     {
@@ -2417,6 +2418,16 @@ public sealed class PoseFileInspectorSection : IDisposable
             _notices.Refused(NoActorText);
             return;
         }
+        ImportFromClipboard(actorId);
+    }
+
+    public void ImportFromClipboard(ActorId actorId)
+    {
+        if (!_imports.HasPosableSkeleton(actorId))
+        {
+            _notices.Refused(NoActorText);
+            return;
+        }
         string text;
         try
         {
@@ -2436,7 +2447,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             actorId, pose, "Import pose from clipboard", "Clipboard");
     }
 
-    private void CopyToClipboard(ActorId actorId)
+    public void CopyToClipboard(ActorId actorId)
     {
         var armed = _capture.CapturePoseFile(actorId, pose =>
         {
