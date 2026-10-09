@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.9.17-beta — Bone maps, IK fixes and pose-aware gaze
+
+- Added editable Body and Face map presets.
+- Added default map presets for each race and gender.
+- Added Abdomen to the default Body map and improved spacing around Lumbar and Waist.
+- Improved bone-map layouts for creatures.
+- Added skeleton highlighting when hovering over bones in a map.
+- Added Shift-click bone selection in the skeleton overlay.
+- Added a button to load default bone-visibility presets.
+- Renamed Show uncovered bones to Toggle other.
+- Made active bone-preset indicators easier to see.
+- Fixed Actor-anchored IK targets not following parent-bone rotations.
+- Fixed inconsistent Rope and Fabric behaviour when changing the bone count.
+- Fixed IK targets needing repeated drags to move back from their limits.
+- Fixed Two Joint End rotation.
+- Added pose-aware gaze for Camera and Point targets.
+- Removed duplicate Gaze and Expression controls from the Inspector.
+- Added selected-entity undo and redo with Alt-based shortcuts.
+- Fixed popped-out group Inspectors clearing unrelated selections.
+- Fixed spawned and duplicated actors sometimes using the wrong appearance.
+- Fixed actors loading with the wrong appearance in saved scenes.
+- Fixed actor names being lost when saving and loading scenes.
+- Fixed Viera ear-bone visibility after changing ear shape.
+- Fixed pose imports and previews switching to the wrong actor.
+- Made the pose import window movable and scrollable.
+- Separated pose Import and Export buttons into their own rows.
+- Added a folder picker and removal button for library folders.
+- Added file sorting by name and date.
+- Added optional single-click folder navigation and pose import.
+- Added customizable pose and animation shortcuts.
+- Made shortcut conflicts easier to identify.
+- Improved spacing in shortcut settings.
+- Restricted window dragging to title bars.
+- Fixed Settings search results flashing while typing.
+- Added submenu animations.
+- Moved Limits above Target in camera Properties.
+- Added indoor brightness controls.
+
 ## 0.9.16-beta — pinned Inspectors and clearer controls
 
 - Keep an entity's Inspector beside its pinned Properties, with a separate collapse button and actor-root transforms.
