@@ -17,7 +17,7 @@ public static class GazeEvaluationProbe
     private static readonly List<Sample> Samples = new();
     private static string? _stopped;
     public sealed record BoneSample(string Name, int Partial, Vector3 Position, Quaternion Rotation, Vector3 Scale);
-    public sealed record Sample(int Sequence, string Phase, int Thread, long Tick, BoneSample[] Bones);
+    public sealed record Sample(int Sequence, string Phase, int Thread, long Tick, Matrix4x4 World, BoneSample[] Bones);
 
     public static void Start(Skeleton skeleton)
     {
@@ -87,7 +87,7 @@ public static class GazeEvaluationProbe
                     new(t->Scale.X, t->Scale.Y, t->Scale.Z)));
             }
             Samples.Add(new(Samples.Count, phase, System.Environment.CurrentManagedThreadId,
-                System.Diagnostics.Stopwatch.GetTimestamp(), values.ToArray()));
+                System.Diagnostics.Stopwatch.GetTimestamp(), skeleton.GetModelMatrix(), values.ToArray()));
         }
     }
 }

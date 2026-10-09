@@ -1161,6 +1161,12 @@ public sealed partial class DebugBridge : IDisposable
                 var result = _gaze.SetParts(id, Enum.Parse<GazeTargetType>(query["parts"], true));
                 return Json(new { ok = result.Success, result.Detail });
             }
+            case "/gazelock":
+            {
+                var result = _gaze.SetPartLock(id, Enum.Parse<GazeTargetType>(query["part"], true),
+                    query.GetValueOrDefault("locked") == "1");
+                return Json(new { ok = result.Success, result.Detail });
+            }
             case "/gazemode":
             {
                 var mode = Enum.Parse<GazeTargetMode>(query["mode"], true);

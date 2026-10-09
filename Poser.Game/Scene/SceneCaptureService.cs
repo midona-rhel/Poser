@@ -422,7 +422,7 @@ public sealed class SceneCaptureService
         foreach (var (actor, entry) in captured)
         {
             var state = _gaze.GetGazeState(actor);
-            if (state.Mode == GazeTargetMode.None)
+            if (state.Mode == GazeTargetMode.None && !state.PoseAware)
                 continue;
 
             Guid? target = null;
