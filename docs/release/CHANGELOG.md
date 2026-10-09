@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.17-beta — Bone maps, IK fixes and pose-aware gaze
+
+- Create and edit separate Body and Face map presets, with mirroring, live previews and race/gender defaults.
+- Copy locked templates, choose map backgrounds, and add bones directly from their context menus.
+- Find Abdomen in the default Body map and use clearer generated maps for non-humanoid actors.
+- Highlight map bones in the skeleton overlay and use Shift-click to change the overlay selection.
+- Apply default visibility presets with the new Wand button, and find uncovered bones under Toggle other.
+- Keep Actor-anchored IK targets relative to parent bones outside the solved chain.
+- Change Rope and Fabric chain lengths without accumulating changes to their reference shape.
+- Reverse IK drags immediately at their limits and preserve hand orientation with Two Joint End rotation.
+- Enable opt-in Pose-aware gaze for Camera and Point targets, including locked points, within native gaze limits.
+- Undo the selected entity with Alt+Z and redo with Alt+Y or Alt+Shift+Z without changing global Ctrl shortcuts.
+- Prevent stale appearance state when spawning creatures, duplicating actors or reloading scenes into reused slots.
+- Preserve actor display names through scene saves, loads and Undo/Redo.
+- Refresh Viera ear-bone visibility when the rendered ear shape changes.
+- Keep Gaze and Expression in their Properties pages and deselect pinned groups without clearing unrelated selections.
+- Keep pose import and preview attached to the chosen actor when selection changes.
+- Use a movable import panel with expanded sections and grouped Import, Export and Library actions.
+- Add source folders through Name and Browse controls, and remove sources without deleting their files.
+- Sort files by name or date and optionally navigate folders and import poses with a single click.
+- Configure pose, clipboard and playback shortcuts with binding-conflict feedback that does not shift the layout.
+- Drag windows only from their title bars and keep Settings search results visually stable.
+- Improve keybind reset spacing, place camera Limits before Target, and animate submenus.
+- Adjust temporary interior brightness.
+
 ## 0.9.16-beta — pinned Inspectors and clearer controls
 
 - Keep an entity's Inspector beside its pinned Properties, with a separate collapse button and actor-root transforms.
