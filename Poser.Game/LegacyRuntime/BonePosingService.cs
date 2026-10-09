@@ -1220,6 +1220,14 @@ public unsafe partial class BonePosingService : IBonePosingService
             && !ReferenceEquals(other.Endpoint, bone) && other.Endpoint.PartialId == bone.PartialId
             && ChainMemberNames(bone, config).Any(name => other.Bones.Contains(name))))
             return "This chain overlaps an active FABRIK chain. Reduce Depth or disable the other chain.";
+        if (config is { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope,
+                Fabrik.ReferenceBones: not null })
+        {
+            var members = FabrikMembers(bone, config);
+            if (!config.Fabrik.TrySelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(),
+                    members.IndexOf(bone), out _))
+                return "The skeleton changed beyond this IK reference. Reset IK and reselect its solver before changing its depth.";
+        }
         config = PrepareIkConfiguration(bone, config);
         if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope))
         {

@@ -49,7 +49,8 @@ public unsafe partial class BonePosingService
         if (config.Fabrik == null && config.Enabled
             || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
                 && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
-            return config with { Fabrik = CaptureFabrikReference(endpoint, config) };
+            return CaptureFabrikReference(endpoint, config) is { } captured
+                ? config with { Fabrik = captured } : config;
         return config;
     }
 
@@ -123,7 +124,8 @@ public unsafe partial class BonePosingService
             if (control == null) return null;
             control = control with { ReferenceBones = reference };
         }
-        return control.SelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(), members.IndexOf(tip));
+        return control.TrySelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(), members.IndexOf(tip), out var selected)
+            ? selected : null;
     }
 
     public FabrikTarget? CaptureFabrikTarget(IBone endpoint, IkTargetMode mode,
@@ -199,6 +201,8 @@ public unsafe partial class BonePosingService
 
     public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false)
     {
+        // Rotation/scale gestures must not pay off a stale translation target.
+        if (delta == Vector3.Zero) return delta;
         if (GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } native)
             return ClampNativeIkTranslation(bone, native, delta, fromAuthoredBaseline);
         if (GetIkConfiguration(bone) is not

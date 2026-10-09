@@ -118,9 +118,9 @@ public sealed class IkAnchorAndSpanTests
         var current = original;
         for (int i = 0; i < 5; i++)
         {
-            current = current.SelectSpan(Keys(1, 6), 5);
+            current = Select(current, Keys(1, 6), 5);
             _ = Solve(current);
-            current = current.SelectSpan(Keys(0, 7), 6);
+            current = Select(current, Keys(0, 7), 6);
             Assert.Equal(original.Bones, current.Bones);
             Assert.Equal(original.Root, current.Root);
             Assert.Equal(original.Tip, current.Tip);
@@ -137,10 +137,10 @@ public sealed class IkAnchorAndSpanTests
     public void Both_depth_directions_and_zero_span_select_the_same_reference_without_mutating_history()
     {
         var original = Control();
-        var initial = original.SelectSpan(Keys(2, 3), 1);
-        var grown = initial.SelectSpan(Keys(0, 7), 3);
-        var zero = grown.SelectSpan(Keys(3, 1), 0);
-        var restored = zero.SelectSpan(Keys(2, 3), 1);
+        var initial = Select(original, Keys(2, 3), 1);
+        var grown = Select(initial, Keys(0, 7), 3);
+        var zero = Select(grown, Keys(3, 1), 0);
+        var restored = Select(zero, Keys(2, 3), 1);
         Assert.Equal(initial.Bones, restored.Bones);
         Assert.Equal(initial.Root, restored.Root);
         Assert.Equal(initial.Tip, restored.Tip);
@@ -150,7 +150,7 @@ public sealed class IkAnchorAndSpanTests
         Assert.Null(zero.Validate());
         var roundTrip = JsonSerializer.Deserialize<FabrikControl>(JsonSerializer.Serialize(grown, Json), Json)!;
         Assert.Equal(grown.ReferenceBones, roundTrip.ReferenceBones);
-        Assert.Equal(initial.Bones, roundTrip.SelectSpan(Keys(2, 3), 1).Bones);
+        Assert.Equal(initial.Bones, Select(roundTrip, Keys(2, 3), 1).Bones);
     }
 
     [Fact]
@@ -161,6 +161,34 @@ public sealed class IkAnchorAndSpanTests
         Assert.NotNull((control with { ReferenceBones = [reference[0], reference[0]] }).Validate());
         Assert.NotNull((control with { ReferenceBones = [reference[0] with
             { Pose = reference[0].Pose with { Position = new(float.NaN) } }] }).Validate());
+    }
+
+    [Fact]
+    public void Zero_translation_preserves_an_out_of_reach_target()
+    {
+        var reach = new IkReach(Vector3.Zero, 1, 2, Vector3.UnitX);
+        Near(new(10, 0, 0), reach.Move(new(10, 0, 0), Vector3.Zero));
+        Near(new(.5f, 0, 0), reach.Move(new(.5f, 0, 0), Vector3.Zero));
+        Near(new(1.9f, 0, 0), reach.Move(new(10, 0, 0), new(-.1f, 0, 0)));
+    }
+
+    [Fact]
+    public void Span_missing_a_newly_available_bone_rejects_without_mutating_the_reference()
+    {
+        var original = Control();
+        Assert.False(original.TrySelectSpan([("b5", 0), ("new_bone", 0)], 0, out var rejected));
+        Assert.Same(original, rejected);
+        Assert.False(original.TrySelectSpan([("b5", 1)], 0, out rejected));
+        Assert.Same(original, rejected);
+        Assert.True(original.TrySelectSpan(Keys(0, 7), 6, out var restored));
+        Assert.Equal(original.Bones, restored.Bones);
+        Assert.Same(original.ReferenceBones, restored.ReferenceBones);
+    }
+
+    private static FabrikControl Select(FabrikControl control, (string Name, int Partial)[] members, int handle)
+    {
+        Assert.True(control.TrySelectSpan(members, handle, out var selected));
+        return selected;
     }
 
     private static FabrikControl Control()
