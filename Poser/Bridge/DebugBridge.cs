@@ -447,7 +447,7 @@ public sealed partial class DebugBridge : IDisposable
                 foreach (var window in windows.System.Windows)
                 {
                     var native = Dalamud.Bindings.ImGui.ImGuiP.FindWindowByName(window.WindowName);
-                    unsafe { if (native.NativePtr == null) continue; }
+                    if (native.IsNull) continue;
                     if (query.GetValueOrDefault("name") == window.WindowName
                         && query.TryGetValue("x", out var px) && query.TryGetValue("y", out var py))
                         Dalamud.Bindings.ImGui.ImGui.SetWindowPos(window.WindowName,
