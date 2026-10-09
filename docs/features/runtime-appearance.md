@@ -35,7 +35,9 @@ spawn, never its source, and never unlocks foreign state. Duplicates instead app
 their source's external appearance to the new body before first draw: reverting
 the reused slot can restore stale base data. Native equipment/customization copy
 alone does not replace an old IPC model override. The source must still be current;
-read/write refusals do not unlock either actor or change the source.
+read/write refusals do not unlock either actor or change the source. A duplicate
+may read a Poser-held MCDF source using Poser's owner key after an unkeyed refusal;
+it still writes the new target unkeyed and never reads through a foreign hold.
 
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.

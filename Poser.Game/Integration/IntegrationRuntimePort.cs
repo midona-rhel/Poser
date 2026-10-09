@@ -1181,16 +1181,30 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         return Guarded(Glamourer, "Initialize duplicate appearance", () =>
         {
             if (AddressPair(sourceAddress, targetAddress) is { } refusal) return refusal;
-            var (read, state) = _getState.InvokeFunc(IndexOf(sourceAddress), 0u);
-            if (read is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state == null)
-                return IntegrationPortResult.Fail($"Could not read source appearance (code {read}).");
-            // Revert uses the retained state's BaseData, which may itself belong
-            // to a previous occupant. Replace ModelData explicitly from the
-            // source; key zero neither reads through nor unlocks foreign holds.
-            int applied = _applyState.InvokeFunc(state.DeepClone(), IndexOf(targetAddress), 0u,
-                ApplyOnce | ApplyEquipment | ApplyCustomization);
-            return GlamourerResult(applied, "initializing the duplicate's appearance");
+            return CopySpawnAppearance(IndexOf(sourceAddress), IndexOf(targetAddress),
+                _getState.InvokeFunc, _applyState.InvokeFunc);
         });
+    }
+
+    internal static IntegrationPortResult CopySpawnAppearance(int sourceIndex, int targetIndex,
+        Func<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> readState,
+        Func<object, int, uint, ulong, int> applyState)
+    {
+        var (read, state) = readState(sourceIndex, 0u);
+        // MCDF holds are ours only when Glamourer accepts our owner key.
+        // Reading with that key does not unlock or edit the source. A foreign
+        // hold still refuses, and the new target is always written unkeyed.
+        if (read == GlamourerEcInvalidKey)
+            (read, state) = readState(sourceIndex, LockKey);
+        if (read == GlamourerEcInvalidKey)
+            return IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld);
+        if (read is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state == null)
+            return IntegrationPortResult.Fail($"Could not read source appearance (code {read}).");
+        // Revert's BaseData can also belong to a previous slot occupant.
+        // Replace ModelData from the source instead of reverting that baseline.
+        int applied = applyState(state.DeepClone(), targetIndex, 0u,
+            ApplyOnce | ApplyEquipment | ApplyCustomization);
+        return GlamourerResult(applied, "initializing the duplicate's appearance");
     }
 
     public IntegrationPortResult ResetSpawnAppearance(nint address)
