@@ -1599,12 +1599,16 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             return;
         // The PRESS selects, as both references do — nothing waits for the
         // release. Ktisis: Ctrl toggles and the highlighted entry is taken.
+        // Poser also accepts Shift for bone selection in that mode, matching
+        // the graphical bone controls and the overlap popup.
         // Brio: Shift toggles, the first hovered is taken, and a cluster
         // also opens the popup on it, frozen.
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || target is not { } pressed)
             return;
         bool brioPress = Config.BonePickBehavior == BonePickBehavior.Brio;
-        SelectNow(pressed, brioPress ? ImGui.GetIO().KeyShift : ImGui.GetIO().KeyCtrl);
+        var io = ImGui.GetIO();
+        bool additive = brioPress ? io.KeyShift : io.KeyCtrl || (pressed.Bone != null && io.KeyShift);
+        SelectNow(pressed, additive);
         if (brioPress && pressed.Bone != null && _hoveredBones.Count > 1)
             OpenPopup(ImGui.GetMousePos());
     }

@@ -314,7 +314,7 @@ internal sealed partial class EntityContextMenus
         _bonePresetItems.Add(ContextMenuItem.Separator);
         _bonePresetActions.Add(null);
         _bonePresetItems.Add(new ContextMenuItem(
-            "Show uncovered bones", TablerIcon.Crosshair,
+            "Toggle other", TablerIcon.Crosshair,
             disabled: presets.Count == 0,
             help: "Hide everything the presets claim and show the rest"));
         _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
@@ -634,10 +634,7 @@ internal sealed partial class EntityContextMenus
             { OnInvoke = () =>
                 {
                     if (_ctxOverlayMemoryKey is { } memoryKey)
-                    {
-                        if (_ctxBranchSkeleton?.Slot == PoseSlot.Character) _bonePresets.ToggleSkeleton(memoryKey, bones);
-                        else _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
-                    }
+                        _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
                     else _overlayPresentation.SetVisible(bones, !visible);
                 }
             },
@@ -650,7 +647,7 @@ internal sealed partial class EntityContextMenus
             [
                 new("Show only " + scope, TablerIcon.Crosshair)
                 { OnInvoke = () => { _overlayPresentation.SetVisible(ownerBones, false); _overlayPresentation.SetVisible(bones, true); } },
-                new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _bonePresets.ShowDefaultsOrAll(ownerBones) },
+                new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, true) },
                 new("Hide all actor bones", TablerIcon.EyeOff) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, false) },
             ]),
             new("Reset", TablerIcon.Refresh, submenuItems:
