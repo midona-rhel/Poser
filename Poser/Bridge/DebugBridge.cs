@@ -671,6 +671,8 @@ public sealed partial class DebugBridge : IDisposable
         switch (path)
         {
             case "/rig":
+                if (query.TryGetValue("allEars", out var allEars))
+                    _configuration.Config.Skeleton.ShowAllVieraEars = allEars == "1";
                 return Json(Rig(actor));
             case "/state":
                 return Json(State(id, actor));
@@ -1003,7 +1005,16 @@ public sealed partial class DebugBridge : IDisposable
             {
                 var key = Enum.Parse<global::Poser.Domain.Integration.CustomizeKey>(query["key"], true);
                 int value = int.Parse(query["value"], CultureInfo.InvariantCulture);
-                var set = _session.SetCustomize(id, new Dictionary<global::Poser.Domain.Integration.CustomizeKey, int> { [key] = value });
+                var values = new Dictionary<global::Poser.Domain.Integration.CustomizeKey, int> { [key] = value };
+                if (query.TryGetValue("race", out var race))
+                    values[global::Poser.Domain.Integration.CustomizeKey.Race] = int.Parse(race, CultureInfo.InvariantCulture);
+                var customize = (Application.Appearance.ICustomizeControl)_services.GetService(typeof(Application.Appearance.ICustomizeControl))!;
+                var set = key is global::Poser.Domain.Integration.CustomizeKey.Clan
+                    or global::Poser.Domain.Integration.CustomizeKey.Race
+                    or global::Poser.Domain.Integration.CustomizeKey.Gender
+                    ? customize.SetBody(id, values, "Bridge body customization")
+                    : customize.SetMany(id, values, "Bridge customization");
+                customize.Seal();
                 return Json(new { ok = set.Success, set.Detail });
             }
             case "/glamstate":
@@ -1285,7 +1296,12 @@ public sealed partial class DebugBridge : IDisposable
                         partials.Add(new { partial = p, pose = poseIndex,
                             bones = pose->Skeleton->Bones.Length });
                     }
+            var published = _sceneSession.Snapshot.Actors.FirstOrDefault(a => a.Id == _bindings.GetActorId(actor))?
+                .Skeletons.FirstOrDefault(s => s.Id.Slot == cached.Slot);
             slots.Add(new { slot = cached.Slot.ToString(), cachedBones = cached.Bones.Count,
+                cached.BuildRevision, skeletonId = published?.Id.ToString(),
+                visibleBoneNames = cached.Bones.Where(b => !b.IsHiddenBone).Select(b => b.BoneName).ToArray(),
+                publishedVisibleBoneNames = published?.Bones.Where(b => !b.IsHidden).Select(b => b.Id.CanonicalName).ToArray(),
                 boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials,
                 chains = _bonePosing.GetIkChains(cached).Select(c => new
                 {
