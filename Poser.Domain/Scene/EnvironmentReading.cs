@@ -17,6 +17,9 @@ public sealed record EnvironmentReading
     public bool ResetWeatherOnGPoseExit { get; init; }
     public bool IsSectionHoldAvailable { get; init; }
     public bool ResetSectionsOnGPoseExit { get; init; }
+    public bool IsHousingInterior { get; init; }
+    public float? InteriorBrightness { get; init; }
+    public bool IsInteriorBrightnessOverridden { get; init; }
     public uint CurrentWeatherId { get; init; }
     public float TransitionTime { get; init; }
     public EnvSkyValues Sky { get; init; }

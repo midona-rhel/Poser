@@ -9,6 +9,7 @@ using Poser.Services;
 using Poser.Domain.Scene;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
+using CSHousingManager = FFXIVClientStructs.FFXIV.Client.Game.HousingManager;
 using WeatherRow = Lumina.Excel.Sheets.Weather;
 
 namespace Poser.Game.Environment;
@@ -49,6 +50,45 @@ internal unsafe interface IEnvironmentNativeFactory
         ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
     IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
         ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
+}
+
+internal readonly record struct HousingBrightnessState(float Current, float Target, float Saved);
+
+internal interface IHousingBrightnessNative
+{
+    bool TryRead(out HousingBrightnessState state);
+    bool TryWrite(float target);
+}
+
+internal sealed unsafe class HousingBrightnessNative : IHousingBrightnessNative
+{
+    public bool TryRead(out HousingBrightnessState state)
+    {
+        var manager = CSHousingManager.Instance();
+        var indoor = manager == null || !manager->IsInside() ? null : manager->IndoorTerritory;
+        if (indoor == null)
+        {
+            state = default;
+            return false;
+        }
+        state = new(indoor->BrightnessCurrent, indoor->BrightnessTarget,
+            1f - indoor->SavedInvertedBrightness * 0.2f);
+        return true;
+    }
+
+    public bool TryWrite(float target)
+    {
+        var manager = CSHousingManager.Instance();
+        var indoor = manager == null || !manager->IsInside() ? null : manager->IndoorTerritory;
+        if (indoor == null)
+            return false;
+        // Brio follows the same transition fields. Never write the player's
+        // SavedInvertedBrightness preference.
+        indoor->BrightnessTarget = target;
+        indoor->BrightnessTransitionSpeed = target - indoor->BrightnessCurrent;
+        indoor->IsBrightnessTransitioning = true;
+        return true;
+    }
 }
 
 internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactory
@@ -151,6 +191,7 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private readonly IClientState _clientState;
     private readonly IPluginLog _log;
     private readonly IEventBus _events;
+    private readonly IHousingBrightnessNative _housingBrightness;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
     private readonly IEnvHook? _timeHook;
@@ -172,6 +213,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private uint? _cachedTerritory;
 
     private SectionFlags _held = SectionFlags.None;
+    private ulong _housingBinding = 1;
+    private float? _housingBaseline;
 
     public bool ResetTimeOnGPoseExit { get; set; } = true;
     public bool ResetWeatherOnGPoseExit { get; set; } = true;
@@ -188,7 +231,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         IDataManager data,
         IPluginLog log,
         IEventBus events)
-        : this(clientState, sigScanner, hooking, data, log, events, new EnvironmentNativeFactory())
+        : this(clientState, sigScanner, hooking, data, log, events,
+            new EnvironmentNativeFactory(), new HousingBrightnessNative())
     {
     }
 
@@ -199,11 +243,13 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         IDataManager data,
         IPluginLog log,
         IEventBus events,
-        IEnvironmentNativeFactory nativeFactory)
+        IEnvironmentNativeFactory nativeFactory,
+        IHousingBrightnessNative? housingBrightness = null)
     {
         _clientState = clientState;
         _log = log;
         _events = events;
+        _housingBrightness = housingBrightness ?? new HousingBrightnessNative();
 
         _timeHook = TryCreate(
             () => nativeFactory.CreateTimeHook(sigScanner, hooking, UpdateEorzeaTimeDetour),
@@ -501,6 +547,50 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     }
 
     // ── Environment sections ──────────────────────────────────────────
+
+    public bool IsHousingInterior => _housingBrightness.TryRead(out _);
+    public float? InteriorBrightness =>
+        _housingBrightness.TryRead(out var state) ? state.Target : null;
+    public bool IsInteriorBrightnessOverridden => _housingBaseline.HasValue;
+    public ulong HousingInteriorBinding => _housingBinding;
+
+    public bool TrySetInteriorBrightness(float value, ulong binding)
+    {
+        if (binding != _housingBinding || !float.IsFinite(value) ||
+            !_housingBrightness.TryRead(out var state))
+            return false;
+        float target = Math.Clamp(value, 0f, 1f);
+        if (!_housingBrightness.TryWrite(target))
+            return false;
+        _housingBaseline ??= state.Target;
+        return true;
+    }
+
+    public bool TryResetInteriorBrightness(ulong binding)
+    {
+        if (binding != _housingBinding ||
+            !_housingBrightness.TryRead(out var state) ||
+            !_housingBrightness.TryWrite(state.Saved))
+            return false;
+        _housingBaseline ??= state.Target;
+        return true;
+    }
+
+    public bool ReleaseInteriorBrightness(ulong binding)
+    {
+        if (binding != _housingBinding || _housingBaseline is not { } baseline)
+            return false;
+        if (!_housingBrightness.TryWrite(baseline))
+            return false;
+        _housingBaseline = null;
+        return true;
+    }
+
+    private void InvalidateInteriorBrightness()
+    {
+        _housingBaseline = null;
+        _housingBinding++;
+    }
 
     public bool IsSectionHeld(EnvSection section) => (_held & Flag(section)) != 0;
 
@@ -813,6 +903,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
             IsWeatherOverrideEnabled = false;
         if (ResetSectionsOnGPoseExit)
             ReleaseAllSections();
+        ReleaseInteriorBrightness(_housingBinding);
+        InvalidateInteriorBrightness();
     }
 
     private void OnTerritoryChanged(uint territory)
@@ -821,10 +913,18 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         // zone starts on its own weather, clock and environment.
         _cachedTerritory = null;
         _territoryWeathers.Clear();
+        // TerritoryChanged is raised after the native territory swap. Do not
+        // write through a freshly resolved pointer using the old baseline.
+        InvalidateInteriorBrightness();
         ReleaseAllHolds("territory change");
     }
 
-    private void OnLogout(int type, int code) => ReleaseAllHolds("logout");
+    private void OnLogout(int type, int code)
+    {
+        ReleaseInteriorBrightness(_housingBinding);
+        InvalidateInteriorBrightness();
+        ReleaseAllHolds("logout");
+    }
 
     /// <summary>
     /// Territory change and logout end every hold. Brio releases weather on
@@ -860,6 +960,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
 
     public void Dispose()
     {
+        ReleaseInteriorBrightness(_housingBinding);
+        InvalidateInteriorBrightness();
         _clientState.TerritoryChanged -= OnTerritoryChanged;
         _clientState.Logout -= OnLogout;
         _events.Unsubscribe(_onGPoseStateChanged);

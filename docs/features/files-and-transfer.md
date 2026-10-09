@@ -59,6 +59,11 @@ nonhuman files are refused. It does not write `.chara`.
 
 ## Storage and library
 
+File dialogs and scanned library tabs share session-local Name, Newest, and
+Oldest ordering. Name remains the default; directories and library sections
+stay structural, and equal modification times fall back to name. Auto-saves
+retain their dedicated newest-first recovery order.
+
 Pose-bearing saves capture the evaluated bone transforms, including solved IK,
 as a baked snapshot in the file only. This covers poses, scenes, saved actors
 and groups, attached companions, and autosaves. Saving never clears live IK,

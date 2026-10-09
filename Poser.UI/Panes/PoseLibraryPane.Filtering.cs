@@ -26,6 +26,48 @@ namespace Poser.UI;
 /// <summary>Kind filters, the query, ordering and the status line.</summary>
 public sealed partial class PoseLibraryPane
 {
+    private LibraryBrowseSort _sort;
+    private HashSet<string>? _sortSelection;
+    private string? _sortPrimary;
+
+    private void SetSort(int selected)
+    {
+        if (!Enum.IsDefined((LibraryBrowseSort)selected)
+            || selected == (int)_sort)
+            return;
+        _sortSelection = new HashSet<string>(StringComparer.Ordinal);
+        foreach (int index in _vm.SelectedSet)
+            if (index >= 0 && index < _vm.Tiles.Count)
+                _sortSelection.Add(_vm.Tiles[index].Id);
+        _sortPrimary = _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
+            ? _vm.Tiles[_vm.Selected].Id
+            : null;
+        _sort = (LibraryBrowseSort)selected;
+        _vm.Sort = _sort;
+        _seenRevision = -1;
+    }
+
+    private bool RestoreSortSelection()
+    {
+        if (_sortSelection is null)
+            return false;
+        _vm.Selected = -1;
+        _vm.SelectedSet.Clear();
+        for (int i = 0; i < _vm.Tiles.Count; i++)
+        {
+            string id = _vm.Tiles[i].Id;
+            if (_sortSelection.Contains(id))
+                _vm.SelectedSet.Add(i);
+            if (string.Equals(id, _sortPrimary, StringComparison.Ordinal))
+                _vm.Selected = i;
+        }
+        _sortSelection = null;
+        _sortPrimary = null;
+        if (_vm.Selected >= 0)
+            EnrichTile(_vm.Selected);
+        return true;
+    }
+
     private readonly HashSet<WorldAssetKind> _worldKindFilters =
         new(Enum.GetValues<WorldAssetKind>());
     public bool KindFilterContains(PoseLibraryEntryKind kind, WorldAssetKind? worldKind = null) =>
@@ -107,6 +149,8 @@ public sealed partial class PoseLibraryPane
 
     private void SyncQuery()
     {
+        _vm.ShowSort = _type != LibraryType.AutoSaves;
+        _vm.OnSort ??= SetSort;
         if (string.Equals(_query, _vm.Query, StringComparison.Ordinal))
             return;
         _query = _vm.Query;

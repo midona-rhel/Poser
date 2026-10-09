@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Library;
 
 namespace Poser.UI.Views;
 
@@ -249,6 +250,10 @@ public sealed class PoseLibraryViewModel
 
     public string Query = string.Empty;
 
+    public LibraryBrowseSort Sort;
+    public bool ShowSort = true;
+    public Action<int>? OnSort;
+
     /// <summary>The active tag filter, shown as a removable chip in the band.
     /// </summary>
     public string? ActiveTag;
@@ -450,6 +455,7 @@ public sealed class PoseLibraryViewModel
 public static class PoseLibraryView
 {
     private const string SearchId = "##pose-library-search";
+    private const string SortId = "##pose-library-sort";
     private const string RailId = "##pose-library-folders";
     private const string GridId = "##pose-library-grid";
     private const string RefreshId = "##pose-library-refresh";
@@ -494,6 +500,9 @@ public static class PoseLibraryView
     private const float MaximumIconSize = 200f;
 
     private const float SliderWidth = 120f;
+    private const float SortWidth = 110f;
+
+    private static readonly string[] SortOptions = ["Name", "Newest", "Oldest"];
 
     /// <summary>The grid's bar is HALF the shell gutter, and the first column
     /// breathes that same half against the body's left edge — the spawn
@@ -524,6 +533,7 @@ public static class PoseLibraryView
     private const float SearchInnerPad = 10f;
 
     private static readonly Action<string> IgnoreQuery = static _ => { };
+    private static readonly Action<int> IgnoreSort = static _ => { };
 
     /// <summary>
     /// Fills the rectangle the shell hands the pane. The geometry is DERIVED
@@ -774,6 +784,21 @@ public static class PoseLibraryView
             help: "Rescan source folders",
             id: RefreshId);
         right -= actionPx + gap;
+
+        if (vm.ShowSort)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(
+                right - SortWidth * scale,
+                band.Min.Y + (band.Size.Y - theme.Controls.WorkspaceHeight * scale) * 0.5f));
+            Crystarium.Dropdown(
+                SortId,
+                SortOptions,
+                (int)vm.Sort,
+                vm.OnSort ?? IgnoreSort,
+                ControlStyle.Workspace with { Width = UiWidth.Fixed(SortWidth) },
+                help: "Sort library entries");
+            right -= SortWidth * scale + gap;
+        }
 
         // No preview switch: the preview is always live in the inspector
         // rail on tabs that can preview (user 2026-08-11 removed the eye).

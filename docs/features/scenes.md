@@ -321,6 +321,20 @@ was observed using Brio's one-write/territory-update suppression mechanism.
 This is an accepted limitation, not a promise that every listed weather works
 in every zone. The all-weathers filter remains available.
 
+## Housing interior brightness
+
+Interior brightness is a transient Environment override, independent of held
+lighting sections and furniture Night state. It is available only while the
+game exposes a live indoor housing territory. The first edit captures that
+territory's current target; explicit release, GPose exit, logout, and plugin
+unload restore it while that original binding is still valid. A territory
+change invalidates ownership without writing through the newly resolved room.
+
+The override writes only the game's current target, transition speed, and
+transition flag. It never changes the player's saved housing lighting level.
+Scene and environment-library files intentionally do not persist this value:
+loading a picture must not acquire a location-specific housing override.
+
 ## Portable appearance
 
 `Modded appearance` makes a save PORTABLE: the scene carries each actor's

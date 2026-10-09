@@ -76,6 +76,110 @@ public sealed class EnvironmentControlTests
         Assert.False(history.CanUndo);
     }
 
+    [Fact]
+    public void Interior_brightness_is_guarded_clamped_and_stale_history_is_refused()
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+
+        control.SetInteriorBrightness(3f);
+        Assert.Equal(1f, runtime.InteriorBrightness);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        runtime.HousingInteriorBinding++;
+        Assert.True(step.Undo());
+        history.CommitUndo(step);
+        Assert.Equal(1f, runtime.InteriorBrightness);
+
+        var outside = new Runtime();
+        var outsideHistory = new TransformHistory();
+        new EnvironmentControl(new(outsideHistory), outside, outside, outside)
+            .SetInteriorBrightness(0.7f);
+        Assert.False(outsideHistory.CanUndo);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Interior_brightness_release_restores_baseline_and_replays(bool returnToBaseline)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+        control.SetInteriorBrightness(0.7f);
+        control.Seal();
+        if (returnToBaseline)
+        {
+            control.SetInteriorBrightness(0.4f);
+            control.Seal();
+        }
+        var previous = history.PeekUndo();
+        control.ReleaseInteriorBrightness();
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
+
+        var release = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.NotSame(previous, release);
+        Assert.True(release.Undo());
+        history.CommitUndo(release);
+        Assert.Equal(returnToBaseline ? 0.4f : 0.7f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        Assert.True(release.Redo());
+        history.CommitRedo(release);
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
+    }
+
+    [Theory]
+    [InlineData(0.8f, false)]
+    [InlineData(0.4f, false)]
+    [InlineData(0.4f, true)]
+    public void Reset_brightness_replays_value_and_ownership(float before, bool owned)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = before };
+        if (owned) runtime.TrySetInteriorBrightness(before, runtime.HousingInteriorBinding);
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+        control.ResetInteriorBrightness();
+        Assert.Equal(0.8f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        var reset = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(reset.Undo());
+        history.CommitUndo(reset);
+        Assert.Equal(before, runtime.InteriorBrightness);
+        Assert.Equal(owned, runtime.IsInteriorBrightnessOverridden);
+        Assert.True(reset.Redo());
+        history.CommitRedo(reset);
+        Assert.Equal(0.8f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void First_brightness_drag_undo_releases_ownership_even_after_return_to_start(bool returnToStart)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var journal = new ValueJournal(history);
+        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
+        journal.BeginEdit("brightness");
+        control.SetInteriorBrightness(0.7f);
+        if (returnToStart) control.SetInteriorBrightness(0.4f);
+        journal.EndEdit();
+        control.Seal();
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        history.CommitUndo(step);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.True(step.Redo());
+        history.CommitRedo(step);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        Assert.Equal(returnToStart ? 0.4f : 0.7f, runtime.InteriorBrightness);
+    }
+
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
     {
         private int _minute;
@@ -102,6 +206,32 @@ public sealed class EnvironmentControlTests
         public void SetSectionHeld(EnvSection section, bool held) { if (held) _held.Add(section); else _held.Remove(section); }
         public void ReleaseAllSections() => _held.Clear();
         public bool ResetSectionsOnGPoseExit { get; set; }
+        public bool IsHousingInterior { get; set; }
+        public float? InteriorBrightnessValue { get; set; }
+        public float? InteriorBrightness => IsHousingInterior ? InteriorBrightnessValue : null;
+        public bool IsInteriorBrightnessOverridden { get; private set; }
+        private float? InteriorBrightnessBaseline { get; set; }
+        public ulong HousingInteriorBinding { get; set; } = 1;
+        public bool TrySetInteriorBrightness(float value, ulong binding)
+        {
+            if (!IsHousingInterior || binding != HousingInteriorBinding)
+                return false;
+            InteriorBrightnessBaseline ??= InteriorBrightnessValue;
+            InteriorBrightnessValue = value;
+            IsInteriorBrightnessOverridden = true;
+            return true;
+        }
+        public bool TryResetInteriorBrightness(ulong binding) =>
+            TrySetInteriorBrightness(0.8f, binding);
+        public bool ReleaseInteriorBrightness(ulong binding)
+        {
+            if (!IsHousingInterior || binding != HousingInteriorBinding || !IsInteriorBrightnessOverridden)
+                return false;
+            InteriorBrightnessValue = InteriorBrightnessBaseline;
+            InteriorBrightnessBaseline = null;
+            IsInteriorBrightnessOverridden = false;
+            return true;
+        }
         private EnvSkyValues _sky;
         public EnvSkyValues Sky { get => _sky; set { _sky = value; _held.Add(EnvSection.Sky); } }
         private EnvCloudsValues _clouds;

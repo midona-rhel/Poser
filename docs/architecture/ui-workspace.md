@@ -205,6 +205,10 @@ names and retains that exact actor generation through preview and application;
 selection changes cannot retarget it, and a missing actor never falls back to
 another. Library preview, import options and Apply share its resolved target.
 
+Short action submenus inherit the floating menu's theme-defined entrance and
+exit motion. Closing submenus remain painted only for their exit interval and
+immediately leave hit testing and navigation.
+
 Library source creation uses one name-and-Browse row. Browse requires a nonblank
 name; choosing a folder immediately adds that named source to the Settings draft.
 Cancelling the chooser leaves the name untouched and adds nothing. Settings Save

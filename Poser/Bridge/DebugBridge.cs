@@ -35,6 +35,9 @@ public sealed partial class DebugBridge : IDisposable
 
     private readonly IFramework _framework;
     private readonly IEnvironmentRuntimePort _environment;
+    private readonly IEnvironmentControl _environmentControl;
+    private readonly global::Poser.UI.PoseFileInspectorSection _poseFiles;
+    private readonly global::Poser.UI.PoseLibraryPane _poseLibrary;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
     private readonly Game.Animation.AnimationRuntimePort _port;
@@ -82,6 +85,9 @@ public sealed partial class DebugBridge : IDisposable
     public DebugBridge(
         global::Poser.Config.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
+        IEnvironmentControl environmentControl,
+        global::Poser.UI.PoseFileInspectorSection poseFiles,
+        global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,
@@ -123,6 +129,9 @@ public sealed partial class DebugBridge : IDisposable
         IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
         _configuration = configuration;
+        _environmentControl = environmentControl;
+        _poseFiles = poseFiles;
+        _poseLibrary = poseLibrary;
         _idleExport = idleExport;
         _idleData = idleData; _idleScanner = idleScanner;
         _parenting = parenting; _parentingRuntime = parentingRuntime;
@@ -376,6 +385,23 @@ public sealed partial class DebugBridge : IDisposable
         if (path == "/parenting") return ParentingProbe(query);
         switch (path)
         {
+            case "/importstate":
+                return Json(new { import = _poseFiles.DebugImportState, library = _poseLibrary.DebugTargetState });
+            case "/interior":
+            {
+                if (query.TryGetValue("value", out var brightness))
+                {
+                    _environmentControl.SetInteriorBrightness(float.Parse(brightness, CultureInfo.InvariantCulture));
+                    _environmentControl.Seal();
+                }
+                if (query.GetValueOrDefault("release") == "1")
+                    _environmentControl.ReleaseInteriorBrightness();
+                if (query.GetValueOrDefault("reset") == "1")
+                    _environmentControl.ResetInteriorBrightness();
+                var reading = _environmentControl.Read();
+                return Json(new { reading.IsHousingInterior, reading.InteriorBrightness,
+                    reading.IsInteriorBrightnessOverridden, binding = _environment.HousingInteriorBinding, history = History() });
+            }
             case "/uiinput":
             {
                 // Inject only into ImGui's input queue, never the desktop or

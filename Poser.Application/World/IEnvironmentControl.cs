@@ -21,6 +21,9 @@ public interface IEnvironmentControl
     void SetSectionHeld(EnvSection section, bool held);
     void ReleaseAllSections();
     void SetResetSectionsOnGPoseExit(bool v);
+    void SetInteriorBrightness(float v);
+    void ResetInteriorBrightness();
+    void ReleaseInteriorBrightness();
     void SetSky(EnvSkyValues v);
     void SetClouds(EnvCloudsValues v);
     void SetLighting(EnvLightingValues v);
