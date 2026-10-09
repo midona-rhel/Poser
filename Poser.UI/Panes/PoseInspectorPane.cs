@@ -1749,6 +1749,9 @@ public partial class PoseInspectorPane : IDisposable
         if (_gazeRefusal is { } refusal && refusal.Actor == actor)
             form.Status(refusal.Text);
 
+        form.Switch("Pose-aware", state.Settings.PoseAware,
+            enabled => Record(_gazeValues.SetPoseAware(actor, enabled)),
+            help: "Compensate posed bones for Camera and Point targets, including locked points. Native gaze limits still apply; Actor and Forward keep their normal behavior.");
         DrawGazeParts(form, actor, state, wide, Record);
 
         if (!wide)

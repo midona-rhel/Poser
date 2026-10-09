@@ -50,6 +50,17 @@ does not resume on id reuse, and clears it only when a live target is chosen.
 Missing gaze signatures or hooks produce an unavailable state before native or
 event side effects.
 
+Pose-aware gaze is an opt-in actor setting, saved with scene gaze and journaled.
+Old scenes default off. Camera and Point targets, including their locked points,
+retain world-space intent; Actor and Forward modes keep their existing behavior.
+The pose pass measures the same native head/body frames before and after authored
+transforms, then inverse-maps the next native target through that change. It never
+compares yesterday's gaze output with today's pose or rewrites stored target
+points. Native gaze remains responsible for solving and its angular limits.
+Missing, replaced, stale or singular frames fall back to the unmodified target.
+The correction measures Poser's update-phase pose, not later render-only edits
+from other plugins.
+
 ## IK
 
 Two Joint and CCD use the game's Havok solvers; FABRIK and Rope use managed

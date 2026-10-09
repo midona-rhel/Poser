@@ -1122,6 +1122,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         var parts = _gaze.SetGazeParts(source, saved.Parts);
         if (!parts.Success)
             return parts.Detail ?? "The gaze parts were refused.";
+        var aware = _gaze.SetPoseAware(source, saved.PoseAware);
+        if (saved.PoseAware && !aware.Success)
+            return aware.Detail ?? "Pose-aware gaze was refused.";
 
         if (saved.Mode == GazeTargetMode.Position)
         {
