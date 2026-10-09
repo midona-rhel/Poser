@@ -162,7 +162,7 @@ public sealed class UndoJournalTests
         var later = new JournalStep("Later", () => true, () => true);
         world.History.Append(later);
         Assert.False(current!());
-        Assert.Equal(clear, token.IsCancellationRequested);
+        Assert.True(token.IsCancellationRequested);
         complete!(GestureResult.Fail("No longer current."));
         Assert.Same(later, world.History.PeekUndo());
         Assert.False(world.History.CanRedo);
@@ -192,6 +192,40 @@ public sealed class UndoJournalTests
         Assert.True(world.Journal.Redo(actor).Success);
         complete!(GestureResult.Ok());
         Assert.Same(step, world.History.PeekUndo());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void New_disjoint_edit_invalidates_pending_scoped_replay(bool undo)
+    {
+        var world = new World();
+        var actor = SelectionId.ForActor(ActorId.New());
+        var light = SelectionId.ForLight(LightId.New());
+        Func<bool>? current = null;
+        Action<GestureResult>? complete = null;
+        CancellationToken token = default;
+        var step = new JournalStep("Actor reset", () => true, () => true)
+        {
+            AffectedEntities = new[] { actor },
+            CompleteReplay = (_, valid, cancellation, done) =>
+                { current = valid; token = cancellation; complete = done; },
+        };
+        world.History.Append(step);
+        if (!undo) world.History.CommitUndo(step);
+        Assert.True((undo ? world.Journal.Undo(actor) : world.Journal.Redo(actor)).Success);
+        Assert.True(current!());
+        var later = new JournalStep("Light edit", () => true, () => true)
+            { AffectedEntities = new[] { light } };
+        world.History.Append(later);
+        Assert.True(token.IsCancellationRequested);
+        Assert.False(current());
+        if (undo) Assert.Same(step, world.History.PeekUndo(actor));
+        complete!(GestureResult.Ok()); // even a late success cannot commit stale history
+        Assert.False(world.Journal.IsRestoring);
+        Assert.Same(later, world.History.PeekUndo());
+        Assert.False(world.History.CanRedo);
+        Assert.Equal(UndoJournal.Dropped, Assert.Single(world.Notices));
     }
 
     private sealed class World
