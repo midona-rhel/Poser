@@ -240,6 +240,8 @@ public class SettingsWindow : Window
                 c.Skeleton.HideSkeletonOnActorSelection,
             OnlyActiveActorBones = c.Skeleton.OnlyActiveActorBones,
             DefaultBonePresets = c.Skeleton.BoneVisibilityPresets.ToDictionary(p => p.Name, p => p.ShowByDefault, StringComparer.OrdinalIgnoreCase),
+            BoneMapDefaults = c.Skeleton.BoneMapDefaults.ToList(),
+            BoneMapPresets = c.Skeleton.BoneMapPresets.ToList(),
             DimInactiveActors = c.Skeleton.DimInactiveActors,
             InactiveActorOpacity = c.Skeleton.InactiveActorOpacity,
             ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
@@ -490,6 +492,7 @@ public class SettingsWindow : Window
         c.Skeleton.OnlyActiveActorBones = _vm.OnlyActiveActorBones;
         foreach (var preset in c.Skeleton.BoneVisibilityPresets)
             if (_vm.DefaultBonePresets.TryGetValue(preset.Name, out var show)) preset.ShowByDefault = show;
+        c.Skeleton.BoneMapDefaults = _vm.BoneMapDefaults.ToList();
         c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
         c.Skeleton.InactiveActorOpacity =
             Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);

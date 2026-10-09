@@ -53,6 +53,13 @@ Default remains immutable. Map/list context actions share the same draft;
 removing a subtree changes only layout entries, never the actor's skeleton.
 Background selection is saved with the preset but replaces only illustration
 pixels; it never changes coordinates or imports another race's bone list.
+Built-in Body and race/ear-specific Face templates have stable reserved IDs.
+Copies retain their base template (coordinate space and reset baseline).
+Automatic map selection resolves a separate Body/Face assignment for race and
+gender, falling back to native race selection if unset or deleted. Explicit
+selection is local to a Properties pane and resets on actor changes; editors
+remain pinned to their original actor/template. Standard humanoid NPCs follow
+the same rules. All built-in templates stay locked, including in persistence.
 
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and

@@ -47,6 +47,40 @@ public sealed class BoneMapPresetTests
     private static readonly BoneMapPoint Default = new(Bone, "body", 0.2f, 0.3f);
 
     [Fact]
+    public void Default_rules_match_race_gender_and_kind_and_fall_back_after_preset_deletion()
+    {
+        var preset = new BoneMapPreset { Name = "Custom", Kind = BoneMapKind.Face };
+        var config = new SkeletonConfiguration { BoneMapPresets = [preset],
+            BoneMapDefaults = [new(4, 1, BoneMapKind.Face, preset.Id)] };
+        var native = BoneMapTemplates.All.Single(item => item.Section == "miqote_head");
+        Assert.Equal(preset.Id, BoneMapTemplates.ResolveDefault(config, BoneMapKind.Face, 4, 1, "miqote_head"));
+        Assert.Equal(native.Id, BoneMapTemplates.ResolveDefault(config, BoneMapKind.Face, 4, 0, "miqote_head"));
+        Assert.Equal(BoneMapTemplates.All[0].Id, BoneMapTemplates.ResolveDefault(config, BoneMapKind.Body, 4, 1, "miqote_head"));
+        config.BoneMapPresets.Clear();
+        Assert.Equal(native.Id, BoneMapTemplates.ResolveDefault(config, BoneMapKind.Face, 4, 1, "miqote_head"));
+        var template = BoneMapTemplates.All.Single(item => item.Section == "hrothgar_head");
+        config.BoneMapDefaults = [new(4, 1, BoneMapKind.Face, template.Id)];
+        Assert.Equal(template.Id, BoneMapTemplates.ResolveDefault(config, BoneMapKind.Face, 4, 1, "miqote_head"));
+    }
+
+    [Fact]
+    public void Built_in_templates_are_locked_and_custom_copies_keep_their_base()
+    {
+        var template = BoneMapTemplates.All[1];
+        var preset = new BoneMapPreset { Id = template.Id, Kind = template.Kind, Name = template.Name, Template = template.Section };
+        var draft = new BoneMapPresetDraft(template.Kind, [], preset);
+        Assert.NotNull(draft.Save(new List<BoneMapPreset>(), out _));
+        Assert.NotNull(draft.Delete(new List<BoneMapPreset>()));
+        var copy = new BoneMapPresetDraft(template.Kind, [], initial: draft.Points)
+            { Name = "Copy", Template = draft.Template };
+        var store = new List<BoneMapPreset>();
+        Assert.Null(copy.Save(store, out _));
+        var loaded = JsonConvert.DeserializeObject<BoneMapPreset>(JsonConvert.SerializeObject(store[0]))!;
+        Assert.Equal("human_head", loaded.Template);
+        Assert.False(BoneMapTemplates.IsBuiltIn(loaded.Id));
+    }
+
+    [Fact]
     public void Unique_names_increment_case_insensitively_within_the_map_kind()
     {
         BoneMapPreset[] store = [new() { Name = "Body copy" }, new() { Name = "BODY COPY 2" },

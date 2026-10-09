@@ -13,8 +13,11 @@ public sealed class BoneMapPreset
     public string Name { get; set; } = string.Empty;
     public BoneMapKind Kind { get; set; }
     public string? Background { get; set; }
+    public string? Template { get; set; }
     public List<BoneMapPoint> Points { get; set; } = new();
 }
 
 /// <summary>Normalized map coordinates; section identity bounds visual connectors.</summary>
 public sealed record BoneMapPoint(PortableBoneId Bone, string Section, float X, float Y);
+
+public sealed record BoneMapDefaultRule(byte Race, byte Gender, BoneMapKind Kind, Guid PresetId);

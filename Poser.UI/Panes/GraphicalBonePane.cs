@@ -164,8 +164,10 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (skeleton == null)
             return false;
         bool humanoid = _customizeRead.IsStandardHumanoid(actor.Id);
-        _layout = !humanoid ? null : editing ? _draft?.Points : SelectedPreset(page)?.Points;
-        _mapBackground = !humanoid ? null : editing ? _draft?.Background : SelectedPreset(page)?.Background;
+        var preset = humanoid && !editing ? SelectedPreset(page, actor) : null;
+        _layout = !humanoid ? null : editing ? _draft?.Points : preset?.Points;
+        _mapBackground = !humanoid ? null : editing ? _draft?.Background : preset?.Background;
+        _mapTemplate = !humanoid ? null : editing ? _draft?.Template : preset?.Template;
 
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -406,9 +408,9 @@ public sealed partial class GraphicalBonePane : IDisposable
         // Face-map variant (race → head section) is a native customize read
         // and lives behind the Game read port; without a stable id for the
         // actor the map keeps the default human section.
-        string headSection = actorId is { } id
+        string headSection = _mapTemplate ?? (actorId is { } id
             ? _customizeRead.HeadSectionFor(id)
-            : ICustomizeReadRuntimePort.DefaultHeadSection;
+            : ICustomizeReadRuntimePort.DefaultHeadSection);
         if (!_config.PoseImages.TryGetValue(headSection, out var section) ||
             string.IsNullOrEmpty(section.Image))
         {

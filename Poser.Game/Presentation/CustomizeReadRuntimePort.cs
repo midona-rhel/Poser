@@ -52,6 +52,14 @@ public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
         return ((CSCharacter*)legacy.Address)->DrawData.CustomizeData.Race is >= 1 and <= 8;
     }
 
+    public (byte Race, byte Gender) MapProfileFor(ActorId actor)
+    {
+        var resolved = _bindings.Resolve(actor);
+        if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero) return (0, 0);
+        var customize = ((CSCharacter*)legacy.Address)->DrawData.CustomizeData;
+        return (customize.Race, customize.Sex);
+    }
+
     /// <summary>Customize race byte → face-map section key. Only the four
     /// head shapes have distinct maps; every other race shares the human
     /// head, and unknown values fall back to it.</summary>

@@ -31,7 +31,7 @@ public sealed partial class GraphicalBonePane
         return bones;
     }
 
-    private List<BoneMapPoint> BuildDefaults(ActorDescriptor actor, BoneMapKind kind)
+    private List<BoneMapPoint> BuildDefaults(ActorDescriptor actor, BoneMapKind kind, string? template = null)
     {
         var points = new List<BoneMapPoint>();
         if (actor.CharacterSkeleton is not { } skeleton) return points;
@@ -55,7 +55,7 @@ public sealed partial class GraphicalBonePane
             }
         }
         if (kind == BoneMapKind.Face)
-            Section(_customizeRead.HeadSectionFor(actor.Id), new(0, 0, 1, 1), true);
+            Section(template ?? _customizeRead.HeadSectionFor(actor.Id), new(0, 0, 1, 1), true);
         else
         {
             Vector4 Rect(float x, float y, float w, float h) => new(x / 2054f, y / 1147f, w / 2054f, h / 1147f);
@@ -69,13 +69,52 @@ public sealed partial class GraphicalBonePane
         return points.DistinctBy(point => (point.Bone, point.Section)).ToList();
     }
 
+    private ActorId? _presetActor;
+    private readonly Dictionary<ActorId, (object Bones, BoneMapPreset[] Presets)> _templateCache = new();
+
+    private BoneMapPreset[] EditorPresets(ActorDescriptor actor, BoneMapKind kind)
+    {
+        var bones = AvailableBones(actor);
+        if (!_templateCache.TryGetValue(actor.Id, out var cache) || !ReferenceEquals(cache.Bones, bones))
+        {
+            if (_templateCache.Count > 2) _templateCache.Clear();
+            cache = (bones, BoneMapTemplates.All.Select(template => new BoneMapPreset
+            {
+                Id = template.Id, Kind = template.Kind, Name = template.Name, Template = template.Section,
+                Points = BuildDefaults(actor, template.Kind, template.Section),
+            }).ToArray());
+            _templateCache[actor.Id] = cache;
+        }
+        return cache.Presets.Where(item => item.Kind == kind)
+            .Concat(_configuration.Config.Skeleton.BoneMapPresets.Where(item => item.Kind == kind)
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+    }
+
+    private BoneMapPreset? SelectedPreset(int page, ActorDescriptor? actor = null)
+    {
+        actor ??= GetSelectedActor();
+        if (actor == null) return null;
+        if (_presetActor != actor.Id)
+        {
+            _presetActor = actor.Id;
+            Array.Clear(_selectedPresets);
+        }
+        var presets = EditorPresets(actor, (BoneMapKind)page);
+        var selected = presets.FirstOrDefault(item => item.Id == _selectedPresets[page]);
+        if (selected != null) return selected;
+        var profile = _customizeRead.MapProfileFor(actor.Id);
+        var id = BoneMapTemplates.ResolveDefault(_configuration.Config.Skeleton, (BoneMapKind)page,
+            profile.Race, profile.Gender, _customizeRead.HeadSectionFor(actor.Id));
+        return presets.First(item => item.Id == id);
+    }
+
     public ContextMenuItem[] AddToPresetActions(BoneId bone)
     {
         if (_scene.Snapshot.FindActor(bone.Skeleton.Actor) is not { } actor || !IsHumanoid(actor.Id)) return [];
         var actions = new List<ContextMenuItem>();
         for (int page = 0; page < 2; page++)
         {
-            if (SelectedPreset(page) is not { } preset) continue;
+            if (SelectedPreset(page, actor) is not { } preset || BoneMapTemplates.IsBuiltIn(preset.Id)) continue;
             var key = PortableBoneId.From(bone);
             actions.Add(new($"{preset.Kind}: {preset.Name}", TablerIcon.Edit,
                 disabled: _draft != null || preset.Points.Any(point => point.Bone == key),
@@ -86,7 +125,7 @@ public sealed partial class GraphicalBonePane
                     if (_draft != null || _scene.Snapshot.FindActor(bone.Skeleton.Actor) is not { } current
                         || !IsHumanoid(current.Id) || !AvailableBones(current).ContainsKey(key)) return;
                     _editActor = current.Id;
-                    _editorDefaults = BuildDefaults(current, preset.Kind);
+                    _editorDefaults = BuildDefaults(current, preset.Kind, preset.Template);
                     _draft = new(preset.Kind, _editorDefaults, preset);
                     _draft.Add(key);
                     _editDefault = false;

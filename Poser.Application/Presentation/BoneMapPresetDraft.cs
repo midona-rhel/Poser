@@ -15,11 +15,12 @@ public sealed class BoneMapPresetDraft
     public BoneMapKind Kind { get; }
     public string Name { get; set; }
     public string? Background { get; set; }
+    public string? Template { get; set; }
     private readonly List<BoneMapPoint> _points;
     public IReadOnlyList<BoneMapPoint> Points => _points;
     public Guid? SourceId => _sourceId;
     public bool HasChanges => Name != (_sourceSnapshot?.Name ?? string.Empty)
-        || Background != _sourceSnapshot?.Background || !_points.SequenceEqual(_initial);
+        || Background != _sourceSnapshot?.Background || Template != _sourceSnapshot?.Template || !_points.SequenceEqual(_initial);
 
     public BoneMapPresetDraft(BoneMapKind kind, IEnumerable<BoneMapPoint> defaults,
         BoneMapPreset? preset = null, IEnumerable<BoneMapPoint>? initial = null)
@@ -29,6 +30,7 @@ public sealed class BoneMapPresetDraft
         Kind = kind;
         Name = preset?.Name ?? string.Empty;
         Background = preset?.Background;
+        Template = preset?.Template;
         _sourceId = preset?.Id;
         _defaults = defaults.ToList();
         _initial = (initial ?? preset?.Points ?? _defaults).ToList();
@@ -138,6 +140,7 @@ public sealed class BoneMapPresetDraft
     public string? Save(IList<BoneMapPreset> store, out Guid savedId)
     {
         savedId = Guid.Empty;
+        if (_sourceId is { } source && BoneMapTemplates.IsBuiltIn(source)) return "Built-in templates are locked. Create a copy first.";
         string name = Name.Trim();
         if (name.Length == 0) return "Name the preset first.";
         if (string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase))
@@ -150,14 +153,14 @@ public sealed class BoneMapPresetDraft
         var existing = _sourceId is { } id ? store.FirstOrDefault(item => item.Id == id) : null;
         // Two non-modal editors must not silently overwrite each other's edits.
         if (_sourceSnapshot is { } snapshot && (existing == null || existing.Kind != snapshot.Kind
-            || existing.Name != snapshot.Name || existing.Background != snapshot.Background || !existing.Points.SequenceEqual(snapshot.Points)))
+            || existing.Name != snapshot.Name || existing.Background != snapshot.Background || existing.Template != snapshot.Template || !existing.Points.SequenceEqual(snapshot.Points)))
             return "This preset changed in another window. Reopen it before saving.";
         if (store.Any(item => item.Kind == Kind && item.Id != _sourceId
             && string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
             return "A preset with this name already exists for this map.";
         var saved = new BoneMapPreset
         {
-            Id = _sourceId ?? Guid.NewGuid(), Name = name, Kind = Kind, Background = Background, Points = _points.ToList(),
+            Id = _sourceId ?? Guid.NewGuid(), Name = name, Kind = Kind, Background = Background, Template = Template, Points = _points.ToList(),
         };
         if (existing == null) store.Add(saved);
         else store[store.IndexOf(existing)] = saved;
@@ -166,14 +169,15 @@ public sealed class BoneMapPresetDraft
     }
 
     public static BoneMapPreset Copy(BoneMapPreset preset) => new()
-        { Id = preset.Id, Name = preset.Name, Kind = preset.Kind, Background = preset.Background, Points = preset.Points.ToList() };
+        { Id = preset.Id, Name = preset.Name, Kind = preset.Kind, Background = preset.Background, Template = preset.Template, Points = preset.Points.ToList() };
 
     public string? Delete(IList<BoneMapPreset> store)
     {
+        if (_sourceId is { } source && BoneMapTemplates.IsBuiltIn(source)) return "Built-in templates cannot be deleted.";
         if (_sourceSnapshot is not { } snapshot)
             return "Only saved custom presets can be deleted.";
         var existing = store.FirstOrDefault(item => item.Id == snapshot.Id);
-        if (existing == null || existing.Kind != snapshot.Kind || existing.Name != snapshot.Name || existing.Background != snapshot.Background
+        if (existing == null || existing.Kind != snapshot.Kind || existing.Name != snapshot.Name || existing.Background != snapshot.Background || existing.Template != snapshot.Template
             || !existing.Points.SequenceEqual(snapshot.Points))
             return "This preset changed in another window. Reopen it before deleting.";
         store.Remove(existing);

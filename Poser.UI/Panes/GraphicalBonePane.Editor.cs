@@ -23,6 +23,7 @@ public sealed partial class GraphicalBonePane
     private BoneMapPresetDraft? _draft;
     private bool _editDefault;
     private string? _mapBackground;
+    private string? _mapTemplate;
     private List<BoneMapPoint> _editorDefaults = new();
     private ActorId? _editActor;
     private string _editFilter = string.Empty;
@@ -31,15 +32,12 @@ public sealed partial class GraphicalBonePane
     private (PortableBoneId Bone, string Section)? _dragPoint, _contextPoint;
     private Vector2 _dragOffset;
     private readonly object _editorHoverOwner = new();
-    private BoneMapPreset? SelectedPreset(int page) => _configuration.Config.Skeleton.BoneMapPresets
-        .FirstOrDefault(item => item.Id == _selectedPresets[page] && (int)item.Kind == page);
 
     private void DrawPresetActions(int page, ActorDescriptor actor, Vector2 origin, float width)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var presets = _configuration.Config.Skeleton.BoneMapPresets
-            .Where(item => (int)item.Kind == page).OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-        var names = new[] { "Default" }.Concat(presets.Select(item => item.Name)).ToArray();
+        var presets = EditorPresets(actor, (BoneMapKind)page);
+        var names = new[] { "Automatic" }.Concat(presets.Select(item => item.Name)).ToArray();
         int selected = Array.FindIndex(presets, item => item.Id == _selectedPresets[page]) + 1;
         ImGui.SetCursorScreenPos(origin + new Vector2(width - 200f * scale, 0f));
         Crystarium.Dropdown("##map-preset", names, selected,
@@ -63,9 +61,9 @@ public sealed partial class GraphicalBonePane
         {
             _openEditorPage = null;
             if (_editActor is not { } editingId || _scene.Snapshot.FindActor(editingId) is not { } editingActor) return;
-            _editorDefaults = BuildDefaults(editingActor, (BoneMapKind)opening);
-            var preset = SelectedPreset(opening);
-            _editDefault = preset == null;
+            var preset = SelectedPreset(opening, editingActor);
+            _editorDefaults = BuildDefaults(editingActor, (BoneMapKind)opening, preset?.Template);
+            _editDefault = preset == null || BoneMapTemplates.IsBuiltIn(preset.Id);
             _draft = new((BoneMapKind)opening, _editorDefaults, preset);
             _editFilter = string.Empty;
             _editError = null;
@@ -88,7 +86,7 @@ public sealed partial class GraphicalBonePane
                     BandHeight = 44f,
                     RailWidth = 284f,
                     FooterLeft = left => left.Label(_editError ?? (_editDefault
-                        ? "Default is locked. Choose New to create a copy."
+                        ? "Built-in template is locked. Choose New or Copy to edit."
                         : "Drag points to arrange them. Right-click for actions.")),
                     FooterRight = right =>
                     {
@@ -123,8 +121,9 @@ public sealed partial class GraphicalBonePane
             initial: copy ? current.Points : _editorDefaults)
         {
             Name = BoneMapPresetDraft.UniqueName(store, current.Kind,
-                copy ? $"{(_editDefault ? "Default" : current.Name)} copy" : "New preset"),
+                copy ? $"{current.Name} copy" : "New preset"),
             Background = copy ? current.Background : null,
+            Template = current.Template,
         };
         _editError = created.Save(store, out var id);
         if (_editError != null) return;
@@ -222,10 +221,11 @@ public sealed partial class GraphicalBonePane
     private void DrawEditorPresetToolbar(WindowFrameRect band)
     {
         if (_draft is not { } draft) return;
-        var presets = _configuration.Config.Skeleton.BoneMapPresets
-            .Where(item => item.Kind == draft.Kind).OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-        string[] names = new[] { "Default (locked)" }.Concat(presets.Select(item => item.Name)).ToArray();
-        int selected = Array.FindIndex(presets, item => item.Id == draft.SourceId) + 1;
+        var actor = _editActor is { } actorId ? _scene.Snapshot.FindActor(actorId) : null;
+        if (actor == null) return;
+        var presets = EditorPresets(actor, draft.Kind);
+        string[] names = presets.Select(item => item.Name).ToArray();
+        int selected = Math.Max(0, Array.FindIndex(presets, item => item.Id == draft.SourceId));
         bool dirty = !_editDefault && draft.HasChanges;
         float s = ImGuiHelpers.GlobalScale;
         float height = Crystarium.ActiveTheme.Controls.WorkspaceHeight;
@@ -235,15 +235,15 @@ public sealed partial class GraphicalBonePane
         float nameWidth = MathF.Min(280f, width - selectorWidth - 376f);
         var style = ControlStyle.Workspace;
         ImGui.SetCursorScreenPos(row);
-        string preview = _editDefault ? "Default (locked)" : draft.SourceId == null ? "New preset" : draft.Name;
+        string preview = draft.Name;
         Crystarium.ActionDropdown("##edit-map-preset", names, selected, preview,
-            index => LoadEditorPreset(index == 0 ? null : presets[index - 1]),
+            index => LoadEditorPreset(presets[index]),
             style with { Width = UiWidth.Fixed(selectorWidth) }, disabled: dirty,
             help: dirty ? "Save or discard these edits before switching presets" : null);
         // The selector may have replaced the draft on this frame.
         draft = _draft!;
         ImGui.SetCursorScreenPos(row + new Vector2((selectorWidth + 8f) * s, 0));
-        Crystarium.TextInput("##map-preset-name", _editDefault ? "Default" : draft.Name, value => draft.Name = value,
+        Crystarium.TextInput("##map-preset-name", draft.Name, value => draft.Name = value,
             style with { Width = UiWidth.Fixed(nameWidth) }, placeholder: "Preset name", disabled: _editDefault);
         float next = selectorWidth + nameWidth + 16f;
         ImGui.SetCursorScreenPos(row + new Vector2(next * s, 0));
@@ -286,7 +286,16 @@ public sealed partial class GraphicalBonePane
     private void LoadEditorPreset(BoneMapPreset? preset)
     {
         if (_draft is not { } draft) return;
-        _editDefault = preset == null;
+        if (_editActor is { } id && _scene.Snapshot.FindActor(id) is { } actor)
+        {
+            if (preset == null)
+            {
+                _selectedPresets[(int)draft.Kind] = Guid.Empty;
+                preset = SelectedPreset((int)draft.Kind, actor);
+            }
+            _editorDefaults = BuildDefaults(actor, draft.Kind, preset?.Template);
+        }
+        _editDefault = preset == null || BoneMapTemplates.IsBuiltIn(preset.Id);
         _draft = new(draft.Kind, _editorDefaults, preset);
         _selectedPresets[(int)draft.Kind] = preset?.Id ?? Guid.Empty;
         _dragPoint = null;
