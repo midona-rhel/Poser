@@ -440,6 +440,23 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
             }
+            case "/uiwindows":
+            {
+                var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
+                var result = new List<object>();
+                foreach (var window in windows.System.Windows)
+                {
+                    var native = Dalamud.Bindings.ImGui.ImGuiP.FindWindowByName(window.WindowName);
+                    unsafe { if (native.NativePtr == null) continue; }
+                    if (query.GetValueOrDefault("name") == window.WindowName
+                        && query.TryGetValue("x", out var px) && query.TryGetValue("y", out var py))
+                        Dalamud.Bindings.ImGui.ImGui.SetWindowPos(window.WindowName,
+                            new System.Numerics.Vector2(float.Parse(px, CultureInfo.InvariantCulture), float.Parse(py, CultureInfo.InvariantCulture)));
+                    result.Add(new { name = window.WindowName, x = native.Pos.X, y = native.Pos.Y,
+                        width = native.Size.X, height = native.Size.Y, open = window.IsOpen });
+                }
+                return Json(result);
+            }
             case "/uiinput":
             {
                 // Inject only into ImGui's input queue, never the desktop or
