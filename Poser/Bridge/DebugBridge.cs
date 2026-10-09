@@ -81,8 +81,10 @@ public sealed partial class DebugBridge : IDisposable
     private readonly CancellationTokenSource _stop = new();
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly IServiceProvider _services;
 
     public DebugBridge(
+        IServiceProvider services,
         global::Poser.Config.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
         IEnvironmentControl environmentControl,
@@ -128,6 +130,7 @@ public sealed partial class DebugBridge : IDisposable
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
         IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
+        _services = services;
         _configuration = configuration;
         _environmentControl = environmentControl;
         _poseFiles = poseFiles;
@@ -287,6 +290,8 @@ public sealed partial class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/selection?actors=INDEX,INDEX (omit to read; empty to clear)",
+                        "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
@@ -401,6 +406,38 @@ public sealed partial class DebugBridge : IDisposable
                 var reading = _environmentControl.Read();
                 return Json(new { reading.IsHousingInterior, reading.InteriorBrightness,
                     reading.IsInteriorBrightnessOverridden, binding = _environment.HousingInteriorBinding, history = History() });
+            }
+            case "/shortcut":
+            {
+                // Configuration is saved on unrelated edits and shutdown too.
+                // Never mutate it under a purported session-only diagnostic.
+                if (query.ContainsKey("action") || query.ContainsKey("primary") ||
+                    query.ContainsKey("secondary") || query.ContainsKey("reset") || query.ContainsKey("clear"))
+                    return Json(new { error = "Change bindings in Settings. This endpoint only probes configured shortcuts." });
+                if (query.TryGetValue("chord", out var chord))
+                {
+                    var ui = (global::Poser.UI.UIManager)_services.GetService(typeof(IUIManager))!;
+                    return Json(ui.DebugShortcut(chord,
+                        Enum.Parse<KeyEventKind>(query.GetValueOrDefault("kind", "Down"), true)));
+                }
+                return Json(global::Poser.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
+            }
+            case "/selection":
+            {
+                if (query.TryGetValue("actors", out var actorKeys) || query.GetValueOrDefault("clear") == "1")
+                {
+                    var ids = new List<SelectionId>();
+                    foreach (var selectionKey in (actorKeys ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var target = FindActor(selectionKey);
+                        if (target == null || _bindings.GetActorId(target) is not { } targetId)
+                            return Json(new { error = "No such actor." });
+                        ids.Add(SelectionId.ForActor(targetId));
+                    }
+                    _sceneSession.Selection.Clear();
+                    foreach (var selectedId in ids) _sceneSession.Selection.Add(selectedId);
+                }
+                return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
             }
             case "/uiinput":
             {

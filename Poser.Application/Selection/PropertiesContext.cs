@@ -16,6 +16,14 @@ public sealed class PropertiesContext : IDisposable
     public SelectionScope WorkspaceSelection => _scene.Selection.Live;
     public bool IsPinned { get; }
 
+    // A pin has no selection cursor to clear; clearing the workspace here
+    // would affect an unrelated subject while leaving the pin unchanged.
+    public bool CanDeselectGroup => !IsPinned;
+    public void DeselectGroup()
+    {
+        if (CanDeselectGroup) WorkspaceSelection.Clear();
+    }
+
     public PropertiesContext(SceneSession scene)
     {
         _scene = scene;

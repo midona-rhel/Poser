@@ -154,10 +154,10 @@ public sealed class SettingsViewModel
     /// after three blind fixes; the probe reports, nobody theorizes.</summary>
     public Action<string>? DebugLog;
     public string RebindProbe = string.Empty;
-    /// <summary>A refused capture's standing answer — a chord already
-    /// bound elsewhere is never applied; the message stands until a new
-    /// chord lands or the capture disarms.</summary>
+    /// <summary>Transient label feedback; never adds a form row.</summary>
     public string RebindRefusal = string.Empty;
+    public string? RebindRefusalAction;
+    public double RebindRefusalUntil;
 
     public int PresetIndex;
     public bool PresetArmed;
@@ -1276,6 +1276,7 @@ public static partial class SettingsView
             {
                 for (int i = start; i < start + count; i++)
                     DrawKeybindRow(vm, form, KeybindRegistry.Actions[i]);
+                form.Gap();
                 form.Actions(
                     string.Empty,
                     actions => actions.Button(
@@ -1333,7 +1334,8 @@ public static partial class SettingsView
                 DrawKeybindSlot(vm, actions, action, slots, 0);
                 DrawKeybindSlot(vm, actions, action, slots, 1);
             },
-            help: action.Help);
+            help: action.Help,
+            labelContent: row => DrawKeybindLabel(vm, action.Id, row));
         var conflicts = vm.Conflicts;
         var others = conflicts.TryGetValue(
                 new KeybindRegistry.SlotRef(action.Id, 0), out var primary)
@@ -1346,6 +1348,32 @@ public static partial class SettingsView
             form.Status(
                 "Also bound to " + string.Join(", ", others) + ".",
                 warning: true);
+    }
+
+    private static void DrawKeybindLabel(
+        SettingsViewModel vm, string action, Crystarium.FormRowScope row)
+    {
+        bool ownsFeedback = vm.RebindRefusalAction == action;
+        float progress = Motion.Progress(
+            ImGui.GetID($"##keybind-feedback-{action}"),
+            ownsFeedback && vm.RebindingAction == action
+                && ImGui.GetTime() < vm.RebindRefusalUntil,
+            Crystarium.ActiveTheme.Motion.Slow);
+        float opacity = new Transition(0f, Easing.EaseInOut).Evaluate(progress);
+        var size = new Vector2(row.LabelWidth, row.RowHeight * row.Scale);
+        if (size.X <= 0f) return;
+        var style = new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize };
+        var normal = Crystarium.ActiveTheme.FormLabel;
+        normal.W *= 1f - opacity;
+        Crystarium.TextInBand(row.Origin, size, action,
+            style with { Color = normal }, TextConstraint.Truncate(size.X));
+        if (ownsFeedback && opacity > 0f)
+        {
+            var warning = Crystarium.ActiveTheme.Warning;
+            warning.W *= opacity;
+            Crystarium.TextInBand(row.Origin, size, vm.RebindRefusal,
+                style with { Color = warning }, TextConstraint.Truncate(size.X));
+        }
     }
 
     private static void DrawKeybindSlot(
@@ -1367,7 +1395,7 @@ public static partial class SettingsView
                 vm.RebindingAction = capturing ? null : action.Id;
                 vm.RebindingSlot = slot;
                 vm.PresetArmed = false;
-                vm.RebindRefusal = string.Empty;
+                vm.RebindRefusalUntil = 0;
                 vm.RebindHeld.Clear();
                 foreach (var (key, imguiKey) in KeyChordInput.CapturableTokens())
                     if (vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey))
@@ -1472,13 +1500,8 @@ public static partial class SettingsView
         // been released once.
         var io = ImGui.GetIO();
 
-        // The probe found the stubbed key source (2026-08-30) and retired;
-        // the armed line states the plain instructions — or the refusal,
-        // which stands until another chord lands.
-        vm.RebindProbe = vm.RebindRefusal.Length > 0
-            ? vm.RebindRefusal
-            : $"Listening for {action}… press a chord. Escape cancels, "
-                + "Backspace clears the slot.";
+        vm.RebindProbe =
+            "Press a chord. Escape cancels, Backspace clears the slot.";
 
         if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
             || ImGui.IsKeyDown(ImGuiKey.Escape))
@@ -1532,9 +1555,9 @@ public static partial class SettingsView
                 }
             if (holder != null)
             {
-                vm.RebindRefusal =
-                    $"{chord} is bound to “{holder}” — press "
-                    + "another chord";
+                vm.RebindRefusal = $"Already bound to {holder}";
+                vm.RebindRefusalAction = action;
+                vm.RebindRefusalUntil = ImGui.GetTime() + 2.5;
                 vm.RebindHeld.Add(key);
                 return;
             }
@@ -1542,7 +1565,7 @@ public static partial class SettingsView
             vm.BindingRevision++;
             vm.RebindingAction = null;
             vm.RebindHeld.Clear();
-            vm.RebindRefusal = string.Empty;
+            vm.RebindRefusalUntil = 0;
             return;
         }
     }

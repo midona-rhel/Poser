@@ -53,6 +53,8 @@ picker identities and gestures; commands and history remain application-owned.
 A pinned group supplies the same complete membership to transform readings,
 frame lookup and edit admission. The active workspace group cannot substitute
 its baseline or members; locks and stale-member refusal still apply.
+Pinned group Properties and Inspectors omit Deselect; their command also refuses
+to clear workspace selection. Only the live group host owns that action.
 A pin keeps its logical target through removal and rebinds only through the
 scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
 Pop-outs contain no workspace sidebar/Inspector detachment controls, remain non-modal, and
@@ -204,6 +206,15 @@ Every pose-import entry point supplies its actor explicitly. The import window
 names and retains that exact actor generation through preview and application;
 selection changes cannot retarget it, and a missing actor never falls back to
 another. Library preview, import options and Apply share its resolved target.
+
+Configurable pose shortcuts cover Import, Import from file, Export, Export to
+file, Copy/Paste through the pose clipboard, and actor Play/Pause. They ship
+unbound in every preset and use the existing two-slot binding/conflict settings.
+They target the globally selected actor (or selected bones belonging only to
+that actor), regardless of focused main/pinned/Library window. Mixed targets,
+missing actors and unavailable capabilities do nothing; no host fallback occurs.
+File actions capture that actor when invoked. Text entry suppresses shortcuts,
+held keys do not repeat actions, and dialog actions reveal their main-shell host.
 
 Short action submenus inherit the floating menu's theme-defined entrance and
 exit motion. Closing submenus remain painted only for their exit interval and

@@ -362,6 +362,14 @@ public static partial class Crystarium
                 content(new FormScope(this, title));
         }
 
+        internal void AddGap()
+        {
+            if (Probe != null || RowFilter != null)
+                return;
+            CloseLine();
+            _y += ActiveTheme.Spacing.Four;
+        }
+
         /// <summary>Draws an inline section separator.</summary>
         internal void DrawInlineRule()
         {
@@ -410,7 +418,8 @@ public static partial class Crystarium
         }
 
         internal FormRowScope BeginRow(
-            string label, string? help = null, float? trailingControlWidth = null)
+            string label, string? help = null, float? trailingControlWidth = null,
+            bool paintLabel = true)
         {
             if (Probe != null)
             {
@@ -442,7 +451,7 @@ public static partial class Crystarium
                 Label = label,
                 VertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size,
             };
-            if (visible && !string.IsNullOrEmpty(label))
+            if (visible && paintLabel && !string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
                     row.LabelWidth,
@@ -558,6 +567,9 @@ public static partial class Crystarium
 
         /// <summary>Ends a paired stretch early.</summary>
         public void EndPair() => _page.EndPairedRows();
+
+        /// <summary>Adds a small scaled gap between groups of controls.</summary>
+        public void Gap() => _page.AddGap();
 
         /// <summary>Places a shared primitive or read-model view in one form
         /// row. The caller owns only the content; page spacing and help remain
@@ -1336,17 +1348,18 @@ public static partial class Crystarium
         /// <param name="fullWidth">Uses the full row width.</param>
         public void Actions(string label, Action<ActionScope> content,
             string? help = null, bool alignRight = false,
-            bool fullWidth = false)
+            bool fullWidth = false, Action<FormRowScope>? labelContent = null)
         {
             string id = string.IsNullOrEmpty(label)
                 ? UnlabelledId("actions", ref _actionRows)
                 : Id(label);
-            var row = _page.BeginRow(label, help);
+            var row = _page.BeginRow(label, help, paintLabel: labelContent == null);
             if (!row.Visible)
             {
                 _page.EndRow(row, id, help);
                 return;
             }
+            labelContent?.Invoke(row);
             var actions = new ActionScope();
             content(actions);
             DrawActions(actions.Items,

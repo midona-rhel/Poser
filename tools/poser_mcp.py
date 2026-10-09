@@ -7,6 +7,10 @@ import json, sys, urllib.request, urllib.parse
 BASE = "http://127.0.0.1:47999"
 
 TOOLS = [
+    ("poser_shortcut", "Read configured shortcuts or inject a parsed chord through the real resolver and deferred dispatch. Release Down with Released; no desktop/game input. Change bindings in Settings; this tool never edits them.",
+     {"chord": "optional chord to inject, e.g. Ctrl+I", "kind": "Down, Held, or Released"}),
+    ("poser_selection", "Read global selection or select existing actors through normal selection commands.",
+     {"actors": "comma-separated actor names or indices", "clear": "1 to clear selection"}),
     ("poser_uiinput", "Queue mouse, key, scroll, or text input to the plugin UI only (not desktop/game controls). Separate press/release calls; always release held buttons and keys with down=0. Screenshot pixels are relative to the viewport, input x/y are absolute screen coordinates.",
      {"x": "screen X", "y": "screen Y", "button": "0 left, 1 right, 2 middle", "down": "1 press, 0 release", "key": "ImGui key name, e.g. Enter or Escape", "text": "text input", "wheel": "vertical scroll amount"}),
     ("poser_screenshot", "Capture the game and plugin UI as a PNG image, without desktop control.", {}),

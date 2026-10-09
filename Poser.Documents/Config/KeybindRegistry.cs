@@ -71,6 +71,7 @@ public static class KeybindRegistry
     public const string GroupOverlay = "OVERLAY";
     public const string GroupWindows = "WINDOWS";
     public const string GroupScene = "SCENE";
+    public const string GroupPose = "POSE";
 
     // ── actions ──────────────────────────────────────────────────────────
 
@@ -79,6 +80,14 @@ public static class KeybindRegistry
         new("Undo", GroupEditing, "Undo the last move, rotation or scale"),
         new("Redo", GroupEditing, "Reapply the change you undid"),
         new("Deselect", GroupEditing, "Drop the current selection"),
+
+        new("Import pose", GroupPose, "Open import options for the globally selected actor"),
+        new("Import pose from file", GroupPose, "Choose a pose file for the globally selected actor"),
+        new("Export pose", GroupPose, "Open export options for the globally selected actor"),
+        new("Export pose to file", GroupPose, "Choose where to save the globally selected actor's pose"),
+        new("Copy pose", GroupPose, "Copy the globally selected actor's pose to the clipboard"),
+        new("Paste pose", GroupPose, "Import a clipboard pose onto the globally selected actor"),
+        new("Play / pause actor", GroupPose, "Toggle playback for the globally selected actor, like its context menu"),
 
         new("Translate mode", GroupGizmo, "Gizmo moves the selection"),
         new("Rotate mode", GroupGizmo, "Gizmo rotates the selection"),

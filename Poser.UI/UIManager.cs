@@ -31,9 +31,11 @@ public sealed class UIManager : IUIManager
     private readonly Application.Presentation.ICameraControl _cameraControl;
     private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
+    private readonly AnimationSession _animation;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly Keybind[] _keybinds;
     private bool _uiHidden;
+    private bool _capturingShortcutThisFrame;
 
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
@@ -58,6 +60,7 @@ public sealed class UIManager : IUIManager
         Application.Presentation.ICameraControl cameraControl,
         SceneSession scene,
         AnimationSceneActions sceneActions,
+        AnimationSession animation,
         Dalamud.Plugin.Services.IPluginLog log)
     {
         _recorder = recorder;
@@ -77,6 +80,7 @@ public sealed class UIManager : IUIManager
         _cameraControl = cameraControl;
         _scene = scene;
         _sceneActions = sceneActions;
+        _animation = animation;
 
         _keybinds = BuildKeybinds();
         _keyEvents = keyEvents;
@@ -128,6 +132,7 @@ public sealed class UIManager : IUIManager
 
     private void DrawUI()
     {
+        _capturingShortcutThisFrame = _windows.Settings.IsRebindingShortcut;
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
         if (!Crystarium.AdvanceTheme())
@@ -252,6 +257,19 @@ public sealed class UIManager : IUIManager
                     _cleanTransforms.Redo();
             },
             ["Deselect"] = () => _scene.Selection.Clear(),
+            ["Import pose"] = () => PoseShortcut(
+                actor => _poseFileSection.RequestImportMenu(withPresets: true, target: actor), opensWindow: true),
+            ["Import pose from file"] = () => PoseShortcut(_poseFileSection.OpenImportFromFile, opensWindow: true),
+            ["Export pose"] = () => PoseShortcut(actor => _poseFileSection.RequestExportMenu(actor), opensWindow: true),
+            ["Export pose to file"] = () => PoseShortcut(_poseFileSection.OpenExport, opensWindow: true),
+            ["Copy pose"] = () => PoseShortcut(_poseFileSection.CopyToClipboard),
+            ["Paste pose"] = () => PoseShortcut(_poseFileSection.ImportFromClipboard),
+            ["Play / pause actor"] = () => PoseShortcut(actor =>
+            {
+                if (!_animation.IsSupported(actor)) return;
+                if (_animation.AnyPlaying(actor)) _animation.Pause(actor);
+                else _animation.Resume(actor);
+            }, requiresPose: false),
             ["Translate mode"] =
                 () => _editorState.TransformTool = TransformTool.Move,
             ["Rotate mode"] =
@@ -322,14 +340,34 @@ public sealed class UIManager : IUIManager
 
     private void CycleCamera(int delta) => _cameraControl.Cycle(delta);
 
+    private void PoseShortcut(Action<global::Poser.Domain.Identity.ActorId> action,
+        bool opensWindow = false, bool requiresPose = true)
+    {
+        // Keyboard actions use the one workspace cursor, never a Library host
+        // or whichever pinned Properties happened to draw last.
+        if (_scene.Selection.PrimaryActor is not { } actor
+            || !_scene.Selection.Selected.All(id => id.OwningActor == actor)
+            || !_scene.Snapshot.Actors.Any(item => item.Id == actor)
+            || (requiresPose && !_poseFileSection.HasPosableTarget(actor)))
+            return;
+        if (opensWindow)
+        {
+            _uiHidden = false;
+            _windows.SetPrimaryOpen(true); // The main shell pumps these dialogs.
+        }
+        action(actor);
+    }
+
     private void HandleKeybinds()
     {
-        if (!_gPoseService.IsGPosing
-            || ImGui.GetIO().WantTextInput)
+        if (ShortcutsSuppressed)
         {
             foreach (var bind in _keybinds)
             {
-                bind.Down = false;
+                bind.Sync(PoserKeybinds.Slots(_configService.Config.UI, bind.Name));
+                // A held recording/text-entry chord is not a fresh press when
+                // suppression ends, including the no-native-hook polling path.
+                bind.Down = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
                 bind.Queued = false;
             }
             return;
@@ -382,10 +420,17 @@ public sealed class UIManager : IUIManager
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
     private bool OnKeyEvent(Config.KeyCode code, global::Poser.Services.KeyEventKind kind)
+        => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
+            _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
+
+    private bool ShortcutsSuppressed => !_gPoseService.IsGPosing
+        || ImGui.GetIO().WantTextInput || _windows.Settings.IsRebindingShortcut
+        || _capturingShortcutThisFrame;
+
+    private bool ProcessShortcutKey(KeyChord chord, global::Poser.Services.KeyEventKind kind)
     {
-        var key = (VirtualKey)code;
-        if (!_gPoseService.IsGPosing
-            || ImGui.GetIO().WantTextInput)
+        var key = (VirtualKey)chord.Key;
+        if (ShortcutsSuppressed)
             return false;
         bool handled = false;
         // Off, the bind still runs, and the game sees the key as well.
@@ -396,7 +441,8 @@ public sealed class UIManager : IUIManager
             && key != VirtualKey.ESCAPE && key != VirtualKey.RETURN;
         foreach (var bind in _keybinds)
         {
-            if (!ChordIs(bind.Primary, key) && !ChordIs(bind.Secondary, key))
+            bind.Sync(PoserKeybinds.Slots(_configService.Config.UI, bind.Name));
+            if (!chord.IsBound || (bind.Primary != chord && bind.Secondary != chord))
                 continue;
             switch (kind)
             {
@@ -423,14 +469,17 @@ public sealed class UIManager : IUIManager
         return handled && keep;
     }
 
-    private bool ChordIs(KeyChord chord, VirtualKey key)
+#if DEBUG
+    // Diagnostic input follows the real chord resolver and deferred draw-frame
+    // dispatch, without sending keys to the game or desktop.
+    public object DebugShortcut(string chord, global::Poser.Services.KeyEventKind kind)
     {
-        if (!chord.IsBound || (int)chord.Key != (int)key)
-            return false;
-        return chord.Ctrl == _keyState[VirtualKey.CONTROL]
-            && chord.Shift == _keyState[VirtualKey.SHIFT]
-            && chord.Alt == _keyState[VirtualKey.MENU];
+        bool suppressed = ShortcutsSuppressed;
+        bool consumed = ProcessShortcutKey(KeyChord.Parse(chord), kind);
+        return new { suppressed, consumed,
+            queued = _keybinds.Where(bind => bind.Queued).Select(bind => bind.Name).ToArray() };
     }
+#endif
 
     private bool ChordDown(KeyChord chord)
     {
