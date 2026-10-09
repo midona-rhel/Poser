@@ -54,7 +54,7 @@ public sealed class LightSession
         var before = Current(l);
         if (!_lighting.ApplyGobo(l, gobo))
             return false;
-        _journal.Record("Set gobo", before, gobo, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
+        _journal.RecordFor(l, "Set gobo", before, gobo, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
         return true;
     }
 
@@ -64,7 +64,7 @@ public sealed class LightSession
         if (before is null)
             return;
         _lighting.ClearGobo(l);
-        _journal.Record("Clear gobo", before, (GoboEntry?)null, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
+        _journal.RecordFor(l, "Clear gobo", before, (GoboEntry?)null, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
     }
 
     private GoboEntry? Current(ILight l)

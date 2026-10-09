@@ -58,7 +58,7 @@ public sealed class AnimationSteps : IAnimationActions
             return result;
         var after = Applied(actor, slot);
         _journal.Record($"Play {AnimationSlots.DisplayName(slot)}", before, after,
-            next => Put(actor, slot, next, playFromStart), () => Alive(actor));
+            next => Put(actor, slot, next, playFromStart), () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 
@@ -69,7 +69,7 @@ public sealed class AnimationSteps : IAnimationActions
         if (!result.Success)
             return result;
         _journal.Record($"Reset {AnimationSlots.DisplayName(slot)}", before, (ushort?)null,
-            next => Put(actor, slot, next, false), () => Alive(actor));
+            next => Put(actor, slot, next, false), () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 

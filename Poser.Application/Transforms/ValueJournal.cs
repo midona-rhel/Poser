@@ -159,6 +159,11 @@ public sealed class ValueJournal
         else _history.Append(Step(after));
     }
 
+    /// <summary>Records an entity-local write whose owner is a legacy runtime handle.</summary>
+    public void RecordFor<T>(object owner, string description, T before, T after,
+        Action<T> write, Func<bool>? alive = null) =>
+        Record(description, before, after, write, alive, Scope(owner)?.SingleOrDefault());
+
     private static JournalStep ResultStep<T>(string description, T before, T after,
         Func<T> latest, Func<T, ValueWriteResult> write, Func<bool>? alive)
     {

@@ -90,7 +90,7 @@ public sealed class ActorValueSession : IActorValueControl
         {
             var restored = _presentation.RestoreOverrides(actor, next);
             return new ValueWriteResult(restored.Success, restored.Detail);
-        }, () => Alive(actor));
+        }, () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 

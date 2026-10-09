@@ -37,7 +37,7 @@ public sealed class ExpressionSession(ValueJournal journal, IExpressionRuntimePo
         var result = runtime.Write(actor, [], reset: true);
         if (result.Success)
             journal.RecordResult("Reset expression", before, Array.Empty<(string Id, float Weight)>(),
-                weights => runtime.Write(actor, weights, reset: true), () => HasActor(actor));
+                weights => runtime.Write(actor, weights, reset: true), () => HasActor(actor), SelectionId.ForActor(actor));
         return result;
     }
 }
