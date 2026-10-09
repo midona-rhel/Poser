@@ -181,6 +181,9 @@ public interface ISceneRuntime
     /// no-op.</summary>
     string? PlaceActor(SceneEntityHandle actor, SceneActor data);
 
+    /// <summary>Restores the display name after binding, independently of pose/placement success.</summary>
+    string? RestoreActorName(SceneEntityHandle actor, SceneActor data);
+
     /// <summary>Restores the attached body's own model placement after its pose.</summary>
     string? PlaceCompanion(SceneEntityHandle actor, SceneActor data);
 

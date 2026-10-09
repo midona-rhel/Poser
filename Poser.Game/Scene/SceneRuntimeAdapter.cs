@@ -44,6 +44,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly ISceneDocumentStore _documents;
     private readonly ISessionGenerationSource _sessions;
     private readonly SceneCaptureService _capture;
+    private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseImportCommands _poses;
     private readonly IActorSpawnService _spawns;
     private readonly ISkeletonService _skeletons;
@@ -113,8 +114,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         IEntityHistoryBinding<IWorldObject> worldHistory,
         IEntityHistoryBinding<ILight> lightHistory,
         IEntityHistoryBinding<IVirtualCamera> cameraHistory,
+        Poser.Config.ConfigurationService configuration,
         IPluginLog? log = null)
     {
+        _configuration = configuration;
         _actorHistory = actorHistory;
         _propHistory = propHistory;
         _overlayHistory = overlayHistory;
@@ -988,6 +991,16 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return result.Success
             ? null
             : result.Detail ?? "The companion pose import refused.";
+    }
+
+    public string? RestoreActorName(SceneEntityHandle actor, SceneActor data)
+    {
+        var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
+        if (_bindings.GetActorId(target) is not { } id)
+            return "The actor is no longer bound.";
+        // Native names remain untouched: appearance providers identify by them.
+        _configuration.SetNickname(id.LogicalId, SceneActorNames.Resolve(data));
+        return null;
     }
 
     public string? PlaceActor(SceneEntityHandle actor, SceneActor data) =>

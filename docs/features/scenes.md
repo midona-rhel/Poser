@@ -2,6 +2,15 @@
 
 ## Load history
 
+Actor names in scene files are authored display nicknames (or the native name
+when no nickname exists), never the temporary anonymous UI mask. Loading applies
+the saved name through the session nickname owner after actor binding is ready,
+before pose import, so a refused pose or placement cannot discard the name;
+resave and load redo preserve it. Native actor names remain unchanged because
+external appearance providers use them as identity.
+New captures mark names as display names. Unmarked legacy names use the normal
+object-index cleanup; authored numeric suffixes in marked files remain intact.
+
 A completed scene load records one undo step. Undo removes that load's
 created entities and restores its captured baselines; redo reads the file
 again and retargets the same step to the new load. Repeated undo never uses
