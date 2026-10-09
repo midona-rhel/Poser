@@ -11,6 +11,7 @@ public static partial class Crystarium
     /// <summary>Call after title controls. The host uses NoMove so content cannot start a native drag.</summary>
     public static void WindowTitleDrag(Vector2 min, Vector2 max)
     {
+        if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) _titleDragId = 0;
         var cursor = ImGui.GetCursorScreenPos();
         uint id = ImGui.GetID("##window-title-drag");
         bool controlHovered = _titleDragId != id && ImGui.IsAnyItemHovered();
@@ -23,7 +24,9 @@ public static partial class Crystarium
         }
         // Anchor to the press, not this frame's delta: movement before the
         // press must not move the window, and skipped frames cannot accumulate drift.
-        if (_titleDragId == id && drag.Active && !drag.DragBegan
+        // Once accepted, crossing another surface cannot revoke this gesture.
+        if (_titleDragId == id && !drag.DragEnded && !drag.DragBegan
+            && ImGui.IsMouseDown(ImGuiMouseButton.Left)
             && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
             ImGui.SetWindowPos(ImGui.GetMousePos() - _titleDragOffset);
         if (drag.DragEnded && _titleDragId == id)

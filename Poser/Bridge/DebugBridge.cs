@@ -181,6 +181,7 @@ public sealed partial class DebugBridge : IDisposable
         try
         {
             _listener.Start();
+            _framework.Update += AdvanceUiDrag;
             _ = Task.Run(AcceptLoop);
             _log.Information($"[Bridge] listening on http://127.0.0.1:{Port}/");
         }
@@ -199,6 +200,8 @@ public sealed partial class DebugBridge : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
+        _framework.Update -= AdvanceUiDrag;
+        FinishUiDrag();
         try { _listener.Stop(); } catch { }
         try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
         try { _stop.Dispose(); } catch { }
@@ -441,6 +444,8 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
             }
+            case "/uidrag":
+                return UiDrag(query);
             case "/uiwindows":
             {
                 var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
