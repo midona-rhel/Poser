@@ -19,10 +19,21 @@ public sealed partial class DebugBridge
     }
 
     private DragProbe? _uiDrag;
+    private readonly object _uiDragGate = new();
     private bool _restoreUiEvents;
     private readonly List<object> _uiDragTrace = new();
 
     private string UiDrag(Dictionary<string, string> query)
+    {
+        lock (_uiDragGate)
+        {
+            if (System.Threading.Volatile.Read(ref _disposed) != 0)
+                return Json(new { error = "The bridge is shutting down." });
+            return UiDragLocked(query);
+        }
+    }
+
+    private string UiDragLocked(Dictionary<string, string> query)
     {
         if (query.GetValueOrDefault("cancel") == "1") FinishUiDrag();
         if (query.ContainsKey("x"))
@@ -44,6 +55,14 @@ public sealed partial class DebugBridge
     }
 
     private void AdvanceUiDrag(IFramework framework)
+    {
+        // Requests already run on the framework thread; disposal need not.
+        // Serialize it with an in-flight step so a finished probe cannot
+        // re-press the button and suppress native events after cleanup.
+        lock (_uiDragGate) AdvanceUiDragLocked();
+    }
+
+    private void AdvanceUiDragLocked()
     {
         if (_uiDrag is not { } probe) return;
         if (DateTime.UtcNow >= probe.Deadline) { FinishUiDrag(); return; }
@@ -70,6 +89,11 @@ public sealed partial class DebugBridge
     }
 
     private void FinishUiDrag()
+    {
+        lock (_uiDragGate) FinishUiDragLocked();
+    }
+
+    private void FinishUiDragLocked()
     {
         if (_uiDrag == null) return;
         var io = ImGui.GetIO();

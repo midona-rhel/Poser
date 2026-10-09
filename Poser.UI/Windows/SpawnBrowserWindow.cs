@@ -278,6 +278,12 @@ public sealed class SpawnBrowserWindow : Window
                     anchor, viewport.WorkPos + viewport.WorkSize - scaled));
             PositionCondition = ImGuiCond.Always;
         }
+        else
+        {
+            // The anchor only places the opening frame. Normal title dragging
+            // must not be overwritten by the old Dalamud-held position.
+            Position = null;
+        }
     }
 
     public override void PostDraw() => ImGui.PopStyleVar(2);
@@ -362,25 +368,6 @@ public sealed class SpawnBrowserWindow : Window
         {
             SpawnBrowserView.Draw(_vm, min);
 
-            // The footer band is the window's GRAB: pinned, the portal is
-            // a palette, and a palette must be movable.
-            var footer = _vm.FooterRect;
-            if (footer.Size.Y > 0f)
-            {
-                ImGui.SetCursorScreenPos(footer.Min);
-                ImGui.InvisibleButton("##portal-drag", footer.Size);
-                if (ImGui.IsItemHovered() || ImGui.IsItemActive())
-                    ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
-                if (ImGui.IsItemActive())
-                {
-                    // The window's position is Dalamud-held (Always, from
-                    // the open's anchor), so the drag moves THAT — an
-                    // ImGui-side move was re-imposed away every frame.
-                    var dragDelta = ImGui.GetIO().MouseDelta;
-                    if (dragDelta != Vector2.Zero && Position is { } held)
-                        Position = held + dragDelta;
-                }
-            }
         }
         finally
         {
