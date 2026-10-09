@@ -196,8 +196,8 @@ Pose import options use a movable, explicitly closable window. Import/export
 option and file section labels never disclose or inherit saved collapse state.
 The file browser reserves
 the face-warning row so changing files cannot move the list or confirmation bar.
-Properties group Import with Import from file, Export with Export to file, and
-Open library separately. The file shortcuts open their browsers directly;
+Properties show Import, Import from file, Export, Export to file, and Library
+in one full-width action row. The file shortcuts open their browsers directly;
 Import and Export open their general options/menus. These actions capture their host actor; opening the library
 from that host seeds its explicit apply target without changing scene selection.
 

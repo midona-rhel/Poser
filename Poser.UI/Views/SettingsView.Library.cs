@@ -84,7 +84,10 @@ public static partial class SettingsView
                 vm.Library.Remove(removing);
             form.TextInput("New source name", vm.LibraryNewName, next => vm.LibraryNewName = next,
                 placeholder: "Taken from the folder when left blank");
-            form.TextInput("New source folder", vm.LibraryNewPath, next => vm.LibraryNewPath = next,
+            form.TextInputActions("New source folder", vm.LibraryNewPath, next => vm.LibraryNewPath = next,
+                actions => actions.Button("Browse", () => vm.OnBrowseFolder?.Invoke(
+                    string.IsNullOrWhiteSpace(vm.LibraryNewPath) ? vm.Library.EffectiveRoot : vm.LibraryNewPath,
+                    next => vm.LibraryNewPath = next)),
                 placeholder: "Full path to a folder of poses");
             form.Actions(string.Empty, actions =>
             {
