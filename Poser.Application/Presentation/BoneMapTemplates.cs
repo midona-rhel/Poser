@@ -24,6 +24,14 @@ public static class BoneMapTemplates
 
     public static bool IsBuiltIn(Guid id) => All.Any(item => item.Id == id);
 
+    public static string DefaultFaceSection(byte race) => race switch
+    {
+        4 => "miqote_head",
+        7 => "hrothgar_head",
+        8 => "viera_head_a",
+        _ => "human_head",
+    };
+
     public static Guid ResolveDefault(SkeletonConfiguration config, BoneMapKind kind,
         byte race, byte gender, string headSection)
     {

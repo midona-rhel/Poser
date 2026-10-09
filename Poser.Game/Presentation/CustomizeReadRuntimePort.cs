@@ -63,16 +63,5 @@ public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
     /// <summary>Customize race byte → face-map section key. Only the four
     /// head shapes have distinct maps; every other race shares the human
     /// head, and unknown values fall back to it.</summary>
-    internal static string HeadSectionForRace(byte race) => race switch
-    {
-        1 => "human_head",     // Hyur
-        2 => "human_head",     // Elezen
-        3 => "human_head",     // Lalafell
-        4 => "miqote_head",    // Miqo'te
-        5 => "human_head",     // Roegadyn
-        6 => "human_head",     // Au Ra
-        7 => "hrothgar_head",  // Hrothgar
-        8 => "viera_head_a",   // Viera (default ear type)
-        _ => ICustomizeReadRuntimePort.DefaultHeadSection,
-    };
+    internal static string HeadSectionForRace(byte race) => BoneMapTemplates.DefaultFaceSection(race);
 }

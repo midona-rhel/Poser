@@ -833,6 +833,9 @@ public static partial class SettingsView
         });
         page.Section("Bone map defaults", form =>
         {
+            form.Status("Choose which actors these defaults apply to.");
+            form.Status("Their Body and Face maps load the presets below.");
+            form.Status("This does not change an actor's race or gender.");
             form.Dropdown("Race", ["Hyur", "Elezen", "Lalafell", "Miqo’te", "Roegadyn", "Au Ra", "Hrothgar", "Viera"],
                 vm.BoneMapRace, value => vm.BoneMapRace = value);
             form.Dropdown("Gender", ["Male", "Female"], vm.BoneMapGender, value => vm.BoneMapGender = value);
@@ -843,12 +846,17 @@ public static partial class SettingsView
                     .Select(item => (item.Id, item.Name))
                     .Concat(vm.BoneMapPresets.Where(item => item.Kind == kind).Select(item => (item.Id, item.Name))).ToArray();
                 var rule = vm.BoneMapDefaults.LastOrDefault(item => item.Race == race && item.Gender == gender && item.Kind == kind);
-                int selected = Array.FindIndex(choices, item => item.Id == rule?.PresetId) + 1;
-                form.Dropdown(kind.ToString(), new[] { "Automatic (built-in)" }.Concat(choices.Select(item => item.Name)).ToArray(),
+                int selected = Array.FindIndex(choices, item => item.Id == rule?.PresetId);
+                if (selected < 0)
+                {
+                    var section = kind == BoneMapKind.Body ? "body" : BoneMapTemplates.DefaultFaceSection(race);
+                    selected = Array.FindIndex(choices, item => item.Id == BoneMapTemplates.All.First(template => template.Section == section).Id);
+                }
+                form.Dropdown(kind + " preset", choices.Select(item => item.Name).ToArray(),
                     selected, value =>
                     {
                         vm.BoneMapDefaults.RemoveAll(item => item.Race == race && item.Gender == gender && item.Kind == kind);
-                        if (value > 0) vm.BoneMapDefaults.Add(new(race, gender, kind, choices[value - 1].Id));
+                        vm.BoneMapDefaults.Add(new(race, gender, kind, choices[value].Id));
                     }, "Default for this race and gender. Manual map selections remain local to their Properties window.");
             }
         });

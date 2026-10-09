@@ -37,11 +37,11 @@ public sealed partial class GraphicalBonePane
     {
         float scale = ImGuiHelpers.GlobalScale;
         var presets = EditorPresets(actor, (BoneMapKind)page);
-        var names = new[] { "Automatic" }.Concat(presets.Select(item => item.Name)).ToArray();
-        int selected = Array.FindIndex(presets, item => item.Id == _selectedPresets[page]) + 1;
+        var names = presets.Select(item => item.Name).ToArray();
+        int selected = Math.Max(0, Array.FindIndex(presets, item => item.Id == SelectedPreset(page, actor)?.Id));
         ImGui.SetCursorScreenPos(origin + new Vector2(width - 200f * scale, 0f));
         Crystarium.Dropdown("##map-preset", names, selected,
-            index => _selectedPresets[page] = index == 0 ? Guid.Empty : presets[index - 1].Id,
+            index => _selectedPresets[page] = presets[index].Id,
             ControlStyle.Workspace with { Width = UiWidth.Fixed(136f) });
         ImGui.SetCursorScreenPos(origin + new Vector2(width - 58f * scale, 0f));
         if (Crystarium.Button("Edit", disabled: _draft != null,

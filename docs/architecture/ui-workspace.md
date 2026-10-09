@@ -56,10 +56,16 @@ pixels; it never changes coordinates or imports another race's bone list.
 Built-in Body and race/ear-specific Face templates have stable reserved IDs.
 Copies retain their base template (coordinate space and reset baseline).
 Automatic map selection resolves a separate Body/Face assignment for race and
-gender, falling back to native race selection if unset or deleted. Explicit
+gender, falling back to native race selection if unset or deleted. Pickers show
+the resolved preset's name, never a selectable "Automatic" placeholder. Explicit
 selection is local to a Properties pane and resets on actor changes; editors
 remain pinned to their original actor/template. Standard humanoid NPCs follow
 the same rules. All built-in templates stay locked, including in persistence.
+Bone context menus expose Preset → Body/Face → Add, Add with mirror, Remove and
+Remove with children. Actions update the selected map immediately, creating a
+uniquely named copy when its template is locked. An already open matching editor
+receives these changes in its draft with live preview; only Save/Confirm commits
+that draft. Context actions never silently save unrelated pending editor changes.
 
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and

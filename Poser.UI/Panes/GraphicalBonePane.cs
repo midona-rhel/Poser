@@ -160,9 +160,10 @@ public sealed partial class GraphicalBonePane : IDisposable
             return false;
         bool humanoid = _customizeRead.IsStandardHumanoid(actor.Id);
         var preset = humanoid && !editing ? SelectedPreset(page, actor) : null;
-        _layout = !humanoid ? null : editing ? _draft?.Points : preset?.Points;
-        _mapBackground = !humanoid ? null : editing ? _draft?.Background : preset?.Background;
-        _mapTemplate = !humanoid ? null : editing ? _draft?.Template : preset?.Template;
+        var liveDraft = editing ? _draft : preset == null ? null : MatchingEditor(actor.Id, preset);
+        _layout = !humanoid ? null : liveDraft?.Points ?? preset?.Points;
+        _mapBackground = !humanoid ? null : liveDraft != null ? liveDraft.Background : preset?.Background;
+        _mapTemplate = !humanoid ? null : liveDraft != null ? liveDraft.Template : preset?.Template;
 
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
