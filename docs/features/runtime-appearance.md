@@ -26,13 +26,20 @@ or a temporary saved Customize+ profile. Incoming state is captured once per
 component. Reset and teardown restore it. Foreign locks and unreadable
 temporary profiles are refused before changes.
 
-Fresh spawns reset retained Glamourer appearance after native self-identification
+Fresh spawns clear retained Glamourer appearance after native self-identification
 and model assignment, within the original deferred-draw window. Slot-based native
 names can retain a previous occupant's model override even when the requested
 native model ID is correct. This initialization precedes scene appearance/pose
 restoration; it is not a later corrective redraw. It targets only the exact owned
-spawn, never its source, and never unlocks foreign state. Duplicates keep their
-copied appearance instead of running the fresh-spawn reset.
+spawn, never its source, and never unlocks foreign state. The name-based clear
+requires a generated Poser name with no other live actor sharing it. Duplicates
+then apply their source's external appearance to the new body before first draw:
+reverting the reused slot restores stale base data, and Glamourer's apply can
+refuse a retained non-human state without reporting failure. Native equipment/customization copy
+alone does not replace an old IPC model override. The source must still be current;
+read/write refusals do not unlock either actor or change the source. A duplicate
+may read a Poser-held MCDF source using Poser's owner key after an unkeyed refusal;
+it still writes the new target unkeyed and never reads through a foreign hold.
 
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.

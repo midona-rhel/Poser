@@ -119,8 +119,6 @@ public partial class PoseInspectorPane : IDisposable
     }
 
     private bool _openTranslation = true;
-    private bool _openExpression = true;
-    private bool _openGaze = true;
     private bool _openIk;
     private bool _openActorIk;
     private bool _openSurfaceActorIk;
@@ -730,25 +728,7 @@ public partial class PoseInspectorPane : IDisposable
         else if (_primary is
                  { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget })
         {
-            var actor = OwningActor();
             var skeleton = PrimarySkeletonDescriptor();
-            bool humanoid = actor != null && !IsCreature(actor);
-            if (actor != null && humanoid)
-                stack.Section(
-                    "gaze",
-                    "Gaze",
-                    _openGaze,
-                    next => _openGaze = next,
-                    form => DrawGaze(form, actor.Id, wide: false));
-            // The narrow rail keeps face-weight sliders only.
-            if (actor != null && humanoid && _expressionSection.CanDraw)
-                stack.Section(
-                    "expression",
-                    "Expression",
-                    _openExpression,
-                    next => _openExpression = next,
-                    form => _expressionSection.Draw(
-                        form, OwningActorId(), paired: false));
             if (skeleton != null)
             {
                 stack.Section(

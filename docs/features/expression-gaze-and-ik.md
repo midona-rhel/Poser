@@ -25,6 +25,10 @@ blends against the authored base face, without redraw or reference-pose reset.
 
 ## Gaze
 
+Actor-wide gaze controls live in Pose > Other; expressions live in Pose >
+Expression. The selection inspector contains neither section. Pinned Properties
+windows retain their own actor target while these controls share actor state.
+
 Gaze has Off, Forward, Camera, Point, and Actor modes. Eyes, Head, and Body can
 be controlled separately, and each can lock its current target. Point mode has
 one shared anchor plus per-part points, numeric editing, and camera snap. It

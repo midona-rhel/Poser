@@ -109,6 +109,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<int, ulong, bool, uint, ulong, int> _setMetaState;
     private readonly ICallGateSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> _getState;
     private readonly ICallGateSubscriber<int, uint, ulong, int> _revertState;
+    private readonly ICallGateSubscriber<string, ushort, uint, int> _deletePlayerState;
     private readonly ICallGateSubscriber<string, string, (int, Guid)> _addDesign;
 
     // Customize+
@@ -172,6 +173,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _setMetaState = pluginInterface.GetIpcSubscriber<int, ulong, bool, uint, ulong, int>("Glamourer.SetMetaState");
         _getState = pluginInterface.GetIpcSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)>("Glamourer.GetState");
         _revertState = pluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+        _deletePlayerState = pluginInterface.GetIpcSubscriber<string, ushort, uint, int>("Glamourer.DeletePlayerState");
         _addDesign = pluginInterface.GetIpcSubscriber<string, string, (int, Guid)>("Glamourer.AddDesign");
 
         _customizeVersion = pluginInterface.GetIpcSubscriber<(int, int)>("CustomizePlus.General.GetApiVersion");
@@ -1175,6 +1177,39 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return GlamourerResult(ec, "reverting the state", actor);
         });
 
+    public IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
+    {
+        if (!Glamourer.Available) return IntegrationPortResult.Ok();
+        return Guarded(Glamourer, "Initialize duplicate appearance", () =>
+        {
+            if (AddressPair(sourceAddress, targetAddress) is { } refusal) return refusal;
+            return CopySpawnAppearance(IndexOf(sourceAddress), IndexOf(targetAddress),
+                _getState.InvokeFunc, () => ResetSpawnAppearance(targetAddress), _applyState.InvokeFunc);
+        });
+    }
+
+    internal static IntegrationPortResult CopySpawnAppearance(int sourceIndex, int targetIndex,
+        Func<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> readState,
+        Func<IntegrationPortResult> prepareTarget,
+        Func<object, int, uint, ulong, int> applyState)
+    {
+        var (read, state) = readState(sourceIndex, 0u);
+        // MCDF holds are ours only when Glamourer accepts our owner key.
+        // Reading with that key does not unlock or edit the source. A foreign
+        // hold still refuses, and the new target is always written unkeyed.
+        if (read == GlamourerEcInvalidKey)
+            (read, state) = readState(sourceIndex, LockKey);
+        if (read == GlamourerEcInvalidKey)
+            return IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld);
+        if (read is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state == null)
+            return IntegrationPortResult.Fail($"Could not read source appearance (code {read}).");
+        var prepared = prepareTarget();
+        if (!prepared.Success) return prepared;
+        int applied = applyState(state.DeepClone(), targetIndex, 0u,
+            ApplyOnce | ApplyEquipment | ApplyCustomization);
+        return GlamourerResult(applied, "initializing the duplicate's appearance");
+    }
+
     public IntegrationPortResult ResetSpawnAppearance(nint address)
     {
         // A missing optional provider has no retained state to clear.
@@ -1182,13 +1217,21 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         return Guarded(Glamourer, "Initialize spawn appearance", () =>
         {
             if (AddressPair(address, address) is { } refusal) return refusal;
-            // Reused Poser names retain Glamourer ModelData independently of the
-            // native model ID. Key zero deliberately cannot unlock a foreign hold.
-            int ec = _revertState.InvokeFunc(IndexOf(address), 0u,
-                ApplyOnce | ApplyEquipment | ApplyCustomization);
-            // No previous state is also a clean spawn.
-            return ec == GlamourerEcActorNotFound ? IntegrationPortResult.Ok()
-                : GlamourerResult(ec, "initializing the spawned actor's appearance");
+            if (_objects[IndexOf(address)] is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter target
+                || target.Address != address)
+                return IntegrationPortResult.Fail("The owned spawn is no longer a player-kind object.");
+            string name = target.Name.TextValue;
+            // This API is name-based. Restrict it to the freshly self-identified
+            // Poser body and refuse any live same-name actor, including its source.
+            if (!name.StartsWith("Poser ", StringComparison.Ordinal)
+                || _objects.Any(other => other.Address != address && other.Name.TextValue == name))
+                return IntegrationPortResult.Fail("The owned spawn's appearance identity is not unique.");
+            // Both BaseData and ModelData survive slot reuse. Revert restores the
+            // stale baseline, and ApplyState can return Success while refusing a
+            // non-human -> human change. Forget only this new body's unheld state;
+            // the next read/draw initializes it from the native body we just seeded.
+            int ec = _deletePlayerState.InvokeFunc(name, checked((ushort)target.HomeWorld.RowId), 0u);
+            return GlamourerResult(ec, "initializing the spawned actor's appearance");
         });
     }
 
