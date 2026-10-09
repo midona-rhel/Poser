@@ -118,13 +118,21 @@ public static partial class Crystarium
         private sealed class SubmenuLevel
         {
             public int Parent;
+            public int[] Path = [];
+            public string[] PathLabels = [];
             public ContextMenuItem[] Items = [];
             public Vector2 Min;
             public Vector2 Size;
+            public Vector2 Pivot;
             public double KeepUntil;
+            public Phase Phase = Phase.Opening;
+            public double PhaseStart;
+            public float ExitScale = 1f;
+            public float ExitAlpha = 1f;
         }
 
         private static readonly List<SubmenuLevel> Submenus = new();
+        private static readonly List<SubmenuLevel> ClosingSubmenus = new();
 
         private static double _phaseStart;
         private static int _lastOwnerFrame = -1;
@@ -155,6 +163,7 @@ public static partial class Crystarium
             _id = id;
             _items = items;
             Submenus.Clear();
+            ClosingSubmenus.Clear();
             _submenuItems = null;
             _submenuParent = -1;
             _submenuClicked = -1;
@@ -175,6 +184,7 @@ public static partial class Crystarium
         public static void DismissAll()
         {
             Submenus.Clear();
+            ClosingSubmenus.Clear();
             if (_phase != Phase.Hidden)
                 Interactive.ReleaseExclusive(ExclusiveKey(_id));
             _phase = Phase.Hidden;
@@ -476,9 +486,15 @@ public static partial class Crystarium
 
             float host = Crystarium.ActiveTheme.Floating.HostMargin * s;
             UpdateSubmenus(pointer, s, io.DisplaySize, interactive);
+            PruneClosingSubmenus(now);
             var unionMin = _min;
             var unionMax = _min + _size;
             foreach (var level in Submenus)
+            {
+                unionMin = Vector2.Min(unionMin, level.Min);
+                unionMax = Vector2.Max(unionMax, level.Min + level.Size);
+            }
+            foreach (var level in ClosingSubmenus)
             {
                 unionMin = Vector2.Min(unionMin, level.Min);
                 unionMax = Vector2.Max(unionMax, level.Min + level.Size);
@@ -494,16 +510,35 @@ public static partial class Crystarium
             int clicked = DrawSurfaceAndRows(
                 dl, s, interactive && !PointerWithinSubmenus(pointer, 0),
                 _items, _min, _size, "##fm-row", alpha);
+            foreach (var level in ClosingSubmenus)
+            {
+                var motion = SubmenuMotion(level, now);
+                int retiringStart = dl.VtxBuffer.Size;
+                DrawSurfaceAndRows(
+                    dl, s, false, level.Items, level.Min, level.Size,
+                    "##fm-retiring-row", alpha * motion.Alpha);
+                int retiringEnd = dl.VtxBuffer.Size;
+                VertexTransform.ApplyPop(
+                    dl, retiringStart, retiringEnd, level.Pivot,
+                    motion.Scale, Vector2.Zero, motion.Alpha);
+            }
             Action? nestedAction = null;
             bool nestedClicked = false;
             bool keepOpen = clicked >= 0 && _items[clicked].KeepOpen;
             for (int depth = 0; depth < Submenus.Count; depth++)
             {
                 var level = Submenus[depth];
+                var motion = SubmenuMotion(level, now);
+                int childStart = dl.VtxBuffer.Size;
                 int childClicked = DrawSurfaceAndRows(
-                    dl, s, interactive && !PointerWithinSubmenus(pointer, depth + 1),
+                    dl, s, interactive && level.Phase == Phase.Open
+                        && !PointerWithinSubmenus(pointer, depth + 1),
                     level.Items, level.Min, level.Size,
-                    $"##fm-submenu-{depth}-row", alpha);
+                    $"##fm-submenu-{depth}-row", alpha * motion.Alpha);
+                int childEnd = dl.VtxBuffer.Size;
+                VertexTransform.ApplyPop(
+                    dl, childStart, childEnd, level.Pivot,
+                    motion.Scale, Vector2.Zero, motion.Alpha);
                 if (childClicked < 0) continue;
                 keepOpen = level.Items[childClicked].KeepOpen;
                 if (depth == 0)
@@ -581,8 +616,24 @@ public static partial class Crystarium
                 if (previous is null || previous.Parent != parent)
                 {
                     if (depth < Submenus.Count)
-                        Submenus.RemoveRange(depth, Submenus.Count - depth);
-                    previous = new SubmenuLevel { Parent = parent };
+                        RetireSubmenus(depth, now);
+                    var path = new int[depth + 1];
+                    var pathLabels = new string[depth + 1];
+                    if (depth > 0)
+                    {
+                        Array.Copy(Submenus[depth - 1].Path, path, depth);
+                        Array.Copy(Submenus[depth - 1].PathLabels, pathLabels, depth);
+                    }
+                    path[depth] = parent;
+                    pathLabels[depth] = items[parent].Label;
+                    RemoveClosingBranch(path, pathLabels);
+                    previous = new SubmenuLevel
+                    {
+                        Parent = parent,
+                        Path = path,
+                        PathLabels = pathLabels,
+                        PhaseStart = now,
+                    };
                     Submenus.Add(previous);
                 }
                 previous.Items = items[parent].SubmenuItems!;
@@ -590,6 +641,9 @@ public static partial class Crystarium
                     HeightFor(previous.Items, scale));
                 previous.Min = PlaceSubmenu(min, size, rowMin, previous.Size,
                     displaySize, scale, Crystarium.ActiveTheme.Floating.MenuPadding);
+                previous.Pivot = new Vector2(
+                    previous.Min.X > min.X ? previous.Min.X : previous.Min.X + previous.Size.X,
+                    previous.Min.Y);
                 if (overDescendant || InRect(pointer, rowMin, new Vector2(
                         size.X - Crystarium.ActiveTheme.Floating.MenuPadding * 2f * scale,
                         Crystarium.ActiveTheme.Controls.ListRowHeight * scale)))
@@ -599,9 +653,72 @@ public static partial class Crystarium
                 size = previous.Size;
             }
             if (depth < Submenus.Count)
-                Submenus.RemoveRange(depth, Submenus.Count - depth);
+                RetireSubmenus(depth, now);
             _submenuItems = Submenus.Count > 0 ? Submenus[0].Items : null;
             _submenuParent = Submenus.Count > 0 ? Submenus[0].Parent : -1;
+        }
+
+        private static void RetireSubmenus(int first, double now)
+        {
+            for (int i = first; i < Submenus.Count; i++)
+            {
+                var level = Submenus[i];
+                var motion = SubmenuMotion(level, now);
+                level.Phase = Phase.Closing;
+                level.PhaseStart = now;
+                level.ExitScale = motion.Scale;
+                level.ExitAlpha = motion.Alpha;
+                ClosingSubmenus.Add(level);
+            }
+            Submenus.RemoveRange(first, Submenus.Count - first);
+        }
+
+        private static void RemoveClosingBranch(int[] path, string[] pathLabels)
+        {
+            for (int i = ClosingSubmenus.Count - 1; i >= 0; i--)
+            {
+                var closing = ClosingSubmenus[i];
+                if (closing.Path.AsSpan().SequenceEqual(path)
+                    && closing.PathLabels.AsSpan().SequenceEqual(pathLabels))
+                {
+                    ClosingSubmenus.RemoveAt(i);
+                    return;
+                }
+            }
+        }
+
+        private static (float Scale, float Alpha) SubmenuMotion(
+            SubmenuLevel level,
+            double now)
+        {
+            float elapsed = (float)(now - level.PhaseStart);
+            if (level.Phase == Phase.Opening)
+            {
+                float k = Enter.Evaluate(Math.Clamp(
+                    elapsed / Crystarium.ActiveTheme.Motion.Fast, 0f, 1f));
+                if (elapsed >= Crystarium.ActiveTheme.Motion.Fast)
+                    level.Phase = Phase.Open;
+                return (0.92f + 0.08f * k, k);
+            }
+            if (level.Phase == Phase.Closing)
+            {
+                float k = Exit.Evaluate(Math.Clamp(
+                    elapsed / Crystarium.ActiveTheme.Motion.MenuExit, 0f, 1f));
+                return (
+                    level.ExitScale + (0.95f - level.ExitScale) * k,
+                    level.ExitAlpha * (1f - k));
+            }
+            return (1f, 1f);
+        }
+
+        private static void PruneClosingSubmenus(double now)
+        {
+            for (int i = ClosingSubmenus.Count - 1; i >= 0; i--)
+            {
+                if (now - ClosingSubmenus[i].PhaseStart
+                    >= Crystarium.ActiveTheme.Motion.MenuExit)
+                    ClosingSubmenus.RemoveAt(i);
+            }
         }
 
         private static bool PointerWithinSubmenus(Vector2 pointer, int first)
