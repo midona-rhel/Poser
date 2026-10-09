@@ -98,24 +98,36 @@ public sealed class EnvironmentControlTests
         Assert.False(outsideHistory.CanUndo);
     }
 
-    [Fact]
-    public void Interior_brightness_release_restores_baseline_and_replays()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Interior_brightness_release_restores_baseline_and_replays(bool returnToBaseline)
     {
         var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
         var history = new TransformHistory();
         var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
         control.SetInteriorBrightness(0.7f);
         control.Seal();
+        if (returnToBaseline)
+        {
+            control.SetInteriorBrightness(0.4f);
+            control.Seal();
+        }
+        var previous = history.PeekUndo();
         control.ReleaseInteriorBrightness();
         Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
 
         var release = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.NotSame(previous, release);
         Assert.True(release.Undo());
         history.CommitUndo(release);
-        Assert.Equal(0.7f, runtime.InteriorBrightness);
+        Assert.Equal(returnToBaseline ? 0.4f : 0.7f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
         Assert.True(release.Redo());
         history.CommitRedo(release);
         Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
     }
 
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort

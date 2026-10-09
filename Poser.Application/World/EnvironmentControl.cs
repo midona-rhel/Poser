@@ -109,12 +109,14 @@ public sealed class EnvironmentControl : IEnvironmentControl
         if (!_environment.ReleaseInteriorBrightness(binding) ||
             _environment.InteriorBrightness is not { } restored)
             return;
-        _journal.Record("Release interior brightness", before, restored, next =>
+        // Ownership changes even when the slider already equals its baseline.
+        _journal.Record("Release interior brightness",
+            (Owned: true, Value: before), (Owned: false, Value: restored), next =>
         {
-            if (next == restored)
-                _environment.ReleaseInteriorBrightness(binding);
+            if (next.Owned)
+                _environment.TrySetInteriorBrightness(next.Value, binding);
             else
-                _environment.TrySetInteriorBrightness(next, binding);
+                _environment.ReleaseInteriorBrightness(binding);
         });
     }
 

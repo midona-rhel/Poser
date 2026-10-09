@@ -705,7 +705,7 @@ public static partial class Crystarium
                 float k = Exit.Evaluate(Math.Clamp(
                     elapsed / Crystarium.ActiveTheme.Motion.MenuExit, 0f, 1f));
                 return (
-                    level.ExitScale + (0.95f - level.ExitScale) * k,
+                    level.ExitScale * (1f - 0.05f * k),
                     level.ExitAlpha * (1f - k));
             }
             return (1f, 1f);
