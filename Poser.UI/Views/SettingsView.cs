@@ -1276,6 +1276,7 @@ public static partial class SettingsView
             {
                 for (int i = start; i < start + count; i++)
                     DrawKeybindRow(vm, form, KeybindRegistry.Actions[i]);
+                form.Gap();
                 form.Actions(
                     string.Empty,
                     actions => actions.Button(
@@ -1334,6 +1335,8 @@ public static partial class SettingsView
                 DrawKeybindSlot(vm, actions, action, slots, 1);
             },
             help: action.Help);
+        if (vm.RebindingAction == action.Id && vm.RebindRefusal.Length > 0)
+            form.Status(vm.RebindRefusal, warning: true);
         var conflicts = vm.Conflicts;
         var others = conflicts.TryGetValue(
                 new KeybindRegistry.SlotRef(action.Id, 0), out var primary)
@@ -1472,13 +1475,8 @@ public static partial class SettingsView
         // been released once.
         var io = ImGui.GetIO();
 
-        // The probe found the stubbed key source (2026-08-30) and retired;
-        // the armed line states the plain instructions — or the refusal,
-        // which stands until another chord lands.
-        vm.RebindProbe = vm.RebindRefusal.Length > 0
-            ? vm.RebindRefusal
-            : $"Listening for {action}… press a chord. Escape cancels, "
-                + "Backspace clears the slot.";
+        vm.RebindProbe =
+            "Press a chord. Escape cancels, Backspace clears the slot.";
 
         if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
             || ImGui.IsKeyDown(ImGuiKey.Escape))
@@ -1532,9 +1530,7 @@ public static partial class SettingsView
                 }
             if (holder != null)
             {
-                vm.RebindRefusal =
-                    $"{chord} is bound to “{holder}” — press "
-                    + "another chord";
+                vm.RebindRefusal = $"{chord}: already bound to {holder}.";
                 vm.RebindHeld.Add(key);
                 return;
             }

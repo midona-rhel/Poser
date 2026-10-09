@@ -362,6 +362,14 @@ public static partial class Crystarium
                 content(new FormScope(this, title));
         }
 
+        internal void AddGap()
+        {
+            if (Probe != null || RowFilter != null)
+                return;
+            CloseLine();
+            _y += ActiveTheme.Spacing.Four;
+        }
+
         /// <summary>Draws an inline section separator.</summary>
         internal void DrawInlineRule()
         {
@@ -558,6 +566,9 @@ public static partial class Crystarium
 
         /// <summary>Ends a paired stretch early.</summary>
         public void EndPair() => _page.EndPairedRows();
+
+        /// <summary>Adds a small scaled gap between groups of controls.</summary>
+        public void Gap() => _page.AddGap();
 
         /// <summary>Places a shared primitive or read-model view in one form
         /// row. The caller owns only the content; page spacing and help remain
