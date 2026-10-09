@@ -88,20 +88,43 @@ public sealed class ScopedHistoryTests
     }
 
     [Fact]
-    public void Lifecycle_identity_may_change_during_replay_without_invalidating_its_commit()
+    public void Lifecycle_requires_global_replay_and_does_not_block_disjoint_edits()
     {
         var history = new TransformHistory();
         SelectionId? live = Actor;
+        var ownEdit = Step(Actor);
+        var otherEdit = Step(_other);
         var entry = new SceneLifecyclePatch("Spawn", () => true, () => true)
             { ResolveAffectedEntities = () => live is { } id ? new[] { id } : null };
+        history.Append(ownEdit);
+        history.Append(otherEdit);
         history.Append(entry);
-        Assert.Same(entry, history.PeekUndo(Actor));
+        Assert.Null(history.PeekUndo(Actor)); // must not skip back across its lifecycle
+        Assert.Same(otherEdit, history.PeekUndo(_other));
+        Assert.Same(entry, history.PeekUndo());
         live = null;
-        history.CommitUndo(entry, Actor);
+        history.CommitUndo(entry);
+        Assert.Null(history.PeekRedo(Actor));
         Assert.Same(entry, history.PeekRedo());
-        live = _other;
-        history.CommitRedo(entry, Actor);
-        Assert.Same(entry, history.PeekUndo(_other));
+        live = SelectionId.ForActor(_actor.NextGeneration());
+        history.CommitRedo(entry);
+        Assert.Null(history.PeekUndo(live));
+        Assert.Same(entry, history.PeekUndo());
+    }
+
+    [Fact]
+    public void Lifecycle_redo_blocks_older_edits_for_its_owner_but_not_other_entities()
+    {
+        var history = new TransformHistory();
+        var ownEdit = Step(Actor);
+        var otherEdit = Step(_other);
+        var entry = new SceneLifecyclePatch("Remove", () => true, () => true)
+            { AffectedEntities = new[] { Actor } };
+        history.Append(entry); history.Append(ownEdit); history.Append(otherEdit);
+        history.CommitUndo(otherEdit); history.CommitUndo(ownEdit); history.CommitUndo(entry);
+        Assert.Null(history.PeekRedo(Actor));
+        Assert.Same(otherEdit, history.PeekRedo(_other));
+        Assert.Same(entry, history.PeekRedo());
     }
 
     [Fact]

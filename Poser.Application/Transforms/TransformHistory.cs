@@ -248,9 +248,11 @@ public sealed class TransformHistory
             if (affected is null || affected.Count == 0) return null;
             var entities = affected.Select(id => EntityOf(ResolveLifecycleEntity(id))).Distinct().ToArray();
             if (!entities.Contains(selected)) continue;
-            // A shared step is indivisible. Never skip it to reach an older
-            // edit of one member, nor replay the other members implicitly.
-            return entities.Length == 1 ? entry : null;
+            // Lifecycle replay can remove the selected entity, leaving no live
+            // target for the opposite shortcut. Keep it global in both directions,
+            // but use its known footprint to skip it for unrelated entity edits.
+            // Shared steps likewise cannot be split or skipped for one member.
+            return entities.Length == 1 && entry is not SceneLifecyclePatch ? entry : null;
         }
         return null;
     }
