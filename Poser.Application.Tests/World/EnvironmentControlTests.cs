@@ -130,6 +130,30 @@ public sealed class EnvironmentControlTests
         Assert.False(runtime.IsInteriorBrightnessOverridden);
     }
 
+    [Theory]
+    [InlineData(0.8f, false)]
+    [InlineData(0.4f, false)]
+    [InlineData(0.4f, true)]
+    public void Reset_brightness_replays_value_and_ownership(float before, bool owned)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = before };
+        if (owned) runtime.TrySetInteriorBrightness(before, runtime.HousingInteriorBinding);
+        var history = new TransformHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+        control.ResetInteriorBrightness();
+        Assert.Equal(0.8f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        var reset = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(reset.Undo());
+        history.CommitUndo(reset);
+        Assert.Equal(before, runtime.InteriorBrightness);
+        Assert.Equal(owned, runtime.IsInteriorBrightnessOverridden);
+        Assert.True(reset.Redo());
+        history.CommitRedo(reset);
+        Assert.Equal(0.8f, runtime.InteriorBrightness);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+    }
+
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
     {
         private int _minute;

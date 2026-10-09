@@ -92,12 +92,19 @@ public sealed class EnvironmentControl : IEnvironmentControl
     {
         if (_environment.InteriorBrightness is not { } before)
             return;
+        bool owned = _environment.IsInteriorBrightnessOverridden;
         ulong binding = _environment.HousingInteriorBinding;
         if (!_environment.TryResetInteriorBrightness(binding) ||
-            _environment.InteriorBrightness is not { } reset || before == reset)
+            _environment.InteriorBrightness is not { } reset)
             return;
-        _journal.Record("Reset interior brightness", before, reset,
-            next => _environment.TrySetInteriorBrightness(next, binding));
+        _journal.Record("Reset interior brightness",
+            (Owned: owned, Value: before), (Owned: true, Value: reset), next =>
+        {
+            if (next.Owned)
+                _environment.TrySetInteriorBrightness(next.Value, binding);
+            else
+                _environment.ReleaseInteriorBrightness(binding);
+        });
     }
 
     public void ReleaseInteriorBrightness()
