@@ -2012,10 +2012,10 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// hover feedback to the hover list.</summary>
     private uint ResolveBoneColor(BoneDisplayData bone, bool useHover, uint fallback)
     {
-        if (bone.Id.Bone is { } hovered && hovered == _presentation.MapHoveredBone)
-            return HoveredBoneColor;
         if (bone.IsSelected)
             return SelectedBoneColor;
+        if (bone.Id.Bone is { } hovered && hovered == _presentation.MapHoveredBone)
+            return HoveredBoneColor;
         if (useHover && bone.IsHovered)
             return HoveredBoneColor;
         if (bone.IsIkChain)
