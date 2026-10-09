@@ -894,9 +894,10 @@ public sealed partial class PoseLibraryPane
             });
         }
 
-        // Row identity did not survive the rebuild, so neither does the
-        // selection; a rail row that no longer exists falls back to "All".
-        ClearTileSelection();
+        // A rescan invalidates row identity. A sort-only rebuild carries the
+        // selected paths across because the files themselves did not change.
+        if (!RestoreSortSelection())
+            ClearTileSelection();
         _vm.ShowRail = true;
         _vm.RailHeads = 2;
         var sources = snapshot.Sources;

@@ -277,6 +277,23 @@ public sealed partial class PoseLibraryPane
     {
         var matching = entries.Where(entry =>
             InTab(entry.Kind, kind) && KindAdmitted(entry, kind));
+        if (_sort != LibraryBrowseSort.Name)
+        {
+            var modified = Comparer<DateTime>.Create((left, right) =>
+                LibraryBrowseOrdering.CompareModified(left, right, _sort));
+            // Keep structural groups contiguous; the date choice orders files
+            // inside the folder/scene section the browser already presents.
+            return kind == PoseLibraryEntryKind.Scene
+                ? matching
+                    .OrderByDescending(entry => SceneDay(entry).Date)
+                    .ThenBy(entry => entry.ScenePlace, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(entry => entry.Modified, modified)
+                    .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                : matching
+                    .OrderBy(entry => entry.Folder)
+                    .ThenBy(entry => entry.Modified, modified)
+                    .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase);
+        }
         return kind == PoseLibraryEntryKind.Scene
             ? matching
                 .OrderByDescending(entry => SceneDay(entry).Date)

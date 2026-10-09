@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Library;
 
 namespace Poser.UI;
 
@@ -106,14 +107,40 @@ public static partial class Crystarium
         private const float RailFooterMinShare = 0.4f;
         private const float RailFooterMaxShare = 0.6f;
 
-        private static readonly Comparison<FileListingEntry> ByKind =
-            static (left, right) =>
-            {
-                if (left.IsDirectory != right.IsDirectory)
-                    return left.IsDirectory ? -1 : 1;
-                return string.Compare(
+        private static readonly string[] SortOptions =
+            ["Name", "Newest", "Oldest"];
+
+        private static int CompareEntries(
+            FileListingEntry left,
+            FileListingEntry right,
+            LibraryBrowseSort sort)
+        {
+            if (left.IsDirectory != right.IsDirectory)
+                return left.IsDirectory ? -1 : 1;
+            int modified = LibraryBrowseOrdering.CompareModified(
+                left.Modified, right.Modified, sort);
+            return modified != 0
+                ? modified
+                : string.Compare(
                     left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
-            };
+        }
+
+        private readonly Comparison<FileListingEntry> _compareEntries;
+
+        private int CompareEntries(FileListingEntry left, FileListingEntry right) =>
+            CompareEntries(left, right, _sort);
+
+        private readonly Action<int> _setSort;
+
+        private void SetSort(int selected)
+        {
+            if (!Enum.IsDefined((LibraryBrowseSort)selected)
+                || selected == (int)_sort)
+                return;
+            _sort = (LibraryBrowseSort)selected;
+            _entries.Sort(_compareEntries);
+            _resetEntriesScroll = true;
+        }
 
         private readonly string _title;
         private readonly string[] _extensions;
@@ -134,6 +161,7 @@ public static partial class Crystarium
         private readonly string _searchId;
         private string _search = string.Empty;
         private string _nameFilter = string.Empty;
+        private LibraryBrowseSort _sort;
         private bool _resetEntriesScroll;
 
         private readonly List<FileQuickEntry> _quick = new();
@@ -190,6 +218,8 @@ public static partial class Crystarium
             _entryRowPrefix = $"{_id}-entry-";
             _nameId = $"{_id}-name";
             _searchId = $"{_id}-search";
+            _compareEntries = CompareEntries;
+            _setSort = SetSort;
         }
 
         /// <summary>
@@ -665,13 +695,26 @@ public static partial class Crystarium
             float searchLeft = inset + EntryIconSlot * 0.5f
                 - theme.Controls.InputPaddingX - theme.Controls.SmallIconSize * 0.5f;
             float searchHeight = theme.Controls.WorkspaceHeight;
+            float sortWidth = 88f;
+            float sortGap = theme.Page.ActionGap;
             ImGui.SetCursorScreenPos(body.Min + new Vector2(searchLeft, inset) * scale);
             FilterPill(_searchId, _search, SetSearch, "Search",
                 ControlStyle.Workspace with
                 {
                     Width = UiWidth.Fixed(MathF.Max(1f,
-                        body.Size.X / scale - searchLeft - theme.Scrollbar.GutterWidth)),
+                        body.Size.X / scale - searchLeft - theme.Scrollbar.GutterWidth
+                        - sortWidth - sortGap)),
                 });
+            ImGui.SetCursorScreenPos(new Vector2(
+                body.Max.X - (theme.Scrollbar.GutterWidth + sortWidth) * scale,
+                body.Min.Y + inset * scale));
+            Dropdown(
+                $"{_id}-sort",
+                SortOptions,
+                (int)_sort,
+                _setSort,
+                ControlStyle.Workspace with { Width = UiWidth.Fixed(sortWidth) },
+                help: "Sort files and folders");
             float listTop = inset + searchHeight + theme.Spacing.Four;
             ImGui.SetCursorScreenPos(body.Min + new Vector2(inset, listTop) * scale);
             ScrollRegion(
@@ -1145,7 +1188,7 @@ public static partial class Crystarium
                 _entries.Add(entry);
             }
 
-            _entries.Sort(ByKind);
+            _entries.Sort(_compareEntries);
         }
 
         private bool MatchesFilter(string name)
