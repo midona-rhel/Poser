@@ -44,8 +44,9 @@ public sealed partial class GraphicalBonePane
         _generatedLayoutSize = size;
         _generatedSpacing = spacing;
         _generatedSections.Clear();
-        var bones = actor.Skeletons.SelectMany(skeleton => skeleton.Bones).ToArray();
-        var known = bones.ToDictionary(bone => bone.Id);
+        var known = actor.Skeletons.SelectMany(skeleton => skeleton.Bones).ToDictionary(bone => bone.Id);
+        // Keep structural ancestors for reference-position lookup, not as selectable map dots.
+        var bones = known.Values.Where(bone => !bone.IsHidden).ToArray();
         var children = bones.Where(bone => bone.Parent is { } parent && known.ContainsKey(parent))
             .ToLookup(bone => bone.Parent!.Value);
 
@@ -55,7 +56,8 @@ public sealed partial class GraphicalBonePane
         var separated = new HashSet<BoneId>();
         foreach (var bone in bones)
         {
-            if (bone.Parent is { } parent && known.ContainsKey(parent) && children[parent].Count() == 1) continue;
+            if (bone.Parent is { } parent && known.TryGetValue(parent, out var ancestor)
+                && !ancestor.IsHidden && children[parent].Count() == 1) continue;
             var chain = new List<BoneDescriptor>();
             var seen = new HashSet<BoneId>();
             var current = bone;
@@ -110,7 +112,8 @@ public sealed partial class GraphicalBonePane
         {
             var chain = chains[c];
             var dots = new List<(BoneDescriptor, Vector2, int)>();
-            BoneDescriptor? anchor = chain[0].Parent is { } parent ? known.GetValueOrDefault(parent) : null;
+            BoneDescriptor? anchor = chain[0].Parent is { } parent
+                && known.GetValueOrDefault(parent) is { IsHidden: false } visibleParent ? visibleParent : null;
             int columns = Math.Max(2, (int)((size.X - 48) / spacing) + 1);
             int count = chain.Count + (anchor == null ? 0 : 1);
             float width = (Math.Min(columns, count) - 1) * spacing;
