@@ -1175,6 +1175,24 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return GlamourerResult(ec, "reverting the state", actor);
         });
 
+    public IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
+    {
+        if (!Glamourer.Available) return IntegrationPortResult.Ok();
+        return Guarded(Glamourer, "Initialize duplicate appearance", () =>
+        {
+            if (AddressPair(sourceAddress, targetAddress) is { } refusal) return refusal;
+            var (read, state) = _getState.InvokeFunc(IndexOf(sourceAddress), 0u);
+            if (read is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state == null)
+                return IntegrationPortResult.Fail($"Could not read source appearance (code {read}).");
+            // Revert uses the retained state's BaseData, which may itself belong
+            // to a previous occupant. Replace ModelData explicitly from the
+            // source; key zero neither reads through nor unlocks foreign holds.
+            int applied = _applyState.InvokeFunc(state.DeepClone(), IndexOf(targetAddress), 0u,
+                ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(applied, "initializing the duplicate's appearance");
+        });
+    }
+
     public IntegrationPortResult ResetSpawnAppearance(nint address)
     {
         // A missing optional provider has no retained state to clear.

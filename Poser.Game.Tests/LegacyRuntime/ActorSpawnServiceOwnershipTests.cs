@@ -85,7 +85,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
-    public void Duplicate_resets_only_its_retained_state_before_first_draw()
+    public void Duplicate_copies_only_its_source_state_before_first_draw()
     {
         var source = Actor(0x901);
         var actor = Actor(0x900);
@@ -103,13 +103,20 @@ public sealed class ActorSpawnServiceOwnershipTests
             framework: framework, appearance: appearance);
         Assert.Same(actor, service.CloneActor(source));
         for (var i = 0; i < 3; i++) framework.RaiseUpdate();
-        Assert.Equal(1, appearance.Calls);
+        Assert.Equal(0, appearance.Calls);
+        Assert.Equal((source.Address, actor.Address), Assert.Single(appearance.Copies));
         Assert.True(native.DrawEnabled);
     }
 
     private sealed class FakeSpawnAppearance(Func<nint, IntegrationPortResult> reset) : ISpawnAppearancePort
     {
         public int Calls { get; private set; }
+        public List<(nint Source, nint Target)> Copies { get; } = new();
+        public IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
+        {
+            Copies.Add((sourceAddress, targetAddress));
+            return reset(targetAddress);
+        }
         public IntegrationPortResult ResetSpawnAppearance(nint address)
         {
             Calls++;

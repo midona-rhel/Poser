@@ -1239,6 +1239,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
             }
             var seeded = descriptor.Value;
+            var appearanceSource = inheritSource ? _native.ResolveActor(sourceAddress) : null;
             void PrepareDraw()
             {
                 if (!IsCallbackCurrent(ownership.Token, seeded)) return;
@@ -1246,12 +1247,14 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 if (_spawnAppearance is not null)
                 {
                     EnsureCurrent(ownership);
-                    // Names are slot-based, but Glamourer state outlives the slot's
-                    // occupant. Clear the old look after self-identification and
-                    // model assignment, inside the original deferred-draw window.
-                    // Duplicates need this too: copied native customize/equipment
-                    // does not replace the previous occupant's IPC ModelData.
-                    var reset = _spawnAppearance.ResetSpawnAppearance(seeded.Address);
+                    // Both ModelData and BaseData can outlive this slot's occupant.
+                    // A duplicate must replace the former from its source rather
+                    // than reverting to a possibly stale BaseData snapshot.
+                    var reset = inheritSource
+                        ? appearanceSource is { } original && _native.ResolveActor(sourceAddress) == original
+                            ? _spawnAppearance.CopySpawnAppearance(sourceAddress, seeded.Address)
+                            : IntegrationPortResult.Fail("The duplicate's appearance source is no longer available.")
+                        : _spawnAppearance.ResetSpawnAppearance(seeded.Address);
                     if (!reset.Success)
                         _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {reset.Detail}");
                 }

@@ -7,4 +7,5 @@ namespace Poser.Game.Integration;
 public interface ISpawnAppearancePort
 {
     IntegrationPortResult ResetSpawnAppearance(nint address);
+    IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress);
 }
