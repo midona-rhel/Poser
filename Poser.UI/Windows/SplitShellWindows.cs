@@ -240,7 +240,7 @@ public sealed class SidebarPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
@@ -545,7 +545,7 @@ public sealed class InspectorPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X

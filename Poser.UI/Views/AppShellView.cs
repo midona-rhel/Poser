@@ -600,7 +600,7 @@ public static class AppShellView
             // gesture twin. Every bar item was submitted by the call above,
             // so a hovered button keeps its own clicks.
             if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-                && !ImGui.IsAnyItemHovered())
+                && !Crystarium.WindowTitleControlHovered())
             {
                 var barMouse = ImGui.GetMousePos();
                 if (barMouse.X >= min.X && barMouse.X < max.X

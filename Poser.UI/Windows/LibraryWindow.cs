@@ -325,7 +325,7 @@ public sealed class LibraryWindow : Window
         // gesture twin, the shell's own rule. The title actions above keep
         // their clicks.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !ImGui.IsAnyItemHovered())
+            && !Crystarium.WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X

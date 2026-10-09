@@ -11,13 +11,21 @@ public static partial class Crystarium
     private static uint _titleDragId;
     private static Vector2 _titleDragOffset;
 
+    internal static bool WindowTitleControlHovered()
+    {
+        // IsAnyItemHovered also includes last frame's item. After hovering
+        // our drag strip, that would make the strip disable itself forever.
+        uint hovered = ImGuiP.GetHoveredID();
+        return hovered != 0 && hovered != ImGui.GetID("##window-title-drag");
+    }
+
     /// <summary>Call after title controls. The host uses NoMove so content cannot start a native drag.</summary>
     public static void WindowTitleDrag(Vector2 min, Vector2 max)
     {
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) _titleDragId = 0;
         var cursor = ImGui.GetCursorScreenPos();
         uint id = ImGui.GetID("##window-title-drag");
-        bool controlHovered = _titleDragId != id && ImGui.IsAnyItemHovered();
+        bool controlHovered = _titleDragId != id && WindowTitleControlHovered();
         ImGui.SetCursorScreenPos(min);
         var drag = Interactive.Reserve("##window-title-drag", max - min, disabled: controlHovered);
 #if DEBUG
