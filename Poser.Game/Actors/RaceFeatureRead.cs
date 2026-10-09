@@ -1,13 +1,15 @@
 using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using Poser.Domain.Identity;
 
 namespace Poser.Game;
 
 /// <summary>
 /// The one customize byte the skeleton itself needs: <c>RaceFeatureType</c>,
 /// which for a Viera says which of the four ear sets the character wears
-/// (Ktisis reads exactly this through <c>ActorEntity.TryGetEarId</c>). Read on
-/// the same terms as every other customize read here — off the draw data, no
-/// thread gate, and a failure means "unknown" rather than a guess.
+/// (Ktisis reads exactly this through <c>ActorEntity.TryGetEarId</c>). The
+/// rendered Human takes precedence over base character data after appearance IPC.
 /// </summary>
 public static unsafe class RaceFeatureRead
 {
@@ -22,6 +24,17 @@ public static unsafe class RaceFeatureRead
     /// </summary>
     private const int RaceFeatureTypeIndex = 22;
 
+    public static CustomizeData ReadCustomize(nint address)
+    {
+        if (address == nint.Zero) return default;
+        var model = SlotCharacterBases.Resolve(address, PoseSlot.Character);
+        // Glamourer may change only Human.Customize; DrawData then still
+        // describes the original race and ears, not the skeleton being posed.
+        return model != null && model->GetModelType() == CharacterBase.ModelType.Human
+            ? ((Human*)model)->Customize
+            : ((CSCharacter*)address)->DrawData.CustomizeData;
+    }
+
     /// <summary>
     /// The actor's ear-set value, or 0 when the actor is not a Viera, has no
     /// address, or the read throws. Zero is the caller's signal to filter
@@ -33,12 +46,9 @@ public static unsafe class RaceFeatureRead
             return 0;
         try
         {
-            var character = (CSCharacter*)address;
-            if (character == null)
-                return 0;
-            var customize = &character->DrawData.CustomizeData;
-            return customize->Race == VieraRace
-                ? customize->Data[RaceFeatureTypeIndex]
+            var customize = ReadCustomize(address);
+            return customize.Race == VieraRace
+                ? customize.Data[RaceFeatureTypeIndex]
                 : (byte)0;
         }
         catch
