@@ -16,6 +16,8 @@
   UI input is not OS/game input; button/key presses require a matching release.
   Screenshots include the main game viewport and its plugin UI, not detached
   external viewports. These probes are diagnostics, not acceptance verdicts.
+  `/uiwindows` measures registered Poser windows and can restore a named test
+  window's position; it cannot target other plugins' windows.
 
 - The in-game harness is the wiring/native gate. `/poser test basic` runs
   these eight scenarios once: `selection.actor-bone-clear`,
