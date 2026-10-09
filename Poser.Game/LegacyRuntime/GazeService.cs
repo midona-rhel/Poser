@@ -545,7 +545,8 @@ public unsafe class GazeService : IGazeService, IDisposable
             }
         }
 
-        // Call original - this runs gaze IK and modifies bones
+        // Continue the native look-at loop. Do not assume its return is the
+        // solved-pose boundary: native pose evaluation can happen later.
 #if DEBUG
         Diagnostics.GazeEvaluationProbe.Capture((nint)args->OwnerObject, "gaze-before");
         var result = _actorLookAtLoop!.Original(args);
