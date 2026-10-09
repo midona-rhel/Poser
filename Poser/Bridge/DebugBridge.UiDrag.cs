@@ -51,9 +51,12 @@ public sealed partial class DebugBridge
         if (probe.LastFrame == frame) return;
         probe.LastFrame = frame;
         var io = ImGui.GetIO();
+        var hoveredWindow = ImGui.GetCurrentContext().HoveredWindow;
         _uiDragTrace.Add(new { step = probe.Step, frame,
             x = io.MousePos.X, y = io.MousePos.Y, down = ImGui.IsMouseDown(ImGuiMouseButton.Left),
-            focusLost = io.AppFocusLost, dragging = ImGui.IsMouseDragging(ImGuiMouseButton.Left) });
+            focusLost = io.AppFocusLost, dragging = ImGui.IsMouseDragging(ImGuiMouseButton.Left),
+            hoveredWindow = hoveredWindow.IsNull ? null : new { id = hoveredWindow.ID,
+                x = hoveredWindow.Pos.X, y = hoveredWindow.Pos.Y } });
         // The desktop backend otherwise replaces each injected position on the
         // following frame. Isolate this bounded diagnostic gesture only; restore
         // native event admission after release, timeout, cancel or plugin disposal.

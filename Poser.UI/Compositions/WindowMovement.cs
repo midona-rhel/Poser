@@ -12,7 +12,7 @@ public static partial class Crystarium
     {
         // IsAnyItemHovered also includes last frame's item. After hovering
         // our drag strip, that would make the strip disable itself forever.
-        uint hovered = ImGuiP.GetHoveredID();
+        uint hovered = ImGui.GetCurrentContext().HoveredId;
         return hovered != 0 && hovered != ImGui.GetID("##window-title-drag");
     }
 
