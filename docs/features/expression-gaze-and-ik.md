@@ -89,6 +89,11 @@ including old out-of-reach offsets, so the first reverse step moves inward.
 With constraints disabled, translation remains unrestricted. Zero-translation
 edits never clamp an existing target; rotation and scale cannot move the handle.
 
+Two Joint's End rotation is the sole orientation switch in every target mode:
+on preserves the authored target orientation, off lets the endpoint turn with
+the solved limb. Other solvers retain Keep rotation; its saved value never
+overrides Two Joint's End rotation, including after the native solve.
+
 Scene entity targets follow props, scenery/world objects, lights and VFX through
 their exact stable scene IDs; they do not need a skeleton. Attachment captures
 the tip's current world-space position offset and relative rotation, matching
