@@ -298,6 +298,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
+                        "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
@@ -989,6 +990,28 @@ public sealed partial class DebugBridge : IDisposable
                 byte d2 = query.TryGetValue("dye2", out var s2) ? byte.Parse(s2) : (byte)0;
                 var set = _session.SetItem(id, slot, item, d1, d2);
                 return Json(new { ok = set.Success, set.Detail });
+            }
+            case "/bonepresetaction":
+            {
+                string name = query.GetValueOrDefault("name", "");
+                string slot = query.GetValueOrDefault("slot", "Character");
+                int partial = int.Parse(query.GetValueOrDefault("partial", "0"), CultureInfo.InvariantCulture);
+                var matches = _skeletons.GetSkeletons(actor).Where(s => s.Slot.ToString() == slot)
+                    .SelectMany(s => s.Bones).Where(b => b.BoneName == name && b.PartialId == partial).ToArray();
+                if (matches.Length != 1 || _bindings.GetBoneId(matches[0]) is not { } boneId)
+                    return Json(new { error = "Expected one exact bound bone." });
+                var pane = (global::Poser.UI.GraphicalBonePane)_services.GetService(typeof(global::Poser.UI.GraphicalBonePane))!;
+                var map = query.GetValueOrDefault("map", "Body");
+                var actions = pane.AddToPresetActions(boneId).FirstOrDefault(item => item.Label == map).SubmenuItems;
+                if (actions == null) return Json(new { error = "No preset actions for this actor/map." });
+                if (query.TryGetValue("operation", out var operation))
+                {
+                    var action = actions.FirstOrDefault(item => item.Label == operation);
+                    if (action.Disabled || action.OnInvoke == null)
+                        return Json(new { error = "The requested action is unavailable." });
+                    action.OnInvoke();
+                }
+                return Json(new { ok = true, actions = actions.Select(item => new { item.Label, item.Disabled }) });
             }
             case "/setbone":
             {
