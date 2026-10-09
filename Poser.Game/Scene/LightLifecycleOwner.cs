@@ -16,6 +16,7 @@ internal sealed class LightLifecycleSlot
     public Poser.Entities.IBone? AttachedBone;
     public WorldLightCandidate? Source;
     public bool HasDocument;
+    public SelectionId? LastIdentity;
 }
 
 /// <summary>Owns light lifecycle capture, removal, restoration, and identity
@@ -25,6 +26,7 @@ internal sealed class LightLifecycleOwner
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
+    private readonly Func<ILight, TransformTargetId?>? _lightTarget;
     private readonly LifecycleSlotOwner<ILight, LightLifecycleSlot> _slots;
 
     public LightLifecycleOwner(
@@ -34,6 +36,7 @@ internal sealed class LightLifecycleOwner
     {
         _history = history;
         _lighting = lighting;
+        _lightTarget = lightTarget;
         _slots = new(
             light => new LightLifecycleSlot { Live = light, Source = _lighting.GetWorldSource(light) },
             slot => slot.Live, (slot, live) => slot.Live = live,
@@ -86,12 +89,16 @@ internal sealed class LightLifecycleOwner
 
         string description = $"{(light.Ownership == LightOwnership.World ? "Release" : "Remove")} light '{light.Name}'";
         var slot = SlotFor(light);
+        var affected = _lightTarget?.Invoke(light)?.ToSelectionId();
         if (!CaptureAndRemove(slot))
             return;
         _history.Append(new SceneLifecyclePatch(
             description,
             () => Restore(slot),
-            () => CaptureAndRemove(slot)));
+            () => CaptureAndRemove(slot))
+        {
+            ResolveAffectedEntities = () => Scope(slot, affected),
+        });
     }
 
     public bool CaptureAndRemove(IReadOnlyList<LightLifecycleSlot> slots)
@@ -121,8 +128,21 @@ internal sealed class LightLifecycleOwner
         _history.Append(new SceneLifecyclePatch(
             description,
             () => CaptureAndRemove(slot),
-            () => Restore(slot)));
+            () => Restore(slot))
+        {
+            ResolveAffectedEntities = () => Scope(slot, _lightTarget?.Invoke(light)?.ToSelectionId()),
+        });
         return light;
+    }
+
+    private IReadOnlyList<SelectionId>? Scope(LightLifecycleSlot slot, SelectionId? prior)
+    {
+        // Attached-light lifecycle also depends on its actor; keep it global
+        // until that complete relationship footprint is represented.
+        if (slot.AttachedBone is not null || slot.Live?.AttachedBone is not null) return null;
+        slot.LastIdentity = (slot.Live is { } live ? _lightTarget?.Invoke(live)?.ToSelectionId() : null)
+            ?? slot.LastIdentity ?? prior;
+        return slot.LastIdentity is { } id ? new[] { id } : null;
     }
 
     private bool CaptureAndRemoveCore(LightLifecycleSlot slot)

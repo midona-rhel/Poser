@@ -1,6 +1,7 @@
 using Poser.Application.World;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
+using Poser.Application.Selection;
 using System.Linq;
 #if DEBUG
 using System;
@@ -82,6 +83,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
     private readonly IServiceProvider _services;
+    private Task<SelectionRemovalResult>? _selectionRemovalProbe;
 
     public DebugBridge(
         IServiceProvider services,
@@ -298,7 +300,8 @@ public sealed partial class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
-                        "/selection?actors=INDEX,INDEX (omit to read; empty to clear)",
+                        "/selection?actors=INDEX,INDEX or entity=EXACT_ID (omit to read; empty actors to clear)",
+                        "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
@@ -435,7 +438,14 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/selection":
             {
-                if (query.TryGetValue("actors", out var actorKeys) || query.GetValueOrDefault("clear") == "1")
+                if (query.TryGetValue("entity", out var entityKey))
+                {
+                    var match = ParentProbeEntities().Where(entry => entry.Id.ToString() == entityKey).ToArray();
+                    if (match.Length != 1 || _sceneSession.Resolve(match[0].Id) != match[0].Id)
+                        return Json(new { error = "No such current entity." });
+                    _sceneSession.Selection.Select(match[0].Id);
+                }
+                else if (query.TryGetValue("actors", out var actorKeys) || query.GetValueOrDefault("clear") == "1")
                 {
                     var ids = new List<SelectionId>();
                     foreach (var selectionKey in (actorKeys ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
@@ -449,6 +459,20 @@ public sealed partial class DebugBridge : IDisposable
                     foreach (var selectedId in ids) _sceneSession.Selection.Add(selectedId);
                 }
                 return Json(_sceneSession.Selection.Selected.Select(id => id.ToString()).ToArray());
+            }
+            case "/selectionremove":
+            {
+                if (query.GetValueOrDefault("start") == "1"
+                    && _selectionRemovalProbe is not { IsCompleted: false })
+                {
+                    var commands = (SelectionEntityCommands)_services.GetService(typeof(SelectionEntityCommands))!;
+                    _selectionRemovalProbe = commands.Remove(_sceneSession.Selection.Selected.ToArray());
+                }
+                if (_selectionRemovalProbe is null) return Json(new { started = false });
+                if (!_selectionRemovalProbe.IsCompleted) return Json(new { running = true });
+                if (!_selectionRemovalProbe.IsCompletedSuccessfully)
+                    return Json(new { error = _selectionRemovalProbe.Exception?.GetBaseException().Message ?? "Removal cancelled." });
+                return Json(new { running = false, result = _selectionRemovalProbe.Result });
             }
             case "/uidrag":
                 return UiDrag(query);
@@ -646,12 +670,14 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/undo":
             {
-                var result = _transforms.Undo();
+                var result = query.GetValueOrDefault("selected") == "1"
+                    ? _transforms.UndoSelected() : _transforms.Undo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
             }
             case "/redo":
             {
-                var result = _transforms.Redo();
+                var result = query.GetValueOrDefault("selected") == "1"
+                    ? _transforms.RedoSelected() : _transforms.Redo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
             }
         }

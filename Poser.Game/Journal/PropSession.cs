@@ -34,7 +34,7 @@ public sealed class PropSession
         var before = p.Model;
         if (!p.Respawn(model, out refusal))
             return false;
-        _journal.Record(
+        _journal.RecordFor(p,
             "Change prop model",
             before,
             model,

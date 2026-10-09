@@ -301,6 +301,43 @@ public sealed class SceneLifecycleHistoryTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Light_lifecycle_is_global_across_removal_and_replacement(bool borrowed)
+    {
+        var world = new World();
+        var actor = SelectionId.ForActor(ActorId.New());
+        var actorEdit = new JournalStep("Actor edit", () => true, () => true)
+            { AffectedEntities = new[] { actor } };
+        world.History.Append(actorEdit);
+        var light = borrowed
+            ? world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!
+            : world.Lifecycle.SpawnLight(LightKind.Point)!;
+        var original = world.Lighting.Target(light)!.Value.ToSelectionId();
+        for (int i = 0; i < 3; i++)
+        {
+            var id = world.Lighting.Target(Assert.Single(world.Lighting.Lights))!.Value.ToSelectionId();
+            Assert.Null(world.History.PeekUndo(id));
+            Assert.Same(actorEdit, world.History.PeekUndo(actor));
+            Assert.True(world.Undo());
+            Assert.Empty(world.Lighting.Lights);
+            Assert.Null(world.History.PeekRedo(id));
+            Assert.True(world.Redo());
+        }
+        var restored = Assert.Single(world.Lighting.Lights);
+        var current = world.Lighting.Target(restored)!.Value.ToSelectionId();
+        Assert.NotEqual(original, current);
+        world.Lifecycle.DestroyLight(restored);
+        Assert.Null(world.History.PeekUndo(current));
+        Assert.Same(actorEdit, world.History.PeekUndo(actor));
+        Assert.True(world.Undo());
+        var replacement = world.Lighting.Target(Assert.Single(world.Lighting.Lights))!.Value.ToSelectionId();
+        Assert.Null(world.History.PeekRedo(replacement));
+        Assert.True(world.Redo());
+        Assert.Empty(world.Lighting.Lights);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Light_edits_survive_release_and_repeated_restoration(bool borrowed)
     {
         var world = new World();

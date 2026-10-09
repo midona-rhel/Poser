@@ -20,6 +20,7 @@ public sealed class UIManager : IUIManager
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
     private readonly ITransformFacade _cleanTransforms;
+    private readonly UserNotices _notices;
     private readonly IKeyState _keyState;
     private readonly global::Poser.Services.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
@@ -49,6 +50,7 @@ public sealed class UIManager : IUIManager
         IGPoseService gPoseService,
         IEventBus eventBus,
         ITransformFacade cleanTransforms,
+        UserNotices notices,
         IKeyState keyState,
         global::Poser.Services.IKeyEvents keyEvents,
         global::Poser.Application.Transforms.ValueJournal values,
@@ -71,6 +73,7 @@ public sealed class UIManager : IUIManager
         _gPoseService = gPoseService;
         _eventBus = eventBus;
         _cleanTransforms = cleanTransforms;
+        _notices = notices;
         _keyState = keyState;
         _editorState = editorState;
         _configService = configService;
@@ -240,6 +243,21 @@ public sealed class UIManager : IUIManager
         return dragging;
     }
 
+    private void SelectedHistory(bool before)
+    {
+        // The journal reports file/deferred failures itself. Report only a
+        // refusal it did not already surface during this synchronous action.
+        bool reported = false;
+        void Posted(string kind, string message) => reported = true;
+        _notices.Posted += Posted;
+        try
+        {
+            var result = before ? _cleanTransforms.UndoSelected() : _cleanTransforms.RedoSelected();
+            if (!reported && !result.Success && result.Detail is { } detail) _notices.Refused(detail);
+        }
+        finally { _notices.Posted -= Posted; }
+    }
+
     private Keybind[] BuildKeybinds()
     {
         var handlers = new Dictionary<string, Action>(StringComparer.Ordinal)
@@ -257,6 +275,8 @@ public sealed class UIManager : IUIManager
                     _cleanTransforms.Redo();
             },
             ["Deselect"] = () => _scene.Selection.Clear(),
+            ["Undo selected entity"] = () => SelectedHistory(before: true),
+            ["Redo selected entity"] = () => SelectedHistory(before: false),
             ["Import pose"] = () => PoseShortcut(
                 actor => _poseFileSection.RequestImportMenu(withPresets: true, target: actor), opensWindow: true),
             ["Import pose from file"] = () => PoseShortcut(_poseFileSection.OpenImportFromFile, opensWindow: true),

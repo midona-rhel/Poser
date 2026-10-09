@@ -56,7 +56,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         _journal.Record(
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
             before, config, next => Write(target, next),
-            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+            () => target.Bone is { } bone && _bindings.Resolve(bone).Success, target.ToSelectionId());
         return result;
     }
 
@@ -212,7 +212,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         // Redo restores that span, not another capture from the later live pose.
         if (target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint })
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
-        var result = _journal.Adjust(("IK", target), "Set IK",
+        var result = _journal.Adjust((target, "IK"), "Set IK",
             () => Get(target) ?? initial,
             next =>
             {

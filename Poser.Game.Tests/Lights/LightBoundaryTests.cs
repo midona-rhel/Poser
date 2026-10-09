@@ -77,6 +77,7 @@ public sealed class LightBoundaryTests
         var f = new Fixture();
         Assert.True(f.Control.ApplyGobo(f.Id, 0).Success);
         var goboStep = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        Assert.Same(goboStep, f.History.PeekUndo(SelectionId.ForLight(f.Id)));
         Assert.Equal("test.tex", f.Light.GoboPath);
         Assert.True(goboStep.Undo());
         Assert.Null(f.Light.GoboPath);
@@ -166,7 +167,7 @@ public sealed class LightBoundaryTests
                 }
             });
             var framework = Stub<IFramework>((_, _) => OnThread);
-            Journal = new(History);
+            Journal = new(History, owner => ReferenceEquals(owner, Light) ? SelectionId.ForLight(CurrentId) : null);
             var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
             {
                 "CanParent" or "CanEdit" or "Write" => true,

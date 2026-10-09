@@ -43,6 +43,7 @@ public sealed class DisruptiveSteps(
         }
         history.Append(new JournalStep(description, PrepareUndo, () => after != null)
         {
+            AffectedEntities = new[] { SelectionId.ForActor(actor) },
             RetainOnFailure = true,
             FailureDetail = () => failure,
             CompleteReplay = (undo, current, cancellation, completed) =>

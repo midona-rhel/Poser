@@ -104,7 +104,7 @@ public sealed class CustomizeSession : ICustomizeControl
             {
                 var applied = Apply(actor, next);
                 return new ValueWriteResult(applied.Success, applied.Detail);
-            }, () => Alive(actor));
+            }, () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 

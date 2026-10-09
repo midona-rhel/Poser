@@ -225,4 +225,20 @@ chains the bake disarmed.
 Transport (play, pause, scrub, speed) is never a step. Choosing a
 timeline and toggling loop are. A locked camera never journals.
 
+Selected-entity undo (Alt+Z) and redo (Alt+Y / Alt+Shift+Z) use the same journal;
+global Ctrl-based shortcuts are unchanged. Bindings are configurable. Bones and
+gaze points address their owning actor; multiple bones on that actor share the
+scope. Empty, stale, grouped or multi-entity selections never fall back to global
+history. A known disjoint entry can be skipped; a shared entry touching the actor
+or an entry with an unknown/scene-wide footprint blocks scoped replay. Entries
+are never split. Scoped redo makes its entry the newest applied operation, and
+any new edit clears redo as usual. Replay uses the normal recovery and asynchronous
+completion barriers. Creation, removal and relationship-changing operations
+remain global: deleting the selected entity must not strand its opposite
+shortcut without a live target. Known lifecycle footprints still allow skipping
+those entries when replaying unrelated entities' edits. Removal batches resolve
+the union of all child footprints at lookup time; any unknown child keeps the
+whole batch a barrier. Any new history append cancels a pending deferred replay,
+even when the new edit belongs to a different entity.
+
 The depth is 500 steps by default (Settings › Undo steps).

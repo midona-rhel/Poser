@@ -79,6 +79,8 @@ public static class KeybindRegistry
     [
         new("Undo", GroupEditing, "Undo the last move, rotation or scale"),
         new("Redo", GroupEditing, "Reapply the change you undid"),
+        new("Undo selected entity", GroupEditing, "Undo the selected entity's latest independent change; bones use their actor"),
+        new("Redo selected entity", GroupEditing, "Redo the selected entity's latest independent change"),
         new("Deselect", GroupEditing, "Drop the current selection"),
 
         new("Import pose", GroupPose, "Open import options for the globally selected actor"),
@@ -141,6 +143,8 @@ public static class KeybindRegistry
         {
             ["Undo"] = new("Ctrl+Z"),
             ["Redo"] = new("Ctrl+Y", "Ctrl+Shift+Z"),
+            ["Undo selected entity"] = new("Alt+Z"),
+            ["Redo selected entity"] = new("Alt+Y", "Alt+Shift+Z"),
             ["Deselect"] = new("Escape"),
             ["Translate mode"] = new("Ctrl+1"),
             ["Rotate mode"] = new("Ctrl+2"),
