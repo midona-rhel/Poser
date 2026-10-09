@@ -12,6 +12,7 @@ public sealed class BoneMapPreset
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
     public BoneMapKind Kind { get; set; }
+    public string? Background { get; set; }
     public List<BoneMapPoint> Points { get; set; } = new();
 }
 

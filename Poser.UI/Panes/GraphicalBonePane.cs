@@ -165,6 +165,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             return false;
         bool humanoid = _customizeRead.IsStandardHumanoid(actor.Id);
         _layout = !humanoid ? null : editing ? _draft?.Points : SelectedPreset(page)?.Points;
+        _mapBackground = !humanoid ? null : editing ? _draft?.Background : SelectedPreset(page)?.Background;
 
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -513,7 +514,13 @@ public sealed partial class GraphicalBonePane : IDisposable
         Vector2 sourceSize;
         if (texture != null)
         {
-            ImGui.GetWindowDrawList().AddImage(texture.Handle, min, min + size);
+            // Preview art never changes the coordinate system or the actor's available bones.
+            bool face = sectionName.EndsWith("head", StringComparison.Ordinal)
+                || sectionName.StartsWith("viera_head", StringComparison.Ordinal);
+            var preview = face && _mapBackground is "PoseHeadWithEars" or "PoseHeadMiqote"
+                or "PoseHeadVieraFloppy" or "PoseHeadHroth" ? GetTexture(_mapBackground) : texture;
+            if (_mapBackground != "none" && preview != null)
+                ImGui.GetWindowDrawList().AddImage(preview.Handle, min, min + size);
             sourceSize = new Vector2(texture.Width, texture.Height);
         }
         else if (_pendingTextures.ContainsKey(section.Image)

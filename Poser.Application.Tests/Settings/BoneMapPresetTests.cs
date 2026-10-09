@@ -47,6 +47,95 @@ public sealed class BoneMapPresetTests
     private static readonly BoneMapPoint Default = new(Bone, "body", 0.2f, 0.3f);
 
     [Fact]
+    public void Unique_names_increment_case_insensitively_within_the_map_kind()
+    {
+        BoneMapPreset[] store = [new() { Name = "Body copy" }, new() { Name = "BODY COPY 2" },
+            new() { Name = "Body copy 3", Kind = BoneMapKind.Face }];
+        Assert.Equal("Body copy 3", BoneMapPresetDraft.UniqueName(store, BoneMapKind.Body, "Body copy"));
+        Assert.Equal("Default 2", BoneMapPresetDraft.UniqueName(store, BoneMapKind.Body, "Default"));
+    }
+
+    [Fact]
+    public void Remove_with_children_follows_hierarchy_through_unmapped_bones_and_keeps_siblings()
+    {
+        var actor = ActorId.New();
+        var skeleton = new SkeletonId(actor, PoseSlot.Character, 0);
+        var root = new BoneDescriptor(new(skeleton, 0, 0, "root"), "Root", null);
+        var middle = new BoneDescriptor(new(skeleton, 0, 1, "middle"), "Middle", root.Id);
+        var end = new BoneDescriptor(new(skeleton, 0, 2, "end"), "End", middle.Id);
+        var sibling = new BoneDescriptor(new(skeleton, 0, 3, "sibling"), "Sibling", root.Id);
+        var available = BoneMapPresetDraft.Available(new(actor, "Actor", [new(skeleton, [root, middle, end, sibling])]));
+        var draft = new BoneMapPresetDraft(BoneMapKind.Body,
+            [new(PortableBoneId.From(root.Id), "body", .5f, .1f),
+             new(PortableBoneId.From(end.Id), "body", .5f, .2f),
+             new(PortableBoneId.From(end.Id), "hands", .5f, .3f),
+             new(PortableBoneId.From(sibling.Id), "body", .5f, .4f)]);
+        draft.RemoveWithChildren(PortableBoneId.From(middle.Id), available);
+        Assert.Equal(2, draft.Points.Count);
+        Assert.False(draft.Contains(PortableBoneId.From(end.Id)));
+        Assert.True(draft.Contains(PortableBoneId.From(sibling.Id)));
+        draft.RemoveWithChildren(PortableBoneId.From(root.Id), available);
+        Assert.Empty(draft.Points);
+    }
+
+    [Fact]
+    public void Background_changes_save_without_moving_points_and_detect_concurrent_edits()
+    {
+        var preset = new BoneMapPreset { Name = "Face", Kind = BoneMapKind.Face, Points = [Default] };
+        var store = new List<BoneMapPreset> { preset };
+        var draft = new BoneMapPresetDraft(BoneMapKind.Face, [], preset) { Background = "PoseHeadHroth" };
+        var stale = new BoneMapPresetDraft(BoneMapKind.Face, [], preset);
+        Assert.True(draft.HasChanges);
+        Assert.Null(draft.Save(store, out _));
+        Assert.Equal(Default, Assert.Single(store[0].Points));
+        Assert.Equal("PoseHeadHroth", BoneMapPresetDraft.Copy(store[0]).Background);
+        Assert.NotNull(stale.Save(store, out _));
+        Assert.NotNull(stale.Delete(store));
+    }
+
+    [Fact]
+    public void Mirror_placement_reflects_about_mapped_parent_and_updates_only_its_panel()
+    {
+        var actor = ActorId.New();
+        var skeleton = new SkeletonId(actor, PoseSlot.Character, 0);
+        var parent = new BoneDescriptor(new(skeleton, 0, 0, "parent"), "Parent", null);
+        var left = new BoneDescriptor(new(skeleton, 0, 1, "arm_l"), "Left", parent.Id);
+        var right = new BoneDescriptor(new(skeleton, 0, 2, "arm_r"), "Right", parent.Id);
+        var available = BoneMapPresetDraft.Available(new(actor, "Actor", [new(skeleton, [parent, left, right])]));
+        var leftKey = PortableBoneId.From(left.Id);
+        var rightKey = PortableBoneId.From(right.Id);
+        var draft = new BoneMapPresetDraft(BoneMapKind.Body,
+            [new(PortableBoneId.From(parent.Id), "body", .4f, .2f), new(leftKey, "body", .2f, .7f),
+             new(rightKey, "hands", .9f, .9f)]);
+        Assert.True(draft.PlaceMirror(leftKey, "body", available, .5f));
+        var mirrored = Assert.Single(draft.Points, point => point.Bone == rightKey && point.Section == "body");
+        Assert.Equal(.6f, mirrored.X, 5);
+        Assert.Equal(.7f, mirrored.Y);
+        Assert.Equal(.9f, Assert.Single(draft.Points, point => point.Section == "hands").X);
+        draft.Move(leftKey, "body", .1f, .8f);
+        Assert.True(draft.PlaceMirror(leftKey, "body", available, .5f));
+        Assert.Equal(.7f, Assert.Single(draft.Points, point => point.Bone == rightKey && point.Section == "body").X, 5);
+    }
+
+    [Fact]
+    public void Mirror_requires_same_slot_partial_and_a_position_inside_the_map()
+    {
+        var actor = ActorId.New();
+        var skeleton = new SkeletonId(actor, PoseSlot.Character, 0);
+        var left = new BoneDescriptor(new(skeleton, 0, 1, "arm_l"), "Left", null);
+        var foreign = new BoneDescriptor(new(skeleton, 1, 2, "arm_r"), "Right", null);
+        var right = foreign with { Id = foreign.Id with { PartialId = 0 } };
+        var key = PortableBoneId.From(left.Id);
+        var draft = new BoneMapPresetDraft(BoneMapKind.Body, [new(key, "body", .8f, .4f)]);
+        var available = BoneMapPresetDraft.Available(new(actor, "Actor", [new(skeleton, [left, foreign])]));
+        Assert.False(draft.PlaceMirror(key, "body", available, .5f));
+        available = BoneMapPresetDraft.Available(new(actor, "Actor", [new(skeleton, [left, right])]));
+        Assert.False(draft.PlaceMirror(key, "body", available, .1f));
+        Assert.True(draft.PlaceMirror(key, "body", available, .5f));
+        Assert.Equal(.2f, Assert.Single(draft.Points, point => point.Bone.CanonicalName == "arm_r").X, 5);
+    }
+
+    [Fact]
     public void Draft_is_detached_and_body_face_names_are_independent()
     {
         var body = new BoneMapPreset { Name = "My layout", Points = [Default] };

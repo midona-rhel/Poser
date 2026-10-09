@@ -43,6 +43,16 @@ NPCs share these presets. Other rigs get a stable, scrollable hierarchy map
 without presets. Map hover publishes an exact bone for one frame of overlay
 feedback; it neither changes selection nor the persistent visibility mask.
 Mirroring swaps map interaction targets, never the saved layout identities.
+The editor's separate mirror-placement action adds or repositions the actual
+same-slot/partial opposite bone horizontally about mapped paired parents,
+the nearest mapped common ancestor, or the panel center in that order. It
+preserves height and refuses out-of-map placements rather than breaking symmetry.
+New/Copy immediately create uniquely named custom presets; Save commits without
+closing, Discard restores the saved version, and Confirm saves then closes.
+Default remains immutable. Map/list context actions share the same draft;
+removing a subtree changes only layout entries, never the actor's skeleton.
+Background selection is saved with the preset but replaces only illustration
+pixels; it never changes coordinates or imports another race's bone list.
 
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and

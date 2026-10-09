@@ -22,6 +22,7 @@ public sealed partial class GraphicalBonePane
     private bool _drawingEditor, _addingCustomPoint;
     private BoneMapPresetDraft? _draft;
     private bool _editDefault;
+    private string? _mapBackground;
     private List<BoneMapPoint> _editorDefaults = new();
     private ActorId? _editActor;
     private string _editFilter = string.Empty;
@@ -92,9 +93,8 @@ public sealed partial class GraphicalBonePane
                     FooterRight = right =>
                     {
                         right.Button("Cancel", CloseEditor, style: ControlStyle.Comfortable);
-                        right.Button("Save preset", SaveEditor, style: ControlStyle.Comfortable,
-                            variant: ButtonVariant.Primary,
-                            disabled: _editDefault || actor == null || string.IsNullOrWhiteSpace(_draft?.Name));
+                        right.Button("Confirm", () => { if (_editDefault || SaveEditor()) CloseEditor(); },
+                            style: ControlStyle.Comfortable, variant: ButtonVariant.Primary);
                     },
                 });
                 if (_draft == null) return;
@@ -104,14 +104,32 @@ public sealed partial class GraphicalBonePane
         if (!open) CloseEditor();
     }
 
-    private void SaveEditor()
+    private bool SaveEditor()
     {
-        if (_editDefault || _draft is not { } draft) return;
+        if (_editDefault || _draft is not { } draft) return false;
         _editError = draft.Save(_configuration.Config.Skeleton.BoneMapPresets, out var saved);
-        if (_editError != null) return;
+        if (_editError != null) return false;
         _selectedPresets[(int)draft.Kind] = saved;
         _configuration.Save();
-        CloseEditor();
+        LoadEditorPreset(_configuration.Config.Skeleton.BoneMapPresets.First(item => item.Id == saved));
+        return true;
+    }
+
+    private void CreateEditorPreset(bool copy)
+    {
+        if (_draft is not { } current) return;
+        var store = _configuration.Config.Skeleton.BoneMapPresets;
+        var created = new BoneMapPresetDraft(current.Kind, _editorDefaults,
+            initial: copy ? current.Points : _editorDefaults)
+        {
+            Name = BoneMapPresetDraft.UniqueName(store, current.Kind,
+                copy ? $"{(_editDefault ? "Default" : current.Name)} copy" : "New preset"),
+            Background = copy ? current.Background : null,
+        };
+        _editError = created.Save(store, out var id);
+        if (_editError != null) return;
+        _configuration.Save();
+        LoadEditorPreset(store.First(item => item.Id == id));
     }
 
     private void CloseEditor()
@@ -169,14 +187,33 @@ public sealed partial class GraphicalBonePane
                 Crystarium.TextInBand(nameOrigin, new Vector2(nameWidth, rowHeight), label,
                     default, TextConstraint.Truncate(nameWidth));
                 if (ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s)))
+                {
                     Crystarium.HoverHelp.Preview("bone-name", nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s),
                         $"{bone.DisplayName} · {bone.Id.CanonicalName} · {bone.Id.Slot}/{bone.Id.PartialId}");
+                    if (!_editDefault && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                    {
+                        string section = draft.Points.FirstOrDefault(point => point.Bone == key)?.Section
+                            ?? _editorDefaults.FirstOrDefault(point => point.Bone == key)?.Section
+                            ?? (draft.Kind == BoneMapKind.Body ? "body" : "face");
+                        _contextPoint = (key, section);
+                        Crystarium.FloatingMenu.Dismiss(_editorId + "-point");
+                        Crystarium.FloatingMenu.Open(_editorId + "-point", ImGui.GetMousePos(), PointMenu(draft, _contextPoint.Value));
+                    }
+                }
                 ImGui.PopID();
                 ImGui.SetCursorScreenPos(row + new Vector2(0f, rowHeight));
             }
         });
         ImGui.SetCursorScreenPos(body.Min + new Vector2(12f * s));
-        var canvas = Vector2.Max(Vector2.One, body.Size - new Vector2(24f * s));
+        string[] backgrounds = draft.Kind == BoneMapKind.Face
+            ? ["Auto", "Human", "Miqo’te", "Viera", "Hrothgar", "None"] : ["Illustrations", "None"];
+        string?[] values = draft.Kind == BoneMapKind.Face
+            ? [null, "PoseHeadWithEars", "PoseHeadMiqote", "PoseHeadVieraFloppy", "PoseHeadHroth", "none"] : [null, "none"];
+        Crystarium.Dropdown("Background", backgrounds, Math.Max(0, Array.IndexOf(values, draft.Background)),
+            index => draft.Background = values[index],
+            ControlStyle.Workspace with { Width = UiWidth.Fixed(180f) }, disabled: _editDefault);
+        ImGui.SetCursorScreenPos(body.Min + new Vector2(12f * s, 48f * s));
+        var canvas = Vector2.Max(Vector2.One, body.Size - new Vector2(24f * s, 60f * s));
         ImGui.BeginChild("##map-preview", canvas, false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         try { DrawMap((int)draft.Kind, canvas, actor); }
         finally { ImGui.EndChild(); }
@@ -194,8 +231,8 @@ public sealed partial class GraphicalBonePane
         float height = Crystarium.ActiveTheme.Controls.WorkspaceHeight;
         var row = band.Min + new Vector2(12f * s, (band.Size.Y - height * s) * 0.5f);
         float width = band.Size.X / s - 24f;
-        float selectorWidth = MathF.Min(220f, (width - 256f) * 0.42f);
-        float nameWidth = MathF.Min(280f, width - selectorWidth - 256f);
+        float selectorWidth = MathF.Min(220f, (width - 376f) * 0.42f);
+        float nameWidth = MathF.Min(280f, width - selectorWidth - 376f);
         var style = ControlStyle.Workspace;
         ImGui.SetCursorScreenPos(row);
         string preview = _editDefault ? "Default (locked)" : draft.SourceId == null ? "New preset" : draft.Name;
@@ -212,18 +249,29 @@ public sealed partial class GraphicalBonePane
         ImGui.SetCursorScreenPos(row + new Vector2(next * s, 0));
         if (Crystarium.Button("New", style: style with { Width = UiWidth.Fixed(56f) }, disabled: dirty, id: "new-map-preset"))
         {
-            _draft = new(draft.Kind, _editorDefaults, initial: draft.Points);
-            _editDefault = false;
-            _editError = null;
-            _dragPoint = null;
-            _contextPoint = null;
-            Crystarium.FloatingMenu.Dismiss(_editorId + "-point");
+            CreateEditorPreset(copy: false);
+            return;
         }
         ImGui.SetCursorScreenPos(row + new Vector2((next + 64f) * s, 0));
-        if (Crystarium.Button("Discard edits", style: style with { Width = UiWidth.Fixed(112f) }, disabled: !dirty, id: "discard-map-edits"))
+        if (Crystarium.Button("Copy", style: style with { Width = UiWidth.Fixed(56f) }, id: "copy-map-preset"))
+        {
+            CreateEditorPreset(copy: true);
+            return;
+        }
+        ImGui.SetCursorScreenPos(row + new Vector2((next + 128f) * s, 0));
+        if (Crystarium.Button("Save", style: style with { Width = UiWidth.Fixed(56f) }, disabled: _editDefault, id: "save-map-edits"))
+        {
+            SaveEditor();
+            return;
+        }
+        ImGui.SetCursorScreenPos(row + new Vector2((next + 192f) * s, 0));
+        if (Crystarium.Button("Discard", style: style with { Width = UiWidth.Fixed(72f) }, disabled: _editDefault, id: "discard-map-edits"))
+        {
             LoadEditorPreset(presets.FirstOrDefault(item => item.Id == draft.SourceId));
+            return;
+        }
         ImGui.SetCursorScreenPos(row + new Vector2((width - 64f) * s, 0));
-        if (Crystarium.Button("Delete", style: style with { Width = UiWidth.Fixed(64f) }, disabled: _editDefault || dirty || draft.SourceId == null,
+        if (Crystarium.Button("Delete", style: style with { Width = UiWidth.Fixed(64f) }, disabled: _editDefault,
             id: "delete-map-preset", help: "Delete this custom map preset"))
         {
             _editError = draft.Delete(_configuration.Config.Skeleton.BoneMapPresets);
@@ -298,13 +346,37 @@ public sealed partial class GraphicalBonePane
             if (action == 0) draft.Reset(context.Bone, context.Section, toDefault: false);
             if (action == 1) draft.Reset(context.Bone, context.Section, toDefault: true);
             if (action == 2) draft.Remove(context.Bone);
+            if (action == 3 && _editActor is { } actorId && _scene.Snapshot.FindActor(actorId) is { } actor)
+                draft.PlaceMirror(context.Bone, context.Section, AvailableBones(actor), SectionCenter(context.Section));
+            if (action == 4 && _editActor is { } owner && _scene.Snapshot.FindActor(owner) is { } target)
+                draft.RemoveWithChildren(context.Bone, AvailableBones(target));
+            if (action == 5) draft.Add(context.Bone);
         }
     }
 
-    private static ContextMenuItem[] PointMenu(BoneMapPresetDraft draft, (PortableBoneId Bone, string Section) point) =>
-    [
-        new("Reset position", TablerIcon.ArrowBackUp, disabled: !draft.CanReset(point.Bone, point.Section, false)),
-        new("Move to default location", TablerIcon.ArrowBackUp, disabled: !draft.CanReset(point.Bone, point.Section, true)),
-        new("Remove", TablerIcon.Trash),
-    ];
+    private ContextMenuItem[] PointMenu(BoneMapPresetDraft draft, (PortableBoneId Bone, string Section) point)
+    {
+        var actor = _editActor is { } id ? _scene.Snapshot.FindActor(id) : null;
+        var mirror = actor == null ? null : draft.PreviewMirror(point.Bone, point.Section,
+            AvailableBones(actor), SectionCenter(point.Section));
+        return
+        [
+            new("Reset position", TablerIcon.ArrowBackUp, disabled: !draft.CanReset(point.Bone, point.Section, false)),
+            new("Move to default location", TablerIcon.ArrowBackUp, disabled: !draft.CanReset(point.Bone, point.Section, true)),
+            new("Remove", TablerIcon.Trash, disabled: !draft.Contains(point.Bone)),
+            new(mirror != null && draft.Points.Any(item => item.Bone == mirror.Bone && item.Section == mirror.Section)
+                ? "Place mirror opposite" : "Add mirror opposite", TablerIcon.SelectMirror, disabled: mirror == null,
+                help: "Reflect across the mapped parent axis, or the panel center when no parent is mapped. Requires an available mirror and space inside the map."),
+            new("Remove with children", TablerIcon.Trash, help: "Remove this bone and all descendants from the map, not the actor."),
+            new("Add to map", TablerIcon.Plus, disabled: draft.Contains(point.Bone)),
+        ];
+    }
+
+    private static float SectionCenter(string section) => section switch
+    {
+        "body" => 337f / 2054f,
+        "armor" => 1064f / 2054f,
+        "hands" or "tail" or "ivcs_toes" => 1754f / 2054f,
+        _ => 0.5f,
+    };
 }
