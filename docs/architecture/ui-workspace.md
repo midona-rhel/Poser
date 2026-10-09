@@ -201,6 +201,11 @@ in one full-width action row. The file shortcuts open their browsers directly;
 Import and Export open their general options/menus. These actions capture their host actor; opening the library
 from that host seeds its explicit apply target without changing scene selection.
 
+Library source creation uses one name-and-Browse row. Browse requires a nonblank
+name; choosing a folder immediately adds that named source to the Settings draft.
+Cancelling the chooser leaves the name untouched and adds nothing. Settings Save
+applies the draft; Settings Cancel discards it.
+
 Spawn browsing keeps predefined actions first, library entries second, then
 the existing catalog order. With an active search, each source group orders
 categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.

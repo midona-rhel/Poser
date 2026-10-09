@@ -82,17 +82,13 @@ public static partial class SettingsView
             }
             if (removing is not null)
                 vm.Library.Remove(removing);
-            form.TextInput("New source name", vm.LibraryNewName, next => vm.LibraryNewName = next,
-                placeholder: "Taken from the folder when left blank");
-            form.TextInputActions("New source folder", vm.LibraryNewPath, next => vm.LibraryNewPath = next,
-                actions => actions.Button("Browse", () => vm.OnBrowseFolder?.Invoke(
-                    string.IsNullOrWhiteSpace(vm.LibraryNewPath) ? vm.Library.EffectiveRoot : vm.LibraryNewPath,
-                    next => vm.LibraryNewPath = next)),
-                placeholder: "Full path to a folder of poses");
+            form.TextInputActions("New source", vm.LibraryNewName, next => vm.LibraryNewName = next,
+                actions => actions.Button("Browse", () => BrowseAndAddLibrarySource(vm),
+                    disabled: string.IsNullOrWhiteSpace(vm.LibraryNewName) || vm.OnBrowseFolder is null),
+                placeholder: "Name",
+                help: "Enter a name, then choose a folder to add it. Save applies changes.");
             form.Actions(string.Empty, actions =>
             {
-                actions.Button("Add source", () => AddLibrarySource(vm),
-                    disabled: string.IsNullOrWhiteSpace(vm.LibraryNewPath));
                 actions.Button("Source issues", () => ShowSourceIssues(vm, true),
                     disabled: issues.Count == 0 && skipped == 0);
                 actions.Button("Retry", () => vm.OnRetrySources?.Invoke(), disabled: vm.SourceScanBusy,
@@ -223,18 +219,17 @@ public static partial class SettingsView
         finally { ImGui.PopID(); }
     }
 
-    private static void AddLibrarySource(SettingsViewModel vm)
+    private static void BrowseAndAddLibrarySource(SettingsViewModel vm)
     {
-        string path = vm.LibraryNewPath.Trim();
-        if (path.Length == 0)
-            return;
         string name = vm.LibraryNewName.Trim();
         if (name.Length == 0)
+            return;
+        vm.OnBrowseFolder?.Invoke(vm.Library.EffectiveRoot, path =>
         {
-            try { name = System.IO.Path.GetFileName(path.TrimEnd('\\', '/')); }
-            catch (ArgumentException) { name = path; }
-        }
-        vm.Library.Add(name.Length == 0 ? path : name, path);
-        vm.LibraryNewName = vm.LibraryNewPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            vm.Library.Add(name, path.Trim());
+            vm.LibraryNewName = string.Empty;
+        });
     }
 }
