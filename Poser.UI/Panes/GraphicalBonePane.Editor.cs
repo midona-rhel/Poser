@@ -145,8 +145,9 @@ public sealed partial class GraphicalBonePane
                 float nameWidth = scroll.ContentWidth * s - 24f * s;
                 Crystarium.TextInBand(nameOrigin, new Vector2(nameWidth, 26f * s), bone.DisplayName,
                     default, TextConstraint.Truncate(nameWidth));
-                Crystarium.HoverHelp.Preview("bone-name", nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s),
-                    $"{bone.DisplayName} · {bone.Id.CanonicalName} · {bone.Id.Slot}/{bone.Id.PartialId}");
+                if (ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s)))
+                    Crystarium.HoverHelp.Preview("bone-name", nameOrigin, nameOrigin + new Vector2(nameWidth, 26f * s),
+                        $"{bone.DisplayName} · {bone.Id.CanonicalName} · {bone.Id.Slot}/{bone.Id.PartialId}");
                 bool duplicate = duplicates.Contains(bone.DisplayName);
                 if (duplicate)
                     Crystarium.TextInBand(nameOrigin + new Vector2(0, 22f * s), new Vector2(nameWidth, 18f * s),
@@ -260,7 +261,7 @@ public sealed partial class GraphicalBonePane
         if (_dragPoint is { } drag)
         {
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) _dragPoint = null;
-            else
+            else if (ImGui.IsMousePosValid())
             {
                 var position = (ImGui.GetMousePos() - _dragOffset - _mapOrigin) / _mapSize;
                 draft.Move(drag.Bone, drag.Section, position.X, position.Y);
