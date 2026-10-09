@@ -75,6 +75,8 @@ public class SkeletonService : ISkeletonService
                 skeleton.CharacterBaseAddress == currentBase &&
                 skeleton.HasCurrentNativeLayout())
             {
+                if (skeleton.RefreshBoneFilters())
+                    _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
                 return skeleton;
             }
 
