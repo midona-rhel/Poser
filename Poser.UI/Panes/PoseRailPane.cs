@@ -129,11 +129,14 @@ public class PoseRailPane
                     _camera.GetCameraPosition()
                     + Vector3.Normalize(look) * 2.5f);
             }
-            ImGui.SameLine(0f, 6f * s);
-            if (Crystarium.Button("Deselect", id: "rail-multi-deselect",
-                    help: "Drop the whole selection",
-                    style: ControlStyle.Workspace))
-                _inspector.GroupDeselect();
+            if (_inspector.CanGroupDeselect)
+            {
+                ImGui.SameLine(0f, 6f * s);
+                if (Crystarium.Button("Deselect", id: "rail-multi-deselect",
+                        help: "Drop the whole selection",
+                        style: ControlStyle.Workspace))
+                    _inspector.GroupDeselect();
+            }
             cursor.Y += 36f * s;
 
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);

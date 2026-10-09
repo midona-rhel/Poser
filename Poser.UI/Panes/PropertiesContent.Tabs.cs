@@ -400,7 +400,8 @@ public sealed partial class PropertiesContent
                                     name, groupTargets)));
                     }
                     actions.Button("Move to camera", MoveSelectionToCamera);
-                    actions.Button("Deselect", () => Context.WorkspaceSelection.Clear());
+                    if (Context.CanDeselectGroup)
+                        actions.Button("Deselect", Context.DeselectGroup);
                 });
             }, divider: false);
         });

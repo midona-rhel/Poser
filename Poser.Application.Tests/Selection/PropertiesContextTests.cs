@@ -8,6 +8,31 @@ namespace Poser.Application.Tests.Selection;
 public sealed class PropertiesContextTests
 {
     [Fact]
+    public void Pinned_group_deselect_cannot_clear_an_unrelated_workspace_selection()
+    {
+        var (scene, first, second) = TwoActors();
+        scene.Selection.Select(SelectionId.ForActor(first));
+        scene.Selection.Add(SelectionId.ForActor(second));
+        using var live = new PropertiesContext(scene);
+        using var properties = live.Pin();
+        using var inspector = properties.PinEntities();
+        var bone = SelectionId.ForBone(scene.Snapshot.Actors[0].Skeletons[0].Bones[0].Id);
+        scene.Selection.Select(bone);
+
+        properties.DeselectGroup();
+        inspector.DeselectGroup();
+
+        Assert.False(properties.CanDeselectGroup);
+        Assert.False(inspector.CanDeselectGroup);
+        Assert.Equal(bone, scene.Selection.Primary);
+        Assert.Equal(2, inspector.Selection.Selected.Count);
+        Assert.True(live.CanDeselectGroup);
+        live.DeselectGroup();
+        Assert.Empty(scene.Selection.Selected);
+        Assert.Equal(2, properties.Selection.Selected.Count);
+    }
+
+    [Fact]
     public void Entity_inspector_stays_on_actor_root_without_changing_shared_bone_selection()
     {
         var (scene, first, second) = TwoActors();

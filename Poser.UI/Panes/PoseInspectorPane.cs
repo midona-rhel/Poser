@@ -219,6 +219,7 @@ public partial class PoseInspectorPane : IDisposable
         _ikBake = ikBake;
         _cameraPane = cameraPane;
         _overlayPane = overlayPane;
+        _properties = properties;
         _selection = properties.Selection;
         _workspaceSelection = properties.WorkspaceSelection;
         _scene = scene;
@@ -587,7 +588,9 @@ public partial class PoseInspectorPane : IDisposable
         else _cleanTransforms.Cancel(gestureId);
     }
 
-    public void GroupDeselect() => _workspaceSelection.Clear();
+    private readonly PropertiesContext _properties;
+    public bool CanGroupDeselect => _properties.CanDeselectGroup;
+    public void GroupDeselect() => _properties.DeselectGroup();
 
     private struct SectionStack
     {
