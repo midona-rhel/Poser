@@ -73,7 +73,7 @@ public sealed class UndoJournal
             return GestureResult.Fail("A restore is still applying.");
         var entry = _history.PeekUndo(entity);
         if (entry == null)
-            return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Shared or scene-wide steps require global undo.");
+            return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Creation, removal, shared or scene-wide steps require global undo.");
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
             return ReplayUntilComplete(pendingStep, true, entity);
         return GiveUpOnRepeat(entry, entity is { } scope ? _runner.Undo(scope) : _runner.Undo());
@@ -130,7 +130,7 @@ public sealed class UndoJournal
             return GestureResult.Fail("A restore is still applying.");
         var entry = _history.PeekRedo(entity);
         if (entry == null)
-            return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Shared or scene-wide steps require global redo.");
+            return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Creation, removal, shared or scene-wide steps require global redo.");
         if (entry.RequiredAsset is { } asset && !_assetExists(asset))
             return Refuse(AssetGone);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)

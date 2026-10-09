@@ -7,6 +7,43 @@ namespace Poser.Game.Tests.Journal;
 public sealed class UndoJournalTests
 {
     [Fact]
+    public void Selected_history_never_removes_its_live_target_but_global_lifecycle_roundtrips()
+    {
+        var world = new World();
+        var light = SelectionId.ForLight(LightId.New());
+        bool alive = true;
+        int intensity = 2;
+        var creation = new SceneLifecyclePatch("Add light",
+            () => { alive = false; return true; },
+            () => { alive = true; return true; })
+            { AffectedEntities = new[] { light } };
+        world.History.Append(creation);
+        var edit = new JournalStep("Intensity",
+            () => { intensity = 1; return true; },
+            () => { intensity = 2; return true; })
+            { AffectedEntities = new[] { light } };
+        world.History.Append(edit);
+        Assert.True(world.Journal.Undo(light).Success);
+        Assert.Equal(1, intensity);
+        Assert.False(world.Journal.Undo(light).Success);
+        Assert.True(alive);
+        Assert.Same(creation, world.History.PeekUndo());
+        Assert.Same(edit, world.History.PeekRedo(light));
+        Assert.True(world.Journal.Redo(light).Success);
+        Assert.Equal(2, intensity);
+
+        Assert.True(world.Journal.Undo(light).Success);
+        Assert.True(world.Journal.Undo().Success);
+        Assert.False(alive);
+        Assert.False(world.Journal.Redo(light).Success); // cannot bypass creation
+        Assert.False(alive);
+        Assert.True(world.Journal.Redo().Success);
+        Assert.True(alive);
+        Assert.True(world.Journal.Redo(light).Success);
+        Assert.Equal(2, intensity);
+    }
+
+    [Fact]
     public void Ordinary_edits_use_their_recorded_inverse()
     {
         var world = new World();

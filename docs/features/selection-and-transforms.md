@@ -233,6 +233,9 @@ history. A known disjoint entry can be skipped; a shared entry touching the acto
 or an entry with an unknown/scene-wide footprint blocks scoped replay. Entries
 are never split. Scoped redo makes its entry the newest applied operation, and
 any new edit clears redo as usual. Replay uses the normal recovery and asynchronous
-completion barriers. Relationship-changing operations remain global.
+completion barriers. Creation, removal and relationship-changing operations
+remain global: deleting the selected entity must not strand its opposite
+shortcut without a live target. Known lifecycle footprints still allow skipping
+those entries when replaying unrelated entities' edits.
 
 The depth is 500 steps by default (Settings › Undo steps).
