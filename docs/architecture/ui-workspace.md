@@ -23,6 +23,17 @@ interaction. It does not own selection, game baselines, pose accumulation,
 undo, or entity identity. Rows carry stable ids and use the current viewport
 for positions. Expanding a tree does not change selection.
 
+Bone-map presets are reusable Body or Face layouts, not actor-instance state
+or overlay visibility presets. Entries carry a portable slot/partial/name key,
+map-section identity and normalized UI coordinates; never native indices or
+actor generations. Missing entries stay stored. Ambiguous portable keys do not
+resolve to an arbitrary native bone. Body and Face names are independent.
+Editing uses a detached draft. Reset position uses its initial layout; default
+position uses the built-in layout. Save checks that the source preset has not
+changed or disappeared in another editor before replacing it. These edits do
+not alter a pose or enter the scene transform journal. The editor UI and
+non-humanoid fallback are tracked by #377 and are not yet shipped.
+
 The workspace shell composes independent sidebar and entity-menu owners.
 Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
 menu disclosure stay with the menu composer. Neither owns workflow progression.
