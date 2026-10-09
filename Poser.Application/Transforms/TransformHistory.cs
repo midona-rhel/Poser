@@ -14,6 +14,11 @@ public abstract record HistoryEntry(string Description)
     public Guid Id { get; init; } = Guid.NewGuid();
     /// <summary>External file required to repeat the operation, when any.</summary>
     public string? RequiredAsset { get; init; }
+    /// <summary>Complete entity footprint for scoped replay. Null is a scene-wide
+    /// ordering barrier, not permission to skip an unknown operation.</summary>
+    public IReadOnlyList<SelectionId>? AffectedEntities { get; init; }
+    /// <summary>Lifecycle entries may bind their new identity on the next scene publication.</summary>
+    public Func<IReadOnlyList<SelectionId>?>? ResolveAffectedEntities { get; init; }
 }
 
 public sealed record TransformPatch(
@@ -195,36 +200,71 @@ public sealed class TransformHistory
                 }
     }
 
-    public HistoryEntry? PeekUndo()
+    public HistoryEntry? PeekUndo(SelectionId? entity = null)
     {
         RefreshLifecycleTargets(_undo);
-        return CanUndo ? _undo[^1] : null;
+        return Find(_undo, entity);
     }
 
-    public void CommitUndo(HistoryEntry patch)
+    public void CommitUndo(HistoryEntry patch, SelectionId? entity = null)
     {
-        if (!CanUndo || _undo[^1].Id != patch.Id)
+        if (entity is null ? PeekUndo()?.Id != patch.Id : !_undo.Any(entry => entry.Id == patch.Id))
             throw new InvalidOperationException(
                 "Undo history changed before commit.");
-        patch = _undo[^1];
-        _undo.RemoveAt(_undo.Count - 1);
+        int index = _undo.FindIndex(entry => entry.Id == patch.Id);
+        patch = _undo[index];
+        _undo.RemoveAt(index);
         _redo.Add(patch);
     }
 
-    public HistoryEntry? PeekRedo()
+    public HistoryEntry? PeekRedo(SelectionId? entity = null)
     {
         RefreshLifecycleTargets(_redo);
-        return CanRedo ? _redo[^1] : null;
+        return Find(_redo, entity);
     }
 
-    public void CommitRedo(HistoryEntry patch)
+    public void CommitRedo(HistoryEntry patch, SelectionId? entity = null)
     {
-        if (!CanRedo || _redo[^1].Id != patch.Id)
+        if (entity is null ? PeekRedo()?.Id != patch.Id : !_redo.Any(entry => entry.Id == patch.Id))
             throw new InvalidOperationException(
                 "Redo history changed before commit.");
-        patch = _redo[^1];
-        _redo.RemoveAt(_redo.Count - 1);
+        int index = _redo.FindIndex(entry => entry.Id == patch.Id);
+        patch = _redo[index];
+        _redo.RemoveAt(index);
         _undo.Add(patch);
+    }
+
+    public static SelectionId EntityOf(SelectionId selected) =>
+        selected.OwningActor is { } actor ? SelectionId.ForActor(actor) : selected;
+
+    private HistoryEntry? Find(List<HistoryEntry> stack, SelectionId? entity)
+    {
+        if (entity is null) return stack.Count > 0 ? stack[^1] : null;
+        var selected = EntityOf(entity.Value);
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            var entry = stack[i];
+            var affected = EntitiesOf(entry);
+            if (affected is null || affected.Count == 0) return null;
+            var entities = affected.Select(id => EntityOf(ResolveLifecycleEntity(id))).Distinct().ToArray();
+            if (!entities.Contains(selected)) continue;
+            // A shared step is indivisible. Never skip it to reach an older
+            // edit of one member, nor replay the other members implicitly.
+            return entities.Length == 1 ? entry : null;
+        }
+        return null;
+    }
+
+    internal static IReadOnlyList<SelectionId>? EntitiesOf(HistoryEntry entry)
+    {
+        if (entry.ResolveAffectedEntities is { } resolve) return resolve();
+        if (entry.AffectedEntities is { } known) return known;
+        if (entry is not TransformPatch patch) return null;
+        var states = patch.Before.Concat(patch.After).ToArray();
+        // Attached targets depend on another entity's frame. Keep their edits
+        // ordered globally rather than treating the child as independent.
+        if (states.Any(state => state.Parent is not null)) return null;
+        return states.Select(state => EntityOf(state.Target.ToSelectionId())).Distinct().ToArray();
     }
 
     /// <summary>

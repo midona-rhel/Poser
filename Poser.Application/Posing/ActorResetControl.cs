@@ -36,6 +36,7 @@ public sealed class ActorResetControl(
             () => CanReset(actor).Success,
             () => ResetCore(actor).Success)
         {
+            AffectedEntities = new[] { SelectionId.ForActor(actor) },
             RetainOnFailure = true,
             CompleteReplay = (undo, current, cancellation, completed) =>
             {

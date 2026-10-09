@@ -29,6 +29,8 @@ public interface ITransformFacade
     GestureResult Cancel(TransformGestureId id);
     GestureResult Undo();
     GestureResult Redo();
+    GestureResult UndoSelected();
+    GestureResult RedoSelected();
     GestureResult SetAbsolute( TransformTargetId target, PoseTransform desired, string description);
     GestureResult ClearActorOverrides( IReadOnlyList<TransformTargetId> targets);
 }

@@ -1,4 +1,5 @@
 using Poser.Domain.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
@@ -8,6 +9,10 @@ public interface IUndoRunner
 {
     GestureResult Undo();
     GestureResult Redo();
+    GestureResult Undo(SelectionId entity) => GestureResult.Fail("Scoped undo is unavailable.");
+    GestureResult Redo(SelectionId entity) => GestureResult.Fail("Scoped redo is unavailable.");
+    GestureResult Replay(JournalStep step, bool before, SelectionId entity) =>
+        GestureResult.Fail("Scoped deferred replay is unavailable.");
     GestureResult Replay(JournalStep step, bool before) =>
         GestureResult.Fail("Deferred history replay is not supported by this runner.");
     GestureResult? RecoverPending() => null;
@@ -57,18 +62,21 @@ public sealed class UndoJournal
     public string? UndoDescription => _history.UndoDescription;
     public string? RedoDescription => _history.RedoDescription;
 
-    public GestureResult Undo()
+    public GestureResult Undo() => UndoCore(null);
+    public GestureResult Undo(SelectionId entity) => UndoCore(entity);
+
+    private GestureResult UndoCore(SelectionId? entity)
     {
         if (_runner.RecoverPending() is { } recovered)
             return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
-        var entry = _history.PeekUndo();
+        var entry = _history.PeekUndo(entity);
         if (entry == null)
-            return GestureResult.Fail("Nothing to undo.");
+            return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Shared or scene-wide steps require global undo.");
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
-            return ReplayUntilComplete(pendingStep, true);
-        return GiveUpOnRepeat(entry, _runner.Undo());
+            return ReplayUntilComplete(pendingStep, true, entity);
+        return GiveUpOnRepeat(entry, entity is { } scope ? _runner.Undo(scope) : _runner.Undo());
     }
 
     /// <summary>The entry the runner refused last; the same entry refused
@@ -111,32 +119,35 @@ public sealed class UndoJournal
         return result;
     }
 
-    public GestureResult Redo()
+    public GestureResult Redo() => RedoCore(null);
+    public GestureResult Redo(SelectionId entity) => RedoCore(entity);
+
+    private GestureResult RedoCore(SelectionId? entity)
     {
         if (_runner.RecoverPending() is { } recovered)
             return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
-        var entry = _history.PeekRedo();
+        var entry = _history.PeekRedo(entity);
         if (entry == null)
-            return GestureResult.Fail("Nothing to redo.");
+            return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Shared or scene-wide steps require global redo.");
         if (entry.RequiredAsset is { } asset && !_assetExists(asset))
             return Refuse(AssetGone);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
-            return ReplayUntilComplete(pendingStep, false);
-        return GiveUpOnRepeat(entry, _runner.Redo());
+            return ReplayUntilComplete(pendingStep, false, entity);
+        return GiveUpOnRepeat(entry, entity is { } scope ? _runner.Redo(scope) : _runner.Redo());
     }
 
-    private GestureResult ReplayUntilComplete(JournalStep step, bool before)
+    private GestureResult ReplayUntilComplete(JournalStep step, bool before, SelectionId? entity)
     {
-        var started = _runner.Replay(step, before);
+        var started = entity is { } scope ? _runner.Replay(step, before, scope) : _runner.Replay(step, before);
         if (!started.Success) return GiveUpOnRepeat(step, started);
         _restoring = step;
         var cancellation = new CancellationTokenSource();
         _replayCancellation = cancellation;
         GestureResult? completed = null;
         bool Current() => _restoring == step
-            && (before ? _history.PeekUndo() : _history.PeekRedo())?.Id == step.Id;
+            && (before ? _history.PeekUndo(entity) : _history.PeekRedo(entity))?.Id == step.Id;
         void Finish(GestureResult result)
         {
             if (_restoring != step) { cancellation.Dispose(); return; }
@@ -146,7 +157,7 @@ public sealed class UndoJournal
             cancellation.Dispose();
             if (!current) { completed = Refuse(Dropped); return; }
             if (!result.Success) { completed = Refuse(result.Detail ?? RestoreFailed); return; }
-            if (before) _history.CommitUndo(step); else _history.CommitRedo(step);
+            if (before) _history.CommitUndo(step, entity); else _history.CommitRedo(step, entity);
             completed = result;
         }
         try { step.CompleteReplay!(before, Current, cancellation.Token, Finish); }

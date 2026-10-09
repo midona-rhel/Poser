@@ -37,7 +37,7 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
         var result = change();
         if (result.Success && Read(actor) is { } after)
             journal.RecordResult(description, before.Settings, after.Settings,
-                settings => Restore(actor, settings), () => Read(actor) is not null);
+                settings => Restore(actor, settings), () => Read(actor) is not null, SelectionId.ForActor(actor));
         return result;
     }
 

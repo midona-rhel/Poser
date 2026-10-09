@@ -216,7 +216,8 @@ internal static class ServiceRegistration
             sp.GetRequiredService<IUndoRunner>(),
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
-        services.AddSingleton<ValueJournal>();
+        services.AddSingleton(sp => new ValueJournal(sp.GetRequiredService<TransformHistory>(),
+            owner => Game.Journal.HistoryEntityLookup.Identify(owner, sp.GetRequiredService<IEntityBindings>())));
         // Native overlay construction and value writes must not resolve each other eagerly.
         services.AddSingleton(sp => new System.Lazy<ValueJournal>(sp.GetRequiredService<ValueJournal>));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();

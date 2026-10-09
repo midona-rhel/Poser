@@ -491,7 +491,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         CancelActive(active);
     }
 
-    public GestureResult Undo()
+    public GestureResult Undo() => UndoCore(null);
+    public GestureResult Undo(SelectionId entity) => UndoCore(entity);
+
+    private GestureResult UndoCore(SelectionId? entity)
     {
         if (RecoverPending() is { } recovered)
             return recovered;
@@ -500,7 +503,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return Busy();
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before undo.");
-        var entry = History.PeekUndo();
+        var entry = History.PeekUndo(entity);
         if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
         if (entry is JournalStep { CompleteReplay: not null })
@@ -509,14 +512,14 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 lifecycle.Undo,
                 $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry), lifecycle.FailureDetail);
+                () => History.CommitUndo(entry, entity), lifecycle.FailureDetail);
         if (entry is JournalStep step)
             return RunLifecycle(
                 step.Undo,
                 $"Could not undo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry), step.FailureDetail);
+                () => History.CommitUndo(entry, entity), step.FailureDetail);
         var patch = (TransformPatch)entry;
-        return RestorePatch(patch, true, () => History.CommitUndo(patch));
+        return RestorePatch(patch, true, () => History.CommitUndo(patch, entity));
     }
 
     /// <summary>
@@ -541,13 +544,16 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
-    public GestureResult Replay(JournalStep step, bool before)
+    public GestureResult Replay(JournalStep step, bool before) => ReplayCore(step, before, null);
+    public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => ReplayCore(step, before, entity);
+
+    private GestureResult ReplayCore(JournalStep step, bool before, SelectionId? entity)
     {
         if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
         using var transition = TryEnterTransition();
         if (transition == null) return Busy();
         if (_active != null) return GestureResult.Fail("Cancel the active gesture before undo or redo.");
-        if ((before ? History.PeekUndo() : History.PeekRedo())?.Id != step.Id)
+        if ((before ? History.PeekUndo(entity) : History.PeekRedo(entity))?.Id != step.Id)
             return GestureResult.Fail("The history changed before replay.");
         // The journal owns async snapshot completion; do not hold this
         // synchronous transition across the import (rollback also needs it).
@@ -556,7 +562,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             () => { }, step.FailureDetail);
     }
 
-    public GestureResult Redo()
+    public GestureResult Redo() => RedoCore(null);
+    public GestureResult Redo(SelectionId entity) => RedoCore(entity);
+
+    private GestureResult RedoCore(SelectionId? entity)
     {
         if (RecoverPending() is { } recovered)
             return recovered;
@@ -565,7 +574,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return Busy();
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before redo.");
-        var entry = History.PeekRedo();
+        var entry = History.PeekRedo(entity);
         if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
         if (entry is JournalStep { CompleteReplay: not null })
@@ -574,14 +583,14 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RunLifecycle(
                 lifecycle.Redo,
                 $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry), lifecycle.FailureDetail);
+                () => History.CommitRedo(entry, entity), lifecycle.FailureDetail);
         if (entry is JournalStep step)
             return RunLifecycle(
                 step.Redo,
                 $"Could not redo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry), step.FailureDetail);
+                () => History.CommitRedo(entry, entity), step.FailureDetail);
         var patch = (TransformPatch)entry;
-        return RestorePatch(patch, false, () => History.CommitRedo(patch));
+        return RestorePatch(patch, false, () => History.CommitRedo(patch, entity));
     }
 
     public GestureResult RunValueTransition(Action action)

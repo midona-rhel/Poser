@@ -1,3 +1,6 @@
+using Poser.Domain.Identity;
+using System.Runtime.CompilerServices;
+
 namespace Poser.Application.Transforms;
 
 public readonly record struct ValueWriteResult(bool Success, string? Detail = null)
@@ -16,6 +19,7 @@ public readonly record struct ValueWriteResult(bool Success, string? Detail = nu
 public sealed class ValueJournal
 {
     private readonly TransformHistory _history;
+    private readonly Func<object, SelectionId?>? _identify;
     private PendingEdit? _pending;
     private object? _control;
     private int _editing;
@@ -46,9 +50,10 @@ public sealed class ValueJournal
         }
     }
 
-    public ValueJournal(TransformHistory history)
+    public ValueJournal(TransformHistory history, Func<object, SelectionId?>? identify = null)
     {
         _history = history;
+        _identify = identify;
         // A spawn, bake or transform may append through another journal
         // owner. Commit earlier value edits before that discrete action.
         _history.BeforeAppend += Seal;
@@ -87,6 +92,7 @@ public sealed class ValueJournal
         {
             BeforeValue = before,
             AfterValue = after,
+            AffectedEntities = Scope(key),
         };
         if (_editing > 0) Stage(key, before, value, Step);
         else _history.Append(Step(value));
@@ -102,7 +108,8 @@ public sealed class ValueJournal
         T before,
         T after,
         Action<T> write,
-        Func<bool>? alive = null)
+        Func<bool>? alive = null,
+        SelectionId? entity = null)
     {
         if (_editing == 0) CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
@@ -114,8 +121,9 @@ public sealed class ValueJournal
         {
             BeforeValue = before,
             AfterValue = next,
+            AffectedEntities = entity is { } id ? new[] { id } : null,
         };
-        if (_editing > 0) Stage((description, typeof(T)), before, after, Step);
+        if (_editing > 0) Stage((entity, description, typeof(T)), before, after, Step);
         else _history.Append(Step(after));
     }
 
@@ -131,7 +139,8 @@ public sealed class ValueJournal
         var result = WriteResult(write, value);
         if (!result.Success || _suspended > 0)
             return result;
-        JournalStep Step(T after) => ResultStep(description, before, after, () => after, write, alive);
+        JournalStep Step(T after) => ResultStep(description, before, after, () => after, write, alive)
+            with { AffectedEntities = Scope(key) };
         if (_editing > 0) Stage(key, before, value, Step);
         else _history.Append(Step(value));
         return result;
@@ -139,13 +148,14 @@ public sealed class ValueJournal
 
     /// <summary>Records an already successful transaction whose inverses can refuse.</summary>
     public void RecordResult<T>(string description, T before, T after,
-        Func<T, ValueWriteResult> write, Func<bool>? alive = null)
+        Func<T, ValueWriteResult> write, Func<bool>? alive = null, SelectionId? entity = null)
     {
         if (_editing == 0) CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
-        JournalStep Step(T next) => ResultStep(description, before, next, () => next, write, alive);
-        if (_editing > 0) Stage((description, typeof(T)), before, after, Step);
+        JournalStep Step(T next) => ResultStep(description, before, next, () => next, write, alive)
+            with { AffectedEntities = entity is { } id ? new[] { id } : null };
+        if (_editing > 0) Stage((entity, description, typeof(T)), before, after, Step);
         else _history.Append(Step(after));
     }
 
@@ -230,7 +240,7 @@ public sealed class ValueJournal
         }
         var box = new Box<T> { Value = value };
         _pending = new PendingEdit(key, next => box.Value = (T)next,
-            () => RecordResult(description, before, box.Value, write, alive));
+            () => RecordResult(description, before, box.Value, write, alive, Scope(key)?.SingleOrDefault()));
         return result;
     }
 
@@ -250,6 +260,8 @@ public sealed class ValueJournal
             {
                 BeforeValue = steps.Select(step => step.BeforeValue).ToArray(),
                 AfterValue = steps.Select(step => step.AfterValue).ToArray(),
+                AffectedEntities = steps.All(step => step.AffectedEntities is not null)
+                    ? steps.SelectMany(step => step.AffectedEntities!).Distinct().ToArray() : null,
                 RetainOnFailure = steps.Any(step => step.RetainOnFailure),
                 FailureDetail = () => steps.Select(step => step.FailureDetail?.Invoke()).FirstOrDefault(detail => detail is not null),
             });
@@ -257,6 +269,21 @@ public sealed class ValueJournal
         var pending = _pending;
         _pending = null;
         pending?.Commit();
+    }
+
+    private IReadOnlyList<SelectionId>? Scope(object key)
+    {
+        // Value keys identify their owner first, followed by a property/channel.
+        while (key is ITuple { Length: > 0 } tuple && tuple[0] is { } owner) key = owner;
+        SelectionId? entity = key switch
+        {
+            SelectionId id => id,
+            ActorId actor => SelectionId.ForActor(actor),
+            BoneId bone => SelectionId.ForBone(bone),
+            TransformTargetId target => target.ToSelectionId(),
+            _ => _identify?.Invoke(key),
+        };
+        return entity is { } found ? new[] { TransformHistory.EntityOf(found) } : null;
     }
 
     private sealed record PendingEdit(object Key, Action<object> SetAfter, Action Commit);

@@ -1,5 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
+using Poser.Domain.Identity;
 
 namespace Poser.Game.Tests.Journal;
 
@@ -131,6 +132,31 @@ public sealed class UndoJournalTests
         Assert.False(world.Journal.IsRestoring);
     }
 
+    [Fact]
+    public void Scoped_deferred_restore_preserves_unrelated_newer_entry_until_completion()
+    {
+        var world = new World();
+        var actor = SelectionId.ForActor(ActorId.New());
+        Action<GestureResult>? complete = null;
+        var step = new JournalStep("Actor reset", () => true, () => true)
+        {
+            AffectedEntities = new[] { actor },
+            CompleteReplay = (_, _, _, done) => complete = done,
+        };
+        var light = new JournalStep("Light", () => true, () => true)
+            { AffectedEntities = new[] { SelectionId.ForLight(LightId.New()) } };
+        world.History.Append(step); world.History.Append(light);
+        Assert.True(world.Journal.Undo(actor).Success);
+        Assert.True(world.Journal.IsRestoring);
+        Assert.Same(light, world.History.PeekUndo());
+        complete!(GestureResult.Ok());
+        Assert.Same(light, world.History.PeekUndo());
+        Assert.Same(step, world.History.PeekRedo(actor));
+        Assert.True(world.Journal.Redo(actor).Success);
+        complete!(GestureResult.Ok());
+        Assert.Same(step, world.History.PeekUndo());
+    }
+
     private sealed class World
     {
         public TransformHistory History { get; } = new();
@@ -144,11 +170,14 @@ public sealed class UndoJournalTests
     {
         public GestureResult Undo() => Apply(true);
         public GestureResult Redo() => Apply(false);
+        public GestureResult Undo(SelectionId entity) => Apply(true, entity);
+        public GestureResult Redo(SelectionId entity) => Apply(false, entity);
+        public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => Replay(step, before);
         public GestureResult Replay(JournalStep step, bool before) =>
             (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
-        private GestureResult Apply(bool before)
+        private GestureResult Apply(bool before, SelectionId? entity = null)
         {
-            var entry = before ? history.PeekUndo() : history.PeekRedo();
+            var entry = before ? history.PeekUndo(entity) : history.PeekRedo(entity);
             bool success = entry switch
             {
                 JournalStep step => before ? step.Undo() : step.Redo(),
@@ -156,7 +185,7 @@ public sealed class UndoJournalTests
                 _ => false,
             };
             if (!success) return GestureResult.Fail("Refused");
-            if (before) history.CommitUndo(entry!); else history.CommitRedo(entry!);
+            if (before) history.CommitUndo(entry!, entity); else history.CommitRedo(entry!, entity);
             return GestureResult.Ok();
         }
     }

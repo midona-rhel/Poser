@@ -114,6 +114,21 @@ public sealed class CleanTransformFacade : ITransformFacade
     public GestureResult Undo() { _values.Seal(); return _journal.Undo(); }
     public GestureResult Redo() { _values.Seal(); return _journal.Redo(); }
 
+    public GestureResult UndoSelected() => ReplaySelected(before: true);
+    public GestureResult RedoSelected() => ReplaySelected(before: false);
+
+    private GestureResult ReplaySelected(bool before)
+    {
+        _values.Seal();
+        var selected = _scene.Selection.Selected;
+        if (selected.Count == 0 || selected.Any(id => _scene.Resolve(id) != id))
+            return GestureResult.Fail("Select a current entity to undo or redo its changes.");
+        var entities = selected.Select(TransformHistory.EntityOf).Distinct().ToArray();
+        if (entities.Length != 1 || entities[0].Kind == SceneEntityKind.Bone)
+            return GestureResult.Fail("Select one entity, or bones belonging to one actor. Use global undo for groups.");
+        return before ? _journal.Undo(entities[0]) : _journal.Redo(entities[0]);
+    }
+
     /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
     public GestureResult SetAbsolute(
         TransformTargetId target,

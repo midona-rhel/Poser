@@ -51,7 +51,7 @@ public sealed class WardrobeSession : IWardrobeControl
             return result;
         _journal.RecordResult(description, before, after,
             worn => Written(_integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2)),
-            () => Alive(actor));
+            () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 
@@ -86,7 +86,7 @@ public sealed class WardrobeSession : IWardrobeControl
         if (!result.Success)
             return result;
         _journal.RecordResult(description, before, bonusItemId,
-            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor));
+            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 
@@ -117,7 +117,7 @@ public sealed class WardrobeSession : IWardrobeControl
             _ => "Set switch",
         };
         _journal.RecordResult(description, before, on,
-            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor));
+            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor), SelectionId.ForActor(actor));
         return result;
     }
 
@@ -152,7 +152,7 @@ public sealed class WardrobeSession : IWardrobeControl
         }
         if (before.Count > 0)
             _journal.RecordResult<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(description, before, after,
-                Dress, () => Alive(actor));
+                Dress, () => Alive(actor), SelectionId.ForActor(actor));
         return outcome;
 
         ValueWriteResult Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)

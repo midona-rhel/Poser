@@ -506,6 +506,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
                 return true;
             })
         {
+            AffectedEntities = before.Concat(after)
+                .Select(state => TransformHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
         });
         return null;
     }

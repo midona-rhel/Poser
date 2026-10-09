@@ -646,12 +646,14 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/undo":
             {
-                var result = _transforms.Undo();
+                var result = query.GetValueOrDefault("selected") == "1"
+                    ? _transforms.UndoSelected() : _transforms.Undo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
             }
             case "/redo":
             {
-                var result = _transforms.Redo();
+                var result = query.GetValueOrDefault("selected") == "1"
+                    ? _transforms.RedoSelected() : _transforms.Redo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
             }
         }
