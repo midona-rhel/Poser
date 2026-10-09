@@ -154,6 +154,32 @@ public sealed class EnvironmentControlTests
         Assert.True(runtime.IsInteriorBrightnessOverridden);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void First_brightness_drag_undo_releases_ownership_even_after_return_to_start(bool returnToStart)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
+        var history = new TransformHistory();
+        var journal = new ValueJournal(history);
+        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
+        journal.BeginEdit("brightness");
+        control.SetInteriorBrightness(0.7f);
+        if (returnToStart) control.SetInteriorBrightness(0.4f);
+        journal.EndEdit();
+        control.Seal();
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        history.CommitUndo(step);
+        Assert.False(runtime.IsInteriorBrightnessOverridden);
+        Assert.Equal(0.4f, runtime.InteriorBrightness);
+        Assert.True(step.Redo());
+        history.CommitRedo(step);
+        Assert.True(runtime.IsInteriorBrightnessOverridden);
+        Assert.Equal(returnToStart ? 0.4f : 0.7f, runtime.InteriorBrightness);
+    }
+
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
     {
         private int _minute;

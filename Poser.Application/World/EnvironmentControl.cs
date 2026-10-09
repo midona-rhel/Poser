@@ -81,11 +81,15 @@ public sealed class EnvironmentControl : IEnvironmentControl
             return;
         ulong binding = _environment.HousingInteriorBinding;
         float value = Math.Clamp(v, 0f, 1f);
-        _journal.Set((_environment, "InteriorBrightness", binding),
+        _journal.TrySet((_environment, "InteriorBrightness", binding),
             "Set interior brightness",
-            () => _environment.HousingInteriorBinding == binding &&
-                _environment.InteriorBrightness is { } current ? current : value,
-            next => _environment.TrySetInteriorBrightness(next, binding), value);
+            () => (Owned: _environment.IsInteriorBrightnessOverridden,
+                Value: _environment.InteriorBrightness ?? value),
+            next => new ValueWriteResult(next.Owned
+                ? _environment.TrySetInteriorBrightness(next.Value, binding)
+                : _environment.ReleaseInteriorBrightness(binding)),
+            (Owned: true, Value: value),
+            () => _environment.HousingInteriorBinding == binding);
     }
 
     public void ResetInteriorBrightness()
