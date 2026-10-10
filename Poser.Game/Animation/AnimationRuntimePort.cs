@@ -162,8 +162,11 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         });
     }
 
-    /// <summary>Whether a foreign region answers a guarded read (the
-    /// ReadProcessMemory import lives in the probe partial).</summary>
+    [DllImport("kernel32.dll", SetLastError = false)]
+    private static extern bool ReadProcessMemory(
+        nint process, nint address, void* buffer, nint size, out nint read);
+
+    /// <summary>Whether a foreign region answers a guarded read.</summary>
     private static bool RegionReadable(nint address, int size)
     {
         if (size > 0x160)
@@ -588,7 +591,9 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     {
         EnforceForcedLoops();
         EnforceLoops(framework);
+#if DEBUG
         ProbeTick();
+#endif
     }
 
     /// <summary>Collects live animation controls.</summary>
@@ -827,16 +832,20 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
+#if DEBUG
         _probeOurWrite = true;
         try
         {
+#endif
             return _setTimelineId!(
                 &character->Timeline.TimelineSequencer, timeline, nint.Zero);
+#if DEBUG
         }
         finally
         {
             _probeOurWrite = false;
         }
+#endif
     }
 
     public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
@@ -1539,9 +1548,11 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         _forcedLoops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
+#if DEBUG
         _probeTimelineHook?.Dispose();
         _probeCancelHook?.Dispose();
         _probeLoadWeaponHook?.Dispose();
+#endif
         _enforcement.Clear();
         _byAddress.Clear();
         // The session restores per-actor overrides before disposal; the

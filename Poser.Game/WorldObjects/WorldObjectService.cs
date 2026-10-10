@@ -944,9 +944,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
     internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
         _port.TryReadIncarnation(address, out identity);
 
+#if DEBUG
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>
         !_disposed && IsHandleCurrent(handle) && _port.IsBgReady(handle.Address);
+#endif
 
     public int Count => _adopted.Count;
 

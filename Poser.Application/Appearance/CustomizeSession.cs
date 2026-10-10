@@ -63,10 +63,12 @@ public sealed class CustomizeSession : ICustomizeControl
         return written.Success ? result : new(false, written.Detail, result.AppearanceRefusal);
     }
 
-    /// <summary>Several values as one step.</summary>
+#if DEBUG
+    /// <summary>Several values as one step. Debug bridge only.</summary>
     public IntegrationResult SetMany(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
         SetValues(actor, values, description, disruptive: false);
+#endif
 
     public IntegrationResult SetBody(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>

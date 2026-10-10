@@ -21,8 +21,12 @@ public sealed class GlamourerAccessTests
         var customize = new CustomizeSession(new ValueJournal(history), integration, port, null!);
         var actor = ActorId.New();
         var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");
+#if DEBUG
         var many = customize.SetMany(actor, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 9 }, "skin");
         foreach (var result in new[] { single, many })
+#else
+        foreach (var result in new[] { single })
+#endif
         {
             Assert.False(result.Success);
             Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);
@@ -63,7 +67,9 @@ public sealed class GlamourerAccessTests
             wardrobe.SetSwitch(actor, MetaSwitch.HatVisible, true),
             wardrobe.SetOutfit(actor, "outfit", _ => new WardrobeSlot(1, 0, 0)),
             customize.Set(actor, CustomizeKey.Height, 50, "height"),
+#if DEBUG
             customize.SetMany(actor, new Dictionary<CustomizeKey, int>(), "look"),
+#endif
         ];
         Assert.All(results, result => Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal));
     }

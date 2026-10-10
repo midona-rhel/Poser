@@ -1,3 +1,4 @@
+#if DEBUG
 using System;
 using System.Globalization;
 using System.Text;
@@ -533,3 +534,4 @@ public sealed unsafe partial class AnimationRuntimePort
         index++;
     }
 }
+#endif

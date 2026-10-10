@@ -1,3 +1,4 @@
+#if DEBUG
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -481,10 +482,6 @@ public sealed unsafe partial class AnimationRuntimePort
     private const int ClockPtrMax = 64;
     private readonly float[] _clockPtrBuffer = new float[ClockPtrBytes / 4];
 
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = false)]
-    private static extern bool ReadProcessMemory(
-        nint process, nint address, void* buffer, nint size, out nint read);
-
     /// <summary>Reads a chased pointer's region through ReadProcessMemory
     /// so a freed or unmapped object fails the read instead of faulting
     /// the game — the 20:11 crash was a raw dereference here.</summary>
@@ -822,3 +819,4 @@ public sealed unsafe partial class AnimationRuntimePort
     }
 
 }
+#endif
