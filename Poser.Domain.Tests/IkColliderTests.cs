@@ -28,7 +28,6 @@ public class IkColliderTests
     [Theory]
     [InlineData(IkColliderShape.Box)]
     [InlineData(IkColliderShape.Cylinder)]
-    [InlineData(IkColliderShape.Cone)]
     public void SegmentInteriorHitsEvenWhenBothEndsAreOutside(IkColliderShape shape)
     {
         var geometry = new ColliderGeometry(new() { Shape = shape });

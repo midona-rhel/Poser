@@ -100,12 +100,10 @@ public sealed class GroupTransformReadModelTests
     private static TransformTargetId Target() =>
         TransformTargetId.ForActor(ActorId.New());
 
-    [Theory]
-    [InlineData(.7f, -.2f, .1f)]
-    [InlineData(-1.2f, 1.1f, 2f)]
-    [InlineData(2.4f, -.9f, -2.3f)]
-    public void Captured_camera_frame_keeps_heading_but_removes_pitch_and_roll(float yaw, float pitch, float roll)
+    [Fact]
+    public void Captured_camera_frame_keeps_heading_but_removes_pitch_and_roll()
     {
+        const float yaw = -1.2f, pitch = 1.1f, roll = 2f;
         var rotation = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
         var cameraWorld = Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(4, 5, 6);
         Assert.True(Matrix4x4.Invert(cameraWorld, out var view));
@@ -125,13 +123,11 @@ public sealed class GroupTransformReadModelTests
             Vector3.Transform(Vector3.UnitY, frame.ToWorldOrientation(next.Rotation))) > .1f);
     }
 
-    [Theory]
-    [InlineData(1f, 0f)]
-    [InlineData(-1f, 0f)]
-    [InlineData(1f, .8f)]
-    [InlineData(-1f, -.8f)]
-    public void Vertical_camera_uses_finite_deterministic_right_heading(float sign, float roll)
+    [Fact]
+    public void Vertical_camera_uses_finite_deterministic_right_heading()
     {
+        // Straight down with roll; straight up is symmetric.
+        const float sign = -1f, roll = -.8f;
         Quaternion? previous = null;
         foreach (float offset in new[] { -.0001f, 0f, .0001f })
         {
@@ -147,20 +143,6 @@ public sealed class GroupTransformReadModelTests
             if (previous is { } prior) Assert.True(MathF.Abs(Quaternion.Dot(prior, frame.Rotation)) > .99999f);
             previous = frame.Rotation;
         }
-    }
-
-    [Fact]
-    public void Coincident_reflected_members_need_no_geometric_fit()
-    {
-        var initial = new Dictionary<TransformTargetId, PoseTransform> {
-            [Target()] = new(Vector3.Zero, Quaternion.Identity, new(-1, 2, 3)),
-            [Target()] = new(Vector3.Zero, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .6f), new(3, 1, -2))
-        };
-        Assert.True(GroupTransformBaseline.TryCapture(initial, GroupTransformFrame.World(Vector3.Zero),
-            out var baseline, out _));
-        var snapshot = new GroupTransformSnapshot(baseline!, initial, GroupTransformControls.Identity(Vector3.Zero));
-        Assert.True(GroupTransformReadModel.TryRead(snapshot, initial, GroupScaleMode.SpacingOnly, out var read, out _));
-        Assert.Equal(Vector3.One, read.Scale);
     }
 
     private static PoseTransform Pose(

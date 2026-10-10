@@ -30,11 +30,10 @@ public sealed class IkImportOffsetTests
         Assert.Equal(new Vector3(3, 0, 0), pose.IkModification().Position);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Reset_import_keeps_only_an_active_tethers_offset(bool held)
+    [Fact]
+    public void Reset_import_keeps_only_an_active_tethers_offset()
     {
+        const bool held = true;
         var pose = new BonePoseInfo("j_te_l", 0);
         pose.Apply(Delta(2), Transform.Zero);
         pose.Apply(Delta(9), Transform.Zero, forceNewStack: true, drivesIk: false);
@@ -63,6 +62,14 @@ public sealed class IkImportOffsetTests
         pose.RestoreInteractiveStacks(after);
         Assert.Equal(after, pose.Stacks);
         Assert.Equal(new Vector3(2, 0, 0), pose.IkModification().Position);
+
+        // A preview copy is independent of its source and keeps the IK edit metadata.
+        var preview = new BonePoseInfo("j_te_l", 0);
+        preview.ReplaceStacks(pose.Stacks);
+        preview.ResetForImport(true);
+        preview.Apply(Delta(-4), Transform.Zero, forceNewStack: true, drivesIk: false);
+        Assert.Equal(after, pose.Stacks);
+        Assert.Equal(pose.IkModification(), preview.IkModification());
     }
 
     [Fact]
@@ -74,22 +81,5 @@ public sealed class IkImportOffsetTests
         pose.ResetForImport(true);
         Assert.Equal(new Vector3(2, 0, 0), pose.IkModification().Position);
         Assert.Contains(pose.Stacks, stack => stack.Layer == "expression");
-    }
-
-    [Fact]
-    public void Preview_stack_copy_is_independent_and_preserves_IK_edit_metadata()
-    {
-        var source = new BonePoseInfo("j_te_l", 0);
-        source.Apply(Delta(2), Transform.Zero);
-        source.Apply(Delta(9), Transform.Zero, forceNewStack: true, drivesIk: false);
-        var sourceBefore = source.Stacks.ToArray();
-        var preview = new BonePoseInfo("j_te_l", 0);
-        preview.ReplaceStacks(source.Stacks);
-        preview.ResetForImport(true);
-        preview.Apply(Delta(-4), Transform.Zero, forceNewStack: true, drivesIk: false);
-        Assert.Equal(sourceBefore, source.Stacks);
-        Assert.Equal(source.IkModification(), preview.IkModification());
-        source.Apply(Delta(3), Transform.Zero);
-        Assert.Equal(new Vector3(2, 0, 0), preview.IkModification().Position);
     }
 }

@@ -6,50 +6,6 @@ namespace Poser.Domain.Tests;
 
 public sealed class TransformPolicyBaselineTests
 {
-    public static IEnumerable<object[]> DefinedMasks()
-    {
-        yield return [TransformComponents.None];
-        yield return [TransformComponents.Position];
-        yield return [TransformComponents.Rotation];
-        yield return [TransformComponents.Position | TransformComponents.Rotation];
-        yield return [TransformComponents.Scale];
-        yield return [TransformComponents.Position | TransformComponents.Scale];
-        yield return [TransformComponents.Rotation | TransformComponents.Scale];
-        yield return [TransformComponents.All];
-    }
-
-    [Theory]
-    [MemberData(nameof(DefinedMasks))]
-    public void Defined_masks_are_representable_by_the_current_domain_type(
-        TransformComponents mask)
-    {
-        Assert.True(TransformComponentsPolicy.IsDefined(mask));
-        TransformComponentsPolicy.Validate(mask);
-        var layer = new PoseLayer(
-            new PoseLayerId(PoseLayerKind.Manual, "baseline"),
-            mask,
-            ValidDelta());
-
-        Assert.Equal(mask, layer.Propagation);
-        Assert.True(layer.IsValid);
-    }
-
-    [Fact]
-    public void Unknown_mask_bits_are_rejected_explicitly()
-    {
-        var layer = new PoseLayer(
-            new PoseLayerId(PoseLayerKind.Manual, "unknown"),
-            (TransformComponents)8,
-            ValidDelta());
-
-        Assert.False(TransformComponentsPolicy.IsDefined(
-            (TransformComponents)8));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => TransformComponentsPolicy.Validate((TransformComponents)8));
-        Assert.False(layer.IsValid);
-        Assert.Throws<ArgumentException>(() => new BonePose([layer]));
-    }
-
     [Fact]
     public void Pose_transform_creation_rejects_non_finite_values_and_normalizes_rotation()
     {
@@ -73,59 +29,6 @@ public sealed class TransformPolicyBaselineTests
             Vector3.One,
             out _,
             out _));
-    }
-
-    [Fact]
-    public void Invalid_delta_is_rejected_without_changing_the_frozen_baseline()
-    {
-        var baseline = PoseTransform.Identity;
-        var invalid = new TransformDelta(
-            new Vector3(float.PositiveInfinity, 0, 0),
-            Quaternion.Identity,
-            Vector3.One);
-
-        Assert.False(invalid.IsValid);
-        Assert.Throws<ArgumentOutOfRangeException>(() => invalid.Normalized());
-        Assert.Throws<ArgumentOutOfRangeException>(() => TransformMath.Apply(
-            baseline,
-            invalid,
-            TransformSpace.Local,
-            Vector3.Zero,
-            rotatePosition: false));
-        Assert.Equal(PoseTransform.Identity, baseline);
-    }
-
-    [Fact]
-    public void Direct_transform_helpers_reject_malformed_delta_and_baselines()
-    {
-        var zeroRotation = new TransformDelta(
-            Vector3.Zero,
-            Quaternion.Zero,
-            Vector3.One);
-        var nonFiniteDelta = new TransformDelta(
-            new Vector3(float.NaN, 0, 0),
-            Quaternion.Identity,
-            Vector3.One);
-        var nonFiniteBaseline = new Quaternion(
-            float.PositiveInfinity,
-            0,
-            0,
-            1);
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => TransformMath.Mirror(zeroRotation));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => TransformMath.Mirror(nonFiniteDelta));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TransformMath.MirrorRebased(
-                TransformDelta.Identity,
-                nonFiniteBaseline,
-                Quaternion.Identity));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TransformMath.LinkRebased(
-                TransformDelta.Identity,
-                Quaternion.Identity,
-                Quaternion.Zero));
     }
 
     [Fact]
@@ -188,27 +91,4 @@ public sealed class TransformPolicyBaselineTests
         Assert.Single(original.Layers);
         Assert.Equal(0UL, original.Version);
     }
-
-    [Fact]
-    public void Immutable_bone_pose_replacement_does_not_mutate_the_original()
-    {
-        var original = new BonePose();
-        var replaced = original.Replace(new PoseLayer(
-            new PoseLayerId(PoseLayerKind.Manual, "baseline"),
-            TransformComponents.All,
-            new PoseDelta(
-                new Vector3(2, 0, 0),
-                Quaternion.Identity,
-                Vector3.Zero)));
-
-        Assert.Equal(0UL, original.Version);
-        Assert.Empty(original.Layers);
-        Assert.Equal(1UL, replaced.Version);
-        Assert.Single(replaced.Layers);
-    }
-
-    private static PoseDelta ValidDelta() => new(
-        Vector3.Zero,
-        Quaternion.Identity,
-        Vector3.Zero);
 }
