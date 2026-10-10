@@ -258,7 +258,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         actor = result.Value!;
         return result.Success && actor != null
-            && _bindings.GetActorId(actor) == id
             && _actorManager.Actors.Contains(actor);
     }
 
@@ -271,7 +270,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         light = result.Value!;
         return result.Success && light is { IsValid: true }
-            && _bindings.GetLightId(light) == id
             && _lighting.Lights.Contains(light);
     }
 
@@ -280,7 +278,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         camera = result.Value!;
         return result.Success && camera is { IsValid: true }
-            && _bindings.GetCameraId(camera) == id
             && _cameras.Cameras.Contains(camera);
     }
 
@@ -289,7 +286,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         prop = result.Value!;
         return result.Success && prop is { IsValid: true }
-            && _bindings.GetPropId(prop) == id
             && _props.Props.Contains(prop);
     }
 
@@ -298,7 +294,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         overlay = result.Value!;
         return result.Success && overlay is { IsValid: true }
-            && _bindings.GetOverlayId(overlay) == id
             && _overlays.Nodes.Contains(overlay);
     }
 
@@ -307,7 +302,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         world = result.Value!;
         return result.Success && world is { IsValid: true }
-            && _bindings.GetWorldObjectId(world) == id
             && _worldObjects.Adopted.Contains(world);
     }
 }

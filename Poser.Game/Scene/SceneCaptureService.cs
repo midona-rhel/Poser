@@ -693,8 +693,7 @@ public sealed class SceneCaptureService
         if (camera.TargetActorId is not { } targetId ||
             _bindings.Resolve(targetId) is not
                 { Success: true, Value: { } exact } ||
-            !ReferenceEquals(exact, camera.TargetActor) ||
-            _bindings.GetActorId(exact) != targetId)
+            !ReferenceEquals(exact, camera.TargetActor))
             return null;
         return actorKeys.TryGetValue(exact, out var key) ? key : null;
     }

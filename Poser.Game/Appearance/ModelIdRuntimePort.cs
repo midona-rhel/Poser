@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
@@ -19,24 +18,19 @@ namespace Poser.Game.Appearance;
 /// </summary>
 public sealed class ModelIdRuntimePort : IModelIdRuntimePort
 {
-    private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IActorSpawnService _spawn;
 
     public ModelIdRuntimePort(
-        IFramework framework,
         StableBindingRegistry bindings,
         IActorSpawnService spawn)
     {
-        _framework = framework;
         _bindings = bindings;
         _spawn = spawn;
     }
 
     public int? Read(ActorId actor)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
@@ -46,9 +40,6 @@ public sealed class ModelIdRuntimePort : IModelIdRuntimePort
 
     public PresentationPortResult Write(ActorId actor, int modelCharaId)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return PresentationPortResult.Fail(
-                "Model id writes must run on the framework thread.");
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)

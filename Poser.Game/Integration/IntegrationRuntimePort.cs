@@ -273,8 +273,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
 
     public bool IsResolvable(ActorId actor)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return false;
         var resolved = _bindings.Value.Resolve(actor);
         return resolved.Success && resolved.Value is { } legacy && legacy.Address != nint.Zero;
     }
@@ -293,11 +291,6 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private int ResolveIndex(ActorId actor, out string? detail)
     {
         detail = null;
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            detail = "External integration calls must run on the framework thread.";
-            return -1;
-        }
         var resolved = _bindings.Value.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
         {

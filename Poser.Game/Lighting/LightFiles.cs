@@ -42,10 +42,7 @@ public sealed class LightFiles(
 
     public SceneActionResult Export(LightId id, string path)
     {
-        if (!framework.IsInFrameworkUpdateThread)
-            return SceneActionResult.Fail("Light export requires the framework thread.");
-        if (bindings.Resolve(id) is not { Success: true, Value: { IsValid: true } light } ||
-            bindings.GetLightId(light) != id)
+        if (bindings.Resolve(id) is not { Success: true, Value: { IsValid: true } light })
             return SceneActionResult.Fail("The light no longer exists.");
         try
         {

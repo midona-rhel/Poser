@@ -14,22 +14,19 @@ public sealed class NativePoseImportService : IPoseImportCommands
 {
     private readonly IEntityBindings _bindings;
     private readonly PoseImportCoordinator _imports;
-    private readonly IFramework _framework;
 
     public NativePoseImportService(
         IEntityBindings bindings,
         PoseImportCoordinator imports,
         IPoseFileService poseFiles,
         ISkeletonService skeletons,
-        IPluginLog log,
-        IFramework framework)
+        IPluginLog log)
     {
         _bindings = bindings;
         _imports = imports;
         _poseFiles = poseFiles;
         _skeletons = skeletons;
         _log = log;
-        _framework = framework;
     }
 
     public bool IsImportBusy => _imports.IsImportBusy;
@@ -73,9 +70,8 @@ public sealed class NativePoseImportService : IPoseImportCommands
     private PoseEditResult? ResolveTarget(ActorId id, out IActor actor)
     {
         actor = null!;
-        // Planning reads native skeleton caches too, not just the later apply pass.
-        if (!_framework.IsInFrameworkUpdateThread)
-            return PoseEditResult.Fail("Pose import must run on the framework thread.");
+        // Planning reads native skeleton caches too, so a refused resolve
+        // (including off the framework thread) stops before any planning.
         var resolved = _bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } current)
             return PoseEditResult.Fail(resolved.Detail ?? "The actor is no longer available.");

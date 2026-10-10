@@ -51,7 +51,7 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
     public bool IsBaking => _capture.IsPending;
 
     private IActor? Resolve(ActorId actor) =>
-        !_disposed && _framework.IsInFrameworkUpdateThread &&
+        !_disposed &&
         _sessions.ActiveSessionGeneration != null &&
         _scene.Snapshot.FindActor(actor) != null &&
         _bindings.Resolve(actor) is { Success: true, Value: { } binding }
