@@ -1,3 +1,4 @@
+using Poser.Application.Lifecycle;
 using Poser.Domain.Operations;
 using Poser.Files;
 
@@ -18,6 +19,8 @@ internal sealed class SceneLoadBarriers(
     /// make it, rather than the scene waiting on a companion that never
     /// draws.</summary>
     private static readonly TimeSpan CompanionReadyTimeout = TimeSpan.FromSeconds(5);
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
     /// Arms ONE atomic pose import — an actor's or its companion's, through
@@ -60,28 +63,28 @@ internal sealed class SceneLoadBarriers(
                 return (null, true);
             return (arm(OnReceipt), false);
         }
-        var slotDeadline = DateTime.UtcNow + workflow.PoseImportBound;
-        while (true)
+        (string? Refusal, bool Busy) armed = default;
+        string? dispatchFailure = null;
+        async Task<bool> Arm()
         {
-            (string? Refusal, bool Busy) armed;
             try
             {
                 armed = await runtime.OnFramework(TryArm);
             }
             catch (Exception ex)
             {
-                return $"The pose import dispatch failed: {ex.Message}";
+                dispatchFailure = $"The pose import dispatch failed: {ex.Message}";
+                return true;
             }
-            if (!armed.Busy)
-            {
-                if (armed.Refusal != null)
-                    return armed.Refusal;
-                break;
-            }
-            if (DateTime.UtcNow >= slotDeadline)
-                return "Another pose edit held the pose import for the whole bound, so the pose was not restored.";
-            await Task.Delay(50, cancellation);
+            return !armed.Busy;
         }
+        await FrameworkPoll.Until(Arm, workflow.PoseImportBound, PollInterval, cancellation);
+        if (dispatchFailure != null)
+            return dispatchFailure;
+        if (armed.Busy)
+            return "Another pose edit held the pose import for the whole bound, so the pose was not restored.";
+        if (armed.Refusal != null)
+            return armed.Refusal;
 
         var finished = await Task.WhenAny(
             completion.Task, Task.Delay(workflow.PoseImportBound, cancellation));
@@ -126,8 +129,8 @@ internal sealed class SceneLoadBarriers(
         IEnumerable<SceneEntityHandle> actors)
     {
         var pending = actors.ToList();
-        var deadline = DateTime.UtcNow + workflow.ActorReadyBound;
-        while (true)
+        string? failure = null;
+        async Task<bool> Ready()
         {
             try
             {
@@ -140,22 +143,25 @@ internal sealed class SceneLoadBarriers(
             }
             catch (Exception ex)
             {
-                return ($"The readiness barrier failed: {ex.Message}", pending);
+                failure = $"The readiness barrier failed: {ex.Message}";
+                return true;
             }
-
-            if (operation.Invalidated || cancellation.IsCancellationRequested)
-                return ("The load was cancelled.", pending);
-            if (pending.Count == 0 || DateTime.UtcNow >= deadline)
-                return (null, pending);
-            try
-            {
-                await Task.Delay(50, workflow.DisposalToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return ("Poser is shutting down.", pending);
-            }
+            return operation.Invalidated || cancellation.IsCancellationRequested
+                || pending.Count == 0;
         }
+        try
+        {
+            await FrameworkPoll.Until(Ready, workflow.ActorReadyBound, PollInterval, workflow.DisposalToken);
+        }
+        catch (OperationCanceledException) when (workflow.DisposalToken.IsCancellationRequested)
+        {
+            return ("Poser is shutting down.", pending);
+        }
+        if (failure != null)
+            return (failure, pending);
+        if (operation.Invalidated || cancellation.IsCancellationRequested)
+            return ("The load was cancelled.", pending);
+        return (null, pending);
     }
 
     /// <summary>
@@ -168,8 +174,7 @@ internal sealed class SceneLoadBarriers(
     public async Task WaitForCompanions(
         IReadOnlyList<SceneActor> actors, IReadOnlyDictionary<Guid, SceneEntityHandle> actorTokens)
     {
-        var deadline = DateTime.UtcNow + CompanionReadyTimeout;
-        while (true)
+        async Task<bool> Built()
         {
             bool ready;
             try
@@ -191,21 +196,17 @@ internal sealed class SceneLoadBarriers(
             catch (Exception)
             {
                 // The framework thread is gone; the pose phase reports it.
-                return;
+                return true;
             }
-
-            if (ready || operation.Invalidated ||
-                cancellation.IsCancellationRequested ||
-                DateTime.UtcNow >= deadline)
-                return;
-            try
-            {
-                await Task.Delay(50, workflow.DisposalToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
+            return ready || operation.Invalidated || cancellation.IsCancellationRequested;
+        }
+        try
+        {
+            await FrameworkPoll.Until(Built, CompanionReadyTimeout, PollInterval, workflow.DisposalToken);
+        }
+        catch (OperationCanceledException) when (workflow.DisposalToken.IsCancellationRequested)
+        {
+            // Unload; the pose phase never runs.
         }
     }
 }

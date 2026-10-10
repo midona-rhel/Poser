@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Operations;
@@ -21,6 +22,8 @@ internal interface IActorRedrawRuntime
 internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposable
 {
     private readonly ConcurrentDictionary<ActorId, Guid> _pending = new();
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(25);
+
     private readonly CancellationTokenSource _lifetime = new();
 
     public async Task<IntegrationResult> RedrawAndWait(
@@ -58,7 +61,8 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
             }).WaitAsync(token);
             if (!requested.Success) return requested;
 
-            while (true)
+            string? failed = null;
+            async Task<bool> Settled()
             {
                 token.ThrowIfCancellationRequested();
                 var state = await runtime.OnFramework(() =>
@@ -69,10 +73,14 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
                     // has acknowledged this actor's requested redraw.
                     return (Failed: (string?)null, Ready: Volatile.Read(ref observed) != 0 && runtime.Ready(exact));
                 }).WaitAsync(token);
-                if (state.Failed is { } failure) return IntegrationResult.Fail(failure);
-                if (state.Ready) return IntegrationResult.Ok();
-                await Task.Delay(25, token);
+                failed = state.Failed;
+                return state.Failed != null || state.Ready;
             }
+            // The linked token is the real deadline; the poll's own bound only
+            // answers if a probe outlives it without the token firing.
+            if (!await FrameworkPoll.Until(Settled, timeout, PollInterval, token))
+                throw new OperationCanceledException(token);
+            return failed is { } failure ? IntegrationResult.Fail(failure) : IntegrationResult.Ok();
         }
         catch (OperationCanceledException)
         {

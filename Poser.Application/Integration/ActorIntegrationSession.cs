@@ -844,26 +844,19 @@ public sealed class ActorIntegrationSession : IDisposable
         Guid operationId, TimeSpan bound, CancellationToken cancellation,
         TimeSpan? drainBound = null)
     {
-        var deadline = DateTime.UtcNow + bound;
+        McdfWait? done = null;
         McdfWaitEnd end;
-        while (true)
+        try
         {
-            if (TerminalOf(operationId) is { } done)
-                return done;
-            if (DateTime.UtcNow >= deadline)
-            {
-                end = McdfWaitEnd.DeadlinePassed;
-                break;
-            }
-            try
-            {
-                await Task.Delay(McdfPollInterval, cancellation);
-            }
-            catch (OperationCanceledException)
-            {
-                end = McdfWaitEnd.ParentCancelled;
-                break;
-            }
+            if (await FrameworkPoll.Until(
+                    () => Task.FromResult((done = TerminalOf(operationId)) is not null),
+                    bound, McdfPollInterval, cancellation))
+                return done!.Value;
+            end = McdfWaitEnd.DeadlinePassed;
+        }
+        catch (OperationCanceledException)
+        {
+            end = McdfWaitEnd.ParentCancelled;
         }
         var drained = await CancelMcdfAndDrain(operationId, drainBound ?? McdfDrainBound);
         return drained with { End = end };

@@ -1,3 +1,4 @@
+using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -37,26 +38,27 @@ internal sealed class SceneLoadStructure(
             .Concat(scene.RootOrder ?? []).Concat((scene.Parents ?? []).SelectMany(p => new[] { p.Child, p.Target }))
             .Select(reference => (reference.Kind, reference.Key))
             .Distinct().Where(tokens.ContainsKey).ToArray();
-        var deadline = System.Diagnostics.Stopwatch.StartNew();
-        while (true)
+        string? stop = null;
+        async Task<bool> Settled()
         {
             var result = await runtime.OnFramework(() =>
             {
-                var stop = operation.Guard(runtime, cancellation);
-                return (Stop: stop, Ready: stop == null
+                var guard = operation.Guard(runtime, cancellation);
+                return (Stop: guard, Ready: guard == null
                     && references.All(reference => runtime.ResolveSceneEntity(tokens[reference]) != null));
             });
-            if (result.Stop != null) return result.Stop;
-            if (result.Ready || deadline.Elapsed >= bound) return null;
-            try
-            {
-                await Task.Delay(50, cancellation);
-            }
-            catch (OperationCanceledException)
-            {
-                return "The load was cancelled.";
-            }
+            stop = result.Stop;
+            return result.Stop != null || result.Ready;
         }
+        try
+        {
+            await FrameworkPoll.Until(Settled, bound, TimeSpan.FromMilliseconds(50), cancellation);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return "The load was cancelled.";
+        }
+        return stop;
     }
 
     /// <summary>
