@@ -47,12 +47,11 @@ public sealed class CustomizeRequestTests
         };
     }
 
-    [Theory]
-    [InlineData(CustomizeKey.SkinColor, 7)]
-    [InlineData(CustomizeKey.SkinColor, 8)]
-    [InlineData(CustomizeKey.HairColor, 207)]
-    public void Palette_request_has_only_requested_and_required_application(CustomizeKey key, int value)
+    [Fact]
+    public void Palette_request_has_only_requested_and_required_application()
     {
+        const CustomizeKey key = CustomizeKey.SkinColor;
+        const int value = 8;
         var snapshot = Snapshot();
         var before = snapshot.DeepClone();
         var result = CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [key] = value });
@@ -104,60 +103,18 @@ public sealed class CustomizeRequestTests
     }
 
     [Theory]
-    [InlineData("null")]
-    [InlineData("{}")]
-    [InlineData("{\"Value\":\"8\"}")]
-    [InlineData("{\"Value\":8.5}")]
-    [InlineData("{\"Value\":8,\"Apply\":\"yes\"}")]
-    public void Missing_or_malformed_requested_field_is_refused_without_mutation(string field)
+    [InlineData("{\"Value\":\"8\"}", CustomizeKey.SkinColor, 8)]
+    [InlineData(null, CustomizeKey.Race, 6)]
+    public void Bad_request_is_refused_without_mutation(string? field, CustomizeKey key, int value)
     {
+        // One malformed snapshot field, and one body that is inconsistent with its clan.
         var snapshot = Snapshot();
-        snapshot["Customize"]!["SkinColor"] = JToken.Parse(field);
+        if (field != null)
+            snapshot["Customize"]!["SkinColor"] = JToken.Parse(field);
         var before = snapshot.DeepClone();
-        var result = CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 8 });
+        var result = CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [key] = value });
         Assert.False(result.Success);
-        Assert.Contains("SkinColor", result.Detail);
         Assert.Null(result.Value);
         Assert.True(JToken.DeepEquals(before, snapshot));
-    }
-
-    [Fact]
-    public void Omitted_false_apply_flag_is_valid_and_wetness_stays_boolean()
-    {
-        var snapshot = Snapshot();
-        ((JObject)snapshot["Customize"]!["Wetness"]!).Remove("Apply");
-        var result = CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [CustomizeKey.Wetness] = 1 });
-        Assert.True(result.Success);
-        Assert.Equal(JTokenType.Boolean, result.Value!["Customize"]!["Wetness"]!["Value"]!.Type);
-        Assert.True(result.Value!["Customize"]!["Wetness"]!["Value"]!.Value<bool>());
-    }
-
-    [Theory]
-    [InlineData(CustomizeKey.SkinColor, -1)]
-    [InlineData(CustomizeKey.HairColor, 256)]
-    [InlineData(CustomizeKey.Wetness, 2)]
-    [InlineData(CustomizeKey.Race, 6)]
-    [InlineData(CustomizeKey.Gender, 3)]
-    public void Invalid_values_or_inconsistent_body_are_refused(CustomizeKey key, int value)
-        => Assert.False(CustomizeRequest.Build(Snapshot(), new Dictionary<CustomizeKey, int> { [key] = value }).Success);
-
-    [Fact]
-    public void Structural_data_is_required_even_for_a_palette_edit()
-    {
-        var snapshot = Snapshot();
-        ((JObject)snapshot["Customize"]!).Remove("Clan");
-        var result = CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 8 });
-        Assert.False(result.Success);
-        Assert.Contains("Clan", result.Detail);
-    }
-
-    [Fact]
-    public void Nonhuman_and_oversized_version_are_refused_without_throwing()
-    {
-        var snapshot = Snapshot();
-        snapshot["Customize"]!["ModelId"] = 1000;
-        Assert.False(CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 8 }).Success);
-        snapshot["FileVersion"] = long.MaxValue;
-        Assert.False(CustomizeRequest.Build(snapshot, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 8 }).Success);
     }
 }

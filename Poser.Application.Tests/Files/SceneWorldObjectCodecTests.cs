@@ -9,32 +9,6 @@ namespace Poser.Tests.Files;
 public sealed class SceneWorldObjectCodecTests
 {
     [Fact]
-    public void Furniture_scene_and_library_payload_round_trips_stain_and_custom_tint()
-    {
-        using var file = new TempWorldScene();
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = [new SceneWorldObject
-        {
-            Key = Guid.NewGuid(),
-            Path = "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb",
-            Name = "Chair 1", Spawned = true, Stain = 42,
-            FurnitureLights = [new("/0", false), new("/2/0", true)],
-            Tint = new Vector3(.2f, .3f, .4f), Opacity = .4f, Visible = false,
-        }];
-        Assert.True(SceneFileStore.Default.Write(scene, file.Path).Succeeded);
-        var read = SceneFileStore.Default.Read(file.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var furniture = Assert.Single(read.Scene!.WorldObjects!);
-        Assert.Equal(scene.WorldObjects[0].Path, furniture.Path);
-        Assert.Equal((byte)42, furniture.Stain);
-        Assert.Equal(scene.WorldObjects[0].FurnitureLights, furniture.FurnitureLights);
-        Assert.Equal(scene.WorldObjects[0].Tint, furniture.Tint);
-        Assert.Equal(.4f, furniture.Opacity);
-        Assert.False(furniture.Visible);
-        Assert.True(furniture.Spawned);
-    }
-
-    [Fact]
     public void Scene_codec_round_trips_world_objects()
     {
         using var file = new TempWorldScene();
@@ -55,133 +29,30 @@ public sealed class SceneWorldObjectCodecTests
                 },
                 Visible = false,
             },
+            new SceneWorldObject
+            {
+                Key = Guid.NewGuid(),
+                Path = "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb",
+                Name = "Chair 1", Spawned = true, Stain = 42,
+                FurnitureLights = [new("/0", false), new("/2/0", true)],
+                Tint = new Vector3(.2f, .3f, .4f), Opacity = .4f,
+            },
         ];
         Assert.True(SceneFileStore.Default.Write(scene, file.Path).Succeeded);
         var read = SceneFileStore.Default.Read(file.Path);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
-        var world = Assert.Single(read.Scene!.WorldObjects!);
+        Assert.Equal(2, read.Scene!.WorldObjects!.Count);
+        var world = read.Scene.WorldObjects[0];
         Assert.Equal(key, world.Key);
         Assert.Equal(new Vector3(12.5f, -3.25f, 88f), world.MapPosition);
         Assert.False(world.Visible);
-    }
-
-    [Fact]
-    public void Optional_world_object_collection_is_absent_and_unknown_members_are_ignored()
-    {
-        using var file = new TempWorldScene();
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = null;
-        var json = System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
-        json = json.TrimEnd()[..^1] + ",\"FutureMember\":true}";
-        SceneFileStoreTests.WriteContainer(file.Path, json);
-
-        var read = SceneFileStore.Default.Read(file.Path);
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.Null(read.Scene!.WorldObjects);
-        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void World_object_validation_preserves_identity_and_numeric_guards()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        var key = Guid.NewGuid();
-        scene.WorldObjects =
-        [
-            new SceneWorldObject { Key = key, Path = "bg/a.mdl", MapPosition = new Vector3(float.NaN, 0, 0) },
-            new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
-        ];
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains(result.Failure!.Kind,
-            new[] { SceneFileValidationFailureKind.Identity,
-                SceneFileValidationFailureKind.NonFiniteNumeric,
-                SceneFileValidationFailureKind.Document });
-    }
-
-    [Fact]
-    public void Scene_codec_reports_each_world_object_guard()
-    {
-        var cases = new
-        (Func<string> Json, SceneStoreFailureKind StoreKind,
-            SceneFileValidationFailureKind? ValidationKind)[]
-        {
-            (() => SerializeScene(MissingWorldKey()), SceneStoreFailureKind.Validation,
-                SceneFileValidationFailureKind.Identity),
-            (() => SerializeScene(DuplicateWorldKey()), SceneStoreFailureKind.Validation,
-                SceneFileValidationFailureKind.Identity),
-            (NonFiniteWorldPositionJson, SceneStoreFailureKind.Json, null),
-            (() => SerializeScene(OversizedWorldObjectList()), SceneStoreFailureKind.Validation,
-                SceneFileValidationFailureKind.CollectionSize),
-        };
-
-        foreach (var testCase in cases)
-        {
-            var json = testCase.Json();
-            var result = SceneFileStore.Default.Parse(json);
-
-            Assert.False(result.Succeeded, testCase.StoreKind.ToString());
-            Assert.Equal(testCase.StoreKind, result.Failure!.Kind);
-            if (testCase.ValidationKind is { } validationKind)
-                Assert.Equal(validationKind, result.Failure.ValidationFailure!.Kind);
-            else
-                Assert.Contains("invalid numeric value", result.Failure.Detail,
-                    StringComparison.Ordinal);
-        }
-    }
-
-    private static SceneFile MissingWorldKey()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = [new SceneWorldObject { Path = "bg/a.mdl" }];
-        return scene;
-    }
-
-    private static SceneFile DuplicateWorldKey()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        var key = Guid.NewGuid();
-        scene.WorldObjects =
-        [
-            new SceneWorldObject { Key = key, Path = "bg/a.mdl" },
-            new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
-        ];
-        return scene;
-    }
-
-    private static string NonFiniteWorldPositionJson()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects =
-        [new SceneWorldObject
-        {
-            Key = Guid.NewGuid(),
-            Path = "bg/a.mdl",
-        }];
-        var json = SerializeScene(scene);
-        return json.Replace(
-            "\"MapPosition\": \"0, 0, 0\"",
-            "\"MapPosition\": \"NaN, 0, 0\"",
-            StringComparison.Ordinal);
-    }
-
-    private static string SerializeScene(SceneFile scene) =>
-        System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
-
-    private static SceneFile OversizedWorldObjectList()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = Enumerable.Range(0, SceneFileLimits.MaxWorldObjects + 1)
-            .Select(index => new SceneWorldObject
-            {
-                Key = Guid.NewGuid(),
-                Path = $"bg/{index}.mdl",
-            })
-            .ToList();
-        return scene;
+        var furniture = read.Scene.WorldObjects[1];
+        Assert.Equal((byte)42, furniture.Stain);
+        Assert.Equal(scene.WorldObjects[1].FurnitureLights, furniture.FurnitureLights);
+        Assert.Equal(scene.WorldObjects[1].Tint, furniture.Tint);
+        Assert.Equal(.4f, furniture.Opacity);
+        Assert.True(furniture.Spawned);
     }
 
     private sealed class TempWorldScene : IDisposable

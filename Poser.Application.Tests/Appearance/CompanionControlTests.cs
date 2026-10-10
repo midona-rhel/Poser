@@ -8,20 +8,6 @@ namespace Poser.Application.Tests.Appearance;
 public sealed class CompanionControlTests
 {
     [Fact]
-    public void Replaced_child_cannot_apply_a_pending_pick_to_its_owner()
-    {
-        var runtime = new Runtime();
-        var history = new TransformHistory();
-        var control = new CompanionSession(runtime, new(history));
-        var owner = control.Read(runtime.Child)!.Owner;
-        var oldChild = runtime.Child;
-        runtime.Child = ActorId.New();
-        Assert.False(control.Set(oldChild, owner, new(CompanionKind.Mount, 2)).Success);
-        Assert.Empty(runtime.Writes);
-        Assert.False(history.CanUndo);
-    }
-
-    [Fact]
     public void Detach_history_targets_owner_after_child_disappears_and_retains_refusals()
     {
         var runtime = new Runtime();

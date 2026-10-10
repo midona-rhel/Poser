@@ -9,22 +9,6 @@ namespace Poser.Application.Tests.Gaze;
 public sealed class GazeSessionTests
 {
     [Fact]
-    public void Pose_aware_toggle_is_one_actor_step_and_preserves_modes_points_and_locks()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        var before = port.State.Settings;
-        Assert.True(session.SetPoseAware(port.Actor, true).Success);
-        Assert.Equal(before with { PoseAware = true }, port.State.Settings);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo(SelectionId.ForActor(port.Actor)));
-        Assert.True(step.Undo());
-        Assert.Equal(before, port.State.Settings);
-        Assert.True(step.Redo());
-        Assert.True(port.State.Settings.PoseAware);
-    }
-
-    [Fact]
     public void Drag_is_one_step_and_replays_original_and_final_points()
     {
         var port = new Runtime();
@@ -62,6 +46,13 @@ public sealed class GazeSessionTests
         Assert.True(step.Undo());
         Assert.Equal(before, port.State.Settings);
         Assert.True(step.Redo());
+        Assert.Equal(after, port.State.Settings);
+
+        // A pose-aware toggle is one actor-scoped step that keeps modes, points and locks.
+        Assert.True(session.SetPoseAware(port.Actor, true).Success);
+        Assert.Equal(after with { PoseAware = true }, port.State.Settings);
+        step = Assert.IsType<JournalStep>(history.PeekUndo(SelectionId.ForActor(port.Actor)));
+        Assert.True(step.Undo());
         Assert.Equal(after, port.State.Settings);
     }
 

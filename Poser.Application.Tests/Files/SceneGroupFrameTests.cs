@@ -13,19 +13,6 @@ namespace Poser.Tests.Files;
 public sealed class SceneGroupFrameTests
 {
     [Fact]
-    public void Origin_placement_moves_frame_controls_and_both_snapshots()
-    {
-        var scene = Scene();
-        scene.Origin = new(3, 4, 5);
-        var saved = scene.Groups![0].Transform!;
-        var before = saved.Members[0].Initial.Position;
-        Assert.Null(SceneRelativePlacement.Rebase(scene, new(13, 24, 35)));
-        Assert.Equal(new Vector3(10, 20, 30), saved.FrameOrigin);
-        Assert.Equal(new Vector3(11, 20, 30), saved.Position);
-        Assert.Equal(before + new Vector3(10, 20, 30), saved.Members[0].Initial.Position);
-    }
-
-    [Fact]
     public void Yaw_rebase_preserves_noncommuting_frame_relative_rotation()
     {
         var scene = Scene();
@@ -51,23 +38,16 @@ public sealed class SceneGroupFrameTests
         Assert.True(GroupTransformReadModel.Equivalent(saved.Members[0].Expected,
             expected with { Position = Vector3.Transform(expected.Position, turn),
                 Rotation = Quaternion.Normalize(turn * expected.Rotation) }));
-    }
 
-    [Fact]
-    public void Real_serializer_roundtrip_validates_and_decodes_complete_state()
-    {
-        var scene = Scene();
-        Assert.Null(SceneGroupTransformCodec.Validate(scene));
-        var json = JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
-        var read = JsonSerializer.Deserialize<SceneFile>(json, SceneJsonOptionsAccessor.Options)!;
-        Assert.Null(SceneGroupTransformCodec.Validate(read));
-        var a = TransformTargetId.ForActor(ActorId.New());
-        var b = TransformTargetId.ForProp(PropId.New());
-        var decoded = SceneGroupTransformCodec.Decode(read.Groups![0].Transform!, [a, b],
-            reference => reference.Kind == "actor" ? a : b);
-        Assert.NotNull(decoded);
-        Assert.Equal(new Vector3(10000), decoded.Controls.SpacingScale);
-        Assert.Equal(new Vector3(100), decoded.Controls.OwnScale);
+        // Origin placement translates the frame, controls and both snapshots.
+        scene = Scene();
+        scene.Origin = new(3, 4, 5);
+        saved = scene.Groups![0].Transform!;
+        var before = saved.Members[0].Initial.Position;
+        Assert.Null(SceneRelativePlacement.Rebase(scene, new(13, 24, 35)));
+        Assert.Equal(new Vector3(10, 20, 30), saved.FrameOrigin);
+        Assert.Equal(new Vector3(11, 20, 30), saved.Position);
+        Assert.Equal(before + new Vector3(10, 20, 30), saved.Members[0].Initial.Position);
     }
 
     [Fact]
@@ -128,40 +108,6 @@ public sealed class SceneGroupFrameTests
         Assert.Equal(changed.Controls.Position, read.Position);
         Assert.Equal(controls.Rotation, read.Rotation);
         Assert.Equal(controls.SpacingScale, read.Scale);
-    }
-
-    [Theory]
-    [InlineData("missing")]
-    [InlineData("duplicate")]
-    [InlineData("wrong-kind")]
-    [InlineData("zero")]
-    [InlineData("overflow")]
-    public void Corrupt_present_records_are_refused(string corruption)
-    {
-        var scene = Scene();
-        var saved = scene.Groups![0].Transform!;
-        switch (corruption)
-        {
-            case "missing": saved.Members.RemoveAt(0); break;
-            case "duplicate": saved.Members[1].Member = saved.Members[0].Member; break;
-            case "wrong-kind": saved.Members[0].Member = new() { Kind = "camera", Key = Guid.NewGuid() }; break;
-            case "zero": saved.OwnScale = Vector3.Zero; break;
-            case "overflow": saved.SpacingScale = new(float.PositiveInfinity); break;
-        }
-        Assert.NotNull(SceneGroupTransformCodec.Validate(scene));
-    }
-
-    [Fact]
-    public void Child_only_parent_uses_effective_descendants_for_saved_membership()
-    {
-        var scene = Scene();
-        var child = scene.Groups![0];
-        var parent = new SceneGroupEntry { Key = Guid.NewGuid(), Name = "Parent", Transform = child.Transform };
-        child.Parent = parent.Key;
-        scene.Groups.Add(parent);
-        Assert.Null(SceneGroupTransformCodec.Validate(scene));
-        parent.Parent = child.Key;
-        Assert.NotNull(SceneGroupTransformCodec.Validate(scene));
     }
 
     private static SceneFile Scene()

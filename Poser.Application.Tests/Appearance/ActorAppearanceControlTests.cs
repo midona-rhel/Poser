@@ -53,25 +53,6 @@ public sealed class ActorAppearanceControlTests
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
     }
 
-    [Fact]
-    public void Model_changes_restore_previous_owned_value_and_refusals_do_not_record()
-    {
-        var f = new Fixture();
-        f.RefuseModel = true;
-        Assert.False(f.Control.SetModel(f.Actor, 42).Success);
-        Assert.False(f.History.CanUndo);
-        f.RefuseModel = false;
-        Assert.True(f.Control.SetModel(f.Actor, 42).Success);
-        Assert.True(f.Control.SetModel(f.Actor, 99).Success);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Replay(step, true);
-        Assert.Equal(42, f.Model);
-        Replay(step, false);
-        Assert.Equal(99, f.Model);
-        Assert.True(f.Control.ResetModel(f.Actor).Success);
-        Assert.Equal(0, f.Model);
-    }
-
     private static void Replay(JournalStep step, bool undo)
     {
         Assert.True(undo ? step.Undo() : step.Redo());

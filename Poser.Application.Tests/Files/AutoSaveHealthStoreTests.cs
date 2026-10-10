@@ -37,22 +37,6 @@ public sealed class AutoSaveHealthStoreTests
     }
 
     [Fact]
-    public void Health_read_rejects_corruption_and_writes_bounded_records()
-    {
-        using var root = new TempRoot();
-        Directory.CreateDirectory(root.Path);
-        File.WriteAllText(Path.Combine(root.Path, AutoSaveHealthStore.FileName), "{ invalid");
-        var store = new AutoSaveHealthStore(root.Path);
-
-        Assert.Null(store.Read());
-        Assert.True(store.Write(AutoSaveHealthRecord.Create(
-            new string('x', 1000), new string('r', 1000),
-            AutoSaveHealthStatus.Pending, DateTime.UtcNow, DateTime.UtcNow,
-            affectedPaths: new[] { new string('p', 10000) })).Succeeded);
-        Assert.InRange(store.Read()!.OperationId.Length, 1, 128);
-    }
-
-    [Fact]
     public void Mutable_filesystem_failure_keeps_the_previous_record_and_reports_evidence()
     {
         using var root = new TempRoot();

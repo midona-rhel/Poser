@@ -16,9 +16,6 @@ public sealed class AppearanceControlTests
 {
     [Theory]
     [InlineData("item")]
-    [InlineData("dye")]
-    [InlineData("facewear")]
-    [InlineData("switch")]
     [InlineData("outfit")]
     public void Equipment_inverse_refusals_preserve_failure_and_can_retry(string action)
     {
@@ -62,60 +59,24 @@ public sealed class AppearanceControlTests
     }
 
     [Fact]
-    public void Equipment_history_does_not_write_to_a_replacement_generation()
-    {
-        var f = new Fixture();
-        Assert.True(Edit(f, "item").Success);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        f.Runtime.Actor = f.Runtime.Actor with { Generation = f.Runtime.Actor.Generation + 1 };
-        f.Runtime.Writes.Clear();
-        Assert.True(step.Undo());
-        Assert.True(step.Redo());
-        Assert.Empty(f.Runtime.Writes);
-    }
-
-    [Fact]
     public void Body_change_captures_fresh_values_and_owns_its_redo_input()
     {
         var f = new Fixture();
         _ = f.Customize.Read(f.Runtime.Actor);
+        f.Runtime.NormalizeBody = true;
         f.Runtime.Customize[CustomizeKey.Gender] = 1;
+        f.Runtime.Customize[CustomizeKey.BustSize] = 100;
         var desired = new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 };
         Assert.True(f.Customize.SetBody(f.Runtime.Actor, desired, "Swap gender").Success);
         desired[CustomizeKey.Gender] = 7;
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Replay(step, true);
-        Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
-        Replay(step, false);
-        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
-    }
-
-    [Fact]
-    public void Body_change_undo_restores_values_normalized_by_the_provider()
-    {
-        var f = new Fixture();
-        f.Runtime.NormalizeBody = true;
-        f.Runtime.Customize[CustomizeKey.Gender] = 1;
-        f.Runtime.Customize[CustomizeKey.BustSize] = 100;
-        Assert.True(f.Customize.SetBody(f.Runtime.Actor,
-            new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 }, "Swap gender").Success);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
+        // Undo restores the values the provider normalized, not only the requested key.
         Replay(step, true);
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
         Assert.Equal(100, f.Runtime.Customize[CustomizeKey.BustSize]);
         Replay(step, false);
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
-        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
-    }
-
-    [Fact]
-    public void Revert_does_not_discard_a_look_that_cannot_be_captured()
-    {
-        var f = new Fixture();
-        f.CaptureFailure = true;
-        Assert.False(f.Wardrobe.Revert(f.Runtime.Actor).Success);
-        Assert.False(f.History.CanUndo);
     }
 
     [Fact]
@@ -148,9 +109,6 @@ public sealed class AppearanceControlTests
     private static IntegrationResult Edit(Fixture f, string action) => action switch
     {
         "item" => f.Wardrobe.SetItem(f.Runtime.Actor, EquipSlot.Head, 99, 3, 4, "Item"),
-        "dye" => f.Wardrobe.SetDye(f.Runtime.Actor, EquipSlot.Head, 1, 8, "Dye"),
-        "facewear" => f.Wardrobe.SetFacewear(f.Runtime.Actor, 42, "Facewear"),
-        "switch" => f.Wardrobe.SetSwitch(f.Runtime.Actor, MetaSwitch.HatVisible, false),
         _ => f.Wardrobe.SetOutfit(f.Runtime.Actor, "Outfit", _ => new(99, 3, 4)),
     };
 

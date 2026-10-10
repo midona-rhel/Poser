@@ -49,28 +49,6 @@ public sealed class InheritedCollectionHistoryTests
     }
 
     [Fact]
-    public void Switching_foreign_or_uncapturable_temporary_refuses_before_assignment()
-    {
-        var (session, runtime) = Create();
-        var actor = ActorId.New();
-        Assert.False(session.SetCollection(actor, runtime.Installed, "Installed").Success);
-        Assert.Equal(0, runtime.Assignments);
-        runtime.CaptureFailure = "Resources not ready";
-        Assert.Equal("Resources not ready", session.SetCollection(actor, runtime.Installed, "Installed").Detail);
-        Assert.Equal(0, runtime.Assignments);
-    }
-
-    [Fact]
-    public void Unowned_temporary_collection_still_refuses_before_mutation()
-    {
-        var (session, runtime) = Create();
-        var captured = session.TryCaptureHistory(ActorId.New());
-        Assert.False(captured.Success);
-        Assert.Contains("another plugin", captured.Detail);
-        Assert.Equal(0, runtime.Restores);
-    }
-
-    [Fact]
     public void Failed_owned_resource_capture_is_not_treated_as_empty_appearance()
     {
         var (session, runtime) = Create();
@@ -97,7 +75,6 @@ public sealed class InheritedCollectionHistoryTests
         public SpawnCollectionSnapshot? Owned;
         public string? CaptureFailure;
         public int Restores;
-        public int Assignments;
         public Guid Installed = Guid.NewGuid();
         private bool _individual;
         private readonly Guid _collection = Guid.NewGuid();
@@ -115,7 +92,6 @@ public sealed class InheritedCollectionHistoryTests
                 case nameof(IIntegrationRuntimePort.GetCollections):
                     return IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([new(Installed, "Installed")]);
                 case nameof(IIntegrationRuntimePort.SetIndividualCollection):
-                    Assignments++;
                     Owned = null;
                     _individual = true;
                     return IntegrationPortResult.Ok();

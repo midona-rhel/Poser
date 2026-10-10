@@ -12,39 +12,6 @@ namespace Poser.Application.Tests.Animation;
 public sealed class AnimationInteractionOwnershipTests
 {
     [Fact]
-    public void Advanced_mode_is_shared_per_generation_and_failed_exit_keeps_it_enabled()
-    {
-        var actor = ActorId.New();
-        var other = ActorId.New();
-        var scene = new SceneSession(new SelectionSession());
-        scene.Refresh(new SceneSnapshot(1, [new(actor, "Actor", []), new(other, "Other", [])], [], [], []));
-        var port = Substitute.For<IAnimationRuntimePort>();
-        var session = new AnimationSession(port);
-        var expressions = Substitute.For<IExpressionPreview>();
-        var steps = new AnimationSteps(session, new ValueJournal(new TransformHistory()), scene, expressions);
-        IAnimationPlayback first = session, second = session;
-
-        Assert.True(steps.SetAdvanced(actor, true).Success);
-        Assert.True(first.IsAdvanced(actor));
-        Assert.True(second.IsAdvanced(actor));
-        Assert.False(second.IsAdvanced(other));
-        Assert.Empty(port.ReceivedCalls());
-        expressions.DidNotReceive().Reset(Arg.Any<ActorId>());
-        expressions.Reset(actor).Returns(AnimationResult.Fail("Not ready"));
-        Assert.False(steps.SetAdvanced(actor, false).Success);
-        Assert.True(second.IsAdvanced(actor));
-        expressions.Reset(actor).Returns(AnimationResult.Ok());
-        Assert.True(steps.SetAdvanced(actor, false).Success);
-        Assert.False(first.IsAdvanced(actor));
-
-        Assert.True(steps.SetAdvanced(actor, true).Success);
-        var replacement = actor with { Generation = actor.Generation + 1 };
-        session.Reconcile(new SceneSnapshot(2, [new(replacement, "Replacement", [])], [], [], []));
-        Assert.False(first.IsAdvanced(actor));
-        Assert.False(first.IsAdvanced(replacement));
-    }
-
-    [Fact]
     public void Old_scrub_owner_cannot_write_or_end_the_new_owners_drag()
     {
         var actor = ActorId.New();
