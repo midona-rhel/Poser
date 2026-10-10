@@ -91,26 +91,27 @@ public sealed record SceneRefreshResult
 public sealed class SceneSession : ICurrentSelectionEntityReads
 {
     private SceneSnapshot _snapshot = SceneSnapshot.Empty;
-    private Dictionary<ActorId, ActorDescriptor> _actors = new();
+    private readonly EntityIndex<ActorId, ActorDescriptor> _actors =
+        new("Actor", static actor => actor.Id, static id => (id.LogicalId, id.Generation));
+    private readonly EntityIndex<LightId, LightDescriptor> _lights =
+        new("light", static light => light.Id, static id => (id.LogicalId, id.Generation));
+    private readonly EntityIndex<CameraId, CameraDescriptor> _cameras =
+        new("camera", static camera => camera.Id, static id => (id.LogicalId, id.Generation));
+    private readonly EntityIndex<PropId, PropDescriptor> _props =
+        new("object", static prop => prop.Id, static id => (id.LogicalId, id.Generation));
+    private readonly EntityIndex<WorldObjectId, WorldObjectDescriptor> _worldObjects =
+        new("world object", static worldObject => worldObject.Id, static id => (id.LogicalId, id.Generation));
+    private readonly EntityIndex<OverlayId, OverlayDescriptor> _overlays =
+        new("overlay", static overlay => overlay.Id, static id => (id.LogicalId, id.Generation));
     private Dictionary<BoneId, BoneDescriptor> _bones = new();
-    private Dictionary<LightId, LightDescriptor> _lights = new();
-    private Dictionary<CameraId, CameraDescriptor> _cameras = new();
-    private Dictionary<PropId, PropDescriptor> _props = new();
-    private Dictionary<WorldObjectId, WorldObjectDescriptor> _worldObjects = new();
-    private Dictionary<OverlayId, OverlayDescriptor> _overlays = new();
+    private Dictionary<ActorId, GazeDescriptor> _gazes = new();
 
-    // These floors live for one GPose session, including through removals and
-    // reappearances. They are dropped only when the admitted snapshot belongs
-    // to a different session generation, whose ids no prior floor can guard,
-    // so the maps stay bounded by one session's entities.
-    private readonly Dictionary<Guid, uint> _actorGenerationFloors = new();
+    // Skeleton floors are keyed by their owning actor generation and slot, so
+    // they stay beside the actor index rather than in it. Like the index
+    // floors they live for one GPose session and are dropped only when the
+    // admitted snapshot belongs to a different session generation.
     private readonly Dictionary<(Guid Actor, uint ActorGeneration, PoseSlot Slot), uint>
         _skeletonGenerationFloors = new();
-    private readonly Dictionary<Guid, uint> _lightGenerationFloors = new();
-    private readonly Dictionary<Guid, uint> _cameraGenerationFloors = new();
-    private readonly Dictionary<Guid, uint> _propGenerationFloors = new();
-    private readonly Dictionary<Guid, uint> _worldObjectGenerationFloors = new();
-    private readonly Dictionary<Guid, uint> _overlayGenerationFloors = new();
     private readonly ISessionGenerationSource? _sessions;
     private SessionGeneration? _floorSession;
     private int _refreshGate;
@@ -167,16 +168,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     SceneRefreshOutcome.RejectedOlderRevision,
                     $"Revision {snapshot.Revision} is older than committed revision {Revision}.");
 
-            if (!TryBuildIndexes(
-                    snapshot,
-                    out var actors,
-                    out var bones,
-                    out var lights,
-                    out var cameras,
-                    out var props,
-                    out var worldObjects,
-                    out var overlays,
-                    out var validationError))
+            if (!TryBuildIndexes(snapshot, out var candidate, out var validationError))
                 return Invalid(validationError!);
 
             var session = _sessions?.ActiveSessionGeneration;
@@ -190,20 +182,21 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
             // Everything above is candidate-local. The following swap is the
             // single commit point for snapshot, indexes, and generation floors.
-            _actors = actors;
-            _bones = bones;
-            _lights = lights;
-            _cameras = cameras;
-            _props = props;
-            _worldObjects = worldObjects;
-            _overlays = overlays;
+            _actors.Commit(candidate.Actors, newSession);
+            _lights.Commit(candidate.Lights, newSession);
+            _cameras.Commit(candidate.Cameras, newSession);
+            _props.Commit(candidate.Props, newSession);
+            _worldObjects.Commit(candidate.WorldObjects, newSession);
+            _overlays.Commit(candidate.Overlays, newSession);
+            _bones = candidate.Bones;
+            _gazes = candidate.Gazes;
             _snapshot = snapshot;
             if (newSession)
             {
-                ClearGenerationFloors();
+                _skeletonGenerationFloors.Clear();
                 _floorSession = session;
             }
-            RecordGenerationFloors(snapshot);
+            RecordSkeletonFloors(snapshot);
 
             var failures = new List<string>();
             try
@@ -239,14 +232,14 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     public SelectionId? Resolve(SelectionId id)
     {
         if (id.Kind == SceneEntityKind.Actor && id.Actor is { } actor)
-            return TryFindActor(actor.LogicalId, out var currentActor)
+            return _actors.TryFind(actor.LogicalId, out var currentActor)
                 ? SelectionId.ForActor(currentActor.Id)
                 : null;
 
         if (id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } gazeActor)
         {
-            if (!TryFindActor(gazeActor.LogicalId, out var gazeOwner) ||
-                !TryFindGaze(gazeOwner.Id, out var gaze) ||
+            if (!_actors.TryFind(gazeActor.LogicalId, out var gazeOwner) ||
+                !_gazes.TryGetValue(gazeOwner.Id, out var gaze) ||
                 gaze.Mode != GazeMode.Position)
                 return null;
 
@@ -265,41 +258,41 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
                 // A missing bone may keep its actor selection, but never a
                 // same-named bone from another generation, slot, or actor.
-                return TryFindActor(bone.Skeleton.Actor.LogicalId, out var owner)
+                return _actors.TryFind(bone.Skeleton.Actor.LogicalId, out var owner)
                     ? SelectionId.ForActor(owner.Id)
                     : null;
             }
 
             if (id.OwnerActorLineage is { } groupOwner &&
                 id.ExternalId is { } groupId &&
-                TryFindActor(groupOwner, out var currentGroupOwner))
+                _actors.TryFind(groupOwner, out var currentGroupOwner))
                 return SelectionId.ForBoneGroup(currentGroupOwner.Id, groupId);
 
             return null;
         }
 
         if (id.Kind == SceneEntityKind.Light && id.Light is { } light)
-            return TryFindLight(light.LogicalId, out var currentLight)
+            return _lights.TryFind(light.LogicalId, out var currentLight)
                 ? SelectionId.ForLight(currentLight.Id)
                 : null;
 
         if (id.Kind == SceneEntityKind.Camera && id.Camera is { } camera)
-            return TryFindCamera(camera.LogicalId, out var currentCamera)
+            return _cameras.TryFind(camera.LogicalId, out var currentCamera)
                 ? SelectionId.ForCamera(currentCamera.Id)
                 : null;
 
         if (id.Kind == SceneEntityKind.Prop && id.Prop is { } prop)
-            return TryFindProp(prop.LogicalId, out var currentProp)
+            return _props.TryFind(prop.LogicalId, out var currentProp)
                 ? SelectionId.ForProp(currentProp.Id)
                 : null;
 
         if (id.Kind == SceneEntityKind.WorldObject && id.WorldObject is { } worldObject)
-            return TryFindWorldObject(worldObject.LogicalId, out var currentWorldObject)
+            return _worldObjects.TryFind(worldObject.LogicalId, out var currentWorldObject)
                 ? SelectionId.ForWorldObject(currentWorldObject.Id)
                 : null;
 
         if (id.Kind == SceneEntityKind.Overlay && id.Overlay is { } overlay)
-            return TryFindOverlay(overlay.LogicalId, out var currentOverlay)
+            return _overlays.TryFind(overlay.LogicalId, out var currentOverlay)
                 ? SelectionId.ForOverlay(currentOverlay.Id)
                 : null;
 
@@ -316,45 +309,48 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
         target.Kind switch
         {
             TransformTargetKind.Collider => target.Collider is { } collider &&
-                _overlays.TryGetValue(collider, out var overlay) && overlay.Kind == OverlayNodeKind.Collider,
+                _overlays.TryGet(collider, out var overlay) && overlay.Kind == OverlayNodeKind.Collider,
             TransformTargetKind.Actor =>
-                target.Actor is { } actor && _actors.ContainsKey(actor),
+                target.Actor is { } actor && _actors.Contains(actor),
             TransformTargetKind.Bone =>
                 target.Bone is { } bone && _bones.ContainsKey(bone),
             TransformTargetKind.Light =>
-                target.Light is { } light && _lights.ContainsKey(light),
+                target.Light is { } light && _lights.Contains(light),
             TransformTargetKind.Prop =>
-                target.Prop is { } prop && _props.ContainsKey(prop),
+                target.Prop is { } prop && _props.Contains(prop),
             TransformTargetKind.WorldObject =>
                 target.WorldObject is { } worldObject &&
-                _worldObjects.ContainsKey(worldObject),
+                _worldObjects.Contains(worldObject),
             _ => false,
         };
 
     private static SceneRefreshResult Invalid(string detail) =>
         new(SceneRefreshOutcome.RejectedInvalidCandidate, detail);
 
-    private static bool TryBuildIndexes(
+    /// <summary>One admission's candidate indexes; nothing reads them until
+    /// the commit swaps them in.</summary>
+    private sealed record Candidate(
+        EntityIndex<ActorId, ActorDescriptor>.Staged Actors,
+        Dictionary<BoneId, BoneDescriptor> Bones,
+        EntityIndex<LightId, LightDescriptor>.Staged Lights,
+        EntityIndex<CameraId, CameraDescriptor>.Staged Cameras,
+        EntityIndex<PropId, PropDescriptor>.Staged Props,
+        EntityIndex<WorldObjectId, WorldObjectDescriptor>.Staged WorldObjects,
+        EntityIndex<OverlayId, OverlayDescriptor>.Staged Overlays,
+        Dictionary<ActorId, GazeDescriptor> Gazes);
+
+    private bool TryBuildIndexes(
         SceneSnapshot snapshot,
-        out Dictionary<ActorId, ActorDescriptor> actors,
-        out Dictionary<BoneId, BoneDescriptor> bones,
-        out Dictionary<LightId, LightDescriptor> lights,
-        out Dictionary<CameraId, CameraDescriptor> cameras,
-        out Dictionary<PropId, PropDescriptor> props,
-        out Dictionary<WorldObjectId, WorldObjectDescriptor> worldObjects,
-        out Dictionary<OverlayId, OverlayDescriptor> overlays,
+        out Candidate candidate,
         out string? validationError)
     {
-        actors = new();
-        bones = new();
-        lights = new();
-        cameras = new();
-        props = new();
-        worldObjects = new();
-        overlays = new();
+        candidate = new(
+            _actors.Stage(), new(), _lights.Stage(), _cameras.Stage(), _props.Stage(),
+            _worldObjects.Stage(), _overlays.Stage(), new());
+        var actors = candidate.Actors;
+        var bones = candidate.Bones;
         validationError = null;
 
-        var actorLineages = new HashSet<Guid>();
         var skeletonIds = new HashSet<SkeletonId>();
         var boneLookup =
             new HashSet<(SkeletonId Skeleton, int PartialId, int BoneIndex)>();
@@ -365,12 +361,10 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                 return Fail("Scene contains a null actor descriptor.", out validationError);
             if (!IsValidActorId(actor.Id))
                 return Fail($"Actor id {actor.Id} is invalid.", out validationError);
-            if (!actorLineages.Add(actor.Id.LogicalId))
+            if (!actors.TryAdd(actor))
                 return Fail(
                     $"Scene contains more than one actor generation for {actor.Id.LogicalId:N}.",
                     out validationError);
-            if (!actors.TryAdd(actor.Id, actor))
-                return Fail($"Scene contains duplicate actor {actor.Id}.", out validationError);
             if (actor.Skeletons is null)
                 return Fail($"Actor {actor.Id} has no skeleton collection.", out validationError);
 
@@ -452,7 +446,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     out validationError);
             if (owner == actor.Id)
                 return Fail($"Actor {actor.Id} cannot own itself.", out validationError);
-            if (!actors.TryGetValue(owner, out var ownerDescriptor))
+            if (!actors.TryGet(owner, out var ownerDescriptor))
                 return Fail(
                     $"Companion {actor.Id} refers to missing owner {owner}.",
                     out validationError);
@@ -485,20 +479,20 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
         if (!TryValidateBoneGraph(bones, out validationError))
             return false;
 
-        if (!TryBuildLightIndexes(snapshot, bones, lights, out validationError))
+        if (!TryBuildLightIndexes(snapshot, bones, candidate.Lights, out validationError))
             return false;
         if (!TryBuildCameraIndexes(
                 snapshot,
                 actors,
                 bones,
-                cameras,
+                candidate.Cameras,
                 out validationError))
             return false;
-        if (!TryBuildPropIndexes(snapshot, props, out validationError))
+        if (!TryBuildPropIndexes(snapshot, candidate.Props, out validationError))
             return false;
-        if (!TryBuildWorldObjectIndexes(snapshot, worldObjects, out validationError))
+        if (!TryBuildWorldObjectIndexes(snapshot, candidate.WorldObjects, out validationError))
             return false;
-        if (!TryBuildOverlayIndexes(snapshot, overlays, out validationError))
+        if (!TryBuildOverlayIndexes(snapshot, candidate.Overlays, out validationError))
             return false;
 
         var gazeActors = new HashSet<Guid>();
@@ -506,7 +500,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
         {
             if (gaze is null)
                 return Fail("Scene contains a null gaze descriptor.", out validationError);
-            if (!actors.ContainsKey(gaze.Actor))
+            if (!actors.Contains(gaze.Actor))
                 return Fail(
                     $"Gaze state refers to missing actor {gaze.Actor}.",
                     out validationError);
@@ -552,7 +546,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     return Fail(
                         $"Actor gaze state for {gaze.Actor} targets itself.",
                         out validationError);
-                if (!actors.ContainsKey(target))
+                if (!actors.Contains(target))
                     return Fail(
                         $"Gaze state for {gaze.Actor} refers to missing target {target}.",
                         out validationError);
@@ -570,6 +564,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                 return Fail(
                     $"Gaze state for {gaze.Actor} contains a non-finite position.",
                     out validationError);
+            candidate.Gazes.Add(gaze.Actor, gaze);
         }
 
         if (snapshot.Environment is { } environment)
@@ -596,17 +591,16 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     private static bool TryBuildLightIndexes(
         SceneSnapshot snapshot,
         Dictionary<BoneId, BoneDescriptor> bones,
-        Dictionary<LightId, LightDescriptor> lights,
+        EntityIndex<LightId, LightDescriptor>.Staged lights,
         out string? validationError)
     {
-        var lineages = new HashSet<Guid>();
         foreach (var light in snapshot.Lights)
         {
             if (light is null)
                 return Fail("Scene contains a null light descriptor.", out validationError);
             if (!IsValidLightId(light.Id))
                 return Fail($"Light id {light.Id} is invalid.", out validationError);
-            if (!lineages.Add(light.Id.LogicalId) || !lights.TryAdd(light.Id, light))
+            if (!lights.TryAdd(light))
                 return Fail(
                     $"Scene contains duplicate light {light.Id.LogicalId:N}.",
                     out validationError);
@@ -627,12 +621,11 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
     private static bool TryBuildCameraIndexes(
         SceneSnapshot snapshot,
-        Dictionary<ActorId, ActorDescriptor> actors,
+        EntityIndex<ActorId, ActorDescriptor>.Staged actors,
         Dictionary<BoneId, BoneDescriptor> bones,
-        Dictionary<CameraId, CameraDescriptor> cameras,
+        EntityIndex<CameraId, CameraDescriptor>.Staged cameras,
         out string? validationError)
     {
-        var lineages = new HashSet<Guid>();
         var liveCount = 0;
         var defaultCount = 0;
         CameraDescriptor? defaultCamera = null;
@@ -642,7 +635,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                 return Fail("Scene contains a null camera descriptor.", out validationError);
             if (!IsValidCameraId(camera.Id))
                 return Fail($"Camera id {camera.Id} is invalid.", out validationError);
-            if (!lineages.Add(camera.Id.LogicalId) || !cameras.TryAdd(camera.Id, camera))
+            if (!cameras.TryAdd(camera))
                 return Fail(
                     $"Scene contains duplicate camera {camera.Id.LogicalId:N}.",
                     out validationError);
@@ -672,7 +665,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
             else
             {
                 if (camera.TargetActor is { } targetActor &&
-                    !actors.ContainsKey(targetActor))
+                    !actors.Contains(targetActor))
                     return Fail(
                         $"Camera {camera.Id} refers to missing target actor {targetActor}.",
                         out validationError);
@@ -713,17 +706,16 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
     private static bool TryBuildPropIndexes(
         SceneSnapshot snapshot,
-        Dictionary<PropId, PropDescriptor> props,
+        EntityIndex<PropId, PropDescriptor>.Staged props,
         out string? validationError)
     {
-        var lineages = new HashSet<Guid>();
         foreach (var prop in snapshot.Props)
         {
             if (prop is null)
                 return Fail("Scene contains a null object descriptor.", out validationError);
             if (!IsValidPropId(prop.Id))
                 return Fail($"Object id {prop.Id} is invalid.", out validationError);
-            if (!lineages.Add(prop.Id.LogicalId) || !props.TryAdd(prop.Id, prop))
+            if (!props.TryAdd(prop))
                 return Fail(
                     $"Scene contains duplicate object {prop.Id.LogicalId:N}.",
                     out validationError);
@@ -740,10 +732,9 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     /// for, or every transform against it is refused as stale.</summary>
     private static bool TryBuildWorldObjectIndexes(
         SceneSnapshot snapshot,
-        Dictionary<WorldObjectId, WorldObjectDescriptor> worldObjects,
+        EntityIndex<WorldObjectId, WorldObjectDescriptor>.Staged worldObjects,
         out string? validationError)
     {
-        var lineages = new HashSet<Guid>();
         foreach (var worldObject in snapshot.WorldObjects)
         {
             if (worldObject is null)
@@ -754,8 +745,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                 return Fail(
                     $"World object id {worldObject.Id} is invalid.",
                     out validationError);
-            if (!lineages.Add(worldObject.Id.LogicalId) ||
-                !worldObjects.TryAdd(worldObject.Id, worldObject))
+            if (!worldObjects.TryAdd(worldObject))
                 return Fail(
                     $"Scene contains duplicate world object {worldObject.Id.LogicalId:N}.",
                     out validationError);
@@ -767,10 +757,9 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
     private static bool TryBuildOverlayIndexes(
         SceneSnapshot snapshot,
-        Dictionary<OverlayId, OverlayDescriptor> overlays,
+        EntityIndex<OverlayId, OverlayDescriptor>.Staged overlays,
         out string? validationError)
     {
-        var lineages = new HashSet<Guid>();
         foreach (var overlay in snapshot.Overlays)
         {
             if (overlay is null)
@@ -780,8 +769,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
             if (!IsValidOverlayId(overlay.Id))
                 return Fail(
                     $"Overlay id {overlay.Id} is invalid.", out validationError);
-            if (!lineages.Add(overlay.Id.LogicalId) ||
-                !overlays.TryAdd(overlay.Id, overlay))
+            if (!overlays.TryAdd(overlay))
                 return Fail(
                     $"Scene contains duplicate overlay {overlay.Id.LogicalId:N}.",
                     out validationError);
@@ -844,15 +832,8 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     {
         foreach (var actor in snapshot.Actors)
         {
-            if (_actorGenerationFloors.TryGetValue(
-                    actor.Id.LogicalId,
-                    out var actorFloor) &&
-                actor.Id.Generation < actorFloor)
-            {
-                validationError =
-                    $"Actor {actor.Id.LogicalId:N} regressed from generation {actorFloor} to {actor.Id.Generation}.";
-                return false;
-            }
+            if (_actors.FloorViolation(actor) is { } regressed)
+                return Fail(regressed, out validationError);
 
             foreach (var skeleton in actor.Skeletons)
             {
@@ -870,85 +851,18 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
             }
         }
 
-        if (!TryValidateObjectGenerationFloors(
-                snapshot.Lights,
-                _lightGenerationFloors,
-                static light => (light.Id.LogicalId, light.Id.Generation),
-                "light",
-                out validationError))
-            return false;
-        if (!TryValidateObjectGenerationFloors(
-                snapshot.Cameras,
-                _cameraGenerationFloors,
-                static camera => (camera.Id.LogicalId, camera.Id.Generation),
-                "camera",
-                out validationError))
-            return false;
-        if (!TryValidateObjectGenerationFloors(
-                snapshot.Props,
-                _propGenerationFloors,
-                static prop => (prop.Id.LogicalId, prop.Id.Generation),
-                "object",
-                out validationError))
-            return false;
-        if (!TryValidateObjectGenerationFloors(
-                snapshot.WorldObjects,
-                _worldObjectGenerationFloors,
-                static worldObject =>
-                    (worldObject.Id.LogicalId, worldObject.Id.Generation),
-                "world object",
-                out validationError))
-            return false;
-        if (!TryValidateObjectGenerationFloors(
-                snapshot.Overlays,
-                _overlayGenerationFloors,
-                static overlay => (overlay.Id.LogicalId, overlay.Id.Generation),
-                "overlay",
-                out validationError))
-            return false;
-
-        validationError = null;
-        return true;
+        validationError = _lights.FloorViolation(snapshot.Lights)
+            ?? _cameras.FloorViolation(snapshot.Cameras)
+            ?? _props.FloorViolation(snapshot.Props)
+            ?? _worldObjects.FloorViolation(snapshot.WorldObjects)
+            ?? _overlays.FloorViolation(snapshot.Overlays);
+        return validationError is null;
     }
 
-    private static bool TryValidateObjectGenerationFloors<T>(
-        IReadOnlyList<T> values,
-        Dictionary<Guid, uint> floors,
-        Func<T, (Guid LogicalId, uint Generation)> identity,
-        string kind,
-        out string? validationError)
-    {
-        foreach (var value in values)
-        {
-            var (logicalId, generation) = identity(value);
-            if (floors.TryGetValue(logicalId, out var floor) && generation < floor)
-            {
-                validationError =
-                    $"{kind} {logicalId:N} regressed from generation {floor} to {generation}.";
-                return false;
-            }
-        }
-
-        validationError = null;
-        return true;
-    }
-
-    private void ClearGenerationFloors()
-    {
-        _actorGenerationFloors.Clear();
-        _skeletonGenerationFloors.Clear();
-        _lightGenerationFloors.Clear();
-        _cameraGenerationFloors.Clear();
-        _propGenerationFloors.Clear();
-        _worldObjectGenerationFloors.Clear();
-        _overlayGenerationFloors.Clear();
-    }
-
-    private void RecordGenerationFloors(SceneSnapshot snapshot)
+    private void RecordSkeletonFloors(SceneSnapshot snapshot)
     {
         foreach (var actor in snapshot.Actors)
         {
-            RaiseFloor(_actorGenerationFloors, actor.Id.LogicalId, actor.Id.Generation);
             foreach (var skeleton in actor.Skeletons)
             {
                 var key = (
@@ -960,32 +874,6 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     _skeletonGenerationFloors[key] = skeleton.Id.Generation;
             }
         }
-
-        foreach (var light in snapshot.Lights)
-            RaiseFloor(_lightGenerationFloors, light.Id.LogicalId, light.Id.Generation);
-        foreach (var camera in snapshot.Cameras)
-            RaiseFloor(_cameraGenerationFloors, camera.Id.LogicalId, camera.Id.Generation);
-        foreach (var prop in snapshot.Props)
-            RaiseFloor(_propGenerationFloors, prop.Id.LogicalId, prop.Id.Generation);
-        foreach (var worldObject in snapshot.WorldObjects)
-            RaiseFloor(
-                _worldObjectGenerationFloors,
-                worldObject.Id.LogicalId,
-                worldObject.Id.Generation);
-        foreach (var overlay in snapshot.Overlays)
-            RaiseFloor(
-                _overlayGenerationFloors,
-                overlay.Id.LogicalId,
-                overlay.Id.Generation);
-    }
-
-    private static void RaiseFloor(
-        Dictionary<Guid, uint> floors,
-        Guid logicalId,
-        uint generation)
-    {
-        if (!floors.TryGetValue(logicalId, out var floor) || generation > floor)
-            floors[logicalId] = generation;
     }
 
     private IReadOnlyList<string> PublishSceneChanged(SceneSnapshot snapshot)
@@ -1045,113 +933,6 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
         float.IsFinite(value.X) &&
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z);
-
-    private bool TryFindActor(Guid logicalId, out ActorDescriptor actor)
-    {
-        foreach (var candidate in _actors.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                actor = candidate;
-                return true;
-            }
-        }
-
-        actor = null!;
-        return false;
-    }
-
-    private bool TryFindLight(Guid logicalId, out LightDescriptor light)
-    {
-        foreach (var candidate in _lights.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                light = candidate;
-                return true;
-            }
-        }
-
-        light = null!;
-        return false;
-    }
-
-    private bool TryFindCamera(Guid logicalId, out CameraDescriptor camera)
-    {
-        foreach (var candidate in _cameras.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                camera = candidate;
-                return true;
-            }
-        }
-
-        camera = null!;
-        return false;
-    }
-
-    private bool TryFindProp(Guid logicalId, out PropDescriptor prop)
-    {
-        foreach (var candidate in _props.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                prop = candidate;
-                return true;
-            }
-        }
-
-        prop = null!;
-        return false;
-    }
-
-    private bool TryFindWorldObject(
-        Guid logicalId,
-        out WorldObjectDescriptor worldObject)
-    {
-        foreach (var candidate in _worldObjects.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                worldObject = candidate;
-                return true;
-            }
-        }
-
-        worldObject = null!;
-        return false;
-    }
-
-    private bool TryFindOverlay(Guid logicalId, out OverlayDescriptor overlay)
-    {
-        foreach (var candidate in _overlays.Values)
-        {
-            if (candidate.Id.LogicalId == logicalId)
-            {
-                overlay = candidate;
-                return true;
-            }
-        }
-
-        overlay = null!;
-        return false;
-    }
-
-    private bool TryFindGaze(ActorId actor, out GazeDescriptor gaze)
-    {
-        foreach (var candidate in _snapshot.GazeStates)
-        {
-            if (candidate.Actor == actor)
-            {
-                gaze = candidate;
-                return true;
-            }
-        }
-
-        gaze = null!;
-        return false;
-    }
 
     private static bool IsValidGazePart(GazeDescriptor gaze, GazePart part) =>
         part switch
