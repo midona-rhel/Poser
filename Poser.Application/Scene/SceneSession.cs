@@ -1,7 +1,9 @@
 using System.Numerics;
 using System.Threading;
+using Poser.Application.Lifecycle;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Operations;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 
@@ -97,9 +99,10 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     private Dictionary<WorldObjectId, WorldObjectDescriptor> _worldObjects = new();
     private Dictionary<OverlayId, OverlayDescriptor> _overlays = new();
 
-    // These floors live for this SceneSession, including through removals and
-    // reappearances. A new logical scene session gets a new owner instance;
-    // there is deliberately no reset that could weaken stale-target safety.
+    // These floors live for one GPose session, including through removals and
+    // reappearances. They are dropped only when the admitted snapshot belongs
+    // to a different session generation, whose ids no prior floor can guard,
+    // so the maps stay bounded by one session's entities.
     private readonly Dictionary<Guid, uint> _actorGenerationFloors = new();
     private readonly Dictionary<(Guid Actor, uint ActorGeneration, PoseSlot Slot), uint>
         _skeletonGenerationFloors = new();
@@ -108,11 +111,17 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
     private readonly Dictionary<Guid, uint> _propGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _worldObjectGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _overlayGenerationFloors = new();
+    private readonly ISessionGenerationSource? _sessions;
+    private SessionGeneration? _floorSession;
     private int _refreshGate;
 
-    public SceneSession(SelectionSession selection)
+    public SceneSession(
+        SelectionSession selection,
+        ISessionGenerationSource? sessions = null)
     {
         Selection = selection ?? throw new ArgumentNullException(nameof(selection));
+        _sessions = sessions;
+        _floorSession = sessions?.ActiveSessionGeneration;
     }
 
     public event Action<SceneSnapshot>? SceneChanged;
@@ -170,7 +179,10 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     out var validationError))
                 return Invalid(validationError!);
 
-            if (!TryValidateGenerationFloors(snapshot, out var floorError))
+            var session = _sessions?.ActiveSessionGeneration;
+            var newSession = session != _floorSession;
+            if (!newSession
+                && !TryValidateGenerationFloors(snapshot, out var floorError))
                 return Invalid(floorError!);
 
             if (snapshot.ContentEquals(_snapshot))
@@ -186,6 +198,11 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
             _worldObjects = worldObjects;
             _overlays = overlays;
             _snapshot = snapshot;
+            if (newSession)
+            {
+                ClearGenerationFloors();
+                _floorSession = session;
+            }
             RecordGenerationFloors(snapshot);
 
             var failures = new List<string>();
@@ -914,6 +931,17 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
         validationError = null;
         return true;
+    }
+
+    private void ClearGenerationFloors()
+    {
+        _actorGenerationFloors.Clear();
+        _skeletonGenerationFloors.Clear();
+        _lightGenerationFloors.Clear();
+        _cameraGenerationFloors.Clear();
+        _propGenerationFloors.Clear();
+        _worldObjectGenerationFloors.Clear();
+        _overlayGenerationFloors.Clear();
     }
 
     private void RecordGenerationFloors(SceneSnapshot snapshot)

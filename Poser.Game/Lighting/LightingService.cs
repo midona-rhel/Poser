@@ -361,6 +361,14 @@ public sealed unsafe class LightingService : ILightingService
         }
     }
 
+    /// <summary>Drops a handle from the overworld set together with its
+    /// generation, so neither outlives the native. Caller holds _worldGate.</summary>
+    private bool ForgetWorldLight(nint handle)
+    {
+        _worldLightGenerations.Remove(handle);
+        return _worldLights.Remove(handle);
+    }
+
     private bool IsCurrentWorldLight(nint handle, long generation)
     {
         lock (_worldGate)
@@ -466,7 +474,7 @@ public sealed unsafe class LightingService : ILightingService
         // The factory runs the same constructor the ctor hook watches, so the
         // plugin's own light lands in the overworld set; take it back out.
         lock (_worldGate)
-            _worldLights.Remove((nint)native);
+            ForgetWorldLight((nint)native);
 
         // The render object caches the address of the light's transform,
         // so the transform must hold its final values BEFORE the pointer
@@ -740,7 +748,7 @@ public sealed unsafe class LightingService : ILightingService
             // The game constructed it, so it is sitting in the overworld set;
             // a camera light is not a capture candidate.
             lock (_worldGate)
-                _worldLights.Remove((nint)native);
+                ForgetWorldLight((nint)native);
 
             _lights.Add(new Light(
                 native, $"Camera Light {slot + 1}", LightOwnership.GPose)
@@ -849,7 +857,7 @@ public sealed unsafe class LightingService : ILightingService
             lock (_worldGate)
             {
                 generation = _worldLightGenerations.GetValueOrDefault(handle);
-                known = _worldLights.Remove(handle);
+                known = ForgetWorldLight(handle);
             }
             if (known && !_disposed)
                 _framework.RunOnTick(() => OnNativeLightDied(handle, generation));

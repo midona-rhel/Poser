@@ -45,7 +45,7 @@ public interface IExpressionService
     bool HasActiveExpression(IActor actor);
 }
 
-public class ExpressionService : IExpressionService
+public class ExpressionService : IExpressionService, IDisposable
 {
     private const string ExpressionLayer = "expression";
 
@@ -108,6 +108,9 @@ public class ExpressionService : IExpressionService
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         LoadCatalogs();
     }
+
+    public void Dispose() =>
+        _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {

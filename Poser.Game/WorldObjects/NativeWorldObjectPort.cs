@@ -64,6 +64,9 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     private readonly VfxOwnedAllocationLedger _vfxOwnership = new();
     private readonly Dictionary<nint, (nint Resource, long Generation)>
         _incarnations = new();
+    // BG objects this port created; their identity survives a walk that
+    // does not reach them.
+    private readonly HashSet<nint> _spawned = new();
     private long _nextGeneration;
     private bool _disposed;
     private bool _resourceHookDisposed;
@@ -187,6 +190,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 _log.Warning(
                     "NativeWorldObjectPort: the world walk hit its node cap; "
                     + "the listing is truncated.");
+            else
+                RetainPresentIdentities();
         }
         catch (Exception ex)
         {
@@ -195,6 +200,22 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
             _log.Error($"NativeWorldObjectPort: walking the world failed: {ex.Message}");
             _rows.Clear();
             _lights.Clear();
+        }
+    }
+
+    /// <summary>After a complete walk, forgets the identity of every address
+    /// the graph no longer holds unless this port owns it, so the identity
+    /// maps stay bounded by the live world rather than by every object ever
+    /// listed. A still-present address keeps its generation, which is what
+    /// candidate and adoption checks compare.</summary>
+    private void RetainPresentIdentities()
+    {
+        _vfxOwnership.RetainObserved(_visited);
+        lock (_handledLock)
+        {
+            foreach (var address in _incarnations.Keys)
+                if (!_visited.Contains(address) && !_spawned.Contains(address))
+                    _incarnations.Remove(address);
         }
     }
 
@@ -869,12 +890,12 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
             if (bg == null)
                 return nint.Zero;
             var address = (nint)bg;
-            _furniture.ForgetReusedGraphicsAddress(address);
             lock (_handledLock)
             {
                 var generation = ++_nextGeneration;
                 var resource = (nint)bg->ModelResourceHandle;
                 _incarnations[address] = (resource, generation);
+                _spawned.Add(address);
                 identity = new(address, generation, resource);
             }
             // LoadAnimationData is deliberately NOT called: it kicked off
@@ -942,7 +963,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 return _vfxOwnership.Release(vanished);
             }
             lock (_handledLock)
+            {
                 _incarnations.Remove(address);
+                _spawned.Remove(address);
+            }
             return true;
         }
         if (expected is { } exact
@@ -961,6 +985,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
             var bg = (BgObject*)node;
             bg->CleanupRender();
             bg->Dtor(1);
+            lock (_handledLock)
+                _spawned.Remove(address);
             if (expected is { } destroyed)
                 RetireIncarnation(destroyed);
             else if (currentIdentity is { } observedIdentity)
@@ -1002,7 +1028,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 return nint.Zero;
             }
             lease = _vfxOwnership.Reserve((nint)vfx, claim);
-            _furniture.ForgetReusedGraphicsAddress((nint)vfx);
             leased = true;
             vfx->SomeFlags &= 0xF7;
             vfx->Update(0f);
@@ -1240,7 +1265,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
     /// stopped being one is inert rather than written blind.</summary>
     private CSObject* Resolve(nint address)
     {
-        if (address == nint.Zero || _furniture.IsLayoutAddress(address))
+        if (address == nint.Zero || _furniture.Contains(address))
             return null;
         try
         {
@@ -1357,7 +1382,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         lock (_handledLock)
         {
             if (!_vfxOwnership.HasClaims)
+            {
                 _incarnations.Clear();
+                _spawned.Clear();
+            }
             _disposed = !_vfxOwnership.HasClaims;
         }
         GC.SuppressFinalize(this);

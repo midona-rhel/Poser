@@ -44,6 +44,24 @@ public sealed class VfxOwnedAllocationLedgerTests
         Assert.False(ledger.HasClaims);
     }
 
+    [Fact]
+    public void Retaining_present_addresses_forgets_only_departed_unowned_effects()
+    {
+        var ledger = new VfxOwnedAllocationLedger();
+        using var token = new NullDisposable();
+        var lease = ledger.Reserve((nint)0x1000, token);
+        Assert.True(ledger.TryPromote(lease, (nint)0x2000, out var owned));
+        var present = ledger.Observe((nint)0x3000, (nint)0x4000);
+        var departed = ledger.Observe((nint)0x5000, (nint)0x6000);
+
+        ledger.RetainObserved(new HashSet<nint> { (nint)0x3000 });
+
+        Assert.Equal(owned, ledger.Observe((nint)0x1000, (nint)0x2000));
+        Assert.Equal(present, ledger.Observe((nint)0x3000, (nint)0x4000));
+        Assert.NotEqual(departed.Generation,
+            ledger.Observe((nint)0x5000, (nint)0x6000).Generation);
+    }
+
     private sealed class NullDisposable : IDisposable
     {
         public void Dispose() { }

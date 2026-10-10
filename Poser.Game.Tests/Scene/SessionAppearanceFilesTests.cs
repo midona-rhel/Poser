@@ -26,6 +26,37 @@ public sealed class SessionAppearanceFilesTests
     }
 
     [Fact]
+    public void Startup_sweep_deletes_only_stale_appearance_packages()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"poser-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            string Make(string name, TimeSpan age)
+            {
+                var path = Path.Combine(root, name);
+                File.WriteAllText(path, "package");
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow - age);
+                return path;
+            }
+            var stale = Make("poser-scene-appearance-old.mcdf", TimeSpan.FromDays(2));
+            var live = Make("poser-scene-appearance-new.mcdf", TimeSpan.FromMinutes(5));
+            var foreign = Make("other-old.mcdf", TimeSpan.FromDays(2));
+
+            SessionAppearanceFiles.DeleteStale(
+                root, DateTime.UtcNow - SessionAppearanceFiles.StaleAge, File.Delete);
+
+            Assert.False(File.Exists(stale));
+            Assert.True(File.Exists(live));
+            Assert.True(File.Exists(foreign));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task File_a_running_child_still_reads_is_deleted_only_once_it_stops()
     {
         var path = Path.Combine(Path.GetTempPath(), $"poser-test-{Guid.NewGuid():N}.mcdf");

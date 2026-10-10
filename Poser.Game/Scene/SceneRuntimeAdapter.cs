@@ -153,6 +153,16 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _environment = environment;
         _environmentControl = environmentControl;
         _framework.Update += SweepHistoryAppearance;
+        // Packages a crash left behind are never retained by any session.
+        // The legacy temp root held them before Poser had its own folder.
+        _ = Task.Run(() =>
+        {
+            var cutoff = DateTime.UtcNow - SessionAppearanceFiles.StaleAge;
+            SessionAppearanceFiles.DeleteStale(
+                SessionAppearanceFiles.TempDirectory, cutoff, DeleteQuietly);
+            SessionAppearanceFiles.DeleteStale(
+                System.IO.Path.GetTempPath(), cutoff, DeleteQuietly);
+        });
     }
 
     private void SweepHistoryAppearance(IFramework _)
@@ -297,9 +307,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                         "was not packaged.");
                     continue;
                 }
-                created = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(),
-                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                created = SessionAppearanceFiles.NewTempPath();
                 var (exported, delete) = await ExportAppearance(
                     id, actor.Name, created, bound, cancellation);
                 if (exported != null)
@@ -803,9 +811,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             string source;
             if (saved.IsPortable)
             {
-                staged = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(),
-                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                staged = SessionAppearanceFiles.NewTempPath();
                 try
                 {
                     // Container entry to disk, as a STREAM. A real package is
