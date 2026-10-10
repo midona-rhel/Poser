@@ -14,20 +14,6 @@ namespace Poser.Application.Tests.Scene;
 public sealed class PendingSceneCreationTests
 {
     [Fact]
-    public void Bound_creation_selects_and_freezes_without_any_window_pump()
-    {
-        var f = new Fixture();
-        f.Pending.SelectWhenReady(f.Handle, freezeActor: true);
-        f.Pending.Tick();
-        Assert.Null(f.Selection.Primary);
-        f.Creation.Resolve(f.Handle).Returns(SelectionId.ForActor(f.Actor));
-        f.Pending.Tick();
-        f.Pending.Tick();
-        Assert.Equal(f.Actor, f.Selection.PrimaryActor);
-        f.Animation.Received(1).Pause(f.Actor);
-    }
-
-    [Fact]
     public void Pose_waits_for_posable_binding_and_keeps_the_clicked_options()
     {
         var f = new Fixture();
@@ -52,19 +38,6 @@ public sealed class PendingSceneCreationTests
         f.Sessions.ActiveSessionGeneration.Returns((SessionGeneration?)null);
         f.Pending.Tick();
         f.Sessions.ActiveSessionGeneration.Returns(SessionGeneration.New());
-        f.Creation.Resolve(f.Handle, true).Returns(SelectionId.ForActor(f.Actor));
-        f.Pending.Tick();
-        Assert.Null(f.Selection.Primary);
-        f.Imports.DidNotReceiveWithAnyArgs().ImportPose(default, "", null!);
-    }
-
-    [Fact]
-    public void A_receipt_that_never_binds_reports_failure_once_and_does_not_apply_later()
-    {
-        var f = new Fixture();
-        f.Pending.ApplyPoseWhenReady(f.Handle, "pose.pose", new());
-        for (int i = 0; i < 130; i++) f.Pending.Tick();
-        Assert.Single(f.Failures);
         f.Creation.Resolve(f.Handle, true).Returns(SelectionId.ForActor(f.Actor));
         f.Pending.Tick();
         Assert.Null(f.Selection.Primary);

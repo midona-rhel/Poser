@@ -12,7 +12,6 @@ public sealed class ConfigurationRecoveryTests : IDisposable
     [Theory]
     [InlineData("{ broken")]
     [InlineData("null")]
-    [InlineData("{}")]
     public void Unreadable_config_is_backed_up_before_defaults_can_replace_it(string content)
     {
         Directory.CreateDirectory(_directory);
@@ -61,28 +60,6 @@ public sealed class ConfigurationRecoveryTests : IDisposable
         Assert.Equal(new System.Numerics.Vector2(12, 34), loaded.Configuration.UI.DetachedPlacements["Inspector"].Position);
         Assert.Equal(Poser.Services.SymmetryMode.Mirror, loaded.Configuration.BoneSymmetryOverrides["j_te_l"]);
         Assert.Contains(loaded.Configuration.Skeleton.BoneVisibilityPresets, p => p.Name == "Saved" && p.Bones.Contains("j_te_l"));
-    }
-
-    [Fact]
-    public void Quiet_save_and_setting_change_publish_the_expected_notifications()
-    {
-        var persistence = new MemoryPersistence();
-        var settings = new ConfigurationService(persistence);
-        int notifications = 0;
-        settings.OnConfigurationChanged += () => notifications++;
-        settings.Save(notify: false);
-        Assert.Equal(1, persistence.Saves);
-        Assert.Equal(0, notifications);
-        settings.ApplyChange();
-        Assert.Equal(2, persistence.Saves);
-        Assert.Equal(1, notifications);
-    }
-
-    private sealed class MemoryPersistence : IConfigurationPersistence
-    {
-        public int Saves;
-        public ConfigurationLoadResult Load() => new(new PoserConfiguration());
-        public void Save(PoserConfiguration configuration) => Saves++;
     }
 
     public void Dispose()

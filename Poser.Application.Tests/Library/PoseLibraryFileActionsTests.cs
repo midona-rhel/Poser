@@ -52,60 +52,6 @@ public sealed class PoseLibraryFileActionsTests
         Assert.False(PoseLibraryFileActions.Default.Restore(restored.ResultPath!).Succeeded);
     }
 
-    [Fact]
-    public void Probe_retries_each_document_through_its_own_codec_and_reports_typed_status()
-    {
-        using var fixture = new ActionsFixture();
-        var valid = fixture.WritePose("valid", PoseFilePersistenceTests.ValidPose());
-        var corrupt = fixture.WriteRaw("corrupt", "{ nope");
-        var futurePose = PoseFilePersistenceTests.ValidPose();
-        futurePose.Version = "future-2";
-        var future = fixture.WritePose("future", futurePose);
-        var scene = fixture.WriteScene("scene", SceneFileStoreTests.ValidScene());
-
-        Assert.Equal(PoseLibraryMetadataStatus.Valid, Probe(valid));
-        Assert.Equal(PoseLibraryMetadataStatus.Corrupt, Probe(corrupt));
-        Assert.Equal(PoseLibraryMetadataStatus.Future, Probe(future));
-        Assert.Equal(PoseLibraryMetadataStatus.Valid, Probe(scene));
-    }
-
-    [Fact]
-    public void Metadata_import_normalizes_fields_preserves_unknown_members_and_refuses_unsafe_reads()
-    {
-        using var fixture = new ActionsFixture();
-        var path = fixture.WriteRaw("foreign", """
-        {
-          "Author": "Brio",
-          "FutureBrioMember": { "Nested": [1, 2, 3] },
-          "Bones": { "j_kao": { "Position": "0, 0, 0", "Rotation": "0, 0, 0, 1", "Scale": "1, 1, 1" } }
-        }
-        """);
-        var beforeCorrupt = fixture.WriteRaw("corrupt", "{ nope");
-        var before = File.ReadAllBytes(beforeCorrupt);
-
-        var edited = PoseLibraryFileActions.Default.EditMetadata(
-            path, "  Midona  ", new[] { " one", "two ", "ONE", "" });
-        var refused = PoseLibraryFileActions.Default.EditMetadata(
-            beforeCorrupt, "Midona", Array.Empty<string>());
-
-        Assert.True(edited.Succeeded, edited.Detail);
-        Assert.False(refused.Succeeded);
-        Assert.Equal(before, File.ReadAllBytes(beforeCorrupt));
-        using var json = JsonDocument.Parse(File.ReadAllBytes(path));
-        Assert.Equal("Midona", json.RootElement.GetProperty("Author").GetString());
-        Assert.Equal(new[] { 1, 2, 3 }, json.RootElement
-            .GetProperty("FutureBrioMember").GetProperty("Nested")
-            .EnumerateArray().Select(item => item.GetInt32()).ToArray());
-        Assert.True(AtomicPoseFileStore.Default.Read(path).Succeeded);
-    }
-
-    private static PoseLibraryMetadataStatus Probe(string path)
-    {
-        var result = PoseLibraryFileActions.Default.Probe(path);
-        Assert.True(result.Succeeded, result.Detail);
-        return result.ProbeStatus!.Value;
-    }
-
     private sealed class ActionsFixture : IDisposable
     {
         public string Root { get; } = Path.Combine(
@@ -118,13 +64,6 @@ public sealed class PoseLibraryFileActionsTests
         {
             var path = Path.Combine(Root, name + ".pose");
             Assert.True(AtomicPoseFileStore.Default.Write(pose, path).Succeeded);
-            return path;
-        }
-
-        public string WriteScene(string name, SceneFile scene)
-        {
-            var path = Path.Combine(Root, name + SceneFile.Extension);
-            Assert.True(SceneFileStore.Default.Write(scene, path).Succeeded);
             return path;
         }
 

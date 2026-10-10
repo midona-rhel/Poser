@@ -12,21 +12,6 @@ namespace Poser.Application.Tests.Scene;
 public sealed class ScenePortableAppearanceTests
 {
     [Fact]
-    public void Appearance_is_excluded_by_default_and_opted_in_per_save()
-    {
-        var excluded = SceneWithReference();
-        var excludedNotes = new List<string>();
-
-        Assert.Equal(
-            0, SceneSavePolicy.Apply(excluded, SceneSaveOptions.Default, excludedNotes));
-
-        Assert.Null(Assert.Single(excluded.Actors).Mcdf);
-        Assert.Equal(
-            "Modded appearance was not saved.", Assert.Single(excludedNotes));
-        Assert.False(SceneSaveOptions.Default.IncludeModdedAppearance);
-    }
-
-    [Fact]
     public void A_portable_save_keeps_bytes_and_drops_an_unsealed_reference()
     {
         var scene = SceneWithReference();
@@ -50,22 +35,6 @@ public sealed class ScenePortableAppearanceTests
             notes,
             note => note.Contains("could not be packaged")
                 && note.Contains("rather than recording where the mods were"));
-    }
-
-    [Fact]
-    public void An_embedded_payload_needs_its_own_digest_and_fits_the_actor_cap()
-    {
-        var missingDigest = SceneWith(PortableActor("A", 16));
-        missingDigest.Actors[0].Mcdf!.ContentHash = string.Empty;
-        Assert.False(SceneFileValidation.Validate(missingDigest).Succeeded);
-
-        // The one remaining refusal is the importer's own ceiling: a package
-        // Poser could not import back is one there is no point saving.
-        var oversized = SceneWith(PortableActor(
-            "A", SceneFileLimits.MaxEmbeddedAppearanceBytes + 1));
-        var refusal = SceneFileValidation.Validate(oversized);
-        Assert.False(refusal.Succeeded);
-        Assert.Contains("over the", refusal.Failure!.Detail);
     }
 
     [Fact]

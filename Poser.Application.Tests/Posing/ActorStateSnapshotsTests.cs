@@ -54,37 +54,31 @@ public sealed class ActorStateSnapshotsTests
         Assert.True(f.Events.IndexOf("tint") < f.Events.IndexOf("expression"));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Failure_or_replaced_session_after_redraw_never_restores_pose(bool replaceSession)
+    [Fact]
+    public async Task Replaced_session_after_redraw_never_restores_pose()
     {
         var f = new Fixture();
         var saved = f.States.Capture(f.Actor).Value!;
         var completed = new TaskCompletionSource<GestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         f.States.Restore(saved, () => true, TestContext.Current.CancellationToken, completed.SetResult);
         await f.RedrawEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
-        if (replaceSession) f.ActiveSessionGeneration = SessionGeneration.New();
-        f.Redraw.SetResult(replaceSession ? IntegrationPortResult.Ok() : IntegrationPortResult.Fail("Redraw failed"));
+        f.ActiveSessionGeneration = SessionGeneration.New();
+        f.Redraw.SetResult(IntegrationPortResult.Ok());
         Assert.False((await completed.Task.WaitAsync(TestContext.Current.CancellationToken)).Success);
         Assert.DoesNotContain("pose", f.Events);
     }
 
     [Fact]
-    public void Required_appearance_capture_failure_is_not_represented_as_empty_state()
+    public void Capture_failure_is_a_refusal_not_an_empty_state()
     {
         var f = new Fixture { CannotReadLook = true };
         var result = f.States.Capture(f.Actor);
         Assert.False(result.Success);
         Assert.Contains("look unreadable", result.Detail);
         Assert.Empty(f.Events);
-    }
 
-    [Fact]
-    public void Pose_capture_exception_is_a_refusal_before_any_mutation()
-    {
-        var f = new Fixture { ThrowPoseCapture = true };
-        var result = f.States.Capture(f.Actor);
+        f = new Fixture { ThrowPoseCapture = true };
+        result = f.States.Capture(f.Actor);
         Assert.False(result.Success);
         Assert.Contains("Pose unavailable", result.Detail);
         Assert.Empty(f.Events);

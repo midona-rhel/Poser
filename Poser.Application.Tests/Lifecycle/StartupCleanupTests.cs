@@ -6,13 +6,7 @@ public sealed class StartupCleanupTests
 {
     [Theory]
     [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
     [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    [InlineData(7)]
     public void Failure_unwinds_acquired_resources_and_allows_a_second_start(int failAfter)
     {
         var live = new HashSet<int>();

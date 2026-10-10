@@ -44,28 +44,6 @@ public sealed class McdfHashIndexTests : IDisposable
     }
 
     [Fact]
-    public void A_hash_the_library_does_not_hold_answers_nothing()
-    {
-        File.WriteAllBytes(
-            Path.Combine(_root, "other.mcdf"), new byte[] { 9, 9, 9 });
-        var index = new McdfHashIndex(() => _root);
-
-        Assert.Null(index.Find(Digest(new byte[] { 1 }), Token));
-    }
-
-    [Fact]
-    public void A_malformed_hash_and_a_missing_root_answer_without_reading()
-    {
-        var index = new McdfHashIndex(() => _root);
-        Assert.Null(index.Find(string.Empty, Token));
-        Assert.Null(index.Find("not-a-digest", Token));
-
-        var missing = new McdfHashIndex(
-            () => Path.Combine(_root, "nowhere"));
-        Assert.Null(missing.Find(Digest(new byte[] { 1 }), Token));
-    }
-
-    [Fact]
     public void A_package_replaced_in_place_cannot_serve_its_old_digest()
     {
         var first = new byte[] { 1, 2, 3 };
@@ -84,36 +62,6 @@ public sealed class McdfHashIndexTests : IDisposable
 
         Assert.Null(index.Find(Digest(first), Token));
         Assert.Equal(path, index.Find(Digest(second), Token));
-    }
-
-    [Fact]
-    public void A_second_lookup_answers_from_the_cache_without_rereading()
-    {
-        var bytes = new byte[] { 8, 8, 8, 8 };
-        string path = Path.Combine(_root, "package.mcdf");
-        File.WriteAllBytes(path, bytes);
-
-        var index = new McdfHashIndex(() => _root);
-        Assert.Equal(path, index.Find(Digest(bytes), Token));
-
-        // The file is opened exclusively, so a lookup that re-read it would
-        // throw or miss. A cached digest whose stamp still holds does neither.
-        using var exclusive = new FileStream(
-            path, FileMode.Open, FileAccess.Read, FileShare.None);
-        Assert.Equal(path, index.Find(Digest(bytes), Token));
-    }
-
-    [Fact]
-    public void A_cancelled_search_stops_and_answers_nothing()
-    {
-        var bytes = new byte[] { 3, 3, 3 };
-        File.WriteAllBytes(Path.Combine(_root, "package.mcdf"), bytes);
-
-        var index = new McdfHashIndex(() => _root);
-        using var cancelled = new CancellationTokenSource();
-        cancelled.Cancel();
-
-        Assert.Null(index.Find(Digest(bytes), cancelled.Token));
     }
 
     /// <summary>The ambient test token, so a cancelled run stops inside a

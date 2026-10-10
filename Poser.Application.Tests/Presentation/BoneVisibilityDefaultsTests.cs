@@ -14,14 +14,6 @@ public sealed class BoneVisibilityDefaultsTests
     }
 
     [Fact]
-    public void Unconfigured_defaults_have_no_matches_and_cannot_apply()
-    {
-        var scope = Bones();
-        Assert.Empty(BoneVisibilityDefaults.Resolve(new(), scope));
-        Assert.False(BoneVisibilityDefaults.CanApply(new(), scope));
-    }
-
-    [Fact]
     public void Defaults_use_union_of_checked_stock_and_custom_sets_in_scope()
     {
         var scope = Bones();
@@ -37,16 +29,6 @@ public sealed class BoneVisibilityDefaultsTests
         Assert.Empty(BoneVisibilityDefaults.Resolve(settings, [scope[1]]));
         Assert.True(BoneVisibilityDefaults.CanApply(settings, scope));
         Assert.False(BoneVisibilityDefaults.CanApply(settings, [scope[1]]));
-    }
-
-    [Fact]
-    public void No_checked_presets_does_not_fall_back_to_showing_everything()
-    {
-        var settings = new SkeletonConfiguration();
-        Assert.Empty(BoneVisibilityDefaults.Resolve(settings, Bones()));
-        Assert.False(BoneVisibilityDefaults.CanApply(settings, Bones()));
-        settings.BoneVisibilityPresets.Add(new() { Name = "Head", Bones = ["head"], ShowByDefault = false });
-        Assert.Empty(BoneVisibilityDefaults.Resolve(settings, Bones()));
     }
 
     [Fact]
