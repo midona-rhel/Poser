@@ -128,11 +128,7 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<IConfigurationPersistence, HostConfigurationPersistence>();
         services.AddSingleton(sp =>
-        {
-            var configuration = new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>());
-            Core.BoneInfo.BoneInfoService.ShowFriendlyNames = configuration.Config.Skeleton.ShowFriendlyBoneNames;
-            return configuration;
-        });
+            new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>()));
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
         return services;

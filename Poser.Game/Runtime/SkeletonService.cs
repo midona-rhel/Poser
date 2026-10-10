@@ -123,7 +123,8 @@ public class SkeletonService : ISkeletonService
                 slot,
                 owner => _actors.IsAvailable(owner)
                     ? (nint)SlotCharacterBases.Resolve(owner.Address, slot) : nint.Zero,
-                () => _configuration.Config.Skeleton.ShowAllVieraEars);
+                () => _configuration.Config.Skeleton.ShowAllVieraEars,
+                () => _configuration.Config.Skeleton.ShowFriendlyBoneNames);
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;

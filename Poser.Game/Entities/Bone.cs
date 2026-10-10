@@ -77,13 +77,13 @@ public class Bone : EntityBase, IBone
     /// while this property is read per bone per frame by every tree, overlay
     /// and descriptor rebuild.
     ///
-    /// <para>WHICH of the two names is handed back is a live read of a static
-    /// field (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
+    /// <para>WHICH of the two names is handed back is a live read of the
+    /// config (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
     /// take effect on the next frame rather than the next skeleton rebuild.
     /// </para>
     /// </summary>
     public override string Name =>
-        BoneInfoService.ShowFriendlyNames ? _displayName : BoneName;
+        _showFriendlyNames() ? _displayName : BoneName;
 
     /// <summary>
     /// Gets the category for this bone.
@@ -92,6 +92,7 @@ public class Bone : EntityBase, IBone
 
     private readonly string _displayName;
     private readonly BoneCategory _category;
+    private readonly Func<bool> _showFriendlyNames;
 
     /// <summary>
     /// The legacy-dedupe and race-feature verdicts, decided once per skeleton
@@ -120,7 +121,8 @@ public class Bone : EntityBase, IBone
         }
     }
 
-    public Bone(ISkeleton skeleton, int partialId, int boneIndex, string boneName)
+    public Bone(ISkeleton skeleton, int partialId, int boneIndex, string boneName,
+        Func<bool> showFriendlyNames)
         : base(EntityId.New(), boneName)
     {
         Skeleton = skeleton;
@@ -130,6 +132,7 @@ public class Bone : EntityBase, IBone
         _childBonesView = _childBones.AsReadOnly();
         _displayName = BoneInfoService.GetDisplayName(boneName);
         _category = BoneInfoService.GetCategory(boneName);
+        _showFriendlyNames = showFriendlyNames;
 
         // VISIBLE by default — the overlay must show the skeleton out of the
         // box (Ktisis/Brio parity); hiding is the opt-out filter, and the
