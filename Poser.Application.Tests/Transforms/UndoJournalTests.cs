@@ -69,7 +69,7 @@ public sealed class UndoJournalTests
         var refused = new SceneLifecyclePatch("Release world object", () => false, () => true)
         {
             FailureDetail = () => "The borrowed object is no longer available.",
-            DropOnFailure = () => true,
+            OnRefusal = () => RefusalAction.DropNow,
         };
         world.History.Append(earlier);
         world.History.Append(refused);
@@ -132,7 +132,7 @@ public sealed class UndoJournalTests
         var step = new JournalStep("Reset all", () => true, () => true)
         {
             CompleteReplay = (_, _, _, done) => complete = done,
-            RetainOnFailure = true,
+            OnRefusal = () => RefusalAction.Keep,
         };
         world.History.Append(step);
         Assert.True(world.Journal.Undo().Success);

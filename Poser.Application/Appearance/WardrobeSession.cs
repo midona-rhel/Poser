@@ -49,9 +49,9 @@ public sealed class WardrobeSession : IWardrobeControl
         var result = _integration.SetItem(actor, slot, itemId, dye1, dye2);
         if (!result.Success)
             return result;
-        _journal.RecordResult(description, before, after,
+        _journal.Record(SelectionId.ForActor(actor), description, before, after,
             worn => Written(_integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2)),
-            () => Alive(actor), SelectionId.ForActor(actor));
+            () => Alive(actor));
         return result;
     }
 
@@ -85,8 +85,8 @@ public sealed class WardrobeSession : IWardrobeControl
         var result = _integration.SetFacewear(actor, bonusItemId);
         if (!result.Success)
             return result;
-        _journal.RecordResult(description, before, bonusItemId,
-            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor), SelectionId.ForActor(actor));
+        _journal.Record(SelectionId.ForActor(actor), description, before, bonusItemId,
+            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor));
         return result;
     }
 
@@ -116,8 +116,8 @@ public sealed class WardrobeSession : IWardrobeControl
             MetaSwitch.WeaponVisible => on ? "Show weapon" : "Hide weapon",
             _ => "Set switch",
         };
-        _journal.RecordResult(description, before, on,
-            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor), SelectionId.ForActor(actor));
+        _journal.Record(SelectionId.ForActor(actor), description, before, on,
+            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor));
         return result;
     }
 
@@ -151,8 +151,8 @@ public sealed class WardrobeSession : IWardrobeControl
             after[slot] = wanted;
         }
         if (before.Count > 0)
-            _journal.RecordResult<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(description, before, after,
-                Dress, () => Alive(actor), SelectionId.ForActor(actor));
+            _journal.Record<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(SelectionId.ForActor(actor), description, before, after,
+                Dress, () => Alive(actor));
         return outcome;
 
         ValueWriteResult Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
@@ -170,6 +170,6 @@ public sealed class WardrobeSession : IWardrobeControl
     public IntegrationResult Revert(ActorId actor) =>
         _disruptive.Run(actor, "Revert look", () => _integration.RevertState(actor));
 
-    private static ValueWriteResult Written(IntegrationResult result) => new(result.Success, result.Detail);
+    private static ValueWriteResult Written(IntegrationResult result) => result.ToValueWrite();
     private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
 }

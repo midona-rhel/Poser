@@ -48,9 +48,9 @@ public sealed class ScenePlaybackControl(
                 if (_objectControl.Read(objectId) is not { } handle)
                     return;
                 if (handle.IsVfx)
-                    _objectControl.SetVfxPaused(objectId, !playing);
+                    _objectControl.Set(objectId, WorldObjectProperties.VfxPaused, !playing);
                 else if (!handle.Spawned)
-                    _objectControl.SetAnimationPaused(objectId, !playing);
+                    _objectControl.Set(objectId, WorldObjectProperties.AnimationPaused, !playing);
                 break;
         }
     }
@@ -68,7 +68,7 @@ public sealed class ScenePlaybackControl(
     {
         if (id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
             && _objectControl.Read(objectId) is { IsVfx: false })
-            _objectControl.SetNightState(objectId, night);
+            _objectControl.Set(objectId, WorldObjectProperties.NightState, night);
     }
 
 }

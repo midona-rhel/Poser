@@ -150,7 +150,8 @@ internal sealed class WorldObjectLifecycleOwner
 
         public bool Restore() => owner.Restore(slots);
         public string? FailureDetail => RestoreFailure(slots);
-        public bool DropOnFailure() => owner.DiscardUnrestorable(slots);
+        public RefusalAction OnRefusal() =>
+            owner.DiscardUnrestorable(slots) ? RefusalAction.DropNow : RefusalAction.Keep;
     }
 
     private readonly TransformHistory _history;
@@ -242,7 +243,7 @@ internal sealed class WorldObjectLifecycleOwner
             () => _slots.Restore(slot))
         {
             FailureDetail = () => slot.RestoreFailure,
-            DropOnFailure = () => DiscardUnrestorable(slot),
+            OnRefusal = () => DiscardUnrestorable(slot) ? RefusalAction.DropNow : RefusalAction.Keep,
         };
         slot.AcquisitionEntry = entry;
         _history.Append(entry);
@@ -255,7 +256,7 @@ internal sealed class WorldObjectLifecycleOwner
             description, batch.Restore, batch.Release)
         {
             FailureDetail = () => batch.FailureDetail,
-            DropOnFailure = batch.DropOnFailure,
+            OnRefusal = batch.OnRefusal,
         });
     }
 

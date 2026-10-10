@@ -100,22 +100,17 @@ public sealed class UndoJournal
             _refused = null;
             return result;
         }
-        if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop }
-            && shouldDrop())
+        switch (RefusalPolicy.Decide(entry))
         {
-            _refused = null;
-            _history.Drop(entry);
-            var reason = entry is SceneLifecyclePatch lifecycle
-                ? lifecycle.FailureDetail?.Invoke() ?? result.Detail
-                : result.Detail;
-            _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
-            return result;
-        }
-        if (entry is not JournalStep step || step.RetainOnFailure
-            || step.HasDeferredGroupCapture?.Invoke() == true)
-        {
-            _refused = null;
-            return result;
+            case RefusalAction.DropNow:
+                _refused = null;
+                _history.Drop(entry);
+                var reason = (entry as InverseEntry)?.FailureDetail?.Invoke() ?? result.Detail;
+                _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
+                return result;
+            case RefusalAction.Keep:
+                _refused = null;
+                return result;
         }
         if (!ReferenceEquals(_refused, entry))
         {
@@ -124,7 +119,7 @@ public sealed class UndoJournal
         }
         _refused = null;
         _history.Drop(entry);
-        _notice($"{step.Description} could not be undone twice and was discarded.");
+        _notice($"{entry.Description} could not be undone twice and was discarded.");
         return result;
     }
 

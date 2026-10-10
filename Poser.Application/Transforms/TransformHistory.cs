@@ -32,11 +32,24 @@ public sealed record TransformPatch(
     public GroupTransformHistoryChange? GroupState { get; init; }
 }
 
+/// <summary>What history does with an entry whose inverse was refused.</summary>
+public enum RefusalAction
+{
+    /// <summary>Retain the entry for retry; the cursor does not move.</summary>
+    Keep,
+    /// <summary>Retain it once; the same entry refused again is discarded.</summary>
+    DropOnRepeat,
+    /// <summary>The refusal is permanent: report it and discard the entry so
+    /// unrelated earlier history can proceed.</summary>
+    DropNow,
+}
+
 /// <summary>
-/// A scene-lifecycle action. Its undo and redo delegates report whether the
-/// action landed and resolve the entity again when it is recreated.
+/// An entry that runs its own undo and redo delegates, each reporting
+/// whether the direction landed. Refusal handling is one value per entry,
+/// read through <see cref="RefusalPolicy"/>.
 /// </summary>
-public sealed record SceneLifecyclePatch(
+public abstract record InverseEntry(
     string Description,
     Func<bool> Undo,
     Func<bool> Redo) : HistoryEntry(Description)
@@ -44,9 +57,34 @@ public sealed record SceneLifecyclePatch(
     /// <summary>Optional reason for a refused direction.</summary>
     public Func<string?>? FailureDetail { get; init; }
 
-    /// <summary>Some refusals are permanent for this history entry. Drop it
-    /// after reporting the reason so unrelated earlier history can proceed.</summary>
-    public Func<bool>? DropOnFailure { get; init; }
+    /// <summary>Decided after a refusal, when it is known; null uses the
+    /// entry kind's default.</summary>
+    public Func<RefusalAction>? OnRefusal { get; init; }
+
+    protected internal virtual RefusalAction DefaultRefusal => RefusalAction.DropOnRepeat;
+}
+
+/// <summary>The single refusal decision read by the undo journal and by
+/// lifecycle batches.</summary>
+public static class RefusalPolicy
+{
+    public static RefusalAction Decide(HistoryEntry entry) =>
+        entry is InverseEntry inverse
+            ? inverse.OnRefusal?.Invoke() ?? inverse.DefaultRefusal
+            : RefusalAction.Keep;
+}
+
+/// <summary>
+/// A scene-lifecycle action. Its undo and redo delegates report whether the
+/// action landed and resolve the entity again when it is recreated. A
+/// refusal is retained unless the entry says it is permanent.
+/// </summary>
+public sealed record SceneLifecyclePatch(
+    string Description,
+    Func<bool> Undo,
+    Func<bool> Redo) : InverseEntry(Description, Undo, Redo)
+{
+    protected internal override RefusalAction DefaultRefusal => RefusalAction.Keep;
 }
 
 /// <summary>
@@ -67,7 +105,7 @@ public sealed class TransformHistory
     private readonly Dictionary<SelectionId, Func<SelectionId?>> _lifecycleTargets = new();
     private LifecycleHistoryBatch? _batch;
 
-    /// <summary>Records one synchronous removal command. Earlier value edits
+    /// <summary>Records one synchronous multi-entity command. Earlier value edits
     /// are sealed first; only synchronous lifecycle and journal entries belong
     /// to the batch. The callback must not schedule work or cross an await.</summary>
     public void RecordLifecycleBatch(string description, Action removals)

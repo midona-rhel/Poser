@@ -9,7 +9,8 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Game.Journal;
+using Poser.Application.Presentation;
+using Poser.Game.Presentation;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Services;
@@ -48,7 +49,11 @@ public sealed class WorldObjectRestoreTests
         // refresh occurs synchronously during native release/adoption.
         var lifecycle = new SceneLifecycleHistory(history, null!, null!, null!, null!, null!,
             new WorldObjectServiceLifecycle(world.Service), worldObjectTarget: Target);
-        var values = new WorldObjectSession(new ValueJournal(history), lifecycle);
+        var objectId = WorldObjectId.New();
+        AdoptedWorldObject? bound = null;
+        var values = new EntityValues<WorldObjectId>(new ValueJournal(history), new HandleValuePort<WorldObjectId, IWorldObject>(
+            exact => exact == objectId ? bound : null, SelectionId.ForWorldObject, o => o.IsValid, lifecycle,
+            SceneObjectAccessors.WorldObjects(), "Gone"), "Gone");
         world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
             history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid)));
         var original = (AdoptedWorldObject)lifecycle.AdoptWorldObject(world.Port.Add("bg/tree.mdl", Placed))!;
@@ -57,7 +62,8 @@ public sealed class WorldObjectRestoreTests
         TransformTargetState State(Transform value) =>
             new(target, new PoseTransform(value.Position, value.Rotation, value.Scale), new BonePose(), true);
         history.Append(new TransformPatch("Move object", [State(Placed)], [State(Moved)]));
-        values.SetVisible(original, false);
+        bound = original;
+        Assert.True(values.Set(objectId, WorldObjectProperties.Visible, false).Success);
 
         void Step(bool undo)
         {

@@ -15,7 +15,7 @@ public class ValueEditScopeTests
         for (int i = 2; i <= 20; i++)
         {
             journal.BeginEdit("slider");
-            journal.Set("light", "Set intensity", () => value, v => value = v, i);
+            journal.Set("light", "Set intensity", () => value, ValueWrites.Unchecked<int>(v => value = v), i);
             journal.EndEdit();
             Assert.False(history.CanUndo);
             Assert.Empty(recorder.Snapshot());
@@ -44,13 +44,13 @@ public class ValueEditScopeTests
         foreach (string next in new[] { "AB", "ABC" })
         {
             journal.BeginEdit("name");
-            journal.Set("name", "Rename", () => name, v => name = v, next);
+            journal.Set("name", "Rename", () => name, ValueWrites.Unchecked<string>(v => name = v), next);
             journal.EndEdit();
         }
         journal.Seal();
         bool visible = true;
-        journal.Set("visible", "Hide", () => visible, v => visible = v, false);
-        journal.Set("visible", "Show", () => visible, v => visible = v, true);
+        journal.Set("visible", "Hide", () => visible, ValueWrites.Unchecked<bool>(v => visible = v), false);
+        journal.Set("visible", "Show", () => visible, ValueWrites.Unchecked<bool>(v => visible = v), true);
         foreach (bool expected in new[] { false, true })
         {
             var step = Assert.IsType<JournalStep>(history.PeekUndo());

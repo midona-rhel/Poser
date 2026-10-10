@@ -33,7 +33,6 @@ public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
     private readonly SelectionScope _targets;
-    private readonly SelectionEntityCommands _entityCommands;
     private readonly EntityActions _entityActions;
 
     /// <summary>The selection the removal was armed against. The arm is only
@@ -45,10 +44,8 @@ public sealed class SelectionSection
     public SelectionSection(
         SceneSession scene,
         PropertiesContext context,
-        SelectionEntityCommands entityCommands,
         EntityActions entityActions)
     {
-        _entityCommands = entityCommands;
         _scene = scene;
         _targets = context.Selection;
         _entityActions = entityActions;
@@ -158,7 +155,7 @@ public sealed class SelectionSection
     private void QueueVisibility(IReadOnlyList<SelectionId> selected, bool visible)
     {
         var ids = selected.ToArray();
-        _pending = () => _entityCommands.SetVisibility(ids, visible);
+        _pending = () => _entityActions.SetVisibility(ids, visible);
     }
 
     private void Remove(IReadOnlyList<SelectionId> ids)

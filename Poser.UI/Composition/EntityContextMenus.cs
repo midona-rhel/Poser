@@ -255,8 +255,8 @@ internal sealed partial class EntityContextMenus
     private ActorDescriptor? ResolveActorDescriptor(ActorId id) =>
         _actorControl.Read(id) != null ? _scene.Snapshot.FindActor(id) : null;
     private bool? IsEntityVisible(SelectionId id) => _entityCommands.ReadVisibility(id);
-    private int SetEntityVisible(SelectionId id, bool visible) => _entityCommands.SetVisibility([id], visible);
-    private void SetSelectionVisible(bool visible) => _entityCommands.SetVisibility(_selection.Selected, visible);
+    private int SetEntityVisible(SelectionId id, bool visible) => _entityActions.SetVisibility([id], visible);
+    private void SetSelectionVisible(bool visible) => _entityActions.SetVisibility(_selection.Selected.ToArray(), visible);
     private bool? PlayingOf(SelectionId id) => _playback.ReadPlaying(id);
     private void SetSelectionPaused(bool paused)
     {

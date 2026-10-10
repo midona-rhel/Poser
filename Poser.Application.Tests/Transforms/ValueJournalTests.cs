@@ -12,7 +12,7 @@ public sealed class ValueJournalTests
     }
 
     private static void Set(ValueJournal journal, Target t, float value) =>
-        journal.Set((t, "Opacity"), "Set opacity", () => t.Opacity, v => t.Opacity = v, value, () => t.Alive);
+        journal.Set((t, "Opacity"), "Set opacity", () => t.Opacity, ValueWrites.Unchecked<float>(v => t.Opacity = v), value, () => t.Alive);
 
     [Fact]
     public void A_drag_is_one_step_that_undoes_to_the_value_before_the_drag()

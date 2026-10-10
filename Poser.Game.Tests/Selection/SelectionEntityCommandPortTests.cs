@@ -7,6 +7,8 @@ using Poser.Application.World;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Game.Journal;
+using Poser.Game.Lighting;
 using Poser.Game.Selection;
 using Poser.Game.WorldObjects;
 using Poser.Services;
@@ -81,6 +83,22 @@ public sealed class SelectionEntityCommandPortTests
         Assert.Equal(selected, fixture.Scene.Selection.IsSelected(fixture.Id));
     }
 
+    [Fact]
+    public void Refused_light_visibility_reports_detail_and_records_nothing()
+    {
+        var fixture = new Fixture();
+        var earlier = new JournalStep("Earlier edit", () => true, () => true);
+        fixture.History.Append(earlier);
+        fixture.History.CommitUndo(earlier);
+
+        var result = fixture.Port.SetVisibility(fixture.Id, visible: false);
+
+        Assert.False(result.Success);
+        Assert.Equal("The light refused.", result.Detail);
+        Assert.False(fixture.History.CanUndo);
+        Assert.Same(earlier, fixture.History.PeekRedo());
+    }
+
     private sealed class Fixture
     {
         public readonly LightId Light = LightId.New();
@@ -90,7 +108,7 @@ public sealed class SelectionEntityCommandPortTests
         public readonly TransformHistory History = new();
         public readonly ReleasePort Release = new();
         public readonly FrameworkProxy Framework;
-        private readonly SelectionEntityCommandPort _port;
+        public readonly SelectionEntityCommandPort Port;
 
         public Fixture()
         {
@@ -102,6 +120,8 @@ public sealed class SelectionEntityCommandPortTests
             {
                 "get_IsValid" => true,
                 "get_Ownership" => LightOwnership.World,
+                "get_IsOn" => true,
+                "set_IsOn" => throw new InvalidOperationException("The light refused."),
                 _ => throw new InvalidOperationException(method.Name),
             });
             var bindings = Proxy<IEntityBindings>((method, args) => method.Name switch
@@ -111,16 +131,23 @@ public sealed class SelectionEntityCommandPortTests
                     new BindingResult<ILight>(BindingStatus.Success, light),
                 _ => throw new InvalidOperationException(method.Name),
             });
-            var lighting = Proxy<ILightingService>((method, _) => method.Name == "get_Lights"
-                ? new ILight[] { light } : throw new InvalidOperationException(method.Name));
+            var lighting = Proxy<ILightingService>((method, _) => method.Name switch
+            {
+                "get_Lights" => new ILight[] { light },
+                "get_Gobos" => Array.Empty<GoboEntry>(),
+                _ => throw new InvalidOperationException(method.Name),
+            });
             var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
             Framework = (FrameworkProxy)(object)framework;
-            _port = new SelectionEntityCommandPort(Scene, bindings, null!, null!, null!,
+            var lights = new LightControl(bindings, Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread"
+                    ? true : throw new InvalidOperationException(method.Name)),
+                lighting, new ValueJournal(History), null!);
+            Port = new SelectionEntityCommandPort(Scene, bindings, null!, null!, lights, null!, null!, null!,
                 null!, lighting, null!, null!, null!, null!, Release, Groups, framework, History);
         }
 
         public Task<SelectionRemovalResult> Remove() =>
-            _port.Remove([new(Id, SelectionRemoval.Release)]);
+            Port.Remove([new(Id, SelectionRemoval.Release)]);
     }
 
     private sealed class ReleasePort : IWorldReleasePort

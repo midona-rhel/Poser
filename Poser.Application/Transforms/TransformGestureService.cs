@@ -508,16 +508,11 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return GestureResult.Fail("Nothing to undo.");
         if (entry is JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
-        if (entry is SceneLifecyclePatch lifecycle)
+        if (entry is InverseEntry inverse)
             return RunLifecycle(
-                lifecycle.Undo,
-                $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry, entity), lifecycle.FailureDetail);
-        if (entry is JournalStep step)
-            return RunLifecycle(
-                step.Undo,
-                $"Could not undo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry, entity), step.FailureDetail);
+                inverse.Undo,
+                $"Could not undo {inverse.Description.ToLowerInvariant()}.",
+                () => History.CommitUndo(entry, entity), inverse.FailureDetail);
         var patch = (TransformPatch)entry;
         return RestorePatch(patch, true, () => History.CommitUndo(patch, entity));
     }
@@ -579,16 +574,11 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return GestureResult.Fail("Nothing to redo.");
         if (entry is JournalStep { CompleteReplay: not null })
             return GestureResult.Fail("This step requires the asynchronous undo journal.");
-        if (entry is SceneLifecyclePatch lifecycle)
+        if (entry is InverseEntry inverse)
             return RunLifecycle(
-                lifecycle.Redo,
-                $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry, entity), lifecycle.FailureDetail);
-        if (entry is JournalStep step)
-            return RunLifecycle(
-                step.Redo,
-                $"Could not redo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry, entity), step.FailureDetail);
+                inverse.Redo,
+                $"Could not redo {inverse.Description.ToLowerInvariant()}.",
+                () => History.CommitRedo(entry, entity), inverse.FailureDetail);
         var patch = (TransformPatch)entry;
         return RestorePatch(patch, false, () => History.CommitRedo(patch, entity));
     }

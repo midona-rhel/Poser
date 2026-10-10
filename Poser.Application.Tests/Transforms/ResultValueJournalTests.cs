@@ -9,19 +9,21 @@ public sealed class ResultValueJournalTests
     {
         public int Value;
         public bool Reject;
+        public bool Permanent;
         public bool Alive = true;
         public int Writes;
         public ValueWriteResult Write(int value)
         {
             Writes++;
-            if (Reject) return new(false, "Foreign appearance hold");
+            if (Reject && Permanent) return new(false, "The game did not take the model.");
+            if (Reject) return ValueWriteResult.Busy("Foreign appearance hold");
             Value = value;
             return ValueWriteResult.Ok();
         }
     }
 
     private static ValueWriteResult Set(ValueJournal journal, Target target, int value)
-        => journal.TrySet(target, "Colour", () => target.Value, target.Write, value, () => target.Alive);
+        => journal.Set(target, "Colour", () => target.Value, target.Write, value, () => target.Alive);
 
     [Fact]
     public void Failed_live_write_keeps_last_success_and_original_before_until_commit()
@@ -48,7 +50,7 @@ public sealed class ResultValueJournalTests
     }
 
     [Fact]
-    public void Repeated_failed_inverse_never_drops_or_advances_and_can_retry()
+    public void Repeated_transient_refusal_never_drops_or_advances_and_can_retry()
     {
         var history = new TransformHistory();
         var target = new Target();
@@ -72,6 +74,51 @@ public sealed class ResultValueJournalTests
         target.Reject = false;
         Assert.True(undo.Redo().Success);
         Assert.Equal(8, target.Value);
+    }
+
+    [Fact]
+    public void Permanent_refusal_is_reported_then_dropped_on_repeat_so_earlier_undo_proceeds()
+    {
+        var history = new TransformHistory();
+        var journal = new ValueJournal(history);
+        var earlier = new Target();
+        var target = new Target();
+        Set(journal, earlier, 5);
+        Set(journal, target, 8);
+        var notices = new List<string>();
+        var undo = new UndoJournal(history, new Runner(history), _ => true, notices.Add);
+        target.Reject = target.Permanent = true;
+        var refused = undo.Undo();
+        Assert.False(refused.Success);
+        Assert.Equal("The game did not take the model.", refused.Detail);
+        Assert.Empty(notices);
+        Assert.False(undo.Undo().Success);
+        Assert.Single(notices);
+        Assert.True(undo.Undo().Success);
+        Assert.Equal(0, earlier.Value);
+        Assert.Equal(8, target.Value);
+        Assert.False(history.CanUndo);
+    }
+
+    [Fact]
+    public void Refused_write_leaves_history_and_redo_unchanged()
+    {
+        var history = new TransformHistory();
+        var journal = new ValueJournal(history);
+        var target = new Target();
+        Set(journal, target, 7);
+        Set(journal, target, 8);
+        var undone = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(undone.Undo());
+        history.CommitUndo(undone);
+        var top = history.PeekUndo();
+        target.Reject = true;
+        var refused = Set(journal, target, 9);
+        Assert.False(refused.Success);
+        Assert.Equal("Foreign appearance hold", refused.Detail);
+        Assert.Same(top, history.PeekUndo());
+        Assert.Same(undone, history.PeekRedo());
+        Assert.Equal(7, target.Value);
     }
 
     private sealed class Runner(TransformHistory history) : IUndoRunner

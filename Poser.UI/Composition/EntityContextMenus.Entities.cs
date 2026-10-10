@@ -66,13 +66,8 @@ internal sealed partial class EntityContextMenus
         {
             () => _actorControl.SetGameTarget(actorId),
             () => _cameraPane.CenterOnActor(actorId),
-            () =>
-            {
-                if (SetEntityVisible(SelectionId.ForActor(actorId),
-                        !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)) == 0)
-                    _notices.Refused(
-                        "Visibility", "The change was refused.");
-            },
+            () => SetEntityVisible(SelectionId.ForActor(actorId),
+                !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)),
             () =>
             {
                 if (_animation.AnyPlaying(actorId))
@@ -570,7 +565,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.State.Visible),
             () => OpenEntityRename(
-                "Rename overlay", node.State.Name, next => _overlayControl.SetName(overlayId, next)),
+                "Rename overlay", node.State.Name, next => _overlayControl.Set(overlayId, Application.Presentation.OverlayProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
             () => OpenEntityRename(
                 "Save overlay to library", node.State.Name,
@@ -592,8 +587,8 @@ internal sealed partial class EntityContextMenus
                 new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
                 .Concat(items).ToArray();
             actions = new Action?[] {
-                () => _overlayControl.SetColliderLocked(overlayId, !collider.Locked),
-                () => _overlayControl.SetCollisionEnabled(overlayId, !collider.Enabled) }
+                () => _overlayControl.EditCollider(overlayId, c => c with { Locked = !collider.Locked }),
+                () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }) }
                 .Concat(actions).ToArray();
         }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
@@ -724,7 +719,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
             () => OpenEntityRename(
-                "Rename light", light.Name, next => _lightControl.SetName(lightId, next)),
+                "Rename light", light.Name, next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
             () => _lightPane.MoveToCamera(lightId),
             () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
             () => _lightPane.OpenSave(lightId),
@@ -817,7 +812,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
             () => OpenEntityRename(
-                "Rename object", prop.Name, next => _objectControl.SetName(propId, next)),
+                "Rename object", prop.Name, next => _objectControl.Set(propId, Application.Presentation.PropProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForProp(propId)),
             () => OpenEntityRename(
                 "Save prop to library", prop.Name,
@@ -888,10 +883,10 @@ internal sealed partial class EntityContextMenus
         var actions = new List<Action?>
         {
             () => _cameraControl.SetLive(cameraId, !camera.IsLive),
-            () => _cameraControl.SetLocked(cameraId, !camera.IsLocked),
+            () => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
-                "Rename camera", camera.Name, next => _cameraControl.SetName(cameraId, next)),
+                "Rename camera", camera.Name, next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
             () => _cameraPane.OpenSave(cameraId),
             () => OpenEntityRename(
@@ -990,7 +985,7 @@ internal sealed partial class EntityContextMenus
             () => SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), !worldObject.Visible),
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
-                next => _objectControl.SetName(worldObjectId, next)),
+                next => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.Name, next)),
             () =>
             {
                 DuplicateAndSelect(SelectionId.ForWorldObject(worldObjectId));
@@ -1024,18 +1019,18 @@ internal sealed partial class EntityContextMenus
         {
             stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",
                 worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-            stateActions.Add(() => _objectControl.SetVfxPaused(worldObjectId, !worldObject.VfxPaused));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.VfxPaused, !worldObject.VfxPaused));
         }
         else
         {
             stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
                 worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
-            stateActions.Add(() => _objectControl.SetNightState(worldObjectId, !worldObject.NightState));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.NightState, !worldObject.NightState));
             if (!worldObject.Spawned)
             {
                 stateItems.Add(new(worldObject.AnimationPaused ? "Play" : "Pause",
                     worldObject.AnimationPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-                stateActions.Add(() => _objectControl.SetAnimationPaused(worldObjectId, !worldObject.AnimationPaused));
+                stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.AnimationPaused, !worldObject.AnimationPaused));
             }
         }
         items = stateItems.Concat(items).ToArray();

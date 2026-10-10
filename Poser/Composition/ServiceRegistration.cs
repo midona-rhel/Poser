@@ -221,17 +221,12 @@ internal static class ServiceRegistration
         // Native overlay construction and value writes must not resolve each other eagerly.
         services.AddSingleton(sp => new System.Lazy<ValueJournal>(sp.GetRequiredService<ValueJournal>));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
-        services.AddSingleton<Game.Journal.WorldObjectSession>();
-        services.AddSingleton<Game.Journal.PropSession>();
         services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
-        services.AddSingleton<Game.Journal.OverlaySession>();
         services.AddSingleton<Application.Presentation.IOverlayControl, Game.Overlays.OverlayControl>();
         services.AddSingleton<Application.Presentation.IStatusIconCatalog>(sp =>
             sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
-        services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Application.Presentation.ILightControl, Game.Lighting.LightControl>();
-        services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
         services.AddSingleton<Game.Cameras.CameraTargetControl>();
         services.AddSingleton<Application.Presentation.ICameraTargetControl>(sp =>
@@ -274,13 +269,6 @@ internal static class ServiceRegistration
         services.AddSingleton<ICustomizeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.CustomizeCatalog>());
         services.AddSingleton<Game.Wardrobe.WardrobeCatalog>();
         services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
-        services.AddSingleton(sp => new Game.Journal.EntitySessions(
-            sp.GetRequiredService<Application.Presentation.IActorValueControl>(),
-            sp.GetRequiredService<Game.Journal.LightSession>(),
-            sp.GetRequiredService<Game.Journal.CameraSession>(),
-            sp.GetRequiredService<Game.Journal.PropSession>(),
-            sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
-            sp.GetRequiredService<Game.Journal.OverlaySession>()));
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<GroupTransformState>();
         services.AddSingleton<IGroupTransformSource, GroupTransformSource>();

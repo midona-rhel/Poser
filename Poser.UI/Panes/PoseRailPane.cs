@@ -373,7 +373,7 @@ public class PoseRailPane
                 if (delta > MathF.PI) delta -= MathF.Tau;
                 if (delta < -MathF.PI) delta += MathF.Tau;
                 Crystarium.ChangeValue("##rail-camera-joystick", () =>
-                    _cameraValues.SetRoll(camera.Id, _joyRollStartValue + delta));
+                    _cameraValues.Set(camera.Id, CameraProperties.Roll, _joyRollStartValue + delta));
                 // The same hide and readout a world drag gets.
                 ManipulationDrag.HoldFromShell(
                     mouse + new Vector2(18f, 14f) * s,
@@ -400,14 +400,14 @@ public class PoseRailPane
                 // rotation runs the other way from an orbit pan.
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
                     Crystarium.ChangeValue("##rail-camera-joystick", () =>
-                        _cameraValues.SetRotation(camera.Id, camera.Rotation with
+                        _cameraValues.Set(camera.Id, CameraProperties.Rotation, camera.Rotation with
                     {
                         X = camera.Rotation.X - stepX,
                         Y = camera.Rotation.Y - stepY,
                     }));
                 else
                     Crystarium.ChangeValue("##rail-camera-joystick", () =>
-                        _cameraValues.SetPan(camera.Id, camera.Pan with
+                        _cameraValues.Set(camera.Id, CameraProperties.Pan, camera.Pan with
                     {
                         X = camera.Pan.X + stepX,
                         Y = camera.Pan.Y + stepY,
@@ -487,14 +487,14 @@ public class PoseRailPane
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
-        if (active && _padOverlayId is { } id && _overlayValues.Read(id) is { } target)
+        if (active && _padOverlayId is { } id && _overlayValues.Read(id) is not null)
         {
             GizmoPointerOwnership.Hold();
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
                 Crystarium.ChangeValue("##rail-overlay-pad",
-                    () => _overlayValues.SetPosition(id, target.State.Position + step));
+                    () => _overlayValues.Update(id, OverlayProperties.Position, position => position + step));
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;

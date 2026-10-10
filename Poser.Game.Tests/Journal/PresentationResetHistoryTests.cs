@@ -40,7 +40,7 @@ public sealed class PresentationResetHistoryTests
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         f.Port.RefuseSet = true;
         Assert.False(step.Undo());
-        Assert.True(step.RetainOnFailure);
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(step));
         f.Port.RefuseSet = false;
         Assert.True(step.Undo());
         Assert.Equal(Vector4.One, f.Port.Tint);
@@ -92,7 +92,6 @@ public sealed class PresentationResetHistoryTests
         f.Port.RefuseRestore = true;
         Assert.False(f.ColorValues.Clear(f.Actor, AppearanceColorChannel.Skin).Success);
         Assert.Same(set, f.History.PeekUndo());
-        Assert.False(f.Journal.Undo().Success);
         Assert.False(f.Journal.Undo().Success);
         Assert.Same(set, f.History.PeekUndo());
         Assert.False(f.History.CanRedo);
@@ -165,7 +164,6 @@ public sealed class PresentationResetHistoryTests
         f.Values.ResetPresentation(f.Actor);
         var step = f.History.PeekUndo();
         f.Port.RefuseSet = true;
-        Assert.False(f.Journal.Undo().Success);
         Assert.False(f.Journal.Undo().Success);
         Assert.Same(step, f.History.PeekUndo());
         Assert.False(f.History.CanRedo);

@@ -25,7 +25,8 @@ public sealed class AppearanceControlTests
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         f.Runtime.Refuse = true;
         Assert.False(step.Undo());
-        Assert.True(step.RetainOnFailure);
+        // A plain write refusal is permanent: retried once, then dropped.
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(step));
         Assert.Equal("Write refused", step.FailureDetail!());
         EqualWardrobe(after, f.Runtime.ReadWardrobe());
         f.Runtime.Refuse = false;
@@ -66,7 +67,7 @@ public sealed class AppearanceControlTests
         f.CaptureFailure = true;
         Assert.False(step.Undo());
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
-        Assert.True(step.RetainOnFailure);
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(step));
         Assert.Equal("State unavailable", step.FailureDetail!());
         f.CaptureFailure = false;
         Replay(step, true);

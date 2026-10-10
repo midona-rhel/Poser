@@ -37,7 +37,7 @@ public sealed class ActorResetControl(
             () => ResetCore(actor).Success)
         {
             AffectedEntities = new[] { SelectionId.ForActor(actor) },
-            RetainOnFailure = true,
+            OnRefusal = () => RefusalAction.Keep,
             CompleteReplay = (undo, current, cancellation, completed) =>
             {
                 if (undo) snapshots.Restore(before, current, cancellation, completed);

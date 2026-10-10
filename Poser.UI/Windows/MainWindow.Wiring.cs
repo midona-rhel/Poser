@@ -241,7 +241,7 @@ public partial class MainWindow
                 return;
             if (!handle.IsVfx)
                 return;
-            _objectControl.SetVfxPaused(pausedId, !handle.VfxPaused);
+            _objectControl.Set(pausedId, Application.Presentation.WorldObjectProperties.VfxPaused, !handle.VfxPaused);
             row.Paused = _objectControl.Read(pausedId)?.VfxPaused ?? row.Paused;
         };
         // The scenery row's sun/moon seat: the same night state the
@@ -253,7 +253,7 @@ public partial class MainWindow
                 return;
             if (_objectControl.Read(nightId) is not { IsVfx: false } handle)
                 return;
-            _objectControl.SetNightState(nightId, !handle.NightState);
+            _objectControl.Set(nightId, Application.Presentation.WorldObjectProperties.NightState, !handle.NightState);
             row.Night = _objectControl.Read(nightId)?.NightState ?? row.Night;
         };
         _vm.OnColliderCollision = row =>
@@ -261,7 +261,7 @@ public partial class MainWindow
             if (row.Tag is SelectionId { Overlay: { } id }
                 && _overlayControl.Read(id) is { State.Collider: { } collider })
             {
-                _overlayControl.SetCollisionEnabled(id, !collider.Enabled);
+                _overlayControl.EditCollider(id, c => c with { Enabled = !collider.Enabled });
                 row.CollisionEnabled = !collider.Enabled;
             }
         };
@@ -270,7 +270,7 @@ public partial class MainWindow
             if (row.Tag is SelectionId { Overlay: { } id }
                 && _overlayControl.Read(id) is { State.Collider: { } collider })
             {
-                _overlayControl.SetColliderLocked(id, !collider.Locked);
+                _overlayControl.EditCollider(id, c => c with { Locked = !collider.Locked });
                 row.ColliderLocked = !collider.Locked;
             }
         };
@@ -345,7 +345,7 @@ public partial class MainWindow
             if (row.Tag is not SelectionId { Camera: { } rowCameraId }
                 || _cameraControl.Read(rowCameraId) is not { } camera)
                 return;
-            _cameraControl.SetLocked(rowCameraId, !camera.IsLocked);
+            _cameraControl.Set(rowCameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked);
             row.CameraLocked = _cameraControl.Read(rowCameraId)?.IsLocked ?? row.CameraLocked;
         };
         _vm.OnOverlayVisibility = row =>

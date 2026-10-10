@@ -51,8 +51,9 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         }
         var before = Read(child);
         Set(child, link);
-        journal.Record(target == null ? "Detach entity" : "Parent entity", before, link,
-            value => Set(history.ResolveLifecycleEntity(child), Rebind(value)),
+        // Keyed by this owner, not the child: relationship changes stay global.
+        journal.Record((this, child), target == null ? "Detach entity" : "Parent entity", before, link,
+            ValueWrites.Unchecked<TransformParent?>(value => Set(history.ResolveLifecycleEntity(child), Rebind(value))),
             () => runtime.Read(history.ResolveLifecycleEntity(child)) != null);
         return ValueWriteResult.Ok();
     }

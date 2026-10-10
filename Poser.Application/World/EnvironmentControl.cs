@@ -29,7 +29,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
     public void Seal() => _journal.Seal();
 
     private void Set<T>(string property, string description, Func<T> read, Action<T> write, T value) =>
-        _journal.Set((_environment, property), description, read, write, value);
+        _journal.Set((_environment, property), description, read, ValueWrites.Unchecked(write), value);
 
     // ── time ────────────────────────────────────────────────────────────
     public void SetMinuteOfDay(int v) => Set("MinuteOfDay", "Set time of day", () => _environment.MinuteOfDay, x => _environment.MinuteOfDay = x, v);
@@ -44,7 +44,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
         _environment.SetWeather(id, transitionTime);
         if (before == id)
             return;
-        _journal.Record("Set weather", before, id, next => _environment.SetWeather(next, transitionTime));
+        _journal.Record(_environment, "Set weather", before, id, ValueWrites.Unchecked<uint>(next => _environment.SetWeather(next, transitionTime)));
     }
 
     public void SetTransitionTime(float v) => Set("TransitionTime", "Set weather transition", () => _environment.TransitionTime, x => _environment.TransitionTime = x, v);
@@ -54,7 +54,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
     // ── sections ────────────────────────────────────────────────────────
     public void SetSectionHeld(EnvSection section, bool held) =>
         _journal.Set((_environment, section), held ? $"Hold {section}" : $"Release {section}",
-            () => _environment.IsSectionHeld(section), x => _environment.SetSectionHeld(section, x), held);
+            () => _environment.IsSectionHeld(section), ValueWrites.Unchecked<bool>(x => _environment.SetSectionHeld(section, x)), held);
 
     /// <summary>Releases every held section as one step.</summary>
     public void ReleaseAllSections()
@@ -64,12 +64,12 @@ public sealed class EnvironmentControl : IEnvironmentControl
         if (before.Length == 0)
             return;
         _environment.ReleaseAllSections();
-        _journal.Record("Release all sections", before, Array.Empty<EnvSection>(), held =>
+        _journal.Record(_environment, "Release all sections", before, Array.Empty<EnvSection>(), ValueWrites.Unchecked<EnvSection[]>(held =>
         {
             _environment.ReleaseAllSections();
             foreach (var section in held)
                 _environment.SetSectionHeld(section, true);
-        });
+        }));
     }
 
     public void SetResetSectionsOnGPoseExit(bool v) => Set("ResetSectionsOnGPoseExit", "Set section restore", () => _environment.ResetSectionsOnGPoseExit, x => _environment.ResetSectionsOnGPoseExit = x, v);
@@ -81,7 +81,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
             return;
         ulong binding = _environment.HousingInteriorBinding;
         float value = Math.Clamp(v, 0f, 1f);
-        _journal.TrySet((_environment, "InteriorBrightness", binding),
+        _journal.Set((_environment, "InteriorBrightness", binding),
             "Set interior brightness",
             () => (Owned: _environment.IsInteriorBrightnessOverridden,
                 Value: _environment.InteriorBrightness ?? value),
@@ -101,14 +101,14 @@ public sealed class EnvironmentControl : IEnvironmentControl
         if (!_environment.TryResetInteriorBrightness(binding) ||
             _environment.InteriorBrightness is not { } reset)
             return;
-        _journal.Record("Reset interior brightness",
-            (Owned: owned, Value: before), (Owned: true, Value: reset), next =>
+        _journal.Record(_environment, "Reset interior brightness",
+            (Owned: owned, Value: before), (Owned: true, Value: reset), ValueWrites.Unchecked<(bool Owned, float Value)>(next =>
         {
             if (next.Owned)
                 _environment.TrySetInteriorBrightness(next.Value, binding);
             else
                 _environment.ReleaseInteriorBrightness(binding);
-        });
+        }));
     }
 
     public void ReleaseInteriorBrightness()
@@ -121,14 +121,14 @@ public sealed class EnvironmentControl : IEnvironmentControl
             _environment.InteriorBrightness is not { } restored)
             return;
         // Ownership changes even when the slider already equals its baseline.
-        _journal.Record("Release interior brightness",
-            (Owned: true, Value: before), (Owned: false, Value: restored), next =>
+        _journal.Record(_environment, "Release interior brightness",
+            (Owned: true, Value: before), (Owned: false, Value: restored), ValueWrites.Unchecked<(bool Owned, float Value)>(next =>
         {
             if (next.Owned)
                 _environment.TrySetInteriorBrightness(next.Value, binding);
             else
                 _environment.ReleaseInteriorBrightness(binding);
-        });
+        }));
     }
 
     public void SetSky(EnvSkyValues v) => Set("Sky", "Set sky", () => _environment.Sky, x => _environment.Sky = x, v);
@@ -142,17 +142,17 @@ public sealed class EnvironmentControl : IEnvironmentControl
 
     // ── water ───────────────────────────────────────────────────────────
     public void SetWaterFrozen(bool v) =>
-        _journal.Set((_rendering, "IsWaterFrozen"), v ? "Freeze water" : "Release water", () => _rendering.IsWaterFrozen, x => _rendering.IsWaterFrozen = x, v);
+        _journal.Set((_rendering, "IsWaterFrozen"), v ? "Freeze water" : "Release water", () => _rendering.IsWaterFrozen, ValueWrites.Unchecked<bool>(x => _rendering.IsWaterFrozen = x), v);
 
     public void SetResetWaterOnGPoseExit(bool v) =>
-        _journal.Set((_rendering, "ResetWaterOnGPoseExit"), "Set water restore", () => _rendering.ResetWaterOnGPoseExit, x => _rendering.ResetWaterOnGPoseExit = x, v);
+        _journal.Set((_rendering, "ResetWaterOnGPoseExit"), "Set water restore", () => _rendering.ResetWaterOnGPoseExit, ValueWrites.Unchecked<bool>(x => _rendering.ResetWaterOnGPoseExit = x), v);
 
     // ── festivals ───────────────────────────────────────────────────────
     public bool AddFestival(uint id, ushort phase = 1)
     {
         if (!_festivals.Add(id, phase))
             return false;
-        _journal.Record($"Add festival {id}", false, true, on => { if (on) _festivals.Add(id, phase); else _festivals.Remove(id); });
+        _journal.Record(_festivals, $"Add festival {id}", false, true, ValueWrites.Unchecked<bool>(on => { if (on) _festivals.Add(id, phase); else _festivals.Remove(id); }));
         return true;
     }
 
@@ -162,7 +162,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
         if (!_festivals.Remove(id))
             return false;
         ushort phase = slot.Phase == 0 ? (ushort)1 : slot.Phase;
-        _journal.Record($"Remove festival {id}", true, false, on => { if (on) _festivals.Add(id, phase); else _festivals.Remove(id); });
+        _journal.Record(_festivals, $"Remove festival {id}", true, false, ValueWrites.Unchecked<bool>(on => { if (on) _festivals.Add(id, phase); else _festivals.Remove(id); }));
         return true;
     }
 
@@ -171,7 +171,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
         var slot = _festivals.ActiveFestivals.FirstOrDefault(f => f.Id == id);
         if (!_festivals.ChangePhase(id, phase))
             return false;
-        _journal.Record($"Set festival {id} phase", slot.Phase, phase, next => _festivals.ChangePhase(id, next));
+        _journal.Record(_festivals, $"Set festival {id} phase", slot.Phase, phase, ValueWrites.Unchecked<ushort>(next => _festivals.ChangePhase(id, next)));
         return true;
     }
 
@@ -180,12 +180,12 @@ public sealed class EnvironmentControl : IEnvironmentControl
     {
         var before = _festivals.ActiveFestivals.ToArray();
         _festivals.Reset();
-        _journal.Record("Reset festivals", before, Array.Empty<ActiveFestival>(), slots =>
+        _journal.Record(_festivals, "Reset festivals", before, Array.Empty<ActiveFestival>(), ValueWrites.Unchecked<ActiveFestival[]>(slots =>
         {
             _festivals.Reset();
             foreach (var slot in slots)
                 _festivals.Add(slot.Id, slot.Phase);
-        });
+        }));
     }
     public EnvironmentReading Read() => new()
     {
@@ -236,7 +236,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
         var before = recordHistory ? Capture() : null;
         ApplyCore(target);
         if (before is not null)
-            _journal.Record("Apply environment", before, Capture(), ApplyCore);
+            _journal.Record(_environment, "Apply environment", before, Capture(), ValueWrites.Unchecked<SceneEnvironment>(ApplyCore));
     }
 
     public SceneEnvironment Capture()

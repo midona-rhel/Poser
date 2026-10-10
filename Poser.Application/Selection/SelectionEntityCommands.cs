@@ -1,3 +1,4 @@
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -36,6 +37,13 @@ public sealed record SelectionRemovalResult(IReadOnlyList<SelectionRemovalItem> 
     public int AppliedCount => Items.Count(item => item.Status == SelectionRemovalStatus.Removed);
 }
 
+public sealed record SelectionVisibilityItem(SelectionId Id, ValueWriteResult Result);
+
+public sealed record SelectionVisibilityResult(IReadOnlyList<SelectionVisibilityItem> Items)
+{
+    public int AppliedCount => Items.Count(item => item.Result.Success);
+}
+
 /// <summary>Reads capabilities only for the exact current SelectionId. It
 /// never repairs an old generation into its successor.</summary>
 public interface ICurrentSelectionEntityReads
@@ -48,7 +56,7 @@ public interface ICurrentSelectionEntityReads
 public interface ISelectionEntityCommandPort
 {
     bool? ReadVisibility(SelectionId id);
-    bool SetVisibility(SelectionId id, bool visible);
+    ValueWriteResult SetVisibility(SelectionId id, bool visible);
     Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests);
 }
 
@@ -57,8 +65,11 @@ public interface ISelectionEntityCommandPort
 /// exact binding and ownership checks before touching a live entity.</summary>
 public sealed class SelectionEntityCommands(
     ICurrentSelectionEntityReads reads,
-    ISelectionEntityCommandPort port)
+    ISelectionEntityCommandPort port,
+    TransformHistory history)
 {
+    private const string Unavailable = "That entity is no longer available.";
+
     public bool? ReadVisibility(SelectionId id)
     {
         var current = reads.ReadCurrent(id);
@@ -67,19 +78,48 @@ public sealed class SelectionEntityCommands(
         return port.ReadVisibility(id);
     }
 
-    public int SetVisibility(IEnumerable<SelectionId> ids, bool visible)
+    /// <summary>Shows or hides every eligible id. Several targets are one
+    /// history entry holding only the writes that landed; refused targets
+    /// append nothing and are reported per item. Ids that cannot change
+    /// visibility (cameras, bones) are left out silently.</summary>
+    public SelectionVisibilityResult SetVisibility(IEnumerable<SelectionId> ids, bool visible)
     {
-        int applied = 0;
+        var items = new List<SelectionVisibilityItem>();
+        var eligible = new List<SelectionId>();
         foreach (var id in ids.Distinct())
         {
             var current = reads.ReadCurrent(id);
-            if (current is not { CanChangeVisibility: true } || current.Id != id)
+            if (current is null || current.Id != id)
+            {
+                // A stale entity id is a refusal; a non-entity id (a bone,
+                // a gaze point) was never a visibility target.
+                if (IsEntityKind(id.Kind)) items.Add(new(id, new(false, Unavailable)));
                 continue;
-            if (port.SetVisibility(id, visible))
-                applied++;
+            }
+            if (current.CanChangeVisibility) eligible.Add(id);
         }
-        return applied;
+        void Apply()
+        {
+            foreach (var id in eligible) items.Add(new(id, Write(id, visible)));
+        }
+        // One target keeps its own value step, so entity-scoped undo still
+        // reaches it; several share one batch entry.
+        if (eligible.Count > 1)
+            history.RecordLifecycleBatch(visible ? "Show entities" : "Hide entities", Apply);
+        else
+            Apply();
+        return new(items);
     }
+
+    private ValueWriteResult Write(SelectionId id, bool visible)
+    {
+        try { return port.SetVisibility(id, visible); }
+        catch (Exception ex) { return new(false, ex.Message); }
+    }
+
+    private static bool IsEntityKind(SceneEntityKind kind) => kind is SceneEntityKind.Actor
+        or SceneEntityKind.Light or SceneEntityKind.Prop or SceneEntityKind.Camera
+        or SceneEntityKind.Overlay or SceneEntityKind.WorldObject;
 
     public Task<SelectionRemovalResult> Remove(IEnumerable<SelectionId> ids)
     {

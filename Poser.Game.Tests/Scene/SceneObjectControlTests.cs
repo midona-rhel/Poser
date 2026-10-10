@@ -4,7 +4,6 @@ using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Game.Journal;
 using Poser.Game.Scene;
 using Poser.Services;
 
@@ -40,8 +39,7 @@ public sealed class SceneObjectControlTests
         });
         var history = new TransformHistory();
         var journal = new ValueJournal(history);
-        var control = new SceneObjectControl(bindings, Stub<IFramework>((_, _) => true),
-            new PropSession(journal), new WorldObjectSession(journal));
+        var control = new SceneObjectControl(bindings, Stub<IFramework>((_, _) => true), journal);
         var reading = control.Read(id)!;
         var edited = model with { AnimationVariant = 3, Stain0 = 12 };
         Assert.True(control.SetModel(id, edited).Success);
@@ -52,6 +50,35 @@ public sealed class SceneObjectControlTests
         Assert.Equal(original, model);
         Assert.True(entry.Redo());
         Assert.Equal(edited, model);
+    }
+
+    [Fact]
+    public void Transport_write_lands_without_a_step_and_a_stale_write_fails()
+    {
+        var id = WorldObjectId.New();
+        bool paused = false, current = true;
+        var effect = Stub<IWorldObject>((method, args) => method switch
+        {
+            "get_IsValid" => true,
+            "get_VfxPaused" => paused,
+            "set_VfxPaused" => paused = (bool)args![0]!,
+            _ => throw new InvalidOperationException(method),
+        });
+        var bindings = Stub<IEntityBindings>((method, args) => current
+            ? new BindingResult<IWorldObject>(BindingStatus.Success, effect)
+            : new BindingResult<IWorldObject>(BindingStatus.StaleTarget));
+        var history = new TransformHistory();
+        var control = new SceneObjectControl(bindings, Stub<IFramework>((_, _) => true), new ValueJournal(history));
+
+        Assert.True(control.Set(id, WorldObjectProperties.VfxPaused, true).Success);
+        Assert.True(paused);
+        Assert.False(history.CanUndo);
+
+        current = false;
+        var stale = control.Set(id, WorldObjectProperties.VfxPaused, false);
+        Assert.Equal((false, "The object is no longer available."), (stale.Success, stale.Detail));
+        Assert.True(paused);
+        Assert.False(history.CanUndo);
     }
 
     private static T Stub<T>(Func<string, object?[]?, object?> call) where T : class

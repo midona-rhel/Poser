@@ -261,12 +261,12 @@ public sealed class LightPane
             cells.Cell(
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
-                    value => _values.SetIsOn(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.IsOn, value)),
                 help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
-                    value => _values.SetHasReflection(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.HasReflection, value)),
                 help: "Let this light appear in reflective surfaces");
         });
         form.Cells(cells =>
@@ -274,13 +274,13 @@ public sealed class LightPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##light-name", light.Name,
-                    value => _values.SetName(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.Name, value)),
                 help: "The name this light carries in the sidebar");
             cells.Cell(
                 "Type",
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
-                    selected => _values.SetKind(light.Id, (LightKind)selected)),
+                    selected => _values.Set(light.Id, LightProperties.Kind, (LightKind)selected)),
                 help: "Sun, bulb, cone, or panel");
         });
     }
@@ -290,7 +290,7 @@ public sealed class LightPane
         form.ColorWells("Color", wells =>
         {
             wells.Well("Color", ToDisplayColor(light.Color),
-                value => _values.SetColor(light.Id, ToRawColor(value)),
+                value => _values.Set(light.Id, LightProperties.Color, ToRawColor(value)),
                 hdr: true);
         }, help: "HDR color; reaches past white");
 
@@ -303,7 +303,7 @@ public sealed class LightPane
             cells.Cell(
                 "Intensity",
                 cell => cell.Slider("##light-intensity", light.Intensity,
-                    0f, 100f, value => _values.SetIntensity(light.Id, value),
+                    0f, 100f, value => _values.Set(light.Id, LightProperties.Intensity, value),
                     scale: SliderScale.Log,
                     marks: IntensityMarks,
                     logCurvature: 9999f, onBegin: _values.Seal),
@@ -311,7 +311,7 @@ public sealed class LightPane
             cells.Cell(
                 "Range",
                 cell => cell.Slider("##light-range", light.Range, 0f, 999f,
-                    value => _values.SetRange(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.Range, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "How far the light reaches");
         });
@@ -321,12 +321,12 @@ public sealed class LightPane
                 "Falloff type",
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
-                    selected => _values.SetFalloffType(light.Id, (LightFalloffType)selected)),
+                    selected => _values.Set(light.Id, LightProperties.FalloffType, (LightFalloffType)selected)),
                 help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
-                    0f, 1000f, value => _values.SetFalloff(light.Id, value),
+                    0f, 1000f, value => _values.Set(light.Id, LightProperties.Falloff, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "Dimming toward the cone edge");
         });
@@ -339,13 +339,13 @@ public sealed class LightPane
                     cells.Cell(
                         "Cone angle",
                         cell => cell.Slider("##light-cone", light.SpotAngle,
-                            0f, 180f, value => _values.SetSpotAngle(light.Id, value), onBegin: _values.Seal),
+                            0f, 180f, value => _values.Set(light.Id, LightProperties.SpotAngle, value), onBegin: _values.Seal),
                         help: "How wide the cone opens, in degrees");
                     cells.Cell(
                         "Falloff angle",
                         cell => cell.Slider("##light-cone-falloff",
                             light.FalloffAngle, 0f, 180f,
-                            value => _values.SetFalloffAngle(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Set(light.Id, LightProperties.FalloffAngle, value), onBegin: _values.Seal),
                         help: "How soft the cone's edge is, in degrees");
                 });
                 break;
@@ -357,17 +357,17 @@ public sealed class LightPane
                         "Skew X",
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
-                            value => _values.SetAreaAngleX(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Update(light.Id, LightProperties.AreaAngle, angle => angle with { X = value }), onBegin: _values.Seal),
                         help: "Tilt the throw around local X (vertical), in degrees; the emitter itself does not rotate");
                     cells.Cell(
                         "Skew Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
-                            value => _values.SetAreaAngleY(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Update(light.Id, LightProperties.AreaAngle, angle => angle with { Y = value }), onBegin: _values.Seal),
                         help: "Tilt the throw around local Y (horizontal), in degrees; the emitter itself does not rotate");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => _values.SetFalloffAngle(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.FalloffAngle, value),
                     help: "How soft the panel's edge is, in degrees", onBegin: _values.Seal);
                 break;
         }
@@ -394,7 +394,7 @@ public sealed class LightPane
                 cell => cell.Button("##light-gobo-clear", "Clear",
                     () =>
                     {
-                        _values.ClearGobo(light.Id);
+                        _values.Set(light.Id, LightProperties.Gobo, null);
                     },
                     disabled: light.GoboPath is null),
                 help: "Project no mask at all");
@@ -482,23 +482,23 @@ public sealed class LightPane
                 "Dynamic",
                 cell => cell.Switch("##light-shadow-dynamic",
                     light.CastsDynamicShadows,
-                    value => _values.SetCastsDynamicShadows(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsDynamicShadows, value)),
                 help: "Cast shadows that update as the scene moves");
             cells.Cell(
                 "Characters",
                 cell => cell.Switch("##light-shadow-chara",
                     light.CastsCharacterShadow,
-                    value => _values.SetCastsCharacterShadow(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsCharacterShadow, value)),
                 help: "Let characters cast shadows from this light");
             cells.Cell(
                 "Objects",
                 cell => cell.Switch("##light-shadow-object",
                     light.CastsObjectShadow,
-                    value => _values.SetCastsObjectShadow(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsObjectShadow, value)),
                 help: "Let scenery cast shadows from this light");
         });
         form.Slider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => _values.SetCharacterShadowRange(light.Id, value),
+            0f, 1000f, value => _values.Set(light.Id, LightProperties.CharacterShadowRange, value),
             help: "How far character shadows are still drawn",
             scale: SliderScale.Log, onBegin: _values.Seal);
         form.Cells(cells =>
@@ -507,14 +507,14 @@ public sealed class LightPane
                 "Shadow near",
                 cell => cell.Slider("##light-shadow-near",
                     light.ShadowPlaneNear, 0f, 10f,
-                    value => _values.SetShadowPlaneNear(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.ShadowPlaneNear, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "The closest distance shadows begin at");
             cells.Cell(
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
                     light.ShadowPlaneFar, 0f, 1000f,
-                    value => _values.SetShadowPlaneFar(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.ShadowPlaneFar, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "The furthest distance shadows reach");
         });
