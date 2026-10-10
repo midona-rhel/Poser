@@ -62,17 +62,30 @@ public sealed class SceneReadOutcome
     public SceneFile? Scene { get; }
     public SceneStoreFailure? Failure { get; }
 
-    private SceneReadOutcome(SceneFile? scene, SceneStoreFailure? failure)
+    /// <summary>Entities the read left out of <see cref="Scene"/> because
+    /// their own data is invalid; the load names each one.</summary>
+    public IReadOnlyList<SceneEntityRefusal> Refusals { get; }
+
+    private SceneReadOutcome(
+        SceneFile? scene, SceneStoreFailure? failure,
+        IReadOnlyList<SceneEntityRefusal> refusals)
     {
         Succeeded = scene is not null;
         Scene = scene;
         Failure = failure;
+        Refusals = refusals;
     }
 
-    internal static SceneReadOutcome Success(SceneFile scene) => new(scene, null);
+    internal static SceneReadOutcome Success(
+        SceneFile scene, IReadOnlyList<SceneEntityRefusal>? refusals = null) =>
+        new(scene, null, refusals ?? Array.Empty<SceneEntityRefusal>());
     internal static SceneReadOutcome Failed(SceneStoreFailure failure) =>
-        new(null, failure);
+        new(null, failure, Array.Empty<SceneEntityRefusal>());
 }
+
+/// <summary>An opened appearance payload — the caller owns the stream — or
+/// why it could not be opened.</summary>
+public sealed record SceneAppearanceOpen(Stream? Stream, string? Error);
 
 /// <summary>Typed status for one scene entry in a listing. The codec
 /// validated the complete document before reporting <see cref="Valid"/>.</summary>
@@ -262,26 +275,30 @@ public sealed class SceneFileStore
     /// Opens ONE appearance payload as a stream. The caller owns the returned
     /// stream and copies it wherever it needs the bytes — they are never
     /// materialized here, because a real package is hundreds of megabytes.
-    /// Null when the container has no such entry.
+    /// Otherwise the reason: a missing entry and an unreadable container are
+    /// different refusals, and the user is told which.
     /// </summary>
-    public Stream? OpenAppearance(string scenePath, string entryName)
+    public SceneAppearanceOpen OpenAppearance(string scenePath, string entryName)
     {
+        Stream? container = null;
         try
         {
-            var archive = ZipFile.OpenRead(scenePath);
+            container = _fileSystem.OpenRead(scenePath);
+            var archive = new ZipArchive(container, ZipArchiveMode.Read, leaveOpen: false);
             var entry = archive.GetEntry(entryName);
             if (entry is null)
             {
                 archive.Dispose();
-                return null;
+                return new(null, "the scene holds no such payload.");
             }
             // The entry stream owns the archive: disposing what the caller was
             // handed closes the container behind it.
-            return new EntryStream(archive, entry.Open());
+            return new(new EntryStream(archive, entry.Open()), null);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return null;
+            container?.Dispose();
+            return new(null, ex.Message);
         }
     }
 
@@ -518,7 +535,7 @@ public sealed class SceneFileStore
     /// deflating it costs minutes of CPU for no bytes. Returns null on
     /// success, else what went wrong.</para>
     /// </summary>
-    private static string? WriteAppearancePayloads(
+    private string? WriteAppearancePayloads(
         SceneFile scene, ZipArchive archive)
     {
         var written = new HashSet<string>(StringComparer.Ordinal);
@@ -538,7 +555,7 @@ public sealed class SceneFileStore
                 var entry = archive.CreateEntry(
                     payload.PackageEntry!, CompressionLevel.NoCompression);
                 using var target = entry.Open();
-                using var reading = File.OpenRead(source);
+                using var reading = _fileSystem.OpenRead(source);
                 reading.CopyTo(target);
             }
             catch (Exception ex)
@@ -575,7 +592,7 @@ public sealed class SceneFileStore
 
     private static SceneReadOutcome Validated(SceneFile? scene, string? path)
     {
-        var validation = SceneFileValidation.Validate(scene);
+        var validation = SceneFileValidation.ValidateForLoad(scene, out var refusals);
         if (!validation.Succeeded)
         {
             return validation.Failure!.Kind ==
@@ -587,7 +604,7 @@ public sealed class SceneFileStore
                     validation.Failure))
                 : ValidationReadFailure(validation.Failure!, path);
         }
-        return SceneReadOutcome.Success(scene!);
+        return SceneReadOutcome.Success(scene!, refusals);
     }
 
     private static bool IsLegacyEntryExtension(string path)

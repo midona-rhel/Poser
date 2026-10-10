@@ -29,7 +29,8 @@ namespace Poser.Application.Scene;
 /// receipt identity must be stable from Pending to terminal).
 ///
 /// Load semantics: the ENTIRE document is validated before any native
-/// mutation; entities spawn additively unless the load was asked to clear the
+/// mutation — a document-level failure refuses the file, an entity whose own
+/// data is invalid is left out by name; entities spawn additively unless the load was asked to clear the
 /// session first (<see cref="SceneLoadOptions.ClearExistingScene"/>, whose
 /// sweep is deliberately outside the rollback ledger and says so in the
 /// outcome, and which is preflighted so it never runs for a load that cannot
@@ -41,7 +42,8 @@ namespace Poser.Application.Scene;
 /// cancellation, and CREATING each actor (a scene with a hole where an actor
 /// should be is not the scene). Everything else is OPTIONAL and becomes a
 /// named refusal beside the restored entities — a Failed receipt that keeps
-/// what did restore and is still one undoable step: an actor whose body does
+/// what did restore and is still one undoable step: an entity whose saved
+/// data does not validate, an actor whose body does
 /// not draw within the readiness bound (kept, not posed), appearance
 /// (character file, collection), companions, names, animation stop, gaze,
 /// pose and placement, props, overlays, map objects, cameras and their
@@ -702,9 +704,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 var appearanceOutcomes = new List<SceneEntityOutcome>();
                 foreach (var actor in scene.Actors)
                     appearanceOutcomes.Add(
-                        new SceneEntityOutcome("Actor", actor.Name, true));
+                        new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, true));
                 appearanceOutcomes.Add(new SceneEntityOutcome(
-                    "Character file",
+                    SceneOutcomeKind.CharacterFile,
                     unsealedAppearance == 1 ? "1 actor" : $"{unsealedAppearance} actors",
                     false,
                     "The appearance package could not be built, so the scene "
@@ -805,6 +807,25 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 // a corrupt, oversized or future file is a plain Failed.
                 Finish(OperationReceiptState.Failed, read.Failure!.Detail);
                 return;
+            }
+
+            // Entities whose own data is invalid were left out of the
+            // document by name; the rest of the scene loads beside them. A
+            // refusal in a category this load leaves out is not this load's.
+            foreach (var refusal in read.Refusals)
+            {
+                bool included = refusal.Kind switch
+                {
+                    SceneOutcomeKind.Object => options.IncludeProps,
+                    SceneOutcomeKind.Overlay => options.IncludeOverlays,
+                    SceneOutcomeKind.WorldObject => options.IncludeWorldObjects,
+                    SceneOutcomeKind.Light => options.IncludeLights,
+                    SceneOutcomeKind.Camera => options.IncludeCameras,
+                    SceneOutcomeKind.Environment => options.IncludeEnvironment,
+                    _ => options.IncludeActors,
+                };
+                if (included)
+                    entities.Add(new SceneEntityOutcome(refusal.Kind, refusal.Name, false, refusal.Detail));
             }
 
             // BORROWING NEVER PERSISTS (ruled 2026-09-01): the borrow is a
@@ -1039,13 +1060,13 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (token is null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Object", prop.Name, false,
+                            SceneOutcomeKind.Object, prop.Name, false,
                             detail ?? "The object could not be spawned."));
                         continue;
                     }
                     operation.SpawnedProps.Add(token);
                     propTokens[prop.Key] = token;
-                    entities.Add(new SceneEntityOutcome("Object", prop.Name, true));
+                    entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Object, prop.Name, true));
                 }
 
                 // An overlay node that will not stage is a NAMED refusal, not
@@ -1058,14 +1079,14 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (token is null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Overlay", name, false,
+                            SceneOutcomeKind.Overlay, name, false,
                             detail ?? "The overlay could not be staged."));
                         continue;
                     }
                     operation.StagedOverlays.Add(token);
                     overlayTokens[overlay.Key] = token;
                     entities.Add(new SceneEntityOutcome(
-                        "Overlay", name, true, detail));
+                        SceneOutcomeKind.Overlay, name, true, detail));
                 }
 
                 // Borrowing back the map's own objects. A refusal here is
@@ -1081,7 +1102,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (token is null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "World object", name, false,
+                            SceneOutcomeKind.WorldObject, name, false,
                             detail ?? "The map object could not be borrowed."));
                         continue;
                     }
@@ -1114,7 +1135,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     ActorReadyBound, cancellation);
                 foreach (var (token, name) in spawnedWorldObjects)
                     entities.Add(new SceneEntityOutcome(
-                        "World object", name, true,
+                        SceneOutcomeKind.WorldObject, name, true,
                         unloaded.Contains(token)
                             ? $"Its model did not finish loading within {ActorReadyBound.TotalSeconds:0} " +
                               "seconds. It was kept and appears once the game streams it in."
@@ -1134,7 +1155,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     actorTokens.Remove(actor.Key);
                     done++;
                     entities.Add(new SceneEntityOutcome(
-                        "Actor", actor.Name, false,
+                        SceneOutcomeKind.Actor, actor.Name, false,
                         $"The actor's body did not finish drawing within {ActorReadyBound.TotalSeconds:0} " +
                         "seconds, so it was kept but nothing more was restored onto it."));
                 }
@@ -1173,7 +1194,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 await Task.WhenAll(collections.Select(entry => entry.Restore));
                 foreach (var (name, restore) in collections)
                     if (restore.Result is { } collectionError)
-                        entities.Add(new SceneEntityOutcome("Collection", name, false, collectionError));
+                        entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Collection, name, false, collectionError));
 
                 foreach (var actor in actors)
                 {
@@ -1192,7 +1213,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     // Neither is ever a silent skip.
                     if (appearance.Detail is { } detail)
                         entities.Add(new SceneEntityOutcome(
-                            "Character file", actor.Name,
+                            SceneOutcomeKind.CharacterFile, actor.Name,
                             appearance.Restored, detail));
                 }
 
@@ -1221,7 +1242,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         actorTokens[actor.Key], actor);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
-                            "Companion", actor.Name, false, detail));
+                            SceneOutcomeKind.Companion, actor.Name, false, detail));
                 }
                 return null;
             });
@@ -1267,11 +1288,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
                     var nameDetail = _runtime.RestoreActorName(actorTokens[actor.Key], actor);
                     if (nameDetail != null)
-                        entities.Add(new SceneEntityOutcome("Actor name", actor.Name, false, nameDetail));
+                        entities.Add(new SceneEntityOutcome(SceneOutcomeKind.ActorName, actor.Name, false, nameDetail));
                     var detail = _runtime.FreezeActor(actorTokens[actor.Key]);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
-                            "Animation", actor.Name, false, detail));
+                            SceneOutcomeKind.Animation, actor.Name, false, detail));
                     if (actor.Gaze?.Mode == GazeTargetMode.Detached)
                     {
                         // Import deltas use the live animated basis. Detaching
@@ -1281,7 +1302,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                             actorTokens[actor.Key], actor, null);
                         if (gazeDetail != null)
                             entities.Add(new SceneEntityOutcome(
-                                "Gaze", actor.Name, false, gazeDetail));
+                                SceneOutcomeKind.Gaze, actor.Name, false, gazeDetail));
                     }
                 }
                 return null;
@@ -1318,8 +1339,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                             ?? _runtime.PlaceActor(token, actor))
                     : poseResult;
                 entities.Add(placement == null
-                    ? new SceneEntityOutcome("Actor", actor.Name, true)
-                    : new SceneEntityOutcome("Actor", actor.Name, false, placement));
+                    ? new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, true)
+                    : new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, false, placement));
 
                 // The companion's OWN pose, after its owner's: the same
                 // single-flight engine takes one import at a time, and a
@@ -1339,7 +1360,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                                 ?? _runtime.PlaceCompanion(token, actor));
                     if (companion != null)
                         entities.Add(new SceneEntityOutcome(
-                            "Companion", actor.Name, false, companion));
+                            SceneOutcomeKind.Companion, actor.Name, false, companion));
                 }
                 done++;
                 Step(ScenePhase.ApplyingPose);
@@ -1366,7 +1387,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         && !actorTokens.TryGetValue(gazeTarget, out target))
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Gaze", actor.Name, false,
+                            SceneOutcomeKind.Gaze, actor.Name, false,
                             "The actor looks at an actor this load did not restore."));
                         continue;
                     }
@@ -1374,7 +1395,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         actorTokens[actor.Key], actor, target);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
-                            "Gaze", actor.Name, false, detail));
+                            SceneOutcomeKind.Gaze, actor.Name, false, detail));
                 }
                 return null;
             });
@@ -1422,7 +1443,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (detail != null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Camera", camera.Camera!.Name, false, detail));
+                            SceneOutcomeKind.Camera, camera.Camera!.Name, false, detail));
                         done++;
                         continue;
                     }
@@ -1436,7 +1457,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         if (!actorTokens.ContainsKey(targetKey))
                         {
                             entities.Add(new SceneEntityOutcome(
-                                "Camera", camera.Camera!.Name, false,
+                                SceneOutcomeKind.Camera, camera.Camera!.Name, false,
                                 "The camera was restored but it follows an " +
                                 "actor this load did not restore."));
                             done++;
@@ -1448,7 +1469,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         if (targetDetail != null)
                         {
                             entities.Add(new SceneEntityOutcome(
-                                "Camera", camera.Camera!.Name, false,
+                                SceneOutcomeKind.Camera, camera.Camera!.Name, false,
                                 $"The camera was restored but its target was not: {targetDetail}"));
                             done++;
                             continue;
@@ -1461,7 +1482,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         liveIsDefault = camera.IsDefault;
                     }
                     entities.Add(new SceneEntityOutcome(
-                        "Camera", camera.Camera!.Name, true));
+                        SceneOutcomeKind.Camera, camera.Camera!.Name, true));
                     done++;
                 }
 
@@ -1471,7 +1492,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         liveIsDefault ? null : liveCamera);
                     if (liveDetail != null)
                         entities.Add(new SceneEntityOutcome(
-                            "Camera", "Live camera", false, liveDetail));
+                            SceneOutcomeKind.LiveCamera, "Live camera", false, liveDetail));
                 }
                 return null;
             });
@@ -1499,7 +1520,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         !actorTokens.ContainsKey(unresolved.ActorKey))
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Light", light.Light!.Name, false,
+                            SceneOutcomeKind.Light, light.Light!.Name, false,
                             "The light is attached to an actor this load did " +
                             "not restore, so it was not spawned."));
                         done++;
@@ -1512,7 +1533,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (token is null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Light", light.Light!.Name, false,
+                            SceneOutcomeKind.Light, light.Light!.Name, false,
                             detail ?? "The light could not be spawned."));
                     }
                     else
@@ -1523,7 +1544,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         // degradation (a gobo the client no longer ships),
                         // reported without refusing the light.
                         entities.Add(new SceneEntityOutcome(
-                            "Light", light.Light!.Name, true, detail));
+                            SceneOutcomeKind.Light, light.Light!.Name, true, detail));
                     }
                     done++;
                 }
@@ -1552,7 +1573,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     {
                         _runtime.ApplyEnvironment(stated);
                         entities.Add(new SceneEntityOutcome(
-                            "Environment", "Environment", true));
+                            SceneOutcomeKind.Environment, "Environment", true));
                         done++;
                     }
                     // Reported only when something DEGRADED: a toggle that
@@ -1564,7 +1585,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         _runtime.ApplyWorld(scene.World ?? new SceneWorld())
                         is { } detail)
                         entities.Add(new SceneEntityOutcome(
-                            "World", "World", false, detail));
+                            SceneOutcomeKind.World, "World", false, detail));
                     return null;
                 });
                 if (environmentFailure != null)
@@ -1594,8 +1615,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var error in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
-                    entities.Add(new SceneEntityOutcome("IK", "FABRIK", false, error));
+                foreach (var (actorName, error) in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
+                    entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Ik, actorName, false, error));
                 RestoreStructure(operation, scene, structureTokens, entities);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 operation.HistoryEntities = structureTokens;
@@ -2087,7 +2108,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         entities = entities
             .Select(entity => entity.Restored || entity.Remedy != null
                 ? entity
-                : entity with { Remedy = SceneEntityRemedy.For(entity.Kind) })
+                : entity with { Remedy = entity.Kind.Remedy() })
             .ToList();
 
         var progress = new SceneProgress(

@@ -246,6 +246,10 @@ public static class SceneFileLimits
     public const int MaxOverlays = 50;
     public const int MaxNameCharacters = 256;
 
+    /// <summary>The scene's free-text description: prose, not a name, so it
+    /// gets room the description field can actually fill.</summary>
+    public const int MaxDescriptionCharacters = 4096;
+
     /// <summary>Bound for stated filesystem paths, which are legitimately
     /// longer than a name — a long-path prefix plus a deep library.</summary>
     public const int MaxPathCharacters = 1024;

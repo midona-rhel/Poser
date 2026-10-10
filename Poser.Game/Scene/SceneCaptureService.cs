@@ -197,7 +197,9 @@ public sealed class SceneCaptureService
             var scene = new SceneFile
             {
                 SceneId = sceneId,
-                Description = description,
+                Description = description is { Length: > SceneFileLimits.MaxDescriptionCharacters }
+                    ? description[..SceneFileLimits.MaxDescriptionCharacters]
+                    : description,
                 SavedAt = DateTimeOffset.UtcNow,
             };
             CaptureTerritory(scene);

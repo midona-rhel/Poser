@@ -63,16 +63,48 @@ public sealed class SceneFileValidationOutcome
         new(false, SceneFileValidationFailure.Create(kind, detail));
 }
 
+/// <summary>One entity a load leaves out because its own data is invalid:
+/// named, with the reason, beside everything that did restore.</summary>
+public sealed record SceneEntityRefusal(SceneOutcomeKind Kind, string Name, string Detail);
+
 /// <summary>
 /// Complete-document scene validation: version, identity, bounds, finite
 /// numerics, nondegenerate rotations, embedded pose/light/camera documents,
-/// and every explicit relationship reference. The store validates the whole
-/// document on every read and before every write, so a scene load never
-/// begins native work against a partially believable file.
+/// and every explicit relationship reference.
+///
+/// <para>Two strengths over the same checks. <see cref="Validate"/> is
+/// strict — any failure refuses — and guards every write and capture.
+/// <see cref="ValidateForLoad"/> splits them: DOCUMENT-level failures
+/// (version, identity, collection caps, document text, cameras' live/default
+/// rules, the group and parent graph) still refuse the file, but an ENTITY
+/// whose own data is invalid is removed from the document and named, so one
+/// bad light never costs the rest of the scene. Either way nothing that
+/// passes can throw during a load's commit.</para>
 /// </summary>
 public static class SceneFileValidation
 {
-    public static SceneFileValidationOutcome Validate(SceneFile? scene)
+    public static SceneFileValidationOutcome Validate(SceneFile? scene) =>
+        Check(scene, null);
+
+    /// <summary>
+    /// The load's validation. Refused entities are REMOVED from
+    /// <paramref name="scene"/> (a refused character file, gaze or environment
+    /// only drops that part). A reference to a removed entity stays valid —
+    /// relationships are checked against every key the file declares — and
+    /// the load names it as "not restored", as it does for any category left
+    /// out.
+    /// </summary>
+    public static SceneFileValidationOutcome ValidateForLoad(
+        SceneFile? scene, out IReadOnlyList<SceneEntityRefusal> refusals)
+    {
+        var refused = new List<SceneEntityRefusal>();
+        var outcome = Check(scene, refused);
+        refusals = refused;
+        return outcome;
+    }
+
+    private static SceneFileValidationOutcome Check(
+        SceneFile? scene, List<SceneEntityRefusal>? refusals)
     {
         if (scene is null)
             return Fail(SceneFileValidationFailureKind.Document,
@@ -127,7 +159,8 @@ public static class SceneFileValidation
                 $"The scene contains {worldObjectList.Count} world objects (limit {SceneFileLimits.MaxWorldObjects}).");
 
         if (!ValidateText(scene.Author, "Author", out var textFailure) ||
-            !ValidateText(scene.Description, "Description", out textFailure) ||
+            !ValidateText(scene.Description, "Description", out textFailure,
+                SceneFileLimits.MaxDescriptionCharacters) ||
             !ValidateText(scene.PlaceName, "PlaceName", out textFailure))
             return textFailure!;
 
@@ -137,10 +170,30 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 "The scene origin is not finite.");
 
+        // Removals are applied at the END: the structure and parent graph is
+        // checked against the whole document as the file states it.
+        var removals = new List<Action>();
+        var refused = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        SceneFileValidationOutcome? Entity(
+            SceneFileValidationOutcome? failure, SceneOutcomeKind kind,
+            string? name, object? entry, Action remove)
+        {
+            if (failure is null || refusals is null)
+                return failure;
+            refusals.Add(new(kind,
+                string.IsNullOrWhiteSpace(name) ? $"Unnamed {kind.Label().ToLowerInvariant()}" : name,
+                failure.Failure!.Detail));
+            removals.Add(remove);
+            if (entry is not null)
+                refused.Add(entry);
+            return null;
+        }
+
         var actorKeys = new HashSet<Guid>();
         foreach (var actor in scene.Actors)
         {
-            if (ValidateActor(actor, actorKeys) is { } failure)
+            if (Entity(ValidateActor(actor, actorKeys), SceneOutcomeKind.Actor,
+                    actor?.Name, actor, () => scene.Actors.Remove(actor!)) is { } failure)
                 return failure;
         }
 
@@ -151,18 +204,29 @@ public static class SceneFileValidation
 
         // Gaze references another ACTOR, so it can only be checked once every
         // actor key is known — a forward reference is as valid as a backward
-        // one.
+        // one. A character file and a gaze are PARTS of an actor: refusing
+        // one drops that part and keeps the actor.
         foreach (var actor in scene.Actors)
         {
-            if (actor!.Gaze is { } gaze &&
-                ValidateGaze(gaze, actorKeys, $"Actor '{actor.Name}' gaze") is { } failure)
-                return failure;
+            if (actor is null || refused.Contains(actor))
+                continue;
+            if (actor.Mcdf is { } mcdf &&
+                Entity(ValidateMcdf(mcdf, $"Actor '{actor.Name}' character file"),
+                    SceneOutcomeKind.CharacterFile, actor.Name, null,
+                    () => actor.Mcdf = null) is { } mcdfFailure)
+                return mcdfFailure;
+            if (actor.Gaze is { } gaze &&
+                Entity(ValidateGaze(gaze, actorKeys, $"Actor '{actor.Name}' gaze"),
+                    SceneOutcomeKind.Gaze, actor.Name, null,
+                    () => actor.Gaze = null) is { } gazeFailure)
+                return gazeFailure;
         }
 
         var keys = new HashSet<Guid>();
         foreach (var prop in scene.Props)
         {
-            if (ValidateProp(prop, keys) is { } failure)
+            if (Entity(ValidateProp(prop, keys), SceneOutcomeKind.Object,
+                    prop?.Name, prop, () => scene.Props.Remove(prop!)) is { } failure)
                 return failure;
         }
 
@@ -171,7 +235,8 @@ public static class SceneFileValidation
             keys.Clear();
             foreach (var overlay in overlays)
             {
-                if (ValidateOverlay(overlay, keys) is { } failure)
+                if (Entity(ValidateOverlay(overlay, keys), SceneOutcomeKind.Overlay,
+                        overlay?.Node?.Name, overlay, () => overlays.Remove(overlay!)) is { } failure)
                     return failure;
             }
         }
@@ -181,7 +246,9 @@ public static class SceneFileValidation
             keys.Clear();
             foreach (var worldObject in worldObjects)
             {
-                if (ValidateWorldObject(worldObject, keys) is { } failure)
+                string? name = worldObject is { Name.Length: > 0 } ? worldObject.Name : worldObject?.Path;
+                if (Entity(ValidateWorldObject(worldObject, keys), SceneOutcomeKind.WorldObject,
+                        name, worldObject, () => worldObjects.Remove(worldObject!)) is { } failure)
                     return failure;
             }
         }
@@ -189,18 +256,26 @@ public static class SceneFileValidation
         keys.Clear();
         foreach (var light in scene.Lights)
         {
-            if (ValidateLight(light, keys, actorKeys) is { } failure)
+            if (Entity(ValidateLight(light, keys, actorKeys), SceneOutcomeKind.Light,
+                    light?.Light?.Name, light, () => scene.Lights.Remove(light!)) is { } failure)
                 return failure;
         }
 
         keys.Clear();
         var liveCount = 0;
         var defaultCount = 0;
+        bool cameraRefused = false;
         SceneCamera? defaultCamera = null;
         foreach (var camera in scene.Cameras)
         {
-            if (ValidateCamera(camera, keys, actorKeys) is { } failure)
+            if (Entity(ValidateCamera(camera, keys, actorKeys), SceneOutcomeKind.Camera,
+                    camera?.Camera?.Name, camera, () => scene.Cameras.Remove(camera!)) is { } failure)
                 return failure;
+            if (camera is null || refused.Contains(camera))
+            {
+                cameraRefused = true;
+                continue;
+            }
             if (camera.IsLive)
                 liveCount++;
             if (camera.IsDefault)
@@ -212,7 +287,9 @@ public static class SceneFileValidation
 
         if (scene.Cameras.Count > 0)
         {
-            if (liveCount != 1)
+            // A refused live camera leaves none live: the load then keeps the
+            // default camera live rather than refusing the file for it.
+            if (liveCount > 1 || liveCount == 0 && !cameraRefused)
                 return Fail(SceneFileValidationFailureKind.Relationship,
                     "A scene with cameras must mark exactly one camera live.");
             // A whole scene carries the session's default camera; a camera
@@ -227,41 +304,96 @@ public static class SceneFileValidation
         }
 
         if (scene.Environment is { } environment &&
-            ValidateEnvironment(environment) is { } environmentFailure)
+            Entity(ValidateEnvironment(environment), SceneOutcomeKind.Environment,
+                "Environment", null, () => scene.Environment = null) is { } environmentFailure)
             return environmentFailure;
+
+        if (ValidateStructure(scene) is { } structureFailure)
+            return structureFailure;
+
+        foreach (var remove in removals)
+            remove();
+        return SceneFileValidationOutcome.Ok();
+    }
+
+    /// <summary>
+    /// The sidebar structure, unconditionally: every group, member and root
+    /// slot the load's structure restore dereferences is present, group keys
+    /// are unique, and nesting names existing groups without a cycle. A
+    /// member or slot of an unknown KIND is legal — a future
+    /// kind reads and is skipped — but a missing one is not. Then the
+    /// optional transform state and the parent links.
+    /// </summary>
+    private static SceneFileValidationOutcome? ValidateStructure(SceneFile scene)
+    {
+        var groups = scene.Groups ?? [];
+        var groupKeys = new HashSet<Guid>();
+        foreach (var group in groups)
+        {
+            if (group is null)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    "The scene contains a null group entry.");
+            if (group.Key == Guid.Empty || !groupKeys.Add(group.Key))
+                return Fail(SceneFileValidationFailureKind.Identity,
+                    $"Group '{group.Name}' has a missing or duplicate key.");
+            if (group.Name is null || group.Members is null || group.Members.Any(member => member?.Kind is null))
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"Group '{group.Name}' has a missing member.");
+        }
+        foreach (var group in groups)
+        {
+            var visited = new HashSet<Guid>();
+            for (var current = group; current.Parent is { } parent;
+                 current = groups.First(candidate => candidate.Key == parent))
+            {
+                if (!groupKeys.Contains(parent))
+                    return Fail(SceneFileValidationFailureKind.Relationship,
+                        $"Group '{group.Name}' nests in a group the scene does not have.");
+                if (!visited.Add(current.Key))
+                    return Fail(SceneFileValidationFailureKind.Relationship,
+                        $"Group '{group.Name}' is nested inside itself.");
+            }
+        }
+        foreach (var slot in scene.RootOrder ?? [])
+        {
+            if (slot?.Kind is null)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    "The scene's sidebar order has a missing entry.");
+            if (slot.Kind == "group" && !groupKeys.Contains(slot.Key))
+                return Fail(SceneFileValidationFailureKind.Relationship,
+                    "The scene's sidebar order names a group the scene does not have.");
+        }
 
         if (SceneGroupTransformCodec.Validate(scene) is { } groupFailure)
             return Fail(SceneFileValidationFailureKind.Relationship, groupFailure);
         if (SceneParenting.Validate(scene) is { } parentingFailure)
             return Fail(SceneFileValidationFailureKind.Relationship, parentingFailure);
-        if (scene.Groups is { } groups)
-            foreach (var group in groups)
+        foreach (var group in groups)
+        {
+            if (group.InitialFrameRotation is { } frame &&
+                (!IsFinite(frame) ||
+                 frame.LengthSquared() < SceneFileLimits.MinQuaternionLengthSquared))
+                return Fail(SceneFileValidationFailureKind.DegenerateQuaternion,
+                    $"Group '{group.Name}' has an invalid initial frame rotation.");
+            if (group.Transform is { } transform)
             {
-                if (group.InitialFrameRotation is { } frame &&
-                    (!IsFinite(frame) ||
-                     frame.LengthSquared() < SceneFileLimits.MinQuaternionLengthSquared))
-                    return Fail(SceneFileValidationFailureKind.DegenerateQuaternion,
-                        $"Group '{group.Name}' has an invalid initial frame rotation.");
-                if (group.Transform is { } transform)
-                {
-                    if (!IsFinite(transform.FrameOrigin) ||
-                        !IsFinite(transform.Position) ||
-                        !IsFinite(transform.FrameRotation) ||
-                        !IsFinite(transform.Rotation) ||
-                        !IsFinite(transform.SpacingScale) ||
-                        !IsFinite(transform.OwnScale) ||
-                        !TransformMath.IsValidRotation(transform.FrameRotation) ||
-                        !TransformMath.IsValidRotation(transform.Rotation))
+                if (!IsFinite(transform.FrameOrigin) ||
+                    !IsFinite(transform.Position) ||
+                    !IsFinite(transform.FrameRotation) ||
+                    !IsFinite(transform.Rotation) ||
+                    !IsFinite(transform.SpacingScale) ||
+                    !IsFinite(transform.OwnScale) ||
+                    !TransformMath.IsValidRotation(transform.FrameRotation) ||
+                    !TransformMath.IsValidRotation(transform.Rotation))
+                    return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                        $"Group '{group.Name}' has an invalid transform state.");
+                foreach (var member in transform.Members)
+                    if (!member.Initial.IsValid || !member.Expected.IsValid)
                         return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
-                            $"Group '{group.Name}' has an invalid transform state.");
-                    foreach (var member in transform.Members)
-                        if (!member.Initial.IsValid || !member.Expected.IsValid)
-                            return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
-                                $"Group '{group.Name}' has an invalid member transform.");
-                }
+                            $"Group '{group.Name}' has an invalid member transform.");
             }
-
-        return SceneFileValidationOutcome.Ok();
+        }
+        return null;
     }
 
     private static SceneFileValidationOutcome? ValidateActor(
@@ -322,11 +454,6 @@ public static class SceneFileValidation
                 is { } placementFailure)
             return placementFailure;
 
-        if (actor.Mcdf is { } mcdf &&
-            ValidateMcdf(mcdf, $"Actor '{actor.Name}' character file")
-                is { } mcdfFailure)
-            return mcdfFailure;
-
         return null;
     }
 
@@ -351,13 +478,17 @@ public static class SceneFileValidation
                     $"{label} embeds {mcdf.PackageBytes:N0} bytes, over the " +
                     $"{SceneFileLimits.MaxEmbeddedAppearanceBytes:N0} byte " +
                     "limit for one actor.");
-            if (mcdf.PackageEntry!.Length > SceneFileLimits.MaxPathCharacters)
-                return Fail(SceneFileValidationFailureKind.Name,
-                    $"{label} payload entry name is too long.");
-            if (mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
+            if (mcdf.ContentHash is not { Length: SceneFileLimits.ContentHashCharacters } digest ||
+                !digest.All(Uri.IsHexDigit))
                 return Fail(SceneFileValidationFailureKind.Document,
                     $"{label} embeds a package with no SHA-256 digest to check " +
                     "it against.");
+            // The entry is NAMED by the digest. Any other name could point the
+            // import at another actor's payload, or at the document itself.
+            if (!string.Equals(mcdf.PackageEntry,
+                    SceneFileStore.AppearanceEntry(digest), StringComparison.Ordinal))
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} payload entry is not the one its digest names.");
         }
         else if (string.IsNullOrWhiteSpace(mcdf.Path))
         {
@@ -489,6 +620,18 @@ public static class SceneFileValidation
                 worldObject.Transform,
                 $"World object '{worldObject.Path}'") is { } failure)
             return failure;
+        // These reach native writes as they stand: a NaN or a negative speed
+        // stops here, not in the renderer.
+        if (!float.IsFinite(worldObject.Opacity) || worldObject.Opacity is < 0f or > 1f ||
+            !float.IsFinite(worldObject.VfxSpeed) || worldObject.VfxSpeed is < 0f or > MaxVfxScale ||
+            !float.IsFinite(worldObject.VfxIntensity) || worldObject.VfxIntensity is < 0f or > MaxVfxScale ||
+            worldObject.Tint is { } tint && !IsFinite(tint))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"World object '{worldObject.Path}' has an invalid opacity, tint, speed or intensity.");
+        if (worldObject.FurnitureLights is null ||
+            worldObject.FurnitureLights.Any(light => light.Key is null))
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"World object '{worldObject.Path}' has a missing furniture light.");
         return null;
     }
 
@@ -768,13 +911,18 @@ public static class SceneFileValidation
         return ValidateText(name, label, out failure);
     }
 
+    /// <summary>A spawned effect's speed and intensity: far beyond what the
+    /// sliders reach, short of anything that is not a deliberate value.</summary>
+    private const float MaxVfxScale = 100f;
+
     private static bool ValidateText(
-        string? text, string label, out SceneFileValidationOutcome? failure)
+        string? text, string label, out SceneFileValidationOutcome? failure,
+        int limit = SceneFileLimits.MaxNameCharacters)
     {
-        if (text is { Length: > SceneFileLimits.MaxNameCharacters })
+        if (text is not null && text.Length > limit)
         {
             failure = Fail(SceneFileValidationFailureKind.Name,
-                $"{label} exceeds {SceneFileLimits.MaxNameCharacters} characters.");
+                $"{label} exceeds {limit} characters.");
             return false;
         }
         failure = null;

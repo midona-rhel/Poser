@@ -765,9 +765,9 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// path, and inventing a second import route for embedded bytes would mean
     /// a second set of phases, a second rollback and a second ownership
     /// ledger. Successful imports retain that file for history until the session
-    /// ends; failed imports delete it immediately. Its checksum is NOT consulted: the
-    /// bytes in the document ARE the package, so there is nothing to identify
-    /// them against.</para>
+    /// ends; failed imports delete it immediately. The bytes are hashed while
+    /// they are staged and refused unless they match the recorded digest —
+    /// the digest names the entry, so it is the payload's identity.</para>
     ///
     /// <para>A REFERENCE entry is resolved by CONTENT first. The scene records
     /// the package's SHA-256, so the user's MCDF library is searched for those
@@ -804,13 +804,30 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 try
                 {
                     // Container entry to disk, as a STREAM. A real package is
-                    // hundreds of megabytes; nothing here holds it.
-                    using var payload = _documents.OpenAppearance(
-                        scenePath, saved.PackageEntry!)
-                        ?? throw new System.IO.IOException(
-                            "the scene holds no such payload.");
-                    using var staging = System.IO.File.Create(staged);
-                    await payload.CopyToAsync(staging, cancellation);
+                    // hundreds of megabytes; nothing here holds it. Hashed
+                    // on the way through: the digest the document carries is
+                    // what makes embedded bytes trustworthy, so bytes that do
+                    // not match it are refused rather than worn.
+                    var opened = _documents.OpenAppearance(scenePath, saved.PackageEntry!);
+                    using var payload = opened.Stream
+                        ?? throw new System.IO.IOException(opened.Error ?? "the payload could not be opened.");
+                    using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+                        System.Security.Cryptography.HashAlgorithmName.SHA256);
+                    using (var staging = System.IO.File.Create(staged))
+                    {
+                        var buffer = new byte[81920];
+                        int read;
+                        while ((read = await payload.ReadAsync(buffer, cancellation)) > 0)
+                        {
+                            hash.AppendData(buffer, 0, read);
+                            await staging.WriteAsync(buffer.AsMemory(0, read), cancellation);
+                        }
+                    }
+                    if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()),
+                            saved.ContentHash, StringComparison.OrdinalIgnoreCase))
+                        return SceneMcdfOutcome.Refused(
+                            $"The appearance package '{saved.FileName}' does not match the " +
+                            "digest the scene recorded for it, so it was not imported.");
                 }
                 catch (Exception ex)
                 {

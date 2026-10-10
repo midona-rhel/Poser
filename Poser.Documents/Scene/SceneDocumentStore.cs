@@ -12,7 +12,7 @@ public sealed class SceneDocumentStore : ISceneDocumentStore
     public SceneDocumentStore() : this(SceneFileStore.Default) { }
     public SceneDocumentStore(SceneFileStore scenes) => _scenes = scenes;
 
-    public Stream? OpenAppearance(string path, string entry) => _scenes.OpenAppearance(path, entry);
+    public SceneAppearanceOpen OpenAppearance(string path, string entry) => _scenes.OpenAppearance(path, entry);
 
     public SceneDocumentRead Read(string path)
     {

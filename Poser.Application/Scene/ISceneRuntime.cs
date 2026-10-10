@@ -230,9 +230,11 @@ public interface ISceneRuntime
     /// the restored actor the saved Entity key resolved to, or null when the
     /// file names none. Null on success, else the refusal detail.</summary>
     string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target);
-    IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
+    /// <summary>Restores the saved IK chains; answers each refused one with the
+    /// actor it belongs to.</summary>
+    IReadOnlyList<(string Actor, string Detail)> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
         IReadOnlyDictionary<Guid, SceneEntityHandle> props, IReadOnlyDictionary<Guid, SceneEntityHandle> worlds,
-        IReadOnlyDictionary<Guid, SceneEntityHandle> lights) => Array.Empty<string>();
+        IReadOnlyDictionary<Guid, SceneEntityHandle> lights) => Array.Empty<(string, string)>();
     Task WaitForFabrikBindings(IEnumerable<SceneEntityHandle> entities, System.Threading.CancellationToken cancellation) => Task.CompletedTask;
 
     void SetActorVisibility(SceneEntityHandle actor, bool visible);

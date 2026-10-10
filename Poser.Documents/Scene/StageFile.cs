@@ -84,12 +84,12 @@ public static class StageFile
                 "The Stage file held no definition.", path));
 
         var scene = ToScene(stage, notes);
-        var validated = SceneFileValidation.Validate(scene);
+        var validated = SceneFileValidation.ValidateForLoad(scene, out var refusals);
         if (!validated.Succeeded)
             return SceneReadOutcome.Failed(SceneStoreFailure.Create(
                 SceneStoreFailureKind.Validation,
                 validated.Failure!.Detail, path, validated.Failure));
-        return SceneReadOutcome.Success(scene);
+        return SceneReadOutcome.Success(scene, refusals);
     }
 
     private static SceneFile ToScene(StageDefinition stage, List<string> notes)

@@ -23,11 +23,11 @@ internal sealed partial class SceneRuntimeAdapter
         // Unavailable references are reported by RestoreFabrik, not rebound by name.
     }
 
-    public IReadOnlyList<string> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
+    public IReadOnlyList<(string Actor, string Detail)> RestoreFabrik(SceneFile scene, IReadOnlyDictionary<Guid, SceneEntityHandle> actors,
         IReadOnlyDictionary<Guid, SceneEntityHandle> props, IReadOnlyDictionary<Guid, SceneEntityHandle> worlds,
         IReadOnlyDictionary<Guid, SceneEntityHandle> lights)
     {
-        var failures = new List<string>();
+        var failures = new List<(string Actor, string Detail)>();
         IBone? Bone(SceneBoneAttachment? saved) => saved != null
             && actors.TryGetValue(saved.ActorKey, out var token) && _handles.Resolve<IActor>(token, SceneEntityKind.Actor) is { } actor
                 ? _skeletons.GetSkeletons(actor).Where(s => s.Slot == saved.Slot)
@@ -56,7 +56,7 @@ internal sealed partial class SceneRuntimeAdapter
                 var tip = Bone(new() { ActorKey = actor.Key, Slot = saved.Slot,
                     PartialId = saved.Partial, BoneName = saved.Endpoint });
                 if (tip == null || saved.Config.Fabrik is not { } control)
-                { failures.Add($"{actor.Name}: FABRIK endpoint {saved.Endpoint} is unavailable."); continue; }
+                { failures.Add((actor.Name, $"FABRIK endpoint {saved.Endpoint} is unavailable.")); continue; }
                 FabrikTarget Rebind(FabrikTarget target, SceneBoneAttachment? bone, SceneStructureRef? entity) =>
                     target with { Bone = Bone(bone) is { } live ? _bindings.GetBoneId(live) : null,
                         Entity = Entity(entity) };
@@ -67,9 +67,9 @@ internal sealed partial class SceneRuntimeAdapter
                 bool Missing(FabrikTarget target) => target.Mode switch
                 { IkTargetMode.Bone => target.Bone == null, IkTargetMode.Entity => target.Entity == null, _ => false };
                 if (Missing(restored.Handle))
-                    failures.Add($"{actor.Name}: an endpoint target for {saved.Endpoint} is unavailable.");
+                    failures.Add((actor.Name, $"An endpoint target for {saved.Endpoint} is unavailable."));
                 if (_bonePosing.RestoreFabrik(tip, saved.Config with { Fabrik = restored }) is { } error)
-                    failures.Add($"{actor.Name}: {error}");
+                    failures.Add((actor.Name, error));
             }
         }
         return failures;

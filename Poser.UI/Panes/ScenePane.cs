@@ -601,6 +601,7 @@ public sealed class ScenePane
         OperationReceipt? receipt)
     {
         var refusals = outcome.Entities.Where(entity => !entity.Restored).ToList();
+        var degraded = outcome.Entities.Where(entity => entity.Degraded).ToList();
         page.Section("Last result", form =>
         {
             form.ReadOnly(
@@ -624,12 +625,21 @@ public sealed class ScenePane
             // said was the actor's name back at the user.
             foreach (var refusal in refusals)
             {
-                form.ReadOnly(refusal.Kind, refusal.Name, unavailable: true);
+                form.ReadOnly(refusal.Kind.Label(), refusal.Name, unavailable: true);
                 form.Paragraph(
                     refusal.Detail ?? "It was refused without a stated reason.",
                     warning: true);
                 if (refusal.Remedy is { Length: > 0 } remedy)
                     form.Paragraph(remedy);
+            }
+
+            // Restored with a caveat: in the scene, and the caveat is the
+            // whole point of the row, so it is shown rather than folded into
+            // the successes.
+            foreach (var entity in degraded)
+            {
+                form.ReadOnly(entity.Kind.Label(), $"{entity.Name} (restored)");
+                form.Paragraph(entity.Detail!);
             }
 
             foreach (var note in outcome.Notes)

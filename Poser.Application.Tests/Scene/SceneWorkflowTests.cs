@@ -195,7 +195,7 @@ public sealed class SceneWorkflowTests
         public List<string> ReadPaths { get; } = [];
         public List<string> WritePaths { get; } = [];
         public IReadOnlyList<string> Notes { get; init; } = [];
-        public System.IO.Stream? OpenAppearance(string path, string entry) => throw new NotSupportedException();
+        public SceneAppearanceOpen OpenAppearance(string path, string entry) => throw new NotSupportedException();
 
         public SceneDocumentRead Read(string path)
         {
@@ -203,7 +203,7 @@ public sealed class SceneWorkflowTests
             fixture.Record("ReadScene");
             return new(fixture.ReadFailure is { } failure
                 ? SceneReadOutcome.Failed(failure)
-                : SceneReadOutcome.Success(fixture.ReadResult!), Notes);
+                : SceneReadOutcome.Success(fixture.ReadResult!, fixture.ReadRefusals), Notes);
         }
 
         public SceneDocumentWrite Write(SceneFile scene, string path)
@@ -225,6 +225,10 @@ public sealed class SceneWorkflowTests
         public SessionGeneration? Session = SessionGeneration.New();
         public SceneFile? ReadResult;
         public SceneStoreFailure? ReadFailure;
+        /// <summary>Entities the read left out by name.</summary>
+        public IReadOnlyList<SceneEntityRefusal>? ReadRefusals;
+        /// <summary>A light that spawns with a caveat.</summary>
+        public string? LightDetail;
         public SceneFile? Captured;
 
         /// <summary>Runs after each named call, so a test can flip the session,
@@ -512,7 +516,7 @@ public sealed class SceneWorkflowTests
             SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail)
         {
             Record("SpawnLight");
-            detail = null;
+            detail = LightDetail;
             var token = Token("light");
             SpawnedLightTokens.Add(token);
             return token;
@@ -698,7 +702,7 @@ public sealed class SceneWorkflowTests
         Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
         var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
-        Assert.Equal(("Actor", "Slow"), (refusal.Kind, refusal.Name));
+        Assert.Equal((SceneOutcomeKind.Actor, "Slow"), (refusal.Kind, refusal.Name));
         Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
         Assert.DoesNotContain("ArmPoseImport:Slow", runtime.Calls);
     }
@@ -736,8 +740,8 @@ public sealed class SceneWorkflowTests
         Assert.Empty(runtime.Destroyed);
         var refusals = load.Progress!.Outcome!.Entities.Where(entity => !entity.Restored).ToList();
         Assert.Equal(2, refusals.Count);
-        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == ("Group", "Rig"));
-        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == ("Parent", "B"));
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == (SceneOutcomeKind.Group, "Rig"));
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == (SceneOutcomeKind.Parent, "B"));
         Assert.All(refusals, refusal => Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy)));
         Assert.Single(Assert.Single(groups.All, group => group.Name == "Rig").Members);
         Assert.Empty(parenting.Capture());
@@ -966,7 +970,7 @@ public sealed class SceneWorkflowTests
         var outcome = save.Progress!.Outcome!;
         var refusal = Assert.Single(
             outcome.Entities, entity => !entity.Restored);
-        Assert.Equal("Character file", refusal.Kind);
+        Assert.Equal(SceneOutcomeKind.CharacterFile, refusal.Kind);
         Assert.Contains("appearance", outcome.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1013,7 +1017,7 @@ public sealed class SceneWorkflowTests
         Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
         Assert.Contains("CancelPoseImport", runtime.Calls);
         var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
-        Assert.Equal(("Actor", "Lead"), (refusal.Kind, refusal.Name));
+        Assert.Equal((SceneOutcomeKind.Actor, "Lead"), (refusal.Kind, refusal.Name));
         Assert.Contains("cancelled", refusal.Detail);
     }
 
@@ -1030,6 +1034,34 @@ public sealed class SceneWorkflowTests
         Assert.Contains("CancelPoseImport", runtime.Calls);
         Assert.Equal(new[] { "actor:Lead" }, runtime.Destroyed.ToArray());
         Assert.False(runtime.HeldPoseImports);
+    }
+
+    // ── issue #439: refusals by name, caveats in sight ───────────────────
+
+    [Fact]
+    public async Task Refused_entities_are_named_beside_the_restored_scene_and_caveats_are_kept()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Key" } });
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            ReadRefusals = [new(SceneOutcomeKind.Light, "Rim", "Light 'Rim' exceeds 256 characters.")],
+            LightDetail = "The gobo is not shipped by this client.",
+        };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        var entities = load.Progress!.Outcome!.Entities;
+        var refusal = Assert.Single(entities, entity => !entity.Restored);
+        Assert.Equal((SceneOutcomeKind.Light, "Rim"), (refusal.Kind, refusal.Name));
+        Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy));
+        var degraded = Assert.Single(entities, entity => entity.Degraded);
+        Assert.Equal((SceneOutcomeKind.Light, "Key"), (degraded.Kind, degraded.Name));
     }
 
     // ── issue #438: collections redraw together, not one after another ───
@@ -1139,7 +1171,7 @@ public sealed class SceneWorkflowTests
 
         var refusal = Assert.Single(
             outcome.Entities, entity => !entity.Restored);
-        Assert.Equal(kind, refusal.Kind);
+        Assert.Equal(kind, refusal.Kind.Label());
         Assert.False(string.IsNullOrWhiteSpace(refusal.Detail));
         Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy));
 

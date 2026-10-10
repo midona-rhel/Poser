@@ -182,8 +182,14 @@ partial result, not a success.
 Placements in the file are absolute. An optional origin records a capture
 anchor for relative loading; it is not needed to read the stored numbers.
 Territory id and capture-time place name are optional metadata. Missing place
-data is never guessed. Unsupported versions, malformed structure, oversized
-input, and invalid numbers fail before Poser changes the game.
+data is never guessed. Unsupported versions, oversized input, and a malformed
+document — its identity, collection caps, text, camera live/default rules, or
+the group and parent graph — fail before Poser changes the game. An entity
+whose own data is invalid (a name over 256 characters, a non-finite value, a
+character-file payload whose entry is not the one its digest names) is left out
+of the load by name and the rest of the scene loads; a bad character file or
+gaze drops only that part of its actor. Writes stay strict. The description is
+prose and allows 4096 characters.
 
 Capture does not change the scene. It refreshes pose data, takes the document
 on the framework thread, then validates and writes it in the background. A
@@ -282,7 +288,10 @@ background.
 Every terminal writes one correlated Scene operation line plus one line per
 entity with its kind, scene name, outcome, reason and next step. A refused
 entity carries both a reason and a corrective action, and neither is truncated
-in the result list. Completion and failure are also announced once through the
+in the result list. An entity restored with a caveat (a missing gobo, a changed
+character file, a model still streaming) is listed with its caveat and logged
+at Information. Every outcome kind has its next step; the kinds are an enum
+whose label and remedy switches do not build with a kind missing. Completion and failure are also announced once through the
 normal Dalamud notification channel; the per-entity detail stays in the Scene
 tab rather than being repeated in a notification.
 
@@ -406,8 +415,9 @@ other live handle is not a portable save.
 
 Restoring an embedded payload streams the container entry into one owned
 temporary file retained for the session and imports it through the same MCDF
-transaction a hand-driven import uses. Its checksum is not consulted: the bytes in the container are the
-package, so there is nothing to identify them against.
+transaction a hand-driven import uses. The entry must be the one its recorded
+SHA-256 names, and the bytes are hashed while they are staged: a payload that
+does not match its digest is refused by name, never imported.
 
 A scene load's character-file import and a save's appearance export are
 children of that load or save. When the parent's bound expires or it is

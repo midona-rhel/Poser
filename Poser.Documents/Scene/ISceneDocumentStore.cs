@@ -15,5 +15,5 @@ public interface ISceneDocumentStore
     SceneDocumentWrite Write(SceneFile scene, string path);
 
     /// <summary>Opens an embedded appearance payload. The caller owns the stream.</summary>
-    Stream? OpenAppearance(string path, string entry);
+    SceneAppearanceOpen OpenAppearance(string path, string entry);
 }

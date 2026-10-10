@@ -1,6 +1,7 @@
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Files;
 
@@ -106,7 +107,7 @@ public sealed partial class SceneWorkflow
                     if (Resolve(member) is { } resolved) members.Add(resolved);
                     else if (Loaded(member)) missing++;
                 if (missing > 0)
-                    outcomes.Add(new SceneEntityOutcome("Group", entry.Name, false,
+                    outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Group, entry.Name, false,
                         $"{Count(missing, "member")} did not become available in time and " +
                         (missing == 1 ? "was" : "were") + " left out of the group."));
                 entries.Add(new(entry.Key, entry.Name, entry.Parent, members,
@@ -128,12 +129,12 @@ public sealed partial class SceneWorkflow
             }
             catch (Exception ex)
             {
-                outcomes.Add(new SceneEntityOutcome("Group", "Sidebar groups", false,
+                outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Group, "Sidebar groups", false,
                     $"The saved groups and order could not be restored: {ex.Message}"));
             }
         }
         else if (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 })
-            outcomes.Add(new SceneEntityOutcome("Group", "Sidebar groups", false,
+            outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Group, "Sidebar groups", false,
                 "Scene structure restoration is unavailable."));
 
         foreach (var link in scene.Parents ?? [])
@@ -143,7 +144,7 @@ public sealed partial class SceneWorkflow
             if (!Loaded(link.Child) || !Loaded(link.Target))
                 continue;
             if (RestoreLink(operation, link, Resolve) is { } refusal)
-                outcomes.Add(new SceneEntityOutcome("Parent", EntityName(scene, link.Child), false,
+                outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Parent, EntityName(scene, link.Child), false,
                     $"{refusal} It was kept where it was saved."));
         }
     }

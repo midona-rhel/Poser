@@ -152,6 +152,46 @@ public sealed class SceneFileStoreTests
         Assert.Equal("old scene", File.ReadAllText(fixture.Path));
     }
 
+    // ── issue #439: one bad entity never refuses the whole scene ─────────
+
+    [Fact]
+    public void A_load_names_bad_entities_and_keeps_the_rest_while_writes_stay_strict()
+    {
+        var scene = ValidScene();
+        scene.Description = new string('d', 400);
+        scene.Lights.Add(new SceneLight
+        {
+            Key = Guid.NewGuid(),
+            Light = new LightFile { Name = new string('x', 300), Transform = scene.Lights[0].Light!.Transform },
+        });
+        scene.WorldObjects = [new SceneWorldObject { Key = Guid.NewGuid(), Path = "bg/fast.avfx", VfxSpeed = float.PositiveInfinity }];
+        scene.Actors[0].Mcdf = new SceneActorMcdf
+        {
+            FileName = "lead.mcdf",
+            ContentHash = new string('A', 64),
+            PackageEntry = SceneFileStore.DocumentEntry,
+        };
+        Assert.False(SceneFileValidation.Validate(scene).Succeeded);
+
+        var load = SceneFileValidation.ValidateForLoad(scene, out var refusals);
+
+        Assert.True(load.Succeeded);
+        Assert.Equal(
+            new[] { SceneOutcomeKind.CharacterFile, SceneOutcomeKind.WorldObject, SceneOutcomeKind.Light },
+            refusals.Select(refusal => refusal.Kind).ToArray());
+        Assert.Equal("Lead", refusals[0].Name);
+        Assert.Single(scene.Actors);
+        Assert.Null(scene.Actors[0].Mcdf);
+        Assert.Single(scene.Lights);
+        Assert.Empty(scene.WorldObjects);
+        Assert.True(SceneFileValidation.Validate(scene).Succeeded);
+
+        // The structure the load's restore dereferences is checked whether or
+        // not a group carries a transform.
+        scene.Groups = [new SceneGroupEntry { Key = Guid.NewGuid(), Name = "Rig", Members = null! }];
+        Assert.False(SceneFileValidation.ValidateForLoad(scene, out _).Succeeded);
+    }
+
     internal static SceneFile ValidScene()
     {
         var actorKey = Guid.NewGuid();

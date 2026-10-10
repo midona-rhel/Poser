@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Poser.Domain.Operations;
+using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
@@ -67,15 +68,24 @@ public sealed record SceneSealOutcome(
 /// <para><see cref="Detail"/> is what happened; <see cref="Remedy"/> is what
 /// the user can do about it. A refused entity carries BOTH — a row that only
 /// restates the entity's own name is the defect issue #41 reported — and the
-/// workflow fills the remedy in from <c>SceneEntityRemedy</c> at the terminal
-/// publication, so the result list and the operation log say the same thing.
-/// </para></summary>
+/// workflow fills the remedy in from <see cref="SceneOutcomeKinds.Remedy"/>
+/// at the terminal publication, so the result list and the operation log say
+/// the same thing.
+/// </para>
+///
+/// <para>Restored WITH a detail is a degraded restore — kept, with a caveat
+/// (a gobo the client no longer ships, a changed character file, a model
+/// still streaming). It is shown and logged like a refusal's reason, never
+/// hidden among the plain successes.</para></summary>
 public sealed record SceneEntityOutcome(
-    string Kind,
+    SceneOutcomeKind Kind,
     string Name,
     bool Restored,
     string? Detail = null,
-    string? Remedy = null);
+    string? Remedy = null)
+{
+    public bool Degraded => Restored && Detail != null;
+}
 
 /// <summary>
 /// Immutable terminal outcome of one scene operation. The state is the SAME
