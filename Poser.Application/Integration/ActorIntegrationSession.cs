@@ -166,11 +166,8 @@ public sealed class ActorIntegrationSession : IDisposable
         try { await pending.WaitAsync(cancellation); }
         catch (OperationCanceledException)
         {
-            await _port.OnFrameworkThread(() =>
-            {
-                if (operation != null && McdfReceipt?.OperationId == operation) CancelMcdf();
-                return true;
-            });
+            if (operation is { } admitted)
+                await _port.OnFrameworkThread(() => CancelIfCurrent(admitted));
             throw;
         }
         return await _port.OnFrameworkThread(() =>
@@ -830,6 +827,97 @@ public sealed class ActorIntegrationSession : IDisposable
     /// <summary>Cooperative cancellation of the running operation.</summary>
     public void CancelMcdf() => _mcdf.Cancel();
 
+    /// <summary>Long enough for a cancelled import's rollback to sit out its
+    /// own redraw barrier (10 s) before the parent stops waiting.</summary>
+    public static readonly TimeSpan McdfDrainBound = TimeSpan.FromSeconds(15);
+
+    private static readonly TimeSpan McdfPollInterval = TimeSpan.FromMilliseconds(50);
+
+    /// <summary>
+    /// A parent's wait on ONE admitted MCDF operation. Returns at its terminal
+    /// receipt; on the deadline or the parent's cancellation it cancels and
+    /// drains that operation (<see cref="CancelMcdfAndDrain"/>) instead of
+    /// walking away from it. Never awaited on the framework thread.
+    /// </summary>
+    public async Task<McdfWait> AwaitMcdf(
+        Guid operationId, TimeSpan bound, CancellationToken cancellation,
+        TimeSpan? drainBound = null)
+    {
+        var deadline = DateTime.UtcNow + bound;
+        McdfWaitEnd end;
+        while (true)
+        {
+            if (TerminalOf(operationId) is { } done)
+                return done;
+            if (DateTime.UtcNow >= deadline)
+            {
+                end = McdfWaitEnd.DeadlinePassed;
+                break;
+            }
+            try
+            {
+                await Task.Delay(McdfPollInterval, cancellation);
+            }
+            catch (OperationCanceledException)
+            {
+                end = McdfWaitEnd.ParentCancelled;
+                break;
+            }
+        }
+        var drained = await CancelMcdfAndDrain(operationId, drainBound ?? McdfDrainBound);
+        return drained with { End = end };
+    }
+
+    /// <summary>
+    /// Cancels the operation only while it is still THIS one — matched by
+    /// receipt id on the framework thread, never the shared slot blindly —
+    /// then waits up to <paramref name="bound"/> for it to finish. A result
+    /// that is not <see cref="McdfWait.Terminal"/> means the child still runs
+    /// (cancelled, so every later mutation refuses) and the caller keeps
+    /// owning whatever the child reads or writes.
+    /// </summary>
+    public async Task<McdfWait> CancelMcdfAndDrain(Guid operationId, TimeSpan bound)
+    {
+        try
+        {
+            var running = await _port.OnFrameworkThread(() => CancelIfCurrent(operationId));
+            await running.WaitAsync(bound);
+        }
+        catch (TimeoutException)
+        {
+            // Still running; reported through the non-terminal result below.
+        }
+        catch (Exception)
+        {
+            // A faulted child is finished and its receipt says how; an
+            // unreachable framework thread (unload) leaves it to Drain.
+        }
+        return TerminalOf(operationId)
+            ?? new McdfWait(McdfWaitEnd.Finished, false, McdfReceipt);
+    }
+
+    /// <summary>Framework thread only.</summary>
+    private Task CancelIfCurrent(Guid operationId)
+    {
+        if (McdfReceipt is not { State: OperationReceiptState.Pending } receipt
+            || receipt.OperationId != operationId)
+            return Task.CompletedTask;
+        CancelMcdf();
+        return _mcdf.CurrentCompletion;
+    }
+
+    /// <summary>The operation's terminal result, or null while it runs. A
+    /// different receipt means a newer operation was admitted, which the
+    /// single slot allows only after this one finished.</summary>
+    private McdfWait? TerminalOf(Guid operationId) => McdfReceipt switch
+    {
+        { } receipt when receipt.OperationId != operationId =>
+            new McdfWait(McdfWaitEnd.Finished, true, null),
+        { State: not OperationReceiptState.Pending } receipt =>
+            new McdfWait(McdfWaitEnd.Finished, true, receipt),
+        _ => null,
+    };
+
     public IntegrationResult BeginImport(ActorId actor, string path) =>
         _mcdf.BeginImport(actor, path);
 
@@ -912,4 +1000,27 @@ public sealed class ActorIntegrationSession : IDisposable
             _overrides.Remove(actor);
         Changed?.Invoke();
     }
+}
+
+/// <summary>Why a parent stopped waiting on its MCDF child.</summary>
+public enum McdfWaitEnd
+{
+    Finished,
+    DeadlinePassed,
+    ParentCancelled,
+}
+
+/// <summary>
+/// What a parent learned about its own MCDF operation. <see cref="Terminal"/>
+/// false means the child was cancelled but has not finished within the drain
+/// bound: it can no longer commit, yet it may still read its input, so the
+/// caller retains that input. <see cref="Receipt"/> is the operation's own
+/// receipt, or null when a newer operation has replaced it.
+/// </summary>
+public readonly record struct McdfWait(McdfWaitEnd End, bool Terminal, OperationReceipt? Receipt)
+{
+    /// <summary>The child committed. Possible after the deadline too: a
+    /// commit ordered before the matched cancel on the framework thread is
+    /// a real, owned result, not a late write.</summary>
+    public bool Applied => Receipt is { State: OperationReceiptState.Applied };
 }

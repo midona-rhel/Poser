@@ -60,6 +60,66 @@ public sealed class McdfHistoryTests
         Assert.True(retried.Success, retried.Detail);
     }
 
+    [Fact]
+    public async Task Import_held_past_its_deadline_is_cancelled_and_its_late_completion_changes_nothing()
+    {
+        var staged = Path.Combine(Path.GetTempPath(), $"poser-test-{Guid.NewGuid():N}.mcdf");
+        File.WriteAllText(staged, "package");
+        try
+        {
+            var files = new Files { Hold = new(), InputExists = File.Exists };
+            using var integration = new ActorIntegrationSession(
+                DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+            var actor = ActorId.New();
+            Assert.True(integration.BeginImport(actor, staged).Success);
+            var id = integration.McdfReceipt!.OperationId;
+
+            var waited = await integration.AwaitMcdf(
+                id, TimeSpan.FromMilliseconds(100), CancellationToken.None, TimeSpan.FromMilliseconds(100));
+
+            // Still reading: the parent stopped, the child is cancelled but not
+            // terminal, so the scene adapter must keep the staged input.
+            Assert.Equal(McdfWaitEnd.DeadlinePassed, waited.End);
+            Assert.False(waited.Terminal);
+            Assert.False(waited.Applied);
+            Assert.True(File.Exists(staged));
+
+            files.Hold.SetResult();
+            await integration.PendingCompletion;
+            Assert.True(Assert.Single(files.InputPresentAtRead));
+            Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
+            Assert.Null(integration.OverridesFor(actor).Mcdf);
+        }
+        finally
+        {
+            File.Delete(staged);
+        }
+    }
+
+    [Fact]
+    public async Task Late_cancel_of_a_finished_operation_never_cancels_the_newer_one()
+    {
+        var files = new Files();
+        using var integration = new ActorIntegrationSession(
+            DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+        var first = ActorId.New();
+        Assert.True(integration.BeginImport(first, "first.mcdf").Success);
+        var old = integration.McdfReceipt!.OperationId;
+        await integration.PendingCompletion;
+
+        files.Hold = new();
+        var second = ActorId.New();
+        Assert.True(integration.BeginImport(second, "second.mcdf").Success);
+        var late = await integration.CancelMcdfAndDrain(old, TimeSpan.FromMilliseconds(50));
+        Assert.True(late.Terminal);
+        Assert.Null(late.Receipt);
+
+        files.Hold.SetResult();
+        await integration.PendingCompletion;
+        Assert.Equal(OperationReceiptState.Applied, integration.McdfReceipt!.State);
+        Assert.NotNull(integration.OverridesFor(second).Mcdf);
+    }
+
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
@@ -116,14 +176,23 @@ public sealed class McdfHistoryTests
         public string GetFileName(string path) => path;
         public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory() =>
             IntegrationValue<McdfOperationDirectory>.Ok(new($"directory-{++_directories}", "owner", null, null));
-        public Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
+        /// <summary>Holds the read until released, ignoring cancellation, as a
+        /// slow package read does; records whether the staged input existed.</summary>
+        public TaskCompletionSource? Hold;
+        public Func<string, bool>? InputExists;
+        public List<bool> InputPresentAtRead { get; } = [];
+        public async Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
             McdfOperationDirectory directory, Action<McdfProgressStep> progress, CancellationToken cancellation)
         {
             Reads++;
-            return Task.FromResult(OriginalAvailable
+            if (Hold is { } hold)
+                await hold.Task;
+            if (InputExists is { } exists)
+                InputPresentAtRead.Add(exists(path));
+            return OriginalAvailable
                 ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", "", "", Resources ? new Dictionary<string,string> { ["model"] = "mod/model" } : new Dictionary<string,string>(),
                     new Dictionary<string,string>(), directory.Path, 0, 0))
-                : IntegrationValue<McdfPackage>.Fail("Original file removed"));
+                : IntegrationValue<McdfPackage>.Fail("Original file removed");
         }
         public Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package, McdfOperationDirectory source,
             McdfOperationDirectory destination, CancellationToken cancellation)
