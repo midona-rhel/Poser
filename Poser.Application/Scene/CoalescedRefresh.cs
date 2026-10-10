@@ -1,34 +1,30 @@
 namespace Poser.Application.Scene;
 
-/// <summary>Framework-thread refresh queue; nested notifications request work, never recurse.</summary>
+/// <summary>
+/// Framework-thread refresh queue. A notification only marks work pending; the
+/// owner's frame tick drains it with at most one pass. However many
+/// notifications a frame carries (a clear-first load publishes per spawn and
+/// per delete), it costs one refresh, and none ever runs inside the
+/// publisher's call stack — which may be a native hook.
+/// </summary>
 public sealed class CoalescedRefresh
 {
-    private bool _running;
     private bool _pending;
     private volatile bool _stopped;
 
-    public void Request(Action refresh)
+    public void Request()
     {
-        if (_stopped) return;
-        _pending = true;
-        Drain(refresh);
+        if (!_stopped)
+            _pending = true;
     }
 
+    /// <summary>Runs one pass when work is pending. A request made during the
+    /// pass waits for the next drain.</summary>
     public void Drain(Action refresh)
     {
-        if (_running || _stopped) return;
-        _running = true;
-        try
-        {
-            // Discovery can publish synchronously. Bound this frame to the
-            // initial pass and one follow-up; another notification waits a tick.
-            for (int pass = 0; pass < 2 && _pending && !_stopped; pass++)
-            {
-                _pending = false;
-                refresh();
-            }
-        }
-        finally { _running = false; }
+        if (!_pending || _stopped) return;
+        _pending = false;
+        refresh();
     }
 
     public void Cancel() => _pending = false;

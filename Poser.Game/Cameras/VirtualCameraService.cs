@@ -601,7 +601,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     }
 
     private void Publish() =>
-        _events.Publish(new CameraListChangedEvent(Cameras));
+        _events.Publish(new CameraListChangedEvent());
 
     // ── native override plumbing ─────────────────────────────────────────
 

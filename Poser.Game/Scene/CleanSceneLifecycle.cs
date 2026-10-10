@@ -13,9 +13,11 @@ namespace Poser.Game.Scene;
 /// discovery belongs HERE, not to any inspector section: an actor whose draw
 /// object or Havok skeleton is not ready at first discovery is retried on
 /// the framework thread at a bounded backoff cadence while it remains
-/// present. Refreshes are coalesced through a structural signature — an
-/// attempt that finds no change publishes nothing, increments no scene
-/// revision, and cancels no active transform gesture.
+/// present. Every notification only requests a refresh; the framework
+/// update runs at most one per frame, never inside the publisher (which may be
+/// a native hook). A refresh that finds no structural change publishes
+/// nothing, increments no scene revision, and cancels no active transform
+/// gesture.
 /// </summary>
 public sealed class CleanSceneLifecycle : IDisposable
 {
@@ -51,6 +53,10 @@ public sealed class CleanSceneLifecycle : IDisposable
     private bool _disposeRestoreAbandoned;
 
     private SceneSnapshot? _lastSignature;
+    /// <summary>The bone-free fingerprint of the scene the last refresh
+    /// settled on; the idle poll rebuilds only when it moves. Null after a
+    /// rejected candidate, so the next poll retries.</summary>
+    private IReadOnlyList<object?>? _idleSignature;
     private readonly CoalescedRefresh _refreshQueue = new();
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
@@ -119,7 +125,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         // bone-name state, while events publish from the framework thread —
         // a concurrent ctor-thread refresh corrupted shared collections.
         _framework.Update += OnFrameworkUpdate;
-        _ = framework.RunOnFrameworkThread(Refresh);
+        _refreshQueue.Request();
     }
 
     public void Dispose()
@@ -204,7 +210,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            RefreshGuarded();
+            RefreshCore();
         }
         finally
         {
@@ -216,13 +222,14 @@ public sealed class CleanSceneLifecycle : IDisposable
         }
     }
 
-    private void RefreshGuarded()
-    {
-        _refreshQueue.Request(RefreshCore);
-    }
+    private void RequestRefresh() => _refreshQueue.Request();
 
     private void RefreshCore()
     {
+        // Taken before the candidate: reading the skeletons here can rebuild
+        // one, and the candidate below must already include that rebuild.
+        var idle = _bindings.IdleSignature();
+        _idleSignature = null;
         var staged = _bindings.RefreshCandidate();
         var candidate = staged.Snapshot;
         var admitted = false;
@@ -255,6 +262,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_lastSignature?.ContentEquals(signature) == true
                 && !_bindings.AuxiliaryBindingsChanged(staged))
             {
+                _idleSignature = idle;
                 return;
             }
 
@@ -279,6 +287,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // A rejected candidate is deliberately retried: recording its
             // signature would coalesce away the correction opportunity.
             _lastSignature = signature;
+            _idleSignature = idle;
             _retryInterval = InitialRetryInterval;
             if (!result.StateChanged)
                 return;
@@ -315,35 +324,36 @@ public sealed class CleanSceneLifecycle : IDisposable
     }
 
     /// <summary>
-    /// Bounded retry pump for actors whose skeletons were not ready at
-    /// discovery: retries at a backoff cadence (0.5 s doubling to 5 s) while
-    /// such an actor remains present. Runs only on the framework tick.
+    /// The one place a refresh runs: at most one per frame, for whatever
+    /// requested it since the last. Also the bounded retry pump for actors
+    /// whose skeletons were not ready at discovery (0.5 s doubling to 5 s
+    /// while such an actor remains present) and the idle poll.
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
-        _refreshQueue.Drain(RefreshCore);
         var now = DateTime.UtcNow;
-
-        // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
-        // replacement, ornament spawn/despawn) fire none of our events, so
-        // slot presence is polled at a steady cadence. The structural
-        // signature makes an unchanged scene free: no snapshot, no
-        // revision, no gesture cancellation.
-        if (!_retryPending)
+        if (_retryPending)
         {
-            if (now < _nextSlotPollUtc)
-                return;
-            _nextSlotPollUtc = now + SlotPollInterval;
-            Refresh();
-            return;
+            if (now >= _nextRetryUtc)
+            {
+                _nextRetryUtc = now + _retryInterval;
+                var doubled = _retryInterval + _retryInterval;
+                _retryInterval = doubled > MaxRetryInterval ? MaxRetryInterval : doubled;
+                RequestRefresh();
+            }
         }
-
-        if (now < _nextRetryUtc)
-            return;
-        _nextRetryUtc = now + _retryInterval;
-        var doubled = _retryInterval + _retryInterval;
-        _retryInterval = doubled > MaxRetryInterval ? MaxRetryInterval : doubled;
-        Refresh();
+        else if (now >= _nextSlotPollUtc)
+        {
+            // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
+            // replacement, ornament spawn/despawn) and some row fields fire
+            // none of our events, so they are polled — through the bone-free
+            // signature, so an unchanged scene costs no rebuild at all.
+            _nextSlotPollUtc = now + SlotPollInterval;
+            if (!StableBindingRegistry.SameIdleSignature(
+                    _idleSignature, _bindings.IdleSignature()))
+                RequestRefresh();
+        }
+        _refreshQueue.Drain(Refresh);
     }
 
     /// <summary>
@@ -376,29 +386,29 @@ public sealed class CleanSceneLifecycle : IDisposable
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnLightListChanged(LightListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnPropListChanged(PropListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnOverlayListChanged(OverlayNodeListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     /// <summary>Borrowing a map object and releasing it both move the scene,
     /// and this event was published from the first day with nothing listening:
     /// an adopted object appeared only if some unrelated list happened to
     /// change and kick a refresh.</summary>
     private void OnWorldObjectListChanged(WorldObjectListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnCameraListChanged(CameraListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     /// <summary>
     /// Leaving GPose is the last chance to write into the actors Poser
@@ -423,8 +433,14 @@ public sealed class CleanSceneLifecycle : IDisposable
         ResetOwnedState("GPose exited.");
     }
 
-    private void OnGPoseChanged(GPoseStateChangedEvent _) =>
-        Refresh();
+    private void OnGPoseChanged(GPoseStateChangedEvent e)
+    {
+        // Lineages are per native object; a finished session's can never
+        // match again, and keeping them grew the registry for good.
+        if (!e.IsGPosing)
+            _bindings.ResetLineages();
+        RequestRefresh();
+    }
 
     private void ResetOwnedState(string reason) =>
         ResetOwnedStateForLifecycle(

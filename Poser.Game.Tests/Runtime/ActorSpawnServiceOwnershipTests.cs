@@ -90,7 +90,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         var native = new FakeNative(new(850, actor.Address, 850));
         var bus = new FakeEventBus();
         var framework = new FakeFramework();
-        var invalidated = new List<IActor>();
+        var invalidated = new List<EntityId>();
         bus.Subscribe<ActorDrawInvalidatedEvent>(e =>
         {
             Assert.False(native.DrawEnabled);
@@ -99,7 +99,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         using var service = NewService(native, new FakeActorManager(actor), bus: bus, framework: framework);
 
         service.SetModelCharaId(actor, 5);
-        Assert.Same(actor, Assert.Single(invalidated));
+        Assert.Equal(actor.Id, Assert.Single(invalidated));
         framework.RaiseUpdate();
         Assert.True(native.DrawEnabled);
         service.SetModelCharaId(actor, 5); // No teardown for an unchanged model.

@@ -40,11 +40,17 @@ Successful removal inverses form one history entry, even if another member
 refuses. Earlier unfinished value edits are sealed separately. This batch is
 synchronous: it never stays open across an await or captures unrelated edits.
 
-Native discovery runs on the framework thread. Notifications during refresh
-coalesce into one immediate follow-up; notifications during that pass remain
-pending for the next tick, never recursive. Unchanged structure and auxiliary
-bindings publish nothing. GPose exit cancels old pending work before requesting
-the exit scene; disposal stops queued refresh callbacks altogether.
+Native discovery runs on the framework thread. Notifications only request a
+refresh; the framework update runs at most one per frame, never inside the
+publisher, so a load that spawns N actors costs one rebuild. Notifications
+during that pass wait for the next frame. Skeleton changes found inside native
+hooks are queued and published on the next update. While idle, a bone-free
+signature (actor slots, attachments and row fields) is polled once a second and
+a rebuild runs only when it moves. Event payloads are value snapshots, never
+live lists or native wrappers. Unchanged structure and auxiliary bindings
+publish nothing. GPose exit cancels old pending work before requesting the exit
+scene and drops the session's actor lineages; disposal stops queued refresh
+callbacks altogether.
 
 One drag or typed transform edit is one gesture. It captures each baseline
 once, then applies total deltas from those values. If a write fails, the

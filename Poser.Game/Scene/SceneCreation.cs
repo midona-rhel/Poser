@@ -188,7 +188,12 @@ public sealed class SceneCreation : ISceneCreation
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
         var posed = _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
-        if (posed is not null && _bindings.GetActorId(posed) is { } id) _animation.Pause(id);
+        // The copy binds on the scene's next refresh, not inside this call.
+        if (posed is not null)
+            _lifecycle.WhenPosable(posed, copy =>
+            {
+                if (_bindings.GetActorId(copy) is { } id) _animation.Pause(id);
+            });
         return posed;
     }
 

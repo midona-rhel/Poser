@@ -517,6 +517,126 @@ public sealed class StableBindingRegistry : IEntityBindings
     }
 
     /// <summary>
+    /// Everything a candidate reads except the bone walk: per actor its
+    /// address, row fields, attachments and each present slot skeleton's
+    /// build; per light, camera, prop, overlay and adopted object its instance
+    /// and row fields. While this is unchanged a new candidate would equal the
+    /// last one, so the idle poll compares it instead of rebuilding. Asking
+    /// for the skeletons also lets the cache notice an in-place rebuild,
+    /// which it reports by itself.
+    /// </summary>
+    public List<object?> IdleSignature()
+    {
+        var signature = new List<object?>();
+        AddActors(_actors.Actors);
+        signature.Add(null);
+        AddActors(_actors.AuxiliaryActors);
+
+        void AddActors(IReadOnlyList<IActor> actors)
+        {
+            foreach (var actor in actors)
+            {
+                signature.Add(actor);
+                if (!_actors.IsAvailable(actor))
+                    continue;
+                var (companion, mount, ornament) = Attachments(actor.Address);
+                signature.Add(actor.Address);
+                signature.Add(actor.Name);
+                signature.Add(actor.IsPlayer);
+                signature.Add(actor.IsCompanion);
+                signature.Add(_spawn.IsVisible(actor));
+                signature.Add(_spawn.IsSpawnedActor(actor));
+                signature.Add(_actors.IsLocalPlayer(actor));
+                signature.Add(_actors.IsAdopted(actor));
+                signature.Add(companion);
+                signature.Add(mount);
+                signature.Add(ornament);
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                {
+                    signature.Add(skeleton.Slot);
+                    signature.Add(skeleton.IsValid);
+                    signature.Add(skeleton.BuildRevision);
+                }
+            }
+        }
+
+        foreach (var light in _lighting.Lights)
+        {
+            signature.Add(light);
+            signature.Add(light.IsValid);
+            signature.Add(light.Name);
+            signature.Add(light.Kind);
+            signature.Add(light.IsOn);
+            signature.Add(light.Ownership);
+            signature.Add(light.AttachedBone);
+        }
+        foreach (var camera in _cameras.Cameras)
+        {
+            signature.Add(camera);
+            signature.Add(camera.IsValid);
+            signature.Add(camera.Name);
+            signature.Add(camera.Kind);
+            signature.Add(camera.IsLive);
+            signature.Add(camera.IsDefault);
+            signature.Add(camera.IsLocked);
+        }
+        foreach (var prop in _props.Props)
+        {
+            signature.Add(prop);
+            signature.Add(prop.IsValid);
+            signature.Add(prop.Name);
+            signature.Add(prop.Visible);
+        }
+        foreach (var overlay in _overlays.Nodes)
+        {
+            signature.Add(overlay);
+            signature.Add(overlay.IsValid);
+            signature.Add(overlay.Name);
+            signature.Add(overlay.Kind);
+            signature.Add(overlay.Visible);
+        }
+        foreach (var worldObject in _worldObjects.Adopted)
+        {
+            signature.Add(worldObject);
+            signature.Add(worldObject.IsValid);
+            signature.Add(worldObject.Name);
+            signature.Add(worldObject.Path);
+            signature.Add(worldObject.Visible);
+            signature.Add(worldObject.Spawned);
+            signature.Add(worldObject.VfxPaused);
+            signature.Add(worldObject.AnimationPaused);
+            signature.Add(worldObject.NightState);
+        }
+        return signature;
+    }
+
+    /// <summary>Entities compare by instance, values by value.</summary>
+    public static bool SameIdleSignature(
+        IReadOnlyList<object?>? previous,
+        IReadOnlyList<object?> current)
+    {
+        if (previous is null || previous.Count != current.Count)
+            return false;
+        for (int i = 0; i < current.Count; i++)
+        {
+            var (a, b) = (previous[i], current[i]);
+            if (!ReferenceEquals(a, b) && !(a is ValueType or string && Equals(a, b)))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Forgets every actor lineage. Lineages are keyed per native object and
+    /// slot index, so they only accumulate within a GPose session; once the
+    /// session's actors are gone none of them can be matched again.
+    /// </summary>
+    public void ResetLineages()
+    {
+        _lineages = new Dictionary<string, ActorLineage>(StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Publishes the exact staged maps after scene admission. The structural
     /// comparison matters for NoChange: a native refresh may only replace maps
     /// when every published id and generation still names this scene.
@@ -675,26 +795,32 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// only their own fields are read: no native sibling or child chain is
     /// ever traversed, so the map stays a one-level companion→owner relation.
     /// </summary>
-    private static unsafe void CollectAttachments(
+    private static void CollectAttachments(
         nint address,
         ActorId owner,
         Dictionary<nint, ActorAttachment> companionOwners)
     {
-        if (address == nint.Zero)
-            return;
-        var native = (Character*)address;
-        if (native == null || native->ChildObject == null)
-            return;
+        var (companion, mount, ornament) = Attachments(address);
+        if (companion != nint.Zero)
+            companionOwners[companion] = new(owner, CompanionKind.Companion);
+        if (mount != nint.Zero)
+            companionOwners[mount] = new(owner, CompanionKind.Mount);
+        if (ornament != nint.Zero)
+            companionOwners[ornament] = new(owner, CompanionKind.Ornament);
+    }
 
-        if (native->CompanionData.CompanionObject != null)
-            companionOwners[(nint)native->CompanionData.CompanionObject] =
-                new(owner, CompanionKind.Companion);
-        if (native->Mount.MountObject != null)
-            companionOwners[(nint)native->Mount.MountObject] =
-                new(owner, CompanionKind.Mount);
-        if (native->OrnamentData.OrnamentObject != null)
-            companionOwners[(nint)native->OrnamentData.OrnamentObject] =
-                new(owner, CompanionKind.Ornament);
+    private static unsafe (nint Companion, nint Mount, nint Ornament) Attachments(
+        nint address)
+    {
+        if (address == nint.Zero)
+            return default;
+        var native = (Character*)address;
+        if (native->ChildObject == null)
+            return default;
+        return (
+            (nint)native->CompanionData.CompanionObject,
+            (nint)native->Mount.MountObject,
+            (nint)native->OrnamentData.OrnamentObject);
     }
 
     /// <summary>Projects the native owner pointers onto the already-minted

@@ -271,7 +271,7 @@ public sealed unsafe class LightingService : ILightingService
             return;
 
         DestroyNative(typed);
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public void ReleaseLight(ILight light)
@@ -284,7 +284,7 @@ public sealed unsafe class LightingService : ILightingService
             return;
 
         ReleaseInternal(typed);
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public void DestroyAllLights()
@@ -312,7 +312,7 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         _lights.Clear();
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public bool IsSpawnedLight(ILight light) =>
@@ -444,7 +444,7 @@ public sealed unsafe class LightingService : ILightingService
             light.NativePtr->Update();
 
             _log.Debug($"LightingService: spawned {kind} light '{light.Name}'");
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
             return light;
         }
         catch (Exception ex)
@@ -759,7 +759,7 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         if (changed)
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
     }
 
     /// <summary>Backfill, Ktisis' RefreshLightEntities: the toggle hook covers
@@ -900,7 +900,7 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         if (changed)
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
     }
 
     /// <summary>
@@ -1081,7 +1081,7 @@ public sealed unsafe class LightingService : ILightingService
 
             _log.Debug(
                 $"LightingService: captured world light {candidate.Handle:X} as '{light.Name}'");
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
             return light;
         }
         catch (Exception ex)
@@ -1178,7 +1178,7 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         if (detached)
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)

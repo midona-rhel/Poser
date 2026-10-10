@@ -1938,7 +1938,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         // The hidden badge lives in the scene snapshot; visibility changes
         // must reconcile it the same way spawn/despawn do.
-        _eventBus.Publish(new ActorListChangedEvent(PresentActors()));
+        _eventBus.Publish(ActorListChangedEvent.Of(PresentActors()));
     }
 
     private void RememberLegacyVisibility(SpawnNativeDescriptor descriptor, bool visible)
@@ -2093,7 +2093,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // The allocator may reuse the old CharacterBase address before the
         // next framework read. Publish the teardown now, while it is known,
         // rather than asking pointer equality to detect a different skeleton.
-        _eventBus.Publish(new ActorDrawInvalidatedEvent(actor));
+        _eventBus.Publish(new ActorDrawInvalidatedEvent(actor.Id, actor.Address));
         PollUntil(
             ownership,
             descriptor,

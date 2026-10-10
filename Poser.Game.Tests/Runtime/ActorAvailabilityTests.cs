@@ -55,6 +55,47 @@ public sealed class ActorAvailabilityTests
     }
 
     [Fact]
+    public void Actor_list_publishes_a_value_snapshot_only_when_the_identity_set_changes()
+    {
+        ushort index = 201;
+        IGameObject? current = Proxy<ICharacter>((method, _) => method.Name switch
+        {
+            "get_ObjectIndex" => index,
+            "get_GameObjectId" => 42UL,
+            "get_Address" => (nint)0x100,
+            "get_ObjectKind" => ObjectKind.Pc,
+            "get_Name" => new SeString(),
+            _ => null,
+        });
+        var bus = new EventBus(Proxy<IPluginLog>((_, _) => null));
+        using var actors = new ActorManager(
+            Proxy<IObjectTable>((method, args) => method.Name == "get_Item" &&
+                Convert.ToInt32(args![0]) == index ? current : null),
+            Proxy<IGPoseService>((_, _) => null),
+            Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread" ? true : null),
+            bus,
+            Proxy<ITargetManager>((_, _) => null),
+            Proxy<IClientState>((method, _) => method.Name == "get_IsLoggedIn" ? true : null));
+        var seen = new List<IReadOnlyList<ActorPresence>>();
+        // A subscriber refreshing during dispatch must not change, or throw
+        // in, what the next subscriber reads.
+        bus.Subscribe<ActorListChangedEvent>(_ => actors.RefreshActors());
+        bus.Subscribe<ActorListChangedEvent>(e => seen.Add(e.Actors));
+
+        actors.RefreshActors();
+        actors.RefreshActors();
+        var first = Assert.Single(seen);
+        var actor = Assert.Single(actors.Actors);
+        Assert.Equal(new ActorPresence(actor.Id, 0x100), Assert.Single(first));
+
+        current = null;
+        actors.RefreshActors();
+        Assert.Equal(2, seen.Count);
+        Assert.Empty(seen[1]);
+        Assert.Single(first);
+    }
+
+    [Fact]
     public unsafe void Adopted_body_is_never_written_or_classified_once_its_address_is_reused()
     {
         var native = (NativeGameObject*)NativeMemory.AllocZeroed((nuint)sizeof(NativeGameObject));

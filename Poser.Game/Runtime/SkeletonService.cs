@@ -10,13 +10,18 @@ using Poser.Services;
 namespace Poser.Game;
 
 /// <summary>The native draw object has been torn down, even if its next allocation reuses the address.</summary>
-internal sealed record ActorDrawInvalidatedEvent(IActor Actor) : IEvent;
+internal sealed record ActorDrawInvalidatedEvent(EntityId Actor, nint Address) : IEvent;
 
 /// <summary>
 /// Slot-aware skeleton discovery and caching. Skeletons cache per
 /// (actor, slot); an entry is reused only while its actor binding AND its
 /// slot's native CharacterBase are unchanged, so sheathing, redraws, and
 /// equipment replacement release exactly that slot.
+///
+/// <para>Changes are discovered wherever a skeleton is asked for, including
+/// inside the native bone hooks, so they are queued and published on the next
+/// framework update instead: no subscriber ever runs inside the game's
+/// physics or render phase.</para>
 /// </summary>
 public class SkeletonService : ISkeletonService
 {
@@ -24,12 +29,15 @@ public class SkeletonService : ISkeletonService
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
     private readonly IActorManager _actors;
+    private readonly IFramework _framework;
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
+    private readonly Dictionary<(EntityId Actor, PoseSlot Slot), bool> _changed = new();
 
     private readonly Config.ConfigurationService _configuration;
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, Config.ConfigurationService configuration)
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, IFramework framework, Config.ConfigurationService configuration)
     {
+        _framework = framework;
         _configuration = configuration;
         _log = log;
         _gPoseService = gPoseService;
@@ -39,6 +47,20 @@ public class SkeletonService : ISkeletonService
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _eventBus.Subscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);
+        _framework.Update += PublishChanges;
+    }
+
+    private void Changed(EntityId actor, PoseSlot slot, bool present) =>
+        _changed[(actor, slot)] = present;
+
+    private void PublishChanges(IFramework framework)
+    {
+        if (_changed.Count == 0)
+            return;
+        var changes = _changed.ToArray();
+        _changed.Clear();
+        foreach (var (key, present) in changes)
+            _eventBus.Publish(new SkeletonChangedEvent(key.Actor, key.Slot, present));
     }
 
     public ISkeleton? GetSkeleton(IActor actor) =>
@@ -76,7 +98,7 @@ public class SkeletonService : ISkeletonService
                 skeleton.HasCurrentNativeLayout())
             {
                 if (skeleton.RefreshBoneFilters())
-                    _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
+                    Changed(actor.Id, slot, true);
                 return skeleton;
             }
 
@@ -86,7 +108,7 @@ public class SkeletonService : ISkeletonService
                 _log.Debug(
                     $"Skeleton released for {actor.Name} {slot}: the slot has no character base");
                 ReleaseSkeleton(key, skeleton);
-                _eventBus.Publish(new SkeletonChangedEvent(actor, null));
+                Changed(actor.Id, slot, false);
                 return null;
             }
 
@@ -105,12 +127,12 @@ public class SkeletonService : ISkeletonService
             skeleton.Refresh();
             if (skeleton.IsValid)
             {
-                _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
+                Changed(actor.Id, slot, true);
                 return skeleton;
             }
 
             ReleaseSkeleton(key, skeleton);
-            _eventBus.Publish(new SkeletonChangedEvent(actor, null));
+            Changed(actor.Id, slot, false);
         }
 
         if (currentBase == nint.Zero)
@@ -133,7 +155,7 @@ public class SkeletonService : ISkeletonService
                     actorBase.AttachChild(skeleton);
 
                 _log.Debug($"Created {slot} skeleton for {actor.Name} with {skeleton.Bones.Count} bones");
-                _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
+                Changed(actor.Id, slot, true);
                 return skeleton;
             }
         }
@@ -200,19 +222,17 @@ public class SkeletonService : ISkeletonService
 
     private void OnActorListChanged(ActorListChangedEvent e)
     {
-        var liveActors = e.Actors.ToDictionary(actor => actor.Id);
+        var liveActors = new Dictionary<EntityId, nint>();
+        foreach (var actor in e.Actors)
+            liveActors[actor.Id] = actor.Address;
         foreach (var (key, skeleton) in _skeletons.ToArray())
         {
             // A live actor at the same id and native address keeps its
-            // entry, wrapper object or not; the entry follows the live
-            // wrapper. An actor gone or moved releases the slot.
-            if (liveActors.TryGetValue(key.Actor, out var actor) &&
-                skeleton.Actor.Address == actor.Address)
-            {
-                if (!ReferenceEquals(skeleton.Actor, actor))
-                    RebindActor(key, skeleton, actor);
+            // entry; the next GetSkeleton re-points it at whichever wrapper
+            // asks. An actor gone or moved releases the slot.
+            if (liveActors.TryGetValue(key.Actor, out var address) &&
+                skeleton.Actor.Address == address)
                 continue;
-            }
 
             ReleaseSkeleton(key, skeleton);
         }
@@ -221,13 +241,17 @@ public class SkeletonService : ISkeletonService
     private void OnDrawInvalidated(ActorDrawInvalidatedEvent e)
     {
         foreach (var (key, skeleton) in _skeletons.ToArray())
-            if (key.Actor == e.Actor.Id && skeleton.Actor.Address == e.Actor.Address)
+            if (key.Actor == e.Actor && skeleton.Actor.Address == e.Address)
+            {
                 ReleaseSkeleton(key, skeleton);
-        _eventBus.Publish(new SkeletonChangedEvent(e.Actor, null));
+                Changed(key.Actor, key.Slot, false);
+            }
+        Changed(e.Actor, PoseSlot.Character, false);
     }
 
     public void Dispose()
     {
+        _framework.Update -= PublishChanges;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _eventBus.Unsubscribe<ActorDrawInvalidatedEvent>(OnDrawInvalidated);

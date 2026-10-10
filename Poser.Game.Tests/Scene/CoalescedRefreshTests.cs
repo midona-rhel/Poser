@@ -24,15 +24,20 @@ public class CoalescedRefreshTests
             if (++passes == 1)
             {
                 generation = 2;
-                queue.Request(Refresh);
+                queue.Request();
             }
             Assert.True(scene.TryRefresh(CleanSceneLifecycle.CreateAdmissionCandidate(candidate, scene.Snapshot)).Accepted);
             bound = enumerated;
         }
-        queue.Request(Refresh);
+        queue.Request();
+        queue.Drain(Refresh);
+        Assert.Equal(1u, bound);
+        // The replacement discovered mid-pass lands on the next frame.
+        queue.Drain(Refresh);
         Assert.Equal(2u, bound);
         ulong revision = scene.Snapshot.Revision;
-        queue.Request(Refresh);
+        queue.Request();
+        queue.Drain(Refresh);
         Assert.Equal(revision, scene.Snapshot.Revision);
         Assert.Equal(2u, scene.Snapshot.Actors[0].Id.Generation);
     }

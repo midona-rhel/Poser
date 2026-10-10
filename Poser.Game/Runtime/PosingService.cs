@@ -249,7 +249,7 @@ public unsafe class PosingService : IPosingService
             _orbitPositions.Remove(address);
         }
         _liveActors.Clear();
-        foreach (var actor in e.Actors)
+        foreach (var actor in _actors.Actors.Concat(_actors.AuxiliaryActors))
             _liveActors[actor.Address] = actor;
     }
 

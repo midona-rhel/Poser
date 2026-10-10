@@ -376,6 +376,7 @@ public class ActorManager : IActorManager
         // GPose object appeared or disappeared invalidates all of those references.
         var existingByAddress = _actors.ToDictionary(actor => actor.Address);
         var refreshed = new List<IActor>();
+        var previousIdentities = _lastActorIdentities.ToArray();
         _nativeBindings.Clear();
         _lastActorIdentities.Clear();
 
@@ -414,24 +415,26 @@ public class ActorManager : IActorManager
                 disposable.Dispose();
         }
 
-        // Every subscriber is presence maintenance, so an unchanged list is
-        // published once, not once per caller: a redraw poll or a spawn step
-        // that finds the same wrappers fans nothing out.
-        bool changed = !_actors.SequenceEqual(refreshed, ReferenceEqualityComparer.Instance);
         _actors.Clear();
         _actors.AddRange(refreshed);
-        changed |= RefreshAuxiliaryActors();
-        if (changed)
-            _eventBus.Publish(new ActorListChangedEvent(AllActors()));
+        RefreshAuxiliaryActors();
+        // Every subscriber is presence maintenance and callers refresh
+        // defensively (spawn, delete, redraw polls), so only a changed
+        // identity set is news. Wrappers are reused exactly when their
+        // (address, id) survives, main and auxiliary alike, so this is also
+        // "the wrappers changed". Names ride the scene's own poll.
+        if (!_lastActorIdentities.SetEquals(previousIdentities))
+            _eventBus.Publish(ActorListChangedEvent.Of(AllActors()));
     }
 
     /// <summary>
     /// The same reconcile as the GPose scan, over the registered auxiliary
     /// indices: an unchanged address keeps its <see cref="ActorBase"/> so
     /// skeleton caches and bindings survive; a replaced body mints a new one.
-    /// Answers whether the auxiliary list changed.
+    /// Its identities join <c>_lastActorIdentities</c>, which decides whether
+    /// the refresh publishes.
     /// </summary>
-    private bool RefreshAuxiliaryActors()
+    private void RefreshAuxiliaryActors()
     {
         var existingByAddress = _auxiliaryActors.ToDictionary(actor => actor.Address);
         var refreshed = new List<IActor>();
@@ -470,29 +473,19 @@ public class ActorManager : IActorManager
                 disposable.Dispose();
         }
 
-        bool changed = !_auxiliaryActors.SequenceEqual(refreshed, ReferenceEqualityComparer.Instance);
         _auxiliaryActors.Clear();
         _auxiliaryActors.AddRange(refreshed);
-        return changed;
     }
 
     /// <summary>
-    /// The list <see cref="ActorListChangedEvent"/> carries. Every subscriber
+    /// The actors <see cref="ActorListChangedEvent"/> describes. Every subscriber
     /// is state maintenance keyed on presence (skeleton release, pose purge,
     /// transform-override pruning, binding refresh); auxiliary bodies belong
     /// there or the preview's own state is torn down every refresh. Nothing
     /// user-facing reads the event payload — the panes read the scene
     /// snapshot, which is built from <see cref="Actors"/> alone.
     /// </summary>
-    private IReadOnlyList<IActor> AllActors()
-    {
-        if (_auxiliaryActors.Count == 0)
-            return Actors;
-        var all = new List<IActor>(_actors.Count + _auxiliaryActors.Count);
-        all.AddRange(_actors);
-        all.AddRange(_auxiliaryActors);
-        return all;
-    }
+    private IEnumerable<IActor> AllActors() => _actors.Concat(_auxiliaryActors);
 
     public void RegisterAuxiliary(ushort objectIndex, ActorKind kind)
     {
@@ -590,7 +583,7 @@ public class ActorManager : IActorManager
         _auxiliaryActors.Clear();
 
         _lastActorIdentities.Clear();
-        _eventBus.Publish(new ActorListChangedEvent(Actors));
+        _eventBus.Publish(new ActorListChangedEvent(Array.Empty<ActorPresence>()));
     }
 
     /// <summary>

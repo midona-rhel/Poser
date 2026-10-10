@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using System.Linq;
+using Poser.Domain.Identity;
 using Poser.Entities;
-using Poser.Services;
 
 namespace Poser.Core;
 
@@ -15,22 +16,34 @@ namespace Poser.Core;
 /// GPoseStateChangedEvent(false) removes actors and their bindings.</summary>
 public record GPoseExitingEvent : IEvent;
 
-/// <summary>
-/// Published when the actor list changes (actors added/removed from GPose).
-/// </summary>
-public record ActorListChangedEvent(IReadOnlyList<IActor> Actors) : IEvent;
+/// <summary>One present actor, as a value: what presence subscribers prune
+/// their state against. Never the wrapper itself.</summary>
+public readonly record struct ActorPresence(EntityId Id, nint Address);
 
 /// <summary>
-/// Published after an actor's skeleton has been created or rebuilt.
-/// Selection consumers use this boundary to replace stale bone references with
-/// the matching bone from the current skeleton.
+/// Published when the actor list changes (actors added/removed from GPose, or
+/// a row field such as visibility). The payload is a copy taken at publish
+/// time: a subscriber that refreshes the list during dispatch cannot change
+/// what later subscribers see.
 /// </summary>
-public record SkeletonChangedEvent(IActor Actor, ISkeleton? Skeleton) : IEvent;
+public record ActorListChangedEvent(IReadOnlyList<ActorPresence> Actors) : IEvent
+{
+    public static ActorListChangedEvent Of(IEnumerable<IActor> actors) =>
+        new(actors.Select(actor => new ActorPresence(actor.Id, actor.Address)).ToArray());
+}
+
+/// <summary>
+/// Published on the framework update after an actor's slot skeleton was
+/// created, rebuilt (<paramref name="Present"/> true) or released. Never
+/// published from inside the native hook that discovered the change.
+/// </summary>
+public record SkeletonChangedEvent(EntityId Actor, PoseSlot Slot, bool Present) : IEvent;
 
 /// <summary>
 /// Published when the spawned-light list changes (light spawned or destroyed).
+/// Payload-free: subscribers re-read the list.
 /// </summary>
-public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
+public record LightListChangedEvent : IEvent;
 
 /// <summary>
 /// Published when the spawned-prop list changes (prop spawned or destroyed).
@@ -57,9 +70,9 @@ public record WorldObjectListChangedEvent : IEvent;
 
 /// <summary>
 /// Published when the virtual-camera list changes (camera created, destroyed,
-/// or the live camera switched).
+/// or the live camera switched). Payload-free: subscribers re-read the list.
 /// </summary>
-public record CameraListChangedEvent(IReadOnlyList<IVirtualCamera> Cameras) : IEvent;
+public record CameraListChangedEvent : IEvent;
 
 #endregion
 

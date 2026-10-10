@@ -176,11 +176,11 @@ public unsafe partial class BonePosingService : IBonePosingService
         _baselineRemovalBuffer = new();
 
     /// <summary>Reused snapshot buffers for the finalize pass — same hazard,
-    /// same idiom as <see cref="_updatePassBuffer"/>: UpdateSkeletonCache →
-    /// GetSkeleton can publish SkeletonChangedEvent synchronously, whose
-    /// handler mutates BOTH live sets (PurgeSkeletonState / re-Add), which
-    /// would throw mid-enumeration inside the FinalizeSkeletons native frame.
-    /// Single-threaded (render detour), never nested.</summary>
+    /// same idiom as <see cref="_updatePassBuffer"/>: the pass may purge or
+    /// re-add entries in BOTH live sets, which would throw mid-enumeration
+    /// inside the FinalizeSkeletons native frame. (Skeleton changes found
+    /// here are published on the next framework update, never in this
+    /// frame.) Single-threaded (render detour), never nested.</summary>
     private readonly List<SkeletonKey> _finalizePassBuffer = new();
     private readonly List<SkeletonKey> _finalizeCachePassBuffer = new();
 
@@ -1720,11 +1720,9 @@ public unsafe partial class BonePosingService : IBonePosingService
 
         // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
         // This takes a final snapshot now the engine is done touching skeletons.
-        // Both sets are snapshotted FIRST: UpdateSkeletonCache → GetSkeleton
-        // publishes SkeletonChangedEvent synchronously when a slot vanished or
-        // was replaced, and OnSkeletonChanged mutates both live sets — the
-        // same mutation-during-enumeration hazard ApplyAllBoneTransforms
-        // already snapshots against.
+        // Both sets are snapshotted FIRST: the pass can mutate both live
+        // sets — the same mutation-during-enumeration hazard
+        // ApplyAllBoneTransforms already snapshots against.
         _finalizePassBuffer.Clear();
         foreach (var key in _skeletonsToUpdate)
             _finalizePassBuffer.Add(key);
