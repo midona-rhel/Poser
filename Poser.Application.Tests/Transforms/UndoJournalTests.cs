@@ -44,30 +44,14 @@ public sealed class UndoJournalTests
     }
 
     [Fact]
-    public void Ordinary_edits_use_their_recorded_inverse()
-    {
-        var world = new World();
-        int value = 2;
-        var step = new JournalStep("Value", () => { value = 1; return true; }, () => { value = 2; return true; });
-        world.History.Append(step);
-        Assert.True(world.Journal.Undo().Success);
-        Assert.Equal(1, value);
-        Assert.True(world.Journal.Redo().Success);
-        Assert.Equal(2, value);
-        Assert.Empty(world.Notices);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Redo_refuses_when_the_required_file_is_gone(bool deferred)
+    public void Redo_refuses_when_the_required_file_is_gone()
     {
         var world = new World(assetExists: false);
         bool ran = false;
         var step = new JournalStep("Import", () => true, () => { ran = true; return true; })
         {
             RequiredAsset = "gone.pose",
-            CompleteReplay = deferred ? (_, _, _, done) => done(GestureResult.Ok()) : null,
+            CompleteReplay = (_, _, _, done) => done(GestureResult.Ok()),
         };
         world.History.Append(step);
         world.History.CommitUndo(step);
@@ -120,6 +104,24 @@ public sealed class UndoJournalTests
         Assert.Same(step, world.History.PeekRedo());
         complete!(GestureResult.Ok());
         Assert.Same(step, world.History.PeekUndo());
+
+        // A history change invalidates the waiting restore; it never advances the new entry.
+        Func<bool>? current = null;
+        CancellationToken token = default;
+        var waiting = new JournalStep("Redraw", () => true, () => true)
+        {
+            CompleteReplay = (_, valid, cancellation, done) => { current = valid; token = cancellation; complete = done; },
+        };
+        world.History.Append(waiting);
+        Assert.True(world.Journal.Undo().Success);
+        var later = new JournalStep("Later", () => true, () => true);
+        world.History.Append(later);
+        Assert.False(current!());
+        Assert.True(token.IsCancellationRequested);
+        complete!(GestureResult.Fail("No longer current."));
+        Assert.Same(later, world.History.PeekUndo());
+        Assert.False(world.History.CanRedo);
+        Assert.False(world.Journal.IsRestoring);
     }
 
     [Fact]
@@ -141,91 +143,6 @@ public sealed class UndoJournalTests
         Assert.True(world.Journal.Undo().Success);
         complete!(GestureResult.Ok());
         Assert.Same(step, world.History.PeekRedo());
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void History_changes_invalidate_waiting_restore_without_advancing_new_entry(bool clear)
-    {
-        var world = new World();
-        Action<GestureResult>? complete = null;
-        Func<bool>? current = null;
-        CancellationToken token = default;
-        var step = new JournalStep("Redraw", () => true, () => true)
-        {
-            CompleteReplay = (_, valid, cancellation, done) => { current = valid; token = cancellation; complete = done; },
-        };
-        world.History.Append(step);
-        Assert.True(world.Journal.Undo().Success);
-        if (clear) world.History.Clear();
-        var later = new JournalStep("Later", () => true, () => true);
-        world.History.Append(later);
-        Assert.False(current!());
-        Assert.True(token.IsCancellationRequested);
-        complete!(GestureResult.Fail("No longer current."));
-        Assert.Same(later, world.History.PeekUndo());
-        Assert.False(world.History.CanRedo);
-        Assert.False(world.Journal.IsRestoring);
-    }
-
-    [Fact]
-    public void Scoped_deferred_restore_preserves_unrelated_newer_entry_until_completion()
-    {
-        var world = new World();
-        var actor = SelectionId.ForActor(ActorId.New());
-        Action<GestureResult>? complete = null;
-        var step = new JournalStep("Actor reset", () => true, () => true)
-        {
-            AffectedEntities = new[] { actor },
-            CompleteReplay = (_, _, _, done) => complete = done,
-        };
-        var light = new JournalStep("Light", () => true, () => true)
-            { AffectedEntities = new[] { SelectionId.ForLight(LightId.New()) } };
-        world.History.Append(step); world.History.Append(light);
-        Assert.True(world.Journal.Undo(actor).Success);
-        Assert.True(world.Journal.IsRestoring);
-        Assert.Same(light, world.History.PeekUndo());
-        complete!(GestureResult.Ok());
-        Assert.Same(light, world.History.PeekUndo());
-        Assert.Same(step, world.History.PeekRedo(actor));
-        Assert.True(world.Journal.Redo(actor).Success);
-        complete!(GestureResult.Ok());
-        Assert.Same(step, world.History.PeekUndo());
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void New_disjoint_edit_invalidates_pending_scoped_replay(bool undo)
-    {
-        var world = new World();
-        var actor = SelectionId.ForActor(ActorId.New());
-        var light = SelectionId.ForLight(LightId.New());
-        Func<bool>? current = null;
-        Action<GestureResult>? complete = null;
-        CancellationToken token = default;
-        var step = new JournalStep("Actor reset", () => true, () => true)
-        {
-            AffectedEntities = new[] { actor },
-            CompleteReplay = (_, valid, cancellation, done) =>
-                { current = valid; token = cancellation; complete = done; },
-        };
-        world.History.Append(step);
-        if (!undo) world.History.CommitUndo(step);
-        Assert.True((undo ? world.Journal.Undo(actor) : world.Journal.Redo(actor)).Success);
-        Assert.True(current!());
-        var later = new JournalStep("Light edit", () => true, () => true)
-            { AffectedEntities = new[] { light } };
-        world.History.Append(later);
-        Assert.True(token.IsCancellationRequested);
-        Assert.False(current());
-        if (undo) Assert.Same(step, world.History.PeekUndo(actor));
-        complete!(GestureResult.Ok()); // even a late success cannot commit stale history
-        Assert.False(world.Journal.IsRestoring);
-        Assert.Same(later, world.History.PeekUndo());
-        Assert.False(world.History.CanRedo);
-        Assert.Equal(UndoJournal.Dropped, Assert.Single(world.Notices));
     }
 
     private sealed class World

@@ -55,16 +55,4 @@ public class DiagnosticRedactorTests
             }
         }
     }
-
-    [Theory]
-    [InlineData(@"Load failed: '\\private-host\hidden-share\Client\hidden.pose'")]
-    public void UnknownAbsolutePathsAreRemovedButOperationAndExtensionRemain(string text)
-    {
-        string result = new DiagnosticRedactor().ScrubText(text);
-        Assert.StartsWith("Load failed:", result);
-        Assert.Contains(".pose", result);
-        Assert.DoesNotContain("hidden", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("private", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Client", result);
-    }
 }

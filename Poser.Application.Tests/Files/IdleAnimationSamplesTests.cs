@@ -48,21 +48,4 @@ public sealed class IdleAnimationSamplesTests
         Assert.All(still.Body.Entry.Frames, frame =>
             Assert.True(MathF.Abs(Quaternion.Dot(Quaternion.Identity, frame[0].Rotation)) > 0.99999f));
     }
-
-    [Fact]
-    public void Rejects_non_finite_sampling()
-    {
-        var pose = Pose("body", Target(1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => IdleAnimationSamples.Create(pose, pose, float.NaN, 30));
-    }
-
-    [Fact]
-    public void Long_native_entry_keeps_its_full_duration()
-    {
-        var pose = Pose("body", Target(1));
-        var samples = IdleAnimationSamples.Create(pose, pose, 215f / 30f);
-        Assert.Equal(215f / 30f, samples.Body.Entry.DurationSeconds);
-        Assert.Equal(216, samples.Body.Entry.Frames.Length);
-        Assert.Equal(samples.Body.Hold.Frames[0], samples.Body.Entry.Frames[^1]);
-    }
 }

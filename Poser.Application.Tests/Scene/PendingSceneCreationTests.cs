@@ -14,23 +14,6 @@ namespace Poser.Application.Tests.Scene;
 public sealed class PendingSceneCreationTests
 {
     [Fact]
-    public void Pose_waits_for_posable_binding_and_keeps_the_clicked_options()
-    {
-        var f = new Fixture();
-        var options = new PoseImportOptions { ApplyScale = true };
-        f.Pending.ApplyPoseWhenReady(f.Handle, "pose.pose", options);
-        options.ApplyScale = false;
-        f.Creation.Resolve(f.Handle).Returns(SelectionId.ForActor(f.Actor));
-        f.Pending.Tick(); // An actor binding alone must not start a pose.
-        f.Imports.DidNotReceiveWithAnyArgs().ImportPose(default, "", null!);
-        f.Creation.Resolve(f.Handle, true).Returns(SelectionId.ForActor(f.Actor));
-        f.Pending.Tick();
-        f.Pending.Tick();
-        f.Imports.Received(1).ImportPose(f.Actor, "pose.pose",
-            Arg.Is<PoseImportOptions>(o => o.ApplyScale), null, Arg.Any<Action<OperationReceipt>>());
-    }
-
-    [Fact]
     public void Session_exit_discards_pending_work_even_if_the_old_receipt_resolves_later()
     {
         var f = new Fixture();

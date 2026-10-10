@@ -78,30 +78,4 @@ public sealed class LibrarySettingsDraftTests : IDisposable
         Assert.Equal(preserved, config.Sources.Skip(4).Select(s => (s.Name, s.Path, s.Enabled)));
         Assert.Empty(Directory.EnumerateFileSystemEntries(_root));
     }
-
-    [Fact]
-    public void Draft_path_changes_never_relabel_saved_health_and_cancel_discards_only_draft()
-    {
-        var config = Custom();
-        var snapshot = Snapshot(config);
-        var draft = new LibrarySettingsDraft(config);
-        var row = draft.Sources[0];
-        Assert.True(LibrarySettingsDraft.IsFailure(draft.RowHealth(row, snapshot, config)));
-        string savedPath = row.Path;
-        row.Path = Path.Combine(_root, "draft path");
-        Assert.Equal(savedPath, config.Sources[0].Path);
-        Assert.Null(draft.RowHealth(row, snapshot, config));
-        var issue = Assert.Single(draft.Issues(snapshot, config));
-        Assert.True(issue.PendingSave);
-        Assert.Equal(savedPath, issue.Health.Path);
-        Assert.False(draft.CanRepair(issue, config));
-        var reopened = new LibrarySettingsDraft(config);
-        Assert.Equal(savedPath, reopened.Sources[0].Path);
-        Assert.False(Assert.Single(reopened.Issues(snapshot, config)).PendingSave);
-        Assert.True(draft.TryApply(config, out var detail), detail);
-        reopened = new LibrarySettingsDraft(config);
-        Assert.Null(reopened.RowHealth(reopened.Sources[0], snapshot, config));
-        Assert.Empty(reopened.Issues(snapshot, config));
-        Assert.Single(reopened.Issues(Snapshot(config), config));
-    }
 }

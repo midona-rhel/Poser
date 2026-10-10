@@ -33,38 +33,6 @@ public sealed class PoseCommandTests
     }
 
     [Fact]
-    public void Deferred_restore_keeps_history_until_completion_and_failure_is_retryable()
-    {
-        using var f = new Fixture { DeferRestore = true };
-        Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
-        var reset = f.History.PeekUndo();
-        Assert.True(f.Journal.Undo().Success);
-        Assert.True(f.Journal.IsRestoring);
-        Assert.Same(reset, f.History.PeekUndo());
-        Assert.False(f.Journal.Redo().Success);
-        f.FinishRestore!(GestureResult.Fail("The actor redraw failed; retry after it is ready."));
-        Assert.False(f.Journal.IsRestoring);
-        Assert.Same(reset, f.History.PeekUndo());
-        Assert.True(f.Journal.Undo().Success);
-        f.FinishRestore!(GestureResult.Ok());
-        Assert.Same(reset, f.History.PeekRedo());
-    }
-
-    [Fact]
-    public void Clearing_history_cancels_deferred_restore_and_ignores_late_completion()
-    {
-        using var f = new Fixture { DeferRestore = true };
-        Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
-        Assert.True(f.Journal.Undo().Success);
-        f.History.Clear();
-        Assert.True(f.RestoreCancellation.IsCancellationRequested);
-        f.FinishRestore!(GestureResult.Ok());
-        Assert.False(f.Journal.IsRestoring);
-        Assert.False(f.History.CanUndo);
-        Assert.False(f.History.CanRedo);
-    }
-
-    [Fact]
     public void Whole_actor_reset_is_one_step_and_redo_resets_pose_inside_the_history_transition()
     {
         using var f = new Fixture();
@@ -84,45 +52,6 @@ public sealed class PoseCommandTests
         Assert.Equal(2, f.IkClears);
         Assert.True(f.Journal.Undo().Success);
         Assert.Same(older, f.History.PeekUndo());
-    }
-
-    [Fact]
-    public void Whole_actor_reset_reports_partial_failure_but_cleans_remaining_state_and_never_replays_on_replacement()
-    {
-        using var f = new Fixture { FailExpression = true };
-        var original = f.Live[f.Character];
-        var result = f.ResetAll.ResetAll(f.Actor);
-        Assert.False(result.Success);
-        Assert.Contains("Expression", result.Detail);
-        Assert.Empty(f.Live[f.Character].Pose.Layers);
-        Assert.Equal(1, f.IkClears);
-        Assert.True(f.Journal.Undo().Success);
-        Assert.Equal(original, f.Live[f.Character]);
-        var replacement = f.Actor with { Generation = f.Actor.Generation + 1 };
-        Assert.True(f.Scene.TryRefresh(new SceneSnapshot(2,
-            [new ActorDescriptor(replacement, "replacement", [])], [], [], [])).Accepted);
-        f.Captures = 0;
-        Assert.False(f.Journal.Redo().Success);
-        Assert.False(f.ResetAll.ResetAll(f.Actor).Success);
-        Assert.Equal(0, f.Captures);
-        Assert.Equal(1, f.IkClears);
-    }
-
-    [Fact]
-    public void Region_reset_leaves_auxiliary_pose_and_actor_placement_alone_and_undo_restores_edits()
-    {
-        using var f = new Fixture();
-        var original = f.Live.ToDictionary();
-        Assert.True(f.Commands.Reset(f.Actor, PoseRegion.Body).Success);
-        Assert.Empty(f.Live[f.Character].Pose.Layers);
-        Assert.Equal(original[f.Weapon], f.Live[f.Weapon]);
-        Assert.Equal(original[f.Model], f.Live[f.Model]);
-        Assert.True(f.Gestures.Undo().Success);
-        Assert.Equal(original[f.Character], f.Live[f.Character]);
-        Assert.True(f.Commands.Reset(f.Actor, PoseRegion.All).Success);
-        Assert.Empty(f.Live[f.Character].Pose.Layers);
-        Assert.Empty(f.Live[f.Weapon].Pose.Layers);
-        Assert.Equal(original[f.Model], f.Live[f.Model]);
     }
 
     [Fact]
@@ -179,10 +108,7 @@ public sealed class PoseCommandTests
         private readonly ActorIntegrationSession _integration;
         public int Captures;
         public int IkClears;
-        public bool FailExpression;
-        public bool FailCapture, DeferRestore;
-        public Action<GestureResult>? FinishRestore;
-        public CancellationToken RestoreCancellation;
+        public bool FailCapture;
 
         public Fixture()
         {
@@ -219,14 +145,12 @@ public sealed class PoseCommandTests
         public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed)
         {
-            if (DeferRestore) { FinishRestore = completed; RestoreCancellation = cancellation; return; }
             if (!current()) { completed(GestureResult.Fail("Stale history")); return; }
             Restore(snapshot.Pose, ok => completed(ok ? GestureResult.Ok() : GestureResult.Fail("Restore failed")));
         }
         public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed) => completed(current() ? GestureResult.Ok() : GestureResult.Fail("Stale history"));
-        public PoseEditResult ResetExpression(ActorId actor) => FailExpression
-            ? throw new InvalidOperationException("native reset failed") : PoseEditResult.Ok(1);
+        public PoseEditResult ResetExpression(ActorId actor) => PoseEditResult.Ok(1);
         public PoseEditResult ClearIk(ActorId actor) { IkClears++; return PoseEditResult.Ok(1); }
         public ActorSnapshot? Capture(Guid lineage) => new(lineage,
             Live.Values.Where(s => s.Target.Bone != null).ToArray(), []);

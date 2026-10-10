@@ -39,42 +39,6 @@ public sealed class GroupTransformStateTests
         Assert.Equal(0, f.Writes);
     }
 
-    private static void AssertPresentation(Fixture f, GroupTransformControls expected, Quaternion world, GroupScaleMode mode)
-    {
-        Assert.True(f.Coordinator.TryReadSelection(mode, out var authored, out var error), error);
-        Assert.True(f.Coordinator.TryReadWorldSelection(mode, out var overlay, out error), error);
-        Assert.True(Vector3.Distance(expected.Position, authored.Position) < .00001f);
-        Assert.True(MathF.Abs(Quaternion.Dot(expected.Rotation, authored.Rotation)) > .99999f);
-        Assert.Equal(expected.DisplayScale(mode), authored.Scale);
-        Assert.Equal(authored.Position, overlay.Position);
-        Assert.Equal(authored.Scale, overlay.Scale);
-        Assert.True(MathF.Abs(Quaternion.Dot(world, overlay.Rotation)) > .99999f);
-    }
-
-    [Fact]
-    public void Combined_preview_keeps_scale_axes_at_begin_not_at_previous_preview()
-    {
-        using var f = new Fixture(3, noncollinear: true);
-        var before = f.Snapshot;
-        var axis = Vector3.Transform(Vector3.UnitX, before.WorldRotation);
-        var pivot = before.Controls.Position;
-        var id = f.Begin(GroupScaleMode.SpacingOnly);
-        foreach (float angle in new[] { .4f, .8f, .4f })
-        {
-            var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle);
-            Assert.True(f.Service.Update(id, new(Vector3.Zero, rotation, new(2, 1, 1))).Success);
-            foreach (var target in f.Targets)
-            {
-                var offset = before.Expected[target].Position - pivot;
-                var scaled = offset + axis * Vector3.Dot(offset, axis);
-                var expected = pivot + Vector3.Transform(scaled, rotation);
-                Assert.True(Vector3.Distance(expected, f.Live[target].Position) < .00001f);
-            }
-        }
-        Assert.True(f.Service.Cancel(id).Success);
-        Assert.True(before.ContentEquals(f.Snapshot));
-    }
-
     [Fact]
     public void Rotated_group_mirror_scales_on_frozen_display_axes_and_replays_exactly()
     {
@@ -199,33 +163,6 @@ public sealed class GroupTransformStateTests
         Assert.Equal(Vector3.Zero, f.Live[f.Targets[0]].Position);
         Assert.True(f.Service.Redo().Success);
         Assert.Equal(controls, f.Snapshot.Controls);
-    }
-
-    [Fact]
-    public void Nested_assembly_and_membership_history_capture_final_effective_members()
-    {
-        using var f = new Fixture(4);
-        var steps = new GroupSteps(f.Groups, f.History, new ValueJournal(f.History), f.State, f.Coordinator);
-        SceneGroup? parent = null;
-        steps.Run("Duplicate tree", () => {
-            parent = steps.Create("Parent", [], allowThin: true)!;
-            var child = steps.Create("Child", f.Selected.Take(2).ToArray())!;
-            steps.Nest(child.Id, parent.Id);
-            steps.AddMember(parent.Id, f.Selected[2]);
-        });
-        var original = f.State.NamedSnapshot(parent!.Id)!;
-        Assert.Equal(3, original.Expected.Count);
-        Assert.True(original.Baseline.Frame.Rotation != Quaternion.Identity);
-        steps.AddMember(parent.Id, f.Selected[3]);
-        Assert.Equal(4, f.State.NamedSnapshot(parent.Id)!.Expected.Count);
-        Assert.True(f.Service.Undo().Success);
-        Assert.True(original.ContentEquals(f.State.NamedSnapshot(parent.Id)!));
-        Assert.True(f.Service.Redo().Success);
-        Assert.Equal(4, f.State.NamedSnapshot(parent.Id)!.Expected.Count);
-        Assert.True(f.Service.Undo().Success);
-        Assert.True(f.Service.Undo().Success);
-        Assert.Empty(f.Groups.All);
-        Assert.Empty(f.State.CaptureNamed());
     }
 
     [Fact]

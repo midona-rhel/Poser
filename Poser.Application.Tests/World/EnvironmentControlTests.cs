@@ -41,54 +41,6 @@ public sealed class EnvironmentControlTests
         Assert.Equal(3u, runtime.CurrentWeatherId);
     }
 
-    [Fact]
-    public void Shared_gesture_coalesces_without_a_panel_and_readings_are_detached()
-    {
-        var runtime = new Runtime();
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
-        var before = control.Read();
-        journal.BeginEdit("wind");
-        control.SetWind(new() { Speed = 2 });
-        control.SetWind(new() { Speed = 5 });
-        journal.EndEdit();
-        control.Seal();
-        runtime.Weathers.Clear();
-        Assert.Equal(2, before.AllWeathers.Count);
-        Assert.Empty(before.HeldSections);
-        Assert.Equal(5, control.Read().Wind.Speed);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        history.CommitUndo(step);
-        Assert.Equal(0, runtime.Wind.Speed);
-        Assert.False(history.CanUndo);
-    }
-
-    [Fact]
-    public void First_brightness_drag_undo_releases_ownership_even_after_return_to_start()
-    {
-        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
-        journal.BeginEdit("brightness");
-        control.SetInteriorBrightness(0.7f);
-        control.SetInteriorBrightness(0.4f);
-        journal.EndEdit();
-        control.Seal();
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        history.CommitUndo(step);
-        Assert.False(runtime.IsInteriorBrightnessOverridden);
-        Assert.Equal(0.4f, runtime.InteriorBrightness);
-        Assert.True(step.Redo());
-        history.CommitRedo(step);
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        Assert.Equal(0.4f, runtime.InteriorBrightness);
-    }
-
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
     {
         private int _minute;

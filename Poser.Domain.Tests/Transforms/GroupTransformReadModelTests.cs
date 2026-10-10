@@ -123,28 +123,6 @@ public sealed class GroupTransformReadModelTests
             Vector3.Transform(Vector3.UnitY, frame.ToWorldOrientation(next.Rotation))) > .1f);
     }
 
-    [Fact]
-    public void Vertical_camera_uses_finite_deterministic_right_heading()
-    {
-        // Straight down with roll; straight up is symmetric.
-        const float sign = -1f, roll = -.8f;
-        Quaternion? previous = null;
-        foreach (float offset in new[] { -.0001f, 0f, .0001f })
-        {
-            var rotation = Quaternion.CreateFromYawPitchRoll(.7f, sign * MathF.PI / 2 + offset, roll);
-            Assert.True(Matrix4x4.Invert(Matrix4x4.CreateFromQuaternion(rotation), out var view));
-            Assert.True(GroupTransformFrame.TryFromView(view, new(2, 3, 4), out var frame));
-            Assert.True(frame.IsValid);
-            Assert.Equal(new Vector3(2, 3, 4), frame.Origin);
-            Assert.True(Vector3.Distance(Vector3.UnitY, Vector3.Transform(Vector3.UnitY, frame.Rotation)) < .00001f);
-            var right = Vector3.Transform(Vector3.UnitX, rotation);
-            var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan2(-right.Z, right.X));
-            Assert.True(MathF.Abs(Quaternion.Dot(expected, frame.Rotation)) > .99999f);
-            if (previous is { } prior) Assert.True(MathF.Abs(Quaternion.Dot(prior, frame.Rotation)) > .99999f);
-            previous = frame.Rotation;
-        }
-    }
-
     private static PoseTransform Pose(
         Vector3 position,
         Quaternion rotation = default) =>

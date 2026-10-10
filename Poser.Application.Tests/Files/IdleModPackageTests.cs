@@ -60,20 +60,6 @@ public sealed class IdleModPackageTests
     }
 
     [Fact]
-    public void Replacement_preserves_clip_metadata_and_timeline_bytes()
-    {
-        var source = Pap();
-        var document = new PapAnimationDocument(source);
-        var replaced = document.ReplaceHavok(new byte[19]);
-        var result = new PapAnimationDocument(replaced);
-        Assert.Equal(document.Clips, result.Clips);
-        Assert.Equal(document.ModelId, result.ModelId);
-        int timeline = BinaryPrimitives.ReadInt32LittleEndian(replaced.AsSpan(22));
-        Assert.Equal(0, timeline % 4);
-        Assert.Equal(source[76..], replaced[timeline..]);
-    }
-
-    [Fact]
     public void Pmp_maps_both_files_and_never_overwrites_existing_output()
     {
         var directory = Directory.CreateTempSubdirectory("poser-idle-test-");

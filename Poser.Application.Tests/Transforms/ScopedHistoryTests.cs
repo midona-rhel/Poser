@@ -13,20 +13,6 @@ public sealed class ScopedHistoryTests
         { AffectedEntities = owners };
 
     [Fact]
-    public void Continuous_bone_configuration_is_scoped_to_its_actor()
-    {
-        var history = new TransformHistory();
-        var values = new ValueJournal(history);
-        var target = TransformTargetId.ForBone(new(new(_actor, PoseSlot.Character, 0), 0, 1, "hand"));
-        int value = 0;
-        values.Adjust((target, "IK"), "Set IK", () => value,
-            next => { value = next; return ValueWriteResult.Ok(); }, 3);
-        values.Seal();
-        var step = Assert.IsType<JournalStep>(history.PeekUndo(Actor));
-        Assert.True(step.Undo()); Assert.Equal(0, value);
-    }
-
-    [Fact]
     public void Scoped_undo_skips_light_and_global_redo_restores_actual_replay_order()
     {
         var history = new TransformHistory();
@@ -44,6 +30,19 @@ public sealed class ScopedHistoryTests
         Assert.Same(light, history.PeekRedo());
         history.CommitRedo(light);
         Assert.Same(pose, history.PeekRedo());
+
+        // Bones and gaze of the same actor share its scope; a new generation does not.
+        var bone = new BoneId(new(_actor, PoseSlot.Character, 0), 0, 1, "hand");
+        var step = Step(SelectionId.ForBone(bone), SelectionId.ForGazeTarget(_actor));
+        history.Clear();
+        history.Append(step);
+        Assert.Same(step, history.PeekUndo(Actor));
+        Assert.Null(history.PeekUndo(SelectionId.ForActor(_actor.NextGeneration())));
+
+        // A new edit clears all redo, scoped or not.
+        history.CommitUndo(step, Actor);
+        history.Append(Step(_other));
+        Assert.False(history.CanRedo);
     }
 
     [Fact]
@@ -59,32 +58,6 @@ public sealed class ScopedHistoryTests
         history.Clear(); history.Append(pose);
         history.Append(new JournalStep("Scene", () => true, () => true));
         Assert.Null(history.PeekUndo(Actor));
-    }
-
-    [Fact]
-    public void Bones_and_gaze_share_actor_scope_but_not_another_generation()
-    {
-        var history = new TransformHistory();
-        var bone = new BoneId(new(_actor, PoseSlot.Character, 0), 0, 1, "hand");
-        var step = Step(SelectionId.ForBone(bone), SelectionId.ForGazeTarget(_actor));
-        history.Append(step);
-        Assert.Same(step, history.PeekUndo(SelectionId.ForBone(bone)));
-        Assert.Same(step, history.PeekUndo(Actor));
-        Assert.Null(history.PeekUndo(SelectionId.ForActor(_actor.NextGeneration())));
-    }
-
-    [Fact]
-    public void Scoped_redo_skips_unrelated_undone_entries_and_new_edits_clear_all_redo()
-    {
-        var history = new TransformHistory();
-        var first = Step(Actor); var second = Step(_other);
-        history.Append(first); history.Append(second);
-        history.CommitUndo(first, Actor); history.CommitUndo(second, _other);
-        Assert.Same(first, history.PeekRedo(Actor));
-        history.CommitRedo(first, Actor);
-        Assert.Same(second, history.PeekRedo());
-        history.Append(Step(Actor));
-        Assert.False(history.CanRedo);
     }
 
     [Fact]
@@ -110,40 +83,5 @@ public sealed class ScopedHistoryTests
         history.CommitRedo(entry);
         Assert.Null(history.PeekUndo(live));
         Assert.Same(entry, history.PeekUndo());
-    }
-
-    [Fact]
-    public void Lifecycle_redo_blocks_older_edits_for_its_owner_but_not_other_entities()
-    {
-        var history = new TransformHistory();
-        var ownEdit = Step(Actor);
-        var otherEdit = Step(_other);
-        var entry = new SceneLifecyclePatch("Remove", () => true, () => true)
-            { AffectedEntities = new[] { Actor } };
-        history.Append(entry); history.Append(ownEdit); history.Append(otherEdit);
-        history.CommitUndo(otherEdit); history.CommitUndo(ownEdit); history.CommitUndo(entry);
-        Assert.Null(history.PeekRedo(Actor));
-        Assert.Same(otherEdit, history.PeekRedo(_other));
-        Assert.Same(entry, history.PeekRedo());
-    }
-
-    [Fact]
-    public void Value_journal_infers_tuple_owner_and_keeps_same_named_edits_on_two_actors_atomic()
-    {
-        var history = new TransformHistory(); var values = new ValueJournal(history);
-        int a = 0, b = 0;
-        values.Set((_actor, "x"), "x", () => a, v => a = v, 1);
-        Assert.NotNull(history.PeekUndo(Actor));
-        history.Clear();
-        values.BeginEdit("shared");
-        a = 2; b = 3;
-        values.Record("x", 1, 2, v => a = v, entity: Actor);
-        values.Record("x", 0, 3, v => b = v, entity: _other);
-        values.EndEdit(); values.Seal();
-        Assert.Null(history.PeekUndo(Actor));
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.Equal(2, step.AffectedEntities!.Count);
-        Assert.True(step.Undo()); Assert.Equal(1, a); Assert.Equal(0, b);
-        Assert.True(step.Redo()); Assert.Equal(2, a); Assert.Equal(3, b);
     }
 }

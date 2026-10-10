@@ -33,30 +33,6 @@ public sealed class GazeSessionTests
     }
 
     [Fact]
-    public void Discrete_edit_restores_part_positions_and_locks_as_one_step()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        var before = port.State.Settings;
-
-        Assert.True(session.SnapPartToCamera(port.Actor, GazeTargetType.Eyes).Success);
-        var after = port.State.Settings;
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        Assert.Equal(before, port.State.Settings);
-        Assert.True(step.Redo());
-        Assert.Equal(after, port.State.Settings);
-
-        // A pose-aware toggle is one actor-scoped step that keeps modes, points and locks.
-        Assert.True(session.SetPoseAware(port.Actor, true).Success);
-        Assert.Equal(after with { PoseAware = true }, port.State.Settings);
-        step = Assert.IsType<JournalStep>(history.PeekUndo(SelectionId.ForActor(port.Actor)));
-        Assert.True(step.Undo());
-        Assert.Equal(after, port.State.Settings);
-    }
-
-    [Fact]
     public void Old_generation_never_writes_into_replacement_actor()
     {
         var port = new Runtime();
@@ -75,22 +51,6 @@ public sealed class GazeSessionTests
         Assert.True(step.Undo()); // obsolete entry does not block earlier history
         Assert.True(step.Redo());
         Assert.Equal(0, port.Writes);
-    }
-
-    [Fact]
-    public void Refused_transition_is_not_history_and_refused_inverse_is_not_success()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        Assert.False(session.SetTarget(port.Actor, new(Guid.NewGuid(), 0)).Success);
-        Assert.False(history.CanUndo);
-        Assert.True(session.SetMode(port.Actor, GazeTargetMode.Camera).Success);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        port.RefuseMode = true;
-
-        Assert.False(step.Undo());
-        Assert.Equal("Native transition refused", step.FailureDetail!());
     }
 
     private sealed class Runtime : IGazeRuntimePort

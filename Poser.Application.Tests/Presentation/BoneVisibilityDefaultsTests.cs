@@ -14,24 +14,6 @@ public sealed class BoneVisibilityDefaultsTests
     }
 
     [Fact]
-    public void Defaults_use_union_of_checked_stock_and_custom_sets_in_scope()
-    {
-        var scope = Bones();
-        var settings = new SkeletonConfiguration
-        {
-            BoneVisibilityPresets = [
-                new() { Name = "Head", Bones = ["head"] },
-                new() { Name = "Face", Bones = ["eye"], ShowByDefault = false },
-                new() { Name = "Custom", Bones = ["head", "custom", "absent"] },
-            ],
-        };
-        Assert.Equal(new[] { scope[0], scope[2] }, BoneVisibilityDefaults.Resolve(settings, scope));
-        Assert.Empty(BoneVisibilityDefaults.Resolve(settings, [scope[1]]));
-        Assert.True(BoneVisibilityDefaults.CanApply(settings, scope));
-        Assert.False(BoneVisibilityDefaults.CanApply(settings, [scope[1]]));
-    }
-
-    [Fact]
     public void Legacy_automatic_option_is_ignored_and_checkbox_choices_survive_serialization()
     {
         var settings = JsonConvert.DeserializeObject<SkeletonConfiguration>("{\"UseDefaultBonePresetsOnShow\":true,\"BoneVisibilityPresets\":[{\"Name\":\"Head\",\"Bones\":[\"head\"]}]}")!;

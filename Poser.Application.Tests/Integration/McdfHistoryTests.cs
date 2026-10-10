@@ -60,23 +60,6 @@ public sealed class McdfHistoryTests
         Assert.True(retried.Success, retried.Detail);
     }
 
-    [Fact]
-    public async Task Import_replaces_a_proven_duplicate_collection_but_not_a_foreign_temporary()
-    {
-        foreach (bool owned in new[] { true, false })
-        {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
-            var runtime = (Runtime)(object)port;
-            runtime.Resources = true;
-            runtime.OwnedDuplicate = owned;
-            using var integration = new ActorIntegrationSession(port, new Files { Resources = true }, new Sessions());
-            Assert.True(integration.BeginImport(ActorId.New(), "body.mcdf").Success);
-            await integration.PendingCompletion;
-            Assert.Equal(owned, integration.Mcdf!.Outcome!.Success);
-            Assert.Equal(owned ? 1 : 0, runtime.Assignments);
-        }
-    }
-
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();

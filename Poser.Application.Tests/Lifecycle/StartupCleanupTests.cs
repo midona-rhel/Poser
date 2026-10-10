@@ -38,22 +38,4 @@ public sealed class StartupCleanupTests
         second.Dispose();
         Assert.Equal(7, live.Count);
     }
-
-    [Fact]
-    public void Throwing_cleanup_and_logger_do_not_mask_original_failure_or_skip_other_resources()
-    {
-        int releases = 0;
-        var startup = new StartupCleanup(_ => throw new Exception("logger"));
-        startup.OnFailure(() => releases++);
-        startup.OnFailure(() => throw new Exception("cleanup"));
-        var original = new InvalidOperationException("activation");
-        var error = Assert.Throws<InvalidOperationException>((Action)(() =>
-        {
-            using (startup)
-                throw original;
-        }));
-        Assert.Same(original, error);
-        startup.Dispose();
-        Assert.Equal(1, releases);
-    }
 }

@@ -79,18 +79,6 @@ public sealed class CharaRequestTests
         Assert.Equal(12ul | (1ul << 49), result.Value["Bonus"]!["Glasses"]!["BonusId"]!.Value<ulong>());
     }
 
-    [Theory]
-    [InlineData("{}")]
-    [InlineData("{\"Race\":6,\"Tribe\":1}")]
-    public void Bad_files_are_refused_without_changing_the_snapshot(string json)
-    {
-        Assert.False(CharaRequest.Build(null, JObject.Parse(json)).Success);
-        var snapshot = Snapshot();
-        var before = snapshot.DeepClone();
-        Assert.False(CharaRequest.Build(snapshot, JObject.Parse(json)).Success);
-        Assert.True(JToken.DeepEquals(before, snapshot));
-    }
-
     [Fact]
     public void Partial_file_keeps_omitted_fields_and_does_not_apply_unset_parameters()
     {

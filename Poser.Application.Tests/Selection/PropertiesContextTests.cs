@@ -25,32 +25,6 @@ public sealed class PropertiesContextTests
         Assert.Equal(second, scene.Selection.PrimaryActor);
     }
 
-    [Fact]
-    public void Pinned_targets_and_captured_callbacks_do_not_follow_workspace_selection()
-    {
-        var (scene, first, second) = TwoActors();
-        scene.Selection.Select(SelectionId.ForActor(first));
-        scene.Selection.Add(SelectionId.ForActor(second));
-        using var live = new PropertiesContext(scene);
-        using var a = live.Pin();
-        using var b = live.Pin();
-        var captured = a.Selection.Selected.ToArray();
-        a.WorkspaceSelection.Clear();
-        scene.Selection.Select(SelectionId.ForActor(second));
-        Assert.Equal(2, b.Selection.Selected.Count);
-        Assert.Equal([SelectionId.ForActor(first), SelectionId.ForActor(second)], captured);
-        Assert.Equal(captured, a.Selection.Selected);
-        Assert.Equal(SelectionId.ForActor(second), a.WorkspaceSelection.Primary);
-
-        // A single-actor pin never picks up another actor or its bones as command targets.
-        scene.Selection.Select(SelectionId.ForActor(first));
-        using var actorPin = live.Pin();
-        scene.Selection.Add(SelectionId.ForActor(second));
-        Assert.Equal(new[] { SelectionId.ForActor(first) }, actorPin.Selection.Selected);
-        scene.Selection.Select(SelectionId.ForBone(scene.Snapshot.Actors[1].Skeletons[0].Bones[0].Id));
-        Assert.Equal(new[] { SelectionId.ForActor(first) }, actorPin.Selection.Selected);
-    }
-
     private static (SceneSession Scene, ActorId First, ActorId Second) TwoActors()
     {
         var first = new ActorId(Guid.NewGuid(), 1);

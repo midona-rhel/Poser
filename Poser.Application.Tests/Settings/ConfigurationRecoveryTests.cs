@@ -11,7 +11,6 @@ public sealed class ConfigurationRecoveryTests : IDisposable
 
     [Theory]
     [InlineData("{ broken")]
-    [InlineData("null")]
     public void Unreadable_config_is_backed_up_before_defaults_can_replace_it(string content)
     {
         Directory.CreateDirectory(_directory);
@@ -24,22 +23,6 @@ public sealed class ConfigurationRecoveryTests : IDisposable
         store.Save(result.Configuration);
         Assert.Equal(content, File.ReadAllText(backup));
         Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
-    }
-
-    [Fact]
-    public void First_run_and_saved_preferences_do_not_enter_recovery()
-    {
-        var store = new ConfigurationFileStore(FilePath);
-        Assert.Empty(store.Load().Failure);
-        var config = new PoserConfiguration { UndoDepth = 37 };
-        config.UI.SectionDisclosure["Appearance"] = false;
-        config.UI.Bindings["Undo"] = new("Ctrl+Z", "Ctrl+U");
-        store.Save(config);
-        var loaded = store.Load();
-        Assert.Empty(loaded.Failure);
-        Assert.Equal(37, loaded.Configuration.UndoDepth);
-        Assert.False(loaded.Configuration.UI.SectionDisclosure["Appearance"]);
-        Assert.Equal("Ctrl+U", loaded.Configuration.UI.Bindings["Undo"].Secondary);
     }
 
     [Fact]

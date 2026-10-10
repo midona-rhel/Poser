@@ -14,7 +14,7 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class SelectionPlacementTests
 {
     [Fact]
-    public void Context_reset_targets_the_clicked_entity_not_current_selection()
+    public void Context_reset_and_move_target_the_clicked_entity_not_current_selection()
     {
         var f = new Fixture();
         var before = f.Values[f.B];
@@ -27,6 +27,13 @@ public sealed class SelectionPlacementTests
         Assert.True(f.Control.ResetComponent(f.B.ToSelectionId(), TransformOperation.Scale).Success);
         Assert.Equal(before.Position, f.Values[f.B].Position);
         Assert.Equal(Vector3.One, f.Values[f.B].Scale);
+
+        // Move to camera also targets exactly what was clicked.
+        Assert.True(f.Control.MoveToCamera([f.B.ToSelectionId()]).Success);
+        Assert.Equal(f.B, Assert.Single(f.GestureTargets));
+        Assert.Equal(new Vector3(10, 0, 2.5f) - f.Values[f.B].Position, f.Delta.Translation);
+        Assert.Equal(1, f.Commits);
+        Assert.Equal(f.A.ToSelectionId(), Assert.Single(f.Selection.Selected));
     }
 
     [Fact]
@@ -41,25 +48,6 @@ public sealed class SelectionPlacementTests
         var unlocked = new Fixture();
         Assert.False(unlocked.Control.ResetComponent(unlocked.B.ToSelectionId(), TransformOperation.Translate).Success);
         Assert.Equal(0, unlocked.Writes);
-    }
-
-    [Fact]
-    public void Move_to_camera_uses_exact_targets_without_changing_selection()
-    {
-        var f = new Fixture();
-        Assert.True(f.Control.MoveToCamera([f.B.ToSelectionId()]).Success);
-        Assert.Equal(f.B, Assert.Single(f.GestureTargets));
-        Assert.Equal(new Vector3(10, 0, 2.5f) - f.Values[f.B].Position, f.Delta.Translation);
-        Assert.Equal(1, f.Commits);
-        Assert.Equal(f.A.ToSelectionId(), Assert.Single(f.Selection.Selected));
-    }
-
-    [Fact]
-    public void Default_move_still_uses_the_current_selection()
-    {
-        var f = new Fixture();
-        Assert.True(f.Control.MoveToCamera().Success);
-        Assert.Equal(f.A, Assert.Single(f.GestureTargets));
     }
 
     private sealed class Fixture

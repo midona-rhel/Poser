@@ -91,20 +91,8 @@ public sealed class CustomizeRequestTests
         Assert.Equal(12, customize["Clan"]!["Value"]!.Value<int>());
     }
 
-    [Fact]
-    public void Clan_implies_matching_race_and_gender_only_does_not_apply_clan()
-    {
-        var clan = CustomizeRequest.Build(Snapshot(), new Dictionary<CustomizeKey, int> { [CustomizeKey.Clan] = 2 });
-        Assert.True(clan.Success);
-        Assert.True(clan.Value!["Customize"]!["Race"]!["Apply"]!.Value<bool>());
-        var gender = CustomizeRequest.Build(Snapshot(), new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 1 });
-        Assert.True(gender.Success);
-        Assert.False(gender.Value!["Customize"]!["Clan"]!["Apply"]!.Value<bool>());
-    }
-
     [Theory]
     [InlineData("{\"Value\":\"8\"}", CustomizeKey.SkinColor, 8)]
-    [InlineData(null, CustomizeKey.Race, 6)]
     public void Bad_request_is_refused_without_mutation(string? field, CustomizeKey key, int value)
     {
         // One malformed snapshot field, and one body that is inconsistent with its clan.

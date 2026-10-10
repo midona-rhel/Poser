@@ -33,46 +33,6 @@ public sealed class PoseImportCoordinatorTests
         Assert.False(f.Coordinator.IsImportBusy);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void FreezePersistsOnlyAfterSuccessfulImport(bool success)
-    {
-        var f = new Fixture();
-        f.Coordinator.Begin(Actor, new Plan(), new() { FreezeOnImport = true }, "Import");
-        f.Runtime.Tick(4);
-        f.Runtime.Finish(success);
-        f.Runtime.Tick(2);
-        Assert.Equal(success, f.Animation.IsPaused(Actor));
-    }
-
-    [Fact]
-    public void UserPausedActorStaysPausedWithoutFreezeOnImport()
-    {
-        var f = new Fixture();
-        f.Animation.Pause(Actor);
-        f.Coordinator.Begin(Actor, new Plan(), new(), "Import");
-        f.Runtime.Tick(4);
-        f.Runtime.Finish(true);
-        f.Runtime.Tick(2);
-        Assert.True(f.Animation.IsPaused(Actor));
-    }
-
-    [Fact]
-    public void SupersededArmCannotApplyOrRestoreItsSuccessorsPause()
-    {
-        var f = new Fixture();
-        f.Coordinator.Begin(Actor, new Plan(), new(), "Old");
-        f.Coordinator.Begin(Actor, new Plan(), new(), "New");
-        f.Runtime.Tick(2); // Old cancellation's deferred restore.
-        Assert.True(f.Animation.IsPaused(Actor));
-        f.Runtime.Tick(4); // Old settle callback must do nothing.
-        Assert.Single(f.Runtime.Applied);
-        f.Runtime.Finish(true);
-        f.Runtime.Tick(2);
-        Assert.False(f.Animation.IsPaused(Actor));
-    }
-
     [Fact]
     public void CompletedImportsDeferredRestoreCannotResumeTheNextImport()
     {

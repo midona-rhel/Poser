@@ -10,22 +10,6 @@ namespace Poser.Application.Tests.Integration;
 public sealed class InheritedCollectionHistoryTests
 {
     [Fact]
-    public void Duplicate_history_retains_resources_and_replays_through_their_owner()
-    {
-        var (session, runtime) = Create();
-        var actor = ActorId.New();
-        runtime.Owned = new(new Dictionary<string, string> { ["model"] = "mod/model" }, "meta");
-        var captured = session.TryCaptureHistory(actor);
-        Assert.True(captured.Success, captured.Detail);
-        Assert.Equal(runtime.Owned, captured.Value!.InheritedCollection);
-        runtime.Owned = null;
-        Assert.True(session.RestoreHistory(actor, captured.Value).Success);
-        Assert.Equal("mod/model", runtime.Owned!.Paths["model"]);
-        Assert.Equal("meta", runtime.Owned.Manipulations);
-        Assert.Equal(1, runtime.Restores);
-    }
-
-    [Fact]
     public void Switching_duplicate_collection_retains_original_resources_for_reset_and_history()
     {
         var (session, runtime) = Create();

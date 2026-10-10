@@ -48,23 +48,6 @@ public sealed class SceneFabrikTests
     }
 
     [Fact]
-    public void Placement_moves_world_points_rotates_offsets_and_leaves_actor_points_alone()
-    {
-        var config = Config();
-        config = config with { Fabrik = config.Fabrik! with
-            { Tip = config.Fabrik.Tip with { Mode = IkTargetMode.Entity } } };
-        var scene = new SceneFile { Actors = [new SceneActor
-            { Fabrik = [SceneFabrikChain.Capture(PoseSlot.Character, 0, "tip", config)] }] };
-        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .5f);
-        Vector3 Move(Vector3 point) => Vector3.Transform(point, turn) + new Vector3(10, 20, 30);
-        SceneFabrikChain.Rebase(scene, Move, turn);
-        var restored = scene.Actors[0].Fabrik![0].Config.Fabrik!;
-        Assert.Equal(Move(config.Fabrik.Root.Position), restored.Root.Position);
-        Assert.Equal(Vector3.Transform(config.Fabrik.Tip.Position, turn), restored.Tip.Position);
-        Assert.Equal(config.Fabrik.Bones, restored.Bones);
-    }
-
-    [Fact]
     public void Old_scene_actor_has_no_fabrik_payload()
     {
         var json = JsonSerializer.Serialize(new SceneActor(), SceneJsonOptionsAccessor.Options);

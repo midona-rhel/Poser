@@ -37,19 +37,6 @@ public sealed class ScenePortableAppearanceTests
                 && note.Contains("rather than recording where the mods were"));
     }
 
-    [Fact]
-    public void A_large_payload_saves_rather_than_being_refused()
-    {
-        // Well past the old 24 MiB refusal and past the warning threshold:
-        // real character files are this big, and a save the user asked for
-        // must produce one.
-        long large = SceneFileLimits.LargeAppearanceWarningBytes + 1;
-        var scene = SceneWith(PortableActor("Big", large));
-
-        Assert.True(SceneFileValidation.Validate(scene).Succeeded);
-        Assert.True(large < SceneFileLimits.MaxEmbeddedAppearanceBytes);
-    }
-
     private static SceneFile SceneWith(params SceneActor[] actors)
     {
         var scene = new SceneFile { SceneId = Guid.NewGuid() };

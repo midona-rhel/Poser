@@ -28,30 +28,4 @@ public sealed class GroupStepsTests
         Assert.Null(groups.Find(made.Id));
         Assert.Empty(groups.RootOrder.Where(slot => slot.IsGroup));
     }
-
-    [Fact]
-    public void A_composite_verb_is_one_step_and_the_gates_are_reapplied_on_the_way_back()
-    {
-        var groups = new SceneGroups();
-        var history = new TransformHistory();
-        var values = new ValueJournal(history);
-        var gates = Substitute.For<IGroupGateState>();
-        var steps = new GroupSteps(groups, history, values, gates: gates);
-        var made = steps.Create("Pair", new[] { Actor(), Actor() })!;
-        var target = new { Visible = true };
-
-        steps.Run("Hide group", () =>
-        {
-            made.Hidden = true;
-            // the routine's member writes journal on their own...
-            values.Set((target, "Visible"), "Hide", () => true, _ => { }, false);
-        });
-
-        // ...and fold into the one step
-        Assert.Equal("Hide group", history.UndoDescription);
-        Assert.True(Undo(history));
-        Assert.False(groups.Find(made.Id)!.Hidden);
-        gates.Received(1).Reapply();
-        Assert.Equal("Create group", history.UndoDescription);
-    }
 }

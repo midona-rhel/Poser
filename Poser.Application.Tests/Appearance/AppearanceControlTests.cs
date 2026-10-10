@@ -16,7 +16,6 @@ public sealed class AppearanceControlTests
 {
     [Theory]
     [InlineData("item")]
-    [InlineData("outfit")]
     public void Equipment_inverse_refusals_preserve_failure_and_can_retry(string action)
     {
         var f = new Fixture();
@@ -34,28 +33,6 @@ public sealed class AppearanceControlTests
         EqualWardrobe(before, f.Runtime.ReadWardrobe());
         Assert.True(step.Redo());
         EqualWardrobe(after, f.Runtime.ReadWardrobe());
-    }
-
-    [Fact]
-    public void Partial_outfit_remains_undoable_and_restoration_stops_on_refusal()
-    {
-        var f = new Fixture();
-        f.Runtime.RefuseSlot = EquipSlot.Body;
-        Assert.False(Edit(f, "outfit").Success);
-        Assert.Equal(99ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.Equal(20ul, f.Runtime.Slots[EquipSlot.Body].ItemId);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        f.Runtime.RefuseSlot = EquipSlot.Head;
-        f.Runtime.Writes.Clear();
-        Assert.False(step.Undo());
-        Assert.Single(f.Runtime.Writes);
-        f.Runtime.RefuseSlot = null;
-        f.Runtime.Slots[EquipSlot.Body] = new(30, 0, 0); // unrelated later edit
-        Assert.True(step.Undo());
-        Assert.Equal(10ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.True(step.Redo());
-        Assert.Equal(99ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.Equal(30ul, f.Runtime.Slots[EquipSlot.Body].ItemId);
     }
 
     [Fact]

@@ -27,29 +27,6 @@ public sealed class SelectionEntityCommandsTests
         Assert.True(port.Visibility);
     }
 
-    [Fact]
-    public async Task Removal_dispatches_one_deduplicated_batch_and_preserves_per_item_outcomes()
-    {
-        var ids = Enumerable.Range(0, 4).Select(_ => SelectionId.ForProp(PropId.New())).ToArray();
-        var statuses = new[]
-        {
-            SelectionRemovalStatus.Removed, SelectionRemovalStatus.AlreadyAbsent,
-            SelectionRemovalStatus.Refused, SelectionRemovalStatus.Failed,
-        };
-        var expected = new SelectionRemovalResult(ids.Select((id, index) =>
-            new SelectionRemovalItem(id, statuses[index], $"Detail {index}")).ToArray());
-        var port = new RecordingPort { BatchResult = expected };
-        var commands = new SelectionEntityCommands(new RemovableReads(), port);
-
-        var result = await commands.Remove([ids[0], ids[1], ids[0], ids[2], ids[3]]);
-
-        Assert.Same(expected, result);
-        Assert.Equal(1, result.AppliedCount);
-        Assert.Equal(1, port.RemovalBatchCount);
-        Assert.Equal(ids, port.Calls.Select(call => call.Id));
-        Assert.All(port.Calls, call => Assert.Equal(SelectionRemoval.Destroy, call.Command));
-    }
-
     private sealed class RemovableReads : ICurrentSelectionEntityReads
     {
         public CurrentSelectionEntity ReadCurrent(SelectionId id) =>

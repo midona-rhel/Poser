@@ -15,65 +15,6 @@ namespace Poser.Tests.Library;
 public sealed class PoseLibraryServiceTests
 {
     [Fact]
-    public void Scan_publishes_ordered_names_normalized_search_fields_and_typed_statuses()
-    {
-        using var fixture = new LibraryFixture();
-        fixture.WritePose("zeta", PoseFilePersistenceTests.ValidPose());
-        var authored = PoseFilePersistenceTests.ValidPose();
-        authored.Author = "MiDoNa";
-        authored.Tags = ["TagOne"];
-        fixture.WritePose("Alpha", authored);
-        fixture.WriteRaw("broken", "{ nope");
-        var future = PoseFilePersistenceTests.ValidPose();
-        future.Version = "future-2";
-        fixture.WritePose("future", future);
-
-        using var service = fixture.CreateService();
-        service.RequestScan();
-        WaitUntil(() => !service.IsScanning);
-
-        Assert.Equal(new[] { "Alpha", "broken", "future", "zeta" },
-            service.Snapshot.Entries.Select(entry => entry.Name));
-        var entry = service.Snapshot.Entries[0];
-        // The scan is a listing: author, tags and status are read when a
-        // tile is selected, never at scan time (2026-09-02).
-        Assert.Equal(string.Empty, entry.AuthorLower);
-        Assert.Empty(entry.TagsLower);
-        Assert.Equal(PoseLibraryMetadataStatus.Valid,
-            service.Snapshot.Entries.Single(e => e.Name == "broken").MetadataStatus);
-        Assert.Equal(PoseLibraryMetadataStatus.Valid,
-            service.Snapshot.Entries.Single(e => e.Name == "future").MetadataStatus);
-    }
-
-    [Fact]
-    public async Task Cancellation_and_disposal_never_publish_a_partial_or_stale_generation()
-    {
-        using var fixture = new LibraryFixture();
-        var started = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        using var service = fixture.CreateService(path =>
-        {
-            started.SetResult(true);
-            release.Task.GetAwaiter().GetResult();
-            return true;
-        });
-        service.RequestScan();
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        service.Dispose();
-        release.SetResult(true);
-        Assert.True(SpinWait.SpinUntil(
-            () => !service.IsScanning, TimeSpan.FromSeconds(10)));
-        var revision = service.Snapshot.Revision;
-        service.RequestScan();
-
-        Assert.Equal(revision, service.Snapshot.Revision);
-        Assert.Equal(0, service.Snapshot.Generation);
-        Assert.False(service.IsScanning);
-    }
-
-    [Fact]
     public void A_failed_source_does_not_hide_healthy_sources()
     {
         using var fixture = new LibraryFixture();

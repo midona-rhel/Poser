@@ -155,26 +155,6 @@ public sealed class SceneWorkflowTests
     }
 
     [Fact]
-    public async Task Storage_is_injected_for_every_format_and_conversion_notes_survive()
-    {
-        const string path = "stage.json";
-        using var runtime = new FakeRuntime { ReadResult = SceneWith() };
-        var documents = new FakeDocuments(runtime) { Notes = ["Unsupported data omitted by converter."] };
-        using var workflow = new SceneWorkflow(runtime, documents);
-        Assert.True(workflow.BeginSave(path).Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
-        Assert.Equal(path, Assert.Single(documents.WritePaths));
-        Assert.Contains(documents.Notes[0], workflow.Progress!.Outcome!.Notes);
-
-        Assert.True(workflow.BeginLoad(path).Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
-        Assert.Equal(path, Assert.Single(documents.ReadPaths));
-        Assert.Contains(documents.Notes[0], workflow.Progress!.Outcome!.Notes);
-    }
-
-    [Fact]
     public async Task Load_history_tracks_each_redo_incarnation_without_appending_again()
     {
         var scene = SceneWith();

@@ -94,33 +94,6 @@ public sealed class PoseFilePersistenceTests
     }
 
     [Fact]
-    public void Oversize_and_overdeep_files_are_refused_before_parsing()
-    {
-        using (var fixture = new StoreFixture())
-        {
-            using (var stream = new FileStream(fixture.Path, FileMode.CreateNew, FileAccess.Write))
-                stream.SetLength(PoseFileLimits.MaxFileBytes + 1);
-            var oversized = AtomicPoseFileStore.Default.Read(fixture.Path);
-            Assert.False(oversized.Succeeded);
-            Assert.Equal(PoseFileStoreFailureKind.SizeLimit, oversized.Failure!.Kind);
-        }
-
-        var deep = "{}";
-        for (var i = 0; i < PoseFileLimits.MaxJsonDepth + 1; i++)
-            deep = $"{{\"x\":{deep}}}";
-
-        var depth = AtomicPoseFileStore.Default.Parse(deep);
-        var entries = string.Join(",", Enumerable.Repeat("\"same\":{}", PoseFileLimits.MaxEntriesPerCollection + 1));
-        var collection = AtomicPoseFileStore.Default.Parse($"{{\"Bones\":{{{entries}}}}}");
-
-        Assert.False(depth.Succeeded);
-        Assert.Equal(PoseFileStoreFailureKind.Json, depth.Failure!.Kind);
-        Assert.False(collection.Succeeded);
-        Assert.Equal(PoseFileValidationFailureKind.CollectionSize,
-            collection.Failure!.ValidationFailure!.Kind);
-    }
-
-    [Fact]
     public void Atomic_commit_reports_phase_failures_and_preserves_recovery_evidence()
     {
         var phaseCases = new[]

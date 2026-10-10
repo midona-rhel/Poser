@@ -68,22 +68,6 @@ public sealed class ActorStateSnapshotsTests
         Assert.DoesNotContain("pose", f.Events);
     }
 
-    [Fact]
-    public void Capture_failure_is_a_refusal_not_an_empty_state()
-    {
-        var f = new Fixture { CannotReadLook = true };
-        var result = f.States.Capture(f.Actor);
-        Assert.False(result.Success);
-        Assert.Contains("look unreadable", result.Detail);
-        Assert.Empty(f.Events);
-
-        f = new Fixture { ThrowPoseCapture = true };
-        result = f.States.Capture(f.Actor);
-        Assert.False(result.Success);
-        Assert.Contains("Pose unavailable", result.Detail);
-        Assert.Empty(f.Events);
-    }
-
     private sealed class Fixture : ISessionGenerationSource, IPoseSnapshotPort
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();

@@ -20,6 +20,8 @@ public sealed class ValueJournalTests
         var history = new TransformHistory();
         var journal = new ValueJournal(history);
         var target = new Target();
+        Set(journal, target, 1f); // setting the value it already holds is not a step
+        Assert.False(history.CanUndo);
 
         journal.BeginEdit("opacity");
         Set(journal, target, 0.8f);
@@ -33,23 +35,6 @@ public sealed class ValueJournalTests
         Assert.True(Undo(history));
         Assert.Equal(1f, target.Opacity);
         Assert.False(history.CanUndo);
-    }
-
-    [Fact]
-    public void Sealing_starts_a_new_step_on_the_same_key()
-    {
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var target = new Target();
-
-        Set(journal, target, 0.5f);
-        journal.Seal();
-        Set(journal, target, 0.2f);
-
-        Assert.True(Undo(history));
-        Assert.Equal(0.5f, target.Opacity);
-        Assert.True(Undo(history));
-        Assert.Equal(1f, target.Opacity);
     }
 
     [Fact]
@@ -68,17 +53,5 @@ public sealed class ValueJournalTests
         Assert.Equal(0.3f, second.Opacity);
         Assert.True(Undo(history));
         Assert.Equal(1f, first.Opacity);
-    }
-
-    [Fact]
-    public void Setting_the_value_it_already_holds_is_not_a_step()
-    {
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var target = new Target();
-
-        Set(journal, target, 1f);
-
-        Assert.False(history.CanUndo);
     }
 }

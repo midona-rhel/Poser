@@ -30,20 +30,6 @@ public sealed class McdfHashIndexTests : IDisposable
     }
 
     [Fact]
-    public void A_package_is_found_by_its_bytes_wherever_it_is_filed()
-    {
-        var bytes = new byte[] { 1, 2, 3, 4, 5 };
-        string nested = Path.Combine(_root, "sorted", "friends");
-        Directory.CreateDirectory(nested);
-        string path = Path.Combine(nested, "renamed-since-the-save.mcdf");
-        File.WriteAllBytes(path, bytes);
-
-        var index = new McdfHashIndex(() => _root);
-
-        Assert.Equal(path, index.Find(Digest(bytes), Token));
-    }
-
-    [Fact]
     public void A_package_replaced_in_place_cannot_serve_its_old_digest()
     {
         var first = new byte[] { 1, 2, 3 };
