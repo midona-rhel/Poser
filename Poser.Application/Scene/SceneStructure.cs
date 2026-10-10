@@ -36,7 +36,12 @@ public sealed class SceneStructure(SceneGroups groups, GroupTransformCoordinator
                 return new SceneStructureGroup(group.Id, group.Name, group.ParentId,
                     group.Members.ToArray(), transform, transform != null, null);
             }).ToArray();
-        return new(captured, groups.RootOrder.ToArray());
+        // A group too thin to save (fewer than two entities under it) leaves
+        // its root slot behind too: a slot naming a group the document does
+        // not carry is a dangling reference the write validation refuses.
+        var saved = captured.Select(group => group.Key).ToHashSet();
+        return new(captured, groups.RootOrder
+            .Where(slot => !slot.IsGroup || saved.Contains(slot.GroupId)).ToArray());
     }
 
     public IReadOnlyList<Guid> Import(IReadOnlyList<SceneStructureGroup> entries, IReadOnlyList<RootSlot> order)

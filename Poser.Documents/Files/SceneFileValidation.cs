@@ -308,7 +308,7 @@ public static class SceneFileValidation
                 "Environment", null, () => scene.Environment = null) is { } environmentFailure)
             return environmentFailure;
 
-        if (ValidateStructure(scene) is { } structureFailure)
+        if (ValidateStructure(scene, strict: refusals is null) is { } structureFailure)
             return structureFailure;
 
         foreach (var remove in removals)
@@ -321,10 +321,12 @@ public static class SceneFileValidation
     /// slot the load's structure restore dereferences is present, group keys
     /// are unique, and nesting names existing groups without a cycle. A
     /// member or slot of an unknown KIND is legal — a future
-    /// kind reads and is skipped — but a missing one is not. Then the
+    /// kind reads and is skipped — but a missing one is not. A root slot
+    /// naming an absent group is refused only when <paramref name="strict"/>
+    /// (a write); a load skips it. Then the
     /// optional transform state and the parent links.
     /// </summary>
-    private static SceneFileValidationOutcome? ValidateStructure(SceneFile scene)
+    private static SceneFileValidationOutcome? ValidateStructure(SceneFile scene, bool strict)
     {
         var groups = scene.Groups ?? [];
         var groupKeys = new HashSet<Guid>();
@@ -359,7 +361,10 @@ public static class SceneFileValidation
             if (slot?.Kind is null)
                 return Fail(SceneFileValidationFailureKind.Document,
                     "The scene's sidebar order has a missing entry.");
-            if (slot.Kind == "group" && !groupKeys.Contains(slot.Key))
+            // A load skips a slot naming a group the file does not carry
+            // (saves before #439 wrote one for every thin group they left
+            // out), so only a write refuses it.
+            if (strict && slot.Kind == "group" && !groupKeys.Contains(slot.Key))
                 return Fail(SceneFileValidationFailureKind.Relationship,
                     "The scene's sidebar order names a group the scene does not have.");
         }

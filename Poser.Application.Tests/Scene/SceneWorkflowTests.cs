@@ -49,7 +49,7 @@ public sealed class SceneWorkflowTests
         using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
             structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
         Assert.True(workflow.BeginLoad("parents.xivs").Success); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         var first = Assert.Single(parenting.Capture());
         Assert.Equal(offset, first.Value.Offset);
         Assert.NotEqual(first.Key, first.Value.Target);
@@ -57,7 +57,7 @@ public sealed class SceneWorkflowTests
         Assert.True(step.Undo()); history.CommitUndo(step);
         Assert.Empty(parenting.Capture()); // #433: rollback takes its links with it.
         Assert.True(step.Redo()); history.CommitRedo(step); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         parenting.Evaluate();
         var currentIds = runtime.SpawnedLightTokens.TakeLast(2).Select(t => runtime.ResolveSceneEntity(t)!.Value).ToArray();
         Assert.Equal(currentIds[0], parenting.Read(currentIds[1])!.Target);
@@ -68,7 +68,7 @@ public sealed class SceneWorkflowTests
             return saved;
         };
         Assert.True(workflow.BeginSave("saved.xivs").Success); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         var link = Assert.Single(runtime.Captured!.Parents!);
         Assert.Equal(currentIds[0].Light!.Value.LogicalId, link.Target.Key);
         Assert.Equal(currentIds[1].Light!.Value.LogicalId, link.Child.Key);
@@ -114,7 +114,7 @@ public sealed class SceneWorkflowTests
                 history.CommitRedo(redo);
             }
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             var importedParent = Assert.Single(groups.All, group => group.Name == "Parent");
             var importedChild = Assert.Single(groups.All, group => group.Name == "Child");
             Assert.Equal(importedParent.Id, importedChild.ParentId);
@@ -132,7 +132,7 @@ public sealed class SceneWorkflowTests
             };
             Assert.True(load.BeginSave("captured.xivs").Success);
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             var savedChild = Assert.Single(runtime.Captured!.Groups!, group => group.Name == "Child");
             var savedParent = Assert.Single(runtime.Captured.Groups!, group => group.Name == "Parent");
             Assert.Equal(savedParent.Key, savedChild.Parent);
@@ -145,6 +145,15 @@ public sealed class SceneWorkflowTests
             Assert.Null(state.NamedSnapshot(importedChild.Id));
             history.CommitUndo(step);
         }
+    }
+
+    /// <summary>Applied, or the receipt's own detail in the failure, so CI
+    /// prints the refusal rather than only the state.</summary>
+    private static void AssertApplied(SceneWorkflow workflow)
+    {
+        var receipt = Assert.IsType<OperationReceipt>(workflow.Receipt);
+        Assert.True(receipt.State == OperationReceiptState.Applied,
+            $"Expected Applied, got {receipt.State}: {receipt.Detail}");
     }
 
     private sealed class EmptyGroupSource : IGroupTransformSource
@@ -167,7 +176,7 @@ public sealed class SceneWorkflowTests
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
         Assert.True(load.BeginLoad("light.xivs").Success);
         await load.Drain;
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         for (var cycle = 0; cycle < 3; cycle++)
         {
@@ -179,7 +188,7 @@ public sealed class SceneWorkflowTests
             Assert.True(step.Redo());
             history.CommitRedo(step);
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             Assert.NotSame(current, runtime.SpawnedLightTokens[^1]);
             Assert.Equal((current, runtime.SpawnedLightTokens[^1]), runtime.HistoryReplacements[^1]);
             Assert.Same(step, history.PeekUndo());
@@ -821,7 +830,7 @@ public sealed class SceneWorkflowTests
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
         Assert.True(load.BeginLoad("shot.xivs", new SceneLoadOptions { ClearExistingScene = true }).Success);
         await load.Drain;
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
 
         Assert.True(journal.Undo().Success);
         Assert.True(history.CanRedo);
@@ -887,7 +896,7 @@ public sealed class SceneWorkflowTests
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         // It polled rather than giving up on the first look.
         Assert.True(runtime.ActorReadyPolls > 3);
         // And it still posed the actor once readiness landed.
@@ -916,7 +925,7 @@ public sealed class SceneWorkflowTests
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         int frozen = runtime.Calls.IndexOf("FreezeActor:Lead");
         int posed = runtime.Calls.IndexOf("ArmPoseImport:Lead");
         Assert.True(frozen >= 0, "the actor was never stopped");
@@ -995,7 +1004,7 @@ public sealed class SceneWorkflowTests
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
         Assert.Equal(3, last.Total);
         Assert.Equal(last.Total, last.Done);
@@ -1078,7 +1087,7 @@ public sealed class SceneWorkflowTests
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         Assert.Equal(2, runtime.PeakCollectionRestores);
     }
 
