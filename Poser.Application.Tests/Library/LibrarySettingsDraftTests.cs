@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using Poser.Library;
+using Poser.Domain.Library;
 
 namespace Poser.Tests.Library;
 

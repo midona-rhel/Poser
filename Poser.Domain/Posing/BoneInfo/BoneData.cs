@@ -1,4 +1,4 @@
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing.BoneInfo;
 
 /// <summary>
 /// Data for a single bone: translation, category, and optional subcategory.

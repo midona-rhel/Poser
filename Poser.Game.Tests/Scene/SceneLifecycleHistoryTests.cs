@@ -20,6 +20,7 @@ using Poser.Game.Scene;
 using Poser.Services;
 
 using Poser.Domain.Cameras;
+using Poser.Domain.Actors;
 
 namespace Poser.Game.Tests.Scene;
 

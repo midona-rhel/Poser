@@ -10,6 +10,7 @@ using Poser.Entities;
 using Poser.Services;
 using Poser.Config;
 using Poser.Game.Posing;
+using Poser.Domain.Transforms;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 

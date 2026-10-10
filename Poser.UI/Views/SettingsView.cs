@@ -8,10 +8,11 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
-using Poser.Entities;
 using Poser.Library;
 
 using Poser.Domain.Cameras;
+using Poser.Domain.Library;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.FilterPillWidgets;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.ScrollRegionWidgets;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Poser.Entities;
+using Poser.Domain.Actors;
 
 namespace Poser.Services;
 

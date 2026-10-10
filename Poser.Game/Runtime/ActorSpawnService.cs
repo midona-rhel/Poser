@@ -9,6 +9,7 @@ using Poser.Domain.Companions;
 using Poser.Entities;
 using Poser.Game.Integration;
 using Poser.Services;
+using Poser.Domain.Identity;
 
 namespace Poser.Game;
 

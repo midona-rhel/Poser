@@ -13,6 +13,7 @@ using Poser.Game.Journal;
 using Poser.Game.Lighting;
 using Poser.Game.Scene;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.WorldObjects;
 

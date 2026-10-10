@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 
 namespace Poser.Entities;
 

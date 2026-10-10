@@ -1,3 +1,5 @@
+using Poser.Domain.Transforms;
+
 namespace Poser.Game.WorldObjects;
 
 // Phase-specific data prevents contradictory "paused, engage next, anchored"

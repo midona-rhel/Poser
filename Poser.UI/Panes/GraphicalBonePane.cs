@@ -16,10 +16,10 @@ using Poser.Core;
 using Poser.Data;
 using Poser.Data.Config;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.DropdownWidgets;
 using static Poser.UI.Widgets.FilterPillWidgets;
 using static Poser.UI.Widgets.ScrollRegionWidgets;
@@ -650,13 +650,13 @@ public sealed partial class GraphicalBonePane : IDisposable
             // the one symmetry rule, in the maps exactly as the overlay.
             var appConfig =
                 _configuration.Config;
-            if (Core.BoneSymmetry.EffectiveMode(
+            if (Domain.Posing.BoneSymmetry.EffectiveMode(
                     appConfig.PerBoneSymmetry,
                     appConfig.BoneSymmetryOverrides,
                     appConfig.AutoLinkPairedBones,
                     _editorState.SymmetryMode,
                     fact.CanonicalName) != SymmetryMode.Off
-                && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
+                && Domain.Posing.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
                 mirrorPartners.Add((fact.Skeleton, fact.PartialId, mirror));
             if (_bonePosing.LinkedBonesEnabled)
@@ -806,7 +806,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         {
             if (bone.IsHidden) continue;
             bool showNsfw = _configuration.Config.Display.ShowNsfwBones;
-            if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+            if (!showNsfw && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 continue;
             _dotIds[bone.Id] = SelectionId.ForBone(bone.Id);
         }

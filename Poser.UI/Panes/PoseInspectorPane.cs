@@ -13,7 +13,6 @@ using Poser.Application.Transforms;
 using Poser.Application.Posing;
 using Poser.Core;
 using Poser.Domain.Posing;
-using Poser.Entities;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -28,6 +27,7 @@ using DomainDelta = Poser.Domain.Transforms.TransformDelta;
 using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.FilterPillWidgets;
@@ -472,7 +472,7 @@ public partial class PoseInspectorPane : IDisposable
                 return (Quaternion.Identity, Quaternion.Identity, false);
 
             Quaternion frameWorld;
-            if (_editorState.RotationPivot == Core.RotationPivot.Parent &&
+            if (_editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
                 ViewportParentModel(boneId) is { } parent)
             {
                 frameWorld = Controls.RotationGizmoRings.RadialFrame(
@@ -1304,7 +1304,7 @@ public partial class PoseInspectorPane : IDisposable
         {
             if (bone.IsHidden) continue;
             if (!showNsfw &&
-                Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+                Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 continue;
             if (_viewport.GetBoneModelTransform(bone.Id) is not { } value) continue;
             positions[bone.Id] = value.Position;
@@ -2001,7 +2001,7 @@ public partial class PoseInspectorPane : IDisposable
         TransformTargetId selectedTarget) =>
         chains.Contains(selectedTarget) && selectedTarget.Bone is { } bone
             ? "Editing " +
-              Core.BoneInfo.BoneInfoService.GetDisplayName(bone.CanonicalName) +
+              Domain.Posing.BoneInfo.BoneInfoService.GetDisplayName(bone.CanonicalName) +
               " below"
             : "Live IK across every limb of this actor";
 
@@ -2658,9 +2658,9 @@ public partial class PoseInspectorPane : IDisposable
             var bones = SelectedBoneIds();
             if (bones.Count > 1)
             {
-                var cats = bones.Select(b => Core.BoneInfo.BoneInfoService.GetCategory(b.CanonicalName)).Distinct().ToList();
+                var cats = bones.Select(b => Domain.Posing.BoneInfo.BoneInfoService.GetCategory(b.CanonicalName)).Distinct().ToList();
                 string who = cats.Count == 1
-                    ? $"{Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cats[0])} — {bones.Count} bones"
+                    ? $"{Domain.Posing.BoneInfo.BoneInfoService.GetCategoryDisplayName(cats[0])} — {bones.Count} bones"
                     : $"{bones.Count} bones";
                 string sub = string.Join(" · ", bones.Take(3).Select(b => b.CanonicalName)) + (bones.Count > 3 ? " …" : "");
                 return (who, sub, bones.Count);
@@ -2955,7 +2955,7 @@ public partial class PoseInspectorPane : IDisposable
                 pivotMode = DomainPivot.PerTarget;
                 // Parent pivots are fixed at gesture start.
                 if (operation == DomainOperation.Rotate &&
-                    _editorState.RotationPivot == Core.RotationPivot.Parent &&
+                    _editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
                     ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
                 {
                     pivotMode = DomainPivot.Custom;
@@ -3178,7 +3178,7 @@ public partial class PoseInspectorPane : IDisposable
     {
         var configuration =
             _configuration.Config;
-        return Core.BoneSymmetry.EffectiveMode(
+        return Domain.Posing.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,
             configuration.AutoLinkPairedBones,

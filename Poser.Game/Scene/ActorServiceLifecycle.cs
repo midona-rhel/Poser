@@ -6,6 +6,7 @@ using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Scene;
 

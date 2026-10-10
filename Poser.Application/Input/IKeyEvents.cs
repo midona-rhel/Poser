@@ -1,4 +1,5 @@
 using Poser.Config;
+using Poser.Domain.Preferences;
 
 namespace Poser.Services;
 

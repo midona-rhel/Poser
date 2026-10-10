@@ -14,6 +14,7 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 using Poser.Domain.Scene;
 using Poser.Application.World;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.WorldObjects;
 

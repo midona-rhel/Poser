@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Poser.Config;
+using Poser.Domain.Preferences;
 
 namespace Poser.Application.Tests.Settings;
 
@@ -32,7 +33,7 @@ public sealed class ConfigurationRecoveryTests : IDisposable
         var config = new PoserConfiguration();
         config.UI.Bindings["Undo"] = new("Ctrl+OEM_4", "");
         config.UI.DetachedPlacements["Inspector"] = new(new(12, 34), new(350, 600));
-        config.BoneSymmetryOverrides["j_te_l"] = Poser.Services.SymmetryMode.Mirror;
+        config.BoneSymmetryOverrides["j_te_l"] = Poser.Domain.Preferences.SymmetryMode.Mirror;
         config.Skeleton.BoneVisibilityPresets.Add(new() { Name = "Saved", Bones = ["j_te_l"] });
         var json = JsonConvert.SerializeObject(config, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All });
         json = json.Replace(", Poser.Documents", ", Poser.Core").Replace(", Poser.Domain", ", Poser.Core");
@@ -41,7 +42,7 @@ public sealed class ConfigurationRecoveryTests : IDisposable
         Assert.Empty(loaded.Failure);
         Assert.Equal("Ctrl+[", KeyChord.Parse(loaded.Configuration.UI.Bindings["Undo"].Primary).ToString());
         Assert.Equal(new System.Numerics.Vector2(12, 34), loaded.Configuration.UI.DetachedPlacements["Inspector"].Position);
-        Assert.Equal(Poser.Services.SymmetryMode.Mirror, loaded.Configuration.BoneSymmetryOverrides["j_te_l"]);
+        Assert.Equal(Poser.Domain.Preferences.SymmetryMode.Mirror, loaded.Configuration.BoneSymmetryOverrides["j_te_l"]);
         Assert.Contains(loaded.Configuration.Skeleton.BoneVisibilityPresets, p => p.Name == "Saved" && p.Bones.Contains("j_te_l"));
     }
 

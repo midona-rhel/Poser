@@ -13,7 +13,6 @@ using Poser.Application.Lifecycle;
 using Poser.Composition;
 using Poser.Config;
 using Poser.Core;
-using Poser.Core.BoneInfo;
 using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
@@ -21,6 +20,8 @@ using Poser.Services;
 using Poser.Application.Scene;
 using Poser.UI;
 using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Domain.Posing.BoneInfo;
 
 namespace Poser;
 

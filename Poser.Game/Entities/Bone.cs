@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Poser.Core;
-using Poser.Core.BoneInfo;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing.BoneInfo;
+using Poser.Domain.Transforms;
 
 namespace Poser.Entities;
 

@@ -15,10 +15,10 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
+using Poser.Domain;
 
 namespace Poser.UI;
 
@@ -39,7 +39,7 @@ public sealed class SpawnBrowserWindow : Window
     /// <summary>Opens the library window on its Objects tab, filtered to
     /// the stated kind (null = everything) — the from-library rows' one
     /// act, wired by the window set.</summary>
-    public Action<global::Poser.Library.PoseLibraryEntryKind?, WorldAssetKind?>?
+    public Action<global::Poser.Domain.Library.PoseLibraryEntryKind?, WorldAssetKind?>?
         OnLibraryRequested;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
@@ -581,24 +581,24 @@ public sealed class SpawnBrowserWindow : Window
             var entry = snapshot.Entries[i];
             (TablerIcon glyph, SpawnBrowserTab tab)? seat = entry.Kind switch
             {
-                global::Poser.Library.PoseLibraryEntryKind.Actor =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Actor =>
                     (TablerIcon.User, SpawnBrowserTab.Actors),
-                global::Poser.Library.PoseLibraryEntryKind.Group =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Group =>
                     (TablerIcon.Folder, SpawnBrowserTab.All),
-                global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.WorldObject =>
                     entry.WorldKind switch
                     {
                         WorldAssetKind.Furniture => (TablerIcon.Couch, SpawnBrowserTab.Furniture),
                         WorldAssetKind.Effect => (TablerIcon.Fire, SpawnBrowserTab.Effects),
                         _ => (TablerIcon.Plant, SpawnBrowserTab.SceneObjects),
                     },
-                global::Poser.Library.PoseLibraryEntryKind.Prop =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Prop =>
                     (TablerIcon.Moneybag, SpawnBrowserTab.Props),
-                global::Poser.Library.PoseLibraryEntryKind.Light =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Light =>
                     (TablerIcon.Bulb, SpawnBrowserTab.Lights),
-                global::Poser.Library.PoseLibraryEntryKind.Camera =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Camera =>
                     (TablerIcon.Camera, SpawnBrowserTab.Cameras),
-                global::Poser.Library.PoseLibraryEntryKind.Overlay =>
+                global::Poser.Domain.Library.PoseLibraryEntryKind.Overlay =>
                     (TablerIcon.Message, SpawnBrowserTab.Overlays),
                 _ => null,
             };
@@ -610,9 +610,9 @@ public sealed class SpawnBrowserWindow : Window
                 entry.NameLower,
                 placed.glyph,
                 0u,
-                entry.Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? "Library · Group" : "Library",
+                entry.Kind == global::Poser.Domain.Library.PoseLibraryEntryKind.Group ? "Library · Group" : "Library",
                 false, placed.tab,
-                entry.Kind == global::Poser.Library.PoseLibraryEntryKind.Group ? SpawnSource.SavedGroup : SpawnSource.Library,
+                entry.Kind == global::Poser.Domain.Library.PoseLibraryEntryKind.Group ? SpawnSource.SavedGroup : SpawnSource.Library,
                 new SpawnDispatch.Saved(entry.Name, entry.FilePath, entry.Kind)));
         }
 
@@ -927,17 +927,17 @@ public sealed class SpawnBrowserWindow : Window
                 OnLibraryRequested?.Invoke(action switch
                 {
                     SpawnActionId.ActorFromLibrary =>
-                        global::Poser.Library.PoseLibraryEntryKind.Actor,
+                        global::Poser.Domain.Library.PoseLibraryEntryKind.Actor,
                     SpawnActionId.PropFromLibrary =>
-                        global::Poser.Library.PoseLibraryEntryKind.Prop,
+                        global::Poser.Domain.Library.PoseLibraryEntryKind.Prop,
                     SpawnActionId.LightFromLibrary =>
-                        global::Poser.Library.PoseLibraryEntryKind.Light,
+                        global::Poser.Domain.Library.PoseLibraryEntryKind.Light,
                     SpawnActionId.CameraFromLibrary =>
-                        global::Poser.Library.PoseLibraryEntryKind.Camera,
+                        global::Poser.Domain.Library.PoseLibraryEntryKind.Camera,
                     SpawnActionId.OverlayFromLibrary =>
-                        global::Poser.Library.PoseLibraryEntryKind.Overlay,
+                        global::Poser.Domain.Library.PoseLibraryEntryKind.Overlay,
                     // These share a file format, but not a UI category.
-                    _ => global::Poser.Library
+                    _ => global::Poser.Domain.Library
                         .PoseLibraryEntryKind.WorldObject,
                 }, action switch
                 {

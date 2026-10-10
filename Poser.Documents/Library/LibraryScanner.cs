@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Poser.Files;
+using Poser.Domain.Library;
 
 namespace Poser.Library;
 
@@ -390,8 +391,8 @@ public sealed class LibraryScanner
         var isLegacy = kind == PoseLibraryEntryKind.Pose
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
         var worldKind = kind == PoseLibraryEntryKind.WorldObject
-            ? Services.WorldAsset.KindOf(SceneFileStore.Default.Read(filePath).Scene?.WorldObjects?.FirstOrDefault()?.Path)
-            : Services.WorldAssetKind.Scenery;
+            ? Domain.Scene.WorldAsset.KindOf(SceneFileStore.Default.Read(filePath).Scene?.WorldObjects?.FirstOrDefault()?.Path)
+            : Domain.Scene.WorldAssetKind.Scenery;
         return new PoseLibraryEntry
         {
             Kind = kind,

@@ -1,4 +1,4 @@
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing.BoneInfo;
 
 /// <summary>
 /// Categories for grouping bones in the UI.

@@ -6,8 +6,8 @@ using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
 using DomainTransform = Poser.Domain.Transforms.PoseTransform;
-using LegacyLayer = Poser.Core.BonePoseTransformInfo;
-using LegacyTransform = Poser.Transform;
+using LegacyLayer = Poser.Domain.Posing.BonePoseTransformInfo;
+using LegacyTransform = Poser.Domain.Transforms.Transform;
 
 namespace Poser.Game.Transforms;
 

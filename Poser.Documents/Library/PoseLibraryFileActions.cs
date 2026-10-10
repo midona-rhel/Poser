@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Poser.Files;
+using Poser.Domain.Library;
 
 namespace Poser.Library;
 

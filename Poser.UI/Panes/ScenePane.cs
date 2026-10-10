@@ -18,6 +18,7 @@ using Dalamud.Bindings.ImGui;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Domain.Library;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.DialogWidgets;
 using static Poser.UI.Widgets.PageForm;

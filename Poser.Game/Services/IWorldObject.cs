@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Poser.Domain;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 
 namespace Poser.Services;
 

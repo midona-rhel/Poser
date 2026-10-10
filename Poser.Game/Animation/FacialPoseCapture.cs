@@ -13,7 +13,7 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
-using LegacyTransform = Poser.Transform;
+using LegacyTransform = Poser.Domain.Transforms.Transform;
 
 namespace Poser.Game.Animation;
 

@@ -5,6 +5,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
+using Poser.Domain;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;

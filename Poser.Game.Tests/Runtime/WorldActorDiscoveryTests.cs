@@ -15,6 +15,7 @@ using Poser.Files;
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Lifecycle;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Tests.Runtime;
 

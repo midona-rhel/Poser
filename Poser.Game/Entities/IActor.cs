@@ -1,3 +1,5 @@
+using Poser.Domain.Actors;
+
 namespace Poser.Entities;
 
 /// <summary>

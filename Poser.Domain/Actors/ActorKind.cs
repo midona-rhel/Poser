@@ -1,4 +1,4 @@
-namespace Poser.Entities;
+namespace Poser.Domain.Actors;
 
 /// <summary>
 /// The type of actor in the game world.

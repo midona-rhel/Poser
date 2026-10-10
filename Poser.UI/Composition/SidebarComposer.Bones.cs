@@ -13,7 +13,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
@@ -29,13 +28,13 @@ internal sealed partial class SidebarComposer
         if (_ktisisLabels == null)
         {
             var labels = new List<string>();
-            void Walk(Core.BoneInfo.KtisisBoneCategory category)
+            void Walk(Domain.Posing.KtisisBoneCategory category)
             {
                 labels.Add(category.Label);
                 foreach (var child in category.Children)
                     Walk(child);
             }
-            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
                 Walk(root);
             _ktisisLabels = labels.ToArray();
         }
@@ -57,7 +56,7 @@ internal sealed partial class SidebarComposer
         List<BuiltCategory> Children);
 
     private BuiltCategory? BuildKtisisCategory(
-        Core.BoneInfo.KtisisBoneCategory category,
+        Domain.Posing.KtisisBoneCategory category,
         Dictionary<string, (BoneDescriptor Bone, int Ordinal)> byName,
         HashSet<string> claimed,
         string filter,
@@ -329,7 +328,7 @@ internal sealed partial class SidebarComposer
                     byName[bone.Id.CanonicalName] = (bone, ordinal++);
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var categories = new List<BuiltCategory>();
-            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
                 if (BuildKtisisCategory(
                         root, byName, claimed, string.Empty, filtering: false)
                     is { } category)

@@ -19,12 +19,12 @@ using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
 using Poser.Files;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
+using Poser.Domain.Library;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 

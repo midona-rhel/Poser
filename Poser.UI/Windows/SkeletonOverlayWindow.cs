@@ -16,6 +16,7 @@ using Poser.Domain.Transforms;
 using Poser.Application.Posing;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
@@ -820,13 +821,13 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                     continue;
                 var bone = descriptors[b];
                 var canonical = bone.Id.CanonicalName;
-                if (Core.BoneSymmetry.EffectiveMode(
+                if (Domain.Posing.BoneSymmetry.EffectiveMode(
                         symmetryConfig.PerBoneSymmetry,
                         symmetryConfig.BoneSymmetryOverrides,
                         symmetryConfig.AutoLinkPairedBones,
                         _editorState.SymmetryMode,
                         canonical) != SymmetryMode.Off
-                    && Core.PoseMath.GetMirrorBoneName(canonical)
+                    && Domain.Posing.PoseMath.GetMirrorBoneName(canonical)
                         is { } mirror)
                     (implicated ??= new()).Add(mirror);
                 if (_poseInteraction.LinkedBonesEnabled || symmetryConfig.AutoLinkPairedBones)
@@ -859,7 +860,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                         && implicated?.Contains(bone.Id.CanonicalName)
                             != true))
                     continue;
-                if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+                if (!showNsfw && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
                 placed[b] = true;
             }
@@ -1957,14 +1958,14 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         {
             if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
                 continue;
-            if (Core.BoneSymmetry.EffectiveMode(
+            if (Domain.Posing.BoneSymmetry.EffectiveMode(
                     configuration.PerBoneSymmetry,
                     configuration.BoneSymmetryOverrides,
                     configuration.AutoLinkPairedBones,
                     globalMode,
                     boneId.CanonicalName) == SymmetryMode.Off)
                 continue;
-            if (Core.PoseMath.GetMirrorBoneName(boneId.CanonicalName) is not { } mirror)
+            if (Domain.Posing.PoseMath.GetMirrorBoneName(boneId.CanonicalName) is not { } mirror)
                 continue;
             partners ??= new HashSet<(SkeletonId, string)>();
             partners.Add((boneId.Skeleton, mirror));

@@ -9,13 +9,14 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Integration;
 using Poser.Config;
-using Poser.Entities;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
 
 using Poser.Domain.Cameras;
 using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Domain.Preferences;
 
 namespace Poser.UI;
 public class SettingsWindow : Window

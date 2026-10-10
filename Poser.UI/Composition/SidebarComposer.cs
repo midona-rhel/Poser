@@ -14,7 +14,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
@@ -799,14 +798,14 @@ internal sealed partial class SidebarComposer
                 (companions ??= new List<ActorDescriptor>()).Add(candidate);
         }
 
-        var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+        var groups = new List<(Domain.Posing.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
         {
             foreach (var bone in skeleton.Bones)
             {
                 if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                 var slot = groups.FindIndex(g => g.Cat == cat);
                 if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
                 groups[slot].Bones.Add(bone);
@@ -958,7 +957,7 @@ internal sealed partial class SidebarComposer
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var built = new List<BuiltCategory>();
-            foreach (var rootCategory in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var rootCategory in Domain.Posing.KtisisBoneCategories.Roots)
                 if (BuildKtisisCategory(
                         rootCategory, byName, claimed, filter, filtering)
                     is { } presentRoot)
@@ -1056,10 +1055,10 @@ internal sealed partial class SidebarComposer
                 if (MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
                     return true;
                 if (!character) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                 if (MatchesSidebarFilter(
                         filter,
-                        Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
+                        Domain.Posing.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
                         cat.ToString()))
                     return true;
             }
@@ -1236,6 +1235,6 @@ internal sealed partial class SidebarComposer
     /// IsHidden and every selection path are untouched.</summary>
     public bool IsBoneSuppressed(BoneDescriptor bone)
         => !_configuration.Config.Display.ShowNsfwBones
-            && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+            && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
 }

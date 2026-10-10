@@ -9,6 +9,7 @@ using Poser.Config;
 using Poser.Files;
 using Poser.Library;
 using Poser.Tests.Files;
+using Poser.Domain.Library;
 
 namespace Poser.Tests.Library;
 

@@ -18,8 +18,9 @@ using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
-using LegacyTransform = Poser.Transform;
+using LegacyTransform = Poser.Domain.Transforms.Transform;
 using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.TablerIconWidgets;
 using static Poser.UI.Widgets.Themes;
 
@@ -86,7 +87,7 @@ public class GizmoOverlayWindow : Window
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
         public Vector3 Pivot { get; init; }
         // Pivot choice is fixed for the gesture.
-        public Core.RotationPivot PivotChoice { get; init; } = Core.RotationPivot.Self;
+        public Domain.Preferences.RotationPivot PivotChoice { get; init; } = Domain.Preferences.RotationPivot.Self;
     }
 
     // One gesture slot and one press-suppression flag cover the overlay.
@@ -620,7 +621,7 @@ public class GizmoOverlayWindow : Window
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
-        Core.RotationPivot currentPivot)
+        Domain.Preferences.RotationPivot currentPivot)
     {
         if (_gesture is not { } gesture)
             return null;
@@ -811,7 +812,7 @@ public class GizmoOverlayWindow : Window
 
         // Parent pivot applies only to bone rotation with a valid parent.
         bool pivotActive = tool == TransformTool.Rotate && isBone &&
-            pivotChoice != Core.RotationPivot.Self;
+            pivotChoice != Domain.Preferences.RotationPivot.Self;
         Vector3? restPivot = null;
         if (pivotActive && gesture == null)
         {
@@ -1094,7 +1095,7 @@ public class GizmoOverlayWindow : Window
         BoneId? primaryBone,
         TransformTool tool,
         TransformOrientation orientation,
-        Core.RotationPivot pivotChoice,
+        Domain.Preferences.RotationPivot pivotChoice,
         bool pivotActive,
         Vector3 pivotModel,
         Vector3 pivotWorld,
@@ -1541,7 +1542,7 @@ public class GizmoOverlayWindow : Window
     {
         var configuration =
             _configuration.Config;
-        return Core.BoneSymmetry.EffectiveMode(
+        return Domain.Posing.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,
             configuration.AutoLinkPairedBones,

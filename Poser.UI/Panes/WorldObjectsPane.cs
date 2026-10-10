@@ -11,6 +11,7 @@ using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.UI.Widgets;
+using Poser.Domain.Scene;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Application.Selection;
 using Poser.UI.Widgets;
+using Poser.Domain;
 
 namespace Poser.UI.Composition;
 

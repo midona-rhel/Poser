@@ -10,6 +10,7 @@ using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Domain.Identity;
 
 namespace Poser.Game;
 

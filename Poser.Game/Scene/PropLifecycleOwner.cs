@@ -5,6 +5,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Scene;
 

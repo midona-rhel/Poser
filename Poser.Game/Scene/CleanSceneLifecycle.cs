@@ -241,7 +241,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // untranslated. One line per refresh instead of one per bone: a modded
             // 400-bone character used to pay hundreds of synchronous log writes on
             // this exact tick. No-op when nothing new was seen.
-            Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
+            Poser.Domain.Posing.BoneInfo.BoneInfoService.FlushUntranslatedLog();
             // One structural signature coalesces every refresh source (events,
             // retries, session transitions): identical scenes publish nothing —
             // no snapshot churn, no revision increment, no gesture cancellation.

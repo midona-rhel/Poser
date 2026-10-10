@@ -149,7 +149,7 @@ public sealed class FacialPoseCaptureTests
                 Array.Empty<CameraDescriptor>(),
                 Array.Empty<PropDescriptor>());
 
-        private static Poser.Transform Raw(float x) =>
+        private static Poser.Domain.Transforms.Transform Raw(float x) =>
             new(new Vector3(x, 0, 0), Quaternion.Identity, Vector3.One);
     }
 

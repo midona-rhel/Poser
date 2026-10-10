@@ -10,7 +10,7 @@ namespace Poser.Game.Transforms;
 public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService posing,
     SceneSession scene, SceneGroups groups) : IParentingRuntime
 {
-    private readonly Dictionary<IBone, global::Poser.Transform?> _boneFrames = new();
+    private readonly Dictionary<IBone, global::Poser.Domain.Transforms.Transform?> _boneFrames = new();
     public ActorId? CompanionOwner(ActorId actor) => scene.Snapshot.Actors.FirstOrDefault(a => a.Id == actor)?.OwnerActor;
     public ActorId? ResolveCompanion(ActorId owner) => scene.Snapshot.Actors.FirstOrDefault(a => a.OwnerActor == owner)?.Id;
     public void BeginRead() => _boneFrames.Clear();
@@ -21,7 +21,7 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
 
     public PoseTransform? Read(SelectionId id)
     {
-        global::Poser.Transform? world = id switch
+        global::Poser.Domain.Transforms.Transform? world = id switch
         {
             { Actor: { } actor } when bindings.Resolve(actor).Value is { } live => posing.GetEffectiveTransform(live),
             { Bone: { } bone } when bindings.Resolve(bone).Value is { } live => ReadBone(live),
@@ -34,7 +34,7 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
         return world is { } t && PoseTransform.TryCreate(t.Position, t.Rotation, t.Scale, out var value, out _) ? value : null;
     }
 
-    private global::Poser.Transform? ReadBone(IBone bone)
+    private global::Poser.Domain.Transforms.Transform? ReadBone(IBone bone)
     {
         if (!_boneFrames.TryGetValue(bone, out var frame))
             _boneFrames[bone] = frame = BoneWorld.ReadCurrent(bone);
@@ -52,7 +52,7 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
     public bool Write(SelectionId id, PoseTransform world)
     {
         if (!world.IsValid) return false;
-        var transform = global::Poser.Transform.FromPose(world);
+        var transform = global::Poser.Domain.Transforms.Transform.FromPose(world);
         switch (id)
         {
             case { Actor: { } actor } when bindings.Resolve(actor).Value is { } live:

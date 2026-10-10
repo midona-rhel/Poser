@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Entities;
 using Poser.Files;
+using Poser.Domain.Transforms;
 
 namespace Poser.Services;
 

@@ -10,6 +10,7 @@ using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Tests.Files;
 

@@ -13,9 +13,10 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.WorldObjects;
 using Poser.Services;
-using PoserTransform = Poser.Transform;
+using PoserTransform = Poser.Domain.Transforms.Transform;
 
 using Poser.Application.Viewport;
+using Poser.Domain.Posing;
 
 namespace Poser.Game.Lighting;
 

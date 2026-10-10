@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Poser.Services;
+using Poser.Domain.Preferences;
 
 namespace Poser.Config;
 

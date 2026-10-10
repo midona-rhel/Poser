@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Transforms;
 using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;
 using static Poser.UI.Widgets.ValueEdits;
@@ -447,7 +448,7 @@ public sealed class UIManager : IUIManager
     /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
-    private bool OnKeyEvent(Config.KeyCode code, global::Poser.Services.KeyEventKind kind)
+    private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Services.KeyEventKind kind)
         => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
             _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
 

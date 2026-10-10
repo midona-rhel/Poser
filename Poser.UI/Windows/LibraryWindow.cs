@@ -6,6 +6,8 @@ using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Domain.Scene;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.SegmentedControlWidgets;
 using static Poser.UI.Widgets.TextWidgets;
@@ -46,29 +48,29 @@ public sealed class LibraryWindow : Window
     /// <summary>The Objects tab's kind toggles follow spawn search's
     /// category order, with environments and groups last.</summary>
     private static readonly
-        (global::Poser.Library.PoseLibraryEntryKind Kind, TablerIcon Icon,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind Kind, TablerIcon Icon,
             string Name, WorldAssetKind? WorldKind)[]
         KindToggles =
     [
-        (global::Poser.Library.PoseLibraryEntryKind.Actor, TablerIcon.User,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Actor, TablerIcon.User,
             "Actors", null),
-        (global::Poser.Library.PoseLibraryEntryKind.Light, TablerIcon.Bulb,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Light, TablerIcon.Bulb,
             "Lights", null),
-        (global::Poser.Library.PoseLibraryEntryKind.Camera, TablerIcon.Camera,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Camera, TablerIcon.Camera,
             "Cameras", null),
-        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Couch,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Couch,
             "Furniture", WorldAssetKind.Furniture),
-        (global::Poser.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
             "Props", null),
-        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
             "Objects", WorldAssetKind.Scenery),
-        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Fire,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Fire,
             "VFX", WorldAssetKind.Effect),
-        (global::Poser.Library.PoseLibraryEntryKind.Overlay, TablerIcon.Message,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Overlay, TablerIcon.Message,
             "Overlays", null),
-        (global::Poser.Library.PoseLibraryEntryKind.Environment, TablerIcon.Sun,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Environment, TablerIcon.Sun,
             "Environments", null),
-        (global::Poser.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
+        (global::Poser.Domain.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
             "Groups", null),
     ];
 

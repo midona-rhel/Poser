@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
-namespace Poser.Core;
+namespace Poser.Domain.Posing;
 
 /// <summary>
 /// The frame a stack delta is expressed in when the runtime applies it.

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Domain.Transforms;
 
 namespace Poser.Services;
 

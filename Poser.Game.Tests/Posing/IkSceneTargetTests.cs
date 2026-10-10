@@ -4,6 +4,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Tests.Posing;
 
@@ -18,7 +19,7 @@ public sealed class IkSceneTargetTests
             Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f),
             Scale = new Vector3(0.1f),
         };
-        var edit = new Poser.Core.BonePoseTransformInfo(Poser.Domain.Posing.TransformComponents.All, transform);
+        var edit = new Poser.Domain.Posing.BonePoseTransformInfo(Poser.Domain.Posing.TransformComponents.All, transform);
         var held = BoneApplyPass.HeldPoseStack(edit, true);
         Assert.Equal(Vector3.Zero, held.Transform.Position);
         Assert.Equal(transform.Rotation, held.Transform.Rotation);

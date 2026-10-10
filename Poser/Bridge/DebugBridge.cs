@@ -668,7 +668,7 @@ public sealed partial class DebugBridge : IDisposable
                     _overlayPresentation.SetVisible(everyBone, show == "1");
                 }
                 if (query.TryGetValue("mode", out var mode))
-                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Services.SkeletonViewMode>(mode, true);
+                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Domain.Preferences.SkeletonViewMode>(mode, true);
                 return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen, bones = _overlay.LastBoneCount, mode = skeleton.SkeletonViewMode.ToString() });
             }
             case "/history":
@@ -911,7 +911,7 @@ public sealed partial class DebugBridge : IDisposable
             case "/bonediff":
             {
                 var other = _actors.Actors[int.Parse(query["other"])];
-                var mine = new Dictionary<string, (int Partial, global::Poser.Transform T)>();
+                var mine = new Dictionary<string, (int Partial, global::Poser.Domain.Transforms.Transform T)>();
                 foreach (var sk in _skeletons.GetSkeletons(actor))
                     foreach (var b in sk.Bones)
                         mine[$"{b.PartialId}:{b.BoneName}"] = (b.PartialId, b.LastTransform);
@@ -1146,7 +1146,7 @@ public sealed partial class DebugBridge : IDisposable
                             float dy = query.TryGetValue("dy", out var dys) ? float.Parse(dys, CultureInfo.InvariantCulture) : 0f;
                             float dz = query.TryGetValue("dz", out var dzs) ? float.Parse(dzs, CultureInfo.InvariantCulture) : 0f;
                             float scale = query.TryGetValue("scale", out var factor) ? float.Parse(factor, CultureInfo.InvariantCulture) : 1f;
-                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale * scale);
+                            var wanted = new global::Poser.Domain.Transforms.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale * scale);
                             var pose = _bonePosing.GetPoseInfo(skeleton).GetPoseInfo(bone.BoneName, bone.PartialId);
                             var propagation = pose.DefaultPropagation;
                             try
@@ -1169,7 +1169,7 @@ public sealed partial class DebugBridge : IDisposable
                         if (bone.BoneName == name && bone.PartialId == part)
                         {
                             var raw = bone.LastRawTransform;
-                            var wanted = new global::Poser.Transform(raw.Position, raw.Rotation, new System.Numerics.Vector3(sc, sc, sc));
+                            var wanted = new global::Poser.Domain.Transforms.Transform(raw.Position, raw.Rotation, new System.Numerics.Vector3(sc, sc, sc));
                             _bonePosing.ApplyTransform(bone, wanted, raw);
                             return Json(new { ok = true, raw = new { raw.Scale.X, raw.Rotation.W }, modification = _bonePosing.GetModification(bone)?.Scale.X });
                         }
@@ -1300,8 +1300,8 @@ public sealed partial class DebugBridge : IDisposable
             case "/spawnobject":
             {
                 string modelPath = query.TryGetValue("path", out var sp) ? sp : "bgcommon/hou/outdoor/general/0022/bgparts/gar_b0_m0022a.mdl";
-                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Transform.Identity;
-                var placement = new global::Poser.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
+                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Domain.Transforms.Transform.Identity;
+                var placement = new global::Poser.Domain.Transforms.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
                 var made = _worldObjects.Spawn(modelPath, placement, true, out var detail);
                 return Json(new { ok = made != null, detail, address = made == null ? null : $"0x{made.Address:X}", name = made?.Name });
             }

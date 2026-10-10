@@ -114,7 +114,7 @@ public sealed class ActorColliderCapture(
             if (pose == null) continue;
             var live = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
             if (live == null || !Matrix4x4.Invert(reference.ToMatrix(), out var inverseBind)) continue;
-            var current = new global::Poser.Transform
+            var current = new global::Poser.Domain.Transforms.Transform
             {
                 Position = new(live->Translation.X, live->Translation.Y, live->Translation.Z),
                 Rotation = new(live->Rotation.X, live->Rotation.Y, live->Rotation.Z, live->Rotation.W),
@@ -123,7 +123,7 @@ public sealed class ActorColliderCapture(
             // Row-vector skinning: bind-model -> bone-local -> posed-model -> world.
             // Read the native final pose, not demand-driven inspector caches or raw baselines.
             bones.TryAdd(bone.BoneName, inverseBind * current.ToMatrix() * world);
-            var frame = global::Poser.Transform.FromMatrix(current.ToMatrix() * world);
+            var frame = global::Poser.Domain.Transforms.Transform.FromMatrix(current.ToMatrix() * world);
             joints.TryAdd(bone.BoneName, new(frame.Position - origin, bone.ParentBone?.BoneName, frame.Rotation));
             if (bindings.GetBoneId(bone) is { } boneId)
             {

@@ -2,6 +2,9 @@ using System.Linq;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using Poser.Domain.Actors;
+using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Entities;
 

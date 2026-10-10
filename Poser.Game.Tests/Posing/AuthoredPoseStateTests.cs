@@ -6,6 +6,7 @@ using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Tests.Posing;
 

@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Poser.Application.Selection;
-using Poser.Core.BoneInfo;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.UI.Views;
+using Poser.Domain.Posing.BoneInfo;
 
 namespace Poser.UI;
 

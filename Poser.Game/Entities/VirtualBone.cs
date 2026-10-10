@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Poser.Core;
+using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Entities;
 

@@ -6,6 +6,7 @@ using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Services;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.WorldObjects;
 

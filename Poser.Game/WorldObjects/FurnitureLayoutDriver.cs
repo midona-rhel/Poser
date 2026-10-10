@@ -7,7 +7,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Node;
 using System.Numerics;
 using System.Text;
 using Poser.Services;
-using Transform = Poser.Transform;
+using Transform = Poser.Domain.Transforms.Transform;
 using LayoutTransform = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Transform;
 
 using Poser.Domain.Scene;

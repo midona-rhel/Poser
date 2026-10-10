@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Poser.Core.BoneInfo;
+using Poser.Domain.Posing;
 
 namespace Poser.Config;
 

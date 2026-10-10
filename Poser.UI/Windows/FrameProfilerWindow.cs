@@ -5,6 +5,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.Domain;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ScrollRegionWidgets;
 using static Poser.UI.Widgets.TextWidgets;

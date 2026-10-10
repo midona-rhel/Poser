@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Text;
 using Poser.Files;
 using Poser.Library;
+using Poser.Domain.Library;
 
 namespace Poser.Tests.Files;
 

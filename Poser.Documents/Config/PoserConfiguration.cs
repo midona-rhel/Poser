@@ -98,7 +98,7 @@ public class PoserConfiguration
 
     /// <summary>The stated per-bone modes, by canonical bone name — only
     /// the bones the user explicitly set.</summary>
-    public System.Collections.Generic.Dictionary<string, Poser.Services.SymmetryMode>
+    public System.Collections.Generic.Dictionary<string, Poser.Domain.Preferences.SymmetryMode>
         BoneSymmetryOverrides { get; set; } = new();
 
     /// <summary>

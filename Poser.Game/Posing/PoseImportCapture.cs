@@ -17,6 +17,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Services;
+using Poser.Domain.Actors;
 
 using static Poser.Game.Posing.PoseImportPlanner;
 

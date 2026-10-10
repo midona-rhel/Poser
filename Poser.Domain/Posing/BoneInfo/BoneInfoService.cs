@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System;
+using Poser.Domain.Posing.BoneInfo.Categories;
 
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing.BoneInfo;
 
 /// <summary>
 /// Central service for bone information (translations and categories).

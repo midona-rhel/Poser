@@ -186,7 +186,7 @@ public sealed partial class GraphicalBonePane
         ScrollRegion("##map-bones", left / s, height / s - 36f, scroll =>
         {
             foreach (var bone in selectableBones
-                .Where(bone => _configuration.Config.Display.ShowNsfwBones || !Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+                .Where(bone => _configuration.Config.Display.ShowNsfwBones || !Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 .Where(bone => bone.DisplayName.Contains(_editFilter, StringComparison.OrdinalIgnoreCase)
                     || bone.Id.CanonicalName.Contains(_editFilter, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(bone => bone.DisplayName, StringComparer.OrdinalIgnoreCase)

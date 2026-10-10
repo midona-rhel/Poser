@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Poser.Services;
 
 using Poser.Application.Viewport;
+using Poser.Domain.Preferences;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
 namespace Poser.Services;
 

@@ -16,6 +16,7 @@ using Poser.Game.Posing;
 using Poser.Application.Posing;
 using Poser.Services;
 using Xunit;
+using Poser.Domain.Transforms;
 
 namespace Poser.Tests;
 

@@ -1,8 +1,8 @@
 using System;
 using System.Numerics;
-using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
-namespace Poser.Core;
+namespace Poser.Domain.Posing;
 
 /// <summary>
 /// Pure pose math shared by posing services. No game or Dalamud dependencies —

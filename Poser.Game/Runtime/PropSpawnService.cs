@@ -7,6 +7,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Core;
 using Poser.Services;
+using Poser.Domain.Transforms;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSWeapon = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Weapon;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;

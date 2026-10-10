@@ -3,6 +3,7 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
+using Poser.Domain.Transforms;
 
 using static Poser.Game.IkChainShapes;
 using static Poser.Game.IkHeldTargets;

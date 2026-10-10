@@ -13,11 +13,11 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.Domain.Preferences;
 
 namespace Poser.UI;
 
@@ -74,7 +74,7 @@ public partial class MainWindow
         };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
-        _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
+        _vm.OnRotationPivot = i => _editorState.RotationPivot = (Domain.Preferences.RotationPivot)i;
         _vm.OnSymmetry = i =>
         {
             var mode = (SymmetryMode)i;

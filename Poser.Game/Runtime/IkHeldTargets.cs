@@ -144,7 +144,7 @@ internal sealed unsafe class IkHeldTargets
         // frame * model (model first, then the actor's frame), so model =
         // frame⁻¹ * world. The authored turn since capture rides on the
         // end, where the delta stack puts it.
-        var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
+        var frame = global::Poser.Domain.Transforms.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
         if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
         var rotation = Quaternion.Normalize(

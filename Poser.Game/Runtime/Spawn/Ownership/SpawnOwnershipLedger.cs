@@ -1,6 +1,7 @@
 using Poser.Core;
 using Poser.Domain.Companions;
 using Poser.Entities;
+using Poser.Domain.Identity;
 
 namespace Poser.Game;
 

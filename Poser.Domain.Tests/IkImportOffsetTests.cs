@@ -1,8 +1,8 @@
 using System.Numerics;
 using System.Linq;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Xunit;
+using Poser.Domain.Transforms;
 
 namespace Poser.Tests;
 

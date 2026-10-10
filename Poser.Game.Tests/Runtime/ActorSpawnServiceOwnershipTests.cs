@@ -8,6 +8,8 @@ using Poser.Domain.Integration;
 using Poser.Game;
 using Poser.Game.Integration;
 using Poser.Services;
+using Poser.Domain.Actors;
+using Poser.Domain.Identity;
 
 namespace Poser.Game.Tests.Runtime;
 

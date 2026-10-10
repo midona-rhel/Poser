@@ -40,7 +40,7 @@ public unsafe class BorrowedLightStateTests
         Assert.Equal(originalRender.LightFlags, copyRender.LightFlags);
         Assert.Equal(originalRender.ColorIntensity, render.ColorIntensity);
         Assert.Equal((byte)17, native.VisibilityFlags);
-        light.Transform = Poser.Transform.Identity;
+        light.Transform = Poser.Domain.Transforms.Transform.Identity;
         light.Kind = LightKind.Spot;
         light.Color = Vector3.One;
         light.Intensity = 10;
