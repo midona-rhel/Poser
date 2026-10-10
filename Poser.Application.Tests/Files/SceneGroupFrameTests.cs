@@ -8,7 +8,7 @@ using Poser.Domain.Transforms;
 using Poser.Documents.Files;
 using Poser.Documents.Scene;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class SceneGroupFrameTests
 {

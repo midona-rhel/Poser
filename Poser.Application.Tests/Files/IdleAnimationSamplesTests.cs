@@ -3,7 +3,7 @@ using System.Numerics;
 using Poser.Documents.Animation;
 using Poser.Domain.Transforms;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class IdleAnimationSamplesTests
 {

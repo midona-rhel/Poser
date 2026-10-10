@@ -6,7 +6,7 @@ using Poser.Domain.Library;
 using Poser.Documents.Library;
 using Poser.Application.Library;
 
-namespace Poser.Tests.Library;
+namespace Poser.Application.Tests.Library;
 
 public sealed class LibrarySettingsDraftTests : IDisposable
 {

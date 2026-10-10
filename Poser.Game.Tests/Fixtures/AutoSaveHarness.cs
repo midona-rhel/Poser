@@ -22,7 +22,7 @@ using Poser.Application.Settings;
 using Poser.Game.Entities;
 using Poser.Game.Services;
 
-namespace Poser.Tests.Fixtures;
+namespace Poser.Game.Tests.Fixtures;
 
 /// <summary>
 /// One actor wired into the harness together with the exact skeleton list
@@ -107,7 +107,7 @@ internal sealed class AutoSaveHarness : IDisposable
             .CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
             .Returns(_ => NewPoseFile());
 
-        Configuration = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
+        Configuration = new ConfigurationService(new Poser.Application.Tests.Fixtures.MemoryConfigurationPersistence());
     }
 
     /// <summary>

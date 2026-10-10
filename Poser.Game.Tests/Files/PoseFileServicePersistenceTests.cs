@@ -12,7 +12,7 @@ using Poser.Game.Entities;
 using Poser.Game.Files;
 using Poser.Game.Services;
 
-namespace Poser.Tests.Files;
+namespace Poser.Game.Tests.Files;
 
 public sealed class PoseFileServicePersistenceTests
 {

@@ -3,8 +3,8 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Tests.Files;
 using Poser.Documents.Files;
+using Poser.Application.Tests.Files;
 
 namespace Poser.Application.Tests.Scene;
 

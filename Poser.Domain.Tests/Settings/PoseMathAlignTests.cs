@@ -2,7 +2,7 @@ using System;
 using System.Numerics;
 using Poser.Domain.Posing;
 
-namespace Poser.Tests.Core;
+namespace Poser.Domain.Tests.Settings;
 
 public sealed class PoseMathAlignTests
 {

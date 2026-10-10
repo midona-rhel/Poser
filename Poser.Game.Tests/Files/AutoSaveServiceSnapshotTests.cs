@@ -1,11 +1,11 @@
 using System;
 using System.IO;
 using System.Linq;
-using Poser.Tests.Fixtures;
 using Poser.Documents.AutoSave;
 using Poser.Documents.Files;
+using Poser.Game.Tests.Fixtures;
 
-namespace Poser.Tests.Files;
+namespace Poser.Game.Tests.Files;
 
 public sealed class AutoSaveServiceSnapshotTests
 {

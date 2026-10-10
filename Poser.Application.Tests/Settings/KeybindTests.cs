@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Documents.Config;
 
-namespace Poser.Tests.Core;
+namespace Poser.Application.Tests.Settings;
 
 public sealed class KeybindTests
 {

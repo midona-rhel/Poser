@@ -4,7 +4,7 @@ using System.Linq;
 using System.Numerics;
 using Poser.Documents.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class SceneWorldObjectCodecTests
 {

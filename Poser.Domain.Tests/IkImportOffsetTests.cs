@@ -4,7 +4,7 @@ using Poser.Domain.Posing;
 using Xunit;
 using Poser.Domain.Transforms;
 
-namespace Poser.Tests;
+namespace Poser.Domain.Tests;
 
 public sealed class IkImportOffsetTests
 {

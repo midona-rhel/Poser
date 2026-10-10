@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Poser.Documents.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class AtomicFileTests
 {

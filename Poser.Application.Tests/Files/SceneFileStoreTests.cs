@@ -8,7 +8,7 @@ using Poser.Domain.Scene;
 using Poser.Application.Diagnostics;
 using Poser.Documents.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {

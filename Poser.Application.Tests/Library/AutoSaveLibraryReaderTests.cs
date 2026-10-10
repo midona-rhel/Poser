@@ -1,10 +1,10 @@
 using System;
 using System.IO;
-using Poser.Tests.Files;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
+using Poser.Application.Tests.Files;
 
-namespace Poser.Tests.Library;
+namespace Poser.Application.Tests.Library;
 
 /// <summary>
 /// The auto-save listing reopens a file only when the listing says it changed,

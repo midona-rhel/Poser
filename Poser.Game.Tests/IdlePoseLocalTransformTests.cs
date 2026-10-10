@@ -2,7 +2,7 @@ using System.Numerics;
 using Poser.Domain.Transforms;
 using Poser.Game.Animation;
 
-namespace Poser.Tests;
+namespace Poser.Game.Tests;
 
 public sealed class IdlePoseLocalTransformTests
 {

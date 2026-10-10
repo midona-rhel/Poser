@@ -3,11 +3,11 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using Poser.Tests.Files;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
+using Poser.Application.Tests.Files;
 
-namespace Poser.Tests.Library;
+namespace Poser.Application.Tests.Library;
 
 public sealed class PoseLibraryFileActionsTests
 {

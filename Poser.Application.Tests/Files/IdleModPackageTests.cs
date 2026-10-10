@@ -6,7 +6,7 @@ using Poser.Application.Animation;
 using Poser.Documents.Animation;
 using Poser.Domain.Identity;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class IdleModPackageTests
 {

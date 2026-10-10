@@ -7,7 +7,7 @@ using Poser.Domain.Library;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class PoseFilePersistenceTests
 {

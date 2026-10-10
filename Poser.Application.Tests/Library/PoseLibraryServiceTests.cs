@@ -5,14 +5,14 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Poser.Tests.Files;
 using Poser.Domain.Library;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
 using Poser.Application.Library;
 using Poser.Application.Settings;
+using Poser.Application.Tests.Files;
 
-namespace Poser.Tests.Library;
+namespace Poser.Application.Tests.Library;
 
 public sealed class PoseLibraryServiceTests
 {
@@ -112,7 +112,7 @@ public sealed class PoseLibraryServiceTests
             Func<string, bool>? observeDirectory,
             params LibrarySourceConfig[] sources)
         {
-            var config = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
+            var config = new ConfigurationService(new Poser.Application.Tests.Fixtures.MemoryConfigurationPersistence());
             config.Config.Library.Sources.Clear();
             if (sources.Length == 0)
             {

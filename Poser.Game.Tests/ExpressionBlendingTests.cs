@@ -9,7 +9,6 @@ using NSubstitute;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Application.Posing;
 using Xunit;
@@ -18,7 +17,7 @@ using Poser.Application.Events;
 using Poser.Game.Entities;
 using Poser.Game.Services;
 
-namespace Poser.Tests;
+namespace Poser.Game.Tests;
 
 public sealed class ExpressionBlendingTests
 {

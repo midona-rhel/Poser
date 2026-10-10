@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using Poser.Documents.Library;
 
-namespace Poser.Tests.Library;
+namespace Poser.Application.Tests.Library;
 
 /// <summary>
 /// The checksum index answers by CONTENT, remembers what it read, and forgets

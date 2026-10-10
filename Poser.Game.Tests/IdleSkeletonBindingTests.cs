@@ -1,6 +1,6 @@
 using Poser.Game.Animation;
 
-namespace Poser.Tests;
+namespace Poser.Game.Tests;
 
 public sealed class IdleSkeletonBindingTests
 {

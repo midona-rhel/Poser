@@ -4,7 +4,7 @@ using System.Numerics;
 using System.Text;
 using Poser.Documents.Data;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class GraphicalBoneReaderTests
 {

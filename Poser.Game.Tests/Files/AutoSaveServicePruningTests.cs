@@ -1,8 +1,8 @@
 using System;
 using System.IO;
-using Poser.Tests.Fixtures;
+using Poser.Game.Tests.Fixtures;
 
-namespace Poser.Tests.Files;
+namespace Poser.Game.Tests.Files;
 
 public sealed class AutoSaveServicePruningTests
 {
