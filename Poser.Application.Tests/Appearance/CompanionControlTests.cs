@@ -19,7 +19,7 @@ public sealed class CompanionControlTests
         Assert.Null(control.Read(runtime.Child));
         runtime.Refuse = true;
         Assert.False(step.Undo());
-        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(step));
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(step));
         Assert.Equal("Slot refused", step.FailureDetail!());
         runtime.Refuse = false;
         Assert.True(step.Undo());

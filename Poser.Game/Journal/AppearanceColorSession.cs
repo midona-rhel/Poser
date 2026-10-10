@@ -24,7 +24,7 @@ public sealed class AppearanceColorSession(
         if (value is { } color)
         {
             var own = integration.OwnLook(actor);
-            if (!own.Success) return new(false, own.Detail);
+            if (!own.Success) return own.ToValueWrite();
             var result = presentation.SetColor(actor, channel, color);
             return new(result.Success, result.Detail);
         }

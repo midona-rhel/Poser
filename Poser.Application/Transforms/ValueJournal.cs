@@ -3,9 +3,22 @@ using System.Runtime.CompilerServices;
 
 namespace Poser.Application.Transforms;
 
+/// <summary>
+/// The outcome of one value write. A refusal is permanent unless its source
+/// knows it will clear by itself or by a user action outside history (an
+/// active transform gesture, an appearance hold the user releases): only
+/// those are <see cref="Transient"/>. History retries a transient refusal
+/// in place; a permanent one is reported, then skipped when it repeats.
+/// </summary>
 public readonly record struct ValueWriteResult(bool Success, string? Detail = null)
 {
+    /// <summary>The refusal is temporary; retrying the same write later can land.</summary>
+    public bool Transient { get; init; }
+
     public static ValueWriteResult Ok() => new(true);
+
+    /// <summary>A temporary refusal: the step stays at the cursor for retry.</summary>
+    public static ValueWriteResult Busy(string? detail) => new(false, detail) { Transient = true };
 }
 
 /// <summary>Adapts a write that cannot report a refusal. Only for runtimes
@@ -113,28 +126,29 @@ public sealed class ValueJournal
         else _history.Append(Step(after));
     }
 
-    // An inverse that returns a refusal is kept for retry; one that throws
-    // is dropped on the second consecutive refusal, as before results.
+    // Only a transient refusal keeps the step for retry. A permanent refusal
+    // or a throw is reported once and dropped when the same step refuses
+    // again, so one inverse that can never land does not wedge history.
     private static JournalStep ResultStep<T>(string description, T before, T after,
         Func<T, ValueWriteResult> write, Func<bool>? alive)
     {
         string? failure = null;
-        bool threw = false;
+        bool transient = false;
         bool Put(T value)
         {
             failure = null;
-            threw = false;
+            transient = false;
             if (alive is not null && !alive())
                 return true;
             try
             {
                 var result = write(value);
                 failure = result.Detail;
+                transient = !result.Success && result.Transient;
                 return result.Success;
             }
             catch (Exception ex)
             {
-                threw = true;
                 failure = ex.Message;
                 return false;
             }
@@ -143,7 +157,7 @@ public sealed class ValueJournal
         {
             BeforeValue = before,
             AfterValue = after,
-            OnRefusal = () => threw ? RefusalAction.DropOnRepeat : RefusalAction.Keep,
+            OnRefusal = () => transient ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
             FailureDetail = () => failure,
         };
     }

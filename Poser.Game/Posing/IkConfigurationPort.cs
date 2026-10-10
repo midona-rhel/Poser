@@ -55,7 +55,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             return result;
         _journal.Record(target.ToSelectionId(),
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
-            before, config, next => Written(Write(target, next)),
+            before, config, next => Written(() => Write(target, next)),
             () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }
@@ -98,16 +98,24 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             : null;
     }
 
-    private static ValueWriteResult Written(IkPortResult result) => new(result.Success, result.Detail);
+    private const string GestureActive = "IK configuration rejected: a transform gesture is active.";
+
+    /// <summary>A replayed IK write. An active transform gesture ends by
+    /// itself, so that refusal is transient; any other is permanent.</summary>
+    private ValueWriteResult Written(Func<IkPortResult> write)
+    {
+        if (_gestures.ActiveGesture != null)
+            return ValueWriteResult.Busy(GestureActive);
+        var result = write();
+        return new(result.Success, result.Detail);
+    }
 
     private IkPortResult Write(TransformTargetId target, IkChainConfig config)
     {
         if (_gestures.ActiveGesture != null)
         {
-            const string reason =
-                "IK configuration rejected: a transform gesture is active.";
-            _log.Information(reason);
-            return IkPortResult.Fail(reason);
+            _log.Information(GestureActive);
+            return IkPortResult.Fail(GestureActive);
         }
         if (target.Bone is not { } boneId)
             return IkPortResult.Fail("IK configuration requires a bone target.");
@@ -136,7 +144,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         if (!result.Success || before is not { } previous || previous == bone)
             return result;
         _journal.Record(this, "Set IK bone target", previous, bone,
-            next => Written(WriteBoneTarget(target, next)),
+            next => Written(() => WriteBoneTarget(target, next)),
             () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
         return result;
     }
@@ -201,7 +209,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         var result = WriteEntityTarget(target, entity);
         if (result.Success && before is { } previous && previous != entity)
             _journal.Record(this, "Set IK scene target", previous, entity,
-                next => Written(WriteEntityTarget(target, next)),
+                next => Written(() => WriteEntityTarget(target, next)),
                 () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }
@@ -216,11 +224,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
         var result = _journal.Adjust((target, "IK"), "Set IK",
             () => Get(target) ?? initial,
-            next =>
-            {
-                var written = Write(target, next);
-                return new ValueWriteResult(written.Success, written.Detail);
-            }, config,
+            next => Written(() => Write(target, next)), config,
             () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return new IkPortResult(result.Success, result.Detail);
     }

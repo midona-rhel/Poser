@@ -170,6 +170,6 @@ public sealed class WardrobeSession : IWardrobeControl
     public IntegrationResult Revert(ActorId actor) =>
         _disruptive.Run(actor, "Revert look", () => _integration.RevertState(actor));
 
-    private static ValueWriteResult Written(IntegrationResult result) => new(result.Success, result.Detail);
+    private static ValueWriteResult Written(IntegrationResult result) => result.ToValueWrite();
     private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
 }
