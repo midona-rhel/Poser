@@ -19,10 +19,14 @@ jobs:
       - name: Validate portable application and documents without the game SDK
         shell: pwsh
         run: |
-          dotnet test Poser.Domain.Tests/Poser.Domain.Tests.csproj -c Release --nologo
+          dotnet test Poser.Domain.Tests/Poser.Domain.Tests.csproj -c Release --nologo --logger trx --results-directory TestResults
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          dotnet test Poser.Application.Tests/Poser.Application.Tests.csproj -c Release --nologo
+          dotnet test Poser.Application.Tests/Poser.Application.Tests.csproj -c Release --nologo --logger trx --results-directory TestResults
           exit $LASTEXITCODE
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: ./tools/Report-TestFailures.ps1
   full:
     # Compiles every project, including the Dalamud-dependent ones, and runs
     # every test project. Release only: a Debug build deploys to the live game.
@@ -47,5 +51,9 @@ jobs:
       - name: Test solution (Release)
         shell: pwsh
         run: |
-          dotnet test Poser.slnx -c Release --no-build --nologo
+          dotnet test Poser.slnx -c Release --no-build --nologo --logger trx --results-directory TestResults
           exit $LASTEXITCODE
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: ./tools/Report-TestFailures.ps1
