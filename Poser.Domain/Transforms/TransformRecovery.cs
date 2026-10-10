@@ -35,5 +35,3 @@ public sealed class TransformRecoveryReceipt
     public IReadOnlyList<TransformRecoveryAttempt> Failures => _failures;
     public bool Complete => _failures.Count == 0;
 }
-
-/// <summary>Single owner for ordered, exhaustive transform restoration.</summary>
