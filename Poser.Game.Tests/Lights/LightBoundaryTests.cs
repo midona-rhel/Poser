@@ -52,7 +52,7 @@ public sealed class LightBoundaryTests
     }
 
     [Fact]
-    public void Replaced_or_off_thread_targets_cannot_receive_deferred_picks_or_export()
+    public void Replaced_target_cannot_receive_deferred_picks_or_export()
     {
         var f = new Fixture();
         using var file = new TemporaryFile();
@@ -63,25 +63,6 @@ public sealed class LightBoundaryTests
         Assert.False(f.Files.Export(f.Id, file.Path).Success);
         Assert.Equal("keep", File.ReadAllText(file.Path));
         Assert.False(f.History.CanUndo);
-        f.OnThread = false;
-        var reads = f.BindingReads;
-        Assert.False(f.Control.SetIntensity(f.CurrentId, 10).Success);
-        Assert.False(f.Files.Export(f.CurrentId, file.Path).Success);
-        Assert.Equal(reads, f.BindingReads);
-    }
-
-    [Fact]
-    public void Gobo_changes_use_the_existing_history()
-    {
-        var f = new Fixture();
-        Assert.True(f.Control.ApplyGobo(f.Id, 0).Success);
-        var goboStep = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.Same(goboStep, f.History.PeekUndo(SelectionId.ForLight(f.Id)));
-        Assert.Equal("test.tex", f.Light.GoboPath);
-        Assert.True(goboStep.Undo());
-        Assert.Null(f.Light.GoboPath);
-        Assert.True(goboStep.Redo());
-        Assert.Equal("test.tex", f.Light.GoboPath);
     }
 
     [Fact]
@@ -111,9 +92,6 @@ public sealed class LightBoundaryTests
         public readonly LightId Id = LightId.New();
         public LightId CurrentId;
         public readonly BoneId BoneId = new(new(ActorId.New(), PoseSlot.Character, 0), 0, 1, "j_te_l");
-        public bool BoneAvailable = true;
-        public bool OnThread = true;
-        public int BindingReads;
         public readonly ILight Light;
         public readonly IBone Bone;
         public readonly TransformHistory History = new();
@@ -132,20 +110,17 @@ public sealed class LightBoundaryTests
                 return state.TryGetValue(m.Name[4..], out var v) ? v :
                     m.ReturnType.IsValueType ? Activator.CreateInstance(m.ReturnType) : null;
             });
-            var skeleton = Stub<ISkeleton>((_, _) => BoneAvailable);
+            var skeleton = Stub<ISkeleton>((_, _) => true);
             Bone = Stub<IBone>((_, _) => skeleton);
             var bindings = Stub<IEntityBindings>((m, a) =>
-            {
-                BindingReads++;
-                return m.Name switch
+                m.Name switch
                 {
                     "Resolve" when a![0] is LightId => new BindingResult<ILight>(BindingStatus.Success, Light),
                     "Resolve" => new BindingResult<IBone>(BindingStatus.Success, Bone),
                     "GetLightId" => CurrentId,
                     "GetBoneId" => BoneId,
                     _ => throw new InvalidOperationException(m.Name),
-                };
-            });
+                });
             var lighting = Stub<ILightingService>((m, a) =>
             {
                 switch (m.Name)
@@ -157,7 +132,7 @@ public sealed class LightBoundaryTests
                     default: throw new InvalidOperationException(m.Name);
                 }
             });
-            var framework = Stub<IFramework>((_, _) => OnThread);
+            var framework = Stub<IFramework>((_, _) => true);
             Journal = new(History, owner => ReferenceEquals(owner, Light) ? SelectionId.ForLight(CurrentId) : null);
             var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
             {

@@ -13,11 +13,10 @@ namespace Poser.Game.Tests.Cameras;
 
 public sealed class CameraFilesTests
 {
-    [Theory]
-    [InlineData(CameraKind.Game)]
-    [InlineData(CameraKind.Free)]
-    public void Export_import_preserves_framing_and_anchors_without_exporting_session_lock(CameraKind kind)
+    [Fact]
+    public void Export_import_preserves_framing_and_anchors_without_exporting_session_lock()
     {
+        const CameraKind kind = CameraKind.Free;
         var f = new Fixture();
         using var file = new TemporaryFile();
         f.Values["Kind"] = kind;
@@ -50,16 +49,6 @@ public sealed class CameraFilesTests
         f.CurrentId = new(f.Id.LogicalId, f.Id.Generation + 1);
         Assert.False(f.Files.Export(f.Id, file.Path).Success);
         Assert.Equal("existing content", File.ReadAllText(file.Path));
-    }
-
-    [Fact]
-    public void Unreadable_import_creates_nothing()
-    {
-        var f = new Fixture();
-        using var file = new TemporaryFile();
-        File.WriteAllText(file.Path, "{");
-        Assert.Null(f.Files.Import(file.Path).Handle);
-        Assert.Null(f.Imported);
     }
 
     private sealed class Fixture

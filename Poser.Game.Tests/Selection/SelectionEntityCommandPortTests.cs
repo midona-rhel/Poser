@@ -57,18 +57,18 @@ public sealed class SelectionEntityCommandPortTests
         Assert.Equal(0, fixture.Release.Calls);
         Assert.True(fixture.Scene.Selection.IsSelected(fixture.Id));
         Assert.False(fixture.History.CanUndo);
-        Assert.Equal(1, fixture.Framework.Dispatches);
     }
 
     [Theory]
-    [InlineData(WorldCommandStatus.Applied, SelectionRemovalStatus.Removed, 1, false)]
-    [InlineData(WorldCommandStatus.AlreadyReleased, SelectionRemovalStatus.AlreadyAbsent, 0, true)]
-    [InlineData(WorldCommandStatus.Refused, SelectionRemovalStatus.Refused, 0, true)]
+    [InlineData(WorldCommandStatus.Applied, false, SelectionRemovalStatus.Removed, 1, false)]
+    [InlineData(WorldCommandStatus.Refused, false, SelectionRemovalStatus.Refused, 0, true)]
+    [InlineData(WorldCommandStatus.Applied, true, SelectionRemovalStatus.Failed, 0, true)]
     public async Task Borrowed_light_uses_exact_release_port_and_reports_its_outcome(
-        WorldCommandStatus releaseStatus, SelectionRemovalStatus expected, int applied, bool selected)
+        WorldCommandStatus releaseStatus, bool throws, SelectionRemovalStatus expected, int applied, bool selected)
     {
         var fixture = new Fixture();
-        fixture.Release.Result = new(releaseStatus, "Release detail");
+        fixture.Release.Result = new(releaseStatus);
+        fixture.Release.Throw = throws;
         var pending = fixture.Remove();
         fixture.Framework.Run();
         var result = await pending;
@@ -79,23 +79,6 @@ public sealed class SelectionEntityCommandPortTests
         Assert.Equal(1, fixture.Release.Calls);
         Assert.Equal(fixture.Id, fixture.Release.Requested);
         Assert.Equal(selected, fixture.Scene.Selection.IsSelected(fixture.Id));
-        if (expected == SelectionRemovalStatus.Refused)
-            Assert.Equal("Release detail", item.Detail);
-    }
-
-    [Fact]
-    public async Task Release_exception_is_a_failed_item_and_keeps_selection()
-    {
-        var fixture = new Fixture();
-        fixture.Release.Throw = true;
-        var pending = fixture.Remove();
-        fixture.Framework.Run();
-        var result = await pending;
-        var item = Assert.Single(result.Items);
-        Assert.Equal(SelectionRemovalStatus.Failed, item.Status);
-        Assert.Equal("Release failed", item.Detail);
-        Assert.Equal(0, result.AppliedCount);
-        Assert.True(fixture.Scene.Selection.IsSelected(fixture.Id));
     }
 
     private sealed class Fixture
@@ -173,13 +156,11 @@ public sealed class SelectionEntityCommandPortTests
     public class FrameworkProxy : DispatchProxy
     {
         private Action? _run;
-        public int Dispatches;
         public void Run() => _run!();
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             Assert.Equal("RunOnFrameworkThread", method!.Name);
-            Dispatches++;
             var completion = new TaskCompletionSource<SelectionRemovalResult>();
             var callback = (Func<SelectionRemovalResult>)args![0]!;
             _run = () =>

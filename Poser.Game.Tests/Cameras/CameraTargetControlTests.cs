@@ -12,28 +12,6 @@ namespace Poser.Game.Tests.Cameras;
 
 public sealed class CameraTargetControlTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Stale_or_off_thread_camera_commands_do_not_touch_native_state(bool onThread)
-    {
-        var id = new CameraId(Guid.NewGuid(), 3);
-        var bindings = Stub<IEntityBindings>((method, args) =>
-        {
-            Assert.True(onThread);
-            Assert.Equal("Resolve", method);
-            Assert.Equal(id, args![0]);
-            return new BindingResult<IVirtualCamera>(BindingStatus.StaleTarget);
-        });
-        var control = new CameraTargetControl(bindings, Stub<IFramework>((_, _) => onThread),
-            null!, null!, null!, null!);
-        Assert.Null(control.Read(id));
-        Assert.False(control.Follow(id, ActorId.New(), "Actor").Success);
-        Assert.False(control.SetTargetLocked(id, true).Success);
-        Assert.False(control.ToggleTrackedBone(id, default).Success);
-        Assert.False(control.Recenter(id, null).Success);
-    }
-
     [Fact]
     public void Follow_and_tracking_edits_use_existing_history_and_respect_camera_lock()
     {

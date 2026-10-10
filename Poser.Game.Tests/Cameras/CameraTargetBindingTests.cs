@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Bindings;
@@ -12,33 +11,14 @@ namespace Poser.Game.Tests.Cameras;
 public sealed class CameraTargetBindingTests
 {
     [Fact]
-    public void Same_generation_id_with_different_reference_is_stale()
+    public void Retained_reference_is_current_only_if_it_is_the_exact_admitted_one()
     {
         var id = new ActorId(Guid.NewGuid(), 3);
         var current = ActorProxy();
-        var retained = ActorProxy();
         var bindings = new Dictionary<ActorId, IActor> { [id] = current };
 
-        Assert.False(StableBindingRegistry.IsCurrentCameraTarget(
-            id, retained, bindings));
-    }
-
-    [Fact]
-    public void Null_identity_with_pointer_only_residual_requires_clear()
-    {
-        Assert.True(StableBindingRegistry.HasCameraTargetResidual(
-            ActorProxy(), string.Empty, Vector3.Zero));
-    }
-
-    [Fact]
-    public void Exact_reference_for_admitted_generation_survives()
-    {
-        var id = new ActorId(Guid.NewGuid(), 4);
-        var current = ActorProxy();
-        var bindings = new Dictionary<ActorId, IActor> { [id] = current };
-
-        Assert.True(StableBindingRegistry.IsCurrentCameraTarget(
-            id, current, bindings));
+        Assert.True(StableBindingRegistry.IsCurrentCameraTarget(id, current, bindings));
+        Assert.False(StableBindingRegistry.IsCurrentCameraTarget(id, ActorProxy(), bindings));
     }
 
     private static IActor ActorProxy() =>

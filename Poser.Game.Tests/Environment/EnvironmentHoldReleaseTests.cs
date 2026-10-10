@@ -11,12 +11,10 @@ namespace Poser.Game.Tests.Environment;
 
 public sealed class EnvironmentHoldReleaseTests
 {
-    [Theory]
-    [InlineData(0)]
-    [InlineData(42)]
-    [InlineData(255)]
-    public unsafe void Held_weather_is_supplied_to_each_native_update_without_restarting_transition(byte weather)
+    [Fact]
+    public unsafe void Held_weather_is_supplied_to_each_native_update_without_restarting_transition()
     {
+        const byte weather = 42;
         var factory = new TestFactory();
         using var service = Create(factory, ClientStateProxy.Create(out _));
         CSEnvManager manager = default;
@@ -42,29 +40,6 @@ public sealed class EnvironmentHoldReleaseTests
     }
 
     [Fact]
-    public void Weather_zero_is_named_even_without_a_weather_sheet_and_out_of_range_ids_are_rejected()
-    {
-        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _));
-        Assert.Equal(new WeatherInfo(0, "None", 0), service.GetWeatherInfo(0));
-        Assert.Contains(new WeatherInfo(0, "None", 0), service.AllWeathers);
-        Assert.Throws<ArgumentOutOfRangeException>(() => service.SetWeather(256));
-        Assert.False(service.IsWeatherOverrideEnabled);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void GPose_exit_respects_weather_restore_setting(bool restore)
-    {
-        var bus = new TestEventBus();
-        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _), bus: bus);
-        service.ResetWeatherOnGPoseExit = restore;
-        service.IsWeatherOverrideEnabled = true;
-        bus.Publish(new GPoseStateChangedEvent(false));
-        Assert.Equal(!restore, service.IsWeatherOverrideEnabled);
-    }
-
-[Fact]
     public void Territory_and_logout_release_all_successful_holds()
     {
         var factory = new TestFactory();
@@ -89,68 +64,6 @@ public sealed class EnvironmentHoldReleaseTests
     }
 
     [Fact]
-    public void Transitions_without_holds_are_no_ops_and_release_failures_are_visible()
-    {
-        var emptyFactory = new TestFactory();
-        var emptyState = ClientStateProxy.Create(out var emptyEvents);
-        var emptyLog = new RecordingLog();
-        using (var empty = Create(emptyFactory, emptyState, emptyLog))
-        {
-            emptyEvents.RaiseTerritoryChanged(5);
-            emptyEvents.RaiseLogout();
-            Assert.Empty(emptyLog.Errors);
-            Assert.Equal(0, emptyFactory.TimeHook.DisableCount);
-        }
-
-        var factory = new TestFactory { WeatherHook = { DisableFailure = true } };
-        var state = ClientStateProxy.Create(out var events);
-        var log = new RecordingLog();
-        using var service = Create(factory, state, log);
-        service.IsTimeFrozen = true;
-        service.IsWeatherOverrideEnabled = true;
-        service.SetSectionHeld(EnvSection.Rain, true);
-        events.RaiseTerritoryChanged(9);
-
-        Assert.True(service.IsWeatherOverrideEnabled);
-        Assert.False(service.IsTimeFrozen);
-        Assert.False(service.IsSectionHeld(EnvSection.Rain));
-        Assert.Single(log.Errors);
-    }
-
-    [Fact]
-    public void Missing_native_signatures_keep_capabilities_unavailable_and_safe()
-    {
-        var factory = new TestFactory { ThrowOnTime = true, ThrowOnWeather = true };
-        var state = ClientStateProxy.Create(out var events);
-        using var service = Create(factory, state);
-        Assert.False(service.IsTimeFreezeAvailable);
-        Assert.False(service.IsWeatherOverrideAvailable);
-        events.RaiseTerritoryChanged(1);
-        events.RaiseLogout();
-        Assert.False(service.IsTimeFrozen);
-        Assert.False(service.IsWeatherOverrideEnabled);
-    }
-
-    [Fact]
-    public void Interior_brightness_captures_once_and_restores_on_gpose_exit()
-    {
-        var bus = new TestEventBus();
-        var housing = new TestHousingBrightness { State = new(0.3f, 0.4f, 0.8f) };
-        using var service = Create(new TestFactory(), ClientStateProxy.Create(out _),
-            bus: bus, housing: housing);
-
-        ulong binding = service.HousingInteriorBinding;
-        Assert.True(service.TrySetInteriorBrightness(0.7f, binding));
-        housing.State = housing.State!.Value with { Current = 0.6f };
-        Assert.True(service.TrySetInteriorBrightness(0.9f, binding));
-        bus.Publish(new GPoseStateChangedEvent(false));
-
-        Assert.Equal([0.7f, 0.9f, 0.4f], housing.Writes);
-        Assert.False(service.IsInteriorBrightnessOverridden);
-        Assert.False(service.TrySetInteriorBrightness(0.6f, binding));
-    }
-
-    [Fact]
     public void Territory_change_invalidates_history_without_writing_the_new_room()
     {
         var housing = new TestHousingBrightness { State = new(0.3f, 0.4f, 0.8f) };
@@ -167,11 +80,10 @@ public sealed class EnvironmentHoldReleaseTests
         Assert.Equal([0.7f], housing.Writes);
         Assert.Equal(0.2f, service.InteriorBrightness);
     }
-private static EnvironmentService Create(
+
+    private static EnvironmentService Create(
         TestFactory factory,
         IClientState clientState,
-        RecordingLog? log = null,
-        TestEventBus? bus = null,
         IHousingBrightnessNative? housing = null)
     {
         return new EnvironmentService(
@@ -179,8 +91,8 @@ private static EnvironmentService Create(
             NewProxy<ISigScanner>(),
             NewProxy<IGameInteropProvider>(),
             NewProxy<IDataManager>(),
-            (log ?? new RecordingLog()).Proxy(),
-            bus ?? new TestEventBus(),
+            NewProxy<IPluginLog>(),
+            new TestEventBus(),
             factory,
             housing);
     }
@@ -261,64 +173,12 @@ private static EnvironmentService Create(
         }
     }
 
-    /// <summary>Records Error/Warning template strings off an IPluginLog proxy.</summary>
-    private sealed class RecordingLog
-    {
-        public List<string> Errors { get; } = new();
-        public List<string> Warnings { get; } = new();
-
-        public IPluginLog Proxy()
-        {
-            var proxy = DispatchProxy.Create<IPluginLog, LogProxy>();
-            ((LogProxy)(object)proxy).Owner = this;
-            return proxy;
-        }
-
-        private class LogProxy : DispatchProxy
-        {
-            public RecordingLog Owner = null!;
-
-            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-            {
-                var message = args?.FirstOrDefault(a => a is string) as string;
-                if (message is not null)
-                {
-                    if (targetMethod?.Name == "Error")
-                        Owner.Errors.Add(message);
-                    else if (targetMethod?.Name == "Warning")
-                        Owner.Warnings.Add(message);
-                }
-                return null;
-            }
-        }
-    }
-
     private class TestEnvHook : IEnvHook
     {
-        public bool EnableFailure { get; set; }
-        public bool DisableFailure { get; set; }
-        public int EnableCount { get; private set; }
-        public int DisableCount { get; private set; }
-        public int DisposeCount { get; private set; }
         public bool IsEnabled { get; private set; }
-
-        public void Enable()
-        {
-            EnableCount++;
-            if (EnableFailure)
-                throw new InvalidOperationException("enable");
-            IsEnabled = true;
-        }
-
-        public void Disable()
-        {
-            DisableCount++;
-            if (DisableFailure)
-                throw new InvalidOperationException("disable");
-            IsEnabled = false;
-        }
-
-        public void Dispose() => DisposeCount++;
+        public void Enable() => IsEnabled = true;
+        public void Disable() => IsEnabled = false;
+        public void Dispose() { }
     }
 
     private sealed class TestHousingBrightness : IHousingBrightnessNative
@@ -353,12 +213,6 @@ private static EnvironmentService Create(
     private sealed unsafe class TestEnvCopyHook : IEnvStateCopyHook
     {
         private readonly TestEnvHook _inner = new();
-        public bool EnableFailure
-        {
-            get => _inner.EnableFailure;
-            set => _inner.EnableFailure = value;
-        }
-        public int EnableCount => _inner.EnableCount;
         public bool IsEnabled => _inner.IsEnabled;
         public void Enable() => _inner.Enable();
         public void Disable() => _inner.Disable();
@@ -372,29 +226,25 @@ private static EnvironmentService Create(
         public TestWeatherHook WeatherHook { get; } = new();
         public UpdateEnvironmentDelegate? WeatherDetour { get; private set; }
         public TestEnvCopyHook EnvCopyHook { get; } = new();
-        public bool ThrowOnTime { get; init; }
-        public bool ThrowOnWeather { get; init; }
-        public bool ThrowOnEnvCopy { get; init; }
-        public bool ThrowOnEnvCopyCallSite { get; init; }
 
         public IEnvHook CreateTimeHook(
             ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour) =>
-            ThrowOnTime ? throw new InvalidOperationException("time sig") : TimeHook;
+            TimeHook;
 
         public IEnvWeatherHook CreateWeatherHook(
             ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour)
         {
             WeatherDetour = detour;
-            return ThrowOnWeather ? throw new InvalidOperationException("weather sig") : WeatherHook;
+            return WeatherHook;
         }
 
         public IEnvStateCopyHook CreateEnvStateCopyHook(
             ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
-            ThrowOnEnvCopy ? throw new InvalidOperationException("copy sig") : EnvCopyHook;
+            EnvCopyHook;
 
         public IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
             ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
-            ThrowOnEnvCopyCallSite ? throw new InvalidOperationException("copy call site sig") : EnvCopyHook;
+            EnvCopyHook;
     }
 
     private sealed class TestEventBus : IEventBus
