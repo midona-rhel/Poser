@@ -2,8 +2,8 @@
 
 Poser is an FFXIV GPose tool for posing actors and building scenes. It covers
 GPose lifecycle, actor discovery and actions, selection and transforms,
-expression/gaze/IK, animation and physics freeze, settings, the live harness,
-and one undo journal. It also covers objects, lights, virtual cameras,
+expression/gaze/IK, animation and physics freeze, settings, and one undo
+journal. It also covers objects, lights, virtual cameras,
 environment, overlays, adopted world objects, scenes, pose and MCDF libraries,
 autosave, and reference pictures.
 
