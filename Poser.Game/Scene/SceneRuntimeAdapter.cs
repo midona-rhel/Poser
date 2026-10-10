@@ -582,9 +582,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// actor. "Clear the session first" means the session, not the part of it
     /// Poser happens to own.</para>
     ///
-    /// <para>A removal the native gates refuse — a stale wrapper, a companion
-    /// body, the GPose primary, an actor no longer in the table — is named in
-    /// the outcome. That is the exception path now, not the design.</para>
+    /// <para>Companion bodies are skipped: they leave with their owner. A
+    /// removal the native gates refuse — a stale wrapper, the GPose primary,
+    /// an actor no longer in the table — is named in the outcome. That is the
+    /// exception path now, not the design.</para>
     /// </summary>
     public SceneClearOutcome ClearScene()
     {
@@ -593,6 +594,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         var refusedCleanup = new List<string>();
         foreach (var actor in _actors.Actors.ToList())
         {
+            // A companion body goes with its owner, and removing an owner
+            // earlier in this sweep can retire later wrappers in the
+            // snapshot: neither is a refusal worth naming.
+            if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament
+                || actor.Address == nint.Zero || !_actors.Actors.Contains(actor))
+                continue;
             // Gaze and appearance are released BEFORE the delete, while the
             // actor still exists to release them against; Brio does the same
             // in CleanObject (Brio/Game/Actor/ActorSpawnService.cs:245-256)
@@ -654,16 +661,21 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     }
 
 
+    public string? LoadPreflight(int actors) =>
+        actors > 0 && _objects.LocalPlayer is null
+            ? "There is no local player to spawn the scene's actors from."
+            : null;
+
     // ── actors ───────────────────────────────────────────────────────────
 
     public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
     {
         // Set the model inside the spawn's deferred-draw window. A second
         // SetModelCharaId redraw races the next-tick collection assignment.
-        var actor = _spawns.SpawnNewActor(data.HasCompanionSlot, data.ModelCharaId);
+        var actor = _spawns.SpawnNewActor(data.HasCompanionSlot, data.ModelCharaId, out var refusal);
         if (actor is null)
         {
-            detail = "The spawn service returned no actor.";
+            detail = refusal ?? "The spawn service returned no actor.";
             return null;
         }
         detail = null;

@@ -205,19 +205,26 @@ republished for these skeleton instances. Bone ids are published by the binding
 registry's own commit pass, so after a redraw the skeleton service hands out
 new bone objects while the registry still holds the previous ones, and every
 bone resolves to null until that pass runs. The barrier polls, so a skeleton
-mid-publication is waited for; only one that never publishes inside the bound
-is refused.
+mid-publication is waited for. The bound is per actor: an actor still not
+pose-ready when it runs out stays in the session, is named in the result, and
+leaves every later phase; the other actors load on. A spawned actor's first
+draw is held until the game reports it ready, for as long as the spawn lives,
+so a busy frame delays the body rather than losing it.
 
 Each phase checks that the load is still running and belongs to the same
 session. Character files come before body-dependent state because import
 redraws the actor. Loads add to the current session by default. Clearing the
-session is outside rollback. Relative loading moves the whole scene from its
-saved origin before game work. A library placement (at the camera or an actor)
-replaces relative loading for that load, so content is moved once.
+session is outside rollback, so a clear-first load first checks it can spawn
+at all (a local player exists) and refuses without clearing when it cannot; a
+rollback after the clear reads "the session was already cleared". Relative
+loading moves the whole scene from its saved origin before game work. A
+library placement (at the camera or an actor) replaces relative loading for
+that load, so content is moved once.
 
 Clearing the session removes everything it holds, actors included: an actor
 Poser spawned goes through its ownership ledger, an adopted one through the
-native scene table. Before either delete the actor's gaze is released and its
+native scene table; a companion body leaves with its owner. Before either
+delete the actor's gaze is released and its
 appearance reverted, while it still exists to release them against; an Entity
 gaze target that LEAVES the scene is kept by id and marked stale, so another
 actor's intent to look at it is refused by name rather than scrubbed. A
@@ -228,9 +235,16 @@ removed actor deselects its whole lineage — the actor, its bones and its bone
 groups — and emptying the session drops the selection entirely, because props,
 overlays, lights, cameras and borrowed objects carry no lineage of their own.
 
-If a load must stop after creating things, Poser removes only the actors and
-objects it created, in reverse order. A refused item does not remove successful
-items, and Poser names each refusal. A borrowed world object is matched by
+What a failure costs is decided in one place, the load policy on
+`SceneWorkflow`. Required steps — reading the file, the session staying the
+same, cancellation, and creating each actor — stop the load: Poser removes only
+what it created, in reverse order. Everything else is optional and becomes a
+named refusal beside what did restore: an actor that never became pose-ready,
+appearance, companions, gaze, pose, objects, cameras, lights, environment,
+FABRIK, sidebar groups and order (a member that did not bind in time is left
+out of its group), and parent links (a missing parent bone or a refused link
+leaves the entity where it was saved). A refused actor spawn names its cause,
+such as a full actor table. A borrowed world object is matched by
 model path and map placement in the current territory, never by pointer or
 object index. Rollback releases its claim.
 

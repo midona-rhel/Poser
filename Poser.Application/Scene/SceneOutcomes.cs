@@ -99,6 +99,12 @@ public sealed record SceneOutcome(
     /// completed rollback and a clean cancel leave nothing behind.</summary>
     public bool LeftEntitiesBehind => State is not (
         OperationReceiptState.RolledBack or OperationReceiptState.Cancelled);
+
+    /// <summary>The load cleared the session before restoring. A rollback
+    /// then leaves nothing of the load behind, but the session it cleared is
+    /// gone too — "nothing was left behind" would read as "nothing changed".
+    /// </summary>
+    public bool SessionCleared { get; init; }
 }
 
 /// <summary>Immutable snapshot of the single running (or last finished)
@@ -152,7 +158,7 @@ public readonly record struct SceneClearOutcome(
 
     /// <summary>Actors the clear could not remove, BY NAME. The clear takes
     /// everything the session holds, so this is the exception path — a stale
-    /// wrapper, a companion body, the GPose primary — and it is never silent:
+    /// wrapper or the GPose primary — and it is never silent:
     /// the user asked for an empty session and has to know what is left.
     /// </summary>
     public IReadOnlyList<string> Refused =>

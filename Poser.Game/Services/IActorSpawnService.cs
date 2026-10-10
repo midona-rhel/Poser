@@ -20,6 +20,11 @@ public interface IActorSpawnService : IDisposable
     /// <returns>The spawned actor, or null if failed.</returns>
     IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0);
 
+    /// <summary>The same spawn, answering WHY when it returns null — a full
+    /// actor table, no local player, no authoritative lifetime — in the
+    /// user's words, so a scene load can name the cause.</summary>
+    IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId, out string? refusal);
+
     /// <summary>
     /// Spawn a clone of an arbitrary scene actor (appearance + position copy —
     /// Brio ActorLifetimeCapability.Clone).

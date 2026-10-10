@@ -605,7 +605,7 @@ public sealed class ScenePane
         {
             form.ReadOnly(
                 "Outcome",
-                StateLabel(outcome.State),
+                StateLabel(outcome),
                 unavailable: !outcome.Success,
                 help: receipt is null
                     ? null
@@ -659,13 +659,17 @@ public sealed class ScenePane
         });
     }
 
-    private static string StateLabel(OperationReceiptState state) => state switch
+    private static string StateLabel(SceneOutcome outcome) => outcome.State switch
     {
+        OperationReceiptState.RolledBack or OperationReceiptState.Cancelled
+            when outcome.SessionCleared =>
+            $"{(outcome.State == OperationReceiptState.RolledBack ? "Rolled back" : "Cancelled")}; " +
+            "the session was already cleared",
         OperationReceiptState.Applied => "Applied",
         OperationReceiptState.RolledBack => "Rolled back — nothing was left behind",
         OperationReceiptState.Cancelled => "Cancelled — nothing was left behind",
         OperationReceiptState.Failed => "Failed",
-        _ => state.ToString(),
+        var state => state.ToString(),
     };
 
     // ── the load dialog's options band ───────────────────────────────────

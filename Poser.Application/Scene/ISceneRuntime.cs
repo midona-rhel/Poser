@@ -116,8 +116,14 @@ public interface ISceneRuntime
     /// </summary>
     SceneClearOutcome ClearScene();
 
-    /// <summary>Spawns one actor and applies its model id. Null with a detail
-    /// on failure.</summary>
+    /// <summary>Why a clear-first load that will spawn
+    /// <paramref name="actors"/> actors cannot succeed right now, or null.
+    /// Asked BEFORE the clear, which cannot be undone. Framework thread.
+    /// </summary>
+    string? LoadPreflight(int actors) => null;
+
+    /// <summary>Spawns one actor and applies its model id. Null with the
+    /// spawn's own refusal on failure.</summary>
     SceneEntityHandle? SpawnActor(SceneActor data, out string? detail);
 
     /// <summary>Whether the spawned actor has slot skeletons AND its exact

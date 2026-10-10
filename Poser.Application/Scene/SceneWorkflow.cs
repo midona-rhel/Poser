@@ -32,18 +32,28 @@ namespace Poser.Application.Scene;
 /// mutation; entities spawn additively unless the load was asked to clear the
 /// session first (<see cref="SceneLoadOptions.ClearExistingScene"/>, whose
 /// sweep is deliberately outside the rollback ledger and says so in the
-/// outcome);
-/// structural failures (a failed actor spawn, readiness timeout, session
-/// replacement, cancellation) roll back everything THIS operation created in
-/// reverse order; entity-level failures (a companion, pose, prop, light or
-/// camera-target refusal) keep the successfully restored entities and
-/// publish a Failed receipt whose outcome names every refusal — typed
-/// partial recovery, never a silent detach and never a silent skip.
+/// outcome, and which is preflighted so it never runs for a load that cannot
+/// start).
+///
+/// <para>THE LOAD POLICY — the one place that decides what a failure costs.
+/// REQUIRED steps roll back everything THIS operation created, in reverse
+/// order: reading the document, admission and the session staying the same,
+/// cancellation, and CREATING each actor (a scene with a hole where an actor
+/// should be is not the scene). Everything else is OPTIONAL and becomes a
+/// named refusal beside the restored entities — a Failed receipt that keeps
+/// what did restore and is still one undoable step: an actor whose body does
+/// not draw within the readiness bound (kept, not posed), appearance
+/// (character file, collection), companions, names, animation stop, gaze,
+/// pose and placement, props, overlays, map objects, cameras and their
+/// targets, lights, environment and world toggles, FABRIK, sidebar groups and
+/// order, and transform parent links. Never a silent detach, never a silent
+/// skip, and never a whole-scene rollback for one of these.</para>
 /// </summary>
 public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 {
     /// <summary>Bound for the spawned actors' skeleton readiness barrier —
-    /// same bound the MCDF redraw barrier uses.</summary>
+    /// same bound the MCDF redraw barrier uses. Per actor: one that misses it
+    /// is a named refusal, never the scene's rollback.</summary>
     private static readonly TimeSpan ActorReadyTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>Bound for one armed pose import to reach its terminal
@@ -128,6 +138,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// fifteen-second test.</summary>
     internal TimeSpan CaptureBound { get; init; } = SceneCaptureTimeout;
 
+    /// <summary>The actor readiness bound, settable for the same reason.</summary>
+    internal TimeSpan ActorReadyBound { get; init; } = ActorReadyTimeout;
+
     /// <summary>Raised after any progress/receipt publication; UI reads the
     /// immutable snapshots, never workflow internals.</summary>
     public event Action? Changed;
@@ -182,6 +195,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         /// journal itself started as a redo does not: its step is the one
         /// being redone.</summary>
         public LoadHistory? Replay;
+        /// <summary>The destroy-first clear ran: a rollback cannot give the
+        /// session back what the clear took, and the outcome says so.</summary>
+        public bool SessionCleared;
 
         public ActorId Target => new(SceneScopeId, 0);
 
@@ -738,9 +754,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             // The per-category views. An excluded category is an EMPTY view
             // rather than a flag consulted at each of its phases: every phase
             // then reads one list, and a category can never be half-skipped.
+            // A list of its own: an actor whose body never draws leaves it
+            // (kept in the session, named, and out of every later phase).
             var actors = options.IncludeActors
-                ? (IReadOnlyList<SceneActor>)scene.Actors
-                : Array.Empty<SceneActor>();
+                ? scene.Actors.ToList()
+                : new List<SceneActor>();
             var props = options.IncludeProps
                 ? (IReadOnlyList<SceneProp>)scene.Props
                 : Array.Empty<SceneProp>();
@@ -901,14 +919,25 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             var lightTokens = new Dictionary<Guid, SceneEntityHandle>();
             var cameraTokens = new Dictionary<Guid, SceneEntityHandle>();
             Step(ScenePhase.SpawningEntities);
+            bool refusedBeforeClear = false;
             var spawnFailure = await _runtime.OnFramework(() =>
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
 
-                if (options.ClearExistingScene &&
-                    _runtime.ClearScene().Summary() is { } cleared)
-                    notes.Add(cleared);
+                if (options.ClearExistingScene)
+                {
+                    // The clear cannot be undone, so a load that cannot even
+                    // start its required steps refuses BEFORE it.
+                    if (_runtime.LoadPreflight(actors.Count) is { } preflight)
+                    {
+                        refusedBeforeClear = true;
+                        return $"{preflight} The session was not cleared.";
+                    }
+                    operation.SessionCleared = true;
+                    if (_runtime.ClearScene().Summary() is { } cleared)
+                        notes.Add(cleared);
+                }
 
                 // A baseline is captured only for what this load will WRITE:
                 // restoring an environment the load never touched would undo
@@ -991,6 +1020,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 }
                 return null;
             });
+            if (refusedBeforeClear)
+            {
+                // Nothing native ran: a plain refusal, like an unreadable file.
+                Finish(OperationReceiptState.Failed, spawnFailure!);
+                return;
+            }
             if (spawnFailure != null)
             {
                 await Abort(spawnFailure);
@@ -998,15 +1033,34 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             }
             done = props.Count;
 
+            // An actor whose body did not draw within the bound is OPTIONAL:
+            // it stays in the session (the load's undo still removes it) and
+            // leaves every later phase, so nothing tries to pose, target or
+            // hang anything off a body that is not there.
+            void DropUnready(IReadOnlyList<SceneEntityHandle> unready)
+            {
+                foreach (var token in unready)
+                {
+                    var actor = actors.First(entry => actorTokens[entry.Key] == token);
+                    actors.Remove(actor);
+                    actorTokens.Remove(actor.Key);
+                    entities.Add(new SceneEntityOutcome(
+                        "Actor", actor.Name, false,
+                        $"The actor's body did not finish drawing within {ActorReadyBound.TotalSeconds:0} " +
+                        "seconds, so it was kept but nothing more was restored onto it."));
+                }
+            }
+
             // Phase 3 — bounded readiness barrier: pose needs the spawned
             // actors' skeletons, which build with their draw objects.
             Step(ScenePhase.AwaitingActors);
-            var ready = await WaitForActors(operation, cancellation);
-            if (ready != null)
+            var ready = await WaitForActors(operation, actorTokens.Values, cancellation);
+            if (ready.Stop != null)
             {
-                await Abort(ready);
+                await Abort(ready.Stop);
                 return;
             }
+            DropUnready(ready.Unready);
 
             // Phase 3b — character files, BEFORE anything that hangs off a
             // body. An MCDF import redraws the actor, which destroys its draw
@@ -1048,12 +1102,13 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
                 // The redraws rebuilt the skeletons every later phase reads.
                 Step(ScenePhase.AwaitingActors);
-                var rebuilt = await WaitForActors(operation, cancellation);
-                if (rebuilt != null)
+                var rebuilt = await WaitForActors(operation, actorTokens.Values, cancellation);
+                if (rebuilt.Stop != null)
                 {
-                    await Abort(rebuilt);
+                    await Abort(rebuilt.Stop);
                     return;
                 }
+                DropUnready(rebuilt.Unready);
             }
 
             // Phase 4 — explicit relationships.
@@ -1208,11 +1263,17 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     // Active gaze comes AFTER the pose: the look-at re-drives its
                     // channels every frame, and its Entity target is another
                     // RESTORED actor, so it needs every token to exist. The
-                    // document validated the reference, so a stated key is
-                    // always present here.
-                    var target = actor.Gaze?.TargetActorKey is { } gazeTarget
-                        ? actorTokens[gazeTarget]
-                        : null;
+                    // document validated the reference; it misses only when
+                    // the target was left out or never drew.
+                    SceneEntityHandle? target = null;
+                    if (actor.Gaze?.TargetActorKey is { } gazeTarget
+                        && !actorTokens.TryGetValue(gazeTarget, out target))
+                    {
+                        entities.Add(new SceneEntityOutcome(
+                            "Gaze", actor.Name, false,
+                            "The actor looks at an actor this load did not restore."));
+                        continue;
+                    }
                     var detail = _runtime.ApplyActorGaze(
                         actorTokens[actor.Key], actor, target);
                     if (detail != null)
@@ -1273,10 +1334,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (camera.TargetActorKey is { } targetKey)
                     {
                         // The document validated this reference; it can only
-                        // miss here if the target actor itself failed (which is
-                        // structural and already aborted) or if this load was
-                        // told to leave the actors out — then the camera is
-                        // restored and its target refused BY NAME.
+                        // miss here if the target actor never drew or this
+                        // load was told to leave the actors out — then the
+                        // camera is restored and its target refused BY NAME.
                         if (!actorTokens.ContainsKey(targetKey))
                         {
                             entities.Add(new SceneEntityOutcome(
@@ -1426,9 +1486,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             var structureTokens = StructureTokens(("actor", actorTokens), ("prop", propTokens),
                 ("overlay", overlayTokens), ("worldObject", worldObjectTokens),
                 ("light", lightTokens), ("camera", cameraTokens));
-            if (await WaitForStructure(operation, scene, structureTokens, cancellation) is { } structureFailure)
+            // Only a stop (cancel, session replaced) aborts here: members that
+            // never bound are the structure restore's named refusals.
+            if (await WaitForStructure(operation, scene, structureTokens, cancellation) is { } structureStop)
             {
-                await Abort(structureFailure);
+                await Abort(structureStop);
                 return;
             }
             Step(ScenePhase.Committing, cancellable: false);
@@ -1438,7 +1500,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     return stop;
                 foreach (var error in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
                     entities.Add(new SceneEntityOutcome("IK", "FABRIK", false, error));
-                RestoreStructure(operation, scene, structureTokens);
+                RestoreStructure(operation, scene, structureTokens, entities);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 operation.HistoryEntities = structureTokens;
                 if (failures.Count == 0 && operation.Replay is { } replay)
@@ -1456,8 +1518,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                       $"{Count(lights.Count, "light")}, " +
                       $"{Count(cameras.Count, "camera")}."
                     : $"Loaded {operation.FileName} partially: " +
-                      $"{failures.Count} of {total} " +
-                      (total == 1 ? "entity" : "entities") + " could not be " +
+                      $"{Count(failures.Count, "part")} could not be " +
                       "restored (everything that did restore was kept): " +
                       string.Join("; ", failures.Select(failure =>
                           $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
@@ -1607,46 +1668,42 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             : receipt.Detail ?? $"The pose import ended {receipt.State}.";
     }
 
-    /// <summary>Bounded readiness barrier over every spawned actor.</summary>
-    private async Task<string?> WaitForActors(
-        Operation operation, CancellationToken cancellation)
+    /// <summary>Bounded readiness barrier over the given actors. Stop is a
+    /// structural refusal (cancel, shutdown, framework gone); Unready names
+    /// the actors still not posable when the bound ran out — each of them
+    /// one named refusal, never a reason to roll the others back.</summary>
+    private async Task<(string? Stop, IReadOnlyList<SceneEntityHandle> Unready)> WaitForActors(
+        Operation operation, IEnumerable<SceneEntityHandle> actors, CancellationToken cancellation)
     {
-        var deadline = DateTime.UtcNow + ActorReadyTimeout;
+        var pending = actors.ToList();
+        var deadline = DateTime.UtcNow + ActorReadyBound;
         while (true)
         {
-            bool ready;
             try
             {
-                ready = await _runtime.OnFramework(() =>
+                await _runtime.OnFramework(() =>
                 {
-                    if (operation.Invalidated)
-                        return true; // The guard below reports the refusal.
-                    foreach (var actor in operation.SpawnedActors)
-                    {
-                        if (!_runtime.ActorReady(actor))
-                            return false;
-                    }
+                    if (!operation.Invalidated) // The guard below reports the refusal.
+                        pending.RemoveAll(_runtime.ActorReady);
                     return true;
                 });
             }
             catch (Exception ex)
             {
-                return $"The readiness barrier failed: {ex.Message}";
+                return ($"The readiness barrier failed: {ex.Message}", pending);
             }
 
             if (operation.Invalidated || cancellation.IsCancellationRequested)
-                return "The load was cancelled.";
-            if (ready)
-                return null;
-            if (DateTime.UtcNow >= deadline)
-                return "The spawned actors' skeletons did not build within the readiness bound.";
+                return ("The load was cancelled.", pending);
+            if (pending.Count == 0 || DateTime.UtcNow >= deadline)
+                return (null, pending);
             try
             {
                 await Task.Delay(50, _disposal.Token);
             }
             catch (OperationCanceledException)
             {
-                return "Poser is shutting down.";
+                return ("Poser is shutting down.", pending);
             }
         }
     }
@@ -1857,7 +1914,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
         var progress = new SceneProgress(
             kind, operation.FileName, phase, 0, 0, false,
-            new SceneOutcome(state, detail, entities, notes, evidence));
+            new SceneOutcome(state, detail, entities, notes, evidence)
+            {
+                SessionCleared = operation.SessionCleared,
+            });
         var receipt = state switch
         {
             OperationReceiptState.Applied => OperationReceipt.Applied(

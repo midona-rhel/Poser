@@ -54,6 +54,10 @@ internal static class SceneEntityRemedy
         "World" =>
             "Set the render and simulation toggles yourself on the "
             + "environment's World tab.",
+        "Parent" =>
+            "Parent the entity again from its transform controls.",
+        "Group" =>
+            "Group or reorder the entities again in the sidebar.",
         _ => null,
     };
 }

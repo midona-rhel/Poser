@@ -1072,21 +1072,34 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return false;
     }
 
-    public IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0)
+    public IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0) =>
+        SpawnNewActor(reserveCompanionSlot, modelCharaId, out _);
+
+    public IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId, out string? refusal)
     {
-        if (!OnOwnerThread || !SpawnAuthorityAvailable())
+        if (!OnOwnerThread)
+        {
+            refusal = "Actors can only be spawned on the framework thread.";
             return null;
+        }
+        if (!SpawnAuthorityAvailable())
+        {
+            refusal = "Spawning is unavailable on this client: " +
+                $"{_native.LifetimeAuthorityDetail ?? "no authoritative actor lifetime"}.";
+            return null;
+        }
         // Creation semantics, clone mechanism: like Brio, a NEW actor is
         // seeded from the local player's appearance.
         var localPlayer = _localPlayerAddress();
         if (localPlayer == nint.Zero)
         {
             _log?.Warning("ActorSpawnService: Cannot spawn - no local player");
+            refusal = "There is no local player to seed the actor from.";
             return null;
         }
         // A new actor is not a copy of the player as far as mods go: it
         // wears the player's collection live, not a snapshot of it.
-        return SpawnCloneFrom(localPlayer, reserveCompanionSlot, inheritSource: false,
+        return SpawnCloneFrom(localPlayer, reserveCompanionSlot, out refusal, inheritSource: false,
             modelCharaId: modelCharaId);
     }
 
@@ -1120,7 +1133,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
         // A clone keeps the slot so companion attachment stays possible,
         // matching the pre-split behavior of every Poser spawn.
-        return SpawnCloneFrom(resolvedSource.Value.Address, reserveCompanionSlot: true);
+        return SpawnCloneFrom(resolvedSource.Value.Address, reserveCompanionSlot: true, out _);
     }
 
     /// <summary>Brio's AddFromWorld: the overworld character ITSELF joins
@@ -1155,6 +1168,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         var actor = SpawnCloneFrom(
             localPlayer,
             reserveCompanionSlot: false,
+            out _,
             inheritSource: false,
             modelCharaId: entry.ModelCharaId,
             // The game name stays a Poser slot name: Penumbra identifies a
@@ -1185,16 +1199,19 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
-    /// <summary>Shared spawn path: new battle character + appearance/position copy.</summary>
+    /// <summary>Shared spawn path: new battle character + appearance/position copy.
+    /// A null result always carries the cause in <paramref name="refusal"/>.</summary>
     private IActor? SpawnCloneFrom(
         nint sourceAddress,
         bool reserveCompanionSlot,
+        out string? refusal,
         bool inheritSource = true,
         int modelCharaId = 0,
         string? name = null,
         CompanionKind? kind = null)
     {
         SpawnOwnershipRecord? ownership = null;
+        refusal = null;
         try
         {
             uint idCheck = _native.CreateBattleCharacter(
@@ -1202,6 +1219,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             if (idCheck == 0xFFFFFFFF)
             {
                 _log?.Warning("ActorSpawnService: Failed to create character - invalid ID");
+                refusal = "The game has no free GPose actor slot (the actor table is full).";
                 return null;
             }
 
@@ -1222,6 +1240,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             {
                 _log?.Warning("ActorSpawnService: Created character could not be resolved");
                 ScheduleCreateRecovery(ownership);
+                refusal = "The created actor could not be resolved in the object table.";
                 return null;
             }
 
@@ -1303,6 +1322,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
         catch (Exception ex)
         {
+            refusal = $"The spawn failed: {ex.Message}";
             if (ownership is null)
             {
                 // Create itself faulted: no index is known, so there is
@@ -1611,12 +1631,15 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _native.SetDrawState(descriptor, true);
             return;
         }
+        // Unbounded while the spawn is live: a clone that is never drawn is
+        // invisible and unposable for good, so a busy frame must cost time,
+        // never the body. The poll ends when the record or the slot goes.
         PollUntil(
             ownership,
             descriptor,
             () => _native.IsReadyToDraw(descriptor) == true,
             () => _native.SetDrawState(descriptor, true),
-            timeoutMs: 2000,
+            timeoutMs: null,
             what: $"clone draw at index {descriptor.Index}",
             skipFrames: 2);
     }
@@ -2094,7 +2117,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         SpawnNativeDescriptor lifetime,
         Func<bool> condition,
         Action onSatisfied,
-        int timeoutMs,
+        int? timeoutMs,
         string what,
         int skipFrames = 0)
     {
@@ -2108,7 +2131,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
 
         var token = ownership?.Token;
-        var deadline = _clock() + timeoutMs;
+        long? deadline = timeoutMs is { } bound ? _clock() + bound : null;
         var remainingSkips = skipFrames;
         void Tick(IFramework fw)
         {

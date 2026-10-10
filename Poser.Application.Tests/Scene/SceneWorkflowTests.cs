@@ -263,8 +263,12 @@ public sealed class SceneWorkflowTests
         private string TokenName(SceneEntityHandle token) => _names[token];
 
         private readonly Dictionary<SceneEntityHandle, SelectionId> _structureIds = new();
+        /// <summary>A light whose binding never publishes.</summary>
+        public Func<SceneEntityHandle, bool>? IsUnbound;
         public SelectionId? ResolveSceneEntity(SceneEntityHandle token)
         {
+            if (IsUnbound?.Invoke(token) == true)
+                return null;
             if (!_structureIds.TryGetValue(token, out var id))
                 _structureIds[token] = id = SelectionId.ForLight(new(Guid.NewGuid(), 1));
             return id;
@@ -342,9 +346,14 @@ public sealed class SceneWorkflowTests
 
         public int ActorReadyPolls;
 
+        /// <summary>An actor whose body never draws.</summary>
+        public string? NeverReadyActor;
+
         public bool ActorReady(SceneEntityHandle actor)
         {
             Record("ActorReady");
+            if (TokenName(actor) == $"actor:{NeverReadyActor}")
+                return false;
             return ++ActorReadyPolls > ActorReadyAfterPolls;
         }
 
@@ -536,6 +545,9 @@ public sealed class SceneWorkflowTests
             return new(10f, 0f, 20f);
         }
 
+        public string? Preflight;
+        public string? LoadPreflight(int actors) => Preflight;
+
         public SceneClearOutcome ClearScene()
         {
             Record("ClearScene");
@@ -629,6 +641,104 @@ public sealed class SceneWorkflowTests
         Assert.Equal(new[] { "ReadScene" }, readRuntime.Calls);
         Assert.False(history.CanUndo);
         Assert.Contains("The document is not a scene.", read.Progress!.Outcome!.Detail);
+    }
+
+    // ── issue #432: optional steps never roll the scene back ─────────────
+
+    [Fact]
+    public async Task One_actor_that_never_draws_is_named_and_the_rest_of_the_scene_stays()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _), Actor("Slow", out _)),
+            NeverReadyActor = "Slow",
+        };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime))
+        {
+            ActorReadyBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal(("Actor", "Slow"), (refusal.Kind, refusal.Name));
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.DoesNotContain("ArmPoseImport:Slow", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Unbound_members_and_refused_parent_links_are_named_not_rolled_back()
+    {
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid();
+        var document = SceneWith();
+        document.Lights.Add(new() { Key = a, Light = new() { Name = "A" } });
+        document.Lights.Add(new() { Key = b, Light = new() { Name = "B" } });
+        document.Lights.Add(new() { Key = c, Light = new() { Name = "C" } });
+        document.Groups = [new() { Key = Guid.NewGuid(), Name = "Rig",
+            Members = [new() { Kind = "light", Key = a }, new() { Kind = "light", Key = c }] }];
+        document.RootOrder = [new() { Kind = "light", Key = a }];
+        // A bone parent on a light cannot land.
+        document.Parents = [new() { Child = new() { Kind = "light", Key = b },
+            Target = new() { Kind = "light", Key = a }, BoneName = "j_kao" }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        runtime.IsUnbound = token =>
+            runtime.SpawnedLightTokens.Count == 3 && token == runtime.SpawnedLightTokens[2];
+        var groups = new SceneGroups(); var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        var history = new TransformHistory();
+        var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+            structure: new SceneStructure(groups, coordinator, state), parenting: parenting)
+        {
+            StructureBindingBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("rig.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var refusals = load.Progress!.Outcome!.Entities.Where(entity => !entity.Restored).ToList();
+        Assert.Equal(2, refusals.Count);
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == ("Group", "Rig"));
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == ("Parent", "B"));
+        Assert.All(refusals, refusal => Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy)));
+        Assert.Single(Assert.Single(groups.All, group => group.Name == "Rig").Members);
+        Assert.Empty(parenting.Capture());
+    }
+
+    [Fact]
+    public async Task Clear_first_refuses_before_clearing_and_labels_a_rollback_after_it()
+    {
+        var clearFirst = new SceneLoadOptions { ClearExistingScene = true };
+        var refusedRuntime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+            Preflight = "There is no local player to spawn the scene's actors from.",
+        };
+        using (var refused = new SceneWorkflow(refusedRuntime, new FakeDocuments(refusedRuntime)))
+        {
+            Assert.True(refused.BeginLoad("shot.xivs", clearFirst).Success);
+            await refused.Drain;
+            Assert.Equal(OperationReceiptState.Failed, refused.Receipt!.State);
+            Assert.DoesNotContain("ClearScene", refusedRuntime.Calls);
+            Assert.DoesNotContain(refusedRuntime.Calls, call => call.StartsWith("SpawnActor"));
+            Assert.False(refused.Progress!.Outcome!.SessionCleared);
+        }
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+            ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).",
+        };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        Assert.True(load.BeginLoad("shot.xivs", clearFirst).Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
+        Assert.Contains("ClearScene", runtime.Calls);
+        Assert.True(load.Progress!.Outcome!.SessionCleared);
+        Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
     }
 
     // ── issue #41: the pose import's pending acknowledgement ─────────────
