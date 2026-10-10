@@ -9,7 +9,7 @@ using Poser.Game;
 using Poser.Game.Integration;
 using Poser.Services;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 public sealed class ActorSpawnServiceOwnershipTests
 {

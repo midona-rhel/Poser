@@ -2,14 +2,14 @@ using System.Collections.Generic;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>
 /// Owns one entity family's identity slots. Every history direction uses the
 /// same slot, captures through the family's removal path, restores through its
 /// family port, and rebinds the slot to the current instance.
 /// </summary>
-internal sealed class LifecycleSlotOwner<TInstance, TSlot>
+public sealed class LifecycleSlotOwner<TInstance, TSlot>
     where TInstance : class
     where TSlot : class
 {

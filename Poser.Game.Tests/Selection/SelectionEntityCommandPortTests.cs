@@ -8,7 +8,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Selection;
-using Poser.Game.World;
+using Poser.Game.WorldObjects;
 using Poser.Services;
 
 namespace Poser.Game.Tests.Selection;

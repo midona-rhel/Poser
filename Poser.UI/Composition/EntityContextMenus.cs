@@ -21,6 +21,7 @@ using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.Application.Transforms;
 
 namespace Poser.UI;
 

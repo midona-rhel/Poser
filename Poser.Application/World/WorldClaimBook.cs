@@ -1,25 +1,24 @@
-using Poser.Application.World;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.World;
+namespace Poser.Application.World;
 
 /// <summary>A receipt targets one scene incarnation, not whatever later occupies its native address.</summary>
-internal sealed class WorldClaimBook
+public sealed class WorldClaimBook
 {
     private readonly Dictionary<WorldClaimId, SelectionId> _claims = new();
 
-    internal WorldClaimId Add(SelectionId entity)
+    public WorldClaimId Add(SelectionId entity)
     {
         var claim = new WorldClaimId(Guid.NewGuid());
         _claims.Add(claim, entity);
         return claim;
     }
 
-    internal WorldRelease Release(WorldClaimId claim, Func<SelectionId, WorldRelease> release) =>
+    public WorldRelease Release(WorldClaimId claim, Func<SelectionId, WorldRelease> release) =>
         _claims.TryGetValue(claim, out var entity)
             ? Release(entity, release) : new(WorldCommandStatus.AlreadyReleased);
 
-    internal WorldRelease Release(SelectionId entity, Func<SelectionId, WorldRelease> release)
+    public WorldRelease Release(SelectionId entity, Func<SelectionId, WorldRelease> release)
     {
         var result = release(entity);
         if (result.Success)
@@ -28,5 +27,5 @@ internal sealed class WorldClaimBook
         return result;
     }
 
-    internal void Clear() => _claims.Clear();
+    public void Clear() => _claims.Clear();
 }

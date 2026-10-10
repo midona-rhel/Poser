@@ -12,10 +12,9 @@ using Poser.Entities;
 using Poser.Game.Journal;
 using Poser.Game.Lighting;
 using Poser.Game.Scene;
-using Poser.Game.WorldObjects;
 using Poser.Services;
 
-namespace Poser.Game.World;
+namespace Poser.Game.WorldObjects;
 
 /// <summary>Immediate release on the framework thread, preserving claim bookkeeping.
 /// Used when a larger synchronous entity command owns the dispatch boundary.</summary>

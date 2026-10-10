@@ -1,7 +1,7 @@
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>Framework-thread refresh queue; nested notifications request work, never recurse.</summary>
-internal sealed class CoalescedRefresh
+public sealed class CoalescedRefresh
 {
     private bool _running;
     private bool _pending;

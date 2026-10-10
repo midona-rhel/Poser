@@ -69,7 +69,7 @@ Brio keeps pose data on the entity capability (survives the draw object) and re-
 model-transform override after redraws (`Game/Posing/ModelTransformService.cs:88-93`).
 
 **Poser:** absent — deliberately inverted. A replaced slot skeleton gets a *fresh* pose store and
-the old one is purged (`Poser.Game/LegacyRuntime/BonePosingService.cs:613-619`); gestures,
+the old one is purged (`Poser.Game/Runtime/BonePosingService.cs:613-619`); gestures,
 history and animation entries for the old generation are released
 (`Poser.Game/Scene/CleanSceneLifecycle.cs:178-195`). This bites hardest inside Poser's own
 design: the Appearance pane's Penumbra-collection / Glamourer / MCDF actions request redraws
@@ -216,7 +216,7 @@ Settings→Posing). Ktisis follows the GPose target in legacy mode and optionall
 click-targeting.
 
 **Poser:** backend-only/absent — Poser can *set* the GPose target from the sidebar, but
-`IActorManager.GetGPoseTarget()` has zero callers (`Poser.Game/LegacyRuntime/ActorManager.cs:179`);
+`IActorManager.GetGPoseTarget()` has zero callers (`Poser.Game/Runtime/ActorManager.cs:179`);
 targeting an actor in game changes nothing in Poser.
 
 **Verified 2026-08-11: DONE.** `Poser.Game/Scene/TargetSyncService.cs` (commit `c382836`):
@@ -398,7 +398,7 @@ a GPose copy and forces `SetTargetable(true)` (`Interface/Editor/Popup/Overworld
 
 **Verified 2026-08-14: DONE (implemented + reviewed; live acceptance pending).** Read-only
 overworld discovery lives outside the 201–439 write gate
-(`Poser.Game/LegacyRuntime/WorldActorDiscovery.cs`, `Poser.Application/Actors/IWorldActorReadPort.cs`,
+(`Poser.Game/Runtime/WorldActorDiscovery.cs`, `Poser.Application/Actors/IWorldActorReadPort.cs`,
 integrated `d7603ca`); the spawn browser gained a World tab — nearest-first snapshot rows,
 clone-on-activate through the typed import, stale refusals restate and re-list (`44cb748`),
 structural row refresh deferred to Draw start (`42d41bd`). **The tab is gone as of
@@ -504,7 +504,7 @@ work by string swap or shim): `ApiVersion`, `Actor.Pose.LoadFromJson`/`GetPoseAs
 `Reset`, `Actor.SetModelTransform`/`GetModelTransform`/`ResetModelTransform`,
 `Actor.Spawn`/`Despawn`/`Exists`/`GetAll`, `Actor.Freeze`/`UnFreeze`/`SetSpeed`/`GetSpeed`,
 `FreezePhysics`/`UnFreezePhysics` — each a thin adapter over the existing facades
-(`CleanPoseFacade`, `CleanTransformFacade`, `ActorSpawnService`, `AnimationSession`). Gate
+(`CleanPoseFacade`, `TransformFacade`, `ActorSpawnService`, `AnimationSession`). Gate
 behind a settings toggle like Brio's `EnableBrioIPC`.
 
 ### 16. Keybind coverage is thin

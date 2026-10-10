@@ -10,7 +10,6 @@ using Poser.Game;
 using Poser.Game.Scene;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
-using Poser.Game.World;
 using System.Linq;
 using System.Threading.Tasks;
 using Poser.Game.Journal;

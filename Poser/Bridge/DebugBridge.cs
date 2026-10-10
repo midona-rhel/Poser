@@ -21,6 +21,7 @@ using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
+using Poser.Application.Transforms;
 
 namespace Poser.Bridge;
 

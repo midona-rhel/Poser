@@ -16,6 +16,7 @@ using Poser.Domain.Scene;
 using Poser.Application.Presentation;
 using Poser.Files;
 using Poser.Services;
+using Poser.Application.Transforms;
 
 namespace Poser.UI;
 

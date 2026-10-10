@@ -1,7 +1,7 @@
 using Poser.Entities;
 using Poser.Files;
 
-namespace Poser.Game.Lights;
+namespace Poser.Game.Lighting;
 
 /// <summary>Shared file, scene and lifecycle mapping; native values never enter presentation.</summary>
 internal static class LightDocument

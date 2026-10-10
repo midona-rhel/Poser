@@ -11,6 +11,7 @@ using Poser.UI.Composition;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Poser.Application.Transforms;
 
 namespace Poser.UI;
 

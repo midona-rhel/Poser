@@ -1,7 +1,7 @@
 using Poser.Application.World;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.World;
+namespace Poser.Game.WorldObjects;
 
 // Native owners supply exact-instance cleanup; binding failure must not look up
 // a saved address or append an acquisition/removal pair to the user's history.

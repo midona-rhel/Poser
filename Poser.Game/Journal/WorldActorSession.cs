@@ -6,7 +6,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Entities;
 using Poser.Game.Scene;
-using Poser.Game.World;
+using Poser.Game.WorldObjects;
 using Poser.Services;
 
 namespace Poser.Game.Journal;

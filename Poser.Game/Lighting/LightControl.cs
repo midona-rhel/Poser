@@ -8,7 +8,7 @@ using Poser.Entities;
 using Poser.Game.Journal;
 using Poser.Services;
 
-namespace Poser.Game.Lights;
+namespace Poser.Game.Lighting;
 
 public sealed class LightControl(
     IEntityBindings bindings, IFramework framework,

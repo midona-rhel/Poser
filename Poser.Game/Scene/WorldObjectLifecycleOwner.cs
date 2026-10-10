@@ -10,6 +10,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Game.WorldObjects;
 using Poser.Services;
+using Poser.Application.Scene;
 
 namespace Poser.Game.Scene;
 

@@ -13,6 +13,7 @@ using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 using Poser.Domain.Scene;
+using Poser.Application.World;
 
 namespace Poser.Game.WorldObjects;
 

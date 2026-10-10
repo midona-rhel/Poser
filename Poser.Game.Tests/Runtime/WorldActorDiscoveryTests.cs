@@ -15,7 +15,7 @@ using System.Numerics;
 using System.Reflection;
 using Poser.Application.Lifecycle;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 public sealed class WorldActorDiscoveryTests
 {

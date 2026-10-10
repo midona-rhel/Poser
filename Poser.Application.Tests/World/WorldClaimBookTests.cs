@@ -1,9 +1,8 @@
 using Poser.Application.World;
 using Poser.Domain.Identity;
-using Poser.Game.World;
 using Xunit;
 
-namespace Poser.Game.Tests.World;
+namespace Poser.Application.Tests.World;
 
 public sealed class WorldClaimBookTests
 {

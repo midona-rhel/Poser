@@ -8,7 +8,7 @@ using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 public sealed class ActorAvailabilityTests
 {
