@@ -18,6 +18,8 @@ using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Services;
 
+using static Poser.Game.Posing.PoseImportPlanner;
+
 namespace Poser.Game.Posing;
 
 /// <summary>
@@ -76,176 +78,14 @@ public sealed class PoseImportCapture : IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly IBonePosingService _posing;
     private readonly ITransformRuntimePort _runtime;
-    private readonly TransformHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly IkBakeCapture _ikBake;
-    private readonly IPoseFileService _poseFiles;
     private readonly ISkeletonService _skeletons;
     private readonly IPluginLog _log;
+    private readonly PoseImportPlanner _planner;
+    private readonly PoseImportTerminal _terminal;
 
-    /// <summary>One slot's share of an import: the plan's writes keyed by
-    /// (partial, bone name) — the pass hands the LIVE bone to the callback,
-    /// so no skeleton or bone instance is held across ticks (issue #78). A
-    /// redraw between registration and the pass simply means the callback
-    /// matches the replacement skeleton's bones by name.</summary>
-    private sealed class SlotImport
-    {
-        public required PoseSlot Slot;
-        public required Dictionary<(int Partial, string Bone),
-            (TransformTargetId Target, Transform File, TransformComponents Components)> Writes;
-        public bool Ended;
-        public bool Executed;
-    }
-
-    /// <summary>Which transitive batch the pending import is waiting on:
-    /// the plan's file writes, the expression import's head restore, the
-    /// post-reparent face reconcile, or the expression import's final
-    /// whole-pose flatten.</summary>
-    private enum ImportStage
-    {
-        Apply,
-        HeadRestore,
-        Reconcile,
-        Flatten,
-    }
-
-    private sealed class Import
-    {
-        public required long Generation;
-        public required Guid OperationId;
-        public required OperationEpoch OperationEpoch;
-        public required SessionGeneration SessionGeneration;
-        public required ActorId TargetActorId;
-        /// <summary>The target actor's stable legacy key
-        /// (<c>actor.Id.Unique</c>): the pose store's actor address and the
-        /// key transitive-batch outcomes are matched by. A string, never a
-        /// wrapper instance — the import holds no instance across ticks.
-        /// </summary>
-        public required string ActorKey;
-        public required PoseImportOperation Operation;
-        public required IReadOnlyList<TransformTargetId> Targets;
-        public required string Description;
-        /// <summary>The CURRENT stage's batches. <see cref="BeginReconcile"/>
-        /// replaces the verified apply slots with the one reconcile slot.</summary>
-        public required List<SlotImport> Slots;
-        /// <summary>Ordered import targets and their pre-edit states —
-        /// captured before anything was written, so a failure restores
-        /// exactly what was there and success has a Before half that needs
-        /// no re-reading.</summary>
-        public required List<TransformTargetId> Order;
-        public required Dictionary<TransformTargetId, TransformTargetState> Before;
-        /// <summary>Targets the synchronous reset cleared. A reset bone that
-        /// had no authored layers did not change and stays out of the
-        /// history entry unless a write landed on it.</summary>
-        public required HashSet<TransformTargetId> Resets;
-        /// <summary>Targets an action (or the model edit) actually wrote.</summary>
-        public readonly HashSet<TransformTargetId> Written = new();
-        /// <summary>Fires exactly once when an import <see cref="Begin"/>
-        /// returned Ok for finishes — with true after the history entry
-        /// landed, false after a rollback. A Begin that returned Fail never
-        /// fires it; a pending import dropped by Dispose does not either
-        /// (session teardown restores animation state wholesale).</summary>
-        public Action<bool>? OnFinished;
-        public Action<OperationReceipt>? OnReceipt;
-        /// <summary>The import targets the pose library's hidden preview
-        /// body. Its changes are scenery, never user edits — they must not
-        /// spend the user's undo stack.</summary>
-        public required bool PreviewTarget;
-        /// <summary>The caller asked for no history entry
-        /// (<see cref="PoseImportOptions.SuppressHistory"/>). Its one caller
-        /// is an undo restoring a despawned actor's pose: that import is
-        /// already inside the history's own walk, and an append there would
-        /// clear the redo stack the walk had just pushed onto.</summary>
-        public bool SuppressHistory;
-        /// <summary>The file the import came from, when it came from one.</summary>
-        public string? Asset;
-        public ImportStage Stage = ImportStage.Apply;
-        /// <summary>Whether this is an expression import — it runs the head
-        /// restore and, at the very end, Brio's whole-pose flatten
-        /// (Reconcile(reset: true), PosingCapability.cs:417-429): the phase-2
-        /// call leaves ImportPose_Internal's reset/reconcile at their TRUE
-        /// defaults, so unlike a body import (reconcile: false, :156) the
-        /// expression chain finishes by exporting the entire visual pose,
-        /// clearing every stack, and re-importing it whole.</summary>
-        public bool Expression;
-        /// <summary>Expression imports only: every j_kao instance the plan
-        /// writes, with the pre-import absolute the head-restore stage puts
-        /// back — Brio's tempPose reduced to the one bone its
-        /// expressionPhase2 actually uses (PosingCapability.cs:194,
-        /// PoseImporter.cs:11-26). The head lands transiently in the apply
-        /// stage so the face computes its deltas in the FILE's head space;
-        /// this restores it. Seeded at Begin, RE-EXPRESSED by the apply
-        /// pass in its own basis — see <see cref="HeadRestore.PreImport"/>
-        /// for why the space is the whole point.</summary>
-        public List<HeadRestore>? HeadRestores;
-        /// <summary>Whether the plan wrote any Character-slot bone of a
-        /// non-zero partial — the only writes whose export/basis spaces can
-        /// disagree, so the only imports a reconcile can converge. The
-        /// Character skeleton itself is resolved fresh on each stage's own
-        /// tick; the import never carries the instance.</summary>
-        public bool WroteFacePartial;
-        /// <summary>Whether the plan wrote any Character-slot bone at all —
-        /// the head-restore and flatten stages exist only for such
-        /// imports.</summary>
-        public bool WroteCharacter;
-        public string? Failure;
-        public bool Completing;
-        public bool Invalidated;
-        public OperationReceipt? PendingReceipt;
-        public bool TerminalPublished;
-        public bool MutationStarted;
-        public readonly OperationInvalidation Invalidation = new();
-    }
-
-    private sealed class OperationInvalidation
-    {
-        private int _invalidated;
-        public bool IsInvalidated => Volatile.Read(ref _invalidated) != 0;
-        public void Invalidate() => Interlocked.Exchange(ref _invalidated, 1);
-    }
-
-    /// <summary>One j_kao instance's target for the expression head restore,
-    /// addressed by (partial, name) like every other bone reference above
-    /// the write layer — the apply pass matches the LIVE head bone by name.
-    /// </summary>
-    private sealed class HeadRestore
-    {
-        public required int Partial;
-        public required string Bone;
-        public required TransformTargetId Target;
-
-        /// <summary>The pre-import head absolute the restore stage writes
-        /// back (position-only; rotation reverts through the stack pop).
-        ///
-        /// THE SPACE IS THE FIX (repeated-apply head drift, user
-        /// 2026-08-10). Begin seeds the cached <c>LastRawTransform</c>,
-        /// which is the last settled frame BEFORE the rewind: the facade's
-        /// bracket pauses the actor and the settle tick rewinds every
-        /// paused control to LocalTime 0 on the very tick it calls Begin
-        /// (PoseImportCoordinator.Begin), so no pass has evaluated the
-        /// rewound animation yet. Every other write in this chain diffs
-        /// against the REWOUND in-pass basis, and the final flatten bakes
-        /// its stacks against that same rewound basis — so restoring the
-        /// head to a pre-rewind absolute baked
-        /// (anim(pause frame) − anim(LocalTime 0)) into the head position
-        /// ON TOP of the previous apply's settled state, once per apply:
-        /// progressive head drift whenever the animation ran between
-        /// applies. <see cref="ApplyBone"/> therefore overwrites the seed
-        /// with the bone's own apply-pass basis — anim(rewound) ⊕ the
-        /// pre-import stacks the expression reset deliberately leaves on
-        /// the head — which IS the pre-import head expressed in the
-        /// chain's one basis. Apply N+1 then restores exactly apply N's
-        /// settled head and the restore delta rejects as near-identity.
-        /// Brio's pre-rewind capture (tempPose) matches its own brief
-        /// bracket — it hands speed back +2 ticks after the import call
-        /// (ActionTimelineCapability.cs:169-175), before its reconcile
-        /// ever reads the pose; Poser holds the pause through reconcile
-        /// and flatten, so the in-pass basis is the only consistent
-        /// space.</summary>
-        public required Transform PreImport;
-    }
-
-    private Import? _pending;
+    private PendingPoseImport? _pending;
     private long _generation;
     private OperationEpoch? _lastOperationEpoch;
     private int _disposed;
@@ -253,7 +93,11 @@ public sealed class PoseImportCapture : IDisposable
     /// <summary>Raised once for each accepted operation's terminal receipt.
     /// Delivery is framework-thread-only and synchronous refusals publish
     /// nothing.</summary>
-    public event Action<OperationReceipt>? ReceiptPublished;
+    public event Action<OperationReceipt>? ReceiptPublished
+    {
+        add => _terminal.ReceiptPublished += value;
+        remove => _terminal.ReceiptPublished -= value;
+    }
 
     public PoseImportCapture(
         IFramework framework,
@@ -275,12 +119,12 @@ public sealed class PoseImportCapture : IDisposable
         _bindings = bindings;
         _posing = posing;
         _runtime = runtime;
-        _history = history;
         _gestures = gestures;
         _ikBake = ikBake;
-        _poseFiles = poseFiles;
         _skeletons = skeletons;
         _log = log;
+        _planner = new PoseImportPlanner(bindings, posing, runtime, poseFiles, skeletons, log);
+        _terminal = new PoseImportTerminal(history, gestures, runtime, log);
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
         _scene.SceneChanged += OnSceneChanged;
     }
@@ -312,8 +156,8 @@ public sealed class PoseImportCapture : IDisposable
             return GestureResult.Fail("No pose import is active.");
 
         Invalidate(import);
-        var terminal = CreateFailureTerminal(import, detail, cancelled: true);
-        Notify(import, terminal);
+        var terminal = _terminal.CreateFailureTerminal(import, detail, cancelled: true);
+        _terminal.Notify(import, terminal);
         return GestureResult.Fail(detail) with
         {
             Recovery = terminal.Recovery,
@@ -390,7 +234,7 @@ public sealed class PoseImportCapture : IDisposable
             actorId,
             description);
         operation = new PoseImportOperation(pending);
-        var import = new Import
+        var import = new PendingPoseImport
         {
             Generation = ++_generation,
             OperationId = operationId,
@@ -401,7 +245,7 @@ public sealed class PoseImportCapture : IDisposable
             Operation = operation,
             Targets = Array.Empty<TransformTargetId>(),
             Description = description,
-            Slots = new List<SlotImport>(),
+            Slots = new List<PoseImportSlot>(),
             Order = new List<TransformTargetId>(),
             Before = new Dictionary<TransformTargetId, TransformTargetState>(),
             Resets = new HashSet<TransformTargetId>(),
@@ -440,147 +284,11 @@ public sealed class PoseImportCapture : IDisposable
         if (_bindings.Resolve(import.TargetActorId) is not
             { Success: true, Value: { } actor })
             return FailAdmitted(import, "The import actor was replaced before application.");
-        var planActorId = import.TargetActorId;
-
         // Resolve and capture EVERYTHING before mutating anything, so a
-        // stale target fails synchronously with nothing to roll back. The
-        // plan is name-keyed (issue #78): every bone resolves against the
-        // LIVE slot skeletons on THIS tick, so nothing planned at the arm
-        // tick can have gone stale — a name that does not resolve here is
-        // a bone no live skeleton of this actor carries, refused by name.
-        TransformPortResult captured;
-        var slotBones = new Dictionary<
-            PoseSlot,
-            (ISkeleton Skeleton, Dictionary<(int Partial, string Bone), IBone> Bones)>();
-
-        (ISkeleton Skeleton, Dictionary<(int Partial, string Bone), IBone> Bones)?
-            ResolveSlot(PoseSlot slot)
-        {
-            if (slotBones.TryGetValue(slot, out var entry))
-                return entry;
-            if (_skeletons.GetSkeleton(actor, slot) is not { } skeleton)
-                return null;
-            entry = (skeleton, MapBones(skeleton));
-            slotBones[slot] = entry;
-            return entry;
-        }
-
-        var resetBones = new List<(IBone Bone, TransformTargetId Target)>(plan.Resets.Count);
-        foreach (var reset in plan.Resets)
-        {
-            if (ResolveSlot(reset.Slot) is not { } resetSlot ||
-                !resetSlot.Bones.TryGetValue(
-                    (reset.Partial, reset.Bone), out var bone))
-                return FailAdmitted(import,
-                    $"Import target {reset.Bone} does not resolve on the live {reset.Slot} skeleton.");
-            if (_bindings.GetBoneId(bone) is not { } resetId)
-                return FailAdmitted(import,
-                    $"Import target {reset.Bone} could not be resolved.");
-            if (resetId.Skeleton.Actor != planActorId)
-                return FailAdmitted(import,
-                    "A reset target belongs to a different actor generation.");
-            var target = TransformTargetId.ForBone(resetId);
-            resetBones.Add((bone, target));
-            if (!import.Before.ContainsKey(target))
-            {
-                captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                    return FailAdmitted(import,
-                        captured.Detail ?? $"Could not capture {target}.");
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            import.Resets.Add(target);
-        }
-
-        var slotMap = new Dictionary<PoseSlot, SlotImport>();
-        foreach (var write in plan.Writes)
-        {
-            if (ResolveSlot(write.Slot) is not { } writeSlot ||
-                !writeSlot.Bones.TryGetValue(
-                    (write.Partial, write.Bone), out var bone))
-                return FailAdmitted(import,
-                    $"Import target {write.Bone} does not resolve on the live {write.Slot} skeleton.");
-            if (_bindings.GetBoneId(bone) is not { } writeId)
-                return FailAdmitted(import,
-                    $"Import target {write.Bone} could not be resolved.");
-            if (writeId.Skeleton.Actor != planActorId)
-                return FailAdmitted(import,
-                    "A write target belongs to a different actor generation.");
-            var target = TransformTargetId.ForBone(writeId);
-            if (!import.Before.ContainsKey(target))
-            {
-                captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                    return FailAdmitted(import,
-                        captured.Detail ?? $"Could not capture {target}.");
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            if (!slotMap.TryGetValue(write.Slot, out var slot))
-            {
-                slotMap[write.Slot] = slot = new SlotImport
-                {
-                    Slot = write.Slot,
-                    Writes = new Dictionary<(int, string),
-                        (TransformTargetId, Transform, TransformComponents)>(),
-                };
-                import.Slots.Add(slot);
-            }
-            slot.Writes[(write.Partial, write.Bone)] =
-                (target, write.File, write.Components);
-            if (write.Slot == PoseSlot.Character)
-            {
-                import.WroteCharacter = true;
-                if (write.Partial != 0)
-                    import.WroteFacePartial = plan.ReconcileFace;
-                // The head's pre-import absolute — a SEED only: this cached
-                // value predates the settle tick's LocalTime rewind, and
-                // the apply pass replaces it with the bone's own in-pass
-                // basis (HeadRestore.PreImport has the space math). Only
-                // instances the plan writes restore: a file without j_kao
-                // never moved the head, so unlike Brio's blind
-                // RemoveLastStack (which would eat a USER head stack in
-                // that case) the restore stage simply skips.
-                if (expression && write.Bone == "j_kao")
-                    (import.HeadRestores ??= new()).Add(new HeadRestore
-                    {
-                        Partial = write.Partial,
-                        Bone = write.Bone,
-                        Target = target,
-                        PreImport = bone.LastRawTransform,
-                    });
-            }
-        }
-
-        (TransformTargetId Target, PoseTransform Desired)? model = null;
-        if (plan.HasModelTransform)
-        {
-            // The model transform belongs to the admitted target actor by
-            // construction — the plan states no actor of its own.
-            var target = TransformTargetId.ForActor(planActorId);
-            if (!import.Before.ContainsKey(target))
-            {
-                captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                    return FailAdmitted(import,
-                        captured.Detail ?? $"Could not capture {target}.");
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            model = (target, new PoseTransform(
-                plan.ModelTransform.Position,
-                plan.ModelTransform.Rotation,
-                plan.ModelTransform.Scale));
-        }
-
-        if (import.Order.Count == 0)
-            return FailAdmitted(import, "No target of this import could be bound.");
-
-        if (import.Order.Any(target => ActorFor(target) != planActorId))
-            return FailAdmitted(import,
-                "An import target belongs to a different actor generation.");
-        import.Targets = import.Order.ToArray();
+        // stale target fails synchronously with nothing to roll back.
+        if (_planner.ResolveApply(import, actor, plan, expression,
+                out var resetBones, out var skeletons, out var model) is { } refusal)
+            return FailAdmitted(import, refusal);
 
         try
         {
@@ -629,8 +337,8 @@ public sealed class PoseImportCapture : IDisposable
                 // the posing service and the callback matches bones by
                 // name — nothing pins this instance past the call.
                 _posing.RegisterTransitiveAction(
-                    slotBones[scope.Slot].Skeleton,
-                    (bone, poseInfo) => ApplyBone(import, scope, bone, poseInfo));
+                    skeletons[scope.Slot],
+                    (bone, poseInfo) => _planner.ApplyBone(import, scope, bone, poseInfo));
             }
 
             _framework.RunOnTick(
@@ -649,110 +357,6 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    /// <summary>
-    /// Brio's <c>PoseImporter.ApplyBone</c> (Game/Posing/PoseImporter.cs:9-87),
-    /// running inside the apply pass. The plan supplies the file absolute and
-    /// the component mask; the basis is <c>bone.LastRawTransform</c> exactly
-    /// as the pass has just refreshed it; the delta is masked and appended as
-    /// a stack the same pass applies immediately.
-    ///
-    /// Brio's near-identity early-out (PoseInfo.cs:100) is taken on the
-    /// MASKED delta, caller-side like the bake's: a bone whose in-scope
-    /// components already match its basis must not gain a stack.
-    /// </summary>
-    private void ApplyBone(
-        Import import,
-        SlotImport slot,
-        IBone bone,
-        BonePoseInfo poseInfo)
-    {
-        try
-        {
-            // This callback runs at the native boundary. It may only inspect
-            // the active token; framework/session/binding validation belongs
-            // to the deferred framework callback.
-            if (!IsNativeLive(import))
-                return;
-            if (!slot.Writes.TryGetValue(
-                    (bone.PartialId, bone.BoneName), out var entry))
-                return;
-            // The attachment owner restores this root, including its scale.
-            // A file's same-named body-head value is not a second root edit.
-            if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.PartialRootScale.HasValue)
-                return;
-
-            // HeadRestore holds an in-pass raw basis, not a visible file
-            // target. Every other stage carries post-reparent absolutes.
-            var desired = import.Stage == ImportStage.HeadRestore
-                ? entry.File : _posing.ToApplySpace(bone, entry.File);
-            var basis = bone.LastRawTransform;
-
-            // Expression imports: re-express this head instance's restore
-            // target in the pass's own basis — anim(rewound) ⊕ the
-            // pre-import stacks the reset left on the head — BEFORE the
-            // file's head lands. The Begin-time seed is pre-rewind;
-            // restoring it re-baked the pause-frame-vs-LocalTime-0 offset
-            // into the head on every apply (HeadRestore.PreImport). Head
-            // restores only ever name Character-slot bones, so the slot
-            // gate keeps a same-named auxiliary bone from re-seeding them.
-            if (import.Stage == ImportStage.Apply &&
-                slot.Slot == PoseSlot.Character &&
-                import.HeadRestores is { } restores)
-            {
-                foreach (var restore in restores)
-                {
-                    if (restore.Partial == bone.PartialId &&
-                        string.Equals(
-                            restore.Bone, bone.BoneName,
-                            StringComparison.Ordinal))
-                    {
-                        restore.PreImport = basis;
-                        break;
-                    }
-                }
-            }
-
-            var delta = BonePoseInfo.FilterDelta(
-                BonePoseInfo.Diff(desired, basis), entry.Components);
-            if (TransformMath.IsApproximatelyIdentityDelta(delta))
-                return;
-
-            // Propagation stays All (Brio PoseImporter.cs:35, 3rd argument):
-            // an imported bone carries its children with it exactly as the
-            // pose it replaced did. The mask applies to the delta only.
-            // forceNewStack matches Brio's PoseImporter (every call passes
-            // true): each import write is its OWN stack entry, which is what
-            // makes the expression head restore's RemoveLastStack pop
-            // exactly the phase-1 head write and nothing else.
-            // The posing provider owns the mutation; mark before entering it
-            // so a partial write followed by a throw still rolls back.
-            import.MutationStarted = true;
-            if (poseInfo.Apply(
-                    desired, basis,
-                    TransformComponents.All,
-                    entry.Components,
-                    forceNewStack: true, drivesIk: false) == null)
-            {
-                // One degenerate bone (a zero-scaled prop helper such as
-                // nf_handprop_k_l on an actor without a prop) is not the
-                // pose: it is skipped and named, the rest lands. Failing the
-                // whole import here left every duplicate of such an actor
-                // idling (2026-09-02).
-                _log.Warning(
-                    $"Pose import: {bone.BoneName} produced a non-finite delta and was skipped.");
-                return;
-            }
-            import.Written.Add(entry.Target);
-        }
-        catch (Exception ex)
-        {
-            // A throw here is inside the physics detour; swallow it into the
-            // import's own failure so the pass stays intact and the whole
-            // edit rolls back on completion.
-            import.Failure ??= $"{bone.BoneName}: {ex.Message}";
-        }
-    }
-
     /// <summary>Raised from the native hooks when the interval that owned a
     /// batch ends. Records only — the completion itself needs the framework
     /// thread.</summary>
@@ -760,7 +364,7 @@ public sealed class PoseImportCapture : IDisposable
     {
         // Native callbacks are record-only. In particular, do not read
         // SceneSession, StableBindingRegistry, or session state here.
-        if (Volatile.Read(ref _pending) is not { } import || !IsNativeLive(import))
+        if (Volatile.Read(ref _pending) is not { } import || !PoseImportPlanner.IsNativeLive(import))
             return;
         var complete = true;
         var known = false;
@@ -789,7 +393,7 @@ public sealed class PoseImportCapture : IDisposable
         import.Completing = true;
         switch (import.Stage)
         {
-            case ImportStage.Apply:
+            case PoseImportStage.Apply:
                 // The apply batches have run. An expression import restores
                 // the head first — Brio schedules its phase 2 at +4 ticks
                 // (PosingCapability.cs:249-250, the same delay its reconcile
@@ -802,7 +406,7 @@ public sealed class PoseImportCapture : IDisposable
                         : () => BeginReconcile(import.Generation),
                     ReconcileDelayTicks);
                 break;
-            case ImportStage.HeadRestore:
+            case PoseImportStage.HeadRestore:
                 // Brio's phase 2 runs with generateSnapshot: true, so its
                 // Snapshot — the reconcile driver — fires another 4 ticks
                 // after the restore pass (PosingCapability.cs:308-309,
@@ -812,7 +416,7 @@ public sealed class PoseImportCapture : IDisposable
                     () => BeginReconcile(import.Generation),
                     ReconcileDelayTicks);
                 break;
-            case ImportStage.Reconcile:
+            case PoseImportStage.Reconcile:
                 QueueFromNative(
                     import,
                     () => FinishAfterReconcile(import.Generation));
@@ -823,7 +427,7 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    private void QueueFromNative(Import import, Action action, int delayTicks = 0)
+    private void QueueFromNative(PendingPoseImport import, Action action, int delayTicks = 0)
     {
         try
         {
@@ -837,10 +441,7 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    private static bool IsNativeLive(Import import) =>
-        !import.Invalidation.IsInvalidated;
-
-    private bool IsLive(Import import) =>
+    private bool IsLive(PendingPoseImport import) =>
         Volatile.Read(ref _disposed) == 0 &&
         !import.Invalidated &&
         !import.Invalidation.IsInvalidated &&
@@ -853,7 +454,7 @@ public sealed class PoseImportCapture : IDisposable
     /// check governs what its ids resolve to (issue #78), and a wrapper or
     /// skeleton object replaced for the same identity changes nothing here.
     /// </summary>
-    private bool IsFrameworkCurrent(Import import)
+    private bool IsFrameworkCurrent(PendingPoseImport import)
     {
         if (!IsLive(import) ||
             _sessions.ActiveSessionGeneration is not { } currentSession ||
@@ -874,7 +475,7 @@ public sealed class PoseImportCapture : IDisposable
         return true;
     }
 
-    private bool GuardFramework(Import import, string detail)
+    private bool GuardFramework(PendingPoseImport import, string detail)
     {
         if (IsFrameworkCurrent(import))
             return true;
@@ -883,14 +484,14 @@ public sealed class PoseImportCapture : IDisposable
         return false;
     }
 
-    private void FailAndPublish(Import import, string detail)
+    private void FailAndPublish(PendingPoseImport import, string detail)
     {
         if (!IsLive(import))
             return;
         import.Failure ??= detail;
         Invalidate(import);
-        var terminal = CreateFailureTerminal(import, detail);
-        Notify(import, terminal);
+        var terminal = _terminal.CreateFailureTerminal(import, detail);
+        _terminal.Notify(import, terminal);
     }
 
     private void OnSceneChanged(SceneSnapshot _)
@@ -936,10 +537,10 @@ public sealed class PoseImportCapture : IDisposable
             return;
         import.Failure ??= import.Stage switch
         {
-            ImportStage.Apply => "The import never reached an apply pass.",
-            ImportStage.HeadRestore =>
+            PoseImportStage.Apply => "The import never reached an apply pass.",
+            PoseImportStage.HeadRestore =>
                 "The head restore never reached an apply pass.",
-            ImportStage.Flatten =>
+            PoseImportStage.Flatten =>
                 "The pose flatten never reached an apply pass.",
             _ => "The face reconcile never reached an apply pass.",
         };
@@ -985,121 +586,13 @@ public sealed class PoseImportCapture : IDisposable
             return;
         }
 
-        var slots = _skeletons.GetSkeletons(actor);
-        if (slots.Count == 0)
+        if (_planner.BuildFlatten(import, actor,
+                out var resetBones, out var flattenSlots, out var skeletons) is { } refusal)
         {
-            Complete(generation);
+            FailAndPublish(import, refusal);
             return;
         }
-        var exported = _poseFiles.CreatePoseFile(slots);
-        var options = new PoseImportOptions
-        {
-            ApplyRotation = true,
-            ApplyPosition = true,
-            ApplyScale = true,
-            ApplyBody = true,
-            ApplyFace = true,
-            ApplyMainHand = true,
-            ApplyOffHand = true,
-            ApplyProp = true,
-            ApplyOrnament = true,
-            ApplyModelTransform = false,
-            ResetBeforeImport = true,
-        };
-        if (_poseFiles.BuildImportPlan(slots, exported, options) is not { } plan)
-        {
-            Complete(generation);
-            return;
-        }
-
-        // The plan was just built from these same live slots, so every name
-        // resolves against them; the maps exist to turn names back into the
-        // bones the capture and reset need on this tick.
-        var slotBones = new Dictionary<
-            PoseSlot,
-            (ISkeleton Skeleton, Dictionary<(int Partial, string Bone), IBone> Bones)>();
-        foreach (var slotSkeleton in slots)
-            slotBones[slotSkeleton.Slot] = (slotSkeleton, MapBones(slotSkeleton));
-
-        // Mid-flight capture, the reconcile's pattern: any target the
-        // flatten can touch that the earlier stages did not is captured
-        // before it changes, so the one rollback covers every stage.
-        var resetBones = new List<(IBone Bone, TransformTargetId Target)>(plan.Resets.Count);
-        foreach (var reset in plan.Resets)
-        {
-            if (!slotBones.TryGetValue(reset.Slot, out var resetSlot) ||
-                !resetSlot.Bones.TryGetValue(
-                    (reset.Partial, reset.Bone), out var bone) ||
-                _bindings.GetBoneId(bone) is not { } id)
-            {
-                FailAndPublish(import, $"Flatten reset target {reset.Bone} could not be resolved.");
-                return;
-            }
-            if (id.Skeleton.Actor != import.TargetActorId)
-            {
-                FailAndPublish(import, "A flatten reset target changed actor generation.");
-                return;
-            }
-            var target = TransformTargetId.ForBone(id);
-            if (!import.Before.ContainsKey(target))
-            {
-                var captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                {
-                    FailAndPublish(import, captured.Detail ?? $"Could not capture {target}.");
-                    return;
-                }
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            resetBones.Add((bone, target));
-            import.Resets.Add(target);
-        }
-
-        var slotMap = new Dictionary<PoseSlot, SlotImport>();
-        var flattenSlots = new List<SlotImport>();
-        foreach (var write in plan.Writes)
-        {
-            if (!slotBones.TryGetValue(write.Slot, out var writeSlot) ||
-                !writeSlot.Bones.TryGetValue(
-                    (write.Partial, write.Bone), out var bone) ||
-                _bindings.GetBoneId(bone) is not { } id)
-            {
-                FailAndPublish(import, $"Flatten write target {write.Bone} could not be resolved.");
-                return;
-            }
-            if (id.Skeleton.Actor != import.TargetActorId)
-            {
-                FailAndPublish(import, "A flatten write target changed actor generation.");
-                return;
-            }
-            var target = TransformTargetId.ForBone(id);
-            if (!import.Before.ContainsKey(target))
-            {
-                var captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                {
-                    FailAndPublish(import, captured.Detail ?? $"Could not capture {target}.");
-                    return;
-                }
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            if (!slotMap.TryGetValue(write.Slot, out var slot))
-            {
-                slotMap[write.Slot] = slot = new SlotImport
-                {
-                    Slot = write.Slot,
-                    Writes = new Dictionary<(int, string),
-                        (TransformTargetId, Transform, TransformComponents)>(),
-                };
-                flattenSlots.Add(slot);
-            }
-            slot.Writes[(write.Partial, write.Bone)] =
-                (target, write.File, write.Components);
-        }
-
-        if (flattenSlots.Count == 0)
+        if (flattenSlots is null)
         {
             Complete(generation);
             return;
@@ -1121,14 +614,14 @@ public sealed class PoseImportCapture : IDisposable
         }
 
         import.Slots = flattenSlots;
-        import.Stage = ImportStage.Flatten;
+        import.Stage = PoseImportStage.Flatten;
         import.Completing = false;
         foreach (var slot in flattenSlots)
         {
             var scope = slot;
             _posing.RegisterTransitiveAction(
-                slotBones[scope.Slot].Skeleton,
-                (bone, poseInfo) => ApplyBone(import, scope, bone, poseInfo));
+                skeletons[scope.Slot],
+                (bone, poseInfo) => _planner.ApplyBone(import, scope, bone, poseInfo));
         }
         }
         catch (Exception exception)
@@ -1189,7 +682,7 @@ public sealed class PoseImportCapture : IDisposable
             // phase-1 stack to pop; the near-identity early-out means a
             // head already at the file's pose gained none. A written
             // instance's PreImport was re-expressed by that same pass in
-            // its own basis (HeadRestore.PreImport), so the write below
+            // its own basis (PoseImportHeadRestore.PreImport), so the write below
             // diffs two values of the SAME space and lands the head back
             // on the pre-import authored state exactly.
             if (!import.Written.Contains(headRestore.Target))
@@ -1212,17 +705,17 @@ public sealed class PoseImportCapture : IDisposable
             return;
         }
 
-        var restore = new SlotImport
+        var restore = new PoseImportSlot
         {
             Slot = PoseSlot.Character,
             Writes = writes,
         };
-        import.Slots = new List<SlotImport> { restore };
-        import.Stage = ImportStage.HeadRestore;
+        import.Slots = new List<PoseImportSlot> { restore };
+        import.Stage = PoseImportStage.HeadRestore;
         import.Completing = false;
         _posing.RegisterTransitiveAction(
             skeleton,
-            (bone, poseInfo) => ApplyBone(import, restore, bone, poseInfo));
+            (bone, poseInfo) => _planner.ApplyBone(import, restore, bone, poseInfo));
         }
         catch (Exception exception)
         {
@@ -1268,7 +761,7 @@ public sealed class PoseImportCapture : IDisposable
             return;
         }
 
-        if (BuildReconcile(import) is not { } reconcile)
+        if (_planner.BuildReconcile(import) is not { } reconcile)
         {
             // Nothing to converge — an expression import still owes the
             // flatten (Brio's Snapshot runs Reconcile(reset) whether or not
@@ -1277,148 +770,17 @@ public sealed class PoseImportCapture : IDisposable
             return;
         }
 
-        import.Slots = new List<SlotImport> { reconcile.Batch };
-        import.Stage = ImportStage.Reconcile;
+        import.Slots = new List<PoseImportSlot> { reconcile.Batch };
+        import.Stage = PoseImportStage.Reconcile;
         import.Completing = false;
         _posing.RegisterTransitiveAction(
             reconcile.Skeleton,
-            (bone, poseInfo) => ApplyBone(import, reconcile.Batch, bone, poseInfo));
+            (bone, poseInfo) => _planner.ApplyBone(import, reconcile.Batch, bone, poseInfo));
         }
         catch (Exception exception)
         {
             FailAndPublish(import, $"Pose import reconcile setup failed: {exception.Message}");
         }
-    }
-
-    /// <summary>
-    /// Brio's <c>ReconcileChildren(j_kao, clearFaceStacks: false)</c>
-    /// (PosingCapability.cs:370-401): the j_kao subtree's POST-reparent
-    /// <c>LastRawTransform</c> absolutes (:385, read on a framework tick like
-    /// this one) become a partial re-import applied with
-    /// <c>TransformComponents.All</c> (:380). Brio collapses the subtree
-    /// into a name-keyed file and re-resolves per name; Poser's plan
-    /// machinery is per instance, so each instance re-imports its OWN
-    /// absolute — identical where instances agree (reparenting just snapped
-    /// them together) and exact where they do not. Bones already consistent
-    /// diff to identity in-pass and gain no stack. Null when a guard in
-    /// <see cref="BeginReconcile"/>'s list says skip.
-    /// </summary>
-    private (SlotImport Batch, ISkeleton Skeleton)? BuildReconcile(Import import)
-    {
-        if (!import.WroteFacePartial)
-            return null;
-        // The subtree is read from the LIVE Character skeleton on this tick
-        // — its post-reparent LastRawTransform absolutes are the reconcile's
-        // whole payload, so any carried instance would be exactly wrong.
-        if (_bindings.Resolve(import.TargetActorId) is not
-                { Success: true, Value: { } actor } ||
-            _skeletons.GetSkeleton(actor) is not { } skeleton)
-        {
-            import.Failure ??=
-                "The Character skeleton is no longer present for the face reconcile.";
-            return null;
-        }
-        if (_posing.HasEnabledIk(skeleton))
-            return null;
-        // First-built instance = partial 0's body head (Skeleton.cs:256),
-        // matching Brio's Character-slot j_kao lookup; the face and hair
-        // partial roots hang off it through the connected-parent attach.
-        if (skeleton.GetBone("j_kao") is not { } head || head is VirtualBone)
-            return null;
-
-        var poseInfo = _posing.GetPoseInfo(skeleton);
-        // Brio checks HasStacks on j_kao and each ancestor (:331-345). The
-        // Poser analog of Brio's stacks is the interactive (unnamed) layers:
-        // named layers are service-owned recomputed state Brio has no
-        // equivalent of, and they re-drive themselves regardless.
-        var overridden = HasInteractiveStacks(poseInfo, head);
-        for (var ancestor = head.ParentBone;
-             !overridden && ancestor != null;
-             ancestor = ancestor.ParentBone)
-        {
-            overridden = ancestor is not VirtualBone &&
-                         HasInteractiveStacks(poseInfo, ancestor);
-        }
-        if (!overridden)
-            return null;
-
-        var subtree = new List<IBone>();
-        CollectSubtree(head, subtree, new HashSet<IBone>());
-
-        var writes = new Dictionary<(int, string),
-            (TransformTargetId, Transform, TransformComponents)>(subtree.Count);
-        foreach (var bone in subtree)
-        {
-            // An explicitly restored partial-root scale is reapplied by
-            // attachment every frame. Reconciling that root as another edit
-            // scales its children, then attachment overwrites only the root:
-            // the duplicate's face grows by rootScale / bodyHeadScale.
-            if (bone.IsPartialRoot && !bone.IsSkeletonRoot && bone.PartialRootScale.HasValue)
-                continue;
-            // A subtree bone without a binding cannot be captured for
-            // rollback, so it is not written either — Brio likewise only
-            // re-applies what its name lookup finds.
-            if (_bindings.GetBoneId(bone) is not { } id)
-            {
-                import.Failure ??= $"Reconcile target {bone.BoneName} could not be resolved.";
-                return null;
-            }
-            if (id.Skeleton.Actor != import.TargetActorId)
-            {
-                import.Failure ??= "A reconcile target changed actor generation.";
-                return null;
-            }
-            var target = TransformTargetId.ForBone(id);
-            if (!import.Before.ContainsKey(target))
-            {
-                // Captured BEFORE the reconcile writes it. A bone the apply
-                // phase never touched carries no stacks, so this mid-flight
-                // capture equals its pre-import state and the one rollback
-                // restores both phases.
-                var captured = _runtime.Capture(target);
-                if (!captured.Success || captured.State is not { } state)
-                {
-                    import.Failure ??= captured.Detail ?? $"Could not capture {target}.";
-                    return null;
-                }
-                import.Before[target] = state;
-                import.Order.Add(target);
-            }
-            writes[(bone.PartialId, bone.BoneName)] =
-                (target, bone.LastRawTransform, TransformComponents.All);
-        }
-
-        if (writes.Count == 0)
-            return null;
-        RefreshTargets(import);
-        return (
-            new SlotImport { Slot = PoseSlot.Character, Writes = writes },
-            skeleton);
-    }
-
-    /// <summary>Brio's ExportFaceBone walk (PosingCapability.cs:383-390):
-    /// the bone and every descendant, which crosses into the face and hair
-    /// partials through the connected-parent attach.</summary>
-    private static void CollectSubtree(
-        IBone bone, List<IBone> into, HashSet<IBone> seen)
-    {
-        if (bone is VirtualBone || !seen.Add(bone))
-            return;
-        into.Add(bone);
-        foreach (var child in bone.ChildBones)
-            CollectSubtree(child, into, seen);
-    }
-
-    private static bool HasInteractiveStacks(
-        SkeletonPoseInfo poseInfo, IBone bone)
-    {
-        foreach (var stack in poseInfo
-                     .GetPoseInfo(bone.BoneName, bone.PartialId).Stacks)
-        {
-            if (stack.Layer == null)
-                return true;
-        }
-        return false;
     }
 
     /// <summary>
@@ -1451,7 +813,7 @@ public sealed class PoseImportCapture : IDisposable
         {
             try
             {
-                failure = AppendHistory(import);
+                failure = _terminal.AppendHistory(import, IsFrameworkCurrent);
             }
             catch (Exception exception)
             {
@@ -1465,13 +827,13 @@ public sealed class PoseImportCapture : IDisposable
             // timeout, and queued framework callbacks can now only no-op.
             Invalidate(import);
             _log.Warning($"Pose import failed: {failure}");
-            var terminal = CreateFailureTerminal(import, failure);
-            Notify(import, terminal);
+            var terminal = _terminal.CreateFailureTerminal(import, failure);
+            _terminal.Notify(import, terminal);
             return;
         }
 
         Invalidate(import);
-        Notify(import, OperationReceipt.Applied(
+        _terminal.Notify(import, OperationReceipt.Applied(
             import.OperationId,
             import.OperationEpoch,
             import.SessionGeneration,
@@ -1479,93 +841,14 @@ public sealed class PoseImportCapture : IDisposable
             import.Description));
     }
 
-    /// <summary>The callback runs application code (the facade's speed
-    /// restore); a throw there must not escape into the framework tick or
-    /// the pass bookkeeping.</summary>
-    private void Notify(Import import, OperationReceipt terminal)
-    {
-        if (import.TerminalPublished)
-            return;
-        import.TerminalPublished = true;
-        try
-        {
-            import.OnFinished?.Invoke(terminal.State == OperationReceiptState.Applied);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Pose import completion callback threw: {ex.Message}");
-        }
-
-        try
-        {
-            import.OnReceipt?.Invoke(terminal);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Pose import receipt callback threw: {ex.Message}");
-        }
-
-        try
-        {
-            ReceiptPublished?.Invoke(terminal);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Pose import receipt subscriber threw: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// One undoable entry covering exactly what the import changed: the
-    /// bones whose authored stacks the reset cleared, and the targets an
-    /// action or the model edit wrote. Unlike the bake, an import that
-    /// changed nothing is a legitimate outcome (the file matched the pose)
-    /// and appends no entry rather than failing.
-    /// </summary>
-    private string? AppendHistory(Import import)
-    {
-        // Preview-body imports happen once per browsed file: recording them
-        // would bury the user's real edits under scenery entries. A
-        // suppressed import is the other case that may not spend the stack:
-        // it IS an undo, walking that very stack.
-        if (import.PreviewTarget || import.SuppressHistory)
-            return null;
-
-        var before = new List<TransformTargetState>();
-        var after = new List<TransformTargetState>();
-        foreach (var target in import.Order)
-        {
-            if (!IsFrameworkCurrent(import))
-                return "The pose import session or target was replaced.";
-            var state = import.Before[target];
-            // HasOverride is set by the capture to "this target had authored
-            // layers", i.e. exactly what the reset cleared.
-            var wasReset = import.Resets.Contains(target) && state.HasOverride;
-            if (!wasReset && !import.Written.Contains(target))
-                continue;
-            var captured = _runtime.Capture(target);
-            if (!captured.Success || captured.State is not { } current)
-                return captured.Detail ?? $"Could not capture {target}.";
-            before.Add(state);
-            after.Add(current);
-        }
-
-        if (before.Count > 0)
-            _history.Append(new TransformPatch(import.Description, before, after)
-            {
-                RequiredAsset = import.Asset,
-            });
-        return null;
-    }
-
-    private GestureResult FailAdmitted(Import import, string detail)
+    private GestureResult FailAdmitted(PendingPoseImport import, string detail)
     {
         if (!IsLive(import))
             return GestureResult.Fail(detail);
         import.Failure ??= detail;
         Invalidate(import);
-        var terminal = CreateFailureTerminal(import, detail);
-        Notify(import, terminal);
+        var terminal = _terminal.CreateFailureTerminal(import, detail);
+        _terminal.Notify(import, terminal);
         return GestureResult.Fail(terminal.Detail ?? detail) with
         {
             Recovery = terminal.Recovery,
@@ -1582,7 +865,7 @@ public sealed class PoseImportCapture : IDisposable
             import.Invalidation.IsInvalidated)
             return;
         Invalidate(import);
-        Notify(import, OperationReceipt.Failed(
+        _terminal.Notify(import, OperationReceipt.Failed(
             import.OperationId,
             import.OperationEpoch,
             import.SessionGeneration,
@@ -1590,109 +873,7 @@ public sealed class PoseImportCapture : IDisposable
             detail));
     }
 
-    private OperationReceipt CreateFailureTerminal(
-        Import import,
-        string detail,
-        bool cancelled = false)
-    {
-        if (!import.MutationStarted)
-            return cancelled
-                ? OperationReceipt.Cancelled(
-                    import.OperationId,
-                    import.OperationEpoch,
-                    import.SessionGeneration,
-                    import.TargetActorId,
-                    detail)
-                : OperationReceipt.Failed(
-                    import.OperationId,
-                    import.OperationEpoch,
-                    import.SessionGeneration,
-                    import.TargetActorId,
-                    detail);
-
-        var restored = _gestures.RestoreForOperation(
-            import.Order.Select(target => import.Before[target]).ToArray());
-        if (restored.Recovery is not { } recovery)
-        {
-            return OperationReceipt.Failed(
-                import.OperationId,
-                import.OperationEpoch,
-                import.SessionGeneration,
-                import.TargetActorId,
-                $"{detail} Rollback could not start: " +
-                (restored.Detail ?? "no recovery evidence was produced."));
-        }
-        if (!recovery.Complete)
-            return OperationReceipt.RecoveryRequired(
-                import.OperationId,
-                import.OperationEpoch,
-                import.SessionGeneration,
-                import.TargetActorId,
-                TransformRecoveryDetail(detail, recovery),
-                recovery);
-        return cancelled
-            ? OperationReceipt.Cancelled(
-                import.OperationId,
-                import.OperationEpoch,
-                import.SessionGeneration,
-                import.TargetActorId,
-                detail,
-                recovery)
-            : OperationReceipt.RolledBack(
-                import.OperationId,
-                import.OperationEpoch,
-                import.SessionGeneration,
-                import.TargetActorId,
-                detail,
-                recovery);
-    }
-
-    private static string TransformRecoveryDetail(
-        string primaryFailure,
-        TransformRecoveryReceipt recovery) =>
-        recovery.Complete
-            ? primaryFailure
-            : $"{primaryFailure} Rollback also failed: " +
-              string.Join(
-                      "; ",
-                  recovery.Failures.Select(failure =>
-                      failure.Detail ??
-                       $"Could not restore {failure.RequestedState.Target}."));
-
-    private static ActorId ActorFor(TransformTargetId target) =>
-        target.Actor ?? target.Bone?.Skeleton.Actor ?? default;
-
-    private static bool ApproximatelySame(PoseTransform left, PoseTransform right)
-    {
-        const float tolerance = TransformMath.ApproximateSameTolerance;
-        return Vector3.DistanceSquared(left.Position, right.Position) < tolerance * tolerance &&
-               Vector3.DistanceSquared(left.Scale, right.Scale) < tolerance * tolerance &&
-               1f - MathF.Abs(Quaternion.Dot(
-                   TransformMath.NormalizeRotation(left.Rotation),
-                   TransformMath.NormalizeRotation(right.Rotation))) < tolerance;
-    }
-
-    private static void RefreshTargets(Import import) =>
-        import.Targets = import.Order.ToArray();
-
-    /// <summary>The (partial, name)→bone map one stage resolves through,
-    /// built from the live skeleton on that stage's own tick and discarded
-    /// with it. Virtual bones carry no stacks and have no stable binding,
-    /// so they are not addressable by an import.</summary>
-    private static Dictionary<(int Partial, string Bone), IBone> MapBones(
-        ISkeleton skeleton)
-    {
-        var map = new Dictionary<(int Partial, string Bone), IBone>(
-            skeleton.Bones.Count);
-        foreach (var bone in skeleton.Bones)
-        {
-            if (bone is not VirtualBone)
-                map[(bone.PartialId, bone.BoneName)] = bone;
-        }
-        return map;
-    }
-
-    private void Invalidate(Import import)
+    private void Invalidate(PendingPoseImport import)
     {
         _posing.SetIkImportSuppressed(import.ActorKey, false);
         // This interlocked token is the native callback's only liveness read.
@@ -1718,14 +899,14 @@ public sealed class PoseImportCapture : IDisposable
             // reports that recovery was not attempted.
             Invalidate(import);
             var terminal = _framework.IsInFrameworkUpdateThread
-                ? CreateFailureTerminal(import, "Pose import disposed.", cancelled: true)
+                ? _terminal.CreateFailureTerminal(import, "Pose import disposed.", cancelled: true)
                 : OperationReceipt.Failed(
                     import.OperationId,
                     import.OperationEpoch,
                     import.SessionGeneration,
                     import.TargetActorId,
                     "Pose import invalidated during off-thread disposal; recovery was not attempted.");
-            Notify(import, terminal);
+            _terminal.Notify(import, terminal);
         }
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;
         _scene.SceneChanged -= OnSceneChanged;
