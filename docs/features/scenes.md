@@ -78,7 +78,11 @@ stacks directly, like Brio's pose history, rather than exporting and re-importin
 the evaluated animation frame. Untouched bones remain untouched. Animation is not
 recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
 The user handles animation after undo/redo. Scene files remain pictures, as described
-below. A repeated removal captures the latest edits again.
+below. A repeated removal captures the latest edits again. An actor whose
+appearance Glamourer cannot read at all (for example `ActorNotFound`) is still
+removed: the entry is recorded without its Glamourer state, the removal notice
+says so, and undo brings the actor back with its spawn appearance. A foreign
+Glamourer hold or a busy character-file operation still refuses removal.
 
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.

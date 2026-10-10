@@ -212,9 +212,9 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                     || (!_actors.IsSpawnedActor(actor)
                         && _actors.RemovalRefusal(actor) is not null))
                     return Refused(_actors.RemovalRefusal(actor) ?? "That actor cannot be destroyed.");
-                if (!_lifecycle.DespawnActor(actor)) return Refused("The actor could not be removed.");
+                if (!_lifecycle.DespawnActor(actor, out var note)) return Refused("The actor could not be removed.");
                 _selection.RemoveActorLineage(actorId.LogicalId);
-                return Removed();
+                return new(id, SelectionRemovalStatus.Removed, note);
             case { Light: { } lightId }:
                 if (!CurrentLight(lightId, out var light)) return Absent();
                 if (light.Ownership == LightOwnership.Spawned)

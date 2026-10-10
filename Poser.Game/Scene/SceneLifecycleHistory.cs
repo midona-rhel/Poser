@@ -627,8 +627,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     /// Removes an owned actor through the shared state capture, regardless of
     /// whether it came from a scene file or its creation entry still exists.
     /// </summary>
-    public bool DespawnActor(IActor actor)
+    public bool DespawnActor(IActor actor) => DespawnActor(actor, out _);
+
+    /// <summary>As <see cref="DespawnActor(IActor)"/>; <paramref name="note"/> tells the
+    /// user what the recorded undo cannot bring back.</summary>
+    public bool DespawnActor(IActor actor, out string? note)
     {
+        note = null;
         if (!_actorOwner.TryGetSlot(actor, out var slot) || !slot.HasRespawn)
         {
             if (!_actors.IsSpawned(actor))
@@ -643,6 +648,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         string description = $"Despawn actor '{actor.Name}'";
         if (!_actorOwner.CaptureAndRemove(slot))
             return false;
+        if (slot.Document.Runtime?.Properties.Appearance.LookOmitted == true)
+            note = $"Glamourer could not read the appearance of '{slot.Name}', so undoing this removal brings it back without that appearance.";
         _history.Append(new SceneLifecyclePatch(
             description,
             () => _actorOwner.Restore(slot),

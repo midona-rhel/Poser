@@ -56,6 +56,11 @@ public sealed class UserNotices
 
     public void Removal(SelectionRemovalResult result)
     {
+        // A removal that landed can still lose something its undo cannot restore.
+        foreach (var note in result.Items
+            .Where(item => item.Status == SelectionRemovalStatus.Removed && item.Detail != null)
+            .Select(item => item.Detail!).Distinct())
+            Note(note);
         foreach (var failure in result.Items
             .Where(item => item.Status is SelectionRemovalStatus.Refused or SelectionRemovalStatus.Failed)
             .Select(item => (item.Status, Detail: item.Detail ?? "The entity could not be removed."))

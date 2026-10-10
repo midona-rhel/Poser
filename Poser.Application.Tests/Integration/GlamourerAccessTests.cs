@@ -30,6 +30,24 @@ public sealed class GlamourerAccessTests
     }
 
     [Fact]
+    public void Removal_capture_omits_an_unreadable_look_but_keeps_a_foreign_hold_refusal()
+    {
+        var (session, port) = Create();
+        var actor = ActorId.New();
+        port.Access = _ => new(GlamourerAccessKind.Unavailable, "unreadable");
+        Assert.False(session.TryCaptureHistory(actor).Success);
+        var removal = session.TryCaptureHistory(actor, omitUnreadableLook: true);
+        Assert.True(removal.Success);
+        Assert.True(removal.Value!.LookOmitted);
+        Assert.Null(removal.Value.StateJson);
+        port.Access = _ => GlamourerAccess.Editable;
+        Assert.True(session.RestoreHistory(ActorId.New(), removal.Value).Success);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson), port.Calls);
+        port.Access = _ => GlamourerAccess.ForeignHeld;
+        Assert.False(session.TryCaptureHistory(actor, omitUnreadableLook: true).Success);
+    }
+
+    [Fact]
     public void Foreign_hold_refuses_ordinary_commands_and_reads_without_mutation_or_unlock()
     {
         var (session, port) = Create();

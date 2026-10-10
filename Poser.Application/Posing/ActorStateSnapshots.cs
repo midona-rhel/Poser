@@ -36,13 +36,14 @@ public sealed class ActorStateSnapshots(
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
     IIntegrationRuntimePort runtime) : IActorStateSnapshots
 {
-    public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true)
+    public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
+        bool omitUnreadableLook = false)
     {
         try
         {
             if (models.Read(actor) is not { } model)
                 return IntegrationValue<ActorPropertiesSnapshot>.Fail("The actor's model could not be captured.");
-            var look = appearance.TryCaptureHistory(actor, captureCollection);
+            var look = appearance.TryCaptureHistory(actor, captureCollection, omitUnreadableLook);
             if (!look.Success || look.Value == null)
                 return IntegrationValue<ActorPropertiesSnapshot>.Fail(look.Detail ?? "Appearance capture failed.");
             var gazeState = gaze.IsAvailable ? gaze.Read(actor) : null;

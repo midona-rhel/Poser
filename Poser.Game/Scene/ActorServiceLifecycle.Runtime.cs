@@ -63,7 +63,9 @@ internal sealed partial class ActorServiceLifecycle
             ? _collections.CaptureInheritedCollection(actor.Address)
             : Poser.Domain.Integration.IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
         if (!collection.Success) throw new InvalidOperationException(collection.Detail);
-        var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null);
+        // Removal capture: an actor Glamourer cannot read stays removable, recorded without its look.
+        var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null,
+            omitUnreadableLook: true);
         if (!captured.Success || captured.Value is not { } properties)
             throw new InvalidOperationException(captured.Detail ?? "Actor state capture failed.");
         var companion = actor.IsCompanion ? null : _spawns.GetCompanionInfo(actor);

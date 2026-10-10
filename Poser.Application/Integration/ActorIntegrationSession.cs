@@ -82,8 +82,11 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationValue<Guid> ReadPlayerCollection() => _port.GetPlayerCollection();
 
-    /// <summary>Destructive commands cannot silently turn a failed capture into empty state.</summary>
-    public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true)
+    /// <summary>Destructive commands cannot silently turn a failed capture into empty state.
+    /// Only removal passes omitUnreadableLook: an actor Glamourer cannot read
+    /// at all must stay removable, so its look is left out and marked rather than refusing.</summary>
+    public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true,
+        bool omitUnreadableLook = false)
     {
         if (McdfBusy) return IntegrationValue<ActorAppearanceSnapshot>.Fail("Wait for the current character-file operation to finish.");
         var owned = OverridesFor(actor);
@@ -99,6 +102,7 @@ public sealed class ActorIntegrationSession : IDisposable
                 return IntegrationValue<ActorAppearanceSnapshot>.Fail("The actor's previous redraw has not completed.");
         }
         string? state = null;
+        bool lookOmitted = false;
         CollectionAssignment? collection = null;
         SpawnCollectionSnapshot? inherited = null;
         if (owned.Mcdf == null)
@@ -106,9 +110,12 @@ public sealed class ActorIntegrationSession : IDisposable
             if (Glamourer.Available || owned.DesignOwned)
             {
                 var look = GetStateJson(actor);
-                if (!look.Success || look.Value == null)
+                if (omitUnreadableLook && look.AppearanceRefusal == GlamourerAccessKind.Unavailable)
+                    lookOmitted = true;
+                else if (!look.Success || look.Value == null)
                     return IntegrationValue<ActorAppearanceSnapshot>.Fail(look.Detail ?? "The actor's appearance could not be captured.");
-                state = look.Value;
+                else
+                    state = look.Value;
             }
             if (captureCollection && (Penumbra.Available || owned.CollectionOwned))
             {
@@ -128,7 +135,7 @@ public sealed class ActorIntegrationSession : IDisposable
         var body = CaptureBodyProfile(actor);
         return body.Success
             ? IntegrationValue<ActorAppearanceSnapshot>.Ok(new(state, collection, body.Value,
-                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources, inherited))
+                owned.BodyProfileName, owned.Mcdf?.SourcePath, resources, inherited, lookOmitted))
             : IntegrationValue<ActorAppearanceSnapshot>.Fail(body.Detail ?? "The Customize+ profile could not be captured.");
     }
 

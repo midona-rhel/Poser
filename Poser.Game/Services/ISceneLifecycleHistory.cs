@@ -23,6 +23,7 @@ public interface ISceneLifecycleHistory
     void WhenPosable(IActor actor, Action<IActor> act);
     IActor? SpawnActorWithPose( string description, Func<IActor?> spawn, IActor source);
     bool DespawnActor(IActor actor);
+    bool DespawnActor(IActor actor, out string? note);
     object? SpawnProp();
     object? SpawnProp(PropModel model);
     object? CloneProp(object source);
