@@ -3,8 +3,6 @@ using System;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
-using Poser.Files;
-using Poser.Services;
 
 using Poser.Application.Viewport;
 using Poser.Documents.Files;

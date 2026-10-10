@@ -1,11 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// A virtual bone representing a calculated pivot point for a group of bones.

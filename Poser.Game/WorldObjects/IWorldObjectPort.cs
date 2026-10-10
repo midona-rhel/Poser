@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Poser.Services;
 using System.Numerics;
 
 using Poser.Domain.Scene;

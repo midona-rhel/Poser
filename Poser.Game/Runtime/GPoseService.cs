@@ -2,11 +2,10 @@ using System;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
 using Poser.Domain.Operations;
-using Poser.Core;
 using Poser.Game.Posing;
-using Poser.Services;
 using Poser.Application.AutoSave;
 using Poser.Application.Events;
+using Poser.Game.Core;
 
 namespace Poser.Game;
 

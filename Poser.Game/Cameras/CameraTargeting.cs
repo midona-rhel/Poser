@@ -5,9 +5,8 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Cameras;
 

@@ -1,6 +1,5 @@
 using System;
 using System.Threading;
-using Poser.Files;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
 

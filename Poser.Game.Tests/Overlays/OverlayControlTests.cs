@@ -5,7 +5,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Game.Overlays;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Overlays;
 

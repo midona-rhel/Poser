@@ -1,6 +1,6 @@
 using Poser.Domain.Actors;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// Represents a game character that can be posed and animated.

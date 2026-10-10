@@ -6,7 +6,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 
 

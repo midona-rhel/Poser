@@ -11,17 +11,17 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
-using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
 
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 using static Poser.Game.GazeEntryStore;
 using static Poser.Game.GazeNativeDriver;
 

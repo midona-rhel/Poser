@@ -8,16 +8,14 @@ using Poser.Application.Posing;
 using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
-using Poser.Services;
 using Poser.Domain.Actors;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 using static Poser.Game.Posing.PoseImportPlanner;
 

@@ -17,8 +17,6 @@ using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
-using Poser.Files;
 using Poser.Game;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
@@ -35,6 +33,9 @@ using Poser.Documents.Library;
 using Poser.Application.Catalog;
 using Poser.Application.Events;
 using Poser.Application.Settings;
+using Poser.Game.Core;
+using Poser.Game.Files;
+using Poser.Game.Services;
 
 namespace Poser.Composition;
 
@@ -217,14 +218,14 @@ internal static class ServiceRegistration
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryResolver<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryBinding<Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryResolver<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryBinding<Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Game.Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Game.Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Game.Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Game.Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryBinding<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryResolver<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
-        services.AddSingleton<IEntityHistoryBinding<Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryResolver<Game.Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        services.AddSingleton<IEntityHistoryBinding<Game.Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryBinding<IPropHandle>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<IOverlayNode>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());

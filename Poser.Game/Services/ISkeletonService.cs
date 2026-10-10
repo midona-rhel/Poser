@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
-using Poser.Entities;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Slot-aware skeleton discovery and caching. One actor owns independently

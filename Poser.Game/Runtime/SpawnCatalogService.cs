@@ -5,7 +5,6 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Domain.Companions;
 using Poser.Game.Companions;
-using Poser.Services;
 using Poser.Application.Catalog;
 
 namespace Poser.Game;

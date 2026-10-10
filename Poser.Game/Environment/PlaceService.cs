@@ -1,6 +1,5 @@
 using Dalamud.Plugin.Services;
 using Lumina.Excel;
-using Poser.Services;
 using Poser.Application.World;
 using TerritoryRow = Lumina.Excel.Sheets.TerritoryType;
 

@@ -1,10 +1,10 @@
 using System.Numerics;
 using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Domain.Scene;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 
 /// <summary>

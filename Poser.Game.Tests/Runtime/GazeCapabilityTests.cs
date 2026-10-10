@@ -7,16 +7,15 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
-using Poser.Core;
-using Poser.Entities;
 using Poser.Game;
-using Poser.Services;
 
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 using StableActorId = Poser.Domain.Identity.ActorId;
 
 namespace Poser.Game.Tests.Runtime;

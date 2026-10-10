@@ -1,8 +1,7 @@
 using System.Collections.Generic;
-using Poser.Core;
 using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// Represents a bone in a skeleton hierarchy.

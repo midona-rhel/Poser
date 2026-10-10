@@ -9,10 +9,10 @@ using Poser.Application.Posing;
 using Poser.Documents.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Animation;
 

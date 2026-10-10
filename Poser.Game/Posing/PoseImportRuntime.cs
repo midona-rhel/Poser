@@ -3,7 +3,6 @@ using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Application.Settings;
 

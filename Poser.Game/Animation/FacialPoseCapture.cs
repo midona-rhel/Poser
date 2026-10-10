@@ -10,9 +10,8 @@ using Poser.Application.Transforms;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Services;
 using LegacyTransform = Poser.Domain.Transforms.Transform;
 
 namespace Poser.Game.Animation;

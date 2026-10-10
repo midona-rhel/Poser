@@ -6,13 +6,12 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>Which bone transform caches a refresh may write. Brio's
 /// CacheTypes: LastRawTransform belongs to the update-phase apply pass and

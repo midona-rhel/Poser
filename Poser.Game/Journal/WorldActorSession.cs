@@ -4,10 +4,10 @@ using Poser.Application.Presentation;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
-using Poser.Entities;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 

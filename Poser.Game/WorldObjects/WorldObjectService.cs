@@ -4,13 +4,13 @@ using System.Globalization;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain;
-using Poser.Services;
 
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Application.Events;
+using Poser.Game.Core;
+using Poser.Game.Services;
 
 namespace Poser.Game.WorldObjects;
 

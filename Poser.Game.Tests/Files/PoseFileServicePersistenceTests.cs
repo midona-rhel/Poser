@@ -4,14 +4,13 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using NSubstitute;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Files;
+using Poser.Game.Services;
 
 namespace Poser.Tests.Files;
 

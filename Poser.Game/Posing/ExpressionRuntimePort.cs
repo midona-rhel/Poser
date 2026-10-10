@@ -2,8 +2,8 @@ using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 

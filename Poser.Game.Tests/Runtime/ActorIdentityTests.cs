@@ -1,5 +1,4 @@
-﻿using Poser.Core;
-using Poser.Game;
+﻿using Poser.Game;
 using Poser.Domain.Identity;
 
 namespace Poser.Game.Tests.Runtime;

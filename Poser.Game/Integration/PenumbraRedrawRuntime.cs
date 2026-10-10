@@ -6,7 +6,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Game.Services;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Integration;

@@ -5,14 +5,14 @@ using System.Numerics;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
-using Poser.Core;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Game.Posing;
 using Poser.Domain.Transforms;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
 using Poser.Application.Settings;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 

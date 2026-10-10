@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
 using Poser.Application.Posing;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Scene;
 

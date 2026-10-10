@@ -7,14 +7,13 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Domain.Animation;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 

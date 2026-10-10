@@ -8,17 +8,17 @@ using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
-using Poser.Core;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.WorldObjects;
-using Poser.Services;
 using PoserTransform = Poser.Domain.Transforms.Transform;
 
 using Poser.Application.Viewport;
 using Poser.Domain.Posing;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 

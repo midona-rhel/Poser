@@ -1,5 +1,4 @@
 ﻿using System.Threading;
-using Poser.Files;
 using Poser.Game.Scene;
 using Poser.Documents.Files;
 using Poser.Documents.Library;

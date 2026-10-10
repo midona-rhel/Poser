@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Domain.Transforms;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>Spawn and destroy through the journal: every creation and
 /// removal a surface issues goes through here so undo knows it. Props,

@@ -8,11 +8,10 @@ using Poser.Domain.Scene;
 using Poser.Domain.Identity;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Transforms;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 

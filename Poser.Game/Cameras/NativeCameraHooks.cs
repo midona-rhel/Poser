@@ -7,7 +7,6 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.Application.Lifecycle;
 
 using SceneCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Camera;

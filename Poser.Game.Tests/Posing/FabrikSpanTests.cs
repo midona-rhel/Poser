@@ -1,7 +1,7 @@
 using System.Reflection;
 using Poser.Domain.Posing;
-using Poser.Entities;
 using Poser.Game.Posing;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Tests.Posing;
 

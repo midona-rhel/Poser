@@ -2,9 +2,9 @@ using System.Numerics;
 using System.Reflection;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Domain.Transforms;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Posing;
 

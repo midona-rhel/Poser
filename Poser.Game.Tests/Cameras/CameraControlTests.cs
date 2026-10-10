@@ -3,10 +3,10 @@ using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Cameras;
 using Poser.Application.Presentation;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Cameras;
 

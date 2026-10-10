@@ -2,10 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain;
-using Poser.Services;
 using Poser.Application.Events;
+using Poser.Game.Core;
 
 namespace Poser.Game.WorldObjects;
 

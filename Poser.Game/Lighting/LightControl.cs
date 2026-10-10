@@ -2,9 +2,9 @@ using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Presentation;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 

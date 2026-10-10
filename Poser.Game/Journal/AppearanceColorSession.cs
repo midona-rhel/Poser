@@ -6,7 +6,7 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 

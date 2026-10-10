@@ -10,7 +10,6 @@ using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
-using Poser.Services;
 using Poser.Documents.Appearance;
 using static Poser.Game.Integration.IntegrationIpc;
 

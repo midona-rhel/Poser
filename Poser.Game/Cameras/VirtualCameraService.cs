@@ -10,11 +10,8 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Services;
 
 using SceneCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Camera;
 using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
@@ -22,6 +19,9 @@ using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
 using Poser.Domain.Cameras;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Cameras;
 

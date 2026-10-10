@@ -6,9 +6,9 @@ using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Cameras;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Viewport;
 

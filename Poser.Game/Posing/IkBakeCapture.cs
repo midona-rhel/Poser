@@ -4,14 +4,12 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
-using Poser.Services;
 using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 

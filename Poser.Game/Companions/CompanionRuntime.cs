@@ -4,7 +4,7 @@ using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Companions;
 

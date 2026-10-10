@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Files;
 using Poser.Documents.Scene;
 
 namespace Poser.Game.Scene;

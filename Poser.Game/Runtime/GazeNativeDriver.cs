@@ -8,7 +8,6 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Application.Viewport;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.Application.Lifecycle;
 using static Poser.Game.GazeEntryStore;
 

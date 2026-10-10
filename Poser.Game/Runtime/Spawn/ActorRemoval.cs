@@ -1,9 +1,8 @@
 using Dalamud.Plugin.Services;
-using Poser.Core;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game;
 

@@ -7,17 +7,16 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using NSubstitute;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Application.Posing;
-using Poser.Services;
 using Xunit;
 using Poser.Domain.Transforms;
 using Poser.Application.Events;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Tests;
 
@@ -104,7 +103,7 @@ public sealed class ExpressionBlendingTests
             Actor.Id.Returns(new EntityId("expression-test"));
             var skeleton = Substitute.For<ISkeleton>();
             skeleton.IsValid.Returns(true);
-            using var stream = typeof(Poser.Files.PoseFileService).Assembly.GetManifestResourceStream("Poser.Data.Expressions.Hyur_Feminine_Midlander.json")!;
+            using var stream = typeof(Poser.Game.Files.PoseFileService).Assembly.GetManifestResourceStream("Poser.Data.Expressions.Hyur_Feminine_Midlander.json")!;
             using var json = JsonDocument.Parse(stream);
             var names = json.RootElement.GetProperty("Groups")[0].GetProperty("Units").EnumerateArray()
                 .SelectMany(unit => unit.GetProperty("Bones").EnumerateObject().Select(b => b.Name)

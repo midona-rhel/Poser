@@ -2,7 +2,6 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
@@ -15,12 +14,12 @@ using Poser.Game.Journal;
 using Poser.Game.Lighting;
 using Poser.Game.Presentation;
 using Poser.Game.WorldObjects;
-using Poser.Entities;
 using Poser.Game.Scene;
-using Poser.Services;
 
 using Poser.Domain.Cameras;
 using Poser.Domain.Actors;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Scene;
 

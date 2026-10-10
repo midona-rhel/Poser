@@ -1,7 +1,7 @@
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Presentation;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Cameras;
 

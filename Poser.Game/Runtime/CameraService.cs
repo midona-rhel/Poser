@@ -1,7 +1,6 @@
 using System;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
-using Poser.Services;
 
 using Poser.Application.Viewport;
 

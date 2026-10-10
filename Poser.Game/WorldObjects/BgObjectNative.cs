@@ -9,7 +9,6 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using Poser.Application.World;
 using Poser.Domain.Scene;
-using Poser.Services;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;

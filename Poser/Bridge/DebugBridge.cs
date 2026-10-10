@@ -18,12 +18,13 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.Application.Transforms;
 using Poser.Application.Input;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.Bridge;
@@ -56,13 +57,13 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.IntegrationSelectors _session;
     private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
     private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
-    private readonly global::Poser.Services.ISkeletonService _skeletons;
+    private readonly global::Poser.Game.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Application.Library.IPoseLibraryService _library;
     private readonly global::Poser.Application.Catalog.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
-    private readonly global::Poser.Services.IBonePosingService _bonePosing;
+    private readonly global::Poser.Game.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
     private readonly ITransformFacade _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
@@ -112,9 +113,9 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Integration.IntegrationSelectors session,
         global::Poser.Application.Appearance.IActorAppearanceControl appearance,
         global::Poser.Application.Settings.ReleaseNotesSession releaseNotes,
-        global::Poser.Services.ISkeletonService skeletons,
+        global::Poser.Game.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
-        global::Poser.Services.IBonePosingService bonePosing,
+        global::Poser.Game.Services.IBonePosingService bonePosing,
         Application.Posing.IIkConfigurationPort ikConfiguration,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Application.Catalog.ISpawnCatalogService catalog,
@@ -641,10 +642,10 @@ public sealed partial class DebugBridge : IDisposable
                     peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
                     gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
                     allocated = GC.GetTotalAllocatedBytes(false),
-                    resolveUs = global::Poser.Entities.Skeleton.ResolveCalls == 0 ? 0.0
-                        : Math.Round(global::Poser.Entities.Skeleton.ResolveTicks * 1_000_000.0
-                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Entities.Skeleton.ResolveCalls, 2),
-                    resolveCalls = global::Poser.Entities.Skeleton.ResolveCalls,
+                    resolveUs = global::Poser.Game.Entities.Skeleton.ResolveCalls == 0 ? 0.0
+                        : Math.Round(global::Poser.Game.Entities.Skeleton.ResolveTicks * 1_000_000.0
+                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Game.Entities.Skeleton.ResolveCalls, 2),
+                    resolveCalls = global::Poser.Game.Entities.Skeleton.ResolveCalls,
                     units,
                 });
             }

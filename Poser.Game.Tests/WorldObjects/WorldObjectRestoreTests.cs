@@ -4,7 +4,6 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -13,10 +12,11 @@ using Poser.Application.Presentation;
 using Poser.Game.Presentation;
 using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
-using Poser.Services;
 
 using Poser.Domain.Scene;
 using Poser.Application.Events;
+using Poser.Game.Core;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.WorldObjects;
 

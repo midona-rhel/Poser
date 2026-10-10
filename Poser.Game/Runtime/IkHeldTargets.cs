@@ -11,12 +11,10 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Identity;
-using Poser.Services;
+using Poser.Game.Entities;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
@@ -62,7 +60,7 @@ internal sealed unsafe class IkHeldTargets
     public HeldTarget? CaptureWorld(IBone endpoint)
     {
         RefreshCache(endpoint);
-        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip)
+        if (global::Poser.Game.Entities.BoneWorld.Of(endpoint) is not { } tip)
             return null;
         var authored = _stacks.GetIkModification(endpoint);
         return new HeldTarget(
@@ -77,8 +75,8 @@ internal sealed unsafe class IkHeldTargets
     {
         RefreshCache(endpoint);
         RefreshCache(target);
-        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip
-            || global::Poser.Entities.BoneWorld.Of(target) is not { } anchor)
+        if (global::Poser.Game.Entities.BoneWorld.Of(endpoint) is not { } tip
+            || global::Poser.Game.Entities.BoneWorld.Of(target) is not { } anchor)
             return null;
         var authored = _stacks.GetIkModification(endpoint);
         return new HeldTarget(
@@ -116,11 +114,11 @@ internal sealed unsafe class IkHeldTargets
                 break;
             case Poser.Domain.Posing.IkTargetMode.Bone:
                 if (ik.TargetBone is not { } targetBone
-                    || targetBone.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton
+                    || targetBone.Skeleton is not global::Poser.Game.Entities.Skeleton targetSkeleton
                     || !targetSkeleton.IsValid)
                     return null;
-                targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-                if (global::Poser.Entities.BoneWorld.Of(targetBone) is not { } anchor)
+                targetSkeleton.UpdateBoneTransforms(global::Poser.Game.Entities.BoneCacheTypes.LastTransform);
+                if (global::Poser.Game.Entities.BoneWorld.Of(targetBone) is not { } anchor)
                     return null;
                 worldPosition = anchor.Position + capture.Target;
                 worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
@@ -135,7 +133,7 @@ internal sealed unsafe class IkHeldTargets
             default:
                 return null;
         }
-        if (endpoint.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid
+        if (endpoint.Skeleton is not global::Poser.Game.Entities.Skeleton skeleton || !skeleton.IsValid
             || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var toModel))
             return null;
         var position = Vector3.Transform(worldPosition, toModel)
@@ -159,8 +157,8 @@ internal sealed unsafe class IkHeldTargets
     /// stale cached transform; a capture reads the live pose.</summary>
     internal static void RefreshCache(IBone bone)
     {
-        if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
-            skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
+        if (bone.Skeleton is global::Poser.Game.Entities.Skeleton skeleton && skeleton.IsValid)
+            skeleton.UpdateBoneTransforms(global::Poser.Game.Entities.BoneCacheTypes.LastTransform);
     }
 
     private static PoseTransform AnchorPose(Transform value) => new(value.Position, value.Rotation, value.Scale);

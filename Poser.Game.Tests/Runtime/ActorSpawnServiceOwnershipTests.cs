@@ -1,17 +1,16 @@
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
-using Poser.Entities;
-using Poser.Core;
 using Poser.Domain.Companions;
 using Poser.Domain.Integration;
 using Poser.Game;
 using Poser.Game.Integration;
-using Poser.Services;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Runtime;
 

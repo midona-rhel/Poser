@@ -1,10 +1,9 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.AutoSave;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
 using Poser.Documents.Files;
 using Poser.Application.World;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.AutoSave;
 

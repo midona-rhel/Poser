@@ -1,7 +1,7 @@
 using System.Numerics;
 using Poser.Domain.Presentation;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>An overlay node the scene holds: a talk box, a balloon or a status icon with its placement and content.</summary>
 public interface IOverlayNode

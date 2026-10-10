@@ -11,13 +11,12 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Identity;
-using Poser.Services;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 

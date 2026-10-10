@@ -5,7 +5,7 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 

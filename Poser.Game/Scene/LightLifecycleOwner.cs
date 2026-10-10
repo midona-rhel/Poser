@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -15,7 +14,7 @@ internal sealed class LightLifecycleSlot
 {
     public ILight? Live;
     public LightFile Document = new();
-    public Poser.Entities.IBone? AttachedBone;
+    public Poser.Game.Entities.IBone? AttachedBone;
     public WorldLightCandidate? Source;
     public bool HasDocument;
     public SelectionId? LastIdentity;

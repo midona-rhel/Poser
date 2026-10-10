@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using Lumina.Excel;
-using Poser.Core;
-using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.Application.Events;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;

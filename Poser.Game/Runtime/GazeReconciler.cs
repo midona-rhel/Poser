@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.Application.Events;
+using Poser.Game.Services;
 using static Poser.Game.GazeEntryStore;
 using static Poser.Game.GazeNativeDriver;
 

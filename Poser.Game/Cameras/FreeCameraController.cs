@@ -4,7 +4,6 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Cameras;
 using Poser.Domain.Scene;
-using Poser.Services;
 
 namespace Poser.Game.Cameras;
 

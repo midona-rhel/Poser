@@ -6,14 +6,14 @@ using Dalamud.Plugin.Services;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Scene;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Selection;
 

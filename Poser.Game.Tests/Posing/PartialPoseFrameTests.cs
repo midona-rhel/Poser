@@ -1,5 +1,4 @@
 using System.Numerics;
-using Poser.Core;
 using Poser.Game.Posing;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;

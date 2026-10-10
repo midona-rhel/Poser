@@ -1,8 +1,8 @@
 using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Cameras;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Tests.Cameras;
 

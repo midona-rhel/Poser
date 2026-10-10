@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
-using Poser.Services;
 using Poser.Application.Events;
 
-namespace Poser.Core;
+namespace Poser.Game.Core;
 
 /// <summary>
 /// Provides decoupled communication between components via publish/subscribe pattern.

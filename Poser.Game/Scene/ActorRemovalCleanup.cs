@@ -1,8 +1,7 @@
 using System;
 using Poser.Application.Integration;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Scene;
 

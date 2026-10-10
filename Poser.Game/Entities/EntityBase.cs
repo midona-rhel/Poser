@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 public abstract class EntityBase : IEntity, IDisposable
 {

@@ -5,13 +5,12 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Domain.Identity;
 using Poser.Application.Events;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game;
 
@@ -123,7 +122,7 @@ public class ExpressionService : IExpressionService, IDisposable
     private void LoadCatalogs()
     {
         // The catalogs remain embedded in Core with their existing resource names.
-        var assembly = typeof(Poser.Files.PoseFileService).Assembly;
+        var assembly = typeof(Poser.Game.Files.PoseFileService).Assembly;
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true };
         foreach (var name in assembly.GetManifestResourceNames())
         {

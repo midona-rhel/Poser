@@ -6,11 +6,9 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Plugin.Services;
-using Poser.Core;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
 
 using NativeDrawObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject;
 using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;

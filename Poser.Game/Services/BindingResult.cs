@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 public enum BindingStatus
 {

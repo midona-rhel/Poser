@@ -1,6 +1,5 @@
 using System.Numerics;
 using Poser.Game.Posing;
-using Poser.Files;
 using Newtonsoft.Json;
 using Poser.Documents.Files;
 

@@ -6,18 +6,16 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-using Poser.Core;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
 
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Actors;
 using Poser.Documents.Files;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Preview;
 

@@ -4,8 +4,6 @@ using Poser.Application.Library;
 using Poser.Application.Scene;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
-using Poser.Files;
-using Poser.Services;
 using Poser.Domain.Library;
 
 namespace Poser.Game.Tests.Scene;

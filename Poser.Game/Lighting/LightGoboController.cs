@@ -5,7 +5,7 @@ using System.Text;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Scene;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 

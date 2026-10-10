@@ -14,10 +14,10 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Game.Animation;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Animation;
 
@@ -227,12 +227,12 @@ public sealed class FacialPoseCaptureTests
 
     private class PosingProxy : DispatchProxy
     {
-        public Poser.Services.IBonePosingService Service { get; set; } = null!;
+        public Poser.Game.Services.IBonePosingService Service { get; set; } = null!;
 
         public static PosingProxy Create()
         {
             var service = DispatchProxy
-                .Create<Poser.Services.IBonePosingService, PosingProxy>();
+                .Create<Poser.Game.Services.IBonePosingService, PosingProxy>();
             var proxy = (PosingProxy)(object)service;
             proxy.Service = service;
             return proxy;

@@ -2,15 +2,14 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
-using Poser.Core;
 using Poser.Domain.Actors;
 using Poser.Domain.Companions;
 using Poser.Domain.Integration;
-using Poser.Entities;
 using Poser.Game.Integration;
-using Poser.Services;
 using Poser.Domain.Identity;
 using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game;
 

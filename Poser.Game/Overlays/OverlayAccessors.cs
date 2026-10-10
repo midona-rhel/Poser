@@ -1,7 +1,7 @@
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
 using Poser.Game.Presentation;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Overlays;
 

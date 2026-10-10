@@ -1,6 +1,6 @@
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 

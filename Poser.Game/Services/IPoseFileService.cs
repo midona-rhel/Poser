@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
 using Poser.Application.Posing;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Brio-compatible .pose import/export over an actor's slot skeleton set.

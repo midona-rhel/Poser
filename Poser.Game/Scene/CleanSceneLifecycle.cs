@@ -1,12 +1,11 @@
 ﻿using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Game.Bindings;
-using Poser.Services;
 using Poser.Application.Events;
+using Poser.Game.Core;
 
 namespace Poser.Game.Scene;
 

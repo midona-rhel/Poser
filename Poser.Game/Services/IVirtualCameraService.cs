@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 
 using Poser.Domain.Cameras;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Owns the virtual cameras over the game's one orbit camera (Brio's overlay

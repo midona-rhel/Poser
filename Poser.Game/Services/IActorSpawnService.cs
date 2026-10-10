@@ -1,9 +1,9 @@
 ﻿using System;
-using Poser.Entities;
 
 using Poser.Domain.Companions;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Service for spawning and destroying actors in GPose.

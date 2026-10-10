@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Poser.Core;
-using Poser.Entities;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// How a registered batch of transitive actions ended: <paramref name="Executed"/>

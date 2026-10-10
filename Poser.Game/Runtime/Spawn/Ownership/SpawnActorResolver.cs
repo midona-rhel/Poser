@@ -1,5 +1,5 @@
 using Poser.Domain.Companions;
-using Poser.Entities;
+using Poser.Game.Entities;
 
 namespace Poser.Game;
 

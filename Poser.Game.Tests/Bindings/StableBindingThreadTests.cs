@@ -2,7 +2,7 @@ using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Bindings;
 

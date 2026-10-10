@@ -1,4 +1,4 @@
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// The frame counter behind bone-transform demand. The finalize hook

@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
-using Poser.Services;
 using Poser.Application.Events;
+using Poser.Game.Core;
+using Poser.Game.Services;
 
 namespace Poser.Game.Overlays;
 

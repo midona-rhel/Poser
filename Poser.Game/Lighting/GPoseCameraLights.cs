@@ -4,11 +4,10 @@ using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
-using Poser.Core;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
 
 namespace Poser.Game.Lighting;
 

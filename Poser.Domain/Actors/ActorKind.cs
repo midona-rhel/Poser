@@ -19,7 +19,7 @@ public enum ActorKind
     /// A body Poser drives for rendering only — the CharaView preview at
     /// object table slot 441. Never discovered by the GPose scan and never a
     /// user-facing actor; it reaches the pose pipeline through
-    /// <see cref="Poser.Services.IActorManager.AuxiliaryActors"/>.
+    /// <see cref="Poser.Game.Services.IActorManager.AuxiliaryActors"/>.
     /// </summary>
     Preview
 }

@@ -1,12 +1,11 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Game.Cameras;
-using Poser.Services;
 using System.Numerics;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Cameras;
 
@@ -142,7 +141,7 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         }
     }
 
-    private static IEntityBindings CameraBinding(Poser.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id)
+    private static IEntityBindings CameraBinding(Poser.Game.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id)
     {
         var bindings = DispatchProxy.Create<IEntityBindings, CameraBindingProxy>();
         ((CameraBindingProxy)(object)bindings).Bind(camera, id);
@@ -151,16 +150,16 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
 
     public class CameraBindingProxy : DispatchProxy
     {
-        private Poser.Entities.IVirtualCamera _camera = null!;
+        private Poser.Game.Entities.IVirtualCamera _camera = null!;
         private Poser.Domain.Identity.CameraId _id;
 
-        public void Bind(Poser.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id) =>
+        public void Bind(Poser.Game.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id) =>
             (_camera, _id) = (camera, id);
 
         protected override object? Invoke(MethodInfo? method, object?[]? args) =>
             method!.Name switch
             {
-                "Resolve" when args![0] is Poser.Domain.Identity.CameraId => new BindingResult<Poser.Entities.IVirtualCamera>(BindingStatus.Success, _camera),
+                "Resolve" when args![0] is Poser.Domain.Identity.CameraId => new BindingResult<Poser.Game.Entities.IVirtualCamera>(BindingStatus.Success, _camera),
                 "GetCameraId" => _id,
                 _ => throw new InvalidOperationException(method.Name),
             };

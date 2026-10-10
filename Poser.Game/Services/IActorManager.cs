@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Poser.Entities;
 using Poser.Domain.Actors;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Manages the lifecycle of actors in GPose.

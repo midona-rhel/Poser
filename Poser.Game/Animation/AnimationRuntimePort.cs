@@ -12,8 +12,8 @@ using Poser.Application.Scene;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Bindings;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Animation;
 

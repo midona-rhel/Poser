@@ -1,8 +1,8 @@
 using System.Reflection;
 using Dalamud.Plugin.Services;
-using Poser.Entities;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Posing;
 

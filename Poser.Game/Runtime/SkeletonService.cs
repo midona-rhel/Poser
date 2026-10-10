@@ -2,12 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game;
 

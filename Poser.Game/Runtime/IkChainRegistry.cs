@@ -11,13 +11,12 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Identity;
-using Poser.Services;
 using Poser.Domain.Actors;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
@@ -148,11 +147,11 @@ internal sealed unsafe partial class IkChainRegistry
             : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
     }
 
-    public IReadOnlyList<Poser.Services.IkConfiguredChain> GetIkChains(
+    public IReadOnlyList<Poser.Game.Services.IkConfiguredChain> GetIkChains(
         ISkeleton skeleton)
     {
         var key = SkeletonKey.Of(skeleton);
-        List<Poser.Services.IkConfiguredChain>? chains = null;
+        List<Poser.Game.Services.IkConfiguredChain>? chains = null;
         foreach (var (chainKey, state) in _ikChains)
         {
             if (chainKey.Skeleton != key)
@@ -161,13 +160,13 @@ internal sealed unsafe partial class IkChainRegistry
                 .GetBone(chainKey.Partial, chainKey.Bone);
             if (endpoint == null)
                 continue;
-            (chains ??= new()).Add(new Poser.Services.IkConfiguredChain(
+            (chains ??= new()).Add(new Poser.Game.Services.IkConfiguredChain(
                 endpoint,
                 state.Config,
                 ChainMemberNames(endpoint, state.Config)));
         }
-        return (IReadOnlyList<Poser.Services.IkConfiguredChain>?)chains
-            ?? Array.Empty<Poser.Services.IkConfiguredChain>();
+        return (IReadOnlyList<Poser.Game.Services.IkConfiguredChain>?)chains
+            ?? Array.Empty<Poser.Game.Services.IkConfiguredChain>();
     }
 
     public string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config)
@@ -289,7 +288,7 @@ internal sealed unsafe partial class IkChainRegistry
     {
         if (ReferenceEquals(endpoint, target))
             return "A bone cannot follow itself.";
-        if (target.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid)
+        if (target.Skeleton is not global::Poser.Game.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid)
             return "That bone is not drawn.";
         var config = GetIkConfiguration(endpoint);
         if (config == null)

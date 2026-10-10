@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
-using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.Domain.Transforms;
+using Poser.Game.Services;
 
 namespace Poser.Game.WorldObjects;
 

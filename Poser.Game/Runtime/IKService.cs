@@ -9,10 +9,9 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Container.Array;
 using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
-using Poser.Core;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Game.Core;
+using Poser.Game.Entities;
 
 namespace Poser.Game;
 

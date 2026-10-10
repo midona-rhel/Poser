@@ -6,7 +6,7 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using Poser.Application.Viewport;
 using Poser.Game.WorldObjects;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 

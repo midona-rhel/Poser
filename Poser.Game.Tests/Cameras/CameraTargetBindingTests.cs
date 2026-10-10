@@ -1,7 +1,7 @@
 using System.Reflection;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Bindings;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Tests.Cameras;
 

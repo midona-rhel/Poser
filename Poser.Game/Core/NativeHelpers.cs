@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Poser.Core;
+namespace Poser.Game.Core;
 
 /// <summary>
 /// Helper methods for native memory operations.

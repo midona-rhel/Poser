@@ -2,7 +2,7 @@ using System.Numerics;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// One plugin-spawned scene light. All setters write the native light

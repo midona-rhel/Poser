@@ -2,9 +2,9 @@ using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Presentation;
 using Poser.Game.Overlays;
+using Poser.Game.Core;
 
 namespace Poser.Game.Tests.Journal;
 

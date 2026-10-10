@@ -1,6 +1,5 @@
 using System.Numerics;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Lighting;
 using Xunit;
 

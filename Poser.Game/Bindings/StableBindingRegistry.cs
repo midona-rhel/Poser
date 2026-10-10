@@ -4,10 +4,10 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Bindings;
 

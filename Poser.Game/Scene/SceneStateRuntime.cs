@@ -13,11 +13,8 @@ using Poser.Application.Lifecycle;
 using Poser.Domain.Operations;
 using Poser.Domain.Animation;
 using Poser.Domain.Companions;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.Documents.Files;
 
