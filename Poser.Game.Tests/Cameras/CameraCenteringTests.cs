@@ -20,7 +20,7 @@ public sealed class CameraCenteringTests
             IsTargetLocked = true,
         };
         var pivot = new Vector3(20, 30, 40);
-        Assert.True(VirtualCameraService.TranslateOrbitPivot(camera, pivot, new(10, 10, 10)).Success);
+        Assert.True(CameraTargeting.TranslateOrbitPivot(camera, pivot, new(10, 10, 10)).Success);
         Assert.Equal(new Vector3(11, 22, 33), camera.PositionOffset);
         Assert.Equal(17f, camera.Zoom);
         Assert.Equal(0.8f, camera.FoV);
@@ -32,7 +32,7 @@ public sealed class CameraCenteringTests
         Assert.Equal(new Vector3(7, 8, 9), camera.TargetOffset);
         Assert.Equal("Followed actor", camera.TargetActorName);
         Assert.True(camera.IsTargetLocked);
-        Assert.True(VirtualCameraService.TranslateOrbitPivot(camera, pivot, pivot).Success);
+        Assert.True(CameraTargeting.TranslateOrbitPivot(camera, pivot, pivot).Success);
         Assert.Equal(new Vector3(11, 22, 33), camera.PositionOffset);
     }
 
@@ -42,7 +42,7 @@ public sealed class CameraCenteringTests
     public void Invalid_centering_pivots_leave_the_shot_untouched(float invalid)
     {
         var camera = new FakeCamera { PositionOffset = new(1, 2, 3), Zoom = 17f };
-        Assert.False(VirtualCameraService.TranslateOrbitPivot(camera, new(invalid, 0, 0), Vector3.Zero).Success);
+        Assert.False(CameraTargeting.TranslateOrbitPivot(camera, new(invalid, 0, 0), Vector3.Zero).Success);
         Assert.Equal(new Vector3(1, 2, 3), camera.PositionOffset);
         Assert.Equal(17f, camera.Zoom);
     }

@@ -26,13 +26,13 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         };
         var before = camera.Rotation;
         MouseFrame mouse = new() { ButtonsPressed = buttons, DeltaX = 12, DeltaY = 8 };
-        service.HandleFreeCameraInput(camera, &mouse, null);
-        service.UpdateFreeCamera(camera);
+        service.FreeCamera.HandleInput(camera, &mouse, null);
+        service.FreeCamera.UpdateMatrix(camera);
         Assert.Equal(new Vector3(1, 2, 3), camera.Position);
         Assert.Equal(looks, camera.Rotation != before);
         Assert.Equal(looks ? Vector2.Zero : new Vector2(12, 8), mouse.Delta);
         var after = camera.Rotation;
-        service.UpdateFreeCamera(camera);
+        service.FreeCamera.UpdateMatrix(camera);
         Assert.Equal(after, camera.Rotation);
     }
 
