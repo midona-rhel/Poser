@@ -1,7 +1,5 @@
 using System.Numerics;
-using Dalamud.Plugin.Services;
 using Poser.Application.Gaze;
-using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -10,7 +8,7 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 public sealed class GazeRuntimeAdapter(
-    IGazeService gaze, IEntityBindings bindings, SceneSession scene, IObjectTable objects)
+    IGazeService gaze, IEntityBindings bindings)
     : IGazeRuntimePort
 {
     public bool IsAvailable => gaze.IsAvailable;
@@ -20,18 +18,7 @@ public sealed class GazeRuntimeAdapter(
     {
         if (bindings.Resolve(id) is not { Success: true, Value: { } actor }) return null;
         var state = gaze.GetGazeState(actor);
-        ActorId? target = null;
-        if (state.TargetId != 0 && !state.TargetStale)
-            foreach (var candidate in scene.Snapshot.Actors)
-                if (bindings.Resolve(candidate.Id) is { Success: true, Value: { } live } &&
-                    objects.CreateObjectReference(live.Address) is { } native &&
-                    native.GameObjectId == state.TargetId)
-                {
-                    target = candidate.Id;
-                    break;
-                }
-        // Compare object identities, not SearchById's address: the overworld actor
-        // and GPose clone share a game id, but have different native addresses.
+        var target = state.TargetStale ? null : state.TargetActor;
         return new(new(state.Mode, state.TargetType, state.Position,
             state.EyesPosition, state.HeadPosition, state.BodyPosition,
             gaze.IsPartLocked(actor, GazeTargetType.Eyes),

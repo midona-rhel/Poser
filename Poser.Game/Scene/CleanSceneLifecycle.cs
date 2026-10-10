@@ -34,6 +34,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
+    private readonly IGazeService _gaze;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
     private readonly Config.ConfigurationService _configuration;
@@ -73,6 +74,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
+        IGazeService gaze,
         IEventBus events,
         IFramework framework,
         Config.ConfigurationService configuration,
@@ -99,6 +101,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _integration = integration;
         _animationPort = animationPort;
         _facialCapture = facialCapture;
+        _gaze = gaze;
         _events = events;
         _framework = framework;
         _configuration = configuration;
@@ -300,6 +303,9 @@ public sealed class CleanSceneLifecycle : IDisposable
             _modelId.Reconcile(_scene.Snapshot);
             _integration.Reconcile(_scene.Snapshot);
             _animationPort.SyncEnforcementIndex();
+            // Gaze is keyed by the same exact generations; a replaced body
+            // must not keep the previous one's gaze.
+            _gaze.Reconcile();
         }
         finally
         {

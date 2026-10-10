@@ -138,8 +138,12 @@ before individual library entries; a mixed group does not belong only to Actors.
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store
-model id, companion attachment and pose, visibility, absolute transform, gaze,
-and an appearance payload. Permanent Penumbra collections are local GUID
+model id, catalog kind, companion attachment and pose, visibility, absolute
+transform, gaze, and an appearance payload. A minion, mount or ornament spawned
+as an actor respawns through the catalog by its saved kind; older files without
+a kind load it as a character. Every loaded character is a clone of the local
+player, so an actor other than the player saved without an appearance payload
+is noted at save and again at load: it comes back wearing the player's look. Permanent Penumbra collections are local GUID
 references, restored and redrawn before companions and poses, as in Brio's
 `ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods. Only
 a collection chosen for the actor is saved: every plain spawn is assigned the

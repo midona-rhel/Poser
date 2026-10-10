@@ -880,6 +880,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             AppendSkipNote(
                 notes, "the environment", options.IncludeEnvironment,
                 scene.Environment is null ? 0 : 1);
+            foreach (var actor in actors)
+                if (actor.AppearanceNotSaved)
+                    notes.Add(SceneSavePolicy.AppearanceNotSavedNote(actor.Name));
 
             // Relative placement rebases the READ document, before one native
             // call: a file with no origin refuses HERE, where nothing has

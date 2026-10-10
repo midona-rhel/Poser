@@ -300,6 +300,17 @@ public class SceneActor
     /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
     public int ModelCharaId { get; set; }
 
+    /// <summary>The catalog kind of a minion, mount or ornament spawned as an
+    /// actor of its own. Absent for a character, and in files written before
+    /// the kind was saved, which load as characters exactly as they did.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CompanionKind? SpawnedKind { get; set; }
+
+    /// <summary>The actor wore an appearance of its own that this file does
+    /// not carry, so it loads wearing the local player's.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AppearanceNotSaved { get; set; }
+
     /// <summary>Local permanent Penumbra collection, restored before posing.
     /// Temporary collections travel through the appearance package instead.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

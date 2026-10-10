@@ -284,6 +284,7 @@ public sealed class SceneCaptureService
             }
 
             var companion = _spawns.GetCompanionInfo(actor);
+            var spawnedKind = _spawns.GetSpawnedKind(actor);
             var id = _bindings.GetActorId(actor);
             var key = id?.LogicalId ?? Guid.NewGuid();
             keys[actor] = key;
@@ -297,6 +298,12 @@ public sealed class SceneCaptureService
                 Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
                     ?? Poser.Config.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
+                SpawnedKind = spawnedKind,
+                // Every loaded character is a clone of the local player, so
+                // anyone else's look exists only in an appearance package.
+                // Marked here and settled by the save policy, which is the
+                // step that knows whether a package survived.
+                AppearanceNotSaved = spawnedKind is null && !_actors.IsLocalPlayer(actor),
                 NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
@@ -437,15 +444,17 @@ public sealed class SceneCaptureService
             Guid? target = null;
             if (state.Mode == GazeTargetMode.Entity)
             {
-                var address = _gaze.GetGazeTargetAddress(actor);
-                foreach (var (candidate, _) in captured)
-                {
-                    if (candidate.Address == address && address != nint.Zero)
+                // By stable id: a GPose copy shares its source's GameObjectId,
+                // so only the binding names which body the gaze follows.
+                if (state.TargetActor is { } followed)
+                    foreach (var (candidate, _) in captured)
                     {
-                        target = keys[candidate];
-                        break;
+                        if (_bindings.GetActorId(candidate) == followed)
+                        {
+                            target = keys[candidate];
+                            break;
+                        }
                     }
-                }
                 if (target is null)
                     notes.Add(
                         $"Actor '{actor.Name}' looks at an uncaptured actor; the gaze target was not saved.");

@@ -418,6 +418,9 @@ public static class SceneFileValidation
         if (actor.ModelCharaId < 0)
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Actor '{actor.Name}' has a negative model id.");
+        if (actor.SpawnedKind is { } spawnedKind && !Enum.IsDefined(spawnedKind))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"Actor '{actor.Name}' has an unknown spawned kind.");
         if (actor.CompanionKind is { } companionKind && !Enum.IsDefined(companionKind))
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Actor '{actor.Name}' has an unknown companion kind.");

@@ -36,9 +36,11 @@ uses the world gizmo, not the bone gizmo. Native look-at updates are not edits;
 user gaze edits use the shared value journal, with one step per point drag.
 History scope and ownership are in [application-state.md](../architecture/application-state.md).
 
-Actor mode needs a live scene target. Poser finds that actor in the GPose range
-immediately before writing. Finding a matching game object id alone does not
-prove it is the right target. Writes outside indices 201–439 are refused.
+Gaze state is keyed by the actor's stable binding id, and Actor mode remembers
+its target the same way. A GPose clone shares its source's game object id, so
+two player-seeded actors hold independent gaze and may look at each other; the
+game object id is only the value written into the native target. Writes outside
+indices 201–439 are refused.
 
 Releasing a part stops Poser writes and lets the game control that part again.
 An empty mask remembers the configured mode, target and points; disabling a

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Domain.Scene;
 
@@ -7,9 +8,9 @@ namespace Poser.Services;
 
 /// <summary>
 /// Read snapshot of an actor's managed gaze state. Durable identity is never
-/// an <see cref="IActor"/> reference: the service keys state by the native
-/// GameObjectId and the Entity target is a GameObjectId, both of which
-/// survive ordinary actor-list refreshes.
+/// an <see cref="IActor"/> reference: the service keys state by the binding
+/// registry's <see cref="ActorId"/> and remembers the Entity target the same
+/// way, because a GPose clone shares its source's GameObjectId.
 /// </summary>
 public class GazeState
 {
@@ -34,7 +35,11 @@ public class GazeState
 
     public GazeTargetType TargetType { get; set; } = GazeTargetType.All;
 
-    /// <summary>The Entity-mode target's GameObjectId; 0 when unset.</summary>
+    /// <summary>The Entity-mode target's stable identity; null when unset.</summary>
+    public ActorId? TargetActor { get; set; }
+
+    /// <summary>The Entity-mode target's GameObjectId, as written natively;
+    /// 0 when unset. Not an identity: clones share it.</summary>
     public ulong TargetId { get; set; }
 
     /// <summary>The shared Position-mode anchor — what the world gizmo grabs.</summary>
@@ -95,10 +100,11 @@ public interface IGazeService
     GazeResult SetGazeTarget(IActor actor, IActor target);
 
     /// <summary>
-    /// The current Entity target's live address resolved at call time
-    /// (for display matching); 0 when none or no longer present.
+    /// Re-checks every entry against the published bindings: a departed
+    /// actor's entry is dropped and a departed target marks its source stale.
+    /// Framework thread; called after each binding commit.
     /// </summary>
-    nint GetGazeTargetAddress(IActor actor);
+    void Reconcile();
 
     /// <summary>
     /// Position mode only: moves the shared anchor and every enabled,

@@ -15,6 +15,7 @@ using Poser.Services;
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
+using StableActorId = Poser.Domain.Identity.ActorId;
 
 namespace Poser.Game.Tests.Runtime;
 
@@ -72,6 +73,27 @@ public sealed class GazeCapabilityTests
     }
 
     [Fact]
+    public void Two_clones_sharing_a_game_object_id_hold_independent_gaze()
+    {
+        using var scene = GazeScene.Create();
+
+        // The twin carries the source's GameObjectId, as every player-seeded
+        // spawn does; it is still another actor, so A -> B is accepted.
+        Assert.True(scene.Service.SetGazeTarget(scene.Actor, scene.Twin).Success);
+        Assert.True(scene.Service.SetGazeMode(scene.Twin, GazeTargetMode.Camera).Success);
+
+        var actor = scene.Service.GetGazeState(scene.Actor);
+        var twin = scene.Service.GetGazeState(scene.Twin);
+        Assert.Equal(GazeTargetMode.Entity, actor.Mode);
+        Assert.Equal<StableActorId?>(scene.TwinKey, actor.TargetActor);
+        Assert.Equal(GazeTargetMode.Camera, twin.Mode);
+        Assert.Null(twin.TargetActor);
+        Assert.Equal(GazeTargetType.All, scene.Written());
+        Assert.Equal(GazeTargetType.All, scene.Service.WrittenParts(scene.TwinKey));
+        Assert.False(scene.Service.SetGazeTarget(scene.Actor, scene.Actor).Success);
+    }
+
+    [Fact]
     public void Leaving_GPose_and_reset_then_dispose_release_everything_once()
     {
         using var scene = GazeScene.Create();
@@ -108,6 +130,7 @@ public sealed class GazeCapabilityTests
         public const int CloneIndex = 201;
         public const int TargetIndex = 202;
         public const int SecondIndex = 203;
+        public const int TwinIndex = 204;    // a second clone of the source
 
         private readonly List<nint> _blocks = new();
 
@@ -122,6 +145,9 @@ public sealed class GazeCapabilityTests
         public required IActor Actor { get; init; }
         public required IActor Target { get; init; }
         public required IActor Second { get; init; }
+        public required IActor Twin { get; init; }
+        public required StableActorId ActorKey { get; init; }
+        public required StableActorId TwinKey { get; init; }
 
         /// <summary>The table itself, so a test can prove the collision trap is
         /// live rather than asserting against a harness that never had one.</summary>
@@ -141,6 +167,8 @@ public sealed class GazeCapabilityTests
             IActor actor,
             IActor target,
             IActor second,
+            IActor twin,
+            Func<IActor, StableActorId> key,
             nint targetBlock,
             IObjectTable objectTable)
         {
@@ -151,6 +179,9 @@ public sealed class GazeCapabilityTests
                 Actor = actor,
                 Target = target,
                 Second = second,
+                Twin = twin,
+                ActorKey = key(actor),
+                TwinKey = key(twin),
                 TargetBlock = targetBlock,
                 ObjectTable = objectTable,
             };
@@ -160,18 +191,18 @@ public sealed class GazeCapabilityTests
         }
 
         /// <summary>The channels the detour would enforce on its next pass.</summary>
-        public GazeTargetType Written() => Service.WrittenParts(ActorId);
+        public GazeTargetType Written() => Service.WrittenParts(ActorKey);
 
         /// <summary>The channels owed a one-shot inactive write on that same
         /// pass — the hand-back the detour is the only place to deliver.</summary>
-        public GazeTargetType Released() => Service.PendingRelease(ActorId);
+        public GazeTargetType Released() => Service.PendingRelease(ActorKey);
 
         /// <summary>Every address a character-target write landed on.</summary>
         public nint[] WrittenAddresses() =>
             Factory.TargetWrites.ConvertAll(write => write.Address).ToArray();
 
-        public void Reconcile() =>
-            Factory.EventBus.Publish(new ActorListChangedEvent(Array.Empty<IActor>()));
+        /// <summary>The pass the scene lifecycle runs after a binding commit.</summary>
+        public void Reconcile() => Service.Reconcile();
 
         /// <summary>Removes the chosen target and runs the reconciliation pass,
         /// exactly as a despawn does.</summary>
@@ -182,7 +213,8 @@ public sealed class GazeCapabilityTests
         }
 
         /// <summary>Puts a fresh object carrying the SAME GameObjectId back in
-        /// the target slot — id reuse, which must not resume anything.</summary>
+        /// the target slot — id reuse, which must not resume anything. The
+        /// registry binds it under a new generation, so the old id stays gone.</summary>
         public void RespawnTargetUnderTheSameId()
         {
             _slots[TargetIndex] = new FakeGameObject(TargetId, TargetIndex, TargetBlock);
@@ -239,6 +271,31 @@ public sealed class GazeCapabilityTests
             var clone = Add(GazeScene.ActorId, GazeScene.CloneIndex);
             var target = Add(GazeScene.TargetId, GazeScene.TargetIndex);
             var second = Add(GazeScene.SecondId, GazeScene.SecondIndex);
+            var twin = Add(GazeScene.ActorId, GazeScene.TwinIndex);
+
+            // The registry: one stable id per actor, resolving only while the
+            // exact object it was bound to still holds its slot.
+            var bound = new Dictionary<StableActorId, (IActor Actor, FakeGameObject Body, int Index)>();
+            var keys = new Dictionary<IActor, StableActorId>(ReferenceEqualityComparer.Instance);
+            IActor Bound(FakeGameObject obj, int index)
+            {
+                var actor = ActorAt(obj);
+                var id = StableActorId.New();
+                bound[id] = (actor, obj, index);
+                keys[actor] = id;
+                return actor;
+            }
+            var bindings = NewProxy<IEntityBindings>();
+            var bindingProxy = (DefaultProxy)(object)bindings;
+            bindingProxy.Handlers["GetActorId"] = args =>
+                args?[0] is IActor actor && keys.TryGetValue(actor, out var id) ? id : null;
+            bindingProxy.Handlers["Resolve"] = args =>
+                args?[0] is StableActorId id
+                && bound.TryGetValue(id, out var entry)
+                && slots.TryGetValue(entry.Index, out var live)
+                && ReferenceEquals(live, entry.Body)
+                    ? new BindingResult<IActor>(BindingStatus.Success, entry.Actor)
+                    : new BindingResult<IActor>(BindingStatus.Missing);
 
             var objectTable = NewProxy<IObjectTable>();
             var proxy = (DefaultProxy)(object)objectTable;
@@ -274,12 +331,14 @@ public sealed class GazeCapabilityTests
                 NewProxy<IGameInteropProvider>(),
                 NewProxy<IPluginLog>(),
                 framework: null,
-                factory);
+                factory,
+                bindings);
 
             return GazeScene.From(
                 service, factory, blocks, slots,
-                ActorAt(clone), ActorAt(target), ActorAt(second),
-                target.Address, objectTable);
+                Bound(clone, GazeScene.CloneIndex), Bound(target, GazeScene.TargetIndex),
+                Bound(second, GazeScene.SecondIndex), Bound(twin, GazeScene.TwinIndex),
+                actor => keys[actor], target.Address, objectTable);
         }
     }
 
@@ -391,8 +450,8 @@ public sealed class GazeCapabilityTests
                 list.Remove(handler);
         }
 
-        // Real dispatch: the reconciliation pass is only reachable by actually
-        // delivering ActorListChangedEvent.
+        // Real dispatch: GPose exit is only reachable by actually delivering
+        // GPoseStateChangedEvent.
         public void Publish<T>(T evt) where T : IEvent
         {
             if (!_handlers.TryGetValue(typeof(T), out var list))

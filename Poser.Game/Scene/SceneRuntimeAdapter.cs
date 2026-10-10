@@ -650,7 +650,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     {
         // Set the model inside the spawn's deferred-draw window. A second
         // SetModelCharaId redraw races the next-tick collection assignment.
-        var actor = _spawns.SpawnNewActor(data.HasCompanionSlot, data.ModelCharaId, out var refusal);
+        // A saved catalog kind respawns through the catalog, as history's
+        // recreate does, so a minion comes back as a minion.
+        string? refusal = null;
+        var actor = data.SpawnedKind is { } kind
+            ? _spawns.SpawnCatalogActor(new(kind, 0, "", "", 0, data.ModelCharaId))
+            : _spawns.SpawnNewActor(data.HasCompanionSlot, data.ModelCharaId, out refusal);
         if (actor is null)
         {
             detail = refusal ?? "The spawn service returned no actor.";

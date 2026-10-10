@@ -18,6 +18,8 @@ public sealed class SceneFileStoreTests
     {
         using var fixture = new SceneFixture();
         var original = ValidScene();
+        original.Actors[0].SpawnedKind = CompanionKind.Mount;
+        original.Actors[0].AppearanceNotSaved = true;
 
         var write = SceneFileStore.Default.Write(original, fixture.Path);
         var read = SceneFileStore.Default.Read(fixture.Path);
@@ -26,6 +28,8 @@ public sealed class SceneFileStoreTests
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Equal(original.SceneId, read.Scene!.SceneId);
         Assert.Equal(1, read.Scene.Actors.Count);
+        Assert.Equal(CompanionKind.Mount, read.Scene.Actors[0].SpawnedKind);
+        Assert.True(read.Scene.Actors[0].AppearanceNotSaved);
         Assert.Equal(1, read.Scene.Props.Count);
         Assert.Equal(1, read.Scene.Lights.Count);
         Assert.Equal(1, read.Scene.Cameras.Count);

@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
 
@@ -75,12 +76,14 @@ internal sealed class GazeNativeFactory : IGazeNativeFactory
 
 /// <summary>
 /// Service for controlling actor gaze (where they look). Based on Brio's
-/// ActorLookAtService. One entry per actor, keyed by the native GameObjectId —
-/// there is no second wrapper-keyed map to desync, so an ordinary actor-list
-/// refresh cannot orphan state. The Entity target is a GameObjectId written
-/// natively (LookMode.Target through the Brio/Ktisis-verified id/position
-/// union); no captured address is ever dereferenced. Position mode holds a
-/// shared world anchor plus per-part positions the detour writes unchanged.
+/// ActorLookAtService. One entry per actor, keyed by the binding registry's
+/// <see cref="ActorId"/>: a GPose clone SHARES its source's GameObjectId, so
+/// that id cannot tell two player-seeded actors apart. The detour finds an
+/// entry by the body's address through an index the reconciliation pass
+/// keeps current. The Entity target is remembered by ActorId too; its
+/// GameObjectId is only the value written natively (LookMode.Target through
+/// the Brio/Ktisis-verified id/position union). Position mode holds a shared
+/// world anchor plus per-part positions the detour writes unchanged.
 /// </summary>
 public unsafe class GazeService : IGazeService, IDisposable
 {
@@ -126,9 +129,16 @@ public unsafe class GazeService : IGazeService, IDisposable
         public bool PoseAware;
         public GazeTargetType Parts = GazeTargetType.All;
 
-        /// <summary>The remembered Entity target GameObjectId; 0 = never
-        /// chosen. Surviving a full untoggle is the point — it is cleared only
-        /// by <see cref="ResetGaze"/>, which is Brio's RemoveObjectFromLook.</summary>
+        /// <summary>The body this entry drives; the detour's lookup key.</summary>
+        public nint Address;
+
+        /// <summary>The remembered Entity target; null = never chosen.
+        /// Surviving a full untoggle is the point — it is cleared only by
+        /// <see cref="ResetGaze"/>, which is Brio's RemoveObjectFromLook.</summary>
+        public ActorId? TargetActor;
+
+        /// <summary>The target's GameObjectId: only the value written into
+        /// the native target union, never an identity. 0 when unset.</summary>
         public ulong TargetId;
 
         /// <summary>The remembered target is no longer in the object table.
@@ -157,7 +167,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     }
 
     private readonly object _sync = new();
-    private readonly Dictionary<ulong, GazeEntry> _entries = new();
+    private readonly Dictionary<ActorId, GazeEntry> _entries = new();
+
+    /// <summary>The detour's view of <see cref="_entries"/>, by body address.</summary>
+    private readonly Dictionary<nint, GazeEntry> _byAddress = new();
+    private readonly IEntityBindings _bindings;
 
     public GazeService(
         IGPoseService gPoseService,
@@ -168,6 +182,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         IGameInteropProvider hooks,
         IPluginLog log,
         IFramework framework,
+        IEntityBindings bindings,
         Poser.Game.Posing.GazePoseFrames gazeFrames)
         : this(
             gPoseService,
@@ -178,7 +193,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             hooks,
             log,
             framework,
-            new GazeNativeFactory(), gazeFrames)
+            new GazeNativeFactory(), bindings, gazeFrames)
     {
     }
 
@@ -192,8 +207,10 @@ public unsafe class GazeService : IGazeService, IDisposable
         IPluginLog log,
         IFramework? framework,
         IGazeNativeFactory nativeFactory,
+        IEntityBindings bindings,
         Poser.Game.Posing.GazePoseFrames? gazeFrames = null)
     {
+        _bindings = bindings;
         _gPoseService = gPoseService;
         _cameraService = cameraService;
         _objectTable = objectTable;
@@ -283,7 +300,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// rewrites the mask and nothing else).
     /// </summary>
     private static GazeTargetMode SeedMode(GazeEntry entry) =>
-        entry.Mode == GazeTargetMode.Entity && (entry.TargetId == 0 || entry.TargetStale)
+        entry.Mode == GazeTargetMode.Entity && (entry.TargetActor is null || entry.TargetStale)
             ? GazeTargetMode.None
             : entry.Mode;
 
@@ -309,11 +326,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// Everything absent is handed back to the game. This is the observable
     /// form of the release contract, so it is what the tests assert.
     /// </summary>
-    internal GazeTargetType WrittenParts(ulong gameObjectId)
+    internal GazeTargetType WrittenParts(ActorId actor)
     {
         lock (_sync)
         {
-            return _entries.TryGetValue(gameObjectId, out var entry)
+            return _entries.TryGetValue(actor, out var entry)
                 ? EnforcedParts(entry)
                 : GazeTargetType.None;
         }
@@ -323,11 +340,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// The channels owed a one-shot hand-back on the detour's next pass. The
     /// other half of the release contract, and likewise what the tests assert.
     /// </summary>
-    internal GazeTargetType PendingRelease(ulong gameObjectId)
+    internal GazeTargetType PendingRelease(ActorId actor)
     {
         lock (_sync)
         {
-            return _entries.TryGetValue(gameObjectId, out var entry)
+            return _entries.TryGetValue(actor, out var entry)
                 ? entry.PendingRelease
                 : GazeTargetType.None;
         }
@@ -365,26 +382,6 @@ public unsafe class GazeService : IGazeService, IDisposable
         character is { Address: not 0 }
         && character.IsValid()
         && character.ObjectIndex is >= 201 and <= 439;
-
-    /// <summary>
-    /// The GPose clones carrying <paramref name="wanted"/>, found in ONE walk
-    /// of the GPose range rather than a walk per id.
-    /// <c>IObjectTable.SearchById</c> scans from index 0 and therefore answers
-    /// with the overworld original for any actor that exists in both places —
-    /// correct for an existence probe, wrong for a write address, so this walk
-    /// is the only sound way to resolve a writable body by id.
-    /// </summary>
-    private Dictionary<ulong, (IGameObject Clone, bool Writable)> ResolveGPoseClones(
-        HashSet<ulong> wanted)
-    {
-        var found = new Dictionary<ulong, (IGameObject, bool)>(wanted.Count);
-        for (int index = 201; index <= 439 && found.Count < wanted.Count; index++)
-            if (_objectTable[index] is { } candidate
-                && wanted.Contains(candidate.GameObjectId)
-                && !found.ContainsKey(candidate.GameObjectId))
-                found[candidate.GameObjectId] = (candidate, CanWriteCharacter(candidate));
-        return found;
-    }
 
     /// <summary>
     /// Computes the character-target-id write this transition owes, and books
@@ -472,7 +469,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
                     lock (_sync)
                     {
-                        if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                        if (_byAddress.TryGetValue(targetActor.Address, out var entry))
                         {
                             known = true;
                             mode = EffectiveMode(entry);
@@ -512,7 +509,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                         {
                             // Only what this pass delivered is settled; a debt
                             // booked meanwhile is still owed.
-                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                            if (_byAddress.TryGetValue(targetActor.Address, out var entry))
                                 entry.PendingRelease &= ~pendingRelease;
                         }
                     }
@@ -595,18 +592,29 @@ public unsafe class GazeService : IGazeService, IDisposable
     private static GazeResult StaleRefusal(GazeEntry entry) => GazeResult.Refused(
         $"The remembered gaze target ({entry.TargetId:X}) has left the scene. Choose another actor.");
 
-    private IGameObject? Resolve(IActor actor) =>
-        actor.Address != nint.Zero ? _objectTable.CreateObjectReference(actor.Address) : null;
+    /// <summary>The actor's stable id and live body. An actor the registry
+    /// has not bound has no gaze identity: keying it by anything else is how
+    /// two clones of one player came to share an entry.</summary>
+    private bool Resolve(IActor actor, out ActorId id, [NotNullWhen(true)] out IGameObject? body)
+    {
+        id = default;
+        body = null;
+        if (actor.Address == nint.Zero || _bindings.GetActorId(actor) is not { } bound)
+            return false;
+        id = bound;
+        body = _objectTable.CreateObjectReference(actor.Address);
+        return body != null;
+    }
 
     public GazeState GetGazeState(IActor actor)
     {
         if (!IsAvailable)
             return new GazeState();
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return new GazeState();
         lock (_sync)
         {
-            return _entries.TryGetValue(gameObject.GameObjectId, out var entry)
+            return _entries.TryGetValue(id, out var entry)
                 ? new GazeState
                 {
                     PoseAware = entry.PoseAware,
@@ -614,6 +622,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     Active = EffectiveMode(entry) != GazeTargetMode.None,
                     TargetStale = entry.TargetStale,
                     TargetType = entry.Parts,
+                    TargetActor = entry.TargetActor,
                     TargetId = entry.TargetId,
                     Position = entry.Position,
                     EyesPosition = entry.Target.Eyes.LookAtTarget.Position,
@@ -627,14 +636,14 @@ public unsafe class GazeService : IGazeService, IDisposable
     public GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings)
     {
         if (!IsAvailable) return Unavailable();
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out var gameObject))
             return GazeResult.Refused("This actor is no longer resolvable.");
         bool writable = CanWriteCharacter(gameObject);
         ulong? pendingTarget;
         lock (_sync)
         {
-            var entry = GetOrCreateEntry(gameObject.GameObjectId);
-            if (settings.Mode == GazeTargetMode.Entity && entry.TargetId != 0 && entry.TargetStale)
+            var entry = Bind(id, gameObject.Address);
+            if (settings.Mode == GazeTargetMode.Entity && entry.TargetActor != null && entry.TargetStale)
                 return StaleRefusal(entry);
             entry.Mode = settings.Mode;
             entry.PoseAware = settings.PoseAware;
@@ -663,9 +672,9 @@ public unsafe class GazeService : IGazeService, IDisposable
     public GazeResult SetPoseAware(IActor actor, bool enabled)
     {
         if (!IsAvailable) return Unavailable();
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out var gameObject))
             return GazeResult.Refused("This actor is no longer resolvable.");
-        lock (_sync) GetOrCreateEntry(gameObject.GameObjectId).PoseAware = enabled;
+        lock (_sync) Bind(id, gameObject.Address).PoseAware = enabled;
         if (!enabled) _gazeFrames.Request(actor.Address, false);
         _eventBus.Publish(new GazeStateChangedEvent());
         return GazeResult.Ok();
@@ -675,7 +684,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return Unavailable();
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out var gameObject))
             return GazeResult.Refused("This actor is no longer resolvable.");
         bool modeChanged;
         ulong? pendingTarget;
@@ -684,10 +693,10 @@ public unsafe class GazeService : IGazeService, IDisposable
         bool writable = CanWriteCharacter(gameObject);
         lock (_sync)
         {
-            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var entry = Bind(id, gameObject.Address);
             // Re-selecting Actor mode is a reapply of the remembered target, so
             // a stale one is refused here rather than silently doing nothing.
-            if (mode == GazeTargetMode.Entity && entry.TargetId != 0 && entry.TargetStale)
+            if (mode == GazeTargetMode.Entity && entry.TargetActor != null && entry.TargetStale)
                 return StaleRefusal(entry);
             var beforeMode = EffectiveMode(entry);
             var previousMode = entry.Mode;
@@ -728,19 +737,19 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return Unavailable();
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out var gameObject))
             return GazeResult.Refused("This actor is no longer resolvable.");
         bool modeChanged;
         ulong? pendingTarget;
         bool writable = CanWriteCharacter(gameObject);
         lock (_sync)
         {
-            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var entry = Bind(id, gameObject.Address);
             // Adding a part back is a reapply of the remembered configuration.
             // Relinquishing one never is, so only additions can be refused.
             if ((parts & ~entry.Parts) != GazeTargetType.None
                 && entry.Mode == GazeTargetMode.Entity
-                && entry.TargetId != 0
+                && entry.TargetActor != null
                 && entry.TargetStale)
                 return StaleRefusal(entry);
             var beforeMode = EffectiveMode(entry);
@@ -776,14 +785,17 @@ public unsafe class GazeService : IGazeService, IDisposable
             return Unavailable();
         if (!OnOwnerThread)
             return GazeResult.Refused("Gaze targets can only be set on the game thread.");
-        if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
+        if (!Resolve(actor, out var id, out var gameObject)
+            || !Resolve(target, out var targetKey, out var targetObject))
             return GazeResult.Refused("This actor is no longer resolvable.");
         // The same predicate the write funnel enforces, spelled once, so this
         // refusal can never drift from what WriteCharacterTarget will accept.
         // It is stated here as well only to name the reason for the user.
         if (!CanWriteCharacter(gameObject))
             return GazeResult.Refused("Only a GPose actor can be given a gaze target.");
-        if (gameObject.GameObjectId == targetObject.GameObjectId)
+        // Stable identity, not GameObjectId: two clones of one player share
+        // that id and are still two actors that may look at each other.
+        if (id == targetKey)
         {
             _log.Warning("GazeService: an actor cannot gaze at itself.");
             return GazeResult.Refused("An actor cannot gaze at itself.");
@@ -793,8 +805,9 @@ public unsafe class GazeService : IGazeService, IDisposable
         bool writable = CanWriteCharacter(gameObject);
         lock (_sync)
         {
-            var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            var entry = Bind(id, gameObject.Address);
             var beforeMode = EffectiveMode(entry);
+            entry.TargetActor = targetKey;
             entry.TargetId = targetObject.GameObjectId;
             // A freshly chosen target is live by construction, and the stale
             // mark is sticky everywhere else, so this is the ONE place it is
@@ -819,31 +832,15 @@ public unsafe class GazeService : IGazeService, IDisposable
         return GazeResult.Ok();
     }
 
-    public nint GetGazeTargetAddress(IActor actor)
-    {
-        if (!IsAvailable)
-            return 0;
-        ulong targetId;
-        if (Resolve(actor) is not { } gameObject)
-            return 0;
-        lock (_sync)
-        {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) || entry.TargetId == 0)
-                return 0;
-            targetId = entry.TargetId;
-        }
-        return _objectTable.SearchById(targetId)?.Address ?? 0;
-    }
-
     public void SetGazePosition(IActor actor, Vector3 position)
     {
         if (!IsAvailable)
             return;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+            if (!_entries.TryGetValue(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return; // the anchor exists only in Position mode
             entry.Position = position;
@@ -856,11 +853,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+            if (!_entries.TryGetValue(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // An explicit user edit outranks a lock, so locked parts move too;
@@ -873,11 +870,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
+            if (!_entries.TryGetValue(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // Brio's "set to camera value": a one-shot capture, not a follow.
@@ -894,11 +891,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+            if (!_entries.TryGetValue(id, out var entry))
                 return;
             var mode = EffectiveMode(entry);
             if (mode == GazeTargetMode.None || !entry.Parts.HasFlag(part))
@@ -915,7 +912,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     // the part already looks so a lock only stops it following
                     // later anchor moves.
                     GazeTargetMode.Position => PartPosition(entry, part) ?? entry.Position,
-                    _ => _objectTable.SearchById(entry.TargetId)?.Position ?? _cameraService.GetCameraPosition(),
+                    _ => TargetPosition(entry.TargetActor) ?? _cameraService.GetCameraPosition(),
                 };
                 ApplyPartLock(entry, part, freezePos);
             }
@@ -931,11 +928,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return false;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out _))
             return false;
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+            if (!_entries.TryGetValue(id, out var entry))
                 return false;
             if (part.HasFlag(GazeTargetType.Eyes) && entry.EyesLocked) return true;
             if (part.HasFlag(GazeTargetType.Head) && entry.HeadLocked) return true;
@@ -948,7 +945,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (!IsAvailable)
             return;
-        if (Resolve(actor) is not { } gameObject)
+        if (!Resolve(actor, out var id, out var gameObject))
             return;
         bool modeChanged;
         ulong? pendingTarget = null;
@@ -959,7 +956,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             // entry itself is cleared in place rather than dropped: it is the
             // ledger the detour reads to deliver the hand-back, and dropping it
             // would strand every claimed channel at its last gaze.
-            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+            if (!_entries.TryGetValue(id, out var entry))
                 return;
             modeChanged = EffectiveMode(entry) != GazeTargetMode.None;
             if (entry.AppliedTargetId != 0 && OnOwnerThread)
@@ -970,6 +967,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             entry.Mode = GazeTargetMode.None;
             entry.PoseAware = false;
             entry.Parts = GazeTargetType.All;
+            entry.TargetActor = null;
             entry.TargetId = 0;
             entry.TargetStale = false;
             entry.Position = default;
@@ -986,12 +984,41 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     // ── entry maintenance (all callers hold _sync) ───────────────────────
 
-    private GazeEntry GetOrCreateEntry(ulong gameObjectId)
+    /// <summary>The actor's entry, created on first use, with the detour's
+    /// address index moved to the body it currently names.</summary>
+    private GazeEntry Bind(ActorId id, nint address)
     {
-        if (_entries.TryGetValue(gameObjectId, out var entry))
-            return entry;
-        return _entries[gameObjectId] = new GazeEntry();
+        if (!_entries.TryGetValue(id, out var entry))
+            _entries[id] = entry = new GazeEntry();
+        if (entry.Address != address)
+        {
+            Unindex(entry);
+            entry.Address = address;
+        }
+        _byAddress[address] = entry;
+        return entry;
     }
+
+    private void Drop(ActorId id)
+    {
+        if (_entries.Remove(id, out var entry))
+            Unindex(entry);
+    }
+
+    private void Unindex(GazeEntry entry)
+    {
+        if (_byAddress.TryGetValue(entry.Address, out var indexed) && ReferenceEquals(indexed, entry))
+            _byAddress.Remove(entry.Address);
+    }
+
+    /// <summary>The remembered target's live position, resolved through the
+    /// registry; null when it is gone.</summary>
+    private Vector3? TargetPosition(ActorId? target) =>
+        target is { } id
+        && _bindings.Resolve(id) is { Success: true, Value: { } live }
+        && _objectTable.CreateObjectReference(live.Address) is { } body
+            ? body.Position
+            : null;
 
     /// <summary>
     /// Reseeds every UNLOCKED participating part for the entry's effective
@@ -1099,76 +1126,78 @@ public unsafe class GazeService : IGazeService, IDisposable
             lock (_sync)
             {
                 _entries.Clear();
+                _byAddress.Clear();
             }
         }
     }
 
+    private void OnActorListChanged(ActorListChangedEvent _) => _gazeFrames.Clear();
+
     /// <summary>
-    /// Actor-list reconciliation by stable id: a departed source drops its
-    /// entry; a departed Entity target transitions its source to Off. Nothing
-    /// ever follows a reused address.
+    /// Reconciliation by stable id: a source the registry no longer resolves
+    /// drops its entry, a surviving one re-points the detour index at its
+    /// current body, and a departed Entity target marks its source stale.
+    /// Runs after each binding commit, not on the actor-list event itself:
+    /// until the registry publishes, its maps still describe the old list and
+    /// a replaced wrapper would read as a departed actor. Nothing ever
+    /// follows a reused address.
     /// </summary>
-    private void OnActorListChanged(ActorListChangedEvent _)
+    public void Reconcile()
     {
         _gazeFrames.Clear();
-        List<(ulong Id, ulong TargetId)> snapshot;
+        if (!IsAvailable || !OnOwnerThread)
+            return;
+        List<(ActorId Id, ActorId? Target)> snapshot;
         lock (_sync)
         {
             if (_entries.Count == 0)
                 return;
-            snapshot = new List<(ulong, ulong)>(_entries.Count);
+            snapshot = new List<(ActorId, ActorId?)>(_entries.Count);
             foreach (var (id, entry) in _entries)
-                snapshot.Add((id, entry.TargetId));
+                snapshot.Add((id, entry.TargetActor));
         }
 
-        // Every object-table read happens OUTSIDE _sync: the clone scan walks
-        // the GPose range, and the detour contends on _sync from the native
-        // thread on every frame.
-
-        // The SOURCES must resolve to their own GPose clones — a clone is the
-        // only body Poser may write, and SearchById would answer with the
-        // overworld original that shares the id. One walk serves the whole
-        // snapshot.
-        var wanted = new HashSet<ulong>();
-        foreach (var (id, _) in snapshot)
-            wanted.Add(id);
-        var clones = ResolveGPoseClones(wanted);
-
-        // The TARGET question is existence, not an address: the game resolves
-        // an imposed id against the whole table, so SearchById is the right
-        // probe here and its answer is never written to.
-        var liveTargets = new HashSet<ulong>();
-        foreach (var (_, targetId) in snapshot)
-            if (targetId != 0 && _objectTable.SearchById(targetId) != null)
+        // Every registry and object-table read happens OUTSIDE _sync: the
+        // detour contends on it from the native thread on every frame.
+        var bodies = new Dictionary<ActorId, (IGameObject Body, bool Writable)>(snapshot.Count);
+        var liveTargets = new HashSet<ActorId>();
+        foreach (var (id, target) in snapshot)
+        {
+            if (_bindings.Resolve(id) is { Success: true, Value: { } live }
+                && live.Address != nint.Zero
+                && _objectTable.CreateObjectReference(live.Address) is { } body)
+                bodies[id] = (body, CanWriteCharacter(body));
+            if (target is { } targetId && _bindings.Resolve(targetId).Success)
                 liveTargets.Add(targetId);
+        }
 
         bool modeChanged = false;
         List<(IGameObject Character, ulong TargetId)>? targetWrites = null;
         lock (_sync)
         {
-            foreach (var (id, probedTargetId) in snapshot)
+            foreach (var (id, probedTarget) in snapshot)
             {
                 if (!_entries.TryGetValue(id, out var entry))
                     continue;
-                if (!clones.TryGetValue(id, out var clone))
+                if (!bodies.TryGetValue(id, out var resolved))
                 {
-                    // No GPose clone carries this id any more: the body the
-                    // entry described is gone, so the entry goes with it.
-                    _entries.Remove(id);
+                    // The exact actor generation the entry described is gone,
+                    // so the entry goes with it.
+                    Drop(id);
                     continue;
                 }
+                Bind(id, resolved.Body.Address);
                 // The liveness probe answered about the target this entry held
                 // when the snapshot was taken. An entry retargeted since is
                 // left alone rather than judged on the wrong id — the retarget
                 // proved its own target live and cleared the mark itself.
-                if (entry.TargetId != probedTargetId)
+                if (entry.TargetActor != probedTarget)
                     continue;
                 bool wasStale = entry.TargetStale;
                 // Exact identity, and STICKY: once a remembered target has left
-                // the scene the mark stays until a live target is chosen. An id
-                // reappearing is not treated as consent to resume imposing it.
+                // the scene the mark stays until a live target is chosen.
                 entry.TargetStale = wasStale ||
-                    (entry.TargetId != 0 && !liveTargets.Contains(entry.TargetId));
+                    (entry.TargetActor is { } target && !liveTargets.Contains(target));
                 if (entry.TargetStale == wasStale)
                     continue;
                 // Entity-only from here: a stale target is meaningless to a
@@ -1179,16 +1208,15 @@ public unsafe class GazeService : IGazeService, IDisposable
                 // A stale target stops enforcement, so every claimed channel
                 // is owed its hand-back — the same debt an untoggle books.
                 BookRelease(entry);
-                _log.Debug(
-                    $"GazeService: gaze target of {id} despawned — remembered as stale.");
+                _log.Debug($"GazeService: gaze target of {id} despawned — remembered as stale.");
                 modeChanged = true;
-                if (PendingTargetWrite(entry, clone.Writable) is { } pending)
-                    (targetWrites ??= new()).Add((clone.Clone, pending));
+                if (PendingTargetWrite(entry, resolved.Writable) is { } pending)
+                    (targetWrites ??= new()).Add((resolved.Body, pending));
             }
         }
         // Outside the lock: a despawned target leaves the character's imposed
-        // target id pointing at nothing, so it is cleared here too — on the
-        // clone, through the same gated funnel as every other write.
+        // target id pointing at nothing, so it is cleared here too, through
+        // the same gated funnel as every other write.
         if (targetWrites != null)
             foreach (var (character, targetId) in targetWrites)
                 WriteCharacterTarget(character, targetId);
@@ -1196,6 +1224,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
     }
+
 
     public void Dispose()
     {

@@ -37,6 +37,26 @@ public sealed class ScenePortableAppearanceTests
                 && note.Contains("rather than recording where the mods were"));
     }
 
+    [Fact]
+    public void An_actor_saved_without_its_own_appearance_is_marked_and_named()
+    {
+        var scene = SceneWithReference();
+        scene.Actors.Add(PortableActor("Sealed", 4));
+        foreach (var actor in scene.Actors)
+            actor.AppearanceNotSaved = true;
+        var notes = new List<string>();
+
+        SceneSavePolicy.Apply(
+            scene, new SceneSaveOptions { IncludeModdedAppearance = true }, notes);
+
+        // The dropped reference leaves the actor wearing the player's look on
+        // load, so the file says so; the sealed package carries its own.
+        Assert.True(scene.Actors[0].AppearanceNotSaved);
+        Assert.False(scene.Actors[1].AppearanceNotSaved);
+        Assert.Contains(SceneSavePolicy.AppearanceNotSavedNote("Reference"), notes);
+        Assert.DoesNotContain(SceneSavePolicy.AppearanceNotSavedNote("Sealed"), notes);
+    }
+
     private static SceneFile SceneWith(params SceneActor[] actors)
     {
         var scene = new SceneFile { SceneId = Guid.NewGuid() };
