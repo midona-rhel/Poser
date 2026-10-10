@@ -329,7 +329,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             clock: () => 5000,
             log: log.Proxy());
 
-        service.DestroyCompanion(actor);
+        Assert.True(service.SetCompanion(actor, null));
 
         Assert.Null(native.Companion);
         Assert.NotEqual(nint.Zero, native.ReadCompanionAddress(descriptor));

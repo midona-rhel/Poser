@@ -1008,12 +1008,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         _port.WriteOutline(address, outline);
     }
 
-    /// <summary>The port's world walk, for callers that must verify an
-    /// address still stands before touching it (the undo journal's
-    /// re-adopt guard).</summary>
-    public IReadOnlyList<WorldObjectRow> EnumerateWorld() =>
-        _disposed ? Array.Empty<WorldObjectRow>() : _port.Enumerate();
-
     /// <summary>Whether this address is already claimed.</summary>
     public bool IsAdopted(nint address)
     {
@@ -1280,21 +1274,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
         expected.IsVfx
             ? current == expected
             : current.SameAllocation(expected);
-
-    /// <summary>
-    /// Adopts one object and puts it back where a saved scene had it. The scene
-    /// load path: the capture still records where the map STANDS it, so the
-    /// release restores the map's placement and not the file's.
-    /// </summary>
-    public AdoptedWorldObject? AdoptAt(nint address, Transform placement, bool visible)
-    {
-        var handle = Adopt(address);
-        if (handle == null)
-            return null;
-        handle.Transform = placement;
-        handle.Visible = visible;
-        return handle;
-    }
 
     /// <summary>How far a saved map position may sit from a live one and still
     /// be the same object. It absorbs the codec — a float that has been through

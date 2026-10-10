@@ -109,9 +109,6 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     bool SetCompanion(IActor owner, CompanionAttachment? container);
 
-    /// <summary>Detach the actor's companion/mount/ornament.</summary>
-    void DestroyCompanion(IActor owner);
-
     /// <summary>Current companion attachment; null when the slot is empty,
     /// absent, or unreadable.</summary>
     CompanionAttachment? GetCompanionInfo(IActor owner);

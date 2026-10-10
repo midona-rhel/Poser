@@ -926,19 +926,6 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
-    public bool IsGazeEnabled(IActor actor)
-    {
-        if (!IsAvailable)
-            return false;
-        if (Resolve(actor) is not { } gameObject)
-            return false;
-        lock (_sync)
-        {
-            return _entries.TryGetValue(gameObject.GameObjectId, out var entry) &&
-                EffectiveMode(entry) != GazeTargetMode.None;
-        }
-    }
-
     public void ResetGaze(IActor actor)
     {
         if (!IsAvailable)

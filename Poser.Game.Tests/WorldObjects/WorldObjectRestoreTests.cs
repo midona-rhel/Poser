@@ -426,7 +426,7 @@ public sealed class WorldObjectRestoreTests
         world.Port.SetVfxPlayback(address, VfxPlaybackState.Playing);
 
         Assert.True(world.Service.Adopt(address)!.IsVfx);
-        Assert.Contains(world.Service.EnumerateWorld(), row => row.IsEffect);
+        Assert.Contains(world.Port.Enumerate(), row => row.IsEffect);
     }
 
     [Fact]

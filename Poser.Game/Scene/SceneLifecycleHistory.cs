@@ -387,8 +387,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     public ILight? CloneLight(ILight source) => _lightOwner.CloneLight(source);
 
-    public ILight? AcquireWorldLight(WorldLightCandidate source) => _lightOwner.AcquireWorldLight(source);
-
     // History alone may resolve an old wrapper to its successor. Public IDs
     // and acquisition receipts remain expired after release.
     ILight? IEntityHistoryResolver<ILight>.Resolve(ILight light) => _lightOwner.CurrentLight(light);
@@ -772,29 +770,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             () => _propOwner.CaptureAndRemove(slot)));
     }
 
-    /// <summary>
-    /// Clearing the prop list is ONE act of the user's, so it is ONE entry
-    /// over every slot it took. Each direction reports the truth for the whole
-    /// set: a partial restore answers false and leaves the entry where it was,
-    /// exactly as a refused single spawn does, so the step is retried rather
-    /// than consumed.
-    /// </summary>
-    public void DestroyAllProps()
-    {
-        var props = _props.Props;
-        if (props.Count == 0)
-            return;
-        var slots = new List<PropSlot>(props.Count);
-        foreach (var prop in props)
-            slots.Add(SlotFor(prop));
-        if (!RemoveProps(slots))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            props.Count == 1 ? "Remove object" : $"Remove {props.Count} objects",
-            () => RestoreProps(slots),
-            () => RemoveProps(slots)));
-    }
-
     private PropSlot SlotFor(object prop)
     {
         return _propOwner.SlotFor(prop);
@@ -827,22 +802,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _props.Apply(prop, slot.Document);
         slot.Live = prop;
         return true;
-    }
-
-    private bool RemoveProps(IReadOnlyList<PropSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _propOwner.CaptureAndRemove(slot);
-        return landed;
-    }
-
-    private bool RestoreProps(IReadOnlyList<PropSlot> slots)
-    {
-        bool landed = true;
-        foreach (var slot in slots)
-            landed &= _propOwner.Restore(slot);
-        return landed;
     }
 
     // ── overlay nodes ──────────────────────────────────────
@@ -946,26 +905,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             description,
             () => _overlayOwner.Restore(slot),
             () => _overlayOwner.CaptureAndRemove(slot)));
-    }
-
-    /// <summary>Clearing the overlay list is ONE act of the user's, so it is
-    /// ONE entry over every slot it took — the prop list's own rule.</summary>
-    public void DestroyAllOverlays()
-    {
-        var overlays = _overlayNodes.Overlays;
-        if (overlays.Count == 0)
-            return;
-        var slots = new List<OverlaySlot>(overlays.Count);
-        foreach (var overlay in overlays)
-            slots.Add(OverlaySlotFor(overlay));
-        if (!RemoveOverlays(slots))
-            return;
-        _history.Append(new SceneLifecyclePatch(
-            overlays.Count == 1
-                ? "Remove overlay"
-                : $"Remove {overlays.Count} overlays",
-            () => RestoreOverlays(slots),
-            () => RemoveOverlays(slots)));
     }
 
     private OverlaySlot OverlaySlotFor(object overlay)

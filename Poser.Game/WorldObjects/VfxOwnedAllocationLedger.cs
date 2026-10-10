@@ -162,22 +162,6 @@ internal sealed class VfxOwnedAllocationLedger
         }
     }
 
-    public bool TryGetPending(nint address, out VfxAllocationLease lease)
-    {
-        lock (_gate)
-        {
-            foreach (var entry in _pending.Values)
-                if (entry.Identity.Address == address)
-                {
-                    lease = new VfxAllocationLease(
-                        entry.Identity, entry.Claim);
-                    return true;
-                }
-            lease = default;
-            return false;
-        }
-    }
-
     public WorldObjectIncarnation[] LiveIdentities
     {
         get

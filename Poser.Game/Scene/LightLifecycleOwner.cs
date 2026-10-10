@@ -71,9 +71,6 @@ internal sealed class LightLifecycleOwner
     public ILight? CloneLight(ILight source) =>
         RecordSpawn($"Clone light '{source.Name}'", () => _lighting.CloneLight(source));
 
-    public ILight? AcquireWorldLight(WorldLightCandidate source) =>
-        AppendSpawn("Acquire world light", _lighting.CaptureWorldLight(source));
-
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
         AppendSpawn(description, light);
 

@@ -28,11 +28,6 @@ public interface ISkeletonService : IDisposable
     IReadOnlyList<ISkeleton> GetSkeletons(IActor actor);
 
     /// <summary>
-    /// Refreshes every cached slot skeleton of the actor.
-    /// </summary>
-    void RefreshSkeleton(IActor actor);
-
-    /// <summary>
     /// Clears all cached skeletons.
     /// </summary>
     void ClearAll();

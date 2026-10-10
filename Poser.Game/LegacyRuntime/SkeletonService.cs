@@ -168,21 +168,6 @@ public class SkeletonService : ISkeletonService
         return result;
     }
 
-    public void RefreshSkeleton(IActor actor)
-    {
-        if (!_actors.IsAvailable(actor))
-            return;
-        foreach (var (key, skeleton) in _skeletons.ToArray())
-        {
-            if (!key.Actor.Equals(actor.Id))
-                continue;
-            if (!ReferenceEquals(skeleton.Actor, actor))
-                RebindActor(key, skeleton, actor);
-            skeleton.Refresh();
-            _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton.IsValid ? skeleton : null));
-        }
-    }
-
     /// <summary>
     /// The ONE release path for every cached skeleton — replacement, actor
     /// removal, ClearAll, and disposal. Detaches the entity from its

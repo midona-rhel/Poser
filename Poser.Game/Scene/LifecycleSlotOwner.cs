@@ -101,12 +101,5 @@ internal sealed class LifecycleSlotOwner<TInstance, TSlot>
         _slots[instance] = slot;
     }
 
-    public void ForgetCurrent(TSlot slot)
-    {
-        if (!_retainAliases && _current(slot) is { } current)
-            _slots.Remove(current);
-        _setCurrent(slot, null);
-    }
-
     public void Clear() => _slots.Clear();
 }

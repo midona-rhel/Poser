@@ -309,7 +309,7 @@ public sealed class SceneLifecycleHistoryTests
             { AffectedEntities = new[] { actor } };
         world.History.Append(actorEdit);
         var light = borrowed
-            ? world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!
+            ? Borrow(world)
             : world.Lifecycle.SpawnLight(LightKind.Point)!;
         var original = world.Lighting.Target(light)!.Value.ToSelectionId();
         for (int i = 0; i < 3; i++)
@@ -343,7 +343,7 @@ public sealed class SceneLifecycleHistoryTests
         var world = new World();
         var values = new LightSession(new ValueJournal(world.History), world.Lighting, world.Lifecycle);
         var light = borrowed
-            ? world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!
+            ? Borrow(world)
             : world.Lifecycle.SpawnLight(LightKind.Point)!;
         values.SetIntensity(light, 7);
         values.SetIsOn(light, false);
@@ -377,7 +377,7 @@ public sealed class SceneLifecycleHistoryTests
     public void Refused_light_release_preserves_its_claim_and_history()
     {
         var world = new World();
-        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        var light = Borrow(world);
         var acquisition = world.History.PeekUndo();
         world.Lighting.RefuseDestroy = true;
         world.Lifecycle.DestroyLight(light);
@@ -394,7 +394,7 @@ public sealed class SceneLifecycleHistoryTests
     public void Light_transform_history_survives_absence_and_rekeys_only_inside_history()
     {
         var world = new World();
-        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        var light = Borrow(world);
         var oldTarget = world.Lighting.Target(light)!.Value;
         var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
         world.History.Append(new TransformPatch("Move light", [state], [state]));
@@ -420,7 +420,7 @@ public sealed class SceneLifecycleHistoryTests
     public void Released_light_cannot_reclaim_a_different_incarnation_at_the_same_address()
     {
         var world = new World();
-        var light = world.Lifecycle.AcquireWorldLight(world.Lighting.Source)!;
+        var light = Borrow(world);
         world.Lifecycle.DestroyLight(light);
         world.Lighting.Source = world.Lighting.Source with { Generation = 2 };
         Assert.False(world.Undo());
@@ -1012,6 +1012,12 @@ public sealed class SceneLifecycleHistoryTests
         Assert.NotSame(actor, world.Actors.Live[0]);
         Assert.NotSame(camera, world.Cameras.Live[0]);
     }
+
+    /// <summary>Borrows the fake's world light the way WorldService does:
+    /// the lighting service captures it and the lifecycle records the claim.</summary>
+    private static ILight Borrow(World world) =>
+        world.Lifecycle.RecordSpawnedLight("Acquire world light",
+            world.Lighting.CaptureWorldLight(world.Lighting.Source))!;
 
     private static ActorState Posed(Vector3 position, bool visible)
     {

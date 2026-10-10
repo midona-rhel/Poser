@@ -28,12 +28,10 @@ public interface ISceneLifecycleHistory
     object? SpawnProp(PropModel model);
     object? CloneProp(object source);
     void DestroyProp(object prop);
-    void DestroyAllProps();
     object? SpawnOverlay(OverlayNodeKind kind);
     object? CloneOverlay(object source);
     object? SpawnOverlay(OverlayNodeState state);
     void DestroyOverlay(object overlay);
-    void DestroyAllOverlays();
     object? SpawnWorldObject(string path, Transform placement, bool visible);
     int DestroySelection( IReadOnlyList<IActor>? actors = null, IReadOnlyList<object>? props = null, IReadOnlyList<ILight>? lights = null, IReadOnlyList<IVirtualCamera>? cameras = null, IReadOnlyList<object>? overlays = null);
 }

@@ -62,7 +62,6 @@ public sealed class CameraSession
     public bool SetAngle(IVirtualCamera c, Vector2 v) => Set(c, "Angle", "Turn camera", camera => camera.Angle, (camera, x) => camera.Angle = x, v);
     public bool SetPan(IVirtualCamera c, Vector2 v) => Set(c, "Pan", "Pan camera", camera => camera.Pan, (camera, x) => camera.Pan = x, v);
     public bool SetPositionOffset(IVirtualCamera c, Vector3 v) => Set(c, "PositionOffset", "Move camera", camera => camera.PositionOffset, (camera, x) => camera.PositionOffset = x, v);
-    public bool SetTargetOffset(IVirtualCamera c, Vector3 v) => Set(c, "TargetOffset", "Move camera target", camera => camera.TargetOffset, (camera, x) => camera.TargetOffset = x, v);
     public bool SetFixedPosition(IVirtualCamera c, Vector3? v) => Set(c, "FixedPosition", v is null ? "Unpin camera" : "Pin camera", camera => camera.FixedPosition, (camera, x) => camera.FixedPosition = x, v);
     public bool SetPosition(IVirtualCamera c, Vector3 v) => Set(c, "Position", "Move camera", camera => camera.Position, (camera, x) => camera.Position = x, v);
     public bool SetRotation(IVirtualCamera c, Vector3 v) => Set(c, "Rotation", "Turn camera", camera => camera.Rotation, (camera, x) => camera.Rotation = x, v);

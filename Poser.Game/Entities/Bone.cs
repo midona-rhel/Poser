@@ -153,12 +153,4 @@ public class Bone : EntityBase, IBone
             AttachChild(child);
         }
     }
-
-    /// <summary>
-    /// Gets a friendly display name for the bone (translation only, no internal name).
-    /// </summary>
-    public string GetFriendlyName()
-    {
-        return BoneInfoService.GetTranslation(BoneName) ?? BoneName;
-    }
 }

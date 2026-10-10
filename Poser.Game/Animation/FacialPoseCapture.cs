@@ -119,12 +119,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 
     public OperationReceipt? LastReceipt => _lastReceipt;
 
-    /// <summary>Returns the last receipt when it belongs to the actor.</summary>
-    public OperationReceipt? ReceiptFor(ActorId actor) =>
-        _lastReceipt is { TargetActorId: var target } && target == actor
-            ? _lastReceipt
-            : null;
-
     private static bool IsFaceBone(string name) =>
         name.StartsWith("j_f_", StringComparison.Ordinal) ||
         name.Equals("j_kao", StringComparison.Ordinal) ||

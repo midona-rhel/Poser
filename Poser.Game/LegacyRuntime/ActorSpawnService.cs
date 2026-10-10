@@ -2016,21 +2016,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return true;
     }
 
-    public void DestroyCompanion(IActor owner)
-    {
-        if (!OnOwnerThread)
-            return;
-        if (!TryResolveActorForOperation(owner, out var descriptor, out _))
-            return;
-
-        if (!_native.TryReadCompanion(descriptor, out var info)
-            || info is not { } attached)
-            return;
-        Diagnostics.GPoseTransitionLog.Actor(_log, "companion-detach-before", descriptor.Address, $"index={descriptor.Index} previous={attached}");
-        var detached = _native.WriteCompanion(descriptor, attached.Kind, 0);
-        _log?.Information($"[GPoseLifetime] companion-detach-complete actor=0x{descriptor.Address:X} success={detached}");
-    }
-
     public CompanionAttachment? GetCompanionInfo(IActor owner)
     {
         if (!OnOwnerThread)
@@ -2186,17 +2171,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
             return false;
         return token is null
             || _ownership.TryGetExact(token.Value, lifetime, out _);
-    }
-
-    internal bool InvokeOwnedCallbackForTests(
-        Guid token,
-        SpawnNativeDescriptor lifetime,
-        Action callback)
-    {
-        if (!IsCallbackCurrent(token, lifetime))
-            return false;
-        callback();
-        return true;
     }
 
     public bool IsSpawnedActor(IActor actor)

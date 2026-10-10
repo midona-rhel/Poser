@@ -130,9 +130,6 @@ public interface IGazeService
     /// <summary>Whether the given part is frozen.</summary>
     bool IsPartLocked(IActor actor, GazeTargetType part);
 
-    /// <summary>Whether any Poser gaze override is active for the actor.</summary>
-    bool IsGazeEnabled(IActor actor);
-
     /// <summary>Removes state and the native handle — full game default.</summary>
     void ResetGaze(IActor actor);
 }

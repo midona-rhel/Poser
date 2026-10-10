@@ -76,7 +76,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
-    /// stage alone for a plain <see cref="ShowPose(string, PoseImportOptions)"/>,
+    /// stage alone for a plain <see cref="ShowPose(PoseFile, string, PoseImportOptions)"/>,
     /// both for a <see cref="ShowSequence"/>. The SERIAL is what the framework
     /// side watches — a new statement supersedes whatever the sequence had
     /// reached, wholesale.</summary>
@@ -223,18 +223,12 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     }
 
     /// <summary>
-    /// The pose to show. Remembered until the preview body is bound, then
-    /// applied; the latest call wins. The OPTIONS INSTANCE is part of the
-    /// request: restating the same path with the same instance is free, while
-    /// a new instance re-imports — that is how an import-option change reaches
-    /// a preview whose path never moved.
+    /// The pose to show, held in memory — the rebase baseline, which is a
+    /// capture and not a file. Remembered until the preview body is bound,
+    /// then applied; the latest call wins. <paramref name="key"/> stands in
+    /// for a path in the dedupe, and the OPTIONS INSTANCE is part of the
+    /// request: a new instance re-imports.
     /// </summary>
-    public void ShowPose(string path, PoseImportOptions options) =>
-        Request(PosePreviewRequest.File(path, options), null);
-
-    /// <summary>The same statement for a pose held in memory — the rebase
-    /// baseline, which is a capture and not a file. <paramref name="key"/>
-    /// stands in for the path in the dedupe.</summary>
     public void ShowPose(PoseFile pose, string key, PoseImportOptions options) =>
         Request(PosePreviewRequest.Memory(pose, key, options), null);
 
