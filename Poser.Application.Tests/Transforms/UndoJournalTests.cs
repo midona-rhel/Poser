@@ -148,10 +148,10 @@ public sealed class UndoJournalTests
     private sealed class World
     {
         public TransformHistory History { get; } = new();
-        public List<string> Notices { get; } = new();
+        public Fixtures.NoticeLog Notices { get; } = new();
         public UndoJournal Journal { get; }
         public World(bool assetExists = true) =>
-            Journal = new(History, new Runner(History), _ => assetExists, Notices.Add);
+            Journal = new(History, new Runner(History), _ => assetExists, Notices);
     }
 
     private sealed class Runner(TransformHistory history) : IUndoRunner

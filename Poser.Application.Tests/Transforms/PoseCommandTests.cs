@@ -128,7 +128,7 @@ public sealed class PoseCommandTests
                     new BonePose([new(new(PoseLayerKind.Manual, "manual"), TransformComponents.All,
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
-            Journal = new(History, Gestures, _ => true, _ => { });
+            Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
             var edits = new PoseEditService(Scene, this, History, Gestures);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),

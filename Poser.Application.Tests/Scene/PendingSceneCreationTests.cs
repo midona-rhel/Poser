@@ -34,7 +34,7 @@ public sealed class PendingSceneCreationTests
         public readonly IPoseImportCommands Imports = Substitute.For<IPoseImportCommands>();
         public readonly IAnimationPlayback Animation = Substitute.For<IAnimationPlayback>();
         public readonly SelectionSession Selection = new();
-        public readonly List<string> Failures = [];
+        public readonly Fixtures.NoticeLog Failures = [];
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneEntityHandle Handle = new(SessionGeneration.New(), SceneEntityKind.Actor);
         public readonly PendingSceneCreation Pending;
@@ -43,7 +43,7 @@ public sealed class PendingSceneCreationTests
         {
             Sessions.ActiveSessionGeneration.Returns(Handle.Session);
             Imports.ImportPose(default, "", null!).ReturnsForAnyArgs(PoseEditResult.Ok(1));
-            Pending = new(Creation, Sessions, Selection, Imports, Animation, Failures.Add);
+            Pending = new(Creation, Sessions, Selection, Imports, Animation, Failures);
         }
     }
 }

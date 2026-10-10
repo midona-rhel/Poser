@@ -224,7 +224,7 @@ public sealed class PresentationResetHistoryTests
             Values = new(values, Session, new Game.Presentation.ActorValueRuntime(Bindings, Spawn));
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
-            Journal = new(History, runner, _ => true, _ => { });
+            Journal = new(History, runner, _ => true, new SilentNotices());
             var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
             ColorValues = new(Session, integration, values, runner, Bindings);
         }
@@ -317,5 +317,12 @@ public sealed class PresentationResetHistoryTests
         public Outcome SetOpacity(ActorId actor, float value) => Outcome.Ok();
         public Outcome RestoreOpacity(ActorId actor, float value) => Outcome.Ok();
         public void ClearOwned(ActorId actor) { }
+    }
+
+    private sealed class SilentNotices : Poser.Application.Presentation.IUserNotices
+    {
+        public void Note(string message) { }
+        public void Refused(string message) { }
+        public void Failed(string message) { }
     }
 }
