@@ -222,15 +222,24 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
+    public PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
         BuildImportPlan(slots, poseFile, options, TransformComponents.All);
 
-    private PoseImportPlan BuildImportPlan(
+    private PoseImportPlan? BuildImportPlan(
         IReadOnlyList<ISkeleton> slots,
         PoseFile poseFile,
         PoseImportOptions? options,
         TransformComponents maskLimit)
     {
+        // The one choke point every import source passes — .pose, .cmp,
+        // clipboard, presets, live captures — so no NaN/infinity or null
+        // collection reaches a plan whatever decoded the document.
+        var validation = PoseFileValidation.Validate(poseFile);
+        if (!validation.Succeeded)
+        {
+            _log.Error($"Pose import refused: {validation.Failure!.Detail}");
+            return null;
+        }
         options ??= DefaultImportOptions;
         // Component selection is a DELTA mask (Brio PoseImporter.cs:35, the
         // 4th Apply argument), applied inside the apply pass — never an

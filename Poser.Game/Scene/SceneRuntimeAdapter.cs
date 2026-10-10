@@ -59,7 +59,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
-    private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly IActorManager _actors;
@@ -107,7 +106,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         WorldObjects.WorldService worldObjects,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
-        IBonePosingService bonePosing,
         IEntityHistoryBinding<IActor> actorHistory,
         IEntityHistoryBinding<IPropHandle> propHistory,
         IEntityHistoryBinding<IOverlayNode> overlayHistory,
@@ -124,7 +122,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _worldHistory = worldHistory;
         _lightHistory = lightHistory;
         _cameraHistory = cameraHistory;
-        _bonePosing = bonePosing;
         _mcdfHashes = mcdfHashes;
         _selection = selection;
         _log = log;

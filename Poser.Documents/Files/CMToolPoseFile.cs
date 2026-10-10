@@ -464,7 +464,9 @@ public class CMToolPoseFile
         if (Race == null)
             throw new InvalidDataException("Legacy .cmp pose file has no race specified");
 
-        var fileRace = (CmpRace)byte.Parse(Race);
+        if (!byte.TryParse(Race, NumberStyles.Integer, CultureInfo.InvariantCulture, out var race))
+            throw new InvalidDataException($"Legacy .cmp pose file has an invalid race '{Race}'.");
+        var fileRace = (CmpRace)race;
 
         foreach (var propertyInfo in GetType().GetProperties(BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance))
         {
@@ -493,7 +495,7 @@ public class CMToolPoseFile
 
         if (!string.IsNullOrEmpty(rot) && rot != "null")
         {
-            var data = StringToByteArray(rot);
+            var data = StringToByteArray(rot, 16);
             bone.Rotation = new Quaternion(
                 BitConverter.ToSingle(data, 0), BitConverter.ToSingle(data, 4),
                 BitConverter.ToSingle(data, 8), BitConverter.ToSingle(data, 12));
@@ -501,7 +503,7 @@ public class CMToolPoseFile
 
         if (!string.IsNullOrEmpty(scale) && scale != "null")
         {
-            var data = StringToByteArray(scale);
+            var data = StringToByteArray(scale, 12);
             bone.Scale = new Vector3(
                 BitConverter.ToSingle(data, 0), BitConverter.ToSingle(data, 4),
                 BitConverter.ToSingle(data, 8));
@@ -510,12 +512,18 @@ public class CMToolPoseFile
         return bone;
     }
 
-    private static byte[] StringToByteArray(string hex)
+    // Values are raw little-endian float bytes, so NaN and infinity decode
+    // as-is; the import plan's PoseFileValidation refuses them.
+    private static byte[] StringToByteArray(string hex, int length)
     {
-        var parts = hex.Trim().Split(' ');
+        var parts = hex.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < length)
+            throw new InvalidDataException(
+                $"Legacy .cmp value '{hex}' has {parts.Length} bytes; {length} are required.");
         var data = new byte[parts.Length];
         for (int i = 0; i < parts.Length; i++)
-            data[i] = byte.Parse(parts[i], NumberStyles.HexNumber);
+            if (!byte.TryParse(parts[i], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out data[i]))
+                throw new InvalidDataException($"Legacy .cmp value '{hex}' is not hexadecimal bytes.");
         return data;
     }
 }

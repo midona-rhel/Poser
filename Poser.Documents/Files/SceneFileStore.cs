@@ -453,6 +453,9 @@ public sealed class SceneFileStore
 
     public SceneWriteOutcome Write(SceneFile scene, string destination)
     {
+        // The bytes are this build's shape whatever version the document was
+        // read at, so they carry this build's version (docs/features/scenes.md).
+        scene.FileVersion = SceneFile.CurrentVersion;
         var validation = SceneFileValidation.Validate(scene);
         if (!validation.Succeeded)
             return ValidationWriteFailure(validation.Failure!, destination);
@@ -572,7 +575,7 @@ public sealed class SceneFileStore
         try
         {
             return Validated(JsonSerializer.Deserialize<SceneFile>(
-                bytes, SceneFile.JsonOptions), path);
+                Utf8Bom.Strip(bytes), SceneFile.JsonOptions), path);
         }
         catch (JsonException ex)
         {

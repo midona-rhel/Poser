@@ -109,12 +109,16 @@ public sealed class PoseLibraryFileActions
     public static (PoseLibraryMetadataStatus Status, string Detail) Classify(
         PoseFileMetadataReadOutcome metadata)
     {
+        // Only the FORMAT version decides Future. `Version` is the author's
+        // free-text pose version (Anamnesis FileBase, Brio JsonDocumentBase)
+        // and says nothing about whether this build can read the file.
         if (metadata.Succeeded)
         {
-            return string.IsNullOrWhiteSpace(metadata.Version)
+            return metadata.FileVersion <= PoseFile.CurrentFileVersion
                 ? (PoseLibraryMetadataStatus.Valid, string.Empty)
                 : (PoseLibraryMetadataStatus.Future,
-                    $"Pose version '{metadata.Version}' is not supported.");
+                    $"The pose was saved in format version {metadata.FileVersion}; " +
+                    $"this build reads up to {PoseFile.CurrentFileVersion}.");
         }
 
         return (
@@ -373,11 +377,11 @@ public sealed class PoseLibraryFileActions
                     read.Failure?.Detail ?? "The pose file could not be read.");
 
             var pose = read.Pose!;
-            if (!string.IsNullOrWhiteSpace(pose.Version))
+            if (pose.FileVersion > PoseFile.CurrentFileVersion)
                 return Refused(
                     kind,
-                    $"Pose version '{pose.Version}' is not supported, so the " +
-                    "file is not rewritten.");
+                    $"The pose was saved in format version {pose.FileVersion}, " +
+                    "newer than this build reads, so the file is not rewritten.");
 
             var trimmedAuthor = author?.Trim();
             pose.Author = string.IsNullOrEmpty(trimmedAuthor) ? null : trimmedAuthor;

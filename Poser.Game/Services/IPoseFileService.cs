@@ -41,7 +41,9 @@ public interface IPoseFileService : IDisposable
     PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
 
     /// <summary>
-    /// Computes the import plan for an already-loaded pose file.
+    /// Computes the import plan for an already-loaded pose file. Every plan
+    /// is built from a pose that passed <see cref="PoseFileValidation"/>;
+    /// returns null when this one does not.
     /// </summary>
-    PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
+    PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
 }

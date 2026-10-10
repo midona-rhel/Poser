@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Poser.Files;
 
@@ -168,6 +169,43 @@ public class PoseFile
             new Converters.QuaternionConverter()
         }
     };
+
+    /// <summary>
+    /// <see cref="JsonOptions"/> for metadata probes: the same contract, but
+    /// <see cref="Base64Image"/> reads as a one-character presence marker so
+    /// indexing a library never materializes every thumbnail string.
+    /// </summary>
+    internal static readonly JsonSerializerOptions MetadataJsonOptions = new(JsonOptions)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    if (info.Type != typeof(PoseFile))
+                        return;
+                    foreach (var property in info.Properties)
+                        if (property.Name == nameof(Base64Image))
+                            property.CustomConverter = new ThumbnailPresenceConverter();
+                },
+            },
+        },
+    };
+
+    private sealed class ThumbnailPresenceConverter : JsonConverter<string>
+    {
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.String)
+                throw new JsonException($"{nameof(Base64Image)} must be a string.");
+            var length = reader.HasValueSequence ? reader.ValueSequence.Length : reader.ValueSpan.Length;
+            return length == 0 ? string.Empty : "*";
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
 
     /// <summary>
     /// Lossy compatibility load. Returns null for every typed read, size,

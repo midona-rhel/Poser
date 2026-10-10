@@ -883,6 +883,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             foreach (var actor in actors)
                 if (actor.AppearanceNotSaved)
                     notes.Add(SceneSavePolicy.AppearanceNotSavedNote(actor.Name));
+            // Scenes saved before #229 carry FABRIK chains beside a pose that
+            // already holds their baked result; restoring them would restart
+            // a solver over it.
+            if (options.IncludeActors && scene.Actors.Any(actor => actor.Fabrik is not null))
+                notes.Add("Saved FABRIK chains from an older build were ignored; " +
+                    "the baked pose loads as saved.");
 
             // Relative placement rebases the READ document, before one native
             // call: a file with no origin refuses HERE, where nothing has
@@ -1600,9 +1606,6 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
             // Commit — re-guarded: a cancellation or session replacement
             // landing after the last phase rolls back instead of committing.
-            if (scene.Actors.Any(actor => actor.Fabrik?.Count > 0))
-                await _runtime.WaitForFabrikBindings(actorTokens.Values.Concat(propTokens.Values)
-                    .Concat(worldObjectTokens.Values).Concat(lightTokens.Values), cancellation);
             var structureTokens = StructureTokens(("actor", actorTokens), ("prop", propTokens),
                 ("overlay", overlayTokens), ("worldObject", worldObjectTokens),
                 ("light", lightTokens), ("camera", cameraTokens));
@@ -1618,8 +1621,6 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var (actorName, error) in _runtime.RestoreFabrik(scene, actorTokens, propTokens, worldObjectTokens, lightTokens))
-                    entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Ik, actorName, false, error));
                 RestoreStructure(operation, scene, structureTokens, entities);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 operation.HistoryEntities = structureTokens;

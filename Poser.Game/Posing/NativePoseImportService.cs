@@ -115,7 +115,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
-            return PoseEditResult.Fail("The pose file could not be read.");
+            return PoseEditResult.Fail("The pose file could not be read or failed validation.");
         return BeginImport(actor, plan, options,
             $"Import {System.IO.Path.GetFileName(path)}", onReceipt, asset: path);
     }
@@ -137,6 +137,8 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
         var plan = _poseFiles.BuildImportPlan(
             _skeletons.GetSkeletons(actor), poseFile, options);
+        if (plan == null)
+            return PoseEditResult.Fail("The pose failed validation and was not imported.");
         return BeginImport(actor, plan, options, description, onReceipt);
     }
 

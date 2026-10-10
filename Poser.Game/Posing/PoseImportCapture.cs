@@ -1014,7 +1014,11 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             ApplyModelTransform = false,
             ResetBeforeImport = true,
         };
-        var plan = _poseFiles.BuildImportPlan(slots, exported, options);
+        if (_poseFiles.BuildImportPlan(slots, exported, options) is not { } plan)
+        {
+            Complete(generation);
+            return;
+        }
 
         // The plan was just built from these same live slots, so every name
         // resolves against them; the maps exist to turn names back into the

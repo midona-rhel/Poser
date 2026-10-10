@@ -112,14 +112,12 @@ public static class SceneFileValidation
 
         if (scene.FileVersion > SceneFile.CurrentVersion)
             return Fail(SceneFileValidationFailureKind.FutureVersion,
-                $"The scene was saved by a newer Poser (file version {scene.FileVersion}, " +
-                $"this build reads up to {SceneFile.CurrentVersion}).");
-        // The floor is the CURRENT version, not 1. `.xivs` has only ever been
-        // written at version 2, so anything lower can only be a development
-        // `.poserscene` document that was renamed — and nothing reads those.
-        // It takes the ordinary invalid-document refusal; there is no
-        // migration shim and no legacy-specific message.
-        if (scene.FileVersion < SceneFile.CurrentVersion)
+                $"The scene was saved by a newer Poser (scene format {scene.FileVersion}; " +
+                $"this build reads up to {SceneFile.CurrentVersion}). Update Poser to open it.");
+        // `.xivs` was first written at version 2, so anything lower can only
+        // be a development `.poserscene` document that was renamed — and
+        // nothing reads those. It takes the ordinary invalid-document refusal.
+        if (scene.FileVersion < SceneFile.MinimumVersion)
             return Fail(SceneFileValidationFailureKind.Document,
                 $"The scene file version {scene.FileVersion} is invalid.");
 
@@ -439,11 +437,6 @@ public static class SceneFileValidation
         if (actor.Pose is null)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' has no embedded pose document.");
-        if (actor.Fabrik is { } chains && (chains.Count > 512 || chains.Any(chain => chain is null
-            || chain.Config is null || chain.Config.Solver is not (Poser.Domain.Posing.IkSolver.Fabrik or Poser.Domain.Posing.IkSolver.Rope)
-            || chain.Config.Fabrik == null || chain.Config.Validate() != null
-            || string.IsNullOrWhiteSpace(chain.Endpoint) || chain.Partial < 0 || !Enum.IsDefined(chain.Slot))))
-            return Fail(SceneFileValidationFailureKind.EmbeddedPose, $"Actor '{actor.Name}' has invalid FABRIK state.");
         var pose = PoseFileValidation.Validate(actor.Pose);
         if (!pose.Succeeded)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,

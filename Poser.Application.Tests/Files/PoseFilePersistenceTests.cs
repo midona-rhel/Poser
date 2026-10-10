@@ -2,7 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using Poser.Files;
+using Poser.Library;
 
 namespace Poser.Tests.Files;
 
@@ -29,6 +31,31 @@ public sealed class PoseFilePersistenceTests
         Assert.True(AtomicPoseFileStore.Default.Write(read.Pose, fixture.Path).Succeeded);
         Assert.True(AtomicPoseFileStore.Default.Read(fixture.Path).Succeeded);
         Assert.False(AtomicPoseFileStore.Default.Parse("""{"ModelDifference":{"Rotation":"0, 0, 0, 0"}}""").Succeeded);
+    }
+
+    [Fact]
+    public void Bom_decimal_comma_and_version_fields_follow_the_interop_rules()
+    {
+        using var fixture = new StoreFixture();
+        const string json = """{"Version":"1.0","Bones":{"j_kao":{"Position":"0.5, 1.25, 0","Rotation":"0, 0, 0, 1","Scale":"1, 1, 1"}}}""";
+        File.WriteAllBytes(fixture.Path,
+            Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(json)).ToArray());
+
+        var read = AtomicPoseFileStore.Default.Read(fixture.Path);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(new Vector3(0.5f, 1.25f, 0), read.Pose!.Bones["j_kao"].Position);
+        // "Version" is the author's pose version, not the format's.
+        Assert.Equal(PoseLibraryMetadataStatus.Valid, PoseLibraryFileActions.Classify(metadata).Status);
+
+        var comma = AtomicPoseFileStore.Default.Parse(json.Replace("0.5, 1.25, 0", "0,5, 1,25, 0"));
+        Assert.False(comma.Succeeded);
+        Assert.Contains("decimal comma", comma.Failure!.Detail);
+
+        File.WriteAllText(fixture.Path, json.Replace(
+            "{\"Version\"", $"{{\"FileVersion\":{PoseFile.CurrentFileVersion + 1},\"Version\""));
+        Assert.Equal(PoseLibraryMetadataStatus.Future,
+            PoseLibraryFileActions.Classify(AtomicPoseFileStore.Default.ReadMetadata(fixture.Path)).Status);
     }
 
     [Fact]

@@ -34,10 +34,15 @@ namespace Poser.Files;
 [Serializable]
 public class SceneFile
 {
-    /// <summary>Bumped on any breaking meaning change of a persisted field.
-    /// Readers refuse versions above this as typed Future outcomes instead
-    /// of guessing at unknown semantics.</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>The scene format version this build writes. The rule is in
+    /// <c>docs/features/scenes.md</c> (Format versioning): bump it for any
+    /// change an older reader would lose or misread; readers accept
+    /// <see cref="MinimumVersion"/> through this and refuse anything newer as
+    /// a typed Future outcome.</summary>
+    public const int CurrentVersion = 3;
+
+    /// <summary>The oldest scene format this build still reads.</summary>
+    public const int MinimumVersion = 2;
 
     /// <summary>The one extension every scene reader, writer and listing
     /// filters on.</summary>
@@ -376,8 +381,13 @@ public class SceneActor
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorGaze? Gaze { get; set; }
+
+    /// <summary>FABRIK chains written before #229 stopped capturing them. The
+    /// actor's pose already carries their baked result, so a load ignores them
+    /// with a note instead of restarting a solver over it; the payload is read
+    /// opaquely, never validated, and no capture sets it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<SceneFabrikChain>? Fabrik { get; set; }
+    public JsonElement? Fabrik { get; set; }
 
     /// <summary>The character file the actor is WEARING. Absent when the
     /// actor's appearance is not an imported MCDF, which is the ordinary

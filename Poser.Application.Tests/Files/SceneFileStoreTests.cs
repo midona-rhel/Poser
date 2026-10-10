@@ -99,6 +99,27 @@ public sealed class SceneFileStoreTests
     }
 
     [Fact]
+    public void Older_bom_prefixed_scenes_read_and_resave_at_the_current_version()
+    {
+        using var fixture = new SceneFixture();
+        var document = System.Text.Json.Nodes.JsonNode.Parse(
+            JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options))!;
+        document["FileVersion"] = SceneFile.MinimumVersion;
+        // A pre-#229 chain: carried opaquely, never validated or restored.
+        document["Actors"]![0]!["Fabrik"] = System.Text.Json.Nodes.JsonNode.Parse(
+            """[{"Slot":"Character","Endpoint":"j_te_r","Config":{"Solver":"NotASolver"}}]""");
+        WriteContainer(fixture.Path, "\uFEFF" + document.ToJsonString());
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(SceneFile.MinimumVersion, read.Scene!.FileVersion);
+        Assert.NotNull(read.Scene.Actors[0].Fabrik);
+
+        Assert.True(SceneFileStore.Default.Write(read.Scene, fixture.Path).Succeeded);
+        Assert.Equal(SceneFile.CurrentVersion, SceneFileStore.Default.Read(fixture.Path).Scene!.FileVersion);
+    }
+
+    [Fact]
     public void Bare_json_light_and_camera_entries_read_as_one_entity_entries()
     {
         using var fixture = new SceneFixture();

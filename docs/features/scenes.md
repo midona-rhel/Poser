@@ -170,11 +170,26 @@ world placement. A camera entry without the session default creates a new
 camera on load. `.xivl` and `.xivc` files written as bare JSON by older builds
 are still read, as a one-light or one-camera entry; nothing writes that form.
 
-The extension and the file version are one identity: `.xivs` is format version
-2, and the reader accepts that version alone. `.xivs` is the only scene format
-Poser has; anything else is not a scene and is not listed, opened or migrated.
-The file viewer states the format, the version and the size before a load, and
-the size includes the appearance payloads.
+`.xivs` is the only scene format Poser has; anything else is not a scene and is
+not listed, opened or migrated. The file viewer states the format, the version
+and the size before a load, and the size includes the appearance payloads.
+
+**Format versioning.** Every scene document (and every library entry, which is
+the same document) carries an integer `FileVersion`; `SceneFile.CurrentVersion`
+is what this build writes, and every write stamps it. Bump it for ANY change an
+older reader would lose or misread — a new member, a new enum name, a changed
+meaning — not only for breaking ones: an older build skips unknown members and
+would silently destroy them on re-save, and fails a whole file on an unknown
+enum name. Readers accept every version from `SceneFile.MinimumVersion` (2, the
+first `.xivs`) through the current one, defaulting members an older version
+lacks, and refuse a newer version as a typed Future outcome ("saved by a newer
+Poser … update Poser to open it") before anything changes the game. Version 3
+covers groups, parent links, overlays, world-object extras and anchors that
+shipped under 2. Older readers report a version-3 file as Future rather than
+dropping those members. Pose files follow Brio's `FileVersion` the same way:
+only a format version above `PoseFile.CurrentFileVersion` is Future. The
+`Version` string is the author's free-text pose version and never decides
+support.
 
 The only size refusal is the MCDF importer's own per-package ceiling: a package
 Poser could not import back is one there is no point saving. There is no
@@ -278,7 +293,7 @@ same, cancellation, and creating each actor — stop the load: Poser removes onl
 what it created, in reverse order. Everything else is optional and becomes a
 named refusal beside what did restore: an actor that never became pose-ready,
 appearance, companions, gaze, pose, objects, cameras, lights, environment,
-FABRIK, sidebar groups and order (a member that did not bind in time is left
+sidebar groups and order (a member that did not bind in time is left
 out of its group), and parent links (a missing parent bone or a refused link
 leaves the entity where it was saved). A refused actor spawn names its cause,
 such as a full actor table. A borrowed world object is matched by
