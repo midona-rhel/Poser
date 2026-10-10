@@ -440,64 +440,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         }, true);
     }
 
-    /// <summary>
-    /// Brio's <c>CleanObject</c> semantics, in Poser's terms, run BEFORE the
-    /// native delete: Brio releases look-at and reverts the character handler
-    /// while the object still exists
-    /// (<c>Brio/Game/Actor/ActorSpawnService.cs:245-256</c>, called at
-    /// <c>:203</c> — before <c>DeleteObjectByIndex</c> at <c>:208</c>), because
-    /// after the delete there is nothing left to name.
-    ///
-    /// <para>Two of the three parts apply here. The actor's own GAZE is
-    /// released so Poser stops driving channels on a body that is about to go.
-    /// Its APPEARANCE is reverted through the ordinary integration teardown,
-    /// which is what releases MCDF ownership, the temporary collection, the
-    /// Glamourer design and the Customize+ profile — the adopted equivalent of
-    /// what <c>TryDelete</c> already does for an owned actor's Penumbra
-    /// collection.</para>
-    ///
-    /// <para>The third part does NOT apply, deliberately. Brio scrubs the
-    /// removed object out of every other actor's look-at. Poser keeps an
-    /// Entity gaze target BY ID and marks it stale
-    /// (<c>IGazeService.TargetStale</c>), so a target that leaves the scene is
-    /// refused by name on reapply instead of being followed. Scrubbing it here
-    /// would delete the user's stated intent to look at that actor; leaving it
-    /// stale is the stronger behaviour and is already the design.</para>
-    ///
-    /// <para>A cleanup that fails is NAMED, never skipped silently — the actor
-    /// is still removed, but the outcome says what did not come apart.</para>
-    /// </summary>
-    private void PrepareActorRemoval(IActor actor, List<string> refusals)
-    {
-        try
-        {
-            _gaze.ResetGaze(actor);
-        }
-        catch (Exception ex)
-        {
-            refusals.Add(
-                $"{actor.Name}: the gaze could not be released before removal " +
-                $"({ex.Message}).");
-        }
-
-        if (_bindings.GetActorId(actor) is not { } id)
-            return;
-        try
-        {
-            var reverted = _integration.ResetActor(id);
-            if (!reverted.Success)
-                refusals.Add(
-                    $"{actor.Name}: the appearance could not be reverted before " +
-                    $"removal ({reverted.Detail ?? "the revert was refused"}).");
-        }
-        catch (Exception ex)
-        {
-            refusals.Add(
-                $"{actor.Name}: the appearance could not be reverted before " +
-                $"removal ({ex.Message}).");
-        }
-    }
-
     public long EstimateAppearanceBytes()
     {
         long total = 0;
@@ -606,7 +548,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             // and for the same reason — after the delete there is nothing left
             // to name.
             var lineage = _bindings.GetActorId(actor)?.LogicalId;
-            PrepareActorRemoval(actor, refusedCleanup);
+            ActorRemovalCleanup.Prepare(actor, _gaze, _integration, _bindings, refusedCleanup.Add);
 
             // One verb for both provenances: the service routes an owned
             // actor to its ledger and an adopted one to the scene table.
@@ -1353,10 +1295,21 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public SceneEntityHandle? DefaultCameraToken() => DefaultCamera is { } camera
         ? _handles.Track(SceneEntityKind.Camera, camera) : null;
 
-    public CameraFile CaptureDefaultCameraState() =>
-        DefaultCamera is { } camera
-            ? Cameras.CameraDocument.Capture(camera)
-            : new CameraFile();
+    /// <summary>The default camera's document AND what the load can change
+    /// beside it: the followed actor and which camera is live. A document
+    /// alone left the default camera following a rolled-back actor.</summary>
+    public SceneCameraBaseline CaptureDefaultCameraState()
+    {
+        var camera = DefaultCamera;
+        var target = camera?.TargetActor is { } followed
+            ? _handles.Track(SceneEntityKind.Actor, followed) : null;
+        var live = _cameras.LiveCamera is { } current
+            ? _handles.Track(SceneEntityKind.Camera, current) : null;
+        return new(
+            camera is null ? new CameraFile() : Cameras.CameraDocument.Capture(camera),
+            target, camera?.TargetActorName ?? string.Empty,
+            camera?.IsTargetLocked ?? false, live);
+    }
 
     public string? ApplyDefaultCamera(SceneCamera data)
     {
@@ -1410,10 +1363,22 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         return null;
     }
 
-    public void RestoreDefaultCamera(CameraFile baseline)
+    public void RestoreDefaultCamera(SceneCameraBaseline baseline)
     {
-        if (DefaultCamera is { } camera)
-            Cameras.CameraDocument.Apply(baseline, camera);
+        if (DefaultCamera is not { } camera)
+            return;
+        Cameras.CameraDocument.Apply(baseline.Camera, camera);
+        // The pre-load target only if it is still the same live actor; the
+        // load's own target never survives its rollback.
+        if (_handles.Resolve<IActor>(baseline.Target, SceneEntityKind.Actor) is { } actor
+            && _bindings.GetActorId(actor) is { } id
+            && _cameras.SetTargetActor(camera, actor, id, baseline.TargetName))
+            camera.IsTargetLocked = baseline.TargetLocked;
+        else
+            _cameras.ClearTargetActor(camera);
+        _cameras.SetLive(
+            _handles.Resolve<IVirtualCamera>(baseline.Live, SceneEntityKind.Camera) is { IsValid: true } live
+                ? live : camera);
     }
 
     // ── environment ──────────────────────────────────────────────────────
@@ -1471,11 +1436,19 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         }
     }
 
+    /// <summary>A load's rollback and undo: the same pre-delete cleanup a
+    /// clear runs, so gaze and appearance ownership go with the actor rather
+    /// than being reconciled later by name.</summary>
     public void DestroyActor(SceneEntityHandle actor) => _handles.Remove<IActor>(
         actor, SceneEntityKind.Actor, _actorHistory.Resolve, entity =>
     {
+        ActorRemovalCleanup.Prepare(entity, _gaze, _integration, _bindings,
+            refusal => _log?.Warning($"Scene rollback: {refusal}"));
+        var lineage = _bindings.GetActorId(entity)?.LogicalId;
         if (!_spawns.DestroyActor(entity) && _actors.Actors.Contains(entity))
             throw new InvalidOperationException("The scene actor could not be destroyed.");
+        if (lineage is { } gone)
+            _selection.RemoveActorLineage(gone);
     });
 
     public void DestroyProp(SceneEntityHandle prop) => _handles.Remove<IPropHandle>(

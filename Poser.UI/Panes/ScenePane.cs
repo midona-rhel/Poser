@@ -653,8 +653,9 @@ public sealed class ScenePane
             if (outcome.LeftEntitiesBehind && refusals.Count > 0)
             {
                 form.Status(
-                    "Everything that did restore was kept. Remove what you do " +
-                    "not want, or load the scene again.");
+                    "Everything that did restore was kept. Undo removes the " +
+                    "whole load in one step; loading it again without undoing " +
+                    "first would duplicate it.");
             }
         });
     }

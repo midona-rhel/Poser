@@ -97,6 +97,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly ISceneWorkflowObserver? _observer;
 
     private readonly object _publishGate = new();
+    /// <summary>Cancelled at unload and deliberately never disposed: a task
+    /// Dispose abandoned after its bounded join still reads its token, and a
+    /// timer-less source holds nothing worth releasing.</summary>
     private readonly CancellationTokenSource _disposal = new();
 
     private SceneProgress? _progress;
@@ -216,7 +219,15 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         public IReadOnlyDictionary<Guid, Guid> HistoryGroups = new Dictionary<Guid, Guid>();
         public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> HistoryEntities =
             new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
-        public CameraFile? DefaultCameraBaseline;
+        public SceneCameraBaseline? DefaultCameraBaseline;
+        /// <summary>Children whose parent link this load imported; rollback
+        /// removes them before the entities go.</summary>
+        public readonly List<SelectionId> ImportedLinks = new();
+        /// <summary>The load reached its commit (Applied, or Failed with
+        /// named refusals): it is in the session and is one history step.
+        /// </summary>
+        public bool Committed;
+        public string? TerminalDetail;
         public SceneEnvironment? EnvironmentBaseline;
         public SceneWorld? WorldBaseline;
     }
@@ -388,11 +399,13 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     }
 
     /// <summary>
-    /// A landed load is one step. Its undo is the load's own rollback: every
-    /// entity the load spawned goes, every baseline it overwrote comes back;
-    /// the actors that were there before the load are untouched, as the
-    /// load never touched them. Its redo loads the file again and gives up
-    /// with the load's own refusal when the file is gone or the load fails.
+    /// A committed load — Applied, or Failed with named refusals — is one
+    /// step. Its undo is the load's own rollback: every entity the load
+    /// spawned goes, every link and group it imported goes, every baseline it
+    /// overwrote comes back; what was there before the load is untouched. Its
+    /// redo loads the file again ADDITIVELY — a redo never clears the session
+    /// a second time — and completes on the replay's terminal: a replay that
+    /// commits lands the step, one that rolls back leaves it to redo again.
     /// A load that cleared the scene first cannot bring the cleared entities
     /// back: the clear is not a step.
     /// </summary>
@@ -403,13 +416,59 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         // Redo creates new native entities. Keep the inverse attached to that
         // new operation rather than the first load's emptied rollback lists.
         var load = new LoadHistory(operation);
+        var replay = options with { ClearExistingScene = false };
         _history?.Append(new JournalStep(
             $"Load {operation.FileName}",
             () => UndoLoad(load),
-            () => BeginLoad(path, options, load).Success)
+            () => BeginLoad(path, replay, load).Success)
         {
             RequiredAsset = path,
+            // Busy is a scene operation still running, not a dead step:
+            // pressing undo twice during a save must not discard the load.
+            OnRefusal = () => Busy ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
+            CompleteReplay = (undo, _, _, completed) =>
+            {
+                if (undo)
+                    completed(Poser.Domain.Transforms.GestureResult.Ok());
+                else
+                    _ = CompleteRedo(load.Current, Drain, completed);
+            },
         });
+    }
+
+    /// <summary>Reports a redo's REAL outcome once the replayed load is
+    /// terminal, on the framework thread history is confined to.</summary>
+    private async Task CompleteRedo(
+        Operation operation, Task running,
+        Action<Poser.Domain.Transforms.GestureResult> completed)
+    {
+        // Never complete inside the redo call itself: history reads a
+        // synchronous completion as the redo's own answer.
+        await Task.Yield();
+        try
+        {
+            await running;
+        }
+        catch (Exception)
+        {
+            // The terminal is published before the task ends either way.
+        }
+        var result = operation.Committed
+            ? Poser.Domain.Transforms.GestureResult.Ok()
+            : Poser.Domain.Transforms.GestureResult.Fail(
+                operation.TerminalDetail ?? $"Loading {operation.FileName} again did not complete.");
+        try
+        {
+            await _runtime.OnFramework(() =>
+            {
+                completed(result);
+                return true;
+            });
+        }
+        catch (Exception)
+        {
+            // The framework is gone (unload); history goes with it.
+        }
     }
 
     private bool UndoLoad(LoadHistory load)
@@ -1503,7 +1562,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 RestoreStructure(operation, scene, structureTokens, entities);
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 operation.HistoryEntities = structureTokens;
-                if (failures.Count == 0 && operation.Replay is { } replay)
+                operation.Committed = true;
+                if (operation.Replay is { } replay)
                 {
                     foreach (var (key, previous) in replay.Entities)
                         if (structureTokens.TryGetValue(key, out var replacement))
@@ -1533,8 +1593,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         : OperationReceiptState.Failed,
                     detail, entities,
                     notes, Array.Empty<string>());
-                if (failures.Count == 0)
-                    AppendLoadStep(operation, path, options);
+                // Partial or not, what committed is in the session, so it is
+                // ONE undoable step: undo removes exactly what this load made.
+                AppendLoadStep(operation, path, options);
                 return null;
             });
             if (committed != null)
@@ -1799,6 +1860,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             failures.Add($"group removal: {ex.Message}");
         }
 
+        foreach (var child in operation.ImportedLinks)
+            _parenting?.Remove(child);
+        operation.ImportedLinks.Clear();
+
         if (operation.EnvironmentBaseline is { } environment)
         {
             try
@@ -1933,6 +1998,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 operation.OperationId, operation.Epoch, operation.Session,
                 operation.Target, detail),
         };
+        operation.TerminalDetail = detail;
         _observer?.Completed(operation.OperationId, progress);
         PublishTerminal(operation, progress, receipt);
     }
@@ -1971,6 +2037,5 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             // A cancelled or faulted task is a completed drain.
         }
         _cancellation?.Dispose();
-        _disposal.Dispose();
     }
 }

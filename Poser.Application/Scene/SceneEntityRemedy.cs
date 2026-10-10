@@ -23,7 +23,7 @@ internal static class SceneEntityRemedy
     {
         "Actor" =>
             "The actor is in the scene. Select it and apply its pose from the "
-            + "Scenes library, or load the scene again.",
+            + "Scenes library, or undo the load and load it again.",
         "Companion" =>
             "The companion is attached. Select the actor and apply the "
             + "companion pose again once its body has drawn.",
@@ -35,16 +35,16 @@ internal static class SceneEntityRemedy
         "Gaze" =>
             "Set where the actor looks on its Pose tab.",
         "Object" =>
-            "Spawn the object yourself, or free a spawn slot and load the "
-            + "scene again.",
+            "Spawn the object yourself, or undo the load, free a spawn slot "
+            + "and load it again.",
         "Overlay" =>
             "Stage the node again from the overlay browser.",
         "World object" =>
-            "A map object only exists where it stands. Load this scene in the "
-            + "zone it was taken in.",
+            "A map object only exists where it stands. Undo the load and load "
+            + "it in the zone it was taken in.",
         "Light" =>
-            "Add the light yourself, or load the scene again with Actors "
-            + "included so the actor it hangs off exists.",
+            "Add the light yourself, or undo the load and load it again with "
+            + "Actors included so the actor it hangs off exists.",
         "Camera" =>
             "Add the camera yourself on the Camera tab.",
         "Live camera" =>

@@ -160,36 +160,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         // cleanup a scene clear gives it — gaze released, appearance
         // reverted — because after the delete there is nothing left to name.
         if (!_spawns.IsSpawnedActor(target))
-            PrepareAdoptedRemoval(target);
+            ActorRemovalCleanup.Prepare(target, _gaze, _integration, _bindings, Note);
         return _spawns.RemoveActorFromScene(target);
-    }
-
-    private void PrepareAdoptedRemoval(IActor actor)
-    {
-        try
-        {
-            _gaze.ResetGaze(actor);
-        }
-        catch (Exception ex)
-        {
-            Note($"'{actor.Name}': the gaze could not be released before " +
-                $"removal ({ex.Message}).");
-        }
-
-        if (_bindings.GetActorId(actor) is not { } id)
-            return;
-        try
-        {
-            var reverted = _integration.ResetActor(id);
-            if (!reverted.Success)
-                Note($"'{actor.Name}': the appearance could not be reverted " +
-                    $"before removal ({reverted.Detail ?? "the revert was refused"}).");
-        }
-        catch (Exception ex)
-        {
-            Note($"'{actor.Name}': the appearance could not be reverted " +
-                $"before removal ({ex.Message}).");
-        }
     }
 
     public ActorState Read(object actor)

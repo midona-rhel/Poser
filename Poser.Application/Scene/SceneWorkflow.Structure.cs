@@ -28,7 +28,7 @@ public sealed partial class SceneWorkflow
     private async Task<string?> WaitForStructure(Operation operation, SceneFile scene,
         IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, CancellationToken cancellation)
     {
-        if (!HasStructure(scene) || _structure == null) return null;
+        if (!HasStructure(scene)) return null;
         var references = (scene.Groups ?? []).SelectMany(group => group.Members)
             .Concat(scene.RootOrder ?? []).Concat((scene.Parents ?? []).SelectMany(p => new[] { p.Child, p.Target }))
             .Select(reference => (reference.Kind, reference.Key))
@@ -142,14 +142,15 @@ public sealed partial class SceneWorkflow
             // their saved placement without a word, as before.
             if (!Loaded(link.Child) || !Loaded(link.Target))
                 continue;
-            if (RestoreLink(link, Resolve) is { } refusal)
+            if (RestoreLink(operation, link, Resolve) is { } refusal)
                 outcomes.Add(new SceneEntityOutcome("Parent", EntityName(scene, link.Child), false,
                     $"{refusal} It was kept where it was saved."));
         }
     }
 
     /// <summary>One parent link; null when it landed, else why not.</summary>
-    private string? RestoreLink(SceneParentLink link, Func<SceneStructureRef, SelectionId?> resolve)
+    private string? RestoreLink(Operation operation, SceneParentLink link,
+        Func<SceneStructureRef, SelectionId?> resolve)
     {
         if (_parenting == null) return "Transform parenting is unavailable.";
         if (resolve(link.Child) is not { } child || resolve(link.Target) is not { } target)
@@ -161,9 +162,10 @@ public sealed partial class SceneWorkflow
                 return $"The parent bone '{name}' is not on the restored actor.";
             target = bone;
         }
-        return _parenting.Import(child, new(target, link.Offset))
-            ? null
-            : "The parent link was refused (the entity cannot be parented, or the link would form a cycle).";
+        if (!_parenting.Import(child, new(target, link.Offset)))
+            return "The parent link was refused (the entity cannot be parented, or the link would form a cycle).";
+        operation.ImportedLinks.Add(child);
+        return null;
     }
 
     /// <summary>The saved name of the entity a structure reference names.</summary>

@@ -55,6 +55,7 @@ public sealed class SceneWorkflowTests
         Assert.NotEqual(first.Key, first.Value.Target);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo()); history.CommitUndo(step);
+        Assert.Empty(parenting.Capture()); // #433: rollback takes its links with it.
         Assert.True(step.Redo()); history.CommitRedo(step); await workflow.Drain;
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         parenting.Evaluate();
@@ -483,10 +484,10 @@ public sealed class SceneWorkflowTests
             return token;
         }
 
-        public CameraFile CaptureDefaultCameraState()
+        public SceneCameraBaseline CaptureDefaultCameraState()
         {
             Record("CaptureDefaultCameraState");
-            return new CameraFile();
+            return new(new CameraFile(), null, string.Empty, false, null);
         }
 
         public string? ApplyDefaultCamera(SceneCamera data)
@@ -570,7 +571,7 @@ public sealed class SceneWorkflowTests
             Destroyed.Enqueue(TokenName(token));
         }
 
-        public void RestoreDefaultCamera(CameraFile baseline) =>
+        public void RestoreDefaultCamera(SceneCameraBaseline baseline) =>
             Record("RestoreDefaultCamera");
     }
 
@@ -739,6 +740,89 @@ public sealed class SceneWorkflowTests
         Assert.Contains("ClearScene", runtime.Calls);
         Assert.True(load.Progress!.Outcome!.SessionCleared);
         Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
+    }
+
+    // ── issue #433: a committed load is one consistent history step ──────
+
+    private sealed class ReplayRunner : IUndoRunner
+    {
+        public GestureResult Undo() => GestureResult.Fail("Not a deferred step.");
+        public GestureResult Redo() => GestureResult.Fail("Not a deferred step.");
+        public GestureResult Replay(JournalStep step, bool before) =>
+            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused.");
+    }
+
+    [Fact]
+    public async Task A_partial_load_is_one_undo_step_that_removes_everything_it_made()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = WholeScene(),
+            GazeFailure = _ => "The look-at target is gone.",
+        };
+        var history = new TransformHistory();
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(new[] { "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.Contains("ReleaseWorldObject:world:bg/example.mdl", runtime.Calls);
+        Assert.Contains("RestoreDefaultCamera", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Redo_never_clears_again_and_a_failed_replay_stays_redoable()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        var history = new TransformHistory();
+        var notices = new List<string>();
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices.Add);
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        Assert.True(load.BeginLoad("shot.xivs", new SceneLoadOptions { ClearExistingScene = true }).Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+
+        Assert.True(journal.Undo().Success);
+        Assert.True(history.CanRedo);
+        runtime.ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).";
+        _ = journal.Redo(); // Admitted; the outcome follows the replay.
+        await load.Drain;
+        for (int wait = 0; journal.IsRestoring && wait < 200; wait++)
+            await Task.Delay(10);
+
+        Assert.False(journal.IsRestoring);
+        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
+        Assert.Single(runtime.Calls, call => call == "ClearScene");
+        Assert.True(history.CanRedo);
+        Assert.False(history.CanUndo);
+        Assert.Contains(notices, notice => notice.Contains("actor table is full"));
+    }
+
+    [Fact]
+    public async Task Undo_while_another_scene_operation_runs_keeps_the_load_step()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        var history = new TransformHistory();
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, _ => { });
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+        var step = history.PeekUndo();
+
+        using var gate = new ManualResetEventSlim();
+        runtime.AfterCall = call => { if (call == "ArmSceneCapture") gate.Wait(); };
+        Assert.True(load.BeginSave("busy.xivs").Success);
+        Assert.False(journal.Undo().Success);
+        Assert.False(journal.Undo().Success);
+        Assert.Same(step, history.PeekUndo());
+
+        gate.Set();
+        await load.Drain;
+        Assert.True(journal.Undo().Success);
+        Assert.Contains("actor:Lead", runtime.Destroyed);
     }
 
     // ── issue #41: the pose import's pending acknowledgement ─────────────

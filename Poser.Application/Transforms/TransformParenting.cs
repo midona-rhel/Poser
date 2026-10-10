@@ -65,6 +65,15 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         return true;
     }
 
+    /// <summary>Drops a link <see cref="Import"/> made; the importer's own
+    /// rollback owns it, so no history is recorded. Follows the child's
+    /// lifecycle replacement, since undo/redo may have rebound it.</summary>
+    public void Remove(SelectionId child)
+    {
+        _links.Remove(child);
+        _links.Remove(history.ResolveLifecycleEntity(child));
+    }
+
     /// <summary>Creation owns the history entry; a duplicate inherits its source's attachment and offset.</summary>
     public bool Copy(SelectionId source, SelectionId copy) =>
         Read(source) is not { } link || Import(copy, Rebind(link)!);

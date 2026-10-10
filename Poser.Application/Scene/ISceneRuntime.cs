@@ -240,8 +240,9 @@ public interface ISceneRuntime
     /// </summary>
     SceneEntityHandle? SpawnLight(SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail);
 
-    /// <summary>Snapshot of the session default camera for rollback.</summary>
-    CameraFile CaptureDefaultCameraState();
+    /// <summary>Snapshot of the session default camera for rollback: its
+    /// document, its followed actor and which camera is live.</summary>
+    SceneCameraBaseline CaptureDefaultCameraState();
 
     /// <summary>Applies a scene camera document onto the session default
     /// camera; null on success.</summary>
@@ -291,5 +292,17 @@ public interface ISceneRuntime
     void DestroyOverlay(SceneEntityHandle overlay);
     void DestroyLight(SceneEntityHandle light);
     void DestroyCamera(SceneEntityHandle camera);
-    void RestoreDefaultCamera(CameraFile baseline);
+    void RestoreDefaultCamera(SceneCameraBaseline baseline);
 }
+
+/// <summary>What a load can change about the session's cameras besides the
+/// cameras it creates: the default camera's document, its followed actor
+/// (null when it followed none) and the live camera. Rollback restores all
+/// three, so the default camera never keeps following an actor the rollback
+/// removed.</summary>
+public sealed record SceneCameraBaseline(
+    CameraFile Camera,
+    SceneEntityHandle? Target,
+    string TargetName,
+    bool TargetLocked,
+    SceneEntityHandle? Live);
