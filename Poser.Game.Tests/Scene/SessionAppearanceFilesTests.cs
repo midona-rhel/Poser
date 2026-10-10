@@ -24,4 +24,27 @@ public sealed class SessionAppearanceFilesTests
         files.Dispose();
         Assert.Equal(2, deleted.Count);
     }
+
+    [Fact]
+    public async Task File_a_running_child_still_reads_is_deleted_only_once_it_stops()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"poser-test-{Guid.NewGuid():N}.mcdf");
+        File.WriteAllText(path, "package");
+        try
+        {
+            var child = new TaskCompletionSource();
+            SceneRuntimeAdapter.DeleteWhenSettled(path, child.Task);
+            await Task.Delay(50);
+            Assert.True(File.Exists(path));
+
+            child.SetResult();
+            for (int i = 0; i < 100 && File.Exists(path); i++)
+                await Task.Delay(20);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

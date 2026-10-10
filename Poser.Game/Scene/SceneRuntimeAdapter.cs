@@ -170,6 +170,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
 
+    public void AbandonChildWaits() => _integration.AbandonMcdfWaits();
+
     public SelectionId? ResolveSceneEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token));
 
     public SelectionId? ResolveHistoryEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token) switch
@@ -295,12 +297,13 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 created = System.IO.Path.Combine(
                     System.IO.Path.GetTempPath(),
                     $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
-                var exported = await ExportAppearance(
+                var (exported, delete) = await ExportAppearance(
                     id, actor.Name, created, bound, cancellation);
                 if (exported != null)
                 {
                     notes.Add($"Actor '{actor.Name}': {exported}");
-                    DeleteQuietly(created);
+                    if (delete)
+                        DeleteQuietly(created);
                     continue;
                 }
                 source = created;
@@ -384,9 +387,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// the existing MCDF export transaction — the same admission, the same
     /// capability refusals, the same receipt. Returns null on success, else the
     /// refusal detail, which is already the exporter's own words about which
-    /// provider was unavailable.
+    /// provider was unavailable. <c>Delete</c> is false while the exporter may
+    /// still own the destination file.
     /// </summary>
-    private async Task<string?> ExportAppearance(
+    private async Task<(string? Refusal, bool Delete)> ExportAppearance(
         Poser.Domain.Identity.ActorId id,
         string name,
         string destination,
@@ -406,32 +410,34 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return null;
         });
         if (refusal != null)
-            return refusal;
+            return (refusal, true);
 
-        var deadline = DateTime.UtcNow + bound;
-        while (true)
+        if (operationId is not { } admitted)
+            return ("the appearance export did not publish its receipt.", true);
+
+        // The export is this save's child: on the deadline or a cancelled
+        // save it is cancelled by its own id and drained, never abandoned.
+        var waited = await _integration.AwaitMcdf(admitted, bound, cancellation);
+        if (waited.Applied)
+            return (null, false);
+        if (!waited.Terminal)
         {
-            var receipt = _integration.McdfReceipt;
-            if (receipt is { } terminal &&
-                terminal.OperationId == operationId &&
-                terminal.State != OperationReceiptState.Pending)
-            {
-                return terminal.State == OperationReceiptState.Applied
-                    ? null
-                    : terminal.Detail
-                        ?? $"the appearance export ended {terminal.State}.";
-            }
-            if (DateTime.UtcNow >= deadline)
-                return "the appearance export did not finish within its bound.";
-            try
-            {
-                await Task.Delay(50, cancellation);
-            }
-            catch (OperationCanceledException)
-            {
-                return "the save was cancelled.";
-            }
+            // Still writing past the drain bound: the destination stays the
+            // child's until it stops, and is deleted then — never under it.
+            DeleteWhenSettled(destination, _integration.McdfSettled(admitted));
+            _log?.Warning(
+                $"Scene save: the appearance export for '{name}' did not stop within " +
+                "its drain bound; its partial file is deleted once it stops.");
+            return ("the appearance export did not stop in time; its partial file is " +
+                "deleted once it stops.", false);
         }
+        return (waited.End switch
+        {
+            Poser.Application.Integration.McdfWaitEnd.ParentCancelled => "the save was cancelled.",
+            Poser.Application.Integration.McdfWaitEnd.DeadlinePassed => "the appearance export did not finish within its bound.",
+            _ => waited.Receipt?.Detail
+                ?? $"the appearance export ended {waited.Receipt?.State.ToString() ?? "replaced"}.",
+        }, true);
     }
 
     /// <summary>
@@ -519,6 +525,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     }
 
     public void DeleteTemporary(string path) => DeleteQuietly(path);
+
+    /// <summary>A temporary file a still-running MCDF child reads or writes:
+    /// deleted once that child has stopped, whatever the outcome. The child
+    /// is cancelled and joined by the transaction's own drain at unload, so
+    /// this runs then at the latest.</summary>
+    internal static void DeleteWhenSettled(string path, Task settled) =>
+        _ = settled.ContinueWith(
+            _ => DeleteQuietly(path),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private static void DeleteQuietly(string path)
     {
@@ -857,37 +874,52 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             if (refusal != null)
                 return SceneMcdfOutcome.Refused(refusal);
 
-            var deadline = DateTime.UtcNow + bound;
-            while (true)
+            if (operationId is not { } admitted)
+                return SceneMcdfOutcome.Refused(
+                    "The character file import did not publish its receipt.");
+
+            // The import is this load's child. On the deadline or a cancelled
+            // load it is cancelled by its own id and drained: once cancelled,
+            // every later phase refuses before mutating, so a late completion
+            // rolls back instead of changing the actor.
+            var waited = await _integration.AwaitMcdf(admitted, bound, cancellation);
+            if (waited.Applied)
             {
-                var receipt = _integration.McdfReceipt;
-                if (receipt is { } terminal &&
-                    terminal.OperationId == operationId &&
-                    terminal.State != OperationReceiptState.Pending)
-                {
-                    if (terminal.State == OperationReceiptState.Applied && staged is not null &&
-                        historySession is { } session && ActiveSession == session &&
-                        _historyAppearanceFiles.Retain(staged, session))
-                        staged = null;
-                    return terminal.State == OperationReceiptState.Applied
-                        ? SceneMcdfOutcome.Ok(changed)
-                        : SceneMcdfOutcome.Refused(
-                            terminal.Detail
-                            ?? $"The character file import ended {terminal.State}.");
-                }
-                if (DateTime.UtcNow >= deadline)
-                    return SceneMcdfOutcome.Refused(
-                        $"The character file '{saved.FileName}' did not finish " +
-                        "importing within its bound.");
-                try
-                {
-                    await Task.Delay(50, cancellation);
-                }
-                catch (OperationCanceledException)
-                {
-                    return SceneMcdfOutcome.Refused("The load was cancelled.");
-                }
+                // Committed (possibly just before a matched cancel): owned by
+                // the transaction, and history may re-import the staged package.
+                if (staged is not null &&
+                    historySession is { } session && ActiveSession == session &&
+                    _historyAppearanceFiles.Retain(staged, session))
+                    staged = null;
+                return SceneMcdfOutcome.Ok(changed);
             }
+            if (!waited.Terminal)
+            {
+                // Cancelled but still running past the drain bound: it may still
+                // read the staged package, so it is deleted when the child
+                // stops — not here, and not by a session sweep that does not
+                // know the child is alive.
+                if (staged is not null)
+                {
+                    DeleteWhenSettled(staged, _integration.McdfSettled(admitted));
+                    staged = null;
+                }
+                _log?.Warning(
+                    $"Scene load: the import of '{saved.FileName}' was cancelled but had not " +
+                    "stopped within its drain bound; its staged package is deleted once it stops.");
+                return SceneMcdfOutcome.Refused(
+                    $"The character file '{saved.FileName}' was cancelled and is still " +
+                    "stopping; it cannot apply.");
+            }
+            return SceneMcdfOutcome.Refused(waited.End switch
+            {
+                Poser.Application.Integration.McdfWaitEnd.ParentCancelled => "The load was cancelled.",
+                Poser.Application.Integration.McdfWaitEnd.DeadlinePassed =>
+                    $"The character file '{saved.FileName}' did not finish " +
+                    "importing within its bound.",
+                _ => waited.Receipt?.Detail
+                    ?? $"The character file import ended {waited.Receipt?.State.ToString() ?? "replaced"}.",
+            });
         }
         finally
         {

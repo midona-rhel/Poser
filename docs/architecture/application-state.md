@@ -254,6 +254,16 @@ bindings still exist; only then does `GPoseStateChangedEvent(false)` clear
 actors and bindings. Normal exit and plugin unload share this ordering.
 Destroyed native bodies are skipped, not written through retained bindings.
 
+`CleanSceneLifecycle` owns the ordered teardown: cancel facial capture, then
+reset animation, presentation, model id and appearance (MCDF), then clear
+scene groups and their transform state. Every step runs even when an earlier
+one fails. Each step returns its result. Failures are logged and shown
+together in one notice, in teardown order. The presentation restore on
+`GPoseExitingEvent` reports the same way. Nothing is retried here; owners
+keep failed state retryable themselves. On plugin disposal the groups are
+also cleared directly after that reset, because an off-thread disposal's
+bounded framework hop can abandon the reset.
+
 Actor nicknames and anonymous-name masks last for one GPose session. The exit
 notification clears them after final-save capture, since native slot reuse can
 retain a logical lineage for an unrelated actor. Temporary disappearance and

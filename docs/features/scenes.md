@@ -359,6 +359,23 @@ temporary file retained for the session and imports it through the same MCDF
 transaction a hand-driven import uses. Its checksum is not consulted: the bytes in the container are the
 package, so there is nothing to identify them against.
 
+A scene load's character-file import and a save's appearance export are
+children of that load or save. When the parent's bound expires or it is
+cancelled, it cancels the child by its own operation id, never the shared
+slot, so a newer operation is never touched. It then waits up to 15 seconds
+for the child to stop. Once cancelled, the child's remaining phases refuse
+and roll back, so a late completion cannot change the actor. A staged
+package or export file is deleted only after its child stops. A child that
+outlives that wait has its file deleted when it does stop, and the outcome
+and log say so. A child that committed before the matched cancel is a
+successful import. While the parent waits, the scene pane reads
+"Cancelling…" rather than holding the last step.
+
+Plugin unload does not drain: the framework thread is blocked in disposal,
+so the drain's framework hop could never run. Disposal cancels the children
+directly first, the parent returns at once, and the MCDF transaction's own
+bounded drain joins the child.
+
 ## Appearance identity
 
 Every appearance capture records the SHA-256 of the package's bytes, on both

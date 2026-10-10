@@ -36,4 +36,35 @@ public class CoalescedRefreshTests
         Assert.Equal(revision, scene.Snapshot.Revision);
         Assert.Equal(2u, scene.Snapshot.Actors[0].Id.Generation);
     }
+
+    [Fact]
+    public void Teardown_reports_a_failing_reset_in_order_and_still_runs_every_later_step()
+    {
+        var ran = new List<string>();
+        var reported = new List<string>();
+        Func<string?> Step(string name, string? failure = null) => () =>
+        {
+            ran.Add(name);
+            return failure;
+        };
+
+        var failures = CleanSceneLifecycle.ResetOwnedStateForLifecycle(
+            "GPose exited.",
+            reason => { ran.Add("face:" + reason); return null; },
+            Step("animation", "scene: physics unpatch refused"),
+            () => throw new InvalidOperationException("presentation threw"),
+            Step("model"),
+            Step("integration", "actor: Glamourer unlock refused"),
+            Step("groups"),
+            reported.Add);
+
+        Assert.Equal(new[] { "face:GPose exited.", "animation", "model", "integration", "groups" }, ran);
+        Assert.Equal(new[]
+        {
+            "Animation: scene: physics unpatch refused",
+            "Presentation: presentation threw",
+            "Appearance: actor: Glamourer unlock refused",
+        }, failures);
+        Assert.Equal(string.Join(" | ", failures), Assert.Single(reported));
+    }
 }

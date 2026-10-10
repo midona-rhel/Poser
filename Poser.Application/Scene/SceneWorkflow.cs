@@ -144,8 +144,26 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// "the operation is finished" barrier.</summary>
     internal Task Drain => _task ?? Task.CompletedTask;
 
-    /// <summary>Cooperative cancellation of the running operation.</summary>
-    public void Cancel() => _cancellation?.Cancel();
+    /// <summary>Cooperative cancellation of the running operation. A
+    /// cancellable step reads "Cancelling" at once: the terminal Cancelled
+    /// can trail it by a child's bounded drain.</summary>
+    public void Cancel()
+    {
+        bool published = false;
+        lock (_publishGate)
+        {
+            if (_current is { TerminalPublished: false, CancelRequested: false } operation
+                && _progress is { Cancellable: true } progress)
+            {
+                operation.CancelRequested = true;
+                _progress = progress with { Phase = ScenePhase.Cancelling, Cancellable = false };
+                published = true;
+            }
+        }
+        _cancellation?.Cancel();
+        if (published)
+            RaiseChanged();
+    }
 
     private sealed class Operation
     {
@@ -157,6 +175,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         public required SceneOperationKind Kind { get; init; }
         public bool Invalidated;
         public bool TerminalPublished;
+        /// <summary>The user asked to cancel; later cancellable steps keep
+        /// reading "Cancelling" until the terminal state lands.</summary>
+        public bool CancelRequested;
         /// <summary>Whether a landed load appends its step. A load the
         /// journal itself started as a redo does not: its step is the one
         /// being redone.</summary>
@@ -192,6 +213,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         {
             if (!ReferenceEquals(_current, operation) || operation.TerminalPublished)
                 return;
+            // Non-cancellable steps (rollback, commit) still show as
+            // themselves; anything else is the cancel winding down.
+            if (operation.CancelRequested && progress.Cancellable)
+                progress = progress with { Phase = ScenePhase.Cancelling, Cancellable = false };
             _progress = progress;
         }
         RaiseChanged();
@@ -1951,6 +1976,16 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         if (_disposed)
             return;
         _disposed = true;
+        // Children first: a cancelled parent must not start a drain that
+        // needs the framework thread this Dispose is blocking.
+        try
+        {
+            _runtime.AbandonChildWaits();
+        }
+        catch (Exception)
+        {
+            // Disposal must not throw; the join below is still bounded.
+        }
         _cancellation?.Cancel();
         _disposal.Cancel();
         try

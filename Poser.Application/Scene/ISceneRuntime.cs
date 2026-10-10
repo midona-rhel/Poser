@@ -16,6 +16,15 @@ public interface ISceneRuntime
 
     Task<T> OnFramework<T>(Func<T> func);
 
+    /// <summary>
+    /// Unload, from the workflow's Dispose on the framework thread: cancel
+    /// every child operation (MCDF import/export) NOW, without a framework
+    /// hop, so a parent waiting on one returns instead of draining against a
+    /// thread that Dispose itself is blocking. The bounded drain stays the
+    /// user-cancel path.
+    /// </summary>
+    void AbandonChildWaits() { }
+
     /// <summary>Resolve an exact spawned instance after binding publication; never by name.</summary>
     SelectionId? ResolveSceneEntity(SceneEntityHandle token);
 

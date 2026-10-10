@@ -176,7 +176,6 @@ internal static class ServiceRegistration
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());
         services.AddSingleton<Application.Scene.SceneGroups>();
-        services.AddSingleton<Application.Scene.SceneGroupsLifetime>();
         services.AddSingleton<SelectionEntityCommands>();
         return services;
     }
@@ -446,7 +445,10 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSceneOwnership(
         this IServiceCollection services)
     {
-        services.AddSingleton<CleanSceneLifecycle>();
+        // The extra argument is the teardown-failure notice; everything else
+        // resolves from the container as before.
+        services.AddSingleton(sp => ActivatorUtilities.CreateInstance<CleanSceneLifecycle>(sp,
+            (Action<string>)(message => sp.GetRequiredService<UserNotices>().Failed(message))));
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
         services.AddSingleton(sp => new global::Poser.Files.ObjectPlacementPreferences
         {

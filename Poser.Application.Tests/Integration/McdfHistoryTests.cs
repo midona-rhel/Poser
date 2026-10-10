@@ -60,6 +60,99 @@ public sealed class McdfHistoryTests
         Assert.True(retried.Success, retried.Detail);
     }
 
+    [Fact]
+    public async Task Import_held_past_its_deadline_is_cancelled_and_its_late_completion_changes_nothing()
+    {
+        var staged = Path.Combine(Path.GetTempPath(), $"poser-test-{Guid.NewGuid():N}.mcdf");
+        File.WriteAllText(staged, "package");
+        try
+        {
+            var files = new Files { Hold = new(), InputExists = File.Exists };
+            using var integration = new ActorIntegrationSession(
+                DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+            var actor = ActorId.New();
+            Assert.True(integration.BeginImport(actor, staged).Success);
+            var id = integration.McdfReceipt!.OperationId;
+
+            var waited = await integration.AwaitMcdf(
+                id, TimeSpan.FromMilliseconds(100), CancellationToken.None, TimeSpan.FromMilliseconds(100));
+
+            // Still reading: the parent stopped, the child is cancelled but not
+            // terminal, so the scene adapter must keep the staged input.
+            Assert.Equal(McdfWaitEnd.DeadlinePassed, waited.End);
+            Assert.False(waited.Terminal);
+            Assert.False(waited.Applied);
+            Assert.True(File.Exists(staged));
+
+            files.Hold.SetResult();
+            await integration.PendingCompletion;
+            Assert.True(Assert.Single(files.InputPresentAtRead));
+            Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
+            Assert.Null(integration.OverridesFor(actor).Mcdf);
+        }
+        finally
+        {
+            File.Delete(staged);
+        }
+    }
+
+    [Fact]
+    public async Task Late_cancel_of_a_finished_operation_never_cancels_the_newer_one()
+    {
+        var files = new Files();
+        using var integration = new ActorIntegrationSession(
+            DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+        var first = ActorId.New();
+        Assert.True(integration.BeginImport(first, "first.mcdf").Success);
+        var old = integration.McdfReceipt!.OperationId;
+        await integration.PendingCompletion;
+
+        files.Hold = new();
+        var second = ActorId.New();
+        Assert.True(integration.BeginImport(second, "second.mcdf").Success);
+        var late = await integration.CancelMcdfAndDrain(old, TimeSpan.FromMilliseconds(50));
+        Assert.True(late.Terminal);
+        Assert.Null(late.Receipt);
+
+        files.Hold.SetResult();
+        await integration.PendingCompletion;
+        Assert.Equal(OperationReceiptState.Applied, integration.McdfReceipt!.State);
+        Assert.NotNull(integration.OverridesFor(second).Mcdf);
+    }
+
+    [Fact]
+    public async Task Unload_returns_a_cancelled_parent_without_waiting_on_the_blocked_framework_thread()
+    {
+        var files = new Files { Hold = new() };
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var runtime = (Runtime)(object)port;
+        using var integration = new ActorIntegrationSession(port, files, new Sessions());
+        var actor = ActorId.New();
+        Assert.True(integration.BeginImport(actor, "held.mcdf").Success);
+        var id = integration.McdfReceipt!.OperationId;
+        await files.ReadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Dispose holds the framework thread: no hop queued from here runs.
+        runtime.FrameworkBlocked = true;
+        using var parent = new CancellationTokenSource();
+        var wait = integration.AwaitMcdf(id, TimeSpan.FromMinutes(1), parent.Token);
+        parent.Cancel();
+        integration.AbandonMcdfWaits();
+
+        var waited = await wait.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(McdfWaitEnd.ParentCancelled, waited.End);
+        Assert.False(waited.Terminal);
+        var settled = integration.McdfSettled(id);
+        Assert.False(settled.IsCompleted);
+
+        // The child was cancelled directly, so once it can run it stops.
+        runtime.FrameworkBlocked = false;
+        files.Hold.SetResult();
+        await settled.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
+        Assert.Null(integration.OverridesFor(actor).Mcdf);
+    }
+
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
@@ -68,12 +161,21 @@ public sealed class McdfHistoryTests
     public class Runtime : DispatchProxy
     {
         public bool Resources, OwnedDuplicate;
+        /// <summary>A framework thread blocked in Dispose: hops never run.</summary>
+        public volatile bool FrameworkBlocked;
         public int Assignments;
         private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == nameof(IIntegrationRuntimePort.OnFrameworkThread))
             {
+                if (FrameworkBlocked)
+                {
+                    var never = Activator.CreateInstance(typeof(TaskCompletionSource<>)
+                        .MakeGenericType(method.GetGenericArguments()[0]))!;
+                    return never.GetType().GetProperty(nameof(TaskCompletionSource<int>.Task))!
+                        .GetValue(never);
+                }
                 var value = ((Delegate)args![0]!).DynamicInvoke();
                 return typeof(Task).GetMethod(nameof(Task.FromResult))!
                     .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
@@ -116,14 +218,26 @@ public sealed class McdfHistoryTests
         public string GetFileName(string path) => path;
         public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory() =>
             IntegrationValue<McdfOperationDirectory>.Ok(new($"directory-{++_directories}", "owner", null, null));
-        public Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
+        /// <summary>Holds the read until released, ignoring cancellation, as a
+        /// slow package read does; records whether the staged input existed.</summary>
+        public TaskCompletionSource? Hold;
+        public Func<string, bool>? InputExists;
+        public List<bool> InputPresentAtRead { get; } = [];
+        public TaskCompletionSource ReadEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
             McdfOperationDirectory directory, Action<McdfProgressStep> progress, CancellationToken cancellation)
         {
             Reads++;
-            return Task.FromResult(OriginalAvailable
+            ReadEntered.TrySetResult();
+            if (Hold is { } hold)
+                await hold.Task;
+            if (InputExists is { } exists)
+                InputPresentAtRead.Add(exists(path));
+            return OriginalAvailable
                 ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", "", "", Resources ? new Dictionary<string,string> { ["model"] = "mod/model" } : new Dictionary<string,string>(),
                     new Dictionary<string,string>(), directory.Path, 0, 0))
-                : IntegrationValue<McdfPackage>.Fail("Original file removed"));
+                : IntegrationValue<McdfPackage>.Fail("Original file removed");
         }
         public Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package, McdfOperationDirectory source,
             McdfOperationDirectory destination, CancellationToken cancellation)
