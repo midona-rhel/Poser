@@ -1,29 +1,9 @@
 namespace Poser.Config;
 
 /// <summary>
-/// A modifier held to suspend one overlay layer — Brio's
-/// <c>Posing_DisableSkeleton</c> / <c>Posing_DisableGizmo</c> pair, which lets
-/// a handle buried under a bone dot (or a dot buried under a handle) be
-/// reached without changing any mode.
-///
-/// <para>Brio binds them to Ctrl and Shift. Poser already spends both — Ctrl
-/// is the overlay's additive-select modifier and the gizmo's fine-sensitivity
-/// multiplier, Shift is the coarse multiplier and the ray-snap key — so
-/// neither is a default here. The chords are offered, and the shipped value is
-/// <see cref="None"/>: nothing about an upgraded config changes until the user
-/// picks one.</para>
-/// </summary>
-public enum OverlayHoldModifier
-{
-    None,
-    Ctrl,
-    Shift,
-}
-
-/// <summary>
-/// The world gizmo's own options: size, snapping, the two hold modifiers, and
-/// whether the gizmo survives a fully hidden armature. Every default is the
-/// behaviour Poser already had.
+/// The world gizmo's own options: size, snapping, and whether the gizmo
+/// survives a fully hidden armature. Every default is the behaviour Poser
+/// already had.
 /// </summary>
 public class GizmoConfiguration
 {
@@ -78,10 +58,4 @@ public class GizmoConfiguration
     /// <see cref="KeepGizmoWhenBonesHidden"/>, which answers for one
     /// hidden bone.</summary>
     public bool HideGizmoWithoutArmature { get; set; }
-
-    public OverlayHoldModifier DisableDotsModifier { get; set; } =
-        OverlayHoldModifier.None;
-
-    public OverlayHoldModifier DisableGizmoModifier { get; set; } =
-        OverlayHoldModifier.None;
 }
