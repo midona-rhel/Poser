@@ -82,18 +82,6 @@ public static class TextInputWidgets
             id, value, onChange, style, placeholder,
             clearable: false, search: false, disabled, help);
 
-    public static bool ClearableTextInput(
-        string id,
-        string value,
-        Action<string> onChange,
-        ControlStyle style = default,
-        string? placeholder = null,
-        bool disabled = false,
-        string? help = null) =>
-        TextInputCore(
-            id, value, onChange, style, placeholder,
-            clearable: true, search: false, disabled, help);
-
     /// <summary>CSS px of the ascent-over-cap dead band KEPT above the cap
     /// top when a native field's caret is trimmed: tall diacritics (É, Å)
     /// reach into that band and keep their marks under this headroom.

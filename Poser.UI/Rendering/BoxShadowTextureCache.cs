@@ -22,8 +22,6 @@ internal sealed class BoxShadowTextureCache(
     private readonly Dictionary<ShadowKey, Entry> _cache = new();
     private int _drawTick;
 
-    internal int EntryCount => _cache.Count;
-
     internal interface IShadowDrawSink
     {
         void AddImage(

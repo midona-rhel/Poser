@@ -18,13 +18,6 @@ public static class FloatingSurface
 
     public static Vector4 FillColor => GlassChrome.BackgroundColor;
 
-    public static void PrependShellBlur(
-        ImDrawListPtr drawList,
-        Vector2 min,
-        Vector2 max,
-        float rounding) =>
-        GlassChrome.PrependBlur(drawList, min, max, rounding);
-
     public static void DrawBorder(Vector2 min, Vector2 max, float radius) =>
         BoxRenderer.Draw(ImGui.GetWindowDrawList(), min, max, new BoxStyle
         {

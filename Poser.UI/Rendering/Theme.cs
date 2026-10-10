@@ -877,8 +877,6 @@ internal sealed class ThemeActivation
 
     public Theme Active { get; private set; }
 
-    internal bool HasPending => _pending.HasValue;
-
     public void ActivateWithoutFonts(Theme theme)
     {
         Active = theme;

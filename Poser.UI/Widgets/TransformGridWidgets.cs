@@ -16,11 +16,6 @@ public static class TransformGridWidgets
     private const float TransformRowGap = 6f;
     private const float TransformBottomMargin = 8f;
 
-    /// <summary>The grid's logical row height, stated so the hosting form
-    /// row can reserve it exactly — the bottom margin included, so the
-    /// next row breathes.</summary>
-    public static float TransformGridHeight => TransformGridHeightFor(3);
-
     /// <summary>The logical height for a grid of the given row count —
     /// the transform presentation is UNIVERSAL across inspectors, and a
     /// camera's grid carries different rows than an actor's.</summary>

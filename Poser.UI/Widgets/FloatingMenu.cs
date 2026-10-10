@@ -855,43 +855,6 @@ public static class FloatingMenu
         return clicked;
     }
 
-    internal static bool IsMenuOrSubmenuPointerWithin(
-        Vector2 point,
-        Vector2 menuMin,
-        Vector2 menuSize,
-        ContextMenuItem[]? submenu,
-        Vector2 submenuMin,
-        Vector2 submenuSize) =>
-        InRect(point, menuMin, menuSize)
-        || (submenu is not null
-            && (InRect(point, submenuMin, submenuSize)
-                || InSubmenuBridge(
-                    point,
-                    new Vector2(menuMin.X, submenuMin.Y),
-                    new Vector2(menuMin.X + menuSize.X, submenuMin.Y + submenuSize.Y),
-                    menuMin,
-                    menuSize,
-                    submenuMin,
-                    submenuSize)));
-
-    internal static bool KeepSubmenuOpen(
-        Vector2 pointer,
-        Vector2 parentRowMin,
-        Vector2 parentRowMax,
-        Vector2 submenuMin,
-        Vector2 submenuSize,
-        Vector2 parentMenuMin,
-        Vector2 parentMenuSize) =>
-        InRect(pointer, submenuMin, submenuSize)
-        || InSubmenuBridge(
-            pointer,
-            parentRowMin,
-            parentRowMax,
-            parentMenuMin,
-            parentMenuSize,
-            submenuMin,
-            submenuSize);
-
     internal static int AcceptSubmenuClick(
         int clicked,
         ContextMenuItem[] items) =>
