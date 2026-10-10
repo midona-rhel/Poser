@@ -39,7 +39,7 @@ public sealed class SceneObjectControlTests
         });
         var history = new TransformHistory();
         var journal = new ValueJournal(history);
-        var control = new SceneObjectControl(bindings, Stub<IFramework>((_, _) => true), journal);
+        var control = new SceneObjectControl(bindings, journal);
         var reading = control.Read(id)!;
         var edited = model with { AnimationVariant = 3, Stain0 = 12 };
         Assert.True(control.SetModel(id, edited).Success);
@@ -68,7 +68,7 @@ public sealed class SceneObjectControlTests
             ? new BindingResult<IWorldObject>(BindingStatus.Success, effect)
             : new BindingResult<IWorldObject>(BindingStatus.StaleTarget));
         var history = new TransformHistory();
-        var control = new SceneObjectControl(bindings, Stub<IFramework>((_, _) => true), new ValueJournal(history));
+        var control = new SceneObjectControl(bindings, new ValueJournal(history));
 
         Assert.True(control.Set(id, WorldObjectProperties.VfxPaused, true).Success);
         Assert.True(paused);

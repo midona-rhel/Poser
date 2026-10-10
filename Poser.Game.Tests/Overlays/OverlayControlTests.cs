@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Reflection;
-using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -22,13 +21,14 @@ public sealed class OverlayControlTests
         var earlier = new JournalStep("Earlier edit", () => true, () => true);
         history.Append(earlier);
         history.CommitUndo(earlier);
-        var bindings = Stub<IEntityBindings>((m, _) => m.Name switch
+        var bindings = Stub<IEntityBindings>((m, a) => m.Name switch
         {
-            "Resolve" => new BindingResult<IOverlayNode>(BindingStatus.Success, node),
-            "GetOverlayId" => current,
+            "Resolve" => (OverlayId)a![0]! == current
+                ? new BindingResult<IOverlayNode>(BindingStatus.Success, node)
+                : new BindingResult<IOverlayNode>(BindingStatus.StaleTarget),
             _ => throw new InvalidOperationException(m.Name),
         });
-        var control = new OverlayControl(bindings, Stub<IFramework>((_, _) => true), new ValueJournal(history));
+        var control = new OverlayControl(bindings, new ValueJournal(history));
 
         var refused = control.EditCollider(id, c => c with { Enabled = false });
         current = id.NextGeneration();

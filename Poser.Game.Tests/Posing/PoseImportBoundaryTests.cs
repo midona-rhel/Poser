@@ -1,5 +1,4 @@
 using System.Reflection;
-using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -22,14 +21,9 @@ public sealed class PoseImportBoundaryTests
             Assert.Equal(id, Assert.IsType<ActorId>(args![0]));
             return new BindingResult<IActor>(BindingStatus.StaleTarget);
         });
-        var framework = Stub<IFramework>((method, _) =>
-        {
-            Assert.Equal("get_IsInFrameworkUpdateThread", method);
-            return true;
-        });
         // Missing dependencies deliberately fail if any refused route reaches native planning.
         IPoseImportCommands imports = new NativePoseImportService(
-            bindings, null!, null!, null!, null!, framework);
+            bindings, null!, null!, null!, null!);
         Assert.False(imports.HasPosableSkeleton(id));
         Assert.Null(imports.InspectPose(id, new PoseFile()));
         var results = new[]

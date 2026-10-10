@@ -35,10 +35,8 @@ public sealed class ExpressionBlendingTests
         var id = new ActorId(Guid.NewGuid(), 1);
         bindings.GetActorId(f.Actor).Returns(id);
         bindings.Resolve(id).Returns(new BindingResult<IActor>(BindingStatus.Success, f.Actor));
-        var framework = Substitute.For<IFramework>();
-        framework.IsInFrameworkUpdateThread.Returns(true);
         var session = new ExpressionSession(journal,
-            new ExpressionRuntimePort(framework, bindings, f.Service));
+            new ExpressionRuntimePort(bindings, f.Service));
         journal.BeginEdit("pair");
         session.SetPair(id, "SmileL", "SmileR", .5f);
         session.SetPair(id, "SmileL", "SmileR", 1.4f);
