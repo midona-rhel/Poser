@@ -63,7 +63,8 @@ of the same file creates independent groups.
 
 `PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
 duplicate-name variants in order, and uses game indices only to find bones.
-Legacy matching and broadcast are explicit compatibility choices. Game access
+Name-only legacy entries match by name; an ambiguous match fails rather than
+broadcasting. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
 Spawn search, library actor creation and entity duplication use the shared
