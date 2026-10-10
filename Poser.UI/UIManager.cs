@@ -13,7 +13,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Transforms;
 using Poser.UI.Widgets;
-using static Poser.UI.Widgets.HostHooks;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;
 using static Poser.UI.Widgets.ValueEdits;
@@ -44,11 +43,13 @@ public sealed class UIManager : IUIManager
     private bool _uiHidden;
     private bool _capturingShortcutThisFrame;
 
+    private readonly UiContext _ui;
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Views.ReleaseNotesView _releaseNotes;
 
     public UIManager(
+        UiContext ui,
         global::Poser.Application.Diagnostics.ActionRecorder recorder,
         Controls.IssueReportModal issueReport,
         Views.ReleaseNotesView releaseNotes,
@@ -71,6 +72,7 @@ public sealed class UIManager : IUIManager
         AnimationSession animation,
         Dalamud.Plugin.Services.IPluginLog log)
     {
+        _ui = ui;
         _recorder = recorder;
         _issueReport = issueReport;
         _releaseNotes = releaseNotes;
@@ -100,10 +102,10 @@ public sealed class UIManager : IUIManager
         _keyEvents.KeyEvent += OnKeyEvent;
         // A released drag or an accepted typed value seals the journal's
         // open step, so every control's edit is one step, press to release.
-        ValueCommitted += _values.CommitEdit;
-        ValueEditBegan += _values.BeginEdit;
-        ValueEditEnded += _values.EndEdit;
-        ValueEditingIdle += _values.Seal;
+        _ui.ValueCommitted += _values.CommitEdit;
+        _ui.ValueEditBegan += _values.BeginEdit;
+        _ui.ValueEditEnded += _values.EndEdit;
+        _ui.ValueEditingIdle += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested += OpenSkeletonSettings;
@@ -150,7 +152,7 @@ public sealed class UIManager : IUIManager
         // Cache warming runs before primary windows can draw. Scoped so the
         // ledger can see it: the un-attributed spikes lived exactly here.
         using (FrameProfiler.Scope("Shell · icon pump"))
-            PumpStartupIcons(_configService.Config.Library.IconSize);
+            _ui.Icons.PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
         using (FrameProfiler.Scope("Shell · preview backing"))
             previewBackingReady = !_windows.IsPrimaryOpen
@@ -601,10 +603,10 @@ public sealed class UIManager : IUIManager
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _keyEvents.KeyEvent -= OnKeyEvent;
-        ValueCommitted -= _values.CommitEdit;
-        ValueEditBegan -= _values.BeginEdit;
-        ValueEditEnded -= _values.EndEdit;
-        ValueEditingIdle -= _values.Seal;
+        _ui.ValueCommitted -= _values.CommitEdit;
+        _ui.ValueEditBegan -= _values.BeginEdit;
+        _ui.ValueEditEnded -= _values.EndEdit;
+        _ui.ValueEditingIdle -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested -= OpenSkeletonSettings;
@@ -615,5 +617,7 @@ public sealed class UIManager : IUIManager
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
+        // Nothing draws past this point; the context and its textures go.
+        _ui.Dispose();
     }
 }

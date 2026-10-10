@@ -3,21 +3,25 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.UI.Widgets;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 internal static class GlassChrome
 {
-    public static bool BackdropBlurAvailable { get; set; }
+    /// <summary>The surface recipe the settings chose.</summary>
+    internal sealed class GlassState
+    {
+        internal float FillOpacity = 1f;
+        internal bool BackdropBlur = true;
+    }
 
-    private static float _fillOpacity = 1f;
-    private static bool _backdropBlur = true;
+    private static GlassState State => UiContext.Current.Glass;
 
     // Below this alpha, translucent surfaces no longer read reliably.
     internal const float MinimumFillOpacity = 0.50f;
 
-    internal static bool ShouldPrependBackdropBlur =>
-        BackdropBlurAvailable && _backdropBlur;
+    internal static bool ShouldPrependBackdropBlur => State.BackdropBlur;
 
     internal static IReadOnlyList<GlassBlurSubmission> BlurSubmissions { get; } =
         Array.AsReadOnly(new[]
@@ -26,7 +30,7 @@ internal static class GlassChrome
         });
 
     public static void Configure(float fillOpacity, bool backdropBlur) =>
-        (_fillOpacity, _backdropBlur) =
+        (State.FillOpacity, State.BackdropBlur) =
             (ClampFillOpacity(fillOpacity), backdropBlur);
 
     // UI callers can pass values that did not come from persisted settings.
@@ -40,7 +44,7 @@ internal static class GlassChrome
         get
         {
             var color = ActiveTheme.Glass.Background;
-            return color with { W = color.W * _fillOpacity };
+            return color with { W = color.W * State.FillOpacity };
         }
     }
 

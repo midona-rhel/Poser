@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using static Poser.UI.Widgets.HostHooks;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -192,7 +192,7 @@ public static class FrameProfiler
         // costliest units before the per-slot counters reset, so a periodic
         // spike names its owner in the log without anybody watching the
         // panel when it fires.
-        if (frameMs > HitchThresholdMs && Log is { } log &&
+        if (frameMs > HitchThresholdMs && UiContext.Current.Log is { } log &&
             (Now() - _lastHitchLogTicks) * MillisecondsPerTick > 1000.0)
         {
             _lastHitchLogTicks = Now();

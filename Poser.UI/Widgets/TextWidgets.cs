@@ -12,6 +12,48 @@ namespace Poser.UI.Widgets;
 
 public static class TextWidgets
 {
+    /// <summary>Per-frame text samples and the measure and truncation caches of one <see cref="UiContext"/>.</summary>
+    internal sealed class TextState
+    {
+        /// <summary>Per-frame cache of <see cref="IFontHandle.Available"/> —
+        /// the getter takes a lock inside Dalamud, and availability cannot
+        /// change mid-frame, yet every text primitive asked it per call: the
+        /// single largest draw-pass cost in the profile.</summary>
+        internal readonly Dictionary<IFontHandle, bool> FontAvailable = new();
+        internal int FontAvailableFrame = -1;
+        /// <summary>The frame's <see cref="ImGuiHelpers.GlobalScale"/>.
+        /// Dalamud resolves that property expensively per call, and it cannot
+        /// change mid-frame — sampled once per frame here, alongside the
+        /// availability reset. Every text-path scale read goes through this.</summary>
+        internal float FrameScale = 1f;
+        internal bool ExplicitTextFrame;
+        /// <summary>Intrinsic sizes by (handle, run). A run's size changes only
+        /// when its font atlas does, yet rows re-measured the same labels every
+        /// frame through a native call. Entries are cached only when the run was
+        /// measured under its OWN font (a not-yet-available handle measures
+        /// under the ambient font and would poison the key; likewise while new
+        /// glyphs are still baking). Cleared on scale change and when a glyph
+        /// bake lands; the cap bounds a pathological label stream.</summary>
+        internal readonly Dictionary<(IFontHandle, string), Vector2>
+            MeasureCache = new();
+        internal float MeasureScale;
+        /// <summary>Text-element boundary scratch for <see cref="TruncateResolved"/>.
+        /// A run is only ever fitted while drawing, which is main-thread only,
+        /// and the buffer never escapes the call — so one instance serves every
+        /// resolve instead of a fresh list per fit.</summary>
+        internal readonly List<int> TruncationBoundaries = [];
+        /// <summary>Fitted truncations by (font, size, run, width). Fitting is
+        /// a binary search of per-glyph advance sums through the bindings, and
+        /// every truncated cell re-fitted the same unchanged label every frame.
+        /// Keyed on the CURRENT ImGui font so an ambient-font fit cannot serve
+        /// a styled one; cleared past the cap, which only a pathological label
+        /// stream (or live column resize) ever reaches.</summary>
+        internal readonly Dictionary<(nint Font, float Size, string Text, float Width), string>
+            TruncateCache = new();
+    }
+
+    private static TextState State => UiContext.Current.Text;
+
     /// <summary>Plain inline body text from the active theme.</summary>
     public static void Text(string text)
         => Text(text, default, TextConstraint.Intrinsic);
@@ -77,7 +119,7 @@ public static class TextWidgets
         RollTextFrame();
         return InkSnapY(
             bandMinY + (bandHeight - measuredHeight) * 0.5f
-            + rise * _frameScale);
+            + rise * State.FrameScale);
     }
 
     /// <summary>
@@ -127,7 +169,7 @@ public static class TextWidgets
         var cacheFont = FontRegistry.Resolve(
             style.Family, style.Weight ?? FontWeight.Regular, size);
         if (cacheFont is not null &&
-            _measureCache.TryGetValue((cacheFont, text), out var cached))
+            State.MeasureCache.TryGetValue((cacheFont, text), out var cached))
             return cached;
 
         var (font, pushed, _, _) = ResolveStyle(style);
@@ -136,9 +178,9 @@ public static class TextWidgets
             var measured = ImGui.CalcTextSize(Presentation(text));
             if (pushed && font is not null && !FontRegistry.GlyphsPending)
             {
-                if (_measureCache.Count >= MeasureCacheCap)
-                    _measureCache.Clear();
-                _measureCache[(font, text)] = measured;
+                if (State.MeasureCache.Count >= MeasureCacheCap)
+                    State.MeasureCache.Clear();
+                State.MeasureCache[(font, text)] = measured;
             }
             return measured;
         }
@@ -170,7 +212,7 @@ public static class TextWidgets
             if (constraint.Mode == TextConstraint.FitMode.Truncate)
                 return new Vector2(constraint.Width, natural);
             float advance = constraint.LineHeight is { } multiplier
-                ? size * multiplier * _frameScale
+                ? size * multiplier * State.FrameScale
                 : natural;
             int lines = 0;
             foreach (var _ in WrapResolved(
@@ -267,71 +309,46 @@ public static class TextWidgets
         return text;
     }
 
-    /// <summary>Per-frame cache of <see cref="IFontHandle.Available"/> —
-    /// the getter takes a lock inside Dalamud, and availability cannot
-    /// change mid-frame, yet every text primitive asked it per call: the
-    /// single largest draw-pass cost in the profile.</summary>
-    private static readonly Dictionary<IFontHandle, bool> _fontAvailable = new();
-    private static int _fontAvailableFrame = -1;
-
-    /// <summary>The frame's <see cref="ImGuiHelpers.GlobalScale"/>.
-    /// Dalamud resolves that property expensively per call, and it cannot
-    /// change mid-frame — sampled once per frame here, alongside the
-    /// availability reset. Every text-path scale read goes through this.</summary>
-    private static float _frameScale = 1f;
-
-    private static bool _explicitTextFrame;
-
     /// <summary>The host's once-per-frame announcement. The fallback asks
     /// ImGui for the frame number on every text call, and that binding call
     /// alone cost 3.6s of a 45s trace — a host that draws every frame calls
     /// this instead and the per-call roll collapses to one branch.</summary>
     public static void BeginTextFrame()
     {
-        _explicitTextFrame = true;
+        State.ExplicitTextFrame = true;
         Roll();
     }
 
     private static void RollTextFrame()
     {
-        if (_explicitTextFrame)
+        if (State.ExplicitTextFrame)
             return;
         int frame = ImGui.GetFrameCount();
-        if (frame == _fontAvailableFrame)
+        if (frame == State.FontAvailableFrame)
             return;
-        _fontAvailableFrame = frame;
+        State.FontAvailableFrame = frame;
         Roll();
     }
 
     private static void Roll()
     {
-        _fontAvailable.Clear();
-        _frameScale = ImGuiHelpers.GlobalScale;
-        if (_frameScale != _measureScale)
+        State.FontAvailable.Clear();
+        State.FrameScale = ImGuiHelpers.GlobalScale;
+        if (State.FrameScale != State.MeasureScale)
         {
-            _measureScale = _frameScale;
-            _measureCache.Clear();
+            State.MeasureScale = State.FrameScale;
+            State.MeasureCache.Clear();
         }
     }
 
     private static bool FontAvailable(IFontHandle font)
     {
         RollTextFrame();
-        if (_fontAvailable.TryGetValue(font, out bool available))
+        if (State.FontAvailable.TryGetValue(font, out bool available))
             return available;
-        return _fontAvailable[font] = font.Available;
+        return State.FontAvailable[font] = font.Available;
     }
 
-    /// <summary>Intrinsic sizes by (handle, run). A run's size changes only
-    /// when its font atlas does, yet rows re-measured the same labels every
-    /// frame through a native call. Entries are cached only when the run was
-    /// measured under its OWN font (a not-yet-available handle measures
-    /// under the ambient font and would poison the key; likewise while new
-    /// glyphs are still baking). Cleared on scale change and when a glyph
-    /// bake lands; the cap bounds a pathological label stream.</summary>
-    internal static readonly Dictionary<(IFontHandle, string), Vector2>
-        _measureCache = new();
-    private static float _measureScale;
     private const int MeasureCacheCap = 8192;
 
     private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
@@ -417,7 +434,7 @@ public static class TextWidgets
                     // occupies the constraint width.
                     float natural = ImGui.GetTextLineHeight();
                     float advance = constraint.LineHeight is { } multiplier
-                        ? size * multiplier * _frameScale
+                        ? size * multiplier * State.FrameScale
                         : natural;
                     float halfLeading = (advance - natural) * 0.5f;
                     float y = origin.Y;
@@ -487,11 +504,7 @@ public static class TextWidgets
         return width;
     }
 
-    /// <summary>Text-element boundary scratch for <see cref="TruncateResolved"/>.
-    /// A run is only ever fitted while drawing, which is main-thread only,
-    /// and the buffer never escapes the call — so one instance serves every
-    /// resolve instead of a fresh list per fit.</summary>
-    private static readonly List<int> TruncationBoundaries = [];
+    private const int TruncateCacheCap = 4096;
 
     /// <summary>Grapheme-cluster ellipsis backoff in the CURRENTLY PUSHED
     /// face — truncation and rendering always agree on the same font, and
@@ -499,27 +512,17 @@ public static class TextWidgets
     /// even the ellipsis alone cannot fit, the ORIGINAL run is returned —
     /// Blink drops the ellipsis and clips the raw text, and the canonical
     /// renderer's clip rectangle does the same here.</summary>
-    /// <summary>Fitted truncations by (font, size, run, width). Fitting is
-    /// a binary search of per-glyph advance sums through the bindings, and
-    /// every truncated cell re-fitted the same unchanged label every frame.
-    /// Keyed on the CURRENT ImGui font so an ambient-font fit cannot serve
-    /// a styled one; cleared past the cap, which only a pathological label
-    /// stream (or live column resize) ever reaches.</summary>
-    private static readonly Dictionary<(nint Font, float Size, string Text, float Width), string>
-        _truncateCache = new();
-    private const int TruncateCacheCap = 4096;
-
     private static unsafe string TruncateResolved(string text, float width)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
         var key = ((nint)ImGui.GetFont().Handle, ImGui.GetFontSize(), text, width);
-        if (_truncateCache.TryGetValue(key, out var known))
+        if (State.TruncateCache.TryGetValue(key, out var known))
             return known;
         string fitted = FitTruncation(text, width);
-        if (_truncateCache.Count >= TruncateCacheCap)
-            _truncateCache.Clear();
-        _truncateCache[key] = fitted;
+        if (State.TruncateCache.Count >= TruncateCacheCap)
+            State.TruncateCache.Clear();
+        State.TruncateCache[key] = fitted;
         return fitted;
     }
 
@@ -533,7 +536,7 @@ public static class TextWidgets
 
         // Prefix boundaries fall on whole text elements (grapheme
         // clusters): surrogate pairs and combining sequences never split.
-        var boundaries = TruncationBoundaries;
+        var boundaries = State.TruncationBoundaries;
         boundaries.Clear();
         for (int index = 0; index < text.Length;)
         {

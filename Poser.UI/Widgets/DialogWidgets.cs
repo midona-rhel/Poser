@@ -11,11 +11,17 @@ namespace Poser.UI.Widgets;
 
 public static class DialogWidgets
 {
-    // Footer right-alignment uses the previous frame's measured width (standard
-    // ImGui trick — avoids double-rendering children and their ID collisions).
-    private static readonly Dictionary<string, float> _modalBodyHeights = new();
-    private static readonly Dictionary<string, float> _modalFooterWidths = new();
-    private static readonly HashSet<string> _dialogNeedsPlacement = new();
+    /// <summary>Measured dialog parts from the previous frame and dialogs still to be placed.</summary>
+    internal sealed class DialogState
+    {
+        // Footer right-alignment uses the previous frame's measured width (standard
+        // ImGui trick — avoids double-rendering children and their ID collisions).
+        internal readonly Dictionary<string, float> BodyHeights = new();
+        internal readonly Dictionary<string, float> FooterWidths = new();
+        internal readonly HashSet<string> NeedsPlacement = new();
+    }
+
+    private static DialogState State => UiContext.Current.Dialogs;
 
     /// <summary>
     /// A normal, movable window with the shared glass header, body and footer.
@@ -44,7 +50,7 @@ public static class DialogWidgets
 
         if (!open)
         {
-            _dialogNeedsPlacement.Remove(popupId);
+            State.NeedsPlacement.Remove(popupId);
             return false;
         }
 
@@ -58,7 +64,7 @@ public static class DialogWidgets
         // Auto-height settles after the first visible frame. Do not hide the
         // measurement frame with Alpha=0: ImGui skips that window's contents,
         // so no height is recorded and the dialog would stay invisible forever.
-        bool measured = _modalBodyHeights.TryGetValue(popupId, out float measuredBody);
+        bool measured = State.BodyHeights.TryGetValue(popupId, out float measuredBody);
         bool measuringFrame = height is null && !measured;
         float totalHeight = height is { } stated
             ? stated * scale
@@ -71,9 +77,9 @@ public static class DialogWidgets
 
         // After measurement, place once. Subsequent content
         // changes must not recenter the window or undo the user's dragging.
-        bool placeAfterMeasurement = _dialogNeedsPlacement.Remove(popupId);
+        bool placeAfterMeasurement = State.NeedsPlacement.Remove(popupId);
         if (measuringFrame)
-            _dialogNeedsPlacement.Add(popupId);
+            State.NeedsPlacement.Add(popupId);
         ImGui.SetNextWindowPos(
             position ?? FloatingSurface.PlaceCentered(new Vector2(width, totalHeight)),
             measuringFrame || placeAfterMeasurement ? ImGuiCond.Always : ImGuiCond.Appearing);
@@ -210,7 +216,7 @@ public static class DialogWidgets
                     // What the body used, padding on both sides included;
                     // the trailing item spacing is not content.
                     float padding = ActiveTheme.Floating.ModalBodyPadding * scale;
-                    _modalBodyHeights[popupId] = MathF.Max(
+                    State.BodyHeights[popupId] = MathF.Max(
                         2f * padding,
                         ImGui.GetCursorPosY() - ImGui.GetStyle().ItemSpacing.Y + padding);
                 }
@@ -224,7 +230,7 @@ public static class DialogWidgets
             // ── Footer content: right-aligned via last frame's measured width.
             if (footer != null)
             {
-                _modalFooterWidths.TryGetValue(popupId, out float lastWidth);
+                State.FooterWidths.TryGetValue(popupId, out float lastWidth);
                 float footerInset = ActiveTheme.Floating.FooterInset * scale;
                 float x = winMin.X + MathF.Max(
                     footerInset,
@@ -236,7 +242,7 @@ public static class DialogWidgets
                 ImGui.BeginGroup();
                 footer();
                 ImGui.EndGroup();
-                _modalFooterWidths[popupId] = ImGui.GetItemRectSize().X;
+                State.FooterWidths[popupId] = ImGui.GetItemRectSize().X;
             }
 
             if (canDismissWithEscape && DialogHasKeyboardFocus()

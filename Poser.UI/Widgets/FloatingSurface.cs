@@ -16,12 +16,6 @@ public static class FloatingSurface
     public static void ConfigureEffects(float fillOpacity, bool backdropBlur) =>
         GlassChrome.Configure(fillOpacity, backdropBlur);
 
-    public static bool BackdropBlurAvailable
-    {
-        get => GlassChrome.BackdropBlurAvailable;
-        set => GlassChrome.BackdropBlurAvailable = value;
-    }
-
     public static Vector4 FillColor => GlassChrome.BackgroundColor;
 
     public static void PrependShellBlur(

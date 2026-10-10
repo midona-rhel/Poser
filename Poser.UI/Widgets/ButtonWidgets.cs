@@ -22,7 +22,7 @@ public static class ButtonWidgets
     /// row's context menu — still opens at the pointer, because it has no
     /// seat to take.
     /// </summary>
-    public static Vector2 ButtonSeat { get; private set; }
+    public static Vector2 ButtonSeat => UiContext.Current.ButtonSeat;
 
     public static bool Button(
         string label,
@@ -254,7 +254,7 @@ public static class ButtonWidgets
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
         {
-            ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
+            UiContext.Current.ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
         }
         return hit.Activated;
@@ -507,7 +507,7 @@ public static class ButtonWidgets
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
         {
-            ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
+            UiContext.Current.ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
         }
         return hit.Activated;

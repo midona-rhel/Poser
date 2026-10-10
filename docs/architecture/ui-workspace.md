@@ -341,7 +341,11 @@ acceptance remains manual under the [testing contract](../process/testing.md).
 The widget toolkit is first-party UI work. `Poser.UI.Widgets` supplies the
 shared controls, text, icons, placement, scrolling, and motion as one static
 class per widget family (`ButtonWidgets`, `TextWidgets`, `FloatingMenu`, …);
-call sites import them with `using static`. `Interactive.Reserve`
+call sites import them with `using static`. Their mutable state (active
+theme, text and texture caches, interaction, menu, help and animation state,
+the texture uploader and log) lives in one `UiContext`. The host registers it
+with its texture uploader and log; `UIManager` owns it and disposes it on
+unload, which releases its textures, so the host resets no UI statics. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.

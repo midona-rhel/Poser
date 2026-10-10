@@ -21,7 +21,6 @@ using Poser.Services;
 using Poser.Application.Scene;
 using Poser.UI;
 using Poser.UI.Widgets;
-using static Poser.UI.Widgets.HostHooks;
 
 namespace Poser;
 
@@ -78,6 +77,9 @@ public class Poser : IDalamudPlugin
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
+        // The widgets draw through one context, installed as it is built;
+        // the UI manager owns it from here and disposes it on unload.
+        _ = _serviceProvider.GetRequiredService<UiContext>();
         ThemeSelection.Apply(
             configuration.Config.UI.Theme,
             configuration.Config.UI.AccentIndex);
@@ -88,10 +90,6 @@ public class Poser : IDalamudPlugin
         // Every feature registered its own startables; this is the one place
         // they run, in StartStage order, before any UI draws.
         Startables.StartAll(_serviceProvider, log);
-        startup.OnFailure(() => Log = null);
-        Log = message =>
-            _serviceProvider.GetRequiredService<
-                Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         // The other polarity's fonts warm on a second atlas, so the atlas
         // the UI draws with is never rebuilt once it is up: the rebuild's
         // landing frame was the one frame the whole UI went missing.
@@ -106,23 +104,9 @@ public class Poser : IDalamudPlugin
                 pluginInterface.AssemblyLocation.DirectoryName ?? ".",
                 "Data", "Fonts"),
             _standbyFontAtlas);
-        Func<byte[], int, int, (nint, IDisposable?)> textureUploader = (pixels, width, height) =>
-        {
-            var wrap = textureProvider.CreateFromRaw(
-                RawImageSpecification.Rgba32(width, height),
-                pixels,
-                "Crystarium icon");
-            return ((nint)wrap.Handle.Handle, wrap);
-        };
-        startup.OnFailure(() => IconTextureUploader = null);
-        startup.OnFailure(() => PanelShadowTextureUploader = null);
-        startup.OnFailure(() => FloatingSurface.BackdropBlurAvailable = false);
-        IconTextureUploader = textureUploader;
-        PanelShadowTextureUploader = textureUploader;
-        FloatingSurface.BackdropBlurAvailable = true;
         log.Debug("Load stage: UI manager");
         var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
-        // Unwinds before the fonts and uploaders registered above.
+        // Unwinds before the fonts registered above.
         startup.OnFailure(uiManager.Dispose);
         if (!_commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -241,10 +225,6 @@ public class Poser : IDalamudPlugin
                 // Draw stops before any resource it draws with is released;
                 // the provider's later dispose of the manager is a no-op.
                 _serviceProvider.GetRequiredService<IUIManager>().Dispose();
-                IconTextureUploader = null;
-                PanelShadowTextureUploader = null;
-                Log = null;
-                FloatingSurface.BackdropBlurAvailable = false;
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });

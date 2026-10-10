@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -30,6 +31,17 @@ namespace Poser.UI;
 /// </summary>
 internal static class Motion
 {
+    /// <summary>Animation progress by identity.</summary>
+    internal sealed class MotionState
+    {
+        internal readonly Dictionary<uint, RampEntry> Ramps = new();
+        internal readonly Dictionary<uint, GroupEntry> Groups = new();
+        // Reused across prunes: the sweep cannot remove while enumerating.
+        internal readonly List<uint> Stale = new();
+    }
+
+    private static MotionState State => UiContext.Current.Animation;
+
     // Eviction heuristic, never a rendering rule: sweep only once a store
     // is genuinely large and only when a miss proves the caller set is
     // churning. The one observable consequence is that an identity gone
@@ -37,19 +49,19 @@ internal static class Motion
     private const int PruneThreshold = 512;
     private const int StaleFrames = 2;
 
-    private abstract class Entry
+    internal abstract class Entry
     {
         public int LastFrame;
     }
 
-    private sealed class RampEntry : Entry
+    internal sealed class RampEntry : Entry
     {
         public float Progress;
     }
 
     /// <summary>One channel of a group: its id plus the origin, target
     /// and current value it interpolates.</summary>
-    private struct Lane
+    internal struct Lane
     {
         public int Channel;
         public Vector4 From;
@@ -57,17 +69,11 @@ internal static class Motion
         public Vector4 Value;
     }
 
-    private sealed class GroupEntry : Entry
+    internal sealed class GroupEntry : Entry
     {
         public float Elapsed;
         public Lane[] Lanes = [];
     }
-
-    private static readonly Dictionary<uint, RampEntry> Ramps = new();
-    private static readonly Dictionary<uint, GroupEntry> Groups = new();
-
-    // Reused across prunes: the sweep cannot remove while enumerating.
-    private static readonly List<uint> Stale = new();
 
     /// <summary>
     /// Constant-rate linear progress for <paramref name="id"/>: 0..1
@@ -84,12 +90,12 @@ internal static class Motion
         uint id, bool on, float durationSeconds)
     {
         int frame = ImGui.GetFrameCount();
-        if (!Ramps.TryGetValue(id, out var entry))
+        if (!State.Ramps.TryGetValue(id, out var entry))
         {
-            if (Ramps.Count > PruneThreshold)
-                Prune(Ramps, frame);
+            if (State.Ramps.Count > PruneThreshold)
+                Prune(State.Ramps, frame);
             entry = new RampEntry { Progress = on ? 1f : 0f };
-            Ramps[id] = entry;
+            State.Ramps[id] = entry;
         }
         // The stored frame must be strictly BEHIND this one for the clock
         // between them to mean anything. A ramp drawn twice in one frame,
@@ -150,12 +156,12 @@ internal static class Motion
                         + $"{channels[i].Channel} at slots {j} and {i}");
 
         int frame = ImGui.GetFrameCount();
-        if (!Groups.TryGetValue(id, out var entry))
+        if (!State.Groups.TryGetValue(id, out var entry))
         {
-            if (Groups.Count > PruneThreshold)
-                Prune(Groups, frame);
+            if (State.Groups.Count > PruneThreshold)
+                Prune(State.Groups, frame);
             entry = new GroupEntry { Lanes = new Lane[channels.Length] };
-            Groups[id] = entry;
+            State.Groups[id] = entry;
             Seed(entry, channels, transition, frame);
             return;
         }
@@ -259,13 +265,13 @@ internal static class Motion
         Dictionary<uint, TEntry> store, int frame)
         where TEntry : Entry
     {
-        Stale.Clear();
+        State.Stale.Clear();
         foreach (var (key, value) in store)
             if (frame - value.LastFrame > StaleFrames)
-                Stale.Add(key);
-        foreach (var key in Stale)
+                State.Stale.Add(key);
+        foreach (var key in State.Stale)
             store.Remove(key);
-        Stale.Clear();
+        State.Stale.Clear();
     }
 }
 

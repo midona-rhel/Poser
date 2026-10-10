@@ -51,6 +51,25 @@ namespace Poser.UI.Widgets;
 /// </summary>
 public static class TextInputWidgets
 {
+    /// <summary>The field a clear button hands focus back to.</summary>
+    internal sealed class RefocusState
+    {
+        // The clear affordance is a reserved hit area, so pressing it takes
+        // ImGui's active id away from the field the way any other control
+        // would. Clearing is an edit of the field the user is still in, so
+        // the field takes focus back on the IMMEDIATELY following frame.
+        //
+        // The frame is part of the request because the identity alone is not
+        // enough: an id is only unique within a frame's id stack, so a request
+        // that outlived its frame could hand focus to a completely different
+        // control that happens to reuse the identity later. One frame of grace
+        // is exactly the lifetime the handover needs.
+        internal uint Target;
+        internal int Frame;
+    }
+
+    private static RefocusState State => UiContext.Current.Refocus;
+
     public static bool TextInput(
         string id,
         string value,
@@ -74,19 +93,6 @@ public static class TextInputWidgets
         TextInputCore(
             id, value, onChange, style, placeholder,
             clearable: true, search: false, disabled, help);
-
-    // The clear affordance is a reserved hit area, so pressing it takes
-    // ImGui's active id away from the field the way any other control
-    // would. Clearing is an edit of the field the user is still in, so
-    // the field takes focus back on the IMMEDIATELY following frame.
-    //
-    // The frame is part of the request because the identity alone is not
-    // enough: an id is only unique within a frame's id stack, so a request
-    // that outlived its frame could hand focus to a completely different
-    // control that happens to reuse the identity later. One frame of grace
-    // is exactly the lifetime the handover needs.
-    private static uint _clearRefocusTarget;
-    private static int _clearRefocusFrame;
 
     /// <summary>CSS px of the ascent-over-cap dead band KEPT above the cap
     /// top when a native field's caret is trimmed: tall diacritics (É, Å)
@@ -224,16 +230,16 @@ public static class TextInputWidgets
                 true);
 
         uint identity = ImGui.GetID(id);
-        if (_clearRefocusTarget != 0)
+        if (State.Target != 0)
         {
             // Anything but the very next frame — including a restarted
             // frame counter — discards the request outright, whether or
             // not this field is the one it named.
-            if (ImGui.GetFrameCount() != _clearRefocusFrame + 1)
-                _clearRefocusTarget = 0;
-            else if (_clearRefocusTarget == identity)
+            if (ImGui.GetFrameCount() != State.Frame + 1)
+                State.Target = 0;
+            else if (State.Target == identity)
             {
-                _clearRefocusTarget = 0;
+                State.Target = 0;
                 ImGui.SetKeyboardFocusHere();
             }
         }
@@ -350,8 +356,8 @@ public static class TextInputWidgets
             {
                 next = string.Empty;
                 changed = true;
-                _clearRefocusTarget = identity;
-                _clearRefocusFrame = ImGui.GetFrameCount();
+                State.Target = identity;
+                State.Frame = ImGui.GetFrameCount();
             }
         }
 

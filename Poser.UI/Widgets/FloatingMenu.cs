@@ -24,7 +24,29 @@ namespace Poser.UI.Widgets;
 /// </summary>
 public static class FloatingMenu
 {
-    private enum Phase { Hidden, Opening, Open, Closing }
+    /// <summary>The open menu, its submenus and their animation phases.</summary>
+    internal sealed class MenuState
+    {
+        internal Phase Phase;
+        internal string Id = string.Empty;
+        internal ContextMenuItem[] Items = Array.Empty<ContextMenuItem>();
+        internal Vector2 Min;
+        internal Vector2 Size;
+        internal Vector2 Pivot;
+        internal ContextMenuItem[]? SubmenuItems;
+        internal int SubmenuParent = -1;
+        internal int SubmenuClicked = -1;
+        internal int SubmenuClickedParent = -1;
+        internal readonly List<SubmenuLevel> Submenus = new();
+        internal readonly List<SubmenuLevel> ClosingSubmenus = new();
+        internal double PhaseStart;
+        internal int LastOwnerFrame = -1;
+        internal int OpenedFrame = -1;
+    }
+
+    private static MenuState State => UiContext.Current.Menu;
+
+    internal enum Phase { Hidden, Opening, Open, Closing }
 
     private static Transition Enter =>
         Transition.CubicBezier(
@@ -35,20 +57,11 @@ public static class FloatingMenu
             ActiveTheme.Motion.MenuExit,
             0.42f, 0f, 1f, 1f); // CSS ease-in
 
-
     // Deliberate deviation from Picto: its menu rows sit their text
     // visibly below true center even in the browser, because flex centers
     // the LINE BOX. Poser centers the INK, and a menu row is
     // icon-adjacent by construction — label and shortcut go through
     // TextInBand's besideIcon mode, which owns that seat.
-
-    private static Phase _phase;
-    private static string _id = string.Empty;
-    private static ContextMenuItem[] _items = Array.Empty<ContextMenuItem>();
-    private static Vector2 _min;
-    private static Vector2 _size;
-    private static Vector2 _pivot;
-    private static ContextMenuItem[]? _submenuItems;
 
     /// <summary>The submenu's hover GRACE: the geometric bridge misses
     /// the row gaps, the menu padding, and a diagonal pass over other
@@ -57,11 +70,8 @@ public static class FloatingMenu
     /// keep-region. A row that opens its own submenu still takes over
     /// immediately.</summary>
     private const double SubmenuGraceSeconds = 0.30;
-    private static int _submenuParent = -1;
-    private static int _submenuClicked = -1;
-    private static int _submenuClickedParent = -1;
 
-    private sealed class SubmenuLevel
+    internal sealed class SubmenuLevel
     {
         public int Parent;
         public int[] Path = [];
@@ -77,13 +87,6 @@ public static class FloatingMenu
         public float ExitAlpha = 1f;
     }
 
-    private static readonly List<SubmenuLevel> Submenus = new();
-    private static readonly List<SubmenuLevel> ClosingSubmenus = new();
-
-    private static double _phaseStart;
-    private static int _lastOwnerFrame = -1;
-    private static int _openedFrame = -1;
-
     /// <summary>Opens the menu for <paramref name="id"/> at the given
     /// screen position (typically the mouse), replacing any open menu.
     /// Items freeze at open.</summary>
@@ -98,7 +101,7 @@ public static class FloatingMenu
         ContextMenuItem[] items,
         float? width = null)
     {
-        if (_phase != Phase.Hidden && _id == id)
+        if (State.Phase != Phase.Hidden && State.Id == id)
         {
             StartClose();
             return;
@@ -106,47 +109,47 @@ public static class FloatingMenu
 
         Interactive.ClaimExclusive(ExclusiveKey(id));
         float s = ImGuiHelpers.GlobalScale;
-        _id = id;
-        _items = items;
-        Submenus.Clear();
-        ClosingSubmenus.Clear();
-        _submenuItems = null;
-        _submenuParent = -1;
-        _submenuClicked = -1;
-        _size = new Vector2(
+        State.Id = id;
+        State.Items = items;
+        State.Submenus.Clear();
+        State.ClosingSubmenus.Clear();
+        State.SubmenuItems = null;
+        State.SubmenuParent = -1;
+        State.SubmenuClicked = -1;
+        State.Size = new Vector2(
             (width ?? ActiveTheme.Floating.MenuWidth) * s,
             HeightFor(items, s));
-        _min = FloatingSurface.PlaceAtPoint(
+        State.Min = FloatingSurface.PlaceAtPoint(
             position,
-            _size,
+            State.Size,
             s,
-            out _pivot);
+            out State.Pivot);
 
-        _phase = Phase.Opening;
-        _phaseStart = ImGui.GetTime();
-        _openedFrame = ImGui.GetFrameCount();
+        State.Phase = Phase.Opening;
+        State.PhaseStart = ImGui.GetTime();
+        State.OpenedFrame = ImGui.GetFrameCount();
     }
 
     public static void DismissAll()
     {
-        Submenus.Clear();
-        ClosingSubmenus.Clear();
-        if (_phase != Phase.Hidden)
-            Interactive.ReleaseExclusive(ExclusiveKey(_id));
-        _phase = Phase.Hidden;
-        _submenuItems = null;
-        _submenuParent = -1;
-        _submenuClicked = -1;
+        State.Submenus.Clear();
+        State.ClosingSubmenus.Clear();
+        if (State.Phase != Phase.Hidden)
+            Interactive.ReleaseExclusive(ExclusiveKey(State.Id));
+        State.Phase = Phase.Hidden;
+        State.SubmenuItems = null;
+        State.SubmenuParent = -1;
+        State.SubmenuClicked = -1;
     }
 
     public static void EndFrame()
     {
-        if (_phase != Phase.Hidden
-            && _lastOwnerFrame != ImGui.GetFrameCount())
+        if (State.Phase != Phase.Hidden
+            && State.LastOwnerFrame != ImGui.GetFrameCount())
             DismissAll();
     }
 
-    public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
+    public static bool IsOpen(string id) => State.Phase != Phase.Hidden && State.Id == id;
 
     /// <summary>Replaces the open menu's rows in place — a menu whose
     /// rows show live state (a toggle's check) is rebuilt by its owner
@@ -154,25 +157,25 @@ public static class FloatingMenu
     /// menu, ignores it.</summary>
     public static void Refresh(string id, ContextMenuItem[] items)
     {
-        if (_phase == Phase.Hidden || _id != id)
+        if (State.Phase == Phase.Hidden || State.Id != id)
             return;
         // Dispatch indices must describe the rows on screen. A changed
         // capability/menu shape closes instead of keeping stale rows.
-        if (items.Length != _items.Length)
+        if (items.Length != State.Items.Length)
         {
             DismissAll();
             return;
         }
-        _items = items;
-        if (_submenuParent >= 0 && _submenuParent < items.Length)
-            _submenuItems = items[_submenuParent].SubmenuItems;
+        State.Items = items;
+        if (State.SubmenuParent >= 0 && State.SubmenuParent < items.Length)
+            State.SubmenuItems = items[State.SubmenuParent].SubmenuItems;
     }
 
     /// <summary>Returns and clears a submenu click.</summary>
     public static int ConsumeSubmenuClick()
     {
-        _submenuClickedParent = -1;
-        return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
+        State.SubmenuClickedParent = -1;
+        return ConsumeSubmenuClick(ref State.SubmenuClicked, State.SubmenuItems);
     }
 
     /// <summary>Returns and clears a submenu click, naming the PARENT
@@ -180,25 +183,25 @@ public static class FloatingMenu
     /// submenus routes the click by it.</summary>
     public static int ConsumeSubmenuClick(out int parent)
     {
-        parent = _submenuClickedParent;
-        _submenuClickedParent = -1;
-        return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
+        parent = State.SubmenuClickedParent;
+        State.SubmenuClickedParent = -1;
+        return ConsumeSubmenuClick(ref State.SubmenuClicked, State.SubmenuItems);
     }
 
     /// <summary>Instantly hides the menu (stale target).</summary>
     public static void Dismiss(string id)
     {
-        if (_id == id)
+        if (State.Id == id)
             DismissAll();
     }
 
     private static void StartClose()
     {
-        if ((_phase is Phase.Opening or Phase.Open)
-            && ImGui.GetFrameCount() != _openedFrame)
+        if ((State.Phase is Phase.Opening or Phase.Open)
+            && ImGui.GetFrameCount() != State.OpenedFrame)
         {
-            _phase = Phase.Closing;
-            _phaseStart = ImGui.GetTime();
+            State.Phase = Phase.Closing;
+            State.PhaseStart = ImGui.GetTime();
         }
     }
 
@@ -325,10 +328,10 @@ public static class FloatingMenu
     /// </summary>
     public static int Draw(string id)
     {
-        if (_phase == Phase.Hidden || _id != id)
+        if (State.Phase == Phase.Hidden || State.Id != id)
             return -1;
-        _submenuClicked = -1;
-        _submenuClickedParent = -1;
+        State.SubmenuClicked = -1;
+        State.SubmenuClickedParent = -1;
         // Hand-rolled surface, same handshake: claim on open, sync
         // every frame it draws, release on dismissal.
         if (!FloatingSurface.SyncExclusive(ExclusiveKey(id)))
@@ -338,12 +341,12 @@ public static class FloatingMenu
         }
 
         var pointer = ImGui.GetMousePos();
-        bool pointerOverMenu = InRect(pointer, _min, _size)
+        bool pointerOverMenu = InRect(pointer, State.Min, State.Size)
             || PointerWithinSubmenus(pointer, 0);
         bool outsidePressed =
             ImGui.IsMouseClicked(ImGuiMouseButton.Left)
             || ImGui.IsMouseClicked(ImGuiMouseButton.Right);
-        if (ImGui.GetFrameCount() != _openedFrame
+        if (ImGui.GetFrameCount() != State.OpenedFrame
             && ShouldDismiss(
                 outsidePressed,
                 pointerOverMenu,
@@ -353,15 +356,15 @@ public static class FloatingMenu
             return -1;
         }
 
-        _lastOwnerFrame = ImGui.GetFrameCount();
+        State.LastOwnerFrame = ImGui.GetFrameCount();
         float s = ImGuiHelpers.GlobalScale;
         double now = ImGui.GetTime();
-        float t = (float)(now - _phaseStart);
+        float t = (float)(now - State.PhaseStart);
 
         // Lifecycle: 100ms in, 80ms out.
         float scale, alpha;
         bool interactive = false;
-        switch (_phase)
+        switch (State.Phase)
         {
             case Phase.Opening:
             {
@@ -376,7 +379,7 @@ public static class FloatingMenu
                 // geometry identical to the rendered rows.
                 interactive = false;
                 if (t >= ActiveTheme.Motion.Fast)
-                    _phase = Phase.Open;
+                    State.Phase = Phase.Open;
                 break;
             }
             case Phase.Closing:
@@ -403,7 +406,7 @@ public static class FloatingMenu
 
         var io = ImGui.GetIO();
         var menuOwner = Interactive.BeginOwner(
-            ExclusiveKey(_id),
+            ExclusiveKey(State.Id),
             InteractionLayer.Popup,
             Vector2.Zero,
             io.DisplaySize);
@@ -415,7 +418,7 @@ public static class FloatingMenu
 
         // Transparent full-viewport backdrop: swallows the outside
         // press that closes the menu, exactly Picto's backdrop div.
-        if (_phase is Phase.Opening or Phase.Open)
+        if (State.Phase is Phase.Opening or Phase.Open)
         {
             ImGui.SetNextWindowPos(Vector2.Zero);
             ImGui.SetNextWindowSize(io.DisplaySize);
@@ -433,14 +436,14 @@ public static class FloatingMenu
         float host = ActiveTheme.Floating.HostMargin * s;
         UpdateSubmenus(pointer, s, io.DisplaySize, interactive);
         PruneClosingSubmenus(now);
-        var unionMin = _min;
-        var unionMax = _min + _size;
-        foreach (var level in Submenus)
+        var unionMin = State.Min;
+        var unionMax = State.Min + State.Size;
+        foreach (var level in State.Submenus)
         {
             unionMin = Vector2.Min(unionMin, level.Min);
             unionMax = Vector2.Max(unionMax, level.Min + level.Size);
         }
-        foreach (var level in ClosingSubmenus)
+        foreach (var level in State.ClosingSubmenus)
         {
             unionMin = Vector2.Min(unionMin, level.Min);
             unionMax = Vector2.Max(unionMax, level.Min + level.Size);
@@ -455,8 +458,8 @@ public static class FloatingMenu
         int vtxStart = dl.VtxBuffer.Size;
         int clicked = DrawSurfaceAndRows(
             dl, s, interactive && !PointerWithinSubmenus(pointer, 0),
-            _items, _min, _size, "##fm-row", alpha);
-        foreach (var level in ClosingSubmenus)
+            State.Items, State.Min, State.Size, "##fm-row", alpha);
+        foreach (var level in State.ClosingSubmenus)
         {
             var motion = SubmenuMotion(level, now);
             int retiringStart = dl.VtxBuffer.Size;
@@ -470,10 +473,10 @@ public static class FloatingMenu
         }
         Action? nestedAction = null;
         bool nestedClicked = false;
-        bool keepOpen = clicked >= 0 && _items[clicked].KeepOpen;
-        for (int depth = 0; depth < Submenus.Count; depth++)
+        bool keepOpen = clicked >= 0 && State.Items[clicked].KeepOpen;
+        for (int depth = 0; depth < State.Submenus.Count; depth++)
         {
-            var level = Submenus[depth];
+            var level = State.Submenus[depth];
             var motion = SubmenuMotion(level, now);
             int childStart = dl.VtxBuffer.Size;
             int childClicked = DrawSurfaceAndRows(
@@ -489,8 +492,8 @@ public static class FloatingMenu
             keepOpen = level.Items[childClicked].KeepOpen;
             if (depth == 0)
             {
-                _submenuClicked = childClicked;
-                _submenuClickedParent = level.Parent;
+                State.SubmenuClicked = childClicked;
+                State.SubmenuClickedParent = level.Parent;
             }
             else
             {
@@ -503,11 +506,11 @@ public static class FloatingMenu
         int vtxEnd = dl.VtxBuffer.Size;
         // The whole surface — shadow, ring, chrome, rows — pops as one
         // composited unit about the flip-aware transform origin.
-        VertexTransform.ApplyPop(dl, vtxStart, vtxEnd, _pivot, scale, Vector2.Zero, alpha);
+        VertexTransform.ApplyPop(dl, vtxStart, vtxEnd, State.Pivot, scale, Vector2.Zero, alpha);
         ImGui.End();
         Interactive.EndOwner(menuOwner);
 
-        if ((clicked >= 0 || _submenuClicked >= 0 || nestedClicked) && !keepOpen)
+        if ((clicked >= 0 || State.SubmenuClicked >= 0 || nestedClicked) && !keepOpen)
             StartClose();
         // Commands may open another surface; never invoke during drawing
         // or close the replacement surface after dispatch.
@@ -522,15 +525,15 @@ public static class FloatingMenu
         bool interactive)
     {
         if (!interactive) return;
-        var items = _items;
-        var min = _min;
-        var size = _size;
+        var items = State.Items;
+        var min = State.Min;
+        var size = State.Size;
         double now = ImGui.GetTime();
         int depth = 0;
         // Bound malformed/self-referencing menu descriptions.
         for (; depth < 16; depth++)
         {
-            var previous = depth < Submenus.Count ? Submenus[depth] : null;
+            var previous = depth < State.Submenus.Count ? State.Submenus[depth] : null;
             int parent = -1;
             Vector2 rowMin = default;
             float y = min.Y + ActiveTheme.Floating.MenuPadding * scale;
@@ -561,14 +564,14 @@ public static class FloatingMenu
             if (parent < 0) break;
             if (previous is null || previous.Parent != parent)
             {
-                if (depth < Submenus.Count)
+                if (depth < State.Submenus.Count)
                     RetireSubmenus(depth, now);
                 var path = new int[depth + 1];
                 var pathLabels = new string[depth + 1];
                 if (depth > 0)
                 {
-                    Array.Copy(Submenus[depth - 1].Path, path, depth);
-                    Array.Copy(Submenus[depth - 1].PathLabels, pathLabels, depth);
+                    Array.Copy(State.Submenus[depth - 1].Path, path, depth);
+                    Array.Copy(State.Submenus[depth - 1].PathLabels, pathLabels, depth);
                 }
                 path[depth] = parent;
                 pathLabels[depth] = items[parent].Label;
@@ -580,7 +583,7 @@ public static class FloatingMenu
                     PathLabels = pathLabels,
                     PhaseStart = now,
                 };
-                Submenus.Add(previous);
+                State.Submenus.Add(previous);
             }
             previous.Items = items[parent].SubmenuItems!;
             previous.Size = new Vector2(MeasureWidth(previous.Items) * scale,
@@ -598,36 +601,36 @@ public static class FloatingMenu
             min = previous.Min;
             size = previous.Size;
         }
-        if (depth < Submenus.Count)
+        if (depth < State.Submenus.Count)
             RetireSubmenus(depth, now);
-        _submenuItems = Submenus.Count > 0 ? Submenus[0].Items : null;
-        _submenuParent = Submenus.Count > 0 ? Submenus[0].Parent : -1;
+        State.SubmenuItems = State.Submenus.Count > 0 ? State.Submenus[0].Items : null;
+        State.SubmenuParent = State.Submenus.Count > 0 ? State.Submenus[0].Parent : -1;
     }
 
     private static void RetireSubmenus(int first, double now)
     {
-        for (int i = first; i < Submenus.Count; i++)
+        for (int i = first; i < State.Submenus.Count; i++)
         {
-            var level = Submenus[i];
+            var level = State.Submenus[i];
             var motion = SubmenuMotion(level, now);
             level.Phase = Phase.Closing;
             level.PhaseStart = now;
             level.ExitScale = motion.Scale;
             level.ExitAlpha = motion.Alpha;
-            ClosingSubmenus.Add(level);
+            State.ClosingSubmenus.Add(level);
         }
-        Submenus.RemoveRange(first, Submenus.Count - first);
+        State.Submenus.RemoveRange(first, State.Submenus.Count - first);
     }
 
     private static void RemoveClosingBranch(int[] path, string[] pathLabels)
     {
-        for (int i = ClosingSubmenus.Count - 1; i >= 0; i--)
+        for (int i = State.ClosingSubmenus.Count - 1; i >= 0; i--)
         {
-            var closing = ClosingSubmenus[i];
+            var closing = State.ClosingSubmenus[i];
             if (closing.Path.AsSpan().SequenceEqual(path)
                 && closing.PathLabels.AsSpan().SequenceEqual(pathLabels))
             {
-                ClosingSubmenus.RemoveAt(i);
+                State.ClosingSubmenus.RemoveAt(i);
                 return;
             }
         }
@@ -659,21 +662,21 @@ public static class FloatingMenu
 
     private static void PruneClosingSubmenus(double now)
     {
-        for (int i = ClosingSubmenus.Count - 1; i >= 0; i--)
+        for (int i = State.ClosingSubmenus.Count - 1; i >= 0; i--)
         {
-            if (now - ClosingSubmenus[i].PhaseStart
+            if (now - State.ClosingSubmenus[i].PhaseStart
                 >= ActiveTheme.Motion.MenuExit)
-                ClosingSubmenus.RemoveAt(i);
+                State.ClosingSubmenus.RemoveAt(i);
         }
     }
 
     private static bool PointerWithinSubmenus(Vector2 pointer, int first)
     {
-        for (int i = first; i < Submenus.Count; i++)
+        for (int i = first; i < State.Submenus.Count; i++)
         {
-            var level = Submenus[i];
-            var parentMin = i == 0 ? _min : Submenus[i - 1].Min;
-            var parentSize = i == 0 ? _size : Submenus[i - 1].Size;
+            var level = State.Submenus[i];
+            var parentMin = i == 0 ? State.Min : State.Submenus[i - 1].Min;
+            var parentSize = i == 0 ? State.Size : State.Submenus[i - 1].Size;
             if (InRect(pointer, level.Min, level.Size)
                 || InSubmenuBridge(pointer,
                     new Vector2(parentMin.X, level.Min.Y),

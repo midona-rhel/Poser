@@ -101,7 +101,7 @@ public static class SliderWidgets
         void Clamped(float next) =>
             onChange(Math.Clamp(next, minimum, maximum));
 
-        if (_axisEditId == ImGui.GetID(id) && !disabled)
+        if (UiContext.Current.AxisEdit.Id == ImGui.GetID(id) && !disabled)
             return EditAxisWell(
                 id, string.Empty, value, Clamped, onCommit,
                 ActiveTheme.FormValue, format ?? "0.###", pos, size, uiScale);
@@ -110,9 +110,10 @@ public static class SliderWidgets
         bool changed = false;
         if (hit.DoubleClicked)
         {
-            _axisEditId = ImGui.GetID(id);
-            _axisEditValue = value;
-            _axisEditNeedsFocus = true;
+            var edit = UiContext.Current.AxisEdit;
+            edit.Id = ImGui.GetID(id);
+            edit.Value = value;
+            edit.NeedsFocus = true;
         }
         else if (hit.Active)
         {
@@ -137,7 +138,7 @@ public static class SliderWidgets
         DrawSliderWell(
             pos, size, value, minimum, maximum, scale, logCurvature,
             format, hit.Active, disabled, uiScale);
-        if (hit.Hovered && _axisEditId == null)
+        if (hit.Hovered && UiContext.Current.AxisEdit.Id == null)
             HoverHelp.Explain(id, pos, pos + size,
                 "Drag to set · Double-click to type");
         return changed;

@@ -10,25 +10,32 @@ namespace Poser.UI.Widgets;
 
 public static class HoverHelp
 {
+    /// <summary>The hovered help candidate and the card on screen.</summary>
+    internal sealed class HelpState
+    {
+        internal Candidate? Candidate;
+        internal uint? PendingId;
+        internal double PendingSince;
+        internal Phase Phase = Phase.Hidden;
+        internal Candidate Card;
+        internal double PhaseStart;
+    }
+
+    private static HelpState State => UiContext.Current.Help;
+
     private static Transition PopEase =>
         Transition.CubicBezier(ActiveTheme.Motion.HoverPop,
             0.25f, 0.1f, 0.25f, 1f);
 
-    private enum Phase { Hidden, Entering, Open, Exiting }
-    private readonly record struct Candidate(
+    internal enum Phase { Hidden, Entering, Open, Exiting }
+    internal readonly record struct Candidate(
         uint Id, Vector2 Min, Vector2 Max, string Text,
         string? Shortcut, HoverHelpSide Side, bool Instant,
         bool Animated, InteractionOwner Owner, Vector2? Position = null,
         float Alpha = 1f, bool Mono = false);
 
-    private static Candidate? _candidate;
-    private static uint? _pendingId;
-    private static double _pendingSince;
-    private static Phase _phase = Phase.Hidden;
-    private static Candidate _card;
-    private static double _phaseStart;
     private static float PopDuration =>
-        _card.Animated ? ActiveTheme.Motion.HoverPop : 0f;
+        State.Card.Animated ? ActiveTheme.Motion.HoverPop : 0f;
     internal static BoxStyle SurfaceStyle
     {
         get
@@ -54,7 +61,7 @@ public static class HoverHelp
     {
         if (text.Length == 0)
             return;
-        _candidate = new Candidate(
+        State.Candidate = new Candidate(
             ImGui.GetID(id), targetMin, targetMax, text, shortcut, side,
             Instant: false, animated, Interactive.CurrentOwner);
     }
@@ -64,7 +71,7 @@ public static class HoverHelp
     {
         if (text.Length == 0)
             return;
-        _candidate = new Candidate(
+        State.Candidate = new Candidate(
             ImGui.GetID(id), targetMin, targetMax, text, null, side,
             Instant: true, animated, Interactive.CurrentOwner);
     }
@@ -104,8 +111,8 @@ public static class HoverHelp
         hit.Hovered || (disabled && HelpHovered(min, max));
     public static void Render()
     {
-        var candidate = _candidate;
-        _candidate = null;
+        var candidate = State.Candidate;
+        State.Candidate = null;
         if (candidate is { } registered
             && Interactive.PointerOccluded(
                 registered.Owner,
@@ -115,67 +122,67 @@ public static class HoverHelp
 
         if (candidate is { } c)
         {
-            if (_pendingId != c.Id)
+            if (State.PendingId != c.Id)
             {
-                _pendingId = c.Id;
-                _pendingSince = now;
+                State.PendingId = c.Id;
+                State.PendingSince = now;
             }
 
-            bool ready = c.Instant || now - _pendingSince >= ActiveTheme.Motion.HoverOpenDelay;
+            bool ready = c.Instant || now - State.PendingSince >= ActiveTheme.Motion.HoverOpenDelay;
             if (ready)
             {
-                if (_phase == Phase.Hidden || _card.Id != c.Id)
+                if (State.Phase == Phase.Hidden || State.Card.Id != c.Id)
                 {
-                    _card = c;
-                    _phase = Phase.Entering;
-                    _phaseStart = now;
+                    State.Card = c;
+                    State.Phase = Phase.Entering;
+                    State.PhaseStart = now;
                 }
                 else
                 {
-                    var wasExiting = _phase == Phase.Exiting;
+                    var wasExiting = State.Phase == Phase.Exiting;
                     float inness = CurrentInness(now);
-                    _card = c;
+                    State.Card = c;
                     if (wasExiting)
                     {
-                        _phase = Phase.Entering;
-                        _phaseStart = now - InverseProgress(inness) * PopDuration;
+                        State.Phase = Phase.Entering;
+                        State.PhaseStart = now - InverseProgress(inness) * PopDuration;
                     }
                 }
             }
-            else if (_phase is Phase.Entering or Phase.Open)
+            else if (State.Phase is Phase.Entering or Phase.Open)
             {
                 BeginExit(now);
             }
         }
         else
         {
-            _pendingId = null;
-            if (_phase is Phase.Entering or Phase.Open)
+            State.PendingId = null;
+            if (State.Phase is Phase.Entering or Phase.Open)
                 BeginExit(now);
         }
 
-        if (_phase == Phase.Entering && now - _phaseStart >= PopDuration)
-            _phase = Phase.Open;
-        if (_phase == Phase.Exiting && now - _phaseStart >= PopDuration)
-            _phase = Phase.Hidden;
-        if (_phase == Phase.Hidden)
+        if (State.Phase == Phase.Entering && now - State.PhaseStart >= PopDuration)
+            State.Phase = Phase.Open;
+        if (State.Phase == Phase.Exiting && now - State.PhaseStart >= PopDuration)
+            State.Phase = Phase.Hidden;
+        if (State.Phase == Phase.Hidden)
             return;
 
-        Draw(_card, CurrentInness(now));
+        Draw(State.Card, CurrentInness(now));
     }
     private static void BeginExit(double now)
     {
         float inness = CurrentInness(now);
-        _phase = Phase.Exiting;
-        _phaseStart = now - InverseProgress(1f - inness) * PopDuration;
+        State.Phase = Phase.Exiting;
+        State.PhaseStart = now - InverseProgress(1f - inness) * PopDuration;
     }
     private static float CurrentInness(double now)
     {
         float duration = PopDuration;
         float p = duration <= 0f
             ? 1f
-            : (float)Math.Clamp((now - _phaseStart) / duration, 0.0, 1.0);
-        return _phase switch
+            : (float)Math.Clamp((now - State.PhaseStart) / duration, 0.0, 1.0);
+        return State.Phase switch
         {
             Phase.Entering => PopEase.Evaluate(p),
             Phase.Open => 1f,

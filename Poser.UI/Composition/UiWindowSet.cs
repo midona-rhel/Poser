@@ -4,8 +4,7 @@ using Poser.Services;
 using System;
 using System.Collections.Generic;
 using Poser.Application.Selection;
-using static Poser.UI.Widgets.HostHooks;
-using static Poser.UI.Widgets.PageForm;
+using Poser.UI.Widgets;
 
 namespace Poser.UI.Composition;
 
@@ -29,6 +28,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
+    private readonly UiContext _ui;
     // Requested state can wait for bounded icon warming.
     private bool _primaryOpenRequested;
     private (bool Open, bool Detached, bool SplitInspector)? _appliedLayout;
@@ -47,6 +47,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly List<(PropertiesContext Context, int Mode, string Tab)> _pendingProperties = new();
 
     public UiWindowSet(
+        UiContext ui,
         IGPoseService gPoseService,
         ConfigurationService configService,
         IServiceProvider services,
@@ -69,9 +70,10 @@ public sealed class UiWindowSet : IDisposable
         _overlayPresentation = overlayPresentation;
         _worldAdoption = worldAdoption;
         _configService = configService;
-        ReadSectionOpen = key =>
+        _ui = ui;
+        ui.Sections.ReadSectionOpen = key =>
             !_configService.Config.UI.SectionDisclosure.TryGetValue(key, out var open) || open;
-        WriteSectionOpen = (key, open) =>
+        ui.Sections.WriteSectionOpen = (key, open) =>
         {
             _configService.Config.UI.SectionDisclosure[key] = open;
             // UI memory is not a settings change: do not reopen hidden split
@@ -162,7 +164,7 @@ public sealed class UiWindowSet : IDisposable
     {
         if (_primaryOpenRequested
             && !Main.IsOpen
-            && StartupIconsReady
+            && _ui.Icons.StartupIconsReady
             && previewBackingReady)
             ApplyPrimaryOpen(true);
     }
@@ -330,8 +332,6 @@ public sealed class UiWindowSet : IDisposable
         Main.OnPopOutRequested -= QueueProperties;
         CloseProperties();
         PumpProperties();
-        ReadSectionOpen = null;
-        WriteSectionOpen = null;
         _referenceImages.OnAdded -= AddReferenceWindow;
         _referenceImages.OnRemoved -= DismissReferenceWindow;
         _referenceWindows.Clear();

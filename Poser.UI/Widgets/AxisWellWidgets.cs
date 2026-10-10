@@ -12,9 +12,15 @@ namespace Poser.UI.Widgets;
 
 public static class AxisWellWidgets
 {
-    internal static uint? _axisEditId;
-    internal static float _axisEditValue;
-    internal static bool _axisEditNeedsFocus;
+    /// <summary>The axis well being typed into, shared with the slider wells.</summary>
+    internal sealed class AxisEditState
+    {
+        internal uint? Id;
+        internal float Value;
+        internal bool NeedsFocus;
+    }
+
+    private static AxisEditState State => UiContext.Current.AxisEdit;
 
     public static bool AxisWell(
         string id,
@@ -38,7 +44,7 @@ public static class AxisWellWidgets
         var pos = ImGui.GetCursorScreenPos();
         var size = metrics.Size;
 
-        if (_axisEditId == ImGui.GetID(id) && !disabled)
+        if (State.Id == ImGui.GetID(id) && !disabled)
             return EditAxisWell(
                 id, axis, value, onChange, onCommit, accent,
                 adaptiveDisplay ? "0.######" : format,
@@ -61,9 +67,9 @@ public static class AxisWellWidgets
         }
         else if (hit.DoubleClicked)
         {
-            _axisEditId = ImGui.GetID(id);
-            _axisEditValue = value;
-            _axisEditNeedsFocus = true;
+            State.Id = ImGui.GetID(id);
+            State.Value = value;
+            State.NeedsFocus = true;
         }
         else if (hit.Active)
         {
@@ -94,7 +100,7 @@ public static class AxisWellWidgets
             pos, size, axis, value, accent,
             adaptiveDisplay ? null : format,
             hit.Active, disabled, scale);
-        if (hit.Hovered && _axisEditId == null)
+        if (hit.Hovered && State.Id == null)
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
             HoverHelp.Explain(id, pos, pos + size,
@@ -105,8 +111,8 @@ public static class AxisWellWidgets
 
     public static void CancelAxisEdit()
     {
-        _axisEditId = null;
-        _axisEditNeedsFocus = false;
+        State.Id = null;
+        State.NeedsFocus = false;
     }
 
     internal static bool EditAxisWell(
@@ -121,7 +127,7 @@ public static class AxisWellWidgets
         Vector2 size,
         float scale)
     {
-        DrawAxisWell(pos, size, axis, _axisEditValue, accent, format,
+        DrawAxisWell(pos, size, axis, State.Value, accent, format,
             focused: true, disabled: false, scale, drawValue: false);
 
         var mono = FontRegistry.Resolve(
@@ -141,7 +147,7 @@ public static class AxisWellWidgets
                 + ActiveTheme.Form.AxisLabelGap;
         float horizontalPaddingPx = horizontalPadding * scale;
         float axisSlotPx = axisSlot * scale;
-        string editText = _axisEditValue.ToString(
+        string editText = State.Value.ToString(
             format,
             CultureInfo.InvariantCulture);
         float inputLeft = MathF.Max(
@@ -167,7 +173,7 @@ public static class AxisWellWidgets
             pos + new Vector2(inputLeft, 0f));
         ImGui.SetNextItemWidth(MathF.Max(
             1f, size.X - inputLeft));
-        if (_axisEditNeedsFocus)
+        if (State.NeedsFocus)
             ImGui.SetKeyboardFocusHere();
 
         float verticalPadding = MathF.Max(
@@ -190,7 +196,7 @@ public static class AxisWellWidgets
         ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
         bool enter = ImGui.InputFloat(
             $"##axis-edit-{id}",
-            ref _axisEditValue,
+            ref State.Value,
             0f,
             0f,
             InputFloatFormat(format),
@@ -203,7 +209,7 @@ public static class AxisWellWidgets
         ImGui.PopStyleVar(2);
         if (fontPushed)
             mono!.Pop();
-        _axisEditNeedsFocus = false;
+        State.NeedsFocus = false;
 
         if (cancelled)
         {
@@ -213,10 +219,10 @@ public static class AxisWellWidgets
 
         if (enter || editedOnDeactivate)
         {
-            ChangeValue(id, () => onChange(_axisEditValue));
+            ChangeValue(id, () => onChange(State.Value));
             Commit(id, onCommit);
             CancelAxisEdit();
-            return _axisEditValue != value;
+            return State.Value != value;
         }
 
         if (deactivated)

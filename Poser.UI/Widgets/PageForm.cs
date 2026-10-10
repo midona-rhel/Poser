@@ -22,11 +22,17 @@ namespace Poser.UI.Widgets;
 
 public static class PageForm
 {
-    // The host supplies persisted UI preferences, independent of ImGui's
-    // window/actor ID stack. The renderer remains usable without a config host.
-    public static Func<string, bool>? ReadSectionOpen { get; set; }
-    public static Action<string, bool>? WriteSectionOpen { get; set; }
-    private static Dictionary<string, bool>? _sectionDisclosure;
+    /// <summary>Section disclosure: the host's remembered preferences and the open host's snapshot.</summary>
+    internal sealed class SectionState
+    {
+        // The host supplies persisted UI preferences, independent of ImGui's
+        // window/actor ID stack. The renderer remains usable without a config host.
+        internal Func<string, bool>? ReadSectionOpen { get; set; }
+        internal Action<string, bool>? WriteSectionOpen { get; set; }
+        internal Dictionary<string, bool>? Disclosure;
+    }
+
+    private static SectionState State => UiContext.Current.Sections;
 
     // A host snapshots the saved defaults when it opens. Writes still remember
     // the preference for future hosts, but cannot collapse an existing sibling.
@@ -37,10 +43,10 @@ public static class PageForm
         private readonly Dictionary<string, bool>? _previous;
         public SectionDisclosureScope(Dictionary<string, bool>? state)
         {
-            _previous = _sectionDisclosure;
-            _sectionDisclosure = state;
+            _previous = State.Disclosure;
+            State.Disclosure = state;
         }
-        public void Dispose() => _sectionDisclosure = _previous;
+        public void Dispose() => State.Disclosure = _previous;
     }
     /// <summary>Logical section-rule thickness.</summary>
     private const float SectionRuleThickness = 1f;
@@ -332,11 +338,11 @@ public static class PageForm
             string disclosureKey = Ids.Join(DisclosureScope ?? _id, "/", title);
             bool searching = SectionFilter != null || RowFilter != null;
             bool canDisclose = AllowDisclosure && allowDisclosure;
-            bool remembered = canDisclose && ReadSectionOpen != null && WriteSectionOpen != null;
+            bool remembered = canDisclose && State.ReadSectionOpen != null && State.WriteSectionOpen != null;
             if (searching || !canDisclose) open = true;
-            else if (_sectionDisclosure is { } local)
+            else if (State.Disclosure is { } local)
                 open = !local.TryGetValue(disclosureKey, out var stored) || stored;
-            else if (remembered) open = ReadSectionOpen!(disclosureKey);
+            else if (remembered) open = State.ReadSectionOpen!(disclosureKey);
 
             // Dense sections omit header padding.
             if (!_dense)
@@ -356,8 +362,8 @@ public static class PageForm
                 if (hit.Clicked)
                 {
                     open = !open;
-                    if (_sectionDisclosure is { } localState) localState[disclosureKey] = open;
-                    if (remembered) WriteSectionOpen!(disclosureKey, open);
+                    if (State.Disclosure is { } localState) localState[disclosureKey] = open;
+                    if (remembered) State.WriteSectionOpen!(disclosureKey, open);
                     onOpenChanged?.Invoke(open);
                 }
             }

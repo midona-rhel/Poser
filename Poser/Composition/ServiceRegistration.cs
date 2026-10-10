@@ -741,6 +741,22 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
             sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
         services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
+        // The widgets' state for this plugin load; the UI manager owns it.
+        services.AddSingleton(sp =>
+        {
+            var textures = sp.GetRequiredService<ITextureProvider>();
+            var log = sp.GetRequiredService<IPluginLog>();
+            return new global::Poser.UI.Widgets.UiContext(
+                (pixels, width, height) =>
+                {
+                    var wrap = textures.CreateFromRaw(
+                        RawImageSpecification.Rgba32(width, height),
+                        pixels,
+                        "Poser widget texture");
+                    return ((nint)wrap.Handle.Handle, wrap);
+                },
+                message => log.Debug(message));
+        });
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
         return services;

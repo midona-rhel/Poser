@@ -9,29 +9,20 @@ namespace Poser.UI;
 /// Bounded cache for soft outset shadow paint. Each entry is a fixed-size
 /// rounded shadow ring whose edge strips stretch with the panel; position and
 /// panel dimensions are deliberately absent from <see cref="ShadowKey"/>.
+/// One cache belongs to each <see cref="Widgets.UiContext"/>, whose disposal
+/// releases its textures.
 /// </summary>
-internal static class BoxShadowTextureCache
+internal sealed class BoxShadowTextureCache(
+    Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)> uploader)
 {
     private const int MaxEntries = 64;
     private const float MaxExtent = 64f;
     private const uint White = 0xFFFFFFFFu;
 
-    private static readonly Dictionary<ShadowKey, Entry> Cache = new();
-    private static Func<byte[], int, int, (nint, IDisposable?)>? _uploader;
-    private static int _drawTick;
+    private readonly Dictionary<ShadowKey, Entry> _cache = new();
+    private int _drawTick;
 
-    internal static int EntryCount => Cache.Count;
-
-    internal static Func<byte[], int, int, (nint, IDisposable?)>? Uploader
-    {
-        get => _uploader;
-        set
-        {
-            // Texture handles belong to the device that made them.
-            Clear();
-            _uploader = value;
-        }
-    }
+    internal int EntryCount => _cache.Count;
 
     internal interface IShadowDrawSink
     {
@@ -139,7 +130,7 @@ internal static class BoxShadowTextureCache
         public int LastDraw;
     }
 
-    internal static bool TryDraw<TSink>(
+    internal bool TryDraw<TSink>(
         TSink sink,
         Vector2 min,
         Vector2 max,
@@ -149,7 +140,7 @@ internal static class BoxShadowTextureCache
         float styleAlpha)
         where TSink : IShadowDrawSink
     {
-        if (_uploader is null || shadow.Inset || shadow.Blur <= 0f)
+        if (shadow.Inset || shadow.Blur <= 0f)
             return false;
 
         // Validate small/collapsed panels even on cache hits: corner slices
@@ -159,10 +150,10 @@ internal static class BoxShadowTextureCache
 
         var key = new ShadowKey(shadow, baseRadius, scale, styleAlpha);
         _drawTick++;
-        if (Cache.TryGetValue(key, out var entry))
+        if (_cache.TryGetValue(key, out var entry))
         {
             entry.LastDraw = _drawTick;
-            Cache[key] = entry;
+            _cache[key] = entry;
             DrawSlices(sink, entry, min, max);
             return true;
         }
@@ -182,7 +173,7 @@ internal static class BoxShadowTextureCache
         IDisposable? keepalive;
         try
         {
-            (handle, keepalive) = _uploader(pixels, description.Width, description.Height);
+            (handle, keepalive) = uploader(pixels, description.Width, description.Height);
         }
         catch (Exception)
         {
@@ -195,7 +186,7 @@ internal static class BoxShadowTextureCache
             return false;
         }
 
-        if (Cache.Count >= MaxEntries)
+        if (_cache.Count >= MaxEntries)
             EvictOldest();
 
         entry = new Entry
@@ -211,16 +202,16 @@ internal static class BoxShadowTextureCache
             Inset = description.Inset,
             LastDraw = _drawTick,
         };
-        Cache.Add(key, entry);
+        _cache.Add(key, entry);
         DrawSlices(sink, entry, min, max);
         return true;
     }
 
-    internal static void Clear()
+    internal void Clear()
     {
-        foreach (var entry in Cache.Values)
+        foreach (var entry in _cache.Values)
             entry.Keepalive?.Dispose();
-        Cache.Clear();
+        _cache.Clear();
         _drawTick = 0;
     }
 
@@ -495,11 +486,11 @@ internal static class BoxShadowTextureCache
             uvEnd);
     }
 
-    private static void EvictOldest()
+    private void EvictOldest()
     {
         ShadowKey oldestKey = default;
         int oldestTick = int.MaxValue;
-        foreach (var pair in Cache)
+        foreach (var pair in _cache)
         {
             if (pair.Value.LastDraw < oldestTick)
             {
@@ -508,7 +499,7 @@ internal static class BoxShadowTextureCache
             }
         }
 
-        if (Cache.Remove(oldestKey, out var entry))
+        if (_cache.Remove(oldestKey, out var entry))
             entry.Keepalive?.Dispose();
     }
 
