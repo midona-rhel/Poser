@@ -565,7 +565,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.State.Visible),
             () => OpenEntityRename(
-                "Rename overlay", node.State.Name, next => _overlayControl.SetName(overlayId, next)),
+                "Rename overlay", node.State.Name, next => _overlayControl.Set(overlayId, Application.Presentation.OverlayProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
             () => OpenEntityRename(
                 "Save overlay to library", node.State.Name,
@@ -587,8 +587,8 @@ internal sealed partial class EntityContextMenus
                 new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
                 .Concat(items).ToArray();
             actions = new Action?[] {
-                () => _overlayControl.SetColliderLocked(overlayId, !collider.Locked),
-                () => _overlayControl.SetCollisionEnabled(overlayId, !collider.Enabled) }
+                () => _overlayControl.EditCollider(overlayId, c => c with { Locked = !collider.Locked }),
+                () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }) }
                 .Concat(actions).ToArray();
         }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));

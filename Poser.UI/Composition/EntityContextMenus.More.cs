@@ -212,7 +212,7 @@ internal sealed partial class EntityContextMenus
         }
         else if (id.Overlay is { } overlay && !worldEntity)
             reset.Add(new("Size and opacity", TablerIcon.Refresh)
-            { OnInvoke = () => { var result = _overlayControl.ResetSize(overlay); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
+            { OnInvoke = () => { var result = _overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
         if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
         items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
     }

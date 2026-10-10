@@ -487,14 +487,14 @@ public class PoseRailPane
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
         Vector2 knob = center;
-        if (active && _padOverlayId is { } id && _overlayValues.Read(id) is { } target)
+        if (active && _padOverlayId is { } id && _overlayValues.Read(id) is not null)
         {
             GizmoPointerOwnership.Hold();
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
                 Crystarium.ChangeValue("##rail-overlay-pad",
-                    () => _overlayValues.SetPosition(id, target.State.Position + step));
+                    () => _overlayValues.Update(id, OverlayProperties.Position, position => position + step));
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;

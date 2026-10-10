@@ -224,7 +224,6 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.WorldObjectSession>();
         services.AddSingleton<Game.Journal.PropSession>();
         services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
-        services.AddSingleton<Game.Journal.OverlaySession>();
         services.AddSingleton<Application.Presentation.IOverlayControl, Game.Overlays.OverlayControl>();
         services.AddSingleton<Application.Presentation.IStatusIconCatalog>(sp =>
             sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
@@ -277,8 +276,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Application.Presentation.IActorValueControl>(),
             sp.GetRequiredService<Game.Journal.CameraSession>(),
             sp.GetRequiredService<Game.Journal.PropSession>(),
-            sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
-            sp.GetRequiredService<Game.Journal.OverlaySession>()));
+            sp.GetRequiredService<Game.Journal.WorldObjectSession>()));
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<GroupTransformState>();
         services.AddSingleton<IGroupTransformSource, GroupTransformSource>();

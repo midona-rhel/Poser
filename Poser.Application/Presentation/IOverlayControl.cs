@@ -1,4 +1,3 @@
-using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -13,25 +12,10 @@ public interface IOverlayControl
 {
     OverlayReading? Read(OverlayId id);
     void Seal();
-    ValueWriteResult SetName(OverlayId id, string value);
-    ValueWriteResult SetVisible(OverlayId id, bool value);
-    ValueWriteResult SetDraggable(OverlayId id, bool value);
-    ValueWriteResult SetPosition(OverlayId id, Vector2 value);
-    ValueWriteResult SetScale(OverlayId id, float value);
-    ValueWriteResult SetAlpha(OverlayId id, float value);
-    ValueWriteResult SetText(OverlayId id, string value);
-    ValueWriteResult SetSpeaker(OverlayId id, string value);
-    ValueWriteResult SetFontSize(OverlayId id, uint value);
-    ValueWriteResult SetTalkBackground(OverlayId id, TalkBackground value);
-    ValueWriteResult SetTalkCursor(OverlayId id, TalkCursor value);
-    ValueWriteResult SetBalloonChannel(OverlayId id, BalloonChannel value);
-    ValueWriteResult SetBalloonGradient(OverlayId id, BalloonGradient value);
-    ValueWriteResult SetArrowVisible(OverlayId id, bool value);
-    ValueWriteResult SetArrowX(OverlayId id, float value);
-    ValueWriteResult SetStatusKind(OverlayId id, StatusKind value);
-    ValueWriteResult SetStatusIconId(OverlayId id, uint value);
-    ValueWriteResult ResetSize(OverlayId id);
-    ValueWriteResult SetColliderShape(OverlayId id, IkColliderShape value);
-    ValueWriteResult SetCollisionEnabled(OverlayId id, bool value);
-    ValueWriteResult SetColliderLocked(OverlayId id, bool value);
+    ValueWriteResult Set<T>(OverlayId id, EntityProperty<OverlayId, T> property, T value);
+    ValueWriteResult Update<T>(OverlayId id, EntityProperty<OverlayId, T> property, Func<T, T> change);
+
+    /// <summary>Changes the overlay's current collider; refuses an overlay
+    /// that has none.</summary>
+    ValueWriteResult EditCollider(OverlayId id, Func<IkCollider, IkCollider> change);
 }

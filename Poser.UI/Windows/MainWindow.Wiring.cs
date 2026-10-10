@@ -261,7 +261,7 @@ public partial class MainWindow
             if (row.Tag is SelectionId { Overlay: { } id }
                 && _overlayControl.Read(id) is { State.Collider: { } collider })
             {
-                _overlayControl.SetCollisionEnabled(id, !collider.Enabled);
+                _overlayControl.EditCollider(id, c => c with { Enabled = !collider.Enabled });
                 row.CollisionEnabled = !collider.Enabled;
             }
         };
@@ -270,7 +270,7 @@ public partial class MainWindow
             if (row.Tag is SelectionId { Overlay: { } id }
                 && _overlayControl.Read(id) is { State.Collider: { } collider })
             {
-                _overlayControl.SetColliderLocked(id, !collider.Locked);
+                _overlayControl.EditCollider(id, c => c with { Locked = !collider.Locked });
                 row.ColliderLocked = !collider.Locked;
             }
         };

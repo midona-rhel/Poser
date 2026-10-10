@@ -25,6 +25,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly IEntityBindings _bindings;
     private readonly EntitySessions _sessions;
     private readonly Poser.Application.Presentation.ILightControl _lights;
+    private readonly Poser.Application.Presentation.IOverlayControl _overlayValues;
     private readonly IActorManager _actorManager;
     private readonly IActorSpawnService _actors;
     private readonly ISceneLifecycleHistory _lifecycle;
@@ -44,6 +45,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         IEntityBindings bindings,
         EntitySessions sessions,
         Poser.Application.Presentation.ILightControl lights,
+        Poser.Application.Presentation.IOverlayControl overlayValues,
         IActorManager actorManager,
         IActorSpawnService actors,
         ISceneLifecycleHistory lifecycle,
@@ -61,6 +63,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         _bindings = bindings;
         _sessions = sessions;
         _lights = lights;
+        _overlayValues = overlayValues;
         _actorManager = actorManager;
         _actors = actors;
         _lifecycle = lifecycle;
@@ -131,8 +134,8 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                 return CurrentProp(propId, out var prop)
                     ? _sessions.Props.SetVisible(prop, visible) : Gone();
             case { Overlay: { } overlayId }:
-                return CurrentOverlay(overlayId, out var overlay)
-                    ? _sessions.Overlays.SetVisible(overlay, visible) : Gone();
+                return CurrentOverlay(overlayId, out _)
+                    ? _overlayValues.Set(overlayId, Poser.Application.Presentation.OverlayProperties.Visible, visible) : Gone();
             case { WorldObject: { } worldId }:
                 return CurrentWorldObject(worldId, out var world)
                     ? _sessions.WorldObjects.SetVisible(world, visible) : Gone();

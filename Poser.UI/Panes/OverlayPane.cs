@@ -156,27 +156,27 @@ public sealed class OverlayPane
     {
         if (node.State.Collider is { } collider)
         {
-            form.TextInput("Name", node.State.Name, next => _values.SetName(node.Id, next));
+            form.TextInput("Name", node.State.Name, next => _values.Set(node.Id, OverlayProperties.Name, next));
             form.Pair("Shape", cell => cell.Dropdown("##collider-shape",
                     collider.Shape == Domain.Posing.IkColliderShape.Mesh
                         ? new[] { "Captured mesh" } : new[] { "Plane", "Box", "Cylinder", "Cone", "Capsule", "Sphere" },
                     collider.Shape == Domain.Posing.IkColliderShape.Mesh ? 0 : (int)collider.Shape > 4 ? (int)collider.Shape - 1 : (int)collider.Shape,
-                    next => _values.SetColliderShape(node.Id, (Domain.Posing.IkColliderShape)(next >= 4 ? next + 1 : next)),
+                    next => _values.EditCollider(node.Id, c => c with { Shape = (Domain.Posing.IkColliderShape)(next >= 4 ? next + 1 : next) }),
                     disabled: collider.Shape == Domain.Posing.IkColliderShape.Mesh),
                 "Collision", cell => cell.Switch("##collider-enabled", collider.Enabled,
-                    next => _values.SetCollisionEnabled(node.Id, next)));
+                    next => _values.EditCollider(node.Id, c => c with { Enabled = next })));
             form.Pair("Lock transform", cell => cell.Switch("##collider-lock", collider.Locked,
-                    next => _values.SetColliderLocked(node.Id, next)),
+                    next => _values.EditCollider(node.Id, c => c with { Locked = next })),
                 "Visible", cell => cell.Switch("##collider-visible", node.State.Visible,
-                    next => _values.SetVisible(node.Id, next)));
-            form.Slider("Opacity", node.State.Alpha, 0f, 1f, next => _values.SetAlpha(node.Id, next), onBegin: _values.Seal);
+                    next => _values.Set(node.Id, OverlayProperties.Visible, next)));
+            form.Slider("Opacity", node.State.Alpha, 0f, 1f, next => _values.Set(node.Id, OverlayProperties.Alpha, next), onBegin: _values.Seal);
             return;
         }
         string name = node.State.Name;
         form.TextInput(
             "Name",
             name,
-            next => _values.SetName(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Name, next),
             placeholder: "Overlay",
             help: "What the sidebar calls this overlay — never the text it "
                 + "draws");
@@ -187,13 +187,13 @@ public sealed class OverlayPane
             cell => cell.Switch(
                 "##overlay-visible",
                 node.State.Visible,
-                next => _values.SetVisible(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.Visible, next),
                 help: "Hide the overlay without destroying it"),
             "Drag on screen",
             cell => cell.Switch(
                 "##overlay-draggable",
                 node.State.Draggable,
-                next => _values.SetDraggable(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.Draggable, next),
                 help: "Grab the overlay itself and drag it"));
         ScreenPointRows(form, node);
         form.Pair(
@@ -203,7 +203,7 @@ public sealed class OverlayPane
                 node.State.Scale,
                 OverlayNodeLimits.MinScale,
                 OverlayNodeLimits.MaxScale,
-                next => _values.SetScale(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.Scale, next),
                 help: "Draw the overlay larger or smaller",
                 onBegin: _values.Seal),
             "Opacity",
@@ -212,7 +212,7 @@ public sealed class OverlayPane
                 node.State.Alpha,
                 0f,
                 1f,
-                next => _values.SetAlpha(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.Alpha, next),
                 help: "Fade the whole overlay",
                 onBegin: _values.Seal));
 
@@ -220,11 +220,11 @@ public sealed class OverlayPane
         {
             actions.Button(
                 "Centre",
-                () => _values.SetPosition(node.Id, Centred(node)),
+                () => _values.Set(node.Id, OverlayProperties.Position, Centred(node)),
                 help: "Move the overlay to the middle of the viewport");
             actions.Button(
                 "Reset size",
-                () => _values.ResetSize(node.Id),
+                () => _values.Set(node.Id, OverlayProperties.Size, (1f, 1f)),
                 help: "Back to full size and full opacity");
         });
     }
@@ -279,7 +279,7 @@ public sealed class OverlayPane
                 cell => cell.Number(
                     "##overlay-x",
                     position.X,
-                    next => _values.SetPosition(node.Id, new Vector2(next, position.Y)),
+                    next => _values.Set(node.Id, OverlayProperties.Position, new Vector2(next, position.Y)),
                     perPixel: 1f,
                     format: "0",
                     onCommit: null));
@@ -288,7 +288,7 @@ public sealed class OverlayPane
                 cell => cell.Number(
                     "##overlay-y",
                     position.Y,
-                    next => _values.SetPosition(node.Id, new Vector2(position.X, next)),
+                    next => _values.Set(node.Id, OverlayProperties.Position, new Vector2(position.X, next)),
                     perPixel: 1f,
                     format: "0",
                     onCommit: null));
@@ -301,7 +301,7 @@ public sealed class OverlayPane
         form.Switch(
             "Drag on screen",
             node.State.Draggable,
-            next => _values.SetDraggable(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Draggable, next),
             help: "Grab the overlay itself and drag it");
     }
 
@@ -315,7 +315,7 @@ public sealed class OverlayPane
         form.TextInput(
             status ? "Effect" : "Line",
             node.State.Text,
-            next => _values.SetText(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Text, next),
             placeholder: status ? "What the effect is called" : "What they say",
             help: status
                 ? "The name the status bar shows"
@@ -343,13 +343,13 @@ public sealed class OverlayPane
         form.TextInput(
             "Speaker",
             node.State.Speaker,
-            next => _values.SetSpeaker(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Speaker, next),
             placeholder: "Who is talking",
             help: "The name on the plate above the panel");
         form.TextInput(
             "Line",
             node.State.Text,
-            next => _values.SetText(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Text, next),
             placeholder: "What they say",
             help: "The panel's body, up to "
                 + OverlayNodeLimits.MaxTextCharacters + " characters");
@@ -359,14 +359,14 @@ public sealed class OverlayPane
                 "##talk-panel",
                 TalkBackgroundLabels,
                 (int)node.State.TalkBackground,
-                next => _values.SetTalkBackground(node.Id, (TalkBackground)next),
+                next => _values.Set(node.Id, OverlayProperties.TalkBackground, (TalkBackground)next),
                 help: "Which dialogue plate to draw on"),
             "Advance mark",
             cell => cell.Dropdown(
                 "##talk-cursor",
                 TalkCursorLabels,
                 (int)node.State.TalkCursor,
-                next => _values.SetTalkCursor(node.Id, (TalkCursor)next),
+                next => _values.Set(node.Id, OverlayProperties.TalkCursor, (TalkCursor)next),
                 help: "The mark in the panel's corner"));
         FontSizeRow(form, node);
     }
@@ -376,7 +376,7 @@ public sealed class OverlayPane
         form.TextInput(
             "Line",
             node.State.Text,
-            next => _values.SetText(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Text, next),
             placeholder: "What they say",
             help: "The bubble holds one line; longer text is cut with an "
                 + "ellipsis, exactly as the game's own bubbles are");
@@ -386,21 +386,21 @@ public sealed class OverlayPane
                 "##balloon-channel",
                 BalloonChannelLabels,
                 (int)node.State.BalloonChannel,
-                next => _values.SetBalloonChannel(node.Id, (BalloonChannel)next),
+                next => _values.Set(node.Id, OverlayProperties.BalloonChannel, (BalloonChannel)next),
                 help: "Which chat channel's frame to wear"),
             "Tint",
             cell => cell.Dropdown(
                 "##balloon-tint",
                 BalloonGradientLabels,
                 (int)node.State.BalloonGradient,
-                next => _values.SetBalloonGradient(node.Id, (BalloonGradient)next),
+                next => _values.Set(node.Id, OverlayProperties.BalloonGradient, (BalloonGradient)next),
                 help: "The colour over the gradient band"));
         form.Pair(
             "Tail",
             cell => cell.Switch(
                 "##balloon-tail",
                 node.State.ArrowVisible,
-                next => _values.SetArrowVisible(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.ArrowVisible, next),
                 help: "The point that marks who is speaking"),
             "Tail position",
             cell => cell.Slider(
@@ -408,7 +408,7 @@ public sealed class OverlayPane
                 node.State.ArrowX,
                 OverlayNodeLimits.MinArrowX,
                 OverlayNodeLimits.MaxArrowX,
-                next => _values.SetArrowX(node.Id, next),
+                next => _values.Set(node.Id, OverlayProperties.ArrowX, next),
                 format: "0",
                 disabled: !node.State.ArrowVisible,
                 help: "Where along the bottom edge the tail sits"));
@@ -420,7 +420,7 @@ public sealed class OverlayPane
         form.TextInput(
             "Effect",
             node.State.Text,
-            next => _values.SetText(node.Id, next),
+            next => _values.Set(node.Id, OverlayProperties.Text, next),
             placeholder: "What the effect is called",
             help: "The name the status bar shows");
         string current = _statusIcons.NameFor(node.State.StatusIconId);
@@ -430,7 +430,7 @@ public sealed class OverlayPane
                 "##status-kind",
                 StatusKindLabels,
                 (int)node.State.StatusKind,
-                next => _values.SetStatusKind(node.Id, (StatusKind)next),
+                next => _values.Set(node.Id, OverlayProperties.StatusKind, (StatusKind)next),
                 help: "Gained reads as an addition, expiring as a "
                     + "subtraction"),
             "Icon",
@@ -452,7 +452,7 @@ public sealed class OverlayPane
             node.State.FontSize,
             OverlayNodeLimits.MinFontSize,
             OverlayNodeLimits.MaxFontSize,
-            next => _values.SetFontSize(node.Id, (uint)MathF.Round(next)),
+            next => _values.Set(node.Id, OverlayProperties.FontSize, (uint)MathF.Round(next)),
             perPixel: 0.2f,
             format: "0",
             help: "Point size of the drawn text");
@@ -522,7 +522,7 @@ public sealed class OverlayPane
     private void ApplyIcon(StatusIconChoice choice)
     {
         if (_iconTarget is { } id)
-            _values.SetStatusIconId(id, choice.IconId);
+            _values.Set(id, OverlayProperties.StatusIconId, choice.IconId);
         _iconTarget = null;
     }
 
