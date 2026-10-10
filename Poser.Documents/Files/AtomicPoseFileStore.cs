@@ -365,6 +365,7 @@ public sealed class AtomicPoseFileStore
         var written = AtomicFile.Write(_fileSystem, destination, bytes, new AtomicWriteOptions
         {
             Subject = "pose",
+            KeepTemporaryOnFailure = true,
             VerifyTemporary = temporary => Read(temporary) is { Succeeded: false } reopened
                 ? $"Reopening the atomic pose temp failed: {reopened.Failure!.Detail}"
                 : null,

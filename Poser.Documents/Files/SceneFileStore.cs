@@ -474,6 +474,7 @@ public sealed class SceneFileStore
         }, new AtomicWriteOptions
         {
             Subject = "scene",
+            KeepTemporaryOnFailure = true,
             VerifyTemporary = temporary => Read(temporary) is { Succeeded: false } reopened
                 ? $"Reopening the atomic scene temp failed: {reopened.Failure!.Detail}"
                 : null,

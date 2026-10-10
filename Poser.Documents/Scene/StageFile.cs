@@ -264,7 +264,7 @@ public static class StageFile
 
         var written = AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
             new AtomicWriteOptions { Subject = "stage" });
-        return written.Succeeded
+        return written.Committed
             ? SceneWriteOutcome.Success()
             : SceneWriteOutcome.Failed(
                 SceneStoreFailure.Create(

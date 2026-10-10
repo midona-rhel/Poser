@@ -150,7 +150,7 @@ public class LightFile
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
             return AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
-                new AtomicWriteOptions { Subject = "light" }).Succeeded;
+                new AtomicWriteOptions { Subject = "light", CopyOverWhenReplaceFails = true }).Committed;
         }
         catch (Exception)
         {

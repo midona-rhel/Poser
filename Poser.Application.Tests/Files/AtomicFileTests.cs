@@ -42,6 +42,71 @@ public sealed class AtomicFileTests
         }
     }
 
+    [Fact]
+    public void Failed_replace_deletes_the_temp_unless_evidence_is_requested()
+    {
+        var root = Directory.CreateTempSubdirectory("poser-atomic-");
+        try
+        {
+            var path = Path.Combine(root.FullName, "target.json");
+            File.WriteAllText(path, "original");
+
+            foreach (var keep in new[] { false, true })
+            {
+                var result = AtomicFile.Write(
+                    new ReplaceFailingFileSystem(), path, "replacement"u8.ToArray(),
+                    new AtomicWriteOptions { Subject = "test", KeepTemporaryOnFailure = keep });
+
+                Assert.False(result.Committed);
+                Assert.Equal(AtomicWritePhase.ReplaceDestination, result.Phase);
+                Assert.Equal("original", File.ReadAllText(path));
+                Assert.Equal(keep ? 2 : 1, root.GetFiles().Length);
+                Assert.Equal(keep ? 1 : 0, result.RecoveryEvidencePaths.Count);
+            }
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Export_falls_back_to_copy_over_when_replace_is_refused()
+    {
+        var root = Directory.CreateTempSubdirectory("poser-atomic-");
+        try
+        {
+            var path = Path.Combine(root.FullName, "target.json");
+            File.WriteAllText(path, "original");
+
+            var result = AtomicFile.Write(
+                new ReplaceFailingFileSystem(), path, "replacement"u8.ToArray(),
+                new AtomicWriteOptions { Subject = "test", CopyOverWhenReplaceFails = true });
+
+            Assert.True(result.Succeeded);
+            Assert.Equal("replacement", File.ReadAllText(path));
+            Assert.Single(root.GetFiles());
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    // Replace is refused as by a sync client or network share.
+    private sealed class ReplaceFailingFileSystem : IAtomicFileSystem
+    {
+        private readonly SystemAtomicFileSystem _inner = new();
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) =>
+            throw new IOException("injected replace failure");
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
     // Writes go through; only the durable flush fails, as on a full disk.
     private sealed class FlushFailingFileSystem : IAtomicFileSystem
     {

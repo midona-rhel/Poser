@@ -338,6 +338,7 @@ public sealed class AutoSaveHealthStore
         var written = AtomicFile.Write(_fileSystem, HealthPath, bytes, new AtomicWriteOptions
         {
             Subject = "autosave health",
+            KeepTemporaryOnFailure = true,
             VerifyTemporary = temporary => TryReadMatchingRecord(temporary, record)
                 ? null
                 : "Autosave health validation failed.",

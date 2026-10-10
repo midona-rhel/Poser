@@ -111,7 +111,7 @@ public class CameraFile
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
             return AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
-                new AtomicWriteOptions { Subject = "camera" }).Succeeded;
+                new AtomicWriteOptions { Subject = "camera", CopyOverWhenReplaceFails = true }).Committed;
         }
         catch (Exception)
         {

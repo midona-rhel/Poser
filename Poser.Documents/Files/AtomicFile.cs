@@ -30,6 +30,18 @@ internal sealed class AtomicWriteOptions
     /// <summary>Validates the flushed temp; returns the failure detail or null.</summary>
     public Func<string, string?>? VerifyTemporary { get; init; }
 
+    /// <summary>True keeps the hidden temp (the new bytes) when the commit
+    /// fails, as recovery evidence. Only set it where the caller reports
+    /// <see cref="AtomicWriteResult.RecoveryEvidencePaths"/>; otherwise the
+    /// temp is deleted so failed saves do not pile up hidden files.</summary>
+    public bool KeepTemporaryOnFailure { get; init; }
+
+    /// <summary>True falls back to copying the temp over the destination when
+    /// <c>Replace</c> throws for a reason other than a read-only destination
+    /// (sync clients, network shares, AV locks). Not atomic; for user exports
+    /// only, never for internal stores.</summary>
+    public bool CopyOverWhenReplaceFails { get; init; }
+
     /// <summary>Test seam invoked before each step with the path it touches.</summary>
     public Action<AtomicWritePhase, string>? BeforePhase { get; init; }
 }
@@ -211,11 +223,10 @@ internal static class AtomicFile
             fileSystem.Replace(temporary, destination, backup);
             if (!Matches(fileSystem, destination, stamp))
             {
-                return AtomicWriteResult.Failed(
+                return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
                     phase,
                     "Replace returned without the validated bytes at the destination.",
-                    destination,
-                    evidence: Surviving(fileSystem, temporary, backup));
+                    destination), temporary, backup);
             }
         }
         catch (Exception ex)
@@ -223,12 +234,17 @@ internal static class AtomicFile
             // Replace can report failure after the swap landed; trust the bytes.
             if (!Matches(fileSystem, destination, stamp))
             {
-                return AtomicWriteResult.Failed(
+                if (options.CopyOverWhenReplaceFails
+                    && ex is (IOException or UnauthorizedAccessException)
+                    && !IsReadOnly(fileSystem, destination))
+                {
+                    return CopyOver(fileSystem, options, stamp, temporary, destination, backup, ex);
+                }
+                return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
                     phase,
                     $"Atomic {options.Subject} replace failed: {ex.Message}",
                     destination,
-                    ex,
-                    Surviving(fileSystem, temporary, backup));
+                    ex), temporary, backup);
             }
         }
         return CleanupConfirmedCommit(fileSystem, options, stamp, destination, temporary, backup);
@@ -248,11 +264,10 @@ internal static class AtomicFile
             fileSystem.Move(temporary, destination);
             if (!Matches(fileSystem, destination, stamp))
             {
-                return AtomicWriteResult.Failed(
+                return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
                     phase,
                     "Move returned without the validated bytes at the destination.",
-                    destination,
-                    evidence: Surviving(fileSystem, temporary));
+                    destination), temporary, null);
             }
         }
         catch (Exception ex)
@@ -269,15 +284,87 @@ internal static class AtomicFile
             }
             if (!Matches(fileSystem, destination, stamp))
             {
-                return AtomicWriteResult.Failed(
+                return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
                     phase,
                     $"Atomic {options.Subject} move failed: {ex.Message}",
                     destination,
-                    ex,
-                    Surviving(fileSystem, temporary));
+                    ex), temporary, null);
             }
         }
         return CleanupConfirmedCommit(fileSystem, options, stamp, destination, temporary, null);
+    }
+
+    // Non-atomic fallback for user exports whose folder refuses Replace.
+    private static AtomicWriteResult CopyOver(
+        IAtomicFileSystem fileSystem,
+        AtomicWriteOptions options,
+        FileStamp stamp,
+        string temporary,
+        string destination,
+        string backup,
+        Exception replaceFailure)
+    {
+        const AtomicWritePhase phase = AtomicWritePhase.ReplaceDestination;
+        try
+        {
+            fileSystem.CopyOver(temporary, destination);
+        }
+        catch (Exception ex)
+        {
+            return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
+                phase,
+                $"Atomic {options.Subject} replace failed: {replaceFailure.Message} " +
+                $"Copying over the destination also failed: {ex.Message}",
+                destination,
+                ex), temporary, backup);
+        }
+        if (!Matches(fileSystem, destination, stamp))
+        {
+            return FailCommit(fileSystem, options, AtomicWriteResult.Failed(
+                phase,
+                "Copy returned without the validated bytes at the destination.",
+                destination,
+                replaceFailure), temporary, backup);
+        }
+        return CleanupConfirmedCommit(fileSystem, options, stamp, destination, temporary, backup);
+    }
+
+    // A failed commit keeps any backup (it may hold the original); the temp
+    // only holds the rejected new bytes and is kept only when asked for.
+    private static AtomicWriteResult FailCommit(
+        IAtomicFileSystem fileSystem,
+        AtomicWriteOptions options,
+        AtomicWriteResult failure,
+        string temporary,
+        string? backup)
+    {
+        if (!options.KeepTemporaryOnFailure)
+        {
+            try
+            {
+                fileSystem.Delete(temporary);
+            }
+            catch (Exception cleanup)
+            {
+                failure = failure.WithDetail(
+                    failure.Detail + $" The temp could not be deleted: {cleanup.Message}");
+            }
+        }
+        return failure.WithEvidence(backup is null
+            ? Surviving(fileSystem, temporary)
+            : Surviving(fileSystem, temporary, backup));
+    }
+
+    private static bool IsReadOnly(IAtomicFileSystem fileSystem, string path)
+    {
+        try
+        {
+            return fileSystem.IsReadOnly(path);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static AtomicWriteResult CleanupConfirmedCommit(

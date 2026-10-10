@@ -13,6 +13,13 @@ internal interface IAtomicFileSystem
     void Replace(string source, string destination, string backup);
     void Move(string source, string destination);
     void Delete(string path);
+
+    /// <summary>Non-atomic overwrite used only by the user-export fallback.</summary>
+    void CopyOver(string source, string destination) =>
+        File.Copy(source, destination, overwrite: true);
+
+    bool IsReadOnly(string path) =>
+        File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly);
 }
 
 internal sealed class SystemAtomicFileSystem : IAtomicFileSystem
