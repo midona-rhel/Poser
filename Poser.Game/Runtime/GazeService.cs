@@ -20,60 +20,10 @@ using Poser.Services;
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
+using static Poser.Game.GazeEntryStore;
+using static Poser.Game.GazeNativeDriver;
 
 namespace Poser.Game;
-
-internal unsafe delegate nint GazeLoopDelegate(ContainerInterface* args);
-
-internal unsafe interface IGazeHook : IDisposable
-{
-    void Enable();
-    nint Original(ContainerInterface* args);
-}
-
-internal interface IGazeNativeFactory
-{
-    nint ScanUpdateLookAt(ISigScanner scanner);
-    nint ScanActorLookAtLoop(ISigScanner scanner);
-    IGazeHook CreateActorLookAtHook(
-        IGameInteropProvider hooks,
-        nint address,
-        GazeLoopDelegate detour);
-
-    /// <summary>
-    /// Writes the CHARACTER's own game target id (Brio ActorLookAtService
-    /// SetActorTarget, `actor.Native()-&gt;SetTargetId(targetActorID)`). Behind
-    /// the factory because it is a native member call on a live character.
-    /// </summary>
-    void SetCharacterTargetId(nint characterAddress, ulong targetId);
-}
-
-internal sealed class GazeNativeFactory : IGazeNativeFactory
-{
-    public unsafe void SetCharacterTargetId(nint characterAddress, ulong targetId) =>
-        ((Character*)characterAddress)->SetTargetId(targetId);
-
-    public nint ScanUpdateLookAt(ISigScanner scanner) => scanner.ScanText(
-        "E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
-
-    public nint ScanActorLookAtLoop(ISigScanner scanner) => scanner.ScanText(
-        "E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
-
-    public IGazeHook CreateActorLookAtHook(
-        IGameInteropProvider hooks,
-        nint address,
-        GazeLoopDelegate detour) =>
-        new DalamudGazeHook(hooks.HookFromAddress<GazeLoopDelegate>(address, detour));
-
-    private sealed class DalamudGazeHook(Hook<GazeLoopDelegate> hook) : IGazeHook
-    {
-        public void Enable() => hook.Enable();
-
-        public unsafe nint Original(ContainerInterface* args) => hook.Original(args);
-
-        public void Dispose() => hook.Dispose();
-    }
-}
 
 /// <summary>
 /// Service for controlling actor gaze (where they look). Based on Brio's
@@ -88,30 +38,20 @@ internal sealed class GazeNativeFactory : IGazeNativeFactory
 /// </summary>
 public unsafe class GazeService : IDisposable
 {
-    // LookAt controller indices for _updateLookAt function
-    private const uint LookAtIndex_Body = 0;
-    private const uint LookAtIndex_Head = 1;
-    private const uint LookAtIndex_Eyes = 2;
-
-    private readonly IGPoseService _gPoseService;
     private readonly ICameraProjection _cameraService;
     private readonly IObjectTable _objectTable;
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
     private readonly IFramework? _framework;
-    private readonly IGazeNativeFactory _nativeFactory;
     private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
 
     /// <summary>Spawn/discovery-standard thread refusal (ActorSpawnService
     /// shape) for the members that write natively outside the hooked loop.</summary>
     private bool OnOwnerThread => _framework is null || _framework.IsInFrameworkUpdateThread;
 
-    private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
-    private IGazeHook? _actorLookAtLoop;
     private bool _isAvailable;
     private bool _disposed;
     private bool _subscribed;
-    private bool _detourFaultLogged;
 
     /// <summary>Whether the native gaze capability initialized successfully.</summary>
     public bool IsAvailable => _isAvailable && !_disposed;
@@ -121,62 +61,10 @@ public unsafe class GazeService : IDisposable
     /// </summary>
     public string? UnavailableDetail { get; private set; }
 
-    /// <summary>
-    /// One managed+native entry per actor. Mutated from the UI thread and read
-    /// from the hooked game loop, so every access goes through the sync lock.
-    /// </summary>
-    private sealed class GazeEntry
-    {
-        /// <summary>The CONFIGURED mode. Remembered across a full untoggle:
-        /// Brio's SetTargetType only rewrites the participation mask and never
-        /// touches TargetMode, so re-adding a part resumes the same mode.</summary>
-        public GazeTargetMode Mode;
-        public bool PoseAware;
-        public GazeTargetType Parts = GazeTargetType.All;
-
-        /// <summary>The body this entry drives; the detour's lookup key.</summary>
-        public nint Address;
-
-        /// <summary>The remembered Entity target; null = never chosen.
-        /// Surviving a full untoggle is the point — it is cleared only by
-        /// <see cref="ResetGaze"/>, which is Brio's RemoveObjectFromLook.</summary>
-        public ActorId? TargetActor;
-
-        /// <summary>The target's GameObjectId: only the value written into
-        /// the native target union, never an identity. 0 when unset.</summary>
-        public ulong TargetId;
-
-        /// <summary>The remembered target is no longer in the object table.
-        /// Exact identity, never an address: the id stays so the refusal can
-        /// name it, and reapplying it is refused rather than followed.</summary>
-        public bool TargetStale;
-
-        /// <summary>The character target id Poser last wrote natively; 0 when
-        /// Poser has written none. Poser only ever clears what it set.</summary>
-        public ulong AppliedTargetId;
-
-        public Vector3 Position;            // Position-mode shared world anchor
-        public LookAtSource Target;         // per-part native write source
-        public bool EyesLocked;
-        public bool HeadLocked;
-        public bool BodyLocked;
-
-        /// <summary>Channels Poser currently claims — the set the detour is
-        /// enforcing. Only a claimed channel can be owed a hand-back.</summary>
-        public GazeTargetType ClaimedParts;
-
-        /// <summary>Channels owed ONE disable write. Booked by the transition
-        /// that dropped them and delivered by the detour on the native
-        /// thread, which is the only place _updateLookAt may be called.</summary>
-        public GazeTargetType PendingRelease;
-    }
-
-    private readonly object _sync = new();
-    private readonly Dictionary<ActorId, GazeEntry> _entries = new();
-
-    /// <summary>The detour's view of <see cref="_entries"/>, by body address.</summary>
-    private readonly Dictionary<nint, GazeEntry> _byAddress = new();
     private readonly IEntityBindings _bindings;
+    private readonly GazeEntryStore _store = new();
+    private readonly GazeNativeDriver _driver;
+    private readonly GazeReconciler _reconciler;
 
     public GazeService(
         IGPoseService gPoseService,
@@ -216,14 +104,18 @@ public unsafe class GazeService : IDisposable
         Poser.Game.Posing.GazePoseFrames? gazeFrames = null)
     {
         _bindings = bindings;
-        _gPoseService = gPoseService;
         _cameraService = cameraService;
         _objectTable = objectTable;
         _eventBus = eventBus;
         _log = log;
         _framework = framework;
-        _nativeFactory = nativeFactory;
         _gazeFrames = gazeFrames ?? new();
+        _driver = new GazeNativeDriver(
+            gPoseService, cameraService, objectTable, log, _store, _gazeFrames, nativeFactory,
+            () => IsAvailable, () => OnOwnerThread);
+        _reconciler = new GazeReconciler(
+            _store, _driver, bindings, objectTable, eventBus, log, _gazeFrames,
+            () => IsAvailable, () => OnOwnerThread);
 
         nint updateLookAtAddress;
         try
@@ -260,13 +152,13 @@ public unsafe class GazeService : IDisposable
         IGazeHook? hook = null;
         try
         {
-            _updateLookAt = (delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void>)updateLookAtAddress;
+            _driver.SetUpdateLookAt(updateLookAtAddress);
             hook = nativeFactory.CreateActorLookAtHook(
                 hooks,
                 actorLookAtLoopAddress,
-                ActorLookAtDetour);
+                _driver.ActorLookAtDetour);
             // Published before enabling: the detour reads it and can run at once.
-            _actorLookAtLoop = hook;
+            _driver.LoopHook = hook;
             hook.Enable();
             _isAvailable = true;
 
@@ -276,8 +168,8 @@ public unsafe class GazeService : IDisposable
         }
         catch (Exception ex)
         {
-            if (ReferenceEquals(_actorLookAtLoop, hook))
-                _actorLookAtLoop = null;
+            if (ReferenceEquals(_driver.LoopHook, hook))
+                _driver.LoopHook = null;
             hook?.Dispose();
             SetUnavailable(
                 hook is null
@@ -298,44 +190,15 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// The mode the entry's stored per-part sources are SEEDED from. Entity
-    /// without a usable target seeds nothing; the participation mask is
-    /// deliberately not consulted, so untoggling every part leaves the stored
-    /// positions and target id exactly as they were (Brio's SetTargetType
-    /// rewrites the mask and nothing else).
-    /// </summary>
-    private static GazeTargetMode SeedMode(GazeEntry entry) =>
-        entry.Mode == GazeTargetMode.Entity && (entry.TargetActor is null || entry.TargetStale)
-            ? GazeTargetMode.None
-            : entry.Mode;
-
-    /// <summary>
-    /// What the detour actually enforces. No participating part means Poser
-    /// writes nothing at all — a channel outside the mask gets no
-    /// _updateLookAt call, exactly as in Brio, where the original loop then
-    /// runs unconditionally.
-    /// </summary>
-    private static GazeTargetMode EffectiveMode(GazeEntry entry) =>
-        entry.Parts == GazeTargetType.None
-            ? GazeTargetMode.None
-            : SeedMode(entry);
-
-    /// <summary>The channels the detour will enforce on its next pass.</summary>
-    private static GazeTargetType EnforcedParts(GazeEntry entry) =>
-        EffectiveMode(entry) == GazeTargetMode.None
-            ? GazeTargetType.None
-            : entry.Parts;
-
-    /// <summary>
     /// The channels the detour will enforce for this actor on its next pass.
     /// Everything absent is handed back to the game. This is the observable
     /// form of the release contract, so it is what the tests assert.
     /// </summary>
     internal GazeTargetType WrittenParts(ActorId actor)
     {
-        lock (_sync)
+        lock (_store.Sync)
         {
-            return _entries.TryGetValue(actor, out var entry)
+            return _store.TryGet(actor, out var entry)
                 ? EnforcedParts(entry)
                 : GazeTargetType.None;
         }
@@ -347,245 +210,11 @@ public unsafe class GazeService : IDisposable
     /// </summary>
     internal GazeTargetType PendingRelease(ActorId actor)
     {
-        lock (_sync)
+        lock (_store.Sync)
         {
-            return _entries.TryGetValue(actor, out var entry)
+            return _store.TryGet(actor, out var entry)
                 ? entry.PendingRelease
                 : GazeTargetType.None;
-        }
-    }
-
-    /// <summary>
-    /// Books the hand-back this transition owes. Ceasing to write a channel is
-    /// NOT a release: _updateLookAt copies into the controller's persistent
-    /// per-channel slot (Ktisis names the same native call
-    /// <c>ActorLookAt(ActorGaze* writeTo, Gaze* readFrom, GazeControl part)</c>
-    /// — Scene/Modules/Actors/ActorModule.cs:231), so a channel Poser stops
-    /// writing keeps aiming at the last target it was given. Each dropped
-    /// channel is therefore owed exactly one INACTIVE write; Brio spells that
-    /// released value out in StopLookAt as LookMode.None on every part
-    /// (Brio/Game/Actor/ActorLookAtService.cs:101-108) and Ktisis calls the
-    /// same value GazeMode.Disabled (Ktisis/Structs/Actors/ActorGaze.cs:75).
-    /// A channel that comes straight back cancels its debt, because the active
-    /// write supersedes the disable. Callers hold <see cref="_sync"/>.
-    /// </summary>
-    private static void BookRelease(GazeEntry entry)
-    {
-        var enforced = EnforcedParts(entry);
-        entry.PendingRelease =
-            (entry.PendingRelease | (entry.ClaimedParts & ~enforced)) & ~enforced;
-        entry.ClaimedParts = enforced;
-    }
-
-    /// <summary>
-    /// Whether this object may receive a native gaze write at all. The GPose
-    /// index range IS the gate: a GPose clone SHARES its GameObjectId with the
-    /// overworld original, so an object outside 201..439 named by an id is the
-    /// wrong body and writing to it lands on the real actor.
-    /// </summary>
-    private static bool CanWriteCharacter([NotNullWhen(true)] IGameObject? character) =>
-        character is { Address: not 0 }
-        && character.IsValid()
-        && character.ObjectIndex is >= 201 and <= 439;
-
-    /// <summary>
-    /// Computes the character-target-id write this transition owes, and books
-    /// it as applied. Null when the native id already matches, when the caller
-    /// is off the owner thread, or when the character is not writable — in each
-    /// case nothing is booked, so a later transition still sees
-    /// desired != applied and retries. Callers hold <see cref="_sync"/>; the
-    /// write itself happens outside it.
-    /// </summary>
-    private ulong? PendingTargetWrite(GazeEntry entry, bool writable)
-    {
-        if (!writable || !OnOwnerThread)
-            return null;
-        var desired = EffectiveMode(entry) == GazeTargetMode.Entity ? entry.TargetId : 0ul;
-        if (desired == entry.AppliedTargetId)
-            return null;
-        entry.AppliedTargetId = desired;
-        return desired;
-    }
-
-    /// <summary>
-    /// Keeps the character's own game target id in step with the effective
-    /// Entity target. Brio drives this BOTH ways — set when an actor is picked,
-    /// and written back to 0 by its "Reset Selected Actor" path — and the clear
-    /// is what actually hands the channel back: an imposed target left behind
-    /// keeps the game's own look-at pointing at it.
-    ///
-    /// This is the ONE gate site for the native call. Every caller funnels
-    /// through here precisely so the GPose-index gate cannot be skipped by
-    /// adding another one.
-    /// </summary>
-    private void WriteCharacterTarget(IGameObject? character, ulong? pending)
-    {
-        if (pending is not { } targetId || !CanWriteCharacter(character))
-            return;
-        _nativeFactory.SetCharacterTargetId(character.Address, targetId);
-    }
-
-    private nint ActorLookAtDetour(ContainerInterface* args)
-    {
-        // Never throw into the game's look-at loop: a fault skips this pass's
-        // writes, is logged once, and the game's own loop still runs.
-        try
-        {
-            if (IsAvailable)
-                DriveLookAt(args);
-        }
-        catch (Exception ex)
-        {
-            if (!_detourFaultLogged)
-            {
-                _detourFaultLogged = true;
-                _log.Error($"GazeService: look-at detour faulted (logged once): {ex}");
-            }
-        }
-        // This advances native gaze inputs. Pose evaluation happens later,
-        // before BonePosingService applies the authored transforms.
-        return _actorLookAtLoop!.Original(args);
-    }
-
-    /// <summary>The detour's own writes, before the game's loop runs.</summary>
-    private void DriveLookAt(ContainerInterface* args)
-    {
-        if (_gPoseService.IsGPosing)
-        {
-            bool any;
-            lock (_sync)
-            {
-                any = _entries.Count > 0;
-            }
-            if (any)
-            {
-                var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
-                // Same predicate as every other native gaze write, so the gate
-                // is spelled exactly once in this file (Brio ActorTableHelpers
-                // 201..439).
-                if (CanWriteCharacter(targetActor))
-                {
-                    GazeTargetMode mode = GazeTargetMode.None;
-                    GazeTargetType parts = GazeTargetType.None;
-                    GazeTargetType pendingRelease = GazeTargetType.None;
-                    LookAtSource lookAt = default;
-                    bool known = false;
-                    bool poseAware = false;
-                    bool eyesLocked = false, headLocked = false, bodyLocked = false;
-                    lock (_sync)
-                    {
-                        if (_byAddress.TryGetValue(targetActor.Address, out var entry))
-                        {
-                            known = true;
-                            mode = EffectiveMode(entry);
-                            poseAware = entry.PoseAware;
-                            parts = entry.Parts;
-                            pendingRelease = entry.PendingRelease;
-                            // Copy to locals (like Brio) — the native calls
-                            // below run outside the lock.
-                            lookAt = entry.Target;
-                            eyesLocked = entry.EyesLocked;
-                            headLocked = entry.HeadLocked;
-                            bodyLocked = entry.BodyLocked;
-                        }
-                    }
-
-                    // An actor Poser has never touched is the game's alone.
-                    if (!known)
-                        return;
-
-                    var lookAtController =
-                        &((Character*)targetActor.Address)->LookAt.Controller;
-
-                    // The hand-back: one INACTIVE write per released channel,
-                    // on the native thread, before this pass's own writes.
-                    // Without it the controller keeps the last target Poser
-                    // gave the channel and the actor stays frozen mid-gaze.
-                    if (pendingRelease != GazeTargetType.None)
-                    {
-                        var release = new LookAtTarget { LookMode = LookMode.None };
-                        if (pendingRelease.HasFlag(GazeTargetType.Body))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Body, 0);
-                        if (pendingRelease.HasFlag(GazeTargetType.Head))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Head, 0);
-                        if (pendingRelease.HasFlag(GazeTargetType.Eyes))
-                            _updateLookAt(lookAtController, &release, LookAtIndex_Eyes, 0);
-                        lock (_sync)
-                        {
-                            // Only what this pass delivered is settled; a debt
-                            // booked meanwhile is still owed.
-                            if (_byAddress.TryGetValue(targetActor.Address, out var entry))
-                                entry.PendingRelease &= ~pendingRelease;
-                        }
-                    }
-
-                    bool compensate = poseAware && mode is GazeTargetMode.Camera or GazeTargetMode.Position;
-                    _gazeFrames.Request(targetActor.Address, compensate);
-                    // Off performs no further write: every channel has been
-                    // handed back and the game's own update owns them again.
-                    if (mode == GazeTargetMode.None)
-                        return;
-
-                    if (mode == GazeTargetMode.Detached)
-                    {
-                        // The game's loop re-aims at the camera each frame;
-                        // "no target" written on every part right before it
-                        // is what keeps the parts on the animation.
-                        var none = new LookAtTarget { LookMode = LookMode.None };
-                        _updateLookAt(lookAtController, &none, LookAtIndex_Body, 0);
-                        _updateLookAt(lookAtController, &none, LookAtIndex_Head, 0);
-                        _updateLookAt(lookAtController, &none, LookAtIndex_Eyes, 0);
-                        return;
-                    }
-
-                    // Camera and Forward are position sources refreshed each
-                    // loop for unlocked parts; Entity carries the target id in
-                    // the union and needs no per-loop position poll; Position
-                    // carries stored fixed world points, likewise needing no
-                    // per-loop poll — they are written through as-is.
-                    if (mode == GazeTargetMode.Camera)
-                    {
-                        var cameraPos = _cameraService.GetCameraPosition();
-                        if (parts.HasFlag(GazeTargetType.Eyes) && !eyesLocked)
-                            lookAt.Eyes.LookAtTarget.Position = cameraPos;
-                        if (parts.HasFlag(GazeTargetType.Head) && !headLocked)
-                            lookAt.Head.LookAtTarget.Position = cameraPos;
-                        if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
-                            lookAt.Body.LookAtTarget.Position = cameraPos;
-                    }
-                    else if (mode == GazeTargetMode.Forward)
-                    {
-                        var nativeObj = (GameObject*)targetActor.Address;
-                        var position = new Vector3(nativeObj->Position.X, nativeObj->Position.Y, nativeObj->Position.Z);
-                        var rotation = nativeObj->Rotation;
-                        var forwardDir = new Vector3(MathF.Sin(rotation), 0f, MathF.Cos(rotation));
-                        var forwardPos = position + forwardDir * 10f + new Vector3(0, 1.5f, 0);
-                        if (parts.HasFlag(GazeTargetType.Eyes) && !eyesLocked)
-                            lookAt.Eyes.LookAtTarget.Position = forwardPos;
-                        if (parts.HasFlag(GazeTargetType.Head) && !headLocked)
-                            lookAt.Head.LookAtTarget.Position = forwardPos;
-                        if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
-                            lookAt.Body.LookAtTarget.Position = forwardPos;
-                    }
-
-                    if (compensate)
-                    {
-                        lookAt.Body.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Body, lookAt.Body.LookAtTarget.Position);
-                        lookAt.Head.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Head, lookAt.Head.LookAtTarget.Position);
-                        lookAt.Eyes.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Eyes, lookAt.Eyes.LookAtTarget.Position);
-                    }
-
-                    if (parts.HasFlag(GazeTargetType.Body))
-                        _updateLookAt(lookAtController, &lookAt.Body.LookAtTarget, LookAtIndex_Body, 0);
-                    if (parts.HasFlag(GazeTargetType.Head))
-                        _updateLookAt(lookAtController, &lookAt.Head.LookAtTarget, LookAtIndex_Head, 0);
-                    if (parts.HasFlag(GazeTargetType.Eyes))
-                        _updateLookAt(lookAtController, &lookAt.Eyes.LookAtTarget, LookAtIndex_Eyes, 0);
-                }
-            }
         }
     }
 
@@ -618,9 +247,9 @@ public unsafe class GazeService : IDisposable
             return new GazeState();
         if (!Resolve(actor, out var id, out _))
             return new GazeState();
-        lock (_sync)
+        lock (_store.Sync)
         {
-            return _entries.TryGetValue(id, out var entry)
+            return _store.TryGet(id, out var entry)
                 ? new GazeState
                 {
                     PoseAware = entry.PoseAware,
@@ -646,9 +275,9 @@ public unsafe class GazeService : IDisposable
             return Outcome.Fail("This actor is no longer resolvable.");
         bool writable = CanWriteCharacter(gameObject);
         ulong? pendingTarget;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            var entry = Bind(id, gameObject.Address);
+            var entry = _store.Bind(id, gameObject.Address);
             if (settings.Mode == GazeTargetMode.Entity && entry.TargetActor != null && entry.TargetStale)
                 return StaleRefusal(entry);
             entry.Mode = settings.Mode;
@@ -668,9 +297,9 @@ public unsafe class GazeService : IDisposable
                     });
             }
             BookRelease(entry);
-            pendingTarget = PendingTargetWrite(entry, writable);
+            pendingTarget = _driver.PendingTargetWrite(entry, writable);
         }
-        WriteCharacterTarget(gameObject, pendingTarget);
+        _driver.WriteCharacterTarget(gameObject, pendingTarget);
         _eventBus.Publish(new GazeStateChangedEvent());
         return Outcome.Ok();
     }
@@ -680,7 +309,7 @@ public unsafe class GazeService : IDisposable
         if (!IsAvailable) return Unavailable();
         if (!Resolve(actor, out var id, out var gameObject))
             return Outcome.Fail("This actor is no longer resolvable.");
-        lock (_sync) Bind(id, gameObject.Address).PoseAware = enabled;
+        lock (_store.Sync) _store.Bind(id, gameObject.Address).PoseAware = enabled;
         if (!enabled) _gazeFrames.Request(actor.Address, false);
         _eventBus.Publish(new GazeStateChangedEvent());
         return Outcome.Ok();
@@ -702,11 +331,11 @@ public unsafe class GazeService : IDisposable
         bool modeChanged;
         ulong? pendingTarget;
         // Resolved before the lock: the gate reads Dalamud wrapper properties,
-        // and the detour contends on _sync from the native thread.
+        // and the detour contends on the store lock from the native thread.
         bool writable = CanWriteCharacter(gameObject);
-        lock (_sync)
+        lock (_store.Sync)
         {
-            var entry = Bind(id, gameObject.Address);
+            var entry = _store.Bind(id, gameObject.Address);
             // Re-selecting Actor mode is a reapply of the remembered target, so
             // a stale one is refused here rather than silently doing nothing.
             if (mode == GazeTargetMode.Entity && entry.TargetActor != null && entry.TargetStale)
@@ -734,12 +363,12 @@ public unsafe class GazeService : IDisposable
             ReseedUnlockedParts(entry);
             BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
-            pendingTarget = PendingTargetWrite(entry, writable);
+            pendingTarget = _driver.PendingTargetWrite(entry, writable);
         }
         // Leaving Entity clears the character's imposed target id, so the
         // game's own look-at stops pointing at the actor Poser chose.
-        WriteCharacterTarget(gameObject, pendingTarget);
-        // Published outside the lock — the detour contends on _sync from the
+        _driver.WriteCharacterTarget(gameObject, pendingTarget);
+        // Published outside the lock — the detour contends on the store lock from the
         // native thread, so the bus is never invoked while holding it.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
@@ -762,9 +391,9 @@ public unsafe class GazeService : IDisposable
         bool modeChanged;
         ulong? pendingTarget;
         bool writable = CanWriteCharacter(gameObject);
-        lock (_sync)
+        lock (_store.Sync)
         {
-            var entry = Bind(id, gameObject.Address);
+            var entry = _store.Bind(id, gameObject.Address);
             // Adding a part back is a reapply of the remembered configuration.
             // Relinquishing one never is, so only additions can be refused.
             if ((parts & ~entry.Parts) != GazeTargetType.None
@@ -787,11 +416,11 @@ public unsafe class GazeService : IDisposable
             // channel Poser just gave up.
             BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
-            pendingTarget = PendingTargetWrite(entry, writable);
+            pendingTarget = _driver.PendingTargetWrite(entry, writable);
         }
         // All-off drops the character's imposed target id; the first part back
         // reapplies it, which is what makes retoggling resume tracking.
-        WriteCharacterTarget(gameObject, pendingTarget);
+        _driver.WriteCharacterTarget(gameObject, pendingTarget);
         // Crossing between "some part enforced" and "none" is the transition;
         // part edits that leave that alone stay silent. Published outside lock.
         if (modeChanged)
@@ -827,9 +456,9 @@ public unsafe class GazeService : IDisposable
         bool modeChanged;
         ulong? pendingTarget;
         bool writable = CanWriteCharacter(gameObject);
-        lock (_sync)
+        lock (_store.Sync)
         {
-            var entry = Bind(id, gameObject.Address);
+            var entry = _store.Bind(id, gameObject.Address);
             var beforeMode = EffectiveMode(entry);
             entry.TargetActor = targetKey;
             entry.TargetId = targetObject.GameObjectId;
@@ -843,12 +472,12 @@ public unsafe class GazeService : IDisposable
             ReseedUnlockedParts(entry);
             BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
-            pendingTarget = PendingTargetWrite(entry, writable);
+            pendingTarget = _driver.PendingTargetWrite(entry, writable);
         }
         // Brio parity (SetActorTarget): the character's own target id backs
         // the game's id-based look tracking. Written through the RESOLVED
         // wrapper's address — the raw IActor address is only a claim.
-        WriteCharacterTarget(gameObject, pendingTarget);
+        _driver.WriteCharacterTarget(gameObject, pendingTarget);
         // Retargeting within Entity mode is not a mode transition; only the
         // move INTO Entity publishes. Published outside the lock.
         if (modeChanged)
@@ -867,9 +496,9 @@ public unsafe class GazeService : IDisposable
             return;
         if (!Resolve(actor, out var id, out _))
             return;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            if (!_entries.TryGetValue(id, out var entry) ||
+            if (!_store.TryGet(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return; // the anchor exists only in Position mode
             entry.Position = position;
@@ -889,9 +518,9 @@ public unsafe class GazeService : IDisposable
             return;
         if (!Resolve(actor, out var id, out _))
             return;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            if (!_entries.TryGetValue(id, out var entry) ||
+            if (!_store.TryGet(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // An explicit user edit outranks a lock, so locked parts move too;
@@ -910,9 +539,9 @@ public unsafe class GazeService : IDisposable
             return;
         if (!Resolve(actor, out var id, out _))
             return;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            if (!_entries.TryGetValue(id, out var entry) ||
+            if (!_store.TryGet(id, out var entry) ||
                 SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // Brio's "set to camera value": a one-shot capture, not a follow.
@@ -936,9 +565,9 @@ public unsafe class GazeService : IDisposable
             return;
         if (!Resolve(actor, out var id, out _))
             return;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            if (!_entries.TryGetValue(id, out var entry))
+            if (!_store.TryGet(id, out var entry))
                 return;
             var mode = EffectiveMode(entry);
             if (mode == GazeTargetMode.None || !entry.Parts.HasFlag(part))
@@ -974,9 +603,9 @@ public unsafe class GazeService : IDisposable
             return false;
         if (!Resolve(actor, out var id, out _))
             return false;
-        lock (_sync)
+        lock (_store.Sync)
         {
-            if (!_entries.TryGetValue(id, out var entry))
+            if (!_store.TryGet(id, out var entry))
                 return false;
             if (part.HasFlag(GazeTargetType.Eyes) && entry.EyesLocked) return true;
             if (part.HasFlag(GazeTargetType.Head) && entry.HeadLocked) return true;
@@ -994,14 +623,14 @@ public unsafe class GazeService : IDisposable
             return;
         bool modeChanged;
         ulong? pendingTarget = null;
-        lock (_sync)
+        lock (_store.Sync)
         {
             // Brio's RemoveObjectFromLook — the ONE path that forgets the
             // remembered target, as opposed to the toggles, which keep it. The
             // entry itself is cleared in place rather than dropped: it is the
             // ledger the detour reads to deliver the hand-back, and dropping it
             // would strand every claimed channel at its last gaze.
-            if (!_entries.TryGetValue(id, out var entry))
+            if (!_store.TryGet(id, out var entry))
                 return;
             modeChanged = EffectiveMode(entry) != GazeTargetMode.None;
             if (entry.AppliedTargetId != 0 && OnOwnerThread)
@@ -1020,41 +649,14 @@ public unsafe class GazeService : IDisposable
             ReseedUnlockedParts(entry);
             BookRelease(entry);
         }
-        WriteCharacterTarget(gameObject, pendingTarget);
+        _driver.WriteCharacterTarget(gameObject, pendingTarget);
         // A dropped entry that was already effectively Off changed nothing.
         // Published outside the lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
     }
 
-    // ── entry maintenance (all callers hold _sync) ───────────────────────
-
-    /// <summary>The actor's entry, created on first use, with the detour's
-    /// address index moved to the body it currently names.</summary>
-    private GazeEntry Bind(ActorId id, nint address)
-    {
-        if (!_entries.TryGetValue(id, out var entry))
-            _entries[id] = entry = new GazeEntry();
-        if (entry.Address != address)
-        {
-            Unindex(entry);
-            entry.Address = address;
-        }
-        _byAddress[address] = entry;
-        return entry;
-    }
-
-    private void Drop(ActorId id)
-    {
-        if (_entries.Remove(id, out var entry))
-            Unindex(entry);
-    }
-
-    private void Unindex(GazeEntry entry)
-    {
-        if (_byAddress.TryGetValue(entry.Address, out var indexed) && ReferenceEquals(indexed, entry))
-            _byAddress.Remove(entry.Address);
-    }
+    // ── entry seeding (all callers hold the store lock) ──────────────────
 
     /// <summary>The remembered target's live position, resolved through the
     /// registry; null when it is gone.</summary>
@@ -1107,41 +709,6 @@ public unsafe class GazeService : IDisposable
         WritePart(entry, part, target);
     }
 
-    private static void ApplyPartLock(GazeEntry entry, GazeTargetType part, Vector3 position)
-    {
-        var target = new LookAtTarget { LookMode = LookMode.Position, Position = position };
-        if (part.HasFlag(GazeTargetType.Eyes)) entry.EyesLocked = true;
-        if (part.HasFlag(GazeTargetType.Head)) entry.HeadLocked = true;
-        if (part.HasFlag(GazeTargetType.Body)) entry.BodyLocked = true;
-        WritePart(entry, part, target);
-    }
-
-    private static void ClearPartLock(GazeEntry entry, GazeTargetType part)
-    {
-        if (part.HasFlag(GazeTargetType.Eyes)) entry.EyesLocked = false;
-        if (part.HasFlag(GazeTargetType.Head)) entry.HeadLocked = false;
-        if (part.HasFlag(GazeTargetType.Body)) entry.BodyLocked = false;
-    }
-
-    private static void WritePart(GazeEntry entry, GazeTargetType part, LookAtTarget target)
-    {
-        if (part.HasFlag(GazeTargetType.Eyes)) entry.Target.Eyes.LookAtTarget = target;
-        if (part.HasFlag(GazeTargetType.Head)) entry.Target.Head.LookAtTarget = target;
-        if (part.HasFlag(GazeTargetType.Body)) entry.Target.Body.LookAtTarget = target;
-    }
-
-    /// <summary>
-    /// The single-flag part's stored target position; null when the flag is
-    /// not exactly one known part (so callers can fall back to the anchor).
-    /// </summary>
-    private static Vector3? PartPosition(GazeEntry entry, GazeTargetType part) => part switch
-    {
-        GazeTargetType.Eyes => entry.Target.Eyes.LookAtTarget.Position,
-        GazeTargetType.Head => entry.Target.Head.LookAtTarget.Position,
-        GazeTargetType.Body => entry.Target.Body.LookAtTarget.Position,
-        _ => null,
-    };
-
     /// <summary>
     /// Halfway between the actor and the camera — Ktisis GetCameraLerpFor,
     /// the seed for a freshly entered Position mode.
@@ -1168,108 +735,17 @@ public unsafe class GazeService : IDisposable
         _gazeFrames.Clear();
         if (!e.IsGPosing)
         {
-            lock (_sync)
+            lock (_store.Sync)
             {
-                _entries.Clear();
-                _byAddress.Clear();
+                _store.Clear();
             }
         }
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) => _gazeFrames.Clear();
 
-    /// <summary>
-    /// Reconciliation by stable id: a source the registry no longer resolves
-    /// drops its entry, a surviving one re-points the detour index at its
-    /// current body, and a departed Entity target marks its source stale.
-    /// Runs after each binding commit, not on the actor-list event itself:
-    /// until the registry publishes, its maps still describe the old list and
-    /// a replaced wrapper would read as a departed actor. Nothing ever
-    /// follows a reused address.
-    /// </summary>
-    public void Reconcile()
-    {
-        _gazeFrames.Clear();
-        if (!IsAvailable || !OnOwnerThread)
-            return;
-        List<(ActorId Id, ActorId? Target)> snapshot;
-        lock (_sync)
-        {
-            if (_entries.Count == 0)
-                return;
-            snapshot = new List<(ActorId, ActorId?)>(_entries.Count);
-            foreach (var (id, entry) in _entries)
-                snapshot.Add((id, entry.TargetActor));
-        }
-
-        // Every registry and object-table read happens OUTSIDE _sync: the
-        // detour contends on it from the native thread on every frame.
-        var bodies = new Dictionary<ActorId, (IGameObject Body, bool Writable)>(snapshot.Count);
-        var liveTargets = new HashSet<ActorId>();
-        foreach (var (id, target) in snapshot)
-        {
-            if (_bindings.Resolve(id) is { Success: true, Value: { } live }
-                && live.Address != nint.Zero
-                && _objectTable.CreateObjectReference(live.Address) is { } body)
-                bodies[id] = (body, CanWriteCharacter(body));
-            if (target is { } targetId && _bindings.Resolve(targetId).Success)
-                liveTargets.Add(targetId);
-        }
-
-        bool modeChanged = false;
-        List<(IGameObject Character, ulong TargetId)>? targetWrites = null;
-        lock (_sync)
-        {
-            foreach (var (id, probedTarget) in snapshot)
-            {
-                if (!_entries.TryGetValue(id, out var entry))
-                    continue;
-                if (!bodies.TryGetValue(id, out var resolved))
-                {
-                    // The exact actor generation the entry described is gone,
-                    // so the entry goes with it.
-                    Drop(id);
-                    continue;
-                }
-                Bind(id, resolved.Body.Address);
-                // The liveness probe answered about the target this entry held
-                // when the snapshot was taken. An entry retargeted since is
-                // left alone rather than judged on the wrong id — the retarget
-                // proved its own target live and cleared the mark itself.
-                if (entry.TargetActor != probedTarget)
-                    continue;
-                bool wasStale = entry.TargetStale;
-                // Exact identity, and STICKY: once a remembered target has left
-                // the scene the mark stays until a live target is chosen.
-                entry.TargetStale = wasStale ||
-                    (entry.TargetActor is { } target && !liveTargets.Contains(target));
-                if (entry.TargetStale == wasStale)
-                    continue;
-                // Entity-only from here: a stale target is meaningless to a
-                // Point/Camera/Forward entry, and must not touch its locks.
-                if (entry.Mode != GazeTargetMode.Entity)
-                    continue;
-                ClearPartLock(entry, GazeTargetType.All);
-                // A stale target stops enforcement, so every claimed channel
-                // is owed its hand-back — the same debt an untoggle books.
-                BookRelease(entry);
-                _log.Debug($"GazeService: gaze target of {id} despawned — remembered as stale.");
-                modeChanged = true;
-                if (PendingTargetWrite(entry, resolved.Writable) is { } pending)
-                    (targetWrites ??= new()).Add((resolved.Body, pending));
-            }
-        }
-        // Outside the lock: a despawned target leaves the character's imposed
-        // target id pointing at nothing, so it is cleared here too, through
-        // the same gated funnel as every other write.
-        if (targetWrites != null)
-            foreach (var (character, targetId) in targetWrites)
-                WriteCharacterTarget(character, targetId);
-        // Published outside the lock, once for the whole reconciliation pass.
-        if (modeChanged)
-            _eventBus.Publish(new GazeStateChangedEvent());
-    }
-
+    /// <summary>See <see cref="GazeReconciler.Reconcile"/>.</summary>
+    public void Reconcile() => _reconciler.Reconcile();
 
     public void Dispose()
     {
@@ -1277,8 +753,7 @@ public unsafe class GazeService : IDisposable
             return;
         _disposed = true;
         _isAvailable = false;
-        _actorLookAtLoop?.Dispose();
-        _actorLookAtLoop = null;
+        _driver.DisposeHook();
         if (_subscribed)
         {
             _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
@@ -1286,43 +761,4 @@ public unsafe class GazeService : IDisposable
             _subscribed = false;
         }
     }
-}
-
-[StructLayout(LayoutKind.Sequential)]
-internal struct LookAtSource
-{
-    public LookAtType Body;
-    public LookAtType Head;
-    public LookAtType Eyes;
-    public LookAtType Unknown;
-}
-
-[StructLayout(LayoutKind.Explicit)]
-internal struct LookAtType
-{
-    [FieldOffset(0x30)] public LookAtTarget LookAtTarget;
-}
-
-[StructLayout(LayoutKind.Explicit, Size = 0x28)]
-internal struct LookAtTarget
-{
-    [FieldOffset(0x08)] public LookMode LookMode;
-    // Position and the actor-target id are a union at 0x10 — corroborated by
-    // Brio ActorLookAtService.LookAtTarget and Ktisis ActorGaze.Gaze.
-    [FieldOffset(0x10)] public Vector3 Position;
-    [FieldOffset(0x10)] public ulong ActorTargetId;
-    // Trailing field of the native 0x28 CharacterLookAtTargetParam (Ktisis
-    // Gaze.Unk5). The explicit size keeps captures and native reads
-    // byte-complete instead of over-reading adjacent managed memory.
-    [FieldOffset(0x20)] public uint Unknown20;
-}
-
-internal enum LookMode
-{
-    None = 0,
-    // Value 1 is id-based object tracking (Brio LookMode.Target / Ktisis
-    // GazeMode.Object) — previously mislabeled "Frozen".
-    Target = 1,
-    Pivot = 2,
-    Position = 3,
 }
