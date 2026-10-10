@@ -148,9 +148,9 @@ public class LightFile
     {
         try
         {
-            var json = JsonSerializer.Serialize(this, JsonOptions);
-            File.WriteAllText(path, json);
-            return true;
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
+            return AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
+                new AtomicWriteOptions { Subject = "light" }).Succeeded;
         }
         catch (Exception)
         {

@@ -312,128 +312,39 @@ public sealed class AutoSaveHealthStore
 
     public AutoSaveHealthWriteResult Write(AutoSaveHealthRecord record)
     {
-        string? temp = null;
-        string? backup = null;
-        var replaceAttempted = false;
-        var moveAttempted = false;
-        var tempCleanupAttempted = false;
+        byte[] bytes;
         try
         {
-            byte[] bytes;
-            try
-            {
-                bytes = JsonSerializer.SerializeToUtf8Bytes(record, JsonOptions);
-            }
-            catch (Exception ex)
-            {
-                return AutoSaveHealthWriteResult.Failed(
-                    $"Autosave health serialization failed: {ex.Message}");
-            }
-
-            if (bytes.Length == 0 || bytes.Length > MaxBytes)
-                return AutoSaveHealthWriteResult.Failed("Autosave health record exceeded its size limit.");
-
-            Directory.CreateDirectory(RootDirectory);
-            temp = Path.Combine(RootDirectory, $".{FileName}.{Guid.NewGuid():N}.tmp");
-            using (var stream = _fileSystem.CreateNew(temp))
-            {
-                stream.Write(bytes, 0, bytes.Length);
-                _fileSystem.FlushToDisk(stream);
-            }
-
-            using (var verify = _fileSystem.OpenRead(temp))
-            {
-                var roundTrip = JsonSerializer.Deserialize<AutoSaveHealthRecord>(verify, JsonOptions);
-                if (!RecordsEqual(record, roundTrip))
-                    return CleanupPrecommitFailure(
-                        "Autosave health validation failed.", ref temp, ref tempCleanupAttempted);
-            }
-
-            if (_fileSystem.Exists(HealthPath))
-            {
-                backup = Path.Combine(RootDirectory, $".{FileName}.{Guid.NewGuid():N}.bak");
-                replaceAttempted = true;
-                _fileSystem.Replace(temp, HealthPath, backup);
-            }
-            else
-            {
-                moveAttempted = true;
-                _fileSystem.Move(temp, HealthPath);
-            }
-
-            try
-            {
-                if (!TryReadMatchingRecord(HealthPath, record))
-                    return AutoSaveHealthWriteResult.Failed(
-                        "Autosave health commit could not confirm its destination.",
-                        Observe(HealthPath).Concat(Observe(backup)).ToArray());
-            }
-            catch (Exception ex)
-            {
-                return AutoSaveHealthWriteResult.Failed(
-                    $"Autosave health commit confirmation failed: {ex.Message}",
-                    Observe(HealthPath).Concat(Observe(backup)).ToArray());
-            }
-
-            temp = null;
-            if (backup is not null)
-            {
-                try
-                {
-                    _fileSystem.Delete(backup);
-                }
-                catch (Exception ex)
-                {
-                    return AutoSaveHealthWriteResult.Failed(
-                        $"Autosave health backup cleanup failed: {ex.Message}",
-                        Observe(backup));
-                }
-            }
-            return AutoSaveHealthWriteResult.Success();
+            bytes = JsonSerializer.SerializeToUtf8Bytes(record, JsonOptions);
         }
         catch (Exception ex)
         {
-            var evidence = new List<string>();
-            if (replaceAttempted)
-            {
-                evidence.AddRange(Observe(HealthPath));
-                evidence.AddRange(Observe(temp));
-                evidence.AddRange(Observe(backup));
-            }
-            else
-            {
-                evidence.AddRange(Observe(temp));
-                evidence.AddRange(Observe(backup));
-            }
+            return AutoSaveHealthWriteResult.Failed(
+                $"Autosave health serialization failed: {ex.Message}");
+        }
 
-            // A pre-commit temp is not recovery evidence once cleanup succeeds.
-            // Remove it before constructing the result so the returned paths
-            // describe only files that still exist.
-            if (temp is not null && !replaceAttempted && !moveAttempted)
-            {
-                tempCleanupAttempted = true;
-                try
-                {
-                    _fileSystem.Delete(temp);
-                    evidence.RemoveAll(path => string.Equals(path, temp, StringComparison.Ordinal));
-                    temp = null;
-                }
-                catch (Exception cleanup)
-                {
-                    evidence.Add(temp!);
-                    ex = new IOException($"{ex.Message}; temp cleanup failed: {cleanup.Message}", ex);
-                }
-            }
-            return AutoSaveHealthWriteResult.Failed(ex.Message, evidence);
-        }
-        finally
+        if (bytes.Length == 0 || bytes.Length > MaxBytes)
+            return AutoSaveHealthWriteResult.Failed("Autosave health record exceeded its size limit.");
+
+        try
         {
-            if (temp is not null && !tempCleanupAttempted && !replaceAttempted && !moveAttempted)
-            {
-                try { _fileSystem.Delete(temp); }
-                catch { /* temp remains recoverable through the failure evidence */ }
-            }
+            Directory.CreateDirectory(RootDirectory);
         }
+        catch (Exception ex)
+        {
+            return AutoSaveHealthWriteResult.Failed(ex.Message);
+        }
+
+        var written = AtomicFile.Write(_fileSystem, HealthPath, bytes, new AtomicWriteOptions
+        {
+            Subject = "autosave health",
+            VerifyTemporary = temporary => TryReadMatchingRecord(temporary, record)
+                ? null
+                : "Autosave health validation failed.",
+        });
+        return written.Succeeded
+            ? AutoSaveHealthWriteResult.Success()
+            : AutoSaveHealthWriteResult.Failed(written.Detail!, written.RecoveryEvidencePaths);
     }
 
     public AutoSaveHealthRecoveryResult RecoverStale()
@@ -459,28 +370,6 @@ public sealed class AutoSaveHealthStore
             current.RecoveryOverflowCount);
         var write = Write(recovered);
         return new AutoSaveHealthRecoveryResult(recovered, write);
-    }
-
-    private AutoSaveHealthWriteResult CleanupPrecommitFailure(
-        string detail,
-        ref string? temp,
-        ref bool cleanupAttempted)
-    {
-        if (temp is null)
-            return AutoSaveHealthWriteResult.Failed(detail);
-        var path = temp;
-        cleanupAttempted = true;
-        try
-        {
-            _fileSystem.Delete(path);
-            temp = null;
-            return AutoSaveHealthWriteResult.Failed(detail);
-        }
-        catch (Exception cleanup)
-        {
-            return AutoSaveHealthWriteResult.Failed(
-                $"{detail}; temp cleanup failed: {cleanup.Message}", Observe(path));
-        }
     }
 
     private bool TryReadMatchingRecord(string path, AutoSaveHealthRecord expected)
@@ -524,18 +413,4 @@ public sealed class AutoSaveHealthStore
 
     private static bool ListsEqual(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
         left.Count == right.Count && left.SequenceEqual(right, StringComparer.Ordinal);
-
-    private IReadOnlyList<string> Observe(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return Array.Empty<string>();
-        try
-        {
-            return _fileSystem.Exists(path) ? new[] { path } : Array.Empty<string>();
-        }
-        catch
-        {
-            return new[] { path };
-        }
-    }
 }
