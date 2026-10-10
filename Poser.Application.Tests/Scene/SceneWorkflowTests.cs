@@ -46,7 +46,7 @@ public sealed class SceneWorkflowTests
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var history = new TransformHistory(); var native = new ParentRuntime();
         var parenting = new TransformParenting(native, history, new(history));
-        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+        using var workflow = Workflow(runtime, history: history,
             structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
         Assert.True(workflow.BeginLoad("parents.xivs").Success); await workflow.Drain;
         AssertApplied(workflow);
@@ -103,7 +103,7 @@ public sealed class SceneWorkflowTests
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var structure = new SceneStructure(groups, coordinator, state);
         var history = new TransformHistory();
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history, structure: structure);
+        using var load = Workflow(runtime, history: history, structure: structure);
         for (int cycle = 0; cycle < 2; cycle++)
         {
             if (cycle == 0) Assert.True(load.BeginLoad("groups.xivs").Success);
@@ -173,7 +173,7 @@ public sealed class SceneWorkflowTests
         var history = new TransformHistory();
         var appends = 0;
         history.Appended += _ => appends++;
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("light.xivs").Success);
         await load.Drain;
         AssertApplied(load);
@@ -195,6 +195,33 @@ public sealed class SceneWorkflowTests
         }
         Assert.Equal(1, appends);
         Assert.DoesNotContain("ClearScene", runtime.Calls);
+    }
+
+    /// <summary>A workflow over the fake with no-op collaborators wherever
+    /// the test does not bring its own.</summary>
+    private static SceneWorkflow Workflow(FakeRuntime runtime, TransformHistory? history = null,
+        ISceneStructure? structure = null, TransformParenting? parenting = null) =>
+        new(runtime, new FakeDocuments(runtime), new NoObserver(), history ?? new TransformHistory(),
+            structure ?? new NoStructure(), parenting ?? Parenting());
+
+    private static TransformParenting Parenting()
+    {
+        var history = new TransformHistory();
+        return new TransformParenting(new ParentRuntime(), history, new(history));
+    }
+
+    private sealed class NoObserver : ISceneWorkflowObserver
+    {
+        public void Saved() { }
+        public void Completed(Guid operationId, SceneProgress progress) { }
+    }
+
+    private sealed class NoStructure : ISceneStructure
+    {
+        public SceneStructureSnapshot Capture() => new([], []);
+        public IReadOnlyList<Guid> Import(IReadOnlyList<SceneStructureGroup> groups, IReadOnlyList<RootSlot> order) =>
+            groups.Select(_ => Guid.NewGuid()).ToArray();
+        public void Remove(IReadOnlyList<Guid> groups) { }
     }
 
     // ── the seam fake ────────────────────────────────────────────────────
@@ -660,7 +687,7 @@ public sealed class SceneWorkflowTests
     {
         var scene = SceneWith(Actor("Lead", out _), Actor("Second", out _));
         var failedRuntime = new FakeRuntime { ReadResult = scene, ActorSpawnFailure = a => a.Name == "Second" ? "no free slot" : null };
-        using (var failed = new SceneWorkflow(failedRuntime, new FakeDocuments(failedRuntime)))
+        using (var failed = Workflow(failedRuntime))
         {
             Assert.True(failed.BeginLoad("shot.xivs").Success);
             await failed.Drain;
@@ -672,7 +699,7 @@ public sealed class SceneWorkflowTests
 
         var replacedRuntime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         replacedRuntime.AfterCall = call => { if (call == "SpawnActor:Lead") replacedRuntime.Session = SessionGeneration.New(); };
-        using var replaced = new SceneWorkflow(replacedRuntime, new FakeDocuments(replacedRuntime));
+        using var replaced = Workflow(replacedRuntime);
         Assert.True(replaced.BeginLoad("shot.xivs").Success);
         await replaced.Drain;
         Assert.Equal(new[] { "actor:Lead" }, replacedRuntime.Destroyed.ToArray());
@@ -682,7 +709,7 @@ public sealed class SceneWorkflowTests
         // A read failure touches no native state and appends no history.
         var readRuntime = new FakeRuntime { ReadFailure = Corrupt("The document is not a scene.") };
         var history = new TransformHistory();
-        using var read = new SceneWorkflow(readRuntime, new FakeDocuments(readRuntime), history: history);
+        using var read = Workflow(readRuntime, history: history);
         Assert.True(read.BeginLoad("shot.xivs").Success);
         await read.Drain;
         Assert.Equal(OperationReceiptState.Failed, read.Receipt!.State);
@@ -701,7 +728,8 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Lead", out _), Actor("Slow", out _)),
             NeverReadyActor = "Slow",
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime))
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(),
+            new TransformHistory(), new NoStructure(), Parenting())
         {
             ActorReadyBound = TimeSpan.FromMilliseconds(100),
         };
@@ -737,8 +765,8 @@ public sealed class SceneWorkflowTests
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var history = new TransformHistory();
         var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
-            structure: new SceneStructure(groups, coordinator, state), parenting: parenting)
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(), history,
+            new SceneStructure(groups, coordinator, state), parenting)
         {
             StructureBindingBound = TimeSpan.FromMilliseconds(100),
         };
@@ -765,7 +793,7 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Lead", out _)),
             Preflight = "There is no local player to spawn the scene's actors from.",
         };
-        using (var refused = new SceneWorkflow(refusedRuntime, new FakeDocuments(refusedRuntime)))
+        using (var refused = Workflow(refusedRuntime))
         {
             Assert.True(refused.BeginLoad("shot.xivs", clearFirst).Success);
             await refused.Drain;
@@ -780,7 +808,7 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Lead", out _)),
             ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).",
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs", clearFirst).Success);
         await load.Drain;
         Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
@@ -808,7 +836,7 @@ public sealed class SceneWorkflowTests
             GazeFailure = _ => "The look-at target is gone.",
         };
         var history = new TransformHistory();
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
         Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
@@ -827,7 +855,7 @@ public sealed class SceneWorkflowTests
         var history = new TransformHistory();
         var notices = new Fixtures.NoticeLog();
         var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices);
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("shot.xivs", new SceneLoadOptions { ClearExistingScene = true }).Success);
         await load.Drain;
         AssertApplied(load);
@@ -854,7 +882,7 @@ public sealed class SceneWorkflowTests
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         var history = new TransformHistory();
         var journal = new UndoJournal(history, new ReplayRunner(), _ => true, new Fixtures.NoticeLog());
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
         var step = history.PeekUndo();
@@ -892,7 +920,7 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Midona Rhel", out _)),
             ActorReadyAfterPolls = 3,
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
@@ -921,7 +949,7 @@ public sealed class SceneWorkflowTests
         var actor = Actor("Lead", out _);
         actor.Gaze = new SceneActorGaze { Mode = GazeTargetMode.Detached, Parts = GazeTargetType.All };
         var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
@@ -966,7 +994,7 @@ public sealed class SceneWorkflowTests
             "back; the scene saved without it.",
         };
 
-        using var save = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var save = Workflow(runtime);
         Assert.True(save.BeginSave(
             "shot.xivs",
             null,
@@ -994,7 +1022,7 @@ public sealed class SceneWorkflowTests
         scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
         scene.WorldObjects = [WorldObject("bg/example.mdl")];
         var runtime = new FakeRuntime { ReadResult = scene, PoseBusyPolls = 3 };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         var last = (Done: 0, Total: 0);
         load.Changed += () =>
         {
@@ -1016,7 +1044,8 @@ public sealed class SceneWorkflowTests
     public async Task A_pose_import_that_never_finishes_is_cancelled_not_left_armed()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime))
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(),
+            new TransformHistory(), new NoStructure(), Parenting())
         {
             PoseImportBound = TimeSpan.FromMilliseconds(100),
         };
@@ -1034,7 +1063,7 @@ public sealed class SceneWorkflowTests
     public async Task Cancelling_during_a_pose_import_ends_cancelled_and_cancels_the_import()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         runtime.AfterCall = call => { if (call == "ArmPoseImport:Lead") load.Cancel(); };
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
@@ -1058,7 +1087,7 @@ public sealed class SceneWorkflowTests
             ReadRefusals = [new(SceneOutcomeKind.Light, "Rim", "Light 'Rim' exceeds 256 characters.")],
             LightDetail = "The gobo is not shipped by this client.",
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
@@ -1083,7 +1112,7 @@ public sealed class SceneWorkflowTests
         first.PenumbraCollection = Guid.NewGuid();
         second.PenumbraCollection = Guid.NewGuid();
         var runtime = new FakeRuntime { ReadResult = SceneWith(first, second) };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
@@ -1168,7 +1197,7 @@ public sealed class SceneWorkflowTests
         var runtime = new FakeRuntime { ReadResult = WholeScene() };
         arrange(runtime);
 
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 

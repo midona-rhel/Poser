@@ -1,4 +1,3 @@
-using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -7,11 +6,14 @@ using Poser.Files;
 
 namespace Poser.Application.Scene;
 
-public sealed partial class SceneWorkflow
+/// <summary>
+/// The load's last optional phase: sidebar groups, root order and transform
+/// parent links restored over the entities the load created.
+/// </summary>
+internal sealed class SceneLoadStructure(
+    ISceneRuntime runtime, ISceneStructure structure, TransformParenting parenting)
 {
-    internal TimeSpan StructureBindingBound { get; init; } = TimeSpan.FromSeconds(2);
-
-    private static Dictionary<(string Kind, Guid Key), SceneEntityHandle> StructureTokens(
+    public static Dictionary<(string Kind, Guid Key), SceneEntityHandle> Tokens(
         params (string Kind, IReadOnlyDictionary<Guid, SceneEntityHandle> Entities)[] maps)
     {
         var result = new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
@@ -26,8 +28,9 @@ public sealed partial class SceneWorkflow
     /// <summary>Waits, bounded, for every loaded member the structure names
     /// to bind. Only a stop (cancel, session replaced) is returned: members
     /// still unbound at the bound are refused by name at commit.</summary>
-    private async Task<string?> WaitForStructure(Operation operation, SceneFile scene,
-        IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, CancellationToken cancellation)
+    public async Task<string?> WaitForBindings(SceneOperation operation, SceneFile scene,
+        IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, TimeSpan bound,
+        CancellationToken cancellation)
     {
         if (!HasStructure(scene)) return null;
         var references = (scene.Groups ?? []).SelectMany(group => group.Members)
@@ -37,14 +40,14 @@ public sealed partial class SceneWorkflow
         var deadline = System.Diagnostics.Stopwatch.StartNew();
         while (true)
         {
-            var result = await _runtime.OnFramework(() =>
+            var result = await runtime.OnFramework(() =>
             {
-                var stop = Guard(operation, cancellation);
+                var stop = operation.Guard(runtime, cancellation);
                 return (Stop: stop, Ready: stop == null
-                    && references.All(reference => _runtime.ResolveSceneEntity(tokens[reference]) != null));
+                    && references.All(reference => runtime.ResolveSceneEntity(tokens[reference]) != null));
             });
             if (result.Stop != null) return result.Stop;
-            if (result.Ready || deadline.Elapsed >= StructureBindingBound) return null;
+            if (result.Ready || deadline.Elapsed >= bound) return null;
             try
             {
                 await Task.Delay(50, cancellation);
@@ -58,12 +61,12 @@ public sealed partial class SceneWorkflow
 
     /// <summary>
     /// Restores groups, root order and parent links over what the load
-    /// created. All of it is OPTIONAL (see the class's load policy): a member
-    /// that did not bind, a refused link or a structure import that fails as a
-    /// whole is a named "Group" or "Parent" refusal added to
-    /// <paramref name="outcomes"/>, and the entities stay restored.
+    /// created. All of it is OPTIONAL (see <see cref="SceneLoadTransaction"/>'s
+    /// load policy): a member that did not bind, a refused link or a structure
+    /// import that fails as a whole is a named "Group" or "Parent" refusal
+    /// added to <paramref name="outcomes"/>, and the entities stay restored.
     /// </summary>
-    private void RestoreStructure(Operation operation, SceneFile scene,
+    public void Restore(SceneOperation operation, SceneFile scene,
         IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens,
         List<SceneEntityOutcome> outcomes)
     {
@@ -79,14 +82,14 @@ public sealed partial class SceneWorkflow
             if (reference.Kind == "companion")
             {
                 var owner = Resolve(new() { Kind = "actor", Key = reference.Key });
-                return owner?.Actor is { } actor && _parenting?.ResolveCompanion(actor) is { } companion
+                return owner?.Actor is { } actor && parenting.ResolveCompanion(actor) is { } companion
                     ? SelectionId.ForActor(companion) : null;
             }
             return tokens.TryGetValue((reference.Kind, reference.Key), out var token)
-                ? _runtime.ResolveSceneEntity(token) : null;
+                ? runtime.ResolveSceneEntity(token) : null;
         }
 
-        if (_structure != null && (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 }))
+        if (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 })
         {
             TransformTargetId? Target(SceneStructureRef reference) => Resolve(reference) is { } id
                 ? GroupTransformCoordinator.Target(id) : null;
@@ -108,7 +111,7 @@ public sealed partial class SceneWorkflow
                     else if (Loaded(member)) missing++;
                 if (missing > 0)
                     outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Group, entry.Name, false,
-                        $"{Count(missing, "member")} did not become available in time and " +
+                        $"{SceneLoadTransaction.Count(missing, "member")} did not become available in time and " +
                         (missing == 1 ? "was" : "were") + " left out of the group."));
                 entries.Add(new(entry.Key, entry.Name, entry.Parent, members,
                     transform, entry.Transform != null, entry.InitialFrameRotation)
@@ -123,7 +126,7 @@ public sealed partial class SceneWorkflow
                 else if (Resolve(reference) is { } id) order.Add(RootSlot.For(id));
             try
             {
-                var imported = _structure.Import(entries, order);
+                var imported = structure.Import(entries, order);
                 operation.ImportedGroups.AddRange(imported);
                 operation.HistoryGroups = entries.Zip(imported).ToDictionary(pair => pair.First.Key, pair => pair.Second);
             }
@@ -133,9 +136,6 @@ public sealed partial class SceneWorkflow
                     $"The saved groups and order could not be restored: {ex.Message}"));
             }
         }
-        else if (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 })
-            outcomes.Add(new SceneEntityOutcome(SceneOutcomeKind.Group, "Sidebar groups", false,
-                "Scene structure restoration is unavailable."));
 
         foreach (var link in scene.Parents ?? [])
         {
@@ -150,20 +150,19 @@ public sealed partial class SceneWorkflow
     }
 
     /// <summary>One parent link; null when it landed, else why not.</summary>
-    private string? RestoreLink(Operation operation, SceneParentLink link,
+    private string? RestoreLink(SceneOperation operation, SceneParentLink link,
         Func<SceneStructureRef, SelectionId?> resolve)
     {
-        if (_parenting == null) return "Transform parenting is unavailable.";
         if (resolve(link.Child) is not { } child || resolve(link.Target) is not { } target)
             return "The entity or its parent did not become available in time.";
         if (link.BoneName is { } name)
         {
             if (target.Actor is not { } actor) return "A bone parent must belong to an actor.";
-            if (_parenting.ResolveBone(actor, link.Slot, name, link.Partial) is not { } bone)
+            if (parenting.ResolveBone(actor, link.Slot, name, link.Partial) is not { } bone)
                 return $"The parent bone '{name}' is not on the restored actor.";
             target = bone;
         }
-        if (!_parenting.Import(child, new(target, link.Offset)))
+        if (!parenting.Import(child, new(target, link.Offset)))
             return "The parent link was refused (the entity cannot be parented, or the link would form a cycle).";
         operation.ImportedLinks.Add(child);
         return null;

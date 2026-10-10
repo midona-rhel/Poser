@@ -292,7 +292,7 @@ groups — and emptying the session drops the selection entirely, because props,
 overlays, lights, cameras and borrowed objects carry no lineage of their own.
 
 What a failure costs is decided in one place, the load policy on
-`SceneWorkflow`. Required steps — reading the file, the session staying the
+`SceneLoadTransaction`. Required steps — reading the file, the session staying the
 same, cancellation, and creating each actor — stop the load: Poser removes only
 what it created, in reverse order. Everything else is optional and becomes a
 named refusal beside what did restore: an actor that never became pose-ready,
