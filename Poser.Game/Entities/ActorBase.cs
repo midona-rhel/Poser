@@ -11,8 +11,6 @@ public class ActorBase : EntityBase, IActor
     public bool IsPosing { get; private set; }
     public ActorKind ActorKind { get; }
 
-    #region ITransformable
-
     /// <summary>
     /// Gets the current world transform of this actor.
     /// </summary>
@@ -23,47 +21,21 @@ public class ActorBase : EntityBase, IActor
     }
 
     /// <summary>
-    /// Actors always show gizmo when selected.
-    /// </summary>
-    public bool ShowGizmo => true;
-
-    /// <summary>
-    /// Actors use IPosingService for transform changes, not direct assignment.
-    /// </summary>
-    public bool CanSetTransform => false;
-
-    #endregion
-
-    #region IAnimatable
-
-    /// <summary>
     /// Whether animation controls are available for this entity.
     /// Companions (minions, mounts) have limited animation control.
     /// </summary>
     public bool CanControlAnimation => !IsCompanion;
-
-    #endregion
-
-    #region ISkeletonOwner
 
     /// <summary>
     /// The skeleton owned by this actor, or null if not available.
     /// </summary>
     public ISkeleton? Skeleton => Children.OfType<ISkeleton>().FirstOrDefault();
 
-    /// <summary>
-    /// Whether the skeleton is currently loaded and available.
-    /// </summary>
-    public bool HasSkeleton => Skeleton != null;
-
-    #endregion
-
     public ActorBase(EntityId id, string name, nint address, ActorKind actorKind = ActorKind.None)
         : base(id, name)
     {
         Address = address;
         ActorKind = actorKind;
-        IsCollapsed = true; // Start collapsed by default
     }
 
     /// <summary>
@@ -82,25 +54,6 @@ public class ActorBase : EntityBase, IActor
     /// Returns true if this actor is an NPC (battle or event).
     /// </summary>
     public bool IsNpc => ActorKind == ActorKind.BattleNpc || ActorKind == ActorKind.EventNpc;
-
-    /// <summary>
-    /// Actors are always collapsible (they will have skeleton children).
-    /// </summary>
-    public override bool IsCollapsible => true;
-
-    /// <summary>
-    /// Returns the entity type based on ObjectKind.
-    /// </summary>
-    public override EntityType EntityType
-    {
-        get
-        {
-            if (IsPlayer) return EntityType.Player;
-            if (IsNpc) return EntityType.Npc;
-            if (IsCompanion) return EntityType.Companion;
-            return EntityType.Generic;
-        }
-    }
 
     /// <summary>
     /// Gets the world position of this actor from game memory.
@@ -136,21 +89,5 @@ public class ActorBase : EntityBase, IActor
     public ActorBase(string name, nint address, ActorKind actorKind = ActorKind.None)
         : this(EntityId.New(), name, address, actorKind)
     {
-    }
-
-    public void BeginPosing()
-    {
-        if (!IsPosing)
-        {
-            IsPosing = true;
-        }
-    }
-
-    public void EndPosing()
-    {
-        if (IsPosing)
-        {
-            IsPosing = false;
-        }
     }
 }

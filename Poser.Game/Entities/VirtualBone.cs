@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Poser.Core;
-using Poser.Entities.Capabilities;
 
 namespace Poser.Entities;
 
@@ -11,7 +10,7 @@ namespace Poser.Entities;
 /// Used when selecting bone categories.
 /// Position comes from the pivot bone (if set) or average of constituent bones.
 /// </summary>
-public class VirtualBone : EntityBase, IBone, ITransformable
+public class VirtualBone : EntityBase, IBone
 {
     private readonly List<IBone> _constituentBones;
     private readonly ISkeleton _skeleton;
@@ -98,24 +97,6 @@ public class VirtualBone : EntityBase, IBone, ITransformable
     public Transform LastRawTransform => Transform; // Virtual bones don't have reparenting
 
     public System.Numerics.Vector3? PartialRootScale { get; set; }
-
-    #endregion
-
-    #region ITransformable Implementation
-
-    public bool ShowGizmo => IsVisible;
-
-    /// <summary>
-    /// Virtual bones are computed from constituent bones - transforms cannot be set directly.
-    /// </summary>
-    public bool CanSetTransform => false;
-
-    #endregion
-
-    #region EntityBase Overrides
-
-    public override EntityType EntityType => EntityType.VirtualBone;
-    public override bool IsCollapsible => false;
 
     #endregion
 }

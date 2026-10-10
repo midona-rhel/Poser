@@ -60,8 +60,6 @@ public class Bone : EntityBase, IBone
 
     public System.Numerics.Vector3? PartialRootScale { get; set; }
 
-    #region ITransformable
-
     /// <summary>
     /// Gets the current transform of this bone (from LastTransform cache).
     /// </summary>
@@ -70,28 +68,6 @@ public class Bone : EntityBase, IBone
         get => LastTransform;
         set => LastTransform = value;
     }
-
-    /// <summary>
-    /// Bones show gizmo when visible.
-    /// </summary>
-    public bool ShowGizmo => IsVisible;
-
-    /// <summary>
-    /// Bone transforms can be set directly (updates LastTransform cache).
-    /// </summary>
-    public bool CanSetTransform => true;
-
-    #endregion
-
-    /// <summary>
-    /// Bones are collapsible if they have children.
-    /// </summary>
-    public override bool IsCollapsible => _childBones.Count > 0;
-
-    /// <summary>
-    /// Entity type is Bone.
-    /// </summary>
-    public override EntityType EntityType => EntityType.Bone;
 
     /// <summary>
     /// Gets the display name with translation: "Translation (internal_name)" or just "internal_name".
@@ -155,11 +131,10 @@ public class Bone : EntityBase, IBone
         _displayName = BoneInfoService.GetDisplayName(boneName);
         _category = BoneInfoService.GetCategory(boneName);
 
-        // Collapsed by default (tree semantics). VISIBLE by default — the
-        // overlay must show the skeleton out of the box (Ktisis/Brio parity);
-        // hiding is the opt-out filter, and the legacy tree that used to flip
-        // visibility on is gone. IsHiddenBone still filters curated junk bones.
-        IsCollapsed = true;
+        // VISIBLE by default — the overlay must show the skeleton out of the
+        // box (Ktisis/Brio parity); hiding is the opt-out filter, and the
+        // legacy tree that used to flip visibility on is gone. IsHiddenBone
+        // still filters curated junk bones.
         IsVisible = true;
     }
 

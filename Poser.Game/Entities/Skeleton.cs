@@ -108,16 +108,6 @@ public class Skeleton : EntityBase, ISkeleton
     /// cache entry per (actor id, slot) — never one per wrapper.</summary>
     public void RebindActor(IActor actor) => Actor = actor;
 
-    /// <summary>
-    /// Skeletons are always collapsible.
-    /// </summary>
-    public override bool IsCollapsible => true;
-
-    /// <summary>
-    /// Entity type is Skeleton.
-    /// </summary>
-    public override EntityType EntityType => EntityType.Skeleton;
-
     // Slot-native discovery is OWNED by Poser.Game: this transitional entity
     // receives only a resolver returning a given actor's current
     // CharacterBase address for this slot (zero when the slot is absent).
@@ -140,7 +130,6 @@ public class Skeleton : EntityBase, ISkeleton
         _bonesView = _bones.AsReadOnly();
         _resolveCharacterBase = resolveCharacterBase;
         _showAllVieraEars = showAllVieraEars;
-        IsCollapsed = true; // Start collapsed by default
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
     }

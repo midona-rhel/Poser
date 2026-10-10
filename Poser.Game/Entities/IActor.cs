@@ -1,12 +1,9 @@
-using Poser.Entities.Capabilities;
-
 namespace Poser.Entities;
 
 /// <summary>
 /// Represents a game character that can be posed and animated.
-/// Extends capability interfaces for compile-time type checking.
 /// </summary>
-public interface IActor : IEntity, ITransformable, IAnimatable, ISkeletonOwner
+public interface IActor : IEntity
 {
     /// <summary>
     /// Memory address of the game character object.
@@ -39,12 +36,13 @@ public interface IActor : IEntity, ITransformable, IAnimatable, ISkeletonOwner
     bool IsNpc { get; }
 
     /// <summary>
-    /// Begin posing this actor.
+    /// Whether animation controls are available for this entity.
+    /// Returns false for companions (minions, mounts) which have limited control.
     /// </summary>
-    void BeginPosing();
+    bool CanControlAnimation { get; }
 
     /// <summary>
-    /// End posing this actor.
+    /// The skeleton owned by this entity, or null if not available.
     /// </summary>
-    void EndPosing();
+    ISkeleton? Skeleton { get; }
 }

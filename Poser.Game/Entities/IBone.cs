@@ -1,14 +1,12 @@
 using System.Collections.Generic;
 using Poser.Core;
-using Poser.Entities.Capabilities;
 
 namespace Poser.Entities;
 
 /// <summary>
 /// Represents a bone in a skeleton hierarchy.
-/// Extends ITransformable for compile-time type checking.
 /// </summary>
-public interface IBone : IEntity, ITransformable
+public interface IBone : IEntity
 {
     /// <summary>
     /// The index of this bone within its partial skeleton.
