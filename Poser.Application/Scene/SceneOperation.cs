@@ -1,3 +1,4 @@
+using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
@@ -10,16 +11,11 @@ namespace Poser.Application.Scene;
 /// flags, and — for a load — the ledger of what it created, which
 /// <see cref="SceneLoadRollback"/> walks in reverse.
 /// </summary>
-internal sealed class SceneOperation
+internal sealed class SceneOperation : SingleFlightOperation
 {
     public required Guid SceneScopeId { get; init; }
     public required string FileName { get; init; }
-    public required Guid OperationId { get; init; }
-    public required OperationEpoch Epoch { get; init; }
-    public required SessionGeneration Session { get; init; }
     public required SceneOperationKind Kind { get; init; }
-    public bool Invalidated;
-    public bool TerminalPublished;
     /// <summary>The user asked to cancel; later cancellable steps keep
     /// reading "Cancelling" until the terminal state lands.</summary>
     public bool CancelRequested;
@@ -30,8 +26,6 @@ internal sealed class SceneOperation
     /// <summary>The destroy-first clear ran: a rollback cannot give the
     /// session back what the clear took, and the outcome says so.</summary>
     public bool SessionCleared;
-
-    public ActorId Target => new(SceneScopeId, 0);
 
     // What THIS operation created, in creation order; rollback walks
     // these in reverse. Receipts contain no native references.

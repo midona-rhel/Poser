@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
+using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Files;
@@ -63,19 +64,12 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly SceneLoadRollback _rollback;
     private readonly SceneLoadHistory _loadHistory;
 
-    private readonly object _publishGate = new();
-    /// <summary>Cancelled at unload and deliberately never disposed: a task
-    /// Dispose abandoned after its bounded join still reads its token, and a
-    /// timer-less source holds nothing worth releasing.</summary>
-    private readonly CancellationTokenSource _disposal = new();
-
-    private SceneProgress? _progress;
-    private OperationReceipt? _receipt;
-    private CancellationTokenSource? _cancellation;
-    private Task? _task;
-    private SceneOperation? _current;
-    private OperationEpoch _epoch;
-    private bool _disposed;
+    // Non-cancellable steps (rollback, commit) still show as themselves;
+    // anything else is the cancel winding down.
+    private readonly SingleFlightOwner<SceneOperation, SceneProgress> _flight = new(
+        (operation, progress) => operation.CancelRequested && progress.Cancellable
+            ? progress with { Phase = ScenePhase.Cancelling, Cancellable = false }
+            : progress);
 
     public SceneWorkflow(
         ISceneRuntime runtime,
@@ -119,97 +113,57 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     /// <summary>Raised after any progress/receipt publication; UI reads the
     /// immutable snapshots, never workflow internals.</summary>
-    public event Action? Changed;
+    public event Action? Changed
+    {
+        add => _flight.Changed += value;
+        remove => _flight.Changed -= value;
+    }
 
-    public SceneProgress? Progress => _progress;
+    public SceneProgress? Progress => _flight.Progress;
 
-    public OperationReceipt? Receipt => _receipt;
+    public OperationReceipt? Receipt => _flight.Receipt;
 
     /// <summary>Only one scene save/load runs at a time.</summary>
-    public bool Busy => _task is { IsCompleted: false };
+    public bool Busy => _flight.Busy;
 
     /// <summary>The running operation's join handle. The terminal receipt is
     /// always published before it completes, so awaiting it is the exact
     /// "the operation is finished" barrier.</summary>
-    internal Task Drain => _task ?? Task.CompletedTask;
+    internal Task Drain => _flight.Completion;
 
     /// <summary>Admission is closed for good: the workflow is draining or
     /// gone.</summary>
-    internal bool Disposed => _disposed;
+    internal bool Disposed => _flight.Closed;
 
     /// <summary>Cancelled at unload; child waits that must outlive a user
     /// cancel still end here.</summary>
-    internal CancellationToken DisposalToken => _disposal.Token;
+    internal CancellationToken DisposalToken => _flight.Disposal;
 
     /// <summary>Cooperative cancellation of the running operation. A
     /// cancellable step reads "Cancelling" at once: the terminal Cancelled
     /// can trail it by a child's bounded drain.</summary>
     public void Cancel()
     {
-        bool published = false;
-        lock (_publishGate)
+        bool published = _flight.TryReplaceProgress((operation, progress) =>
         {
-            if (_current is { TerminalPublished: false, CancelRequested: false } operation
-                && _progress is { Cancellable: true } progress)
-            {
-                operation.CancelRequested = true;
-                _progress = progress with { Phase = ScenePhase.Cancelling, Cancellable = false };
-                published = true;
-            }
-        }
-        _cancellation?.Cancel();
+            if (operation.CancelRequested || progress is not { Cancellable: true } cancellable)
+                return null;
+            operation.CancelRequested = true;
+            return cancellable with { Phase = ScenePhase.Cancelling, Cancellable = false };
+        });
+        _flight.Cancel();
         if (published)
-            RaiseChanged();
+            _flight.RaiseChanged();
     }
 
-    // ── Publication (late-completion armor) ──────────────────────────────
-
-    internal void PublishStep(SceneOperation operation, SceneProgress progress)
-    {
-        lock (_publishGate)
-        {
-            if (!ReferenceEquals(_current, operation) || operation.TerminalPublished)
-                return;
-            // Non-cancellable steps (rollback, commit) still show as
-            // themselves; anything else is the cancel winding down.
-            if (operation.CancelRequested && progress.Cancellable)
-                progress = progress with { Phase = ScenePhase.Cancelling, Cancellable = false };
-            _progress = progress;
-        }
-        RaiseChanged();
-    }
-
-    private void PublishTerminal(
-        SceneOperation operation, SceneProgress progress, OperationReceipt receipt)
-    {
-        lock (_publishGate)
-        {
-            if (!ReferenceEquals(_current, operation) || operation.TerminalPublished)
-                return;
-            operation.TerminalPublished = true;
-            _progress = progress;
-            _receipt = receipt;
-        }
-        RaiseChanged();
-    }
-
-    private void RaiseChanged()
-    {
-        try
-        {
-            Changed?.Invoke();
-        }
-        catch
-        {
-            // Observer failures never poison the transaction.
-        }
-    }
+    internal void PublishStep(SceneOperation operation, SceneProgress progress) =>
+        _flight.PublishStep(operation, progress);
 
     // ── Admission ────────────────────────────────────────────────────────
 
     private Outcome? AdmissionGate()
     {
-        if (_disposed)
+        if (_flight.Closed)
             return Outcome.Fail(
                 "Poser is shutting down; no new scene operation can start.");
         if (Busy)
@@ -225,29 +179,21 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         string fileName,
         SceneOperationKind kind,
         SessionGeneration session,
-        ScenePhase firstPhase)
-    {
-        _cancellation?.Dispose();
-        _cancellation = new CancellationTokenSource();
-        _epoch = _epoch.IsValid ? _epoch.Next() : OperationEpoch.First;
-        var operation = new SceneOperation
-        {
-            SceneScopeId = sceneScopeId,
-            FileName = fileName,
-            OperationId = Guid.NewGuid(),
-            Epoch = _epoch,
-            Session = session,
-            Kind = kind,
-        };
-        lock (_publishGate)
-        {
-            _current = operation;
-            _receipt = OperationReceipt.Pending(
-                operation.OperationId, operation.Epoch, session, operation.Target);
-            _progress = new SceneProgress(kind, fileName, firstPhase, 0, 0, true, null);
-        }
-        return operation;
-    }
+        ScenePhase firstPhase,
+        out CancellationToken cancellation) =>
+        _flight.Admit(
+            epoch => new SceneOperation
+            {
+                SceneScopeId = sceneScopeId,
+                FileName = fileName,
+                OperationId = Guid.NewGuid(),
+                Epoch = epoch,
+                Session = session,
+                Target = new ActorId(sceneScopeId, 0),
+                Kind = kind,
+            },
+            new SceneProgress(kind, fileName, firstPhase, 0, 0, true, null),
+            out cancellation);
 
     /// <summary>Starts the whole-scene save: the bone-cache refresh is armed
     /// first, the framework-thread pointer-free capture runs once it lands,
@@ -266,17 +212,15 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         var sceneId = Guid.NewGuid();
         var operation = Admit(
             sceneId, System.IO.Path.GetFileName(path), SceneOperationKind.Save, session,
-            ScenePhase.RefreshingPoses);
-        var cancellation = _cancellation!.Token;
-        RaiseChanged();
-        _task = Task.Run(
+            ScenePhase.RefreshingPoses, out var cancellation);
+        _flight.RaiseChanged();
+        _flight.Run(
             () => RunSave(
                 operation,
                 path,
                 description,
                 options ?? SceneSaveOptions.Default,
-                cancellation),
-            CancellationToken.None);
+                cancellation));
         return Outcome.Ok();
     }
 
@@ -313,15 +257,15 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
         var operation = Admit(
             Guid.NewGuid(), System.IO.Path.GetFileName(path),
-            SceneOperationKind.Load, session, ScenePhase.Reading);
+            SceneOperationKind.Load, session, ScenePhase.Reading, out var cancellation);
         operation.Replay = replay;
         if (replay is not null)
             replay.Current = operation;
         var load = new SceneLoadTransaction(
             this, _runtime, _documents, _loadStructure, _rollback, _loadHistory,
-            operation, path, chosen, _cancellation!.Token);
-        RaiseChanged();
-        _task = Task.Run(() => load.Run(), CancellationToken.None);
+            operation, path, chosen, cancellation);
+        _flight.RaiseChanged();
+        _flight.Run(() => load.Run());
         return Outcome.Ok();
     }
 
@@ -619,7 +563,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         };
         operation.TerminalDetail = detail;
         _observer.Completed(operation.OperationId, progress);
-        PublishTerminal(operation, progress, receipt);
+        _flight.PublishTerminal(operation, progress, receipt);
     }
 
 
@@ -632,9 +576,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// source.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (!_flight.Close())
             return;
-        _disposed = true;
         // Children first: a cancelled parent must not start a drain that
         // needs the framework thread this Dispose is blocking.
         try
@@ -645,16 +588,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         {
             // Disposal must not throw; the join below is still bounded.
         }
-        _cancellation?.Cancel();
-        _disposal.Cancel();
-        try
-        {
-            _task?.Wait(DisposeDrainTimeout);
-        }
-        catch (AggregateException)
-        {
-            // A cancelled or faulted task is a completed drain.
-        }
-        _cancellation?.Dispose();
+        _flight.Drain(DisposeDrainTimeout);
     }
 }
