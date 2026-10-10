@@ -30,7 +30,8 @@ public sealed class LightSession
 
     public void SetName(ILight l, string v) => Set(l, "Name", "Rename light", x => x.Name, (x, value) => x.Name = value, v);
     public void SetKind(ILight l, LightKind v) => Set(l, "Kind", "Set light type", x => x.Kind, (x, value) => x.Kind = value, v);
-    public void SetIsOn(ILight l, bool v) => Set(l, "IsOn", v ? "Switch light on" : "Switch light off", x => x.IsOn, (x, value) => x.IsOn = value, v);
+    public ValueWriteResult SetIsOn(ILight l, bool v) => _values.TrySet(l, "IsOn", v ? "Switch light on" : "Switch light off",
+        x => x.IsOn, (x, value) => { x.IsOn = value; return ValueWriteResult.Ok(); }, v, "The light is no longer available.");
     public void SetColor(ILight l, Vector3 v) => Set(l, "Color", "Set light colour", x => x.Color, (x, value) => x.Color = value, v);
     public void SetIntensity(ILight l, float v) => Set(l, "Intensity", "Set light intensity", x => x.Intensity, (x, value) => x.Intensity = value, v);
     public void SetRange(ILight l, float v) => Set(l, "Range", "Set light range", x => x.Range, (x, value) => x.Range = value, v);

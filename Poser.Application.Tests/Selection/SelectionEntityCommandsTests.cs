@@ -1,5 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -17,14 +18,43 @@ public sealed class SelectionEntityCommandsTests
             CanChangeVisibility: true, IsVisible: true,
             SelectionRemoval.Destroy));
         var port = new RecordingPort();
-        var commands = new SelectionEntityCommands(reads, port);
+        var commands = new SelectionEntityCommands(reads, port, new TransformHistory());
 
         Assert.Null(commands.ReadVisibility(id));
-        Assert.Equal(0, commands.SetVisibility([id], visible: false));
+        var hidden = commands.SetVisibility([id], visible: false);
+        Assert.Equal(0, hidden.AppliedCount);
+        Assert.False(Assert.Single(hidden.Items).Result.Success);
         Assert.Equal(0, (await commands.Remove([id])).AppliedCount);
         Assert.Equal(0, port.RemovalBatchCount);
         Assert.Empty(port.Calls);
         Assert.True(port.Visibility);
+    }
+
+    [Fact]
+    public void Hide_selection_is_one_entry_and_replays_only_landed_targets()
+    {
+        var history = new TransformHistory();
+        var actors = new[] { SelectionId.ForActor(ActorId.New()), SelectionId.ForActor(ActorId.New()) };
+        var light = SelectionId.ForLight(LightId.New());
+        var prop = SelectionId.ForProp(PropId.New());
+        var port = new RecordingPort { History = history, Refuse = { [prop] = "The prop refused." } };
+        var commands = new SelectionEntityCommands(new RemovableReads(), port, history);
+
+        var result = commands.SetVisibility([.. actors, light, prop], visible: false);
+
+        Assert.Equal(3, result.AppliedCount);
+        Assert.Equal("The prop refused.", Assert.Single(result.Items, item => !item.Result.Success).Result.Detail);
+        var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
+        Assert.Equal("Hide entities", entry.Description);
+        Assert.True(entry.Undo());
+        history.CommitUndo(entry);
+        Assert.False(history.CanUndo);
+        Assert.All(actors.Append(light), id => Assert.True(port.Visible[id]));
+        Assert.False(port.Visible.ContainsKey(prop));
+        Assert.True(entry.Redo());
+        history.CommitRedo(entry);
+        Assert.All(actors.Append(light), id => Assert.False(port.Visible[id]));
+        Assert.False(port.Visible.ContainsKey(prop));
     }
 
     private sealed class RemovableReads : ICurrentSelectionEntityReads
@@ -48,11 +78,21 @@ public sealed class SelectionEntityCommandsTests
 
         public bool? ReadVisibility(SelectionId id) => Visibility;
 
-        public bool SetVisibility(SelectionId id, bool visible)
+        public TransformHistory? History { get; init; }
+        public Dictionary<SelectionId, string> Refuse { get; } = new();
+        public Dictionary<SelectionId, bool> Visible { get; } = new();
+
+        public ValueWriteResult SetVisibility(SelectionId id, bool visible)
         {
             Calls.Add((id, visible));
+            if (Refuse.TryGetValue(id, out var detail)) return new(false, detail);
             Visibility = visible;
-            return true;
+            Visible[id] = visible;
+            // Mirrors a value session: a landed write appends one step.
+            History?.Append(new JournalStep(visible ? "Show" : "Hide",
+                () => { Visible[id] = !visible; return true; },
+                () => { Visible[id] = visible; return true; }) { AffectedEntities = [id] });
+            return ValueWriteResult.Ok();
         }
 
         public Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests)

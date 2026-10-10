@@ -57,7 +57,8 @@ public sealed class LightControl(
 
     public ValueWriteResult SetName(LightId id, string value) => Edit(id, l => values.SetName(l, value));
     public ValueWriteResult SetKind(LightId id, LightKind value) => Edit(id, l => values.SetKind(l, value));
-    public ValueWriteResult SetIsOn(LightId id, bool value) => Edit(id, l => values.SetIsOn(l, value));
+    public ValueWriteResult SetIsOn(LightId id, bool value) =>
+        Resolve(id) is { } light ? values.SetIsOn(light, value) : new(false, "The light is no longer available.");
     public ValueWriteResult SetColor(LightId id, Vector3 value) => Edit(id, l => values.SetColor(l, value));
     public ValueWriteResult SetIntensity(LightId id, float value) => Edit(id, l => values.SetIntensity(l, value));
     public ValueWriteResult SetRange(LightId id, float value) => Edit(id, l => values.SetRange(l, value));

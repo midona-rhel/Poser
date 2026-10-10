@@ -23,8 +23,9 @@ public sealed class PropSession
     public void SetName(IPropHandle p, string value) =>
         _values.Set(p, "Name", "Rename prop", entity => entity.Name, (entity, v) => entity.Name = v, value);
 
-    public void SetVisible(IPropHandle p, bool value) =>
-        _values.Set(p, "Visible", value ? "Show prop" : "Hide prop", entity => entity.Visible, (entity, v) => entity.Visible = v, value);
+    public ValueWriteResult SetVisible(IPropHandle p, bool value) =>
+        _values.TrySet(p, "Visible", value ? "Show prop" : "Hide prop", entity => entity.Visible,
+            (entity, v) => { entity.Visible = v; return ValueWriteResult.Ok(); }, value, "The prop is no longer available.");
 
     /// <summary>Respawns the prop as <paramref name="model"/>. False with
     /// the refusal when the respawn did not happen; nothing is journaled

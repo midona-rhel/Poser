@@ -27,8 +27,9 @@ public sealed class OverlaySession
     public void SetName(IOverlayNode n, string value) =>
         _values.Set(n, "Name", "Rename overlay", entity => entity.Name, (entity, v) => entity.Name = v, value);
 
-    public void SetVisible(IOverlayNode n, bool value) =>
-        _values.Set(n, "Visible", value ? "Show overlay" : "Hide overlay", entity => entity.Visible, (entity, v) => entity.Visible = v, value);
+    public ValueWriteResult SetVisible(IOverlayNode n, bool value) =>
+        _values.TrySet(n, "Visible", value ? "Show overlay" : "Hide overlay", entity => entity.Visible,
+            (entity, v) => { entity.Visible = v; return ValueWriteResult.Ok(); }, value, "The overlay is no longer available.");
 
     public void SetDraggable(IOverlayNode n, bool value) =>
         _values.Set(n, "Draggable", "Set overlay drag", entity => entity.Draggable, (entity, v) => entity.Draggable = v, value);

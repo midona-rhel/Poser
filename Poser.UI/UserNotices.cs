@@ -68,6 +68,15 @@ public sealed class UserNotices
         }
     }
 
+    public void Visibility(SelectionVisibilityResult result)
+    {
+        foreach (var detail in result.Items
+            .Where(item => !item.Result.Success)
+            .Select(item => item.Result.Detail ?? "The change was refused.")
+            .Distinct())
+            Refused("Visibility", detail);
+    }
+
     /// <summary>Every notice as it is posted: its kind and its text, for
     /// the action recorder.</summary>
     public event Action<string, string>? Posted;

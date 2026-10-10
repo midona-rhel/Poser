@@ -41,10 +41,10 @@ public partial class MainWindow
         => _entityCommands.ReadVisibility(id);
 
     private int SetEntityVisible(SelectionId id, bool visible) =>
-        _entityCommands.SetVisibility([id], visible);
+        _entityActions.SetVisibility([id], visible);
 
     private void SetSelectionVisible(bool visible) =>
-        _entityCommands.SetVisibility(_selection.Selected.ToArray(), visible);
+        _entityActions.SetVisibility(_selection.Selected.ToArray(), visible);
 
     /// <summary>One animation state for every selected actor.</summary>
     private void SetSelectionPaused(bool paused)

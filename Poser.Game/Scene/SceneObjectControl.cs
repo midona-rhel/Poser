@@ -43,7 +43,8 @@ public sealed class SceneObjectControl(
     }
 
     public ValueWriteResult SetName(PropId id, string value) => Write(id, p => props.SetName(p, value));
-    public ValueWriteResult SetVisible(PropId id, bool value) => Write(id, p => props.SetVisible(p, value));
+    public ValueWriteResult SetVisible(PropId id, bool value) =>
+        Resolve(id) is { } p ? props.SetVisible(p, value) : new(false, "The prop is no longer available.");
     public ValueWriteResult SetModel(PropId id, PropModel value)
     {
         if (Resolve(id) is not { } p) return new(false, "The prop is no longer available.");
@@ -52,7 +53,8 @@ public sealed class SceneObjectControl(
     }
 
     public ValueWriteResult SetName(WorldObjectId id, string value) => Write(id, o => objects.SetName(o, value));
-    public ValueWriteResult SetVisible(WorldObjectId id, bool value) => Write(id, o => objects.SetVisible(o, value));
+    public ValueWriteResult SetVisible(WorldObjectId id, bool value) =>
+        Resolve(id) is { } o ? objects.SetVisible(o, value) : new(false, "The object is no longer available.");
     public ValueWriteResult SetOpacity(WorldObjectId id, float value) => Write(id, o => objects.SetOpacity(o, value));
     public ValueWriteResult SetTint(WorldObjectId id, Vector3? value) => Write(id, o => objects.SetTint(o, value));
     public ValueWriteResult SetStain(WorldObjectId id, byte value) => Write(id, o => objects.SetStain(o, value));

@@ -35,4 +35,15 @@ public sealed class EntityValueJournal<TEntity>(
             next => { if (Current(original) is { } live) write(live, next); },
             value, () => Current(original) is not null);
     }
+
+    /// <summary>A write that can refuse: a gone entity, or one that goes
+    /// stale before the write, fails with detail and journals nothing.</summary>
+    public ValueWriteResult TrySet<T>(TEntity original, string property, string description,
+        Func<TEntity, T> read, Func<TEntity, T, ValueWriteResult> write, T value, string unavailable)
+    {
+        if (Current(original) is not { } current) return new(false, unavailable);
+        return journal.TrySet((original, property), description, () => read(current),
+            next => Current(original) is { } live ? write(live, next) : new(false, unavailable),
+            value, () => Current(original) is not null);
+    }
 }

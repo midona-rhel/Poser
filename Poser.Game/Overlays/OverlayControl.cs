@@ -31,7 +31,8 @@ public sealed class OverlayControl(
     }
 
     public ValueWriteResult SetName(OverlayId id, string value) => Edit(id, n => values.SetName(n, value));
-    public ValueWriteResult SetVisible(OverlayId id, bool value) => Edit(id, n => values.SetVisible(n, value));
+    public ValueWriteResult SetVisible(OverlayId id, bool value) =>
+        Resolve(id) is { } node ? values.SetVisible(node, value) : new(false, "The overlay is no longer available.");
     public ValueWriteResult SetDraggable(OverlayId id, bool value) => Edit(id, n => values.SetDraggable(n, value));
     public ValueWriteResult SetPosition(OverlayId id, Vector2 value) => Edit(id, n => values.SetPosition(n, value));
     public ValueWriteResult SetScale(OverlayId id, float value) => Edit(id, n => values.SetScale(n, value));

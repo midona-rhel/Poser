@@ -66,13 +66,8 @@ internal sealed partial class EntityContextMenus
         {
             () => _actorControl.SetGameTarget(actorId),
             () => _cameraPane.CenterOnActor(actorId),
-            () =>
-            {
-                if (SetEntityVisible(SelectionId.ForActor(actorId),
-                        !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)) == 0)
-                    _notices.Refused(
-                        "Visibility", "The change was refused.");
-            },
+            () => SetEntityVisible(SelectionId.ForActor(actorId),
+                !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)),
             () =>
             {
                 if (_animation.AnyPlaying(actorId))

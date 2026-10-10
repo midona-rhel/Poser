@@ -105,37 +105,36 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         }
     }
 
-    public bool SetVisibility(SelectionId id, bool visible)
+    public ValueWriteResult SetVisibility(SelectionId id, bool visible)
     {
+        ValueWriteResult Gone() => new(false, "That entity is no longer available.");
         if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current
             || current.Id != id)
-            return false;
+            return Gone();
         switch (id)
         {
             case { Actor: { } actorId }:
-                if (!CurrentActor(actorId, out var actor)
-                    || !ActorOwnershipMatches(actorId, actor)) return false;
-                return _sessions.Actors.SetVisibility(actorId, visible).Success;
+                if (!CurrentActor(actorId, out var actor)) return Gone();
+                if (!ActorOwnershipMatches(actorId, actor))
+                    return new(false, "The actor's ownership changed; select it again.");
+                return _sessions.Actors.SetVisibility(actorId, visible);
             case { Light: { } lightId }:
-                if (!CurrentLight(lightId, out var light)
-                    || (current.Removal == SelectionRemoval.Release)
-                        != (light.Ownership != LightOwnership.Spawned)) return false;
-                _sessions.Lights.SetIsOn(light, visible);
-                return true;
+                if (!CurrentLight(lightId, out var light)) return Gone();
+                if ((current.Removal == SelectionRemoval.Release)
+                        != (light.Ownership != LightOwnership.Spawned))
+                    return new(false, "The light's ownership changed; select it again.");
+                return _sessions.Lights.SetIsOn(light, visible);
             case { Prop: { } propId }:
-                if (!CurrentProp(propId, out var prop)) return false;
-                _sessions.Props.SetVisible(prop, visible);
-                return true;
+                return CurrentProp(propId, out var prop)
+                    ? _sessions.Props.SetVisible(prop, visible) : Gone();
             case { Overlay: { } overlayId }:
-                if (!CurrentOverlay(overlayId, out var overlay)) return false;
-                _sessions.Overlays.SetVisible(overlay, visible);
-                return true;
+                return CurrentOverlay(overlayId, out var overlay)
+                    ? _sessions.Overlays.SetVisible(overlay, visible) : Gone();
             case { WorldObject: { } worldId }:
-                if (!CurrentWorldObject(worldId, out var world)) return false;
-                _sessions.WorldObjects.SetVisible(world, visible);
-                return true;
+                return CurrentWorldObject(worldId, out var world)
+                    ? _sessions.WorldObjects.SetVisible(world, visible) : Gone();
             default:
-                return false;
+                return new(false, "That entity cannot be shown or hidden.");
         }
     }
 

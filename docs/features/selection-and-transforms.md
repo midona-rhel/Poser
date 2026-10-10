@@ -225,6 +225,12 @@ chains the bake disarmed.
 Transport (play, pause, scrub, speed) is never a step. Choosing a
 timeline and toggling loop are. A locked camera never journals.
 
+Show and Hide report a result per target. A refused or stale target writes
+nothing and appends nothing; every surface (sidebar eye, context menu,
+selection section) shows the same refusal notice. One target is its own value
+step. Several targets are one entry that holds only the targets that landed, so
+undo and redo touch only those targets.
+
 Selected-entity undo (Alt+Z) and redo (Alt+Y / Alt+Shift+Z) use the same journal;
 global Ctrl-based shortcuts are unchanged. Bindings are configurable. Bones and
 gaze points address their owning actor; multiple bones on that actor share the

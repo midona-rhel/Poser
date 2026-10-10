@@ -27,8 +27,9 @@ public sealed class WorldObjectSession
     public void SetName(IWorldObject o, string value) =>
         Set(o, "Name", "Rename object", x => x.Name, (x, v) => x.Name = v, value);
 
-    public void SetVisible(IWorldObject o, bool value) =>
-        Set(o, "Visible", value ? "Show object" : "Hide object", x => x.Visible, (x, v) => x.Visible = v, value);
+    public ValueWriteResult SetVisible(IWorldObject o, bool value) =>
+        _values.TrySet(o, "Visible", value ? "Show object" : "Hide object", x => x.Visible,
+            (x, v) => { x.Visible = v; return ValueWriteResult.Ok(); }, value, "The object is no longer available.");
 
     public void SetOpacity(IWorldObject o, float value) =>
         Set(o, "Opacity", "Set object opacity", x => x.Opacity, (x, v) => x.Opacity = v, value);

@@ -67,7 +67,7 @@ public sealed class TransformHistory
     private readonly Dictionary<SelectionId, Func<SelectionId?>> _lifecycleTargets = new();
     private LifecycleHistoryBatch? _batch;
 
-    /// <summary>Records one synchronous removal command. Earlier value edits
+    /// <summary>Records one synchronous multi-entity command. Earlier value edits
     /// are sealed first; only synchronous lifecycle and journal entries belong
     /// to the batch. The callback must not schedule work or cross an await.</summary>
     public void RecordLifecycleBatch(string description, Action removals)
