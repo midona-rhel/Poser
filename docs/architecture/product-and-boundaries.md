@@ -37,6 +37,12 @@ At this revision:
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
 the game and runs its hooks on the framework thread. Native entities, skeletons
 and low-level service contracts live in Game; the Core project is retired.
+Policy without a native dependency lives in Application even when only Game
+calls it: the transform facade, scene-group lifetime, refresh coalescing,
+lifecycle slots and world/VFX claim ledgers. The Journal entity sessions stay in
+Game because they hold native handles. Game folders follow the area:
+`Runtime` (core actor, posing, camera and GPose services), `Lighting`,
+`WorldObjects` (including world borrowing).
 The host wires the assemblies; UI shows application state. CI checks the allowed
 project graph and builds/tests the portable layers without the game SDK.
 
