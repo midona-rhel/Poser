@@ -16,11 +16,6 @@ public interface IActor : IEntity
     ActorKind ActorKind { get; }
 
     /// <summary>
-    /// Whether the actor is currently being posed.
-    /// </summary>
-    bool IsPosing { get; }
-
-    /// <summary>
     /// Returns true if this actor is a companion (minion, mount, pet).
     /// </summary>
     bool IsCompanion { get; }

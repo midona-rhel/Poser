@@ -8,7 +8,6 @@ namespace Poser.Entities;
 public class ActorBase : EntityBase, IActor
 {
     public nint Address { get; }
-    public bool IsPosing { get; private set; }
     public ActorKind ActorKind { get; }
 
     /// <summary>

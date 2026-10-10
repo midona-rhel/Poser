@@ -893,89 +893,6 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void Mixed_release_group_refuses_before_restoring_owned_members()
-    {
-        var world = new World();
-        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
-        var borrowedAddress = world.WorldObjects.Place(0x4000, MapStood);
-        _ = world.Lifecycle.AdoptWorldObject(borrowedAddress);
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true);
-        Assert.True(world.Lifecycle.ReleaseAllWorldObjects());
-        world.WorldObjects.Place(borrowedAddress, MapStood); // Reused address invalidates borrowed history.
-        var group = Assert.IsType<SceneLifecyclePatch>(world.History.PeekUndo());
-        int spawnCallsAfterRelease = world.WorldObjects.SpawnCalls;
-
-        Assert.False(world.Undo());
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.Equal(spawnCallsAfterRelease, world.WorldObjects.SpawnCalls);
-        Assert.Equal(1, world.WorldObjects.AdoptCalls);
-        Assert.Contains("identity", group.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("Earlier edit", world.History.UndoDescription);
-    }
-
-    [Fact]
-    public void Owned_only_release_group_still_restores_all_members()
-    {
-        var world = new World();
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned-a.mdl", UserPut, true);
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned-b.mdl", MapStood, false);
-        Assert.True(world.Lifecycle.ReleaseAllWorldObjects());
-        int spawnCallsAfterRelease = world.WorldObjects.SpawnCalls;
-
-        Assert.True(world.Undo());
-        Assert.Equal(2, world.WorldObjects.Live.Count);
-        Assert.Equal(spawnCallsAfterRelease + 2, world.WorldObjects.SpawnCalls);
-        Assert.Contains(world.WorldObjects.Live, item => world.WorldObjects.Read(item).Path == "bg/owned-a.mdl");
-        Assert.Contains(world.WorldObjects.Live, item => world.WorldObjects.Read(item).Path == "bg/owned-b.mdl");
-    }
-
-    [Fact]
-    public void Release_all_records_successes_before_a_later_live_claim_refuses()
-    {
-        var world = new World();
-        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true);
-        var borrowedAddress = world.WorldObjects.Place(0x5000, MapStood);
-        _ = world.Lifecycle.AdoptWorldObject(borrowedAddress);
-        world.WorldObjects.RefuseReleaseAddresses.Add(borrowedAddress);
-
-        Assert.False(world.Lifecycle.ReleaseAllWorldObjects());
-
-        Assert.Equal("Remove world object", world.History.UndoDescription);
-        Assert.Equal("bg/fake.mdl", world.WorldObjects.Read(Assert.Single(world.WorldObjects.Live)).Path);
-        Assert.True(world.Undo()); // The successful owned release has its own restore entry.
-        Assert.Contains(world.WorldObjects.Live,
-            item => world.WorldObjects.Read(item).Path == "bg/owned.mdl");
-        Assert.Equal(2, world.WorldObjects.Live.Count);
-        world.WorldObjects.RefuseReleaseAddresses.Clear();
-        Assert.True(world.Undo()); // The still-live borrowed claim remains undoable.
-        Assert.True(world.Undo()); // The owned acquisition remains undoable too.
-        Assert.True(world.Undo());
-        Assert.False(world.History.CanUndo);
-    }
-
-    [Fact]
-    public void Group_redo_retry_skips_members_already_released_before_a_later_refusal()
-    {
-        var world = new World();
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned-a.mdl", UserPut, true);
-        _ = world.Lifecycle.SpawnWorldObject("bg/owned-b.mdl", MapStood, true);
-        world.Lifecycle.ReleaseAllWorldObjects();
-
-        Assert.True(world.Undo());
-        world.WorldObjects.RefuseReleasePaths.Add("bg/owned-b.mdl");
-        Assert.False(world.Redo()); // A is released before B refuses.
-        Assert.Single(world.WorldObjects.Live);
-        Assert.Equal("bg/owned-b.mdl", world.WorldObjects.Read(Assert.Single(world.WorldObjects.Live)).Path);
-
-        world.WorldObjects.RefuseReleasePaths.Clear();
-        Assert.True(world.Redo()); // A is already complete; retry only releases B.
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.True(world.Undo());
-        Assert.Equal(2, world.WorldObjects.Live.Count);
-    }
-
-    [Fact]
     public void History_keeps_lifecycle_entries_ordered_and_clears_slots_when_disabled()
     {
         var world = new World();
@@ -1340,12 +1257,9 @@ public sealed class SceneLifecycleHistoryTests
         private readonly List<object> _adopted = new();
         private long _nextGeneration;
         public int AdoptCalls { get; private set; }
-        public int SpawnCalls { get; private set; }
 
         public bool RefuseAdopt { get; set; }
         public bool RefuseRelease { get; set; }
-        public HashSet<nint> RefuseReleaseAddresses { get; } = new();
-        public HashSet<string> RefuseReleasePaths { get; } = new();
         public IReadOnlyList<object> Live => _adopted;
         public IReadOnlyList<object> WorldObjects => _adopted.ToList();
 
@@ -1420,7 +1334,6 @@ public sealed class SceneLifecycleHistoryTests
 
         public object? Spawn(string path, Transform placement, bool visible)
         {
-            SpawnCalls++;
             var claim = new FakeWorldObject
             {
                 Owner = this,
@@ -1437,9 +1350,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public bool Release(object worldObject)
         {
-            var state = ((FakeWorldObject)worldObject).State;
-            if (RefuseRelease || RefuseReleaseAddresses.Contains(state.Address)
-                || RefuseReleasePaths.Contains(state.Path))
+            if (RefuseRelease)
                 return false;
             var claim = (FakeWorldObject)worldObject;
             _adopted.Remove(claim);

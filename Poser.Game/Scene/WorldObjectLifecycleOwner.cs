@@ -232,26 +232,6 @@ internal sealed class WorldObjectLifecycleOwner
         return true;
     }
 
-    public bool ReleaseAll()
-    {
-        var slots = _worldObjects.WorldObjects.Select(_slots.SlotFor).ToArray();
-        if (slots.Length == 0)
-            return true;
-
-        // A refused member remains live with its acquisition entry. Only
-        // confirmed releases belong to this one group history action.
-        var released = new List<Slot>(slots.Length);
-        bool allReleased = true;
-        foreach (var slot in slots)
-            if (_slots.CaptureAndRemove(slot))
-                released.Add(slot);
-            else
-                allReleased = false;
-        if (released.Count != 0)
-            AppendRelease(released.Count == 1 ? "Remove world object" : $"Remove {released.Count} world objects", released);
-        return allReleased;
-    }
-
     internal void AppendAcquisition(object worldObject)
     {
         var slot = _slots.SlotFor(worldObject);

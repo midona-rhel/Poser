@@ -76,8 +76,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
-    /// stage alone for a plain <see cref="ShowPose(PoseFile, string, PoseImportOptions)"/>,
-    /// both for a <see cref="ShowSequence"/>. The SERIAL is what the framework
+    /// stage alone for a single-stage request, both for a
+    /// <see cref="ShowSequence"/>. The SERIAL is what the framework
     /// side watches — a new statement supersedes whatever the sequence had
     /// reached, wholesale.</summary>
     private PosePreviewRequest? _requestedFirst;
@@ -221,16 +221,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         _framework.Update += OnFrameworkUpdate;
         RunOnFramework(InitializeCharaView);
     }
-
-    /// <summary>
-    /// The pose to show, held in memory — the rebase baseline, which is a
-    /// capture and not a file. Remembered until the preview body is bound,
-    /// then applied; the latest call wins. <paramref name="key"/> stands in
-    /// for a path in the dedupe, and the OPTIONS INSTANCE is part of the
-    /// request: a new instance re-imports.
-    /// </summary>
-    public void ShowPose(PoseFile pose, string key, PoseImportOptions options) =>
-        Request(PosePreviewRequest.Memory(pose, key, options), null);
 
     /// <summary>
     /// TWO poses in order, which is how a preview shows what an import will
@@ -655,7 +645,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
             _appliedSerial = serial;
             _appliedStage = 0;
         }
-        // The sequence is one stage (a plain ShowPose) or two (rebase then
+        // The sequence is one stage or two (rebase then
         // file). Once every stage has been dispatched the body stands for the
         // whole request and NOTHING more is armed — the bug this guards was a
         // second stage re-arming every idle tick, which held the shared import

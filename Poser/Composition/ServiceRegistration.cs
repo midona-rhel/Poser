@@ -25,7 +25,6 @@ using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Game.Transforms;
-using Poser.Game.Validation;
 using Poser.Library;
 using Poser.Lifecycle;
 using Poser.Services;
@@ -580,10 +579,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddFaceAndDevTools(
         this IServiceCollection services)
     {
-        // Gaze and expression are the face features; LiveTestService is the
-        // in-game validation harness and CommandRouter the /poser dev bridge.
+        // Gaze and expression are the face features; CommandRouter is the
+        // /poser chat command.
         services.AddSingleton<IGazeService, GazeService>();
-        services.AddSingleton<ILiveTestService, LiveTestService>();
         services.AddSingleton<IExpressionService, ExpressionService>();
         services.AddSingleton<CommandRouter>();
         return services;

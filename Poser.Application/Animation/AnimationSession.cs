@@ -128,13 +128,6 @@ public sealed class AnimationSession : IAnimationPlayback
         return AnimationResult.Ok();
     }
 
-    /// <summary>Plays the actor's full-body timeline.</summary>
-    public AnimationResult PlayBase(ActorId actor, ushort timeline)
-    {
-        var chosen = ChooseSlot(actor, AnimationSlot.Base, timeline);
-        return chosen.Success ? ApplySelectedSlotCore(actor, AnimationSlot.Base) : chosen;
-    }
-
     private AnimationResult PlayBaseCore(
         ActorId actor,
         ushort timeline,

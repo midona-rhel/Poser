@@ -988,11 +988,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     internal bool ReleaseWorldObject(object worldObject) =>
         _worldObjectOwner.Release(worldObject);
 
-    /// <summary>Giving the whole list back is ONE act of the user's, so it is
-    /// ONE entry over the slots whose release succeeded; refused live claims
-    /// remain in the scene and keep their own acquisition history.</summary>
-    internal bool ReleaseAllWorldObjects() => _worldObjectOwner.ReleaseAll();
-
     /// <summary>Compatibility entry point for handle-based callers. Each entity
     /// keeps its normal removal owner, and only confirmed removals are counted.</summary>
     public int DestroySelection(

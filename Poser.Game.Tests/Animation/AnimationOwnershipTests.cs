@@ -34,8 +34,8 @@ public sealed class AnimationOwnershipTests
         var session = new AnimationSession(port.Port);
 
         Assert.True(session.SetSlotLoop(Actor, AnimationSlot.Base, 0, true).Success);
-        Assert.True(session.PlayBase(Actor, 42).Success);
-        Assert.True(session.PlayBase(Actor, 43).Success);
+        Assert.True(PlayBase(session, 42).Success);
+        Assert.True(PlayBase(session, 43).Success);
         Assert.Equal(port.BaseCapture, session.OverridesFor(Actor).BaseCapture);
         Assert.Equal("SetForceLoop:43", port.Calls.Last(call =>
             call.StartsWith("SetForceLoop", StringComparison.Ordinal)));
@@ -82,7 +82,7 @@ public sealed class AnimationOwnershipTests
             EmoteId: 300, EmoteIndex: 0);
 
         Assert.True(session.SetSlotLoop(Actor, AnimationSlot.Base, 0, true).Success);
-        Assert.True(session.PlayBase(Actor, 42).Success);
+        Assert.True(PlayBase(session, 42).Success);
         Assert.True(session.SetSlotLoop(
             Actor, AnimationSlot.UpperBody, 0, true).Success);
         Assert.True(session.ChooseSlot(
@@ -159,6 +159,14 @@ public sealed class AnimationOwnershipTests
             AnimationSlot.Facial));
         Assert.False(session.OverridesFor(Actor).SlotSpeedCaptures.ContainsKey(
             AnimationSlot.Facial));
+    }
+
+    private static AnimationResult PlayBase(AnimationSession session, ushort timeline)
+    {
+        var chosen = session.ChooseSlot(Actor, AnimationSlot.Base, timeline);
+        return chosen.Success
+            ? session.PlaySelectedSlot(Actor, AnimationSlot.Base, null, playFromStart: false)
+            : chosen;
     }
 
     private static ActorAnimationReading ReadingWithSlot(

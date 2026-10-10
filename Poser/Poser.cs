@@ -177,7 +177,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<IUIManager>();
         if (!_commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Poser. Use \"/poser test\" for the focused in-game validation harness."
+            HelpMessage = "Open Poser."
         }))
             throw new InvalidOperationException("The /poser command is already registered.");
         startup.OnFailure(() => _commandManager.RemoveHandler(CommandName));

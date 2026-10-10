@@ -176,19 +176,17 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
     /// <summary>The bones the solver moves for this target — the limb a bake
     /// is about. The bake itself writes the whole skeleton, as Brio's does;
-    /// this is what the UI and the live scenario name. Empty when the target is
+    /// this is what the UI names. Empty when the target is
     /// not an armed, resolvable chain.</summary>
-    IReadOnlyList<BoneId> IIkBake.AffectedChain(TransformTargetId target) =>
-        AffectedChain(target).Select(bone => _bindings.GetBoneId(bone))
-            .OfType<BoneId>().ToArray();
-
-    public IReadOnlyList<IBone> AffectedChain(TransformTargetId target)
+    public IReadOnlyList<BoneId> AffectedChain(TransformTargetId target)
     {
         if (target.Bone is not { } boneId ||
             _bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint } ||
             _posing.GetIkConfiguration(endpoint) is not { Enabled: true } config)
-            return Array.Empty<IBone>();
-        return AffectedBones(endpoint, config);
+            return Array.Empty<BoneId>();
+        return AffectedBones(endpoint, config)
+            .Select(bone => _bindings.GetBoneId(bone))
+            .OfType<BoneId>().ToArray();
     }
 
     /// <summary>

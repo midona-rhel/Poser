@@ -162,10 +162,10 @@ public unsafe partial class BonePosingService : IBonePosingService
         else _ikImports.Remove(actorKey);
     }
 
-    // Native-boundary observations used by the live acceptance harness.
-    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), BoneEvaluationObservation>
-        _evaluationObservations = new();
-    private long _evaluationSequence;
+    // Pre-layer animated baseline per modified concrete bone, captured by the
+    // native skeleton update hook (read by GetAnimatedBaseline).
+    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), Transform>
+        _animatedBaselines = new();
 
     /// <summary>Reused snapshot buffers for the two per-frame passes that must
     /// iterate a collection they may mutate. Both are single-threaded (physics
@@ -173,7 +173,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// the steady state free of per-frame arrays.</summary>
     private readonly List<SkeletonKey> _updatePassBuffer = new();
     private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
-        _observationRemovalBuffer = new();
+        _baselineRemovalBuffer = new();
 
     /// <summary>Reused snapshot buffers for the finalize pass — same hazard,
     /// same idiom as <see cref="_updatePassBuffer"/>: UpdateSkeletonCache →
@@ -261,7 +261,6 @@ public unsafe partial class BonePosingService : IBonePosingService
         _isUpdating = true;
         try
         {
-            _evaluationSequence++;
             ApplyAllBoneTransforms();
         }
         catch (Exception ex)
@@ -302,7 +301,7 @@ public unsafe partial class BonePosingService : IBonePosingService
                 continue;
             }
 
-            RemoveEvaluationObservations(slotKey);
+            RemoveAnimatedBaselines(slotKey);
         }
 
         _skeletonsToUpdateCache.Clear();
@@ -402,27 +401,14 @@ public unsafe partial class BonePosingService : IBonePosingService
     }
 
     /// <summary>The frozen animated/reference baseline beneath the authored
-    /// layers; a bone without applied layers has no observation, and its
+    /// layers; a bone without applied layers has no captured baseline, and its
     /// current transform IS its baseline.</summary>
     public Transform GetAnimatedBaseline(IBone bone) =>
-        TryGetEvaluationObservation(bone, out var observation)
-            ? observation.AnimatedBaseline
-            : bone.LastTransform;
-
-    public bool TryGetEvaluationObservation(
-        IBone bone,
-        out BoneEvaluationObservation observation)
-    {
-        if (bone is VirtualBone)
-        {
-            observation = default;
-            return false;
-        }
-
-        return _evaluationObservations.TryGetValue(
+        bone is not VirtualBone && _animatedBaselines.TryGetValue(
             (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex),
-            out observation);
-    }
+            out var baseline)
+            ? baseline
+            : bone.LastTransform;
 
     /// <summary>Actor teardown: purge every runtime pose store belonging to
     /// an address that no longer hosts a live actor.</summary>
@@ -450,7 +436,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         // execute; report it so its owner can roll back instead of waiting.
         if (_transitiveActions.Remove(key, out var orphaned))
             RaiseTransitiveActionsEnded(orphaned);
-        RemoveEvaluationObservations(key);
+        RemoveAnimatedBaselines(key);
         foreach (var chainKey in _ikChains.Keys
                      .Where(chainKey => chainKey.Skeleton == key)
                      .ToArray())
@@ -465,7 +451,7 @@ public unsafe partial class BonePosingService : IBonePosingService
             EndTransitiveActions();
             _poseInfos.Clear();
             _skeletonsToUpdate.Clear();
-            _evaluationObservations.Clear();
+            _animatedBaselines.Clear();
             _partialFrames.Clear();
             foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
             _ikChains.Clear();
@@ -681,14 +667,9 @@ public unsafe partial class BonePosingService : IBonePosingService
                     bone.LastTransform = transform;
                     if (bonePoseInfo.HasStacks || fixedHold)
                     {
-                        _evaluationObservations[
+                        _animatedBaselines[
                             (slotKey, partialIdx, boneIdx)] =
-                            new BoneEvaluationObservation(
-                                _evaluationSequence,
-                                animatedBaseline,
-                                transform,
-                                Combine(bonePoseInfo.Stacks),
-                                bonePoseInfo.Stacks.Count);
+                            animatedBaseline;
                     }
 
                     // Brio SkeletonService.cs:119-127: the actions run against
@@ -1635,7 +1616,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
         bonePoseInfo.ClearStacks();
-        _evaluationObservations.Remove(
+        _animatedBaselines.Remove(
             (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex));
 
     }
@@ -1647,7 +1628,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         {
             poseInfo.Clear();
         }
-        RemoveEvaluationObservations(slotKey);
+        RemoveAnimatedBaselines(slotKey);
     }
 
     public bool HasModifications(IBone bone)
@@ -1916,40 +1897,23 @@ public unsafe partial class BonePosingService : IBonePosingService
                 transform->Scale.Z),
         };
 
-    private static Transform Combine(
-        IReadOnlyList<BonePoseTransformInfo> stacks)
-    {
-        var combined = Transform.Zero;
-        foreach (var stack in stacks)
-        {
-            combined = new Transform
-            {
-                Position = combined.Position + stack.Transform.Position,
-                Rotation = Quaternion.Normalize(
-                    combined.Rotation * stack.Transform.Rotation),
-                Scale = combined.Scale + stack.Transform.Scale,
-            };
-        }
-        return combined;
-    }
-
     /// <summary>Runs every frame for every registered-but-unposed skeleton
     /// (OnFrameworkUpdate), so it collects into a reused buffer instead of the
     /// LINQ chain + array it used to allocate per skeleton per frame.</summary>
-    private void RemoveEvaluationObservations(SkeletonKey slotKey)
+    private void RemoveAnimatedBaselines(SkeletonKey slotKey)
     {
-        if (_evaluationObservations.Count == 0)
+        if (_animatedBaselines.Count == 0)
             return;
 
-        _observationRemovalBuffer.Clear();
-        foreach (var key in _evaluationObservations.Keys)
+        _baselineRemovalBuffer.Clear();
+        foreach (var key in _animatedBaselines.Keys)
         {
             if (key.Skeleton == slotKey)
-                _observationRemovalBuffer.Add(key);
+                _baselineRemovalBuffer.Add(key);
         }
 
-        for (var i = 0; i < _observationRemovalBuffer.Count; i++)
-            _evaluationObservations.Remove(_observationRemovalBuffer[i]);
+        for (var i = 0; i < _baselineRemovalBuffer.Count; i++)
+            _animatedBaselines.Remove(_baselineRemovalBuffer[i]);
     }
 
     public void Dispose()
@@ -1963,7 +1927,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         EndTransitiveActions();
         _poseInfos.Clear();
-        _evaluationObservations.Clear();
+        _animatedBaselines.Clear();
         GC.SuppressFinalize(this);
     }
 }

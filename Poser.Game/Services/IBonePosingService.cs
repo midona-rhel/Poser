@@ -7,19 +7,6 @@ using Poser.Domain.Identity;
 namespace Poser.Services;
 
 /// <summary>
-/// One post-animation pose evaluation observed at the native boundary.
-/// The animated baseline is captured after the game updates the skeleton and
-/// before Poser applies persistent pose layers. The evaluated transform is
-/// captured after those layers have been applied.
-/// </summary>
-public readonly record struct BoneEvaluationObservation(
-    long Sequence,
-    Transform AnimatedBaseline,
-    Transform EvaluatedTransform,
-    Transform AppliedDelta,
-    int StackCount);
-
-/// <summary>
 /// How a registered batch of transitive actions ended: <paramref name="Executed"/>
 /// is true when an apply pass ran it, false when the interval ended without one
 /// (the skeleton left the update set, gpose ended, the skeleton was replaced).
@@ -193,15 +180,6 @@ public interface IBonePosingService : IDisposable
     /// framework thread: a handler may record and defer, nothing more.
     /// </summary>
     event Action<TransitiveActionOutcome>? TransitiveActionsEnded;
-
-    /// <summary>
-    /// Gets the most recent pre-layer/post-layer observation for a modified
-    /// concrete bone. Observations are produced only by the native skeleton
-    /// update hook and therefore prove the runtime application path executed.
-    /// </summary>
-    bool TryGetEvaluationObservation(
-        IBone bone,
-        out BoneEvaluationObservation observation);
 
     /// <summary>
     /// Flips a bone's rotation (X = 180 - X, Y = -Y).
