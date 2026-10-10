@@ -24,6 +24,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly EntitySessions _sessions;
+    private readonly Poser.Application.Presentation.ILightControl _lights;
     private readonly IActorManager _actorManager;
     private readonly IActorSpawnService _actors;
     private readonly ISceneLifecycleHistory _lifecycle;
@@ -42,6 +43,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         SceneSession scene,
         IEntityBindings bindings,
         EntitySessions sessions,
+        Poser.Application.Presentation.ILightControl lights,
         IActorManager actorManager,
         IActorSpawnService actors,
         ISceneLifecycleHistory lifecycle,
@@ -58,6 +60,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         _scene = scene;
         _bindings = bindings;
         _sessions = sessions;
+        _lights = lights;
         _actorManager = actorManager;
         _actors = actors;
         _lifecycle = lifecycle;
@@ -123,7 +126,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                 if ((current.Removal == SelectionRemoval.Release)
                         != (light.Ownership != LightOwnership.Spawned))
                     return new(false, "The light's ownership changed; select it again.");
-                return _sessions.Lights.SetIsOn(light, visible);
+                return _lights.Set(lightId, Poser.Application.Presentation.LightProperties.IsOn, visible);
             case { Prop: { } propId }:
                 return CurrentProp(propId, out var prop)
                     ? _sessions.Props.SetVisible(prop, visible) : Gone();

@@ -8,6 +8,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Journal;
+using Poser.Game.Lighting;
 using Poser.Game.Selection;
 using Poser.Game.WorldObjects;
 using Poser.Services;
@@ -130,13 +131,19 @@ public sealed class SelectionEntityCommandPortTests
                     new BindingResult<ILight>(BindingStatus.Success, light),
                 _ => throw new InvalidOperationException(method.Name),
             });
-            var lighting = Proxy<ILightingService>((method, _) => method.Name == "get_Lights"
-                ? new ILight[] { light } : throw new InvalidOperationException(method.Name));
+            var lighting = Proxy<ILightingService>((method, _) => method.Name switch
+            {
+                "get_Lights" => new ILight[] { light },
+                "get_Gobos" => Array.Empty<GoboEntry>(),
+                _ => throw new InvalidOperationException(method.Name),
+            });
             var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
             Framework = (FrameworkProxy)(object)framework;
-            var sessions = new EntitySessions(null!,
-                new LightSession(new ValueJournal(History), lighting), null!, null!, null!, null!);
-            Port = new SelectionEntityCommandPort(Scene, bindings, sessions, null!, null!,
+            var sessions = new EntitySessions(null!, null!, null!, null!, null!);
+            var lights = new LightControl(bindings, Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread"
+                    ? true : throw new InvalidOperationException(method.Name)),
+                lighting, new ValueJournal(History), null!);
+            Port = new SelectionEntityCommandPort(Scene, bindings, sessions, lights, null!, null!,
                 null!, lighting, null!, null!, null!, null!, Release, Groups, framework, History);
         }
 

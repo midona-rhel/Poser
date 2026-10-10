@@ -5,7 +5,6 @@ namespace Poser.Game.Journal;
 /// dependency.</summary>
 public sealed record EntitySessions(
     Poser.Application.Presentation.IActorValueControl Actors,
-    LightSession Lights,
     CameraSession Cameras,
     PropSession Props,
     WorldObjectSession WorldObjects,

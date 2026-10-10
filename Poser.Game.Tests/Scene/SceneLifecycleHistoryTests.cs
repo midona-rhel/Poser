@@ -9,7 +9,10 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Domain.Posing;
+using Poser.Application.Presentation;
 using Poser.Game.Journal;
+using Poser.Game.Lighting;
+using Poser.Game.Presentation;
 using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Game.Scene;
@@ -56,10 +59,13 @@ public sealed class SceneLifecycleHistoryTests
     public void Borrowed_light_edits_survive_release_and_repeated_restoration()
     {
         var world = new World();
-        var values = new LightSession(new ValueJournal(world.History), world.Lighting, world.Lifecycle);
         var light = Borrow(world);
-        values.SetIntensity(light, 7);
-        values.SetIsOn(light, false);
+        var id = LightId.New();
+        var values = new EntityValues<LightId>(new ValueJournal(world.History), new HandleValuePort<LightId, ILight>(
+            exact => exact == id && world.Lighting.Lights.Contains(light) ? light : null, SelectionId.ForLight,
+            l => l.IsValid, world.Lifecycle, LightAccessors.Create(world.Lighting), "Gone"), "Gone");
+        Assert.True(values.Set(id, LightProperties.Intensity, 7f).Success);
+        Assert.True(values.Set(id, LightProperties.IsOn, false).Success);
         world.Lifecycle.DestroyLight(light);
         for (int i = 0; i < 3; i++)
         {

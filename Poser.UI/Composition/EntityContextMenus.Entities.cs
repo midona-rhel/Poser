@@ -719,7 +719,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
             () => OpenEntityRename(
-                "Rename light", light.Name, next => _lightControl.SetName(lightId, next)),
+                "Rename light", light.Name, next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
             () => _lightPane.MoveToCamera(lightId),
             () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
             () => _lightPane.OpenSave(lightId),

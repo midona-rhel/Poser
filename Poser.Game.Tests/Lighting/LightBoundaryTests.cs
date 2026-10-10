@@ -1,13 +1,13 @@
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
+using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
-using Poser.Game.Journal;
 using Poser.Game.Lighting;
 using Poser.Services;
 
@@ -23,7 +23,7 @@ public sealed class LightBoundaryTests
         for (int i = 1; i <= 3; i++)
         {
             f.Journal.BeginEdit("intensity");
-            Assert.True(f.Control.SetIntensity(f.Id, i).Success);
+            Assert.True(f.Control.Set(f.Id, LightProperties.Intensity, (float)i).Success);
             f.Journal.EndEdit();
         }
         Assert.False(f.History.CanUndo);
@@ -44,11 +44,29 @@ public sealed class LightBoundaryTests
         var f = new Fixture();
         _ = f.Control.Read(f.Id);
         f.Light.AreaAngle = new(10, 20);
-        Assert.True(f.Control.SetAreaAngleX(f.Id, 30).Success);
+        Assert.True(f.Control.Update(f.Id, LightProperties.AreaAngle, angle => angle with { X = 30 }).Success);
         Assert.Equal(new Vector2(30, 20), f.Light.AreaAngle);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.True(step.Undo());
         Assert.Equal(new Vector2(10, 20), f.Light.AreaAngle);
+    }
+
+    [Fact]
+    public void Stale_or_refused_light_write_returns_detail_and_appends_nothing()
+    {
+        var f = new Fixture();
+        var earlier = new JournalStep("Earlier edit", () => true, () => true);
+        f.History.Append(earlier);
+        f.History.CommitUndo(earlier);
+        f.Ignored.Add("Intensity");
+        var refused = f.Control.Set(f.Id, LightProperties.Intensity, 5f);
+        f.CurrentId = f.Id.NextGeneration();
+        var stale = f.Control.Set(f.Id, LightProperties.Range, 5f);
+        Assert.Equal((false, "The light did not accept the value."), (refused.Success, refused.Detail));
+        Assert.Equal((false, "The light is no longer available."), (stale.Success, stale.Detail));
+        Assert.Equal(0f, f.Light.Range);
+        Assert.False(f.History.CanUndo);
+        Assert.Same(earlier, f.History.PeekRedo());
     }
 
     [Fact]
@@ -99,6 +117,7 @@ public sealed class LightBoundaryTests
         public readonly LightControl Control;
         public readonly LightFiles Files;
         public LightFile? Imported;
+        public readonly HashSet<string> Ignored = new();
 
         public Fixture()
         {
@@ -106,7 +125,11 @@ public sealed class LightBoundaryTests
             var state = new Dictionary<string, object?> { ["IsValid"] = true, ["Name"] = "Test light" };
             Light = Stub<ILight>((m, a) =>
             {
-                if (m.Name.StartsWith("set_")) { state[m.Name[4..]] = a![0]; return null; }
+                if (m.Name.StartsWith("set_"))
+                {
+                    if (!Ignored.Contains(m.Name[4..])) state[m.Name[4..]] = a![0];
+                    return null;
+                }
                 return state.TryGetValue(m.Name[4..], out var v) ? v :
                     m.ReturnType.IsValueType ? Activator.CreateInstance(m.ReturnType) : null;
             });
@@ -133,14 +156,14 @@ public sealed class LightBoundaryTests
                 }
             });
             var framework = Stub<IFramework>((_, _) => true);
-            Journal = new(History, owner => ReferenceEquals(owner, Light) ? SelectionId.ForLight(CurrentId) : null);
+            Journal = new(History);
             var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
             {
                 "CanParent" or "CanEdit" or "Write" => true,
                 "Read" => (Poser.Domain.Transforms.PoseTransform?)Poser.Domain.Transforms.PoseTransform.Identity,
                 _ => null,
             }), History, Journal);
-            Control = new(bindings, framework, lighting, new LightSession(Journal, lighting), parenting);
+            Control = new(bindings, framework, lighting, Journal, parenting);
             Files = new(framework, bindings, Stub<ISceneCreation>((_, a) =>
             {
                 Imported = (LightFile)a![0]!;

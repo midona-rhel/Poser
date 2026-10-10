@@ -229,7 +229,6 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Presentation.IStatusIconCatalog>(sp =>
             sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
-        services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Application.Presentation.ILightControl, Game.Lighting.LightControl>();
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
@@ -276,7 +275,6 @@ internal static class ServiceRegistration
         services.AddSingleton<IWardrobeCatalog>(sp => sp.GetRequiredService<Game.Wardrobe.WardrobeCatalog>());
         services.AddSingleton(sp => new Game.Journal.EntitySessions(
             sp.GetRequiredService<Application.Presentation.IActorValueControl>(),
-            sp.GetRequiredService<Game.Journal.LightSession>(),
             sp.GetRequiredService<Game.Journal.CameraSession>(),
             sp.GetRequiredService<Game.Journal.PropSession>(),
             sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
