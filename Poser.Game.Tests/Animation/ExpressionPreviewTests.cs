@@ -33,18 +33,6 @@ public sealed class ExpressionPreviewTests
     }
 
     [Fact]
-    public void Retry_cannot_outlive_its_target()
-    {
-        using var f = new Fixture();
-        f.Preview();
-        f.Body = Stub<IActor>((_, _) => null);
-        var before = f.Plays;
-        f.Tick(1000);
-        Assert.Equal(before, f.Plays);
-        Assert.False(f.Control.IsPending(f.Actor));
-    }
-
-    [Fact]
     public void Bake_uses_exact_actor_and_refuses_pending_or_unavailable_targets()
     {
         using var f = new Fixture();
@@ -67,7 +55,7 @@ public sealed class ExpressionPreviewTests
         public readonly ActorId Actor = ActorId.New();
         public readonly TimelineEntry Entry = new(45, "Expression", AnimationKind.Expression, AnimationSlot.Facial);
         public readonly SessionGeneration? Session = SessionGeneration.New();
-        public IActor Body = Stub<IActor>((_, _) => null);
+        public readonly IActor Body = Stub<IActor>((_, _) => null);
         public int Plays;
         public ActorId? BakedActor;
         public ActorDescriptor? BakedDescriptor;

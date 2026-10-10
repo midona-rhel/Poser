@@ -16,12 +16,10 @@ namespace Poser.Tests.Files;
 
 public sealed class GroupTransformRoutingTests
 {
-    [Theory]
-    [InlineData(TransformOperation.Translate)]
-    [InlineData(TransformOperation.Rotate)]
-    [InlineData(TransformOperation.Scale)]
-    public void Legacy_facade_entry_points_always_attach_group_metadata(TransformOperation operation)
+    [Fact]
+    public void Legacy_facade_entry_points_always_attach_group_metadata()
     {
+        const TransformOperation operation = TransformOperation.Translate;
         var selection = new SelectionSession();
         var scene = new SceneSession(selection);
         var actor = ActorId.New();

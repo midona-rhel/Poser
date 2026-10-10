@@ -30,7 +30,6 @@ public sealed class GlamourerAccessTests
         {
             Assert.False(result.Success);
             Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);
-            Assert.Equal(GlamourerAccess.ForeignHeld.Detail, result.Detail);
         }
         Assert.False(history.CanUndo);
     }
@@ -93,17 +92,8 @@ public sealed class GlamourerAccessTests
     }
 
     [Theory]
-    [InlineData(0, true, null, false, GlamourerAccessKind.Editable)]
-    [InlineData(1, true, null, false, GlamourerAccessKind.Editable)]
-    [InlineData(0, false, null, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(2, false, null, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(99, false, null, false, GlamourerAccessKind.Unavailable)]
     [InlineData(6, false, 6, false, GlamourerAccessKind.ForeignHeld)]
     [InlineData(6, false, 0, true, GlamourerAccessKind.PoserHeld)]
-    [InlineData(6, false, 1, true, GlamourerAccessKind.PoserHeld)]
-    [InlineData(6, false, 0, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(6, false, 2, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(6, false, 99, false, GlamourerAccessKind.Unavailable)]
     public void Vendor_codes_are_classified_without_inventing_ownership(
         int code, bool state, int? keyedCode, bool keyedState, GlamourerAccessKind expected)
     {

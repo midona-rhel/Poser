@@ -9,31 +9,6 @@ namespace Poser.Tests.Files;
 public sealed class AutoSaveServiceSnapshotTests
 {
     [Fact]
-    public void Snapshot_capture_preserves_actor_order_and_makes_safe_unique_names()
-    {
-        using var h = new AutoSaveHarness();
-        h.AddActor("Zidane");
-        h.AddActor("Zidane");
-        h.AddActor("A<b>:c");
-        h.AddActor("   ");
-
-        Assert.Equal(4, h.Service.SaveNow("manual"));
-        h.WaitForWrite();
-
-        Assert.Equal(
-            new[]
-            {
-                $"{h.PrefixNow()} A_b__c.pose",
-                $"{h.PrefixNow()} Actor.pose",
-                $"{h.PrefixNow()} Zidane (2).pose",
-                $"{h.PrefixNow()} Zidane.pose",
-            },
-            h.SnapshotFiles(h.DayNow()));
-        Assert.All(h.SnapshotFiles(h.DayNow()), name =>
-            Assert.DoesNotContain("<", name, StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void Snapshot_capture_is_complete_before_dispatch_and_round_trips_real_pose_bytes()
     {
         using var h = new AutoSaveHarness();

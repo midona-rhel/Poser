@@ -64,17 +64,13 @@ public sealed class FabrikSpanTests
     }
 
     [Fact]
-    public void Selected_bone_is_between_parent_and_child_spans_in_native_order()
-    {
-        var nodes = Chain(7);
-        var span = BonePosingService.FabrikMembers(nodes[3].Bone,
-            IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 });
-        Assert.Equal(nodes.Skip(1).Take(5).Select(n => n.Bone), span);
-    }
-
-    [Fact]
     public void Walks_stop_at_forks_partial_boundaries_and_hidden_parents_but_keep_the_selected_bone()
     {
+        // The selected bone sits between its parent and child spans in native order.
+        var straight = Chain(7);
+        Assert.Equal(straight.Skip(1).Take(5).Select(n => n.Bone), BonePosingService.FabrikMembers(straight[3].Bone,
+            IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 }));
+
         var forked = Chain(5);
         forked[2].Children.Add(new Node(forked[0].Skeleton).Bone);
         Assert.Equal(new[] { forked[1].Bone, forked[2].Bone }, BonePosingService.FabrikMembers(forked[1].Bone,

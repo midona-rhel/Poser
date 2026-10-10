@@ -55,7 +55,7 @@ public sealed class PartialPoseFrameTests
         before.Rotation = Quaternion.CreateFromYawPitchRoll(.4f, -.2f, .7f);
         before.Scale = new Vector3(.8f, 1.3f, 1.1f);
         var after = PosedRoot;
-        after.Scale = new Vector3(.8f, 1.3f, 1.1f);
+        after.Scale = new Vector3(1.2f, .9f, 1.4f);
         var frame = new PartialPoseFrame(before, after);
         var raw = new Transform(new Vector3(.15f, 1.62f, -.07f),
             Quaternion.CreateFromYawPitchRoll(.2f, .3f, -.4f), Vector3.One);

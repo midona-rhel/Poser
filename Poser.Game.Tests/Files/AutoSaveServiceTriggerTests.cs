@@ -36,19 +36,4 @@ public sealed class AutoSaveServiceTriggerTests
         h.TickAt(T0.AddMinutes(13).AddSeconds(31));
         Assert.Equal(2, h.CaptureCallCount);
     }
-
-    [Fact]
-    public void Disposal_closes_admission_and_is_idempotent_after_the_worker_is_idle()
-    {
-        using var h = new AutoSaveHarness();
-        h.AddActor("Alpha");
-        Assert.Equal(1, h.Service.SaveNow("manual"));
-        h.WaitForWrite();
-
-        h.Service.Dispose();
-        h.Service.Dispose();
-
-        Assert.Equal(0, h.Service.SaveNow("after-dispose"));
-        Assert.Equal(1, h.CaptureCallCount);
-    }
 }

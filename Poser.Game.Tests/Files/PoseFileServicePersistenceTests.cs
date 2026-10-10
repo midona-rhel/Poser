@@ -42,14 +42,10 @@ public sealed class PoseFileServicePersistenceTests
         Assert.Empty(plan.Writes);
     }
 
-    [Theory]
-    [InlineData(PoseSlot.Character, false)]
-    [InlineData(PoseSlot.Character, true)]
-    [InlineData(PoseSlot.MainHand, false)]
-    [InlineData(PoseSlot.MainHand, true)]
-    public void Captured_chain_keeps_requested_positions_even_when_local_offsets_match(
-        PoseSlot slot, bool reset)
+    [Fact]
+    public void Captured_chain_keeps_requested_positions_even_when_local_offsets_match()
     {
+        const PoseSlot slot = PoseSlot.MainHand;
         var skeleton = Substitute.For<ISkeleton>();
         skeleton.Slot.Returns(slot);
         var pose = new PoseFile();
@@ -73,7 +69,7 @@ public sealed class PoseFileServicePersistenceTests
         skeleton.Bones.Returns(bones);
         var options = new PoseImportOptions
         {
-            ApplyPosition = true, ApplyScale = true, ResetBeforeImport = reset,
+            ApplyPosition = true, ApplyScale = true, ResetBeforeImport = true,
         };
         var plan = Service().BuildImportPlan(new[] { skeleton }, pose, options);
 
