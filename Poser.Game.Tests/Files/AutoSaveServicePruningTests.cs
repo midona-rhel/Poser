@@ -43,4 +43,29 @@ public sealed class AutoSaveServicePruningTests
         h.WaitForWrite();
         Assert.Contains(h.DayNow(), h.SnapshotFolders());
     }
+
+    [Fact]
+    public void Pruning_counts_pose_files_only_and_keeps_recovery_evidence()
+    {
+        using var h = new AutoSaveHarness();
+        h.NowUtc = SaveTime;
+        h.Settings.MaxAutoSaves = 1;
+        var day = h.SeedSnapshot(h.DayNow());
+        var stalePose = Path.Combine(day, "00-00-00 Old.pose");
+        var temp = Path.Combine(day, ".00-00-00 Old.pose.0123456789abcdef.tmp");
+        var backup = Path.Combine(day, ".00-00-00 Old.pose.0123456789abcdef.bak");
+        foreach (var file in new[] { stalePose, temp, backup })
+        {
+            File.WriteAllText(file, "{}");
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddHours(-1));
+        }
+        h.AddActor("Alpha");
+
+        Assert.Equal(1, h.Service.SaveNow("manual"));
+        h.WaitForWrite();
+
+        Assert.False(File.Exists(stalePose));
+        Assert.True(File.Exists(temp));
+        Assert.True(File.Exists(backup));
+    }
 }

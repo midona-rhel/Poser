@@ -615,13 +615,18 @@ internal static class ServiceRegistration
         // capture and store through SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
         services.AddSceneWorkflow();
-        services.AddSingleton(sp => new SceneAutoSaveService(
-            sp.GetRequiredService<ConfigurationService>(),
-            sp.GetRequiredService<SceneCaptureService>().BeginCapture,
-            () => sp.GetRequiredService<SceneWorkflow>().Busy,
-            new SceneAutoSaveStore(System.IO.Path.Combine(
-                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"),
-                message => sp.GetRequiredService<IPluginLog>().Error(message))));
+        services.AddSingleton(sp =>
+        {
+            var log = sp.GetRequiredService<IPluginLog>();
+            return new SceneAutoSaveService(
+                sp.GetRequiredService<ConfigurationService>(),
+                sp.GetRequiredService<SceneCaptureService>().BeginCapture,
+                () => sp.GetRequiredService<SceneWorkflow>().Busy,
+                new SceneAutoSaveStore(System.IO.Path.Combine(
+                    sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"),
+                    message => log.Error(message)),
+                message => log.Warning(message));
+        });
         services.AddSingleton<ISceneAutoSave>(sp => sp.GetRequiredService<SceneAutoSaveService>());
         return services;
     }

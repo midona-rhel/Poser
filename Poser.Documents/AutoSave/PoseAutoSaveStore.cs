@@ -12,6 +12,7 @@ public sealed class PoseAutoSaveStore
 {
     private const string DayFolderFormat = "yyyy-MM-dd";
     private const string TimePrefixFormat = "HH-mm-ss";
+    private const string PoseExtension = ".pose";
     private readonly Action<string> _error;
     private readonly Action<string> _info;
     private readonly Action<string> _debug;
@@ -166,10 +167,14 @@ public sealed class PoseAutoSaveStore
     /// whatever it is now called. Ties break on key, descending, so the order
     /// is total even at one-second stamp granularity. A day folder whose last
     /// event was pruned goes with it.</para>
+    ///
+    /// <para>Only <c>*.pose</c> files are events: the hidden <c>.tmp</c>/<c>.bak</c>
+    /// recovery evidence a failed atomic write leaves on purpose is never
+    /// counted or deleted here, and its day folder stays while it remains.</para>
     /// </summary>
     private bool Prune(int keep)
     {
-        var events = new List<(DateTime AtUtc, string Key, string? LegacyDir, List<string>? Files)>();
+        var events = new List<(DateTime AtUtc, string Key, string Target, bool LegacyDir)>();
         var dayFolders = new List<string>();
         try
         {
@@ -179,23 +184,15 @@ public sealed class PoseAutoSaveStore
                 if (!IsDayFolder(name))
                 {
                     // Old layout: the folder is the save.
-                    events.Add((Directory.GetLastWriteTimeUtc(dir), name, dir, null));
+                    events.Add((Directory.GetLastWriteTimeUtc(dir), name, dir, true));
                     continue;
                 }
 
                 dayFolders.Add(dir);
-                foreach (var group in Directory.EnumerateFiles(dir)
-                             .GroupBy(file => Path.GetFileName(file)))
+                foreach (var file in Directory.EnumerateFiles(dir, "*" + PoseExtension))
                 {
-                    var files = group.ToList();
-                    var newest = DateTime.MinValue;
-                    foreach (var file in files)
-                    {
-                        var at = File.GetLastWriteTimeUtc(file);
-                        if (at > newest)
-                            newest = at;
-                    }
-                    events.Add((newest, $"{name}/{group.Key}", null, files));
+                    events.Add((File.GetLastWriteTimeUtc(file),
+                        $"{name}/{Path.GetFileName(file)}", file, false));
                 }
             }
         }
@@ -213,22 +210,20 @@ public sealed class PoseAutoSaveStore
 
         var pruned = 0;
         var success = true;
-        foreach (var (_, _, legacyDir, files) in stale)
+        foreach (var (_, _, path, legacyDir) in stale)
         {
             try
             {
-                if (legacyDir != null)
-                    Directory.Delete(legacyDir, recursive: true);
+                if (legacyDir)
+                    Directory.Delete(path, recursive: true);
                 else
-                    foreach (var file in files!)
-                        File.Delete(file);
+                    File.Delete(path);
                 pruned++;
             }
             catch (Exception ex)
             {
                 success = false;
-                _error(
-                    $"Auto-save: could not prune '{legacyDir ?? files![0]}': {ex.Message}");
+                _error($"Auto-save: could not prune '{path}': {ex.Message}");
             }
         }
 

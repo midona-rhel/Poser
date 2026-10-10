@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 
 namespace Poser.Library;
@@ -289,7 +290,8 @@ public partial class LibraryConfiguration
         if (File.Exists(path))
             path = Path.Combine(
                 root,
-                $"{cleaned} {DateTime.Now:yyyy-MM-dd HH.mm.ss}{extension}");
+                string.Create(CultureInfo.InvariantCulture,
+                    $"{cleaned} {DateTime.Now:yyyy-MM-dd HH.mm.ss}{extension}"));
         return path;
     }
 

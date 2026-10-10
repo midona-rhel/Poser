@@ -63,7 +63,8 @@ Library refresh/cancellation and autosave cadence/admission live in Application.
 Documents owns scans, file actions, snapshot writes and disk retention. Game
 captures detached poses/scenes and owns framework subscriptions; panel visibility
 does not drive this work. Pose and scene snapshots retain their separate formats,
-roots and limits, and scene progress is exposed through `ISceneAutoSave`.
+roots and limits. `ISceneAutoSave` exposes the scene snapshot root; a failed
+scene snapshot is logged at Warning.
 
 Actor appearance commands own their history inverses in Application. UI
 supplies an actor and the selected value; it never constructs restore callbacks

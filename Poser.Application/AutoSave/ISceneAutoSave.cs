@@ -40,5 +40,4 @@ public sealed record SceneAutoSaveResult(
 public interface ISceneAutoSave : IDisposable
 {
     string RootDirectory { get; }
-    event Action? Changed;
 }
