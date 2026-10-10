@@ -29,7 +29,6 @@ public sealed class LightPane
     private readonly ISceneCreation _creation;
 
     private readonly EntityActions _entityActions;
-    private readonly ILightFiles _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
@@ -68,10 +67,6 @@ public sealed class LightPane
     private readonly global::Poser.UI.Controls.RememberedFolder _folder =
         new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
-    // An imported light is only selectable once the scene refresh has bound
-    // it, exactly like a spawned one.
-    private readonly IPendingSceneCreation _pendingCreation;
-
     /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
     /// the log track, so the tiers read before dragging.</summary>
     private static readonly float[] IntensityMarks = [1f, 10f];
@@ -96,9 +91,7 @@ public sealed class LightPane
         SceneSession scene,
         PropertiesContext properties,
         ISceneCreation creation,
-        IPendingSceneCreation pendingCreation,
         EntityActions entityActions,
-        ILightFiles lightFiles,
         ObjectPlacementPreferences placement,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
@@ -116,10 +109,8 @@ public sealed class LightPane
         _scene = scene;
         _selection = properties.Selection;
         _creation = creation;
-        _pendingCreation = pendingCreation;
         _scenePane = scenePane;
         _entityActions = entityActions;
-        _lightFiles = lightFiles;
         _placement = placement;
         _cleanTransforms = cleanTransforms;
         // The load dialog carries the ONE choice that changes where the
@@ -182,16 +173,8 @@ public sealed class LightPane
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
     {
-        _folder.Open(_loadBrowser, path =>
-        {
-            var imported = _lightFiles.Import(path, _placement.Mode);
-            if (imported.Handle is null)
-            {
-                _notices.Failed(imported.Detail ?? "The light could not be loaded.");
-                return;
-            }
-            _pendingCreation.SelectWhenReady(imported.Handle);
-        });
+        _folder.Open(_loadBrowser,
+            path => _scenePane.LoadEntry(path, _placement.Mode));
     }
 
     /// <summary>
@@ -547,14 +530,8 @@ public sealed class LightPane
     /// </summary>
     public void OpenSave(LightId id)
     {
-        _folder.Open(_saveBrowser, path =>
-        {
-            var result = _lightFiles.Export(id, path);
-            if (result.Success)
-                _notices.Done($"Light saved to {path}.");
-            else
-                _notices.Failed(result.Detail ?? "The light file could not be written.");
-        });
+        _folder.Open(_saveBrowser,
+            path => _scenePane.SaveEntryTo(SelectionId.ForLight(id), path));
     }
 
     private void ActionRows(

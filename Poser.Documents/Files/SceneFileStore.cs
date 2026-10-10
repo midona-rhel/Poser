@@ -339,6 +339,18 @@ public sealed class SceneFileStore
                     path);
             }
 
+            // Light and camera entries were once bare JSON documents. A
+            // .xivl/.xivc that is not a container (no "PK" signature) is read
+            // as that document and wrapped as the one-entity entry every
+            // writer now produces; nothing writes the old form any more.
+            if (IsLegacyEntryExtension(path))
+            {
+                int signature = stream.ReadByte();
+                stream.Position = 0;
+                if (signature != 'P')
+                    return DecodeLegacyEntry(stream, path);
+            }
+
             using var archive = new ZipArchive(
                 stream, ZipArchiveMode.Read, leaveOpen: true);
             if (archive.GetEntry(DocumentEntry) is not { } document)
@@ -542,21 +554,8 @@ public sealed class SceneFileStore
     {
         try
         {
-            var scene = JsonSerializer.Deserialize<SceneFile>(
-                bytes, SceneFile.JsonOptions);
-            var validation = SceneFileValidation.Validate(scene);
-            if (!validation.Succeeded)
-            {
-                return validation.Failure!.Kind ==
-                    SceneFileValidationFailureKind.FutureVersion
-                    ? SceneReadOutcome.Failed(SceneStoreFailure.Create(
-                        SceneStoreFailureKind.FutureVersion,
-                        validation.Failure.Detail,
-                        path,
-                        validation.Failure))
-                    : ValidationReadFailure(validation.Failure!, path);
-            }
-            return SceneReadOutcome.Success(scene!);
+            return Validated(JsonSerializer.Deserialize<SceneFile>(
+                bytes, SceneFile.JsonOptions), path);
         }
         catch (JsonException ex)
         {
@@ -570,6 +569,75 @@ public sealed class SceneFileStore
             return ReadFailure(
                 SceneStoreFailureKind.Json,
                 $"The scene JSON could not be decoded: {ex.Message}",
+                path);
+        }
+    }
+
+    private static SceneReadOutcome Validated(SceneFile? scene, string? path)
+    {
+        var validation = SceneFileValidation.Validate(scene);
+        if (!validation.Succeeded)
+        {
+            return validation.Failure!.Kind ==
+                SceneFileValidationFailureKind.FutureVersion
+                ? SceneReadOutcome.Failed(SceneStoreFailure.Create(
+                    SceneStoreFailureKind.FutureVersion,
+                    validation.Failure.Detail,
+                    path,
+                    validation.Failure))
+                : ValidationReadFailure(validation.Failure!, path);
+        }
+        return SceneReadOutcome.Success(scene!);
+    }
+
+    private static bool IsLegacyEntryExtension(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(SceneFile.LightEntryExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(SceneFile.CameraEntryExtension, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Wraps a bare light or camera document as its one-entity
+    /// entry. The wrapped camera is a created one — live, not the default —
+    /// which is what the old loader made of it.</summary>
+    private static SceneReadOutcome DecodeLegacyEntry(Stream stream, string path)
+    {
+        if (stream.Length > SceneFileLimits.MaxDocumentBytes)
+        {
+            return ReadFailure(
+                SceneStoreFailureKind.SizeLimit,
+                $"The document is {stream.Length} bytes " +
+                $"(limit {SceneFileLimits.MaxDocumentBytes}).",
+                path);
+        }
+        try
+        {
+            var scene = new SceneFile { SceneId = Guid.NewGuid() };
+            if (Path.GetExtension(path).Equals(
+                    SceneFile.LightEntryExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                var light = JsonSerializer.Deserialize<LightFile>(stream, SceneFile.JsonOptions);
+                scene.CameraAnchor = light?.CameraAnchor;
+                scene.ActorAnchor = light?.ActorAnchor;
+                scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = light });
+            }
+            else
+            {
+                var camera = JsonSerializer.Deserialize<CameraFile>(stream, SceneFile.JsonOptions);
+                scene.CameraAnchor = camera?.CameraAnchor;
+                scene.ActorAnchor = camera?.ActorAnchor;
+                scene.Cameras.Add(new SceneCamera
+                {
+                    Key = Guid.NewGuid(), Camera = camera, IsLive = true,
+                });
+            }
+            return Validated(scene, path);
+        }
+        catch (Exception ex)
+        {
+            return ReadFailure(
+                SceneStoreFailureKind.Json,
+                $"The document JSON is invalid: {ex.Message}",
                 path);
         }
     }

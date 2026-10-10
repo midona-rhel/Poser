@@ -95,6 +95,31 @@ public sealed class SceneFileStoreTests
     }
 
     [Fact]
+    public void Bare_json_light_and_camera_entries_read_as_one_entity_entries()
+    {
+        using var fixture = new SceneFixture();
+        var lightPath = Path.Combine(fixture.Root, "old" + SceneFile.LightEntryExtension);
+        var cameraPath = Path.Combine(fixture.Root, "old" + SceneFile.CameraEntryExtension);
+        var light = ValidScene().Lights[0].Light!;
+        light.CameraAnchor = new PlacementAnchorData { Position = new Vector3(1, 2, 3) };
+        File.WriteAllText(lightPath, JsonSerializer.Serialize(light, SceneJsonOptionsAccessor.Options));
+        File.WriteAllText(cameraPath, JsonSerializer.Serialize(
+            new CameraFile { Name = "Saved view", Kind = CameraKind.Free },
+            SceneJsonOptionsAccessor.Options));
+
+        var lightRead = SceneFileStore.Default.Read(lightPath);
+        var cameraRead = SceneFileStore.Default.Read(cameraPath);
+
+        Assert.True(lightRead.Succeeded, lightRead.Failure?.Detail);
+        Assert.Equal("Key light", Assert.Single(lightRead.Scene!.Lights).Light!.Name);
+        Assert.Equal(new Vector3(1, 2, 3), lightRead.Scene.CameraAnchor!.Position);
+        Assert.True(cameraRead.Succeeded, cameraRead.Failure?.Detail);
+        var camera = Assert.Single(cameraRead.Scene!.Cameras);
+        Assert.True(camera.IsLive);
+        Assert.False(camera.IsDefault);
+    }
+
+    [Fact]
     public void A_scene_write_failure_preserves_an_existing_destination()
     {
         using var fixture = new SceneFixture();

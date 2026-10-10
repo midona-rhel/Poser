@@ -86,49 +86,8 @@ public sealed class SceneCreation : ISceneCreation
     public SceneCreationResult CreateLight(LightKind kind) =>
         Create(SceneEntityKind.Light, () => _lifecycle.SpawnLight(kind));
 
-    public SceneCreationResult CreateLight(Poser.Files.LightFile document, string description) =>
-        Create(SceneEntityKind.Light, () =>
-        {
-            var light = _lighting.SpawnLight(document.Kind);
-            if (light is null) return null;
-            try
-            {
-                Lighting.LightDocument.Apply(document, light);
-                if (!string.IsNullOrEmpty(document.Gobo))
-                {
-                    var gobo = _lighting.Gobos.FirstOrDefault(g =>
-                        string.Equals(g.Path, document.Gobo, StringComparison.OrdinalIgnoreCase));
-                    if (gobo is not null) _lighting.ApplyGobo(light, gobo);
-                }
-                return _lifecycle.RecordSpawnedLight(description, light);
-            }
-            catch
-            {
-                _lighting.DestroyLight(light);
-                throw;
-            }
-        });
-
     public SceneCreationResult CreateCamera(CameraKind kind) =>
         Create(SceneEntityKind.Camera, () => _lifecycle.CreateCamera(kind));
-
-    public SceneCreationResult CreateCamera(Poser.Files.CameraFile document, string description) =>
-        Create(SceneEntityKind.Camera, () =>
-        {
-            var camera = _cameras.CreateCamera(document.Kind);
-            if (camera is null) return null;
-            try
-            {
-                Cameras.CameraDocument.Apply(document, camera);
-                // Record the applied file, not the spawn defaults, as the redo baseline.
-                return _lifecycle.RecordSpawnedCamera(description, camera);
-            }
-            catch
-            {
-                _cameras.DestroyCamera(camera);
-                throw;
-            }
-        });
 
     public SceneCreationResult CreateProp(PropModel? model = null) =>
         Create(SceneEntityKind.Prop, () => model is { } value

@@ -31,7 +31,6 @@ public sealed class CameraPane
     private readonly ICameraTargetControl _targets;
 
     private readonly EntityActions _entityActions;
-    private readonly ICameraFiles _cameraFiles;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
     /// standing facts only.</summary>
@@ -76,7 +75,6 @@ public sealed class CameraPane
         PropertiesContext properties,
         ICameraTargetControl targets,
         EntityActions entityActions,
-        ICameraFiles cameraFiles,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         ScenePane scenePane,
@@ -94,7 +92,6 @@ public sealed class CameraPane
         _scenePane = scenePane;
         _targets = targets;
         _entityActions = entityActions;
-        _cameraFiles = cameraFiles;
         _notices = notices;
     }
 
@@ -113,16 +110,8 @@ public sealed class CameraPane
     /// header's "New camera from file…".</summary>
     public void OpenLoad()
     {
-        _folder.Open(_loadBrowser, path =>
-        {
-            var imported = _cameraFiles.Import(path);
-            if (imported.Handle == null)
-            {
-                _notices.Failed(imported.Detail ?? "The camera could not be loaded.");
-                return;
-            }
-            _pendingCreation.SelectWhenReady(imported.Handle);
-        });
+        _folder.Open(_loadBrowser, path => _scenePane.LoadEntry(
+            path, global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved));
     }
 
     /// <summary>Frames one exact actor through the live orbit camera. The
@@ -721,14 +710,8 @@ public sealed class CameraPane
     /// </summary>
     public void OpenSave(CameraId id)
     {
-        _folder.Open(_saveBrowser, path =>
-        {
-            var result = _cameraFiles.Export(id, path);
-            if (result.Success)
-                _notices.Done($"Camera saved to {path}.");
-            else
-                _notices.Failed(result.Detail ?? "The camera file could not be written.");
-        });
+        _folder.Open(_saveBrowser,
+            path => _scenePane.SaveEntryTo(SelectionId.ForCamera(id), path));
     }
 
     // ── state ────────────────────────────────────────────────────────────

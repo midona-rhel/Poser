@@ -9,6 +9,9 @@ namespace Poser.Application.Library;
 public interface ILibrarySceneSave
 {
     SceneActionResult SaveEntry(SelectionId target, string name);
+    /// <summary>The same entry save written to a chosen path — a pane's
+    /// "Save to file…". The entity keeps its own name.</summary>
+    SceneActionResult SaveEntryTo(SelectionId target, string path);
     SceneActionResult SaveGroup(IReadOnlyList<SelectionId> members, string name);
     SceneActionResult SaveScene(string name, SceneSaveOptions options);
 }
@@ -17,30 +20,47 @@ public interface ILibrarySceneSave
 public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene,
     ConfigurationService config, IPoseLibraryService library, Action<string> reportNotice) : ILibrarySceneSave
 {
-    public SceneActionResult SaveEntry(SelectionId target, string name)
+    public SceneActionResult SaveEntry(SelectionId target, string name) =>
+        Entry(target, out var options, out var extension) is { } refused
+            ? refused
+            : Save(config.Config.Library.ResolveObjectsRoot(), name, extension,
+                options with { EntryName = name });
+
+    public SceneActionResult SaveEntryTo(SelectionId target, string path) =>
+        Entry(target, out var options, out _) is { } refused
+            ? refused
+            : workflow.BeginSave(path, null, options);
+
+    /// <summary>One entity's entry: its category, its key, its extension.
+    /// Returns the refusal, or null with the options filled.</summary>
+    private SceneActionResult? Entry(SelectionId target, out SceneSaveOptions options, out string extension)
     {
+        options = SceneSaveOptions.Default;
+        extension = string.Empty;
         if (scene.Resolve(target) != target) return SceneActionResult.Fail("The entity is no longer available.");
-        (SceneSaveOptions Options, string Extension)? entry = target switch
+        (SceneCategories Category, Guid Key, string Extension)? entry = target switch
         {
             { Kind: SceneEntityKind.Actor, Actor: { } actor } =>
-                (SceneSaveOptions.ActorEntry(actor.LogicalId), SceneFile.ActorEntryExtension),
+                (SceneCategories.Actors, actor.LogicalId, SceneFile.ActorEntryExtension),
             { Kind: SceneEntityKind.Light, Light: { } light } =>
-                (SceneSaveOptions.LightEntry(light.LogicalId), SceneFile.LightEntryExtension),
+                (SceneCategories.Lights, light.LogicalId, SceneFile.LightEntryExtension),
             { Kind: SceneEntityKind.Camera, Camera: { } camera } =>
-                (SceneSaveOptions.CameraEntry(camera.LogicalId), SceneFile.CameraEntryExtension),
+                (SceneCategories.Cameras, camera.LogicalId, SceneFile.CameraEntryExtension),
             { Kind: SceneEntityKind.Prop, Prop: { } prop } =>
-                (SceneSaveOptions.PropEntry(prop.LogicalId), SceneFile.PropEntryExtension),
+                (SceneCategories.Props, prop.LogicalId, SceneFile.PropEntryExtension),
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } world } =>
-                (SceneSaveOptions.WorldObjectEntry(world.LogicalId), SceneFile.WorldObjectEntryExtension),
+                (SceneCategories.WorldObjects, world.LogicalId, SceneFile.WorldObjectEntryExtension),
             { Kind: SceneEntityKind.Overlay, Overlay: { } overlay } =>
-                (SceneSaveOptions.OverlayEntry(overlay.LogicalId), SceneFile.OverlayEntryExtension),
+                (SceneCategories.Overlays, overlay.LogicalId, SceneFile.OverlayEntryExtension),
             _ => null,
         };
-        if (entry == null) return SceneActionResult.Fail("This selection cannot be saved as an entity.");
+        if (entry is not { } chosen) return SceneActionResult.Fail("This selection cannot be saved as an entity.");
         if (target.Actor is { } id && scene.Snapshot.FindActor(id) is not { IsOwned: true })
             return SceneActionResult.Fail("Only an actor you spawned or your own character can be saved to the library.");
-        return Save(config.Config.Library.ResolveObjectsRoot(), name, entry.Value.Extension,
-            entry.Value.Options with { EntryName = name });
+        options = SceneSaveOptions.Only(chosen.Category, new[] { chosen.Key })
+            with { IncludeModdedAppearance = chosen.Category == SceneCategories.Actors };
+        extension = chosen.Extension;
+        return null;
     }
 
     public SceneActionResult SaveGroup(IReadOnlyList<SelectionId> members, string name)
@@ -55,7 +75,10 @@ public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene
             || scene.Snapshot.FindActor(actor) is { IsOwned: true });
         if (!owned) reportNotice("The group holds an actor that is not yours; it is saved without appearance.");
         return Save(config.Config.Library.ResolveObjectsRoot(), name, SceneFile.GroupEntryExtension,
-            SceneSaveOptions.GroupEntry(keys) with { EntryName = name, IncludeModdedAppearance = owned });
+            SceneSaveOptions.Only(SceneCategories.All & ~SceneCategories.Environment, keys) with
+            {
+                IncludeStructure = true, EntryName = name, IncludeModdedAppearance = owned,
+            });
     }
 
     public SceneActionResult SaveScene(string name, SceneSaveOptions options) =>

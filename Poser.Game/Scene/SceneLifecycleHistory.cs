@@ -452,12 +452,6 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             $"Clone camera '{source.Name}'",
             () => _cameras.CloneCamera(source));
 
-    /// <summary>Records a camera some other path already created — a file
-    /// import — under this seam's discipline.</summary>
-    public IVirtualCamera? RecordSpawnedCamera(
-        string description, IVirtualCamera? camera) =>
-        AppendCameraSpawn(description, camera);
-
     public void DestroyCamera(IVirtualCamera camera)
     {
         // The GPose session's own camera cannot be destroyed, so there is

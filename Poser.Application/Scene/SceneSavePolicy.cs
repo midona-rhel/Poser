@@ -45,10 +45,9 @@ internal static class SceneSavePolicy
             scene.World = null;
         }
         if (!options.IncludeOverlays)
-        {
             scene.Overlays = null;
+        if (!options.IncludeWorldObjects)
             scene.WorldObjects = null;
-        }
 
         int excluded = 0;
         int unsealed = 0;

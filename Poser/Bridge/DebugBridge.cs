@@ -540,8 +540,8 @@ public sealed partial class DebugBridge : IDisposable
                         var target = FindActor(onlyActor);
                         if (target == null || _bindings.GetActorId(target) is not { } targetId)
                             return Json(new { error = "No such actor." });
-                        saveOptions = SceneSaveOptions.ActorEntry(targetId.LogicalId)
-                            with { IncludeModdedAppearance = false };
+                        saveOptions = SceneSaveOptions.Only(
+                            SceneCategories.Actors, new[] { targetId.LogicalId });
                     }
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });

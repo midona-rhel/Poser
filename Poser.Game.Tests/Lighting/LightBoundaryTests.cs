@@ -70,39 +70,13 @@ public sealed class LightBoundaryTests
     }
 
     [Fact]
-    public void Replaced_target_cannot_receive_deferred_picks_or_export()
+    public void Replaced_target_cannot_receive_deferred_picks()
     {
         var f = new Fixture();
-        using var file = new TemporaryFile();
-        File.WriteAllText(file.Path, "keep");
         f.CurrentId = f.Id.NextGeneration();
         Assert.Null(f.Control.Read(f.Id));
         Assert.False(f.Control.ApplyGobo(f.Id, 0).Success);
-        Assert.False(f.Files.Export(f.Id, file.Path).Success);
-        Assert.Equal("keep", File.ReadAllText(file.Path));
         Assert.False(f.History.CanUndo);
-    }
-
-    [Fact]
-    public void File_roundtrip_uses_shared_creation_with_complete_values_and_placement()
-    {
-        var f = new Fixture();
-        using var file = new TemporaryFile();
-        f.Light.Intensity = 4;
-        f.Light.AreaAngle = new(12, 24);
-        f.Light.Transform = new() { Position = new(10, 20, 30), Scale = Vector3.One, Rotation = Quaternion.Identity };
-        Assert.True(f.Control.ApplyGobo(f.Id, 0).Success);
-        Assert.True(f.Files.Export(f.Id, file.Path).Success);
-        Assert.NotNull(f.Files.Import(file.Path, ObjectPlacementMode.RelativeToSelectedActor).Handle);
-        var document = Assert.IsType<LightFile>(f.Imported);
-        Assert.Equal(4f, document.Intensity);
-        Assert.Equal(new Vector2(12, 24), document.AreaAngle);
-        Assert.Equal("test.tex", document.Gobo);
-        Assert.Equal(new Vector3(15, 20, 30), document.Transform.Position);
-        f.Imported = null;
-        File.WriteAllText(file.Path, "{");
-        Assert.Null(f.Files.Import(file.Path, ObjectPlacementMode.AsSaved).Handle);
-        Assert.Null(f.Imported);
     }
 
     private sealed class Fixture
@@ -115,8 +89,6 @@ public sealed class LightBoundaryTests
         public readonly TransformHistory History = new();
         public readonly ValueJournal Journal;
         public readonly LightControl Control;
-        public readonly LightFiles Files;
-        public LightFile? Imported;
         public readonly HashSet<string> Ignored = new();
 
         public Fixture()
@@ -157,7 +129,6 @@ public sealed class LightBoundaryTests
                     default: throw new InvalidOperationException(m.Name);
                 }
             });
-            var framework = Stub<IFramework>((_, _) => true);
             Journal = new(History);
             var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
             {
@@ -166,25 +137,7 @@ public sealed class LightBoundaryTests
                 _ => null,
             }), History, Journal);
             Control = new(bindings, lighting, Journal, parenting);
-            Files = new(framework, bindings, Stub<ISceneCreation>((_, a) =>
-            {
-                Imported = (LightFile)a![0]!;
-                return new SceneCreationResult(new(default, SceneEntityKind.Light));
-            }), Stub<IPlacementAnchorSource>((m, a) =>
-            {
-                if (m.Name == "TryCurrentFor")
-                {
-                    a![1] = new Vector3(6, 2, 3); a[2] = 0f; a[3] = null; return true;
-                }
-                return new PlacementAnchorData { Position = new(1, 2, 3), Yaw = 0f };
-            }), Stub<IPluginLog>((_, _) => null));
         }
-    }
-
-    private sealed class TemporaryFile : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{Guid.NewGuid():N}.xivl");
-        public void Dispose() => File.Delete(Path);
     }
 
     private static T Stub<T>(Func<MethodInfo, object?[]?, object?> call) where T : class

@@ -18,7 +18,6 @@ public interface ISceneLifecycleHistory
     void DestroyLight(ILight light);
     IVirtualCamera? CreateCamera(CameraKind kind);
     IVirtualCamera? CloneCamera(IVirtualCamera source);
-    IVirtualCamera? RecordSpawnedCamera( string description, IVirtualCamera? camera);
     void DestroyCamera(IVirtualCamera camera);
     IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null);
     void WhenPosable(IActor actor, Action<IActor> act);

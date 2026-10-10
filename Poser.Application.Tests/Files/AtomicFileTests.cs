@@ -70,29 +70,6 @@ public sealed class AtomicFileTests
         }
     }
 
-    [Fact]
-    public void Export_falls_back_to_copy_over_when_replace_is_refused()
-    {
-        var root = Directory.CreateTempSubdirectory("poser-atomic-");
-        try
-        {
-            var path = Path.Combine(root.FullName, "target.json");
-            File.WriteAllText(path, "original");
-
-            var result = AtomicFile.Write(
-                new ReplaceFailingFileSystem(), path, "replacement"u8.ToArray(),
-                new AtomicWriteOptions { Subject = "test", CopyOverWhenReplaceFails = true });
-
-            Assert.True(result.Succeeded);
-            Assert.Equal("replacement", File.ReadAllText(path));
-            Assert.Single(root.GetFiles());
-        }
-        finally
-        {
-            root.Delete(recursive: true);
-        }
-    }
-
     // Replace is refused as by a sync client or network share.
     private sealed class ReplaceFailingFileSystem : IAtomicFileSystem
     {

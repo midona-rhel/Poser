@@ -331,6 +331,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         string path, SceneLoadOptions? options, LoadHistory? replay)
     {
         var chosen = options ?? SceneLoadOptions.Default;
+        // An anchored placement and the origin rebase both move the content;
+        // run together they land it twice. The placement the caller resolved
+        // is the more specific answer, so it wins.
+        if (chosen.Placement != Poser.Domain.Scene.ObjectPlacementMode.AsSaved)
+            chosen = chosen with { PlaceRelativeToCurrentOrigin = false };
         if (AdmissionGate() is { } refused)
             return refused;
         if (_runtime.ActiveSession is not { } session)
@@ -510,88 +515,15 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
             var notes = captured.Notes.ToList();
 
-            // The actor-entry save narrows to its one actor BEFORE sealing:
-            // sealing reads and packages appearance per actor, and an entry
-            // save must pay for exactly one.
+            // An entry save narrows to its keys BEFORE sealing: sealing reads
+            // and packages appearance per actor, and an entry save must pay
+            // for exactly the actors it keeps.
             var actorIdentities = captured.ActorIdentities;
-            if (options.OnlyActorLogicalId is { } only)
+            if (SceneSaveNarrowing.Narrow(scene, options.OnlyEntityKeys, ref actorIdentities)
+                is { } narrowRefusal)
             {
-                var keep = new HashSet<Guid>(actorIdentities
-                    .Where(pair => pair.Value.LogicalId == only)
-                    .Select(pair => pair.Key));
-                scene.Actors.RemoveAll(entry => !keep.Contains(entry.Key));
-                if (scene.Actors.Count != 1)
-                {
-                    Finish(false,
-                        "The actor was not in the capture; it may have just " +
-                        "been removed. Nothing was saved.");
-                    return;
-                }
-                actorIdentities = actorIdentities
-                    .Where(pair => keep.Contains(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value);
-            }
-
-            if (options.OnlyOverlayKey is { } onlyOverlay)
-            {
-                scene.Overlays?.RemoveAll(entry => entry.Key != onlyOverlay);
-                if ((scene.Overlays?.Count ?? 0) != 1)
-                {
-                    Finish(false,
-                        "The overlay was not in the capture; it may have " +
-                        "just been removed. Nothing was saved.");
-                    return;
-                }
-            }
-
-            // The sidebar's structure rides the document: named groups and
-            // the user's root order, referencing the entity lists by the
-            // keys they already carry.
-
-            // The group-entry save narrows to the group's members, the
-            // actor-entry rule generalized: everything else leaves, and
-            // only groups every member of which survived ride along.
-            if (options.OnlyEntityKeys is { } onlyKeys)
-            {
-                var keep = new HashSet<Guid>(onlyKeys);
-                // Actor entries key by capture key, not logical id — admit
-                // the capture keys of every kept logical id.
-                foreach (var pair in actorIdentities)
-                    if (keep.Contains(pair.Value.LogicalId))
-                        keep.Add(pair.Key);
-                scene.Actors.RemoveAll(entry => !keep.Contains(entry.Key));
-                scene.Props.RemoveAll(entry => !keep.Contains(entry.Key));
-                scene.Lights.RemoveAll(entry => !keep.Contains(entry.Key));
-                scene.Cameras.RemoveAll(entry => !keep.Contains(entry.Key));
-                scene.Overlays?.RemoveAll(entry => !keep.Contains(entry.Key));
-                scene.WorldObjects?.RemoveAll(
-                    entry => !keep.Contains(entry.Key));
-                scene.Groups?.RemoveAll(group =>
-                    !(group.Transform?.Members.Select(member => member.Member) ?? group.Members)
-                        .All(member => keep.Contains(member.Key)));
-                // A parent that fell out takes its nesting with it.
-                if (scene.Groups is { } remaining)
-                    foreach (var group in remaining)
-                        if (group.Parent is { } parentKey
-                            && !remaining.Any(candidate => candidate.Key == parentKey))
-                            group.Parent = null;
-                // An entry has no sidebar order of its own: its entities
-                // seat where the load lands them.
-                scene.RootOrder = null;
-                if (scene.Actors.Count + scene.Props.Count
-                    + scene.Lights.Count + scene.Cameras.Count
-                    + (scene.Overlays?.Count ?? 0)
-                    + (scene.WorldObjects?.Count ?? 0) == 0)
-                {
-                    Finish(false,
-                        "Nothing the entry names was in the capture; it "
-                        + "may have just been removed. Nothing was "
-                        + "saved.");
-                    return;
-                }
-                actorIdentities = actorIdentities
-                    .Where(pair => keep.Contains(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                Finish(false, narrowRefusal);
+                return;
             }
 
             // A document NEVER carries a borrow (ruled 2026-09-01): every
@@ -602,30 +534,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 foreach (var spawnable in scene.WorldObjects)
                     spawnable.Spawned = true;
 
-            // The entry's name IS the thing's name: Stone rail spawns a
-            // Stone rail. A group entry names the GROUP and its children
-            // keep their own saved names, so the group check leads.
-            if (options.EntryName is { Length: > 0 } entryName)
-            {
-                if (scene.Groups is { Count: 1 } namedGroups)
-                    namedGroups[0].Name = entryName;
-                else if (scene.WorldObjects is { Count: 1 } namedObjects)
-                    namedObjects[0].Name = entryName;
-                else if (scene.Props is { Count: 1 } namedProps)
-                    namedProps[0].Name = entryName;
-                else if (scene.Lights is { Count: 1 } namedLights
-                    && namedLights[0].Light is { } lightDocument)
-                    lightDocument.Name = entryName;
-                else if (scene.Cameras is { Count: 1 } namedCameras
-                    && namedCameras[0].Camera is { } cameraDocument)
-                    cameraDocument.Name = entryName;
-                else if (scene.Overlays is { Count: 1 } namedOverlays
-                    && namedOverlays[0].Node is { } nodeDocument)
-                    namedOverlays[0].Node =
-                        nodeDocument with { Name = entryName };
-                else if (scene.Actors is { Count: 1 } namedActors)
-                    namedActors[0].Name = entryName;
-            }
+            SceneSaveNarrowing.ApplyEntryName(scene, options.EntryName);
 
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
@@ -649,6 +558,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
             int unsealedAppearance = SceneSavePolicy.Apply(scene, options, notes);
             SceneParenting.Prune(scene, notes);
+            SceneSaveNarrowing.DetachDangling(scene, notes);
 
             if (cancellation.IsCancellationRequested)
             {
@@ -837,8 +747,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             var overlays = options.IncludeOverlays
                 ? (IReadOnlyList<SceneOverlay>)(scene.Overlays ?? [])
                 : Array.Empty<SceneOverlay>();
-            var worldObjects = (IReadOnlyList<SceneWorldObject>)(
-                scene.WorldObjects ?? []);
+            var worldObjects = options.IncludeWorldObjects
+                ? (IReadOnlyList<SceneWorldObject>)(scene.WorldObjects ?? [])
+                : Array.Empty<SceneWorldObject>();
             var lights = options.IncludeLights
                 ? (IReadOnlyList<SceneLight>)scene.Lights
                 : Array.Empty<SceneLight>();
@@ -859,6 +770,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             AppendSkipNote(
                 notes, "overlays", options.IncludeOverlays,
                 scene.Overlays?.Count ?? 0);
+            AppendSkipNote(
+                notes, "world objects", options.IncludeWorldObjects,
+                scene.WorldObjects?.Count ?? 0);
             AppendSkipNote(
                 notes, "the environment", options.IncludeEnvironment,
                 scene.Environment is null ? 0 : 1);

@@ -1,14 +1,12 @@
 using System;
-using System.IO;
 using System.Numerics;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Poser.Domain.Scene;
 
 namespace Poser.Files;
 
 /// <summary>
-/// Poser light file format (.xivl). Carries every light property,
+/// One light's document, embedded in a scene container (a .xivl entry is
+/// that container holding one light). Carries every light property,
 /// including the absolute transform and the flag
 /// set — Ktisis' .ktlight and Brio's light DTO each drop part of that, and a
 /// light that comes back missing its shadow flags or its falloff type is not
@@ -32,15 +30,10 @@ public class LightFile
 
     public TransformData Transform { get; set; } = TransformData.Identity;
 
-    /// <summary>Where the camera stood at save, for
-    /// <see cref="ObjectPlacementMode.RelativeToCamera"/> loads. Absent in a
-    /// file saved before anchors existed; a relative load then refuses by
-    /// name rather than guessing.</summary>
+    /// <summary>The placement anchors a bare-JSON .xivl carried before
+    /// entries became containers; read only to wrap such a file, where they
+    /// become the scene's own anchors.</summary>
     public PlacementAnchorData? CameraAnchor { get; set; }
-
-    /// <summary>Where the selected actor stood at save, for
-    /// <see cref="ObjectPlacementMode.RelativeToSelectedActor"/> loads.
-    /// Absent when nothing was selected at save.</summary>
     public PlacementAnchorData? ActorAnchor { get; set; }
 
     public Vector3 Color { get; set; }
@@ -90,71 +83,5 @@ public class LightFile
         };
 
 
-    }
-
-    // The same wire style .pose files use — numerics as "X, Y, Z" strings,
-    // enums by name, relaxed escaping, trailing commas tolerated.
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        AllowTrailingCommas = true,
-        PropertyNamingPolicy = null,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Converters =
-        {
-            new JsonStringEnumConverter(),
-            new Converters.Vector2Converter(),
-            new Converters.Vector3Converter(),
-            new Converters.Vector4Converter(),
-            new Converters.QuaternionConverter()
-        }
-    };
-
-    /// <summary>
-    /// Loads a light file from disk.
-    /// </summary>
-    public static LightFile? Load(string path)
-    {
-        try
-        {
-            var json = File.ReadAllText(path);
-            return FromJson(json);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Parses a light file from JSON string.
-    /// </summary>
-    public static LightFile? FromJson(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<LightFile>(json, JsonOptions);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Saves this light file to disk.
-    /// </summary>
-    public bool Save(string path)
-    {
-        try
-        {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
-            return AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
-                new AtomicWriteOptions { Subject = "light", CopyOverWhenReplaceFails = true }).Committed;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
     }
 }

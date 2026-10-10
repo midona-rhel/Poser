@@ -34,17 +34,9 @@ public sealed class LibrarySceneActions(
         // Entries are additive: a scene's clear-first preference never applies.
         var options = new SceneLoadOptions();
         if (kind == PoseLibraryEntryKind.Overlay)
-            options = options with
-            {
-                IncludeActors = false, IncludeProps = false, IncludeLights = false,
-                IncludeCameras = false, IncludeEnvironment = false,
-            };
+            options = SceneLoadOptions.Only(SceneCategories.Overlays);
         else if (kind == PoseLibraryEntryKind.Environment)
-            options = options with
-            {
-                IncludeActors = false, IncludeProps = false, IncludeLights = false,
-                IncludeCameras = false, IncludeOverlays = false,
-            };
+            options = SceneLoadOptions.Only(SceneCategories.Environment);
         else if (anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
             options = options with { Placement = placement, PlacementPosition = position, PlacementYaw = yaw };
         else if (!fallbackToSaved)

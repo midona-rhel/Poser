@@ -145,6 +145,14 @@ copy. Payload entries are written and read as streams, so a scene carrying
 hundreds of megabytes of appearance still has a small document and never puts
 that payload in memory.
 
+Library entries (`.xiva`, `.xivl`, `.xivc`, `.xivp`, `.xivw`, `.xivo`,
+`.xivg`, `.xive`) are the same container narrowed to one entity, group or the
+environment. A reference to an actor the entry left out is cleared with a named
+note: a gaze or camera target is dropped, and an attached light is saved at its
+world placement. A camera entry without the session default creates a new
+camera on load. `.xivl` and `.xivc` files written as bare JSON by older builds
+are still read, as a one-light or one-camera entry; nothing writes that form.
+
 The extension and the file version are one identity: `.xivs` is format version
 2, and the reader accepts that version alone. `.xivs` is the only scene format
 Poser has; anything else is not a scene and is not listed, opened or migrated.
@@ -204,7 +212,8 @@ Each phase checks that the load is still running and belongs to the same
 session. Character files come before body-dependent state because import
 redraws the actor. Loads add to the current session by default. Clearing the
 session is outside rollback. Relative loading moves the whole scene from its
-saved origin before game work.
+saved origin before game work. A library placement (at the camera or an actor)
+replaces relative loading for that load, so content is moved once.
 
 Clearing the session removes everything it holds, actors included: an actor
 Poser spawned goes through its ownership ledger, an adopted one through the

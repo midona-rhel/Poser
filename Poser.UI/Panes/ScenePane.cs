@@ -174,6 +174,11 @@ public sealed class ScenePane
     public bool SaveEntry(SelectionId target, string displayName) =>
         ReportLibrarySave(_librarySave.SaveEntry(target, displayName));
 
+    /// <summary>A pane's "Save to file…": the same entry save, written to
+    /// the path the dialog chose.</summary>
+    public bool SaveEntryTo(SelectionId target, string path) =>
+        ReportLibrarySave(_librarySave.SaveEntryTo(target, path));
+
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
         ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
 
@@ -186,23 +191,27 @@ public sealed class ScenePane
     /// <summary>The portal's "from file" rows: pick ANY entry file and
     /// load it through the standing placement rule — the same
     /// anchored BeginLoad a library activation runs.</summary>
-    public void OpenEntryLoad()
+    public void OpenEntryLoad() =>
+        _folder.Open(_entryBrowser,
+            path => LoadEntry(path, _config.Config.DefaultSpawnPlacement));
+
+    /// <summary>Loads one entry file through the anchored BeginLoad. An
+    /// anchor that cannot be resolved loads the entry as saved.</summary>
+    public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode)
     {
-        _folder.Open(_entryBrowser, path =>
-        {
-            var options = new SceneLoadOptions();
-            var mode = _config.Config.DefaultSpawnPlacement;
-            if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
-                && _anchors.TryCurrentFor(
-                    mode, out var position, out var yaw, out _))
-                options = options with
-                {
-                    Placement = mode,
-                    PlacementPosition = position,
-                    PlacementYaw = yaw,
-                };
-            _workflow.BeginLoad(path, options);
-        });
+        var options = new SceneLoadOptions();
+        if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
+            && _anchors.TryCurrentFor(
+                mode, out var position, out var yaw, out _))
+            options = options with
+            {
+                Placement = mode,
+                PlacementPosition = position,
+                PlacementYaw = yaw,
+            };
+        var result = _workflow.BeginLoad(path, options);
+        if (!result.Success)
+            _notices.Refused(result.Detail ?? "The entry could not be loaded.");
     }
 
     public ScenePane(
@@ -757,7 +766,7 @@ public sealed class ScenePane
                     Options with { PlaceRelativeToCurrentOrigin = next },
                 "Places it where you stand"));
 
-    /// <summary>The six INCLUSION filters, one group, in the order the load
+    /// <summary>The seven INCLUSION filters, one group, in the order the load
     /// restores them. Only the three whose scope is not obvious from the word
     /// carry help — a tooltip that repeats its own label is noise.</summary>
     private void DrawIncludeOptions(Crystarium.FormScope form, bool disabled) =>
@@ -785,7 +794,10 @@ public sealed class ScenePane
             new Crystarium.CheckItem(
                 "Overlays", Options.IncludeOverlays,
                 next => Options = Options with { IncludeOverlays = next },
-                "Dialogue and status nodes"));
+                "Dialogue and status nodes"),
+            new Crystarium.CheckItem(
+                "World objects", Options.IncludeWorldObjects,
+                next => Options = Options with { IncludeWorldObjects = next }));
 
     // ── the save dialog's options band ───────────────────────────────────
 

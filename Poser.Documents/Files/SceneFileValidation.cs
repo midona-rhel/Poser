@@ -215,10 +215,13 @@ public static class SceneFileValidation
             if (liveCount != 1)
                 return Fail(SceneFileValidationFailureKind.Relationship,
                     "A scene with cameras must mark exactly one camera live.");
-            if (defaultCount != 1)
+            // A whole scene carries the session's default camera; a camera
+            // entry carries a created one and has none — its load creates
+            // the camera rather than overwriting the default.
+            if (defaultCount > 1)
                 return Fail(SceneFileValidationFailureKind.Relationship,
-                    "A scene with cameras must mark exactly one camera as the default.");
-            if (defaultCamera!.Camera!.Kind != CameraKind.Game)
+                    "A scene must not mark more than one camera as the default.");
+            if (defaultCamera is not null && defaultCamera.Camera!.Kind != CameraKind.Game)
                 return Fail(SceneFileValidationFailureKind.Relationship,
                     "The default camera must use the Game camera kind.");
         }

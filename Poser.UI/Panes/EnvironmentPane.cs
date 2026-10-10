@@ -1062,7 +1062,7 @@ public sealed class EnvironmentPane
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
             root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.EnvironmentEntry);
+            path, null, SceneSaveOptions.Only(SceneCategories.Environment));
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "The environment could not be saved.");

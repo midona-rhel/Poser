@@ -1,14 +1,12 @@
 using System;
-using System.IO;
 using System.Numerics;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Poser.Domain.Scene;
 
 namespace Poser.Files;
 
 /// <summary>
-/// Poser camera file format (.xivc). Carries every virtual camera property
+/// One virtual camera's document, embedded in a scene container (a .xivc
+/// entry is that container holding one camera). Carries every virtual camera property
 /// except the live flag and
 /// the tracked bones — liveness belongs to the session and bone references
 /// belong to the scene they were picked in. Angular values are stored in the
@@ -26,10 +24,8 @@ public class CameraFile
     public CameraKind Kind { get; set; }
 
     // Orbit state.
-    /// <summary>Placement anchors, exactly as the light file records them.
-    /// Only a FREE camera places relatively — an orbit camera follows its
-    /// target — but the anchors are recorded for every kind so a later kind
-    /// switch does not orphan them.</summary>
+    /// <summary>The placement anchors a bare-JSON .xivc carried before
+    /// entries became containers; read only to wrap such a file.</summary>
     public PlacementAnchorData? CameraAnchor { get; set; }
     public PlacementAnchorData? ActorAnchor { get; set; }
 
@@ -61,61 +57,4 @@ public class CameraFile
     // Projection.
     public bool Orthographic { get; set; }
     public float OrthographicZoom { get; set; } = 10f;
-
-    // The same wire style .xivl uses — numerics as "X, Y, Z" strings,
-    // enums by name, relaxed escaping, trailing commas tolerated.
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        AllowTrailingCommas = true,
-        PropertyNamingPolicy = null,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Converters =
-        {
-            new JsonStringEnumConverter(),
-            new Converters.Vector2Converter(),
-            new Converters.Vector3Converter(),
-            new Converters.Vector4Converter(),
-            new Converters.QuaternionConverter()
-        }
-    };
-
-    public static CameraFile? Load(string path)
-    {
-        try
-        {
-            var json = File.ReadAllText(path);
-            return FromJson(json);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    public static CameraFile? FromJson(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<CameraFile>(json, JsonOptions);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    public bool Save(string path)
-    {
-        try
-        {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions);
-            return AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
-                new AtomicWriteOptions { Subject = "camera", CopyOverWhenReplaceFails = true }).Committed;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
 }
