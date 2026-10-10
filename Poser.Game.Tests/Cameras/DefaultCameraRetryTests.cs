@@ -56,7 +56,7 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
         var history = new Poser.Application.Transforms.TransformHistory();
         var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
-        var control = new CameraControl(new CameraBinding(camera, id), setup.Framework, service,
+        var control = new CameraControl(CameraBinding(camera, id), setup.Framework, service,
             new Poser.Application.Transforms.ValueJournal(history));
         camera.FoV = 0.4f;
         camera.Zoom = 7f;
