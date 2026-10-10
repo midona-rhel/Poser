@@ -95,10 +95,10 @@ public readonly struct Transition
     public static Transition Slow => new(ActiveTheme.Motion.Slow);
 
     /// <summary>picto --ease-default: cubic-bezier(0.4, 0, 0.22, 1) at --duration-normal (200ms).</summary>
-    public static readonly Transition PictoDefault = CubicBezier(0.2f, 0.4f, 0f, 0.22f, 1f);
+    public static readonly Transition EaseNormal = CubicBezier(0.2f, 0.4f, 0f, 0.22f, 1f);
 
     /// <summary>picto --ease-default at --duration-fast (50ms).</summary>
-    public static readonly Transition PictoFast = CubicBezier(0.05f, 0.4f, 0f, 0.22f, 1f);
+    public static readonly Transition EaseFast = CubicBezier(0.05f, 0.4f, 0f, 0.22f, 1f);
 }
 
 public enum Easing

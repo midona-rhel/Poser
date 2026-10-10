@@ -2649,7 +2649,7 @@ public static class PageForm
         [
             MotionChannel.Number(SectionChevronChannel, target),
         ];
-        Motion.Toward(identity, Transition.PictoDefault, fade);
+        Motion.Toward(identity, Transition.EaseNormal, fade);
         float opacity = fade[0].Scalar;
         if (opacity <= 0f)
             return;

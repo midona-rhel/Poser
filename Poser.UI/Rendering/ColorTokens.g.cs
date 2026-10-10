@@ -8,12 +8,12 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// Committed generated projection of the Picto color tokens Crystarium
-/// consumes, resolved per supported theme cascade. tokens.css is the
+/// Committed generated projection of the Picto color tokens the widgets
+/// consume, resolved per supported theme cascade. tokens.css is the
 /// canonical source; production consumes this committed output and never
 /// needs the Picto checkout or a generator run.
 /// </summary>
-internal static class PictoTokens
+internal static class ColorTokens
 {
     /// <summary>SHA-256 of the LF-normalized canonical tokens.css.</summary>
     internal const string SourceHash = "37518f5c861e68a298e1c3757c34ef447827803b1e0eefabfc38b8f970c0ad8c";

@@ -157,7 +157,7 @@ public static class TreeRowWidgets
             MotionChannel.Number(
                 TreeRowHighlightChannel, fill.W > 0f ? 1f : 0f),
         ];
-        Motion.Toward(identity, Transition.PictoFast, highlight);
+        Motion.Toward(identity, Transition.EaseFast, highlight);
         float pillOpacity = highlight[0].Scalar;
         if (fill.W > 0f && pillOpacity > 0f)
         {

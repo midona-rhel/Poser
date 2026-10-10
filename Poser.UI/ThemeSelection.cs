@@ -38,14 +38,14 @@ internal static class ThemeSelection
         var theme = selection switch
         {
             UITheme.Auto => windowsUsesLightApps
-                ? Theme.PictoLight
-                : Theme.PictoDark,
-            UITheme.Light => Theme.PictoLight,
-            UITheme.LightGray => Theme.PictoLightGray,
-            UITheme.Gray => Theme.PictoGray,
-            UITheme.Blue => Theme.PictoBlue,
-            UITheme.Purple => Theme.PictoPurple,
-            _ => Theme.PictoDark,
+                ? Theme.Light
+                : Theme.Dark,
+            UITheme.Light => Theme.Light,
+            UITheme.LightGray => Theme.LightGray,
+            UITheme.Gray => Theme.Gray,
+            UITheme.Blue => Theme.Blue,
+            UITheme.Purple => Theme.Purple,
+            _ => Theme.Dark,
         };
         return theme.WithAccent(Theme.AccentOptions[
             NormalizeAccentIndex(accentIndex)]);

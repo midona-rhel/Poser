@@ -1538,9 +1538,9 @@ public sealed class PoseFileInspectorSection : IDisposable
         fadeRamp = Math.Clamp(
             fadeRamp
                 + (handle != 0 ? 1f : -1f) * ImGui.GetIO().DeltaTime
-                    / Transition.PictoDefault.DurationSeconds,
+                    / Transition.EaseNormal.DurationSeconds,
             0f, 1f);
-        float fade = Transition.PictoDefault.Evaluate(fadeRamp);
+        float fade = Transition.EaseNormal.Evaluate(fadeRamp);
 
         nint backing = ResolvePreviewBacking();
         if (backing != 0)

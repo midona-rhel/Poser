@@ -44,7 +44,7 @@ namespace Poser.UI;
 /// state stands on the full chassis — fill, blur, shadow and edge.</para>
 ///
 /// <para>The fade is the overlay-tooltip idiom without the pop: a
-/// constant-rate ramp eased on <see cref="Transition.PictoDefault"/>, applied
+/// constant-rate ramp eased on <see cref="Transition.EaseNormal"/>, applied
 /// as <see cref="ImGuiStyleVar.Alpha"/> so the whole bar — scrim, rule, label,
 /// slider, close — fades as ONE surface through the shared
 /// <c>ColorEx.ApplyAlpha</c> path. No scale, no rise.</para>
@@ -403,10 +403,10 @@ public sealed class ReferenceImageWindow : Window
         _barRamp = Math.Clamp(
             _barRamp
                 + (_hovered ? 1f : -1f) * ImGui.GetIO().DeltaTime
-                    / Transition.PictoDefault.DurationSeconds,
+                    / Transition.EaseNormal.DurationSeconds,
             0f,
             1f);
-        float fade = Transition.PictoDefault.Evaluate(_barRamp);
+        float fade = Transition.EaseNormal.Evaluate(_barRamp);
         // Submitted only while it is visible: a bar at zero alpha still
         // reserves its close button, and an invisible close is a trap.
         if (fade <= 0.001f)

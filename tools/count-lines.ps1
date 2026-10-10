@@ -6,7 +6,7 @@
 # are never counted as handwritten lines.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$generated = @("TablerSvgSources.cs", "PictoTokens.g.cs")
+$generated = @("TablerSvgSources.cs", "ColorTokens.g.cs")
 $outputDirs = '\\(bin|obj|artifacts|out|node_modules|__pycache__)\\'
 
 function Count($paths, $filter) {

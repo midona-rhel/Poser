@@ -5,8 +5,8 @@ public static class Themes
     /// <summary>The visible theme and the one waiting for its font atlas.</summary>
     internal sealed class ThemeState
     {
-        internal Theme Active = Theme.PictoDark;
-        internal readonly ThemeActivation Activation = new(Theme.PictoDark);
+        internal Theme Active = Theme.Dark;
+        internal readonly ThemeActivation Activation = new(Theme.Dark);
     }
 
     private static ThemeState State => UiContext.Current.Theme;
