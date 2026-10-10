@@ -139,7 +139,13 @@ public static partial class Crystarium
                 TextInBand(min, size, i.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     new TextStyle
                     {
-                        Size = theme.Typography.CaptionSize * _fit,
+                        // A theme step, never CaptionSize * _fit: every
+                        // distinct fitted pixel size was a new font handle,
+                        // and each one rebuilt the whole live atlas while
+                        // the display resized.
+                        Size = _fit < 1f
+                            ? theme.Typography.ShortcutSize
+                            : theme.Typography.CaptionSize,
                         Color = luminance > 0.5f ? new Vector4(0f, 0f, 0f, 1f) : Vector4.One,
                     }, TextConstraint.Truncate(size.X, TextAlign.Center));
             }

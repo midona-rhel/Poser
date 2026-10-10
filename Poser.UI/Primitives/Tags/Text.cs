@@ -266,7 +266,7 @@ public static partial class Crystarium
         try
         {
             var measured = ImGui.CalcTextSize(Presentation(text));
-            if (pushed && font is not null)
+            if (pushed && font is not null && !FontRegistry.GlyphsPending)
             {
                 if (_measureCache.Count >= MeasureCacheCap)
                     _measureCache.Clear();
@@ -385,16 +385,18 @@ public static partial class Crystarium
     /// and lone CR become LF, as the HTML parser does before layout) and
     /// composed NFC form, so measurement, truncation, wrapping, and
     /// drawing all see the same sequence the reference renderer shapes.
-    /// Semantic content outside presentation is never rewritten.</summary>
+    /// Semantic content outside presentation is never rewritten. Every
+    /// presented run declares its CJK glyphs to the font registry.</summary>
     private static string Presentation(string text)
     {
         if (string.IsNullOrEmpty(text))
             return text;
         if (text.Contains('\r'))
             text = text.Replace("\r\n", "\n").Replace('\r', '\n');
-        return text.IsNormalized(NormalizationForm.FormC)
-            ? text
-            : text.Normalize(NormalizationForm.FormC);
+        if (!text.IsNormalized(NormalizationForm.FormC))
+            text = text.Normalize(NormalizationForm.FormC);
+        FontRegistry.RequireGlyphs(text);
+        return text;
     }
 
     /// <summary>Per-frame cache of <see cref="IFontHandle.Available"/> —
@@ -456,8 +458,9 @@ public static partial class Crystarium
     /// when its font atlas does, yet rows re-measured the same labels every
     /// frame through a native call. Entries are cached only when the run was
     /// measured under its OWN font (a not-yet-available handle measures
-    /// under the ambient font and would poison the key). Cleared on scale
-    /// change; the cap bounds a pathological label stream.</summary>
+    /// under the ambient font and would poison the key; likewise while new
+    /// glyphs are still baking). Cleared on scale change and when a glyph
+    /// bake lands; the cap bounds a pathological label stream.</summary>
     private static readonly Dictionary<(IFontHandle, string), Vector2>
         _measureCache = new();
     private static float _measureScale;

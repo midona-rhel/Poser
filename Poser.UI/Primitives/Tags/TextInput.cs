@@ -243,6 +243,9 @@ public static partial class Crystarium
             search
                 ? ImGuiInputTextFlags.AutoSelectAll
                 : ImGuiInputTextFlags.None);
+        // The native widget draws the value outside the text renderer, so
+        // it declares its own CJK glyphs (typed or IME-composed).
+        FontRegistry.RequireGlyphs(next);
         bool committed = ImGui.IsItemDeactivatedAfterEdit()
             || (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter));
         if (caretClipped)

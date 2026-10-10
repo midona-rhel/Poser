@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Interface.ManagedFontAtlas;
 
 namespace Poser.UI;
@@ -87,17 +88,24 @@ public static class FontRegistry
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
 
-    /// <summary>CJK ranges merged from the font-link fallback face:
-    /// ideographic punctuation + kana, unified ideographs, and fullwidth
-    /// forms. The in-game font path requests identical coverage for every
-    /// theme and scale.</summary>
-    public static readonly ushort[] CjkMergeRanges =
-    [
-        0x3000, 0x30ff,
-        0x4e00, 0x9fff,
-        0xff01, 0xff5e,
-        0,
-    ];
+    /// <summary>CJK codepoints merged from the font-link fallback face,
+    /// limited to those the UI has actually been asked to draw. Merging the
+    /// whole ideograph block put ~20k glyphs into every Default handle on
+    /// both atlases, and Dalamud rebakes all of them on every global-scale
+    /// change: that bake, not the Latin faces, is what kept the scaled old
+    /// atlas on screen for seconds (#454). Only the main thread writes the
+    /// seen set; bakes read the immutable range snapshot.</summary>
+    private static readonly HashSet<char> _cjkSeen = new();
+    private static volatile ushort[]? _cjkRanges;
+    private static bool _cjkDirty;
+    private static Task? _glyphBuild;
+
+    /// <summary>The blocks the fallback face covers: ideographic
+    /// punctuation + kana, unified ideographs, and fullwidth forms.</summary>
+    private static bool IsCjk(char c) =>
+        c is (>= (char)0x3000 and <= (char)0x30ff)
+            or (>= (char)0x4e00 and <= (char)0x9fff)
+            or (>= (char)0xff01 and <= (char)0xff5e);
 
     /// <summary>Directory holding the plugin's bundled font files; null
     /// until the host registers, and every family then falls back to the
@@ -180,6 +188,67 @@ public static class FontRegistry
         SetRequired(required);
         PrimeStandby();
         return true;
+    }
+
+    /// <summary>Records the CJK glyphs a run needs. A glyph seen for the
+    /// first time is baked by the next <see cref="SyncGlyphs"/>; until then
+    /// it draws as the fallback glyph.</summary>
+    public static void RequireGlyphs(string text)
+    {
+        foreach (char c in text)
+        {
+            if (c >= 0x3000 && IsCjk(c) && _cjkSeen.Add(c))
+                _cjkDirty = true;
+        }
+    }
+
+    /// <summary>True while newly required glyphs are not yet baked; a
+    /// measurement taken now describes the fallback glyph.</summary>
+    public static bool GlyphsPending => _cjkDirty || _glyphBuild is not null;
+
+    /// <summary>
+    /// Once per frame: starts ONE rebuild per atlas for every glyph first
+    /// required since the last bake. Returns true on the frame that bake
+    /// completes, so measurements cached before it can be dropped.
+    /// </summary>
+    public static bool SyncGlyphs()
+    {
+        if (_glyphBuild is { IsCompleted: true })
+        {
+            _glyphBuild = null;
+            if (!_cjkDirty)
+                return true;
+        }
+        if (!_cjkDirty || _atlas == null || _glyphBuild is not null)
+            return false;
+
+        _cjkDirty = false;
+        _cjkRanges = ToRanges(_cjkSeen);
+        _glyphBuild = _standbyAtlas is null
+            ? _atlas.BuildFontsAsync()
+            : Task.WhenAll(_atlas.BuildFontsAsync(), _standbyAtlas.BuildFontsAsync());
+        return false;
+    }
+
+    /// <summary>Codepoints as zero-terminated inclusive ImGui glyph-range
+    /// pairs, consecutive codepoints coalesced.</summary>
+    private static ushort[] ToRanges(IEnumerable<char> codepoints)
+    {
+        var ranges = new List<ushort>();
+        foreach (char c in codepoints.OrderBy(c => c))
+        {
+            if (ranges.Count > 0 && ranges[^1] + 1 == c)
+            {
+                ranges[^1] = c;
+            }
+            else
+            {
+                ranges.Add(c);
+                ranges.Add(c);
+            }
+        }
+        ranges.Add(0);
+        return ranges.ToArray();
     }
 
     /// <summary>
@@ -439,15 +508,17 @@ public static class FontRegistry
                             RasterizerGamma = gamma,
                         };
                         var added = tk.AddFontFromFile(file, config);
-                        // CJK coverage for the Default family only —
-                        // mono wells and italic hints have no CJK use,
-                        // and keeping them out bounds the first-visible
-                        // atlas cost. The shared font-link resolver picks
+                        // CJK coverage for the Default family only, and
+                        // only the glyphs required so far (read at bake
+                        // time, so every rebuild carries the current set);
+                        // mono wells and italic hints have no CJK use.
+                        // The shared font-link resolver picks
                         // the face Chromium falls back to from Segoe UI
                         // (Meiryo UI before Yu Gothic UI), and the merge
                         // sizes by THAT face's own metrics so the game renders
                         // consistently with the selected font path.
                         if (key.Family == FontFamily.Default
+                            && _cjkRanges is { } cjkRanges
                             && WindowsFontFallback.ResolveJapanese(
                                 (int)key.Weight) is { } cjkFace)
                         {
@@ -457,7 +528,7 @@ public static class FontRegistry
                                     cjkFace.Path, cjkFace.FaceIndex),
                                 FontNo = cjkFace.FaceIndex,
                                 MergeFont = added,
-                                GlyphRanges = CjkMergeRanges,
+                                GlyphRanges = cjkRanges,
                                 RasterizerMultiply = RasterizerMultiply,
                                 RasterizerGamma = gamma,
                             };
@@ -532,6 +603,10 @@ public static class FontRegistry
         _required.Clear();
         _failed.Clear();
         _files.Clear();
+        _cjkSeen.Clear();
+        _cjkRanges = null;
+        _cjkDirty = false;
+        _glyphBuild = null;
         _atlas = null;
         _standbyAtlas = null;
         EverReady = false;
