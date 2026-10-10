@@ -11,6 +11,7 @@ using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
+using Poser.Application.Scene;
 
 namespace Poser.Game.Scene;
 

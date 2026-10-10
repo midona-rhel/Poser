@@ -1,16 +1,14 @@
 using System;
-using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Services;
 
-namespace Poser.Game.Scene;
+namespace Poser.Application.Scene;
 
 /// <summary>Groups are scene state: they end with the GPose session and
 /// with the plugin, like every entity they hold. Left alone they outlived
 /// their members — pruned only when the sidebar next rebuilt, never on
-/// unload (2026-09-02). The application layer cannot see the event bus,
-/// so this owner clears them from the game layer.</summary>
+/// unload (2026-09-02).</summary>
 public sealed class SceneGroupsLifetime : IDisposable
 {
     private readonly IEventBus _events;

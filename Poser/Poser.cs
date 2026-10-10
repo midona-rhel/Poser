@@ -94,7 +94,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<Game.WorldObjects.WorldObjectService>();
         log.Debug("Load link: lighting");
         _ = _serviceProvider.GetRequiredService<ILightingService>();
-        _ = _serviceProvider.GetRequiredService<Game.Scene.SceneGroupsLifetime>();
+        _ = _serviceProvider.GetRequiredService<Application.Scene.SceneGroupsLifetime>();
         log.Debug("Load link: cameras");
         _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
         log.Debug("Load link: environment");

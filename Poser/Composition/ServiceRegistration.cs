@@ -180,7 +180,7 @@ internal static class ServiceRegistration
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());
         services.AddSingleton<Application.Scene.SceneGroups>();
-        services.AddSingleton<Game.Scene.SceneGroupsLifetime>();
+        services.AddSingleton<Application.Scene.SceneGroupsLifetime>();
         services.AddSingleton<SelectionEntityCommands>();
         return services;
     }

@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
-namespace Poser.Game.WorldObjects;
+namespace Poser.Application.World;
 
 /// <summary>Thread-safe ownership ledger for the resource-load hook. Claims
 /// are per spawned instance, not per session: an unsuccessful create rolls
 /// back its pending token and a path remains handled while any live instance
 /// still owns it.</summary>
-internal sealed class VfxPathClaimOwner
+public sealed class VfxPathClaimOwner
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _counts =
@@ -25,19 +25,19 @@ internal sealed class VfxPathClaimOwner
         return new Claim(this, path);
     }
 
-    internal bool Contains(string path)
+    public bool Contains(string path)
     {
         lock (_gate)
             return _counts.ContainsKey(path);
     }
 
-    internal int Count(string path)
+    public int Count(string path)
     {
         lock (_gate)
             return _counts.TryGetValue(path, out var count) ? count : 0;
     }
 
-    internal bool HasClaims
+    public bool HasClaims
     {
         get
         {
