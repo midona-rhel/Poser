@@ -60,7 +60,7 @@ public sealed class SceneCaptureService
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
-    private readonly World.WorldService _worldObjects;
+    private readonly WorldObjects.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
     private readonly Poser.Config.ConfigurationService _configuration;
 
@@ -85,7 +85,7 @@ public sealed class SceneCaptureService
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingRuntimePort rendering,
-        World.WorldService worldObjects,
+        WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
         Poser.Config.ConfigurationService configuration)
     {
@@ -603,7 +603,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = Lights.LightDocument.Capture(light);
+            var document = Lighting.LightDocument.Capture(light);
             document.Name = Bounded(document.Name, "Light");
             document.Transform = NormalizedTransform(
                 (Transform)document.Transform, $"Light '{light.Name}'", notes);

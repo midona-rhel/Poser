@@ -150,7 +150,7 @@ internal sealed class LightLifecycleOwner
         if (light.IsValid)
         {
             // Capture the state at removal time so redo restores the last edit.
-            slot.Document = Lights.LightDocument.Capture(light);
+            slot.Document = Lighting.LightDocument.Capture(light);
             slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
             _lighting.DestroyLight(light);
@@ -171,7 +171,7 @@ internal sealed class LightLifecycleOwner
             : _lighting.SpawnLight(slot.Document.Kind);
         if (light == null)
             return false;
-        Lights.LightDocument.Apply(slot.Document, light);
+        Lighting.LightDocument.Apply(slot.Document, light);
         ApplyGobo(slot.Document.Gobo, light);
         if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
             light.AttachedBone = bone;

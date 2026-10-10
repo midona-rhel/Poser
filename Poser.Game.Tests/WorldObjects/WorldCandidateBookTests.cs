@@ -1,10 +1,10 @@
 using System.Numerics;
 using Poser.Application.World;
 using Poser.Domain.Identity;
-using Poser.Game.World;
+using Poser.Game.WorldObjects;
 using Xunit;
 
-namespace Poser.Game.Tests.World;
+namespace Poser.Game.Tests.WorldObjects;
 
 public sealed class WorldCandidateBookTests
 {

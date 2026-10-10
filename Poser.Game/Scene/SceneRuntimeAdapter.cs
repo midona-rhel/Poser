@@ -63,7 +63,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
-    private readonly World.WorldService _worldObjects;
+    private readonly WorldObjects.WorldService _worldObjects;
 
     /// <summary>Finds an appearance package by its bytes. Held as the
     /// interface: the library owns MCDFs and will own this index too.
@@ -102,7 +102,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         IWorldRenderingRuntimePort rendering,
         IActorManager actors,
         IObjectTable objects,
-        World.WorldService worldObjects,
+        WorldObjects.WorldService worldObjects,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         IBonePosingService bonePosing,
@@ -1280,7 +1280,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return null;
         }
 
-        Lights.LightDocument.Apply(document, light);
+        Lighting.LightDocument.Apply(document, light);
         if (bone is not null)
             light.AttachedBone = bone;
 

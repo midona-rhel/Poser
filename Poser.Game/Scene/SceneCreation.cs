@@ -93,7 +93,7 @@ public sealed class SceneCreation : ISceneCreation
             if (light is null) return null;
             try
             {
-                Lights.LightDocument.Apply(document, light);
+                Lighting.LightDocument.Apply(document, light);
                 if (!string.IsNullOrEmpty(document.Gobo))
                 {
                     var gobo = _lighting.Gobos.FirstOrDefault(g =>

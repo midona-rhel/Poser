@@ -16,7 +16,7 @@ using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 public sealed class GazeCapabilityTests
 {

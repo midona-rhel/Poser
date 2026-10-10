@@ -1,7 +1,7 @@
 using Poser.Application.World;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.World;
+namespace Poser.Game.WorldObjects;
 
 internal sealed record WorldCandidateEntry(
     object Identity, WorldKinds Kind, string Name, System.Numerics.Vector3 Position,

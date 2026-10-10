@@ -1,6 +1,6 @@
 using Poser.Core;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 /// <summary>
 /// THE REDRAW CONTRACT, at the seam issue #78 moved it to: the pose store.

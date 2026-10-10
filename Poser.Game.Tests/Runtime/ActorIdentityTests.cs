@@ -1,7 +1,7 @@
 ﻿using Poser.Core;
 using Poser.Game;
 
-namespace Poser.Game.Tests.LegacyRuntime;
+namespace Poser.Game.Tests.Runtime;
 
 /// <summary>
 /// The actor identity has to be unique among actors that COEXIST, not merely

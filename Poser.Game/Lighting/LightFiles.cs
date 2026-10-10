@@ -5,7 +5,7 @@ using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.Services;
 
-namespace Poser.Game.Lights;
+namespace Poser.Game.Lighting;
 
 public sealed class LightFiles(
     IFramework framework, IEntityBindings bindings, ISceneCreation creation,

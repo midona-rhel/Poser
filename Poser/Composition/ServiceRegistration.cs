@@ -230,7 +230,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Game.Overlays.StatusIconCatalog>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<Game.Journal.LightSession>();
-        services.AddSingleton<Application.Presentation.ILightControl, Game.Lights.LightControl>();
+        services.AddSingleton<Application.Presentation.ILightControl, Game.Lighting.LightControl>();
         services.AddSingleton<Game.Journal.CameraSession>();
         services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
         services.AddSingleton<Game.Cameras.CameraTargetControl>();
@@ -591,7 +591,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
-        services.AddSingleton<ILightFiles, Game.Lights.LightFiles>();
+        services.AddSingleton<ILightFiles, Game.Lighting.LightFiles>();
         services.AddSingleton<ICameraFiles, Game.Cameras.CameraFiles>();
         // One territory-to-place resolution is shared by whole-scene capture
         // and pose auto-save so a recorded place means the same thing in both
@@ -704,9 +704,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Scene.IActorSceneControl, Game.Scene.ActorSceneControl>();
         services.AddSingleton<EntityActions>();
         services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
-        services.AddSingleton<Game.World.WorldService>();
-        services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.World.WorldService>());
-        services.AddSingleton<Game.World.IWorldReleasePort>(sp => sp.GetRequiredService<Game.World.WorldService>());
+        services.AddSingleton<Game.WorldObjects.WorldService>();
+        services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
+        services.AddSingleton<Game.WorldObjects.IWorldReleasePort>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
         // Owns every reference picture's texture, so the container's own
         // dispose is what releases them at plugin teardown.

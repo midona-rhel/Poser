@@ -8,10 +8,10 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Journal;
-using Poser.Game.Lights;
+using Poser.Game.Lighting;
 using Poser.Services;
 
-namespace Poser.Game.Tests.Lights;
+namespace Poser.Game.Tests.Lighting;
 
 public sealed class LightBoundaryTests
 {
