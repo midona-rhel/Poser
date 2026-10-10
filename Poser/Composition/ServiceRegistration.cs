@@ -402,7 +402,7 @@ internal static class ServiceRegistration
             // defaults; read once at composition.
             var limits = sp.GetRequiredService<Config.ConfigurationService>()
                 .Config.Integration;
-            session.Limits = new global::Poser.Domain.Integration.McdfLimits(
+            session.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
                 limits.McdfMaxTotalBytes,
                 limits.McdfMaxFileBytes,
                 limits.McdfMaxFileCount,
