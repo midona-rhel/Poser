@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using Poser.Domain.Actors;
 using Poser.Domain.Companions;
 using Poser.Domain.Integration;
 using Poser.Entities;
@@ -1156,10 +1157,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
             reserveCompanionSlot: false,
             inheritSource: false,
             modelCharaId: entry.ModelCharaId,
-            // The game name stays a Poser name: Penumbra identifies a
-            // player-kind object by a two-word capitalized name and answered
-            // InvalidIdentifier (16) for "Morbol seedling", so the actor got
-            // no collection (2026-09-03). The label is the nickname instead.
+            // The game name stays a Poser slot name: Penumbra identifies a
+            // player-kind object by a two-word letters-only name (each part
+            // capitalized, no digits) and answered InvalidIdentifier (16) for
+            // "Morbol seedling", so the actor got no collection (2026-09-03).
+            // SpawnNames.ForSlot keeps every slot inside that rule (#427).
+            // The label is the nickname instead.
             name: null,
             kind: entry.Kind);
         return actor;
@@ -1227,7 +1230,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 ownership,
                 sourceAddress,
                 modelCharaId,
-                name ?? ToPoserName(descriptor.Value.Index));
+                name ?? SpawnNames.ForSlot(descriptor.Value.Index));
             // Penumbra cannot place the copy on the frame it is created
             // (CollectionMissing, 00:14) and can one tick later (00:2x): the
             // inherit runs next tick, still ahead of the draw. The flags
@@ -1499,7 +1502,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         // Set a name for the character (like Brio does).
         EnsureCurrent(ownership);
-        SetName(newObject, name ?? ToPoserName(descriptor.Index));
+        SetName(newObject, name ?? SpawnNames.ForSlot(descriptor.Index));
 
         // Brio registers the new body with GPose BEFORE the appearance copy
         // (ActorSpawnService.cs:325-327): the second copy exists to trigger a
@@ -1646,19 +1649,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
             gameObject->Name[x] = (byte)name[x];
         }
         gameObject->Name[Math.Min(name.Length, 63)] = 0;
-    }
-
-    private static string ToPoserName(int index)
-    {
-        // Simple naming: "Poser One", "Poser Two", etc. Slot 0 has no word
-        // (and is a real slot the game can hand back), so it takes the number.
-        string[] ones = { "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
-                         "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen" };
-
-        if (index > 0 && index < ones.Length)
-            return $"Poser {ones[index]}";
-
-        return $"Poser {index}";
     }
 
     public bool DestroyActor(IActor actor)
