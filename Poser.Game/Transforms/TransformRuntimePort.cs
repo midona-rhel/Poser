@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -17,18 +16,15 @@ namespace Poser.Game.Transforms;
 /// </summary>
 public sealed class TransformRuntimePort : ITransformRuntimePort
 {
-    private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _actors;
     private readonly BonePosingService _bones;
 
     public TransformRuntimePort(
-        IFramework framework,
         StableBindingRegistry bindings,
         PosingService actors,
         BonePosingService bones)
     {
-        _framework = framework;
         _bindings = bindings;
         _actors = actors;
         _bones = bones;
@@ -36,9 +32,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
 
     public TransformPortResult Capture(TransformTargetId target)
     {
-        if (!OnFrameworkThread())
-            return FrameworkThreadFailure();
-
         return target.Kind switch
         {
             TransformTargetKind.Collider when target.Collider is { } collider => CaptureCollider(target, collider),
@@ -63,8 +56,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         DomainTransform desired,
         bool rawBaseline = false)
     {
-        if (!OnFrameworkThread())
-            return FrameworkThreadFailure();
         if (!DomainTransform.TryCreate(
                 desired.Position,
                 desired.Rotation,
@@ -158,9 +149,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
 
     public TransformPortResult Restore(TransformTargetState state)
     {
-        if (!OnFrameworkThread())
-            return FrameworkThreadFailure();
-
         if (state.Target.Collider is { } colliderId)
             return WriteCollider(colliderId, state.Transform);
 
@@ -361,14 +349,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             animatedBaselineRotation,
             stacks);
     }
-
-    private bool OnFrameworkThread() =>
-        _framework.IsInFrameworkUpdateThread;
-
-    private static TransformPortResult FrameworkThreadFailure() =>
-        TransformPortResult.Fail(
-            TransformPortStatus.NativeUnavailable,
-            "Transform runtime port must execute on the framework thread.");
 
     private static TransformPortResult FromBinding(
         BindingStatus status,

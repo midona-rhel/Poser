@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -7,11 +6,10 @@ using Poser.Services;
 
 namespace Poser.Game.Scene;
 
-public sealed class ActorSceneControl(IFramework framework, IEntityBindings bindings,
+public sealed class ActorSceneControl(IEntityBindings bindings,
     IActorManager actors, IActorSpawnService spawns) : IActorSceneControl
 {
-    private IActor? Resolve(ActorId id) => framework.IsInFrameworkUpdateThread
-        && bindings.Resolve(id).Value is { } actor && bindings.GetActorId(actor) == id ? actor : null;
+    private IActor? Resolve(ActorId id) => bindings.Resolve(id).Value;
 
     public ActorSceneReading? Read(ActorId id) => Resolve(id) is { } actor
         ? new(spawns.GetSpawnedKind(actor), spawns.HasCompanionSlot(actor),

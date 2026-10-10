@@ -36,9 +36,8 @@ public sealed class CameraControl : ICameraControl
                 ? ControlsUnavailable : CameraProperties.RefuseWhileLocked(camera, property));
     }
 
-    private IVirtualCamera? Resolve(CameraId id) => _framework.IsInFrameworkUpdateThread &&
-        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } camera } &&
-        _bindings.GetCameraId(camera) == id ? camera : null;
+    private IVirtualCamera? Resolve(CameraId id) =>
+        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } camera } ? camera : null;
 
     private IVirtualCamera? Current(IVirtualCamera original)
     {

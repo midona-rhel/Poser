@@ -68,8 +68,9 @@ public sealed class CameraFilesTests
                 m.ReturnType.IsValueType ? Activator.CreateInstance(m.ReturnType) : null);
             Files = new(
                 Stub<IFramework>((_, _) => true),
-                Stub<IEntityBindings>((m, _) => m.Name == "Resolve"
-                    ? new BindingResult<IVirtualCamera>(BindingStatus.Success, camera) : CurrentId),
+                Stub<IEntityBindings>((m, a) => m.Name == "Resolve" && (CameraId)a![0]! == CurrentId
+                    ? new BindingResult<IVirtualCamera>(BindingStatus.Success, camera)
+                    : new BindingResult<IVirtualCamera>(BindingStatus.StaleTarget)),
                 Stub<ISceneCreation>((_, a) =>
                 {
                     Imported = (CameraFile)a![0]!;

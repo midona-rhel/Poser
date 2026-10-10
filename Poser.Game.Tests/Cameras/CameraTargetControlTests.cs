@@ -113,7 +113,7 @@ public sealed class CameraTargetControlTests
                 }
                 throw new InvalidOperationException(method);
             });
-            Control = new(bindings, Stub<IFramework>((_, _) => true), cameras,
+            Control = new(bindings, cameras,
                 Stub<IActorManager>((method, _) => method == "GetGPoseTarget" ? actor : throw new InvalidOperationException(method)),
                 null!, Journal, new CameraControl(bindings, Stub<IFramework>((_, _) => true), cameras, Journal));
         }

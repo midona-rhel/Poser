@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -12,21 +11,18 @@ public sealed class OverlayControl : IOverlayControl
 {
     private const string Unavailable = "The overlay is no longer available.";
     private readonly IEntityBindings _bindings;
-    private readonly IFramework _framework;
     private readonly EntityValues<OverlayId> _values;
 
-    public OverlayControl(IEntityBindings bindings, IFramework framework, ValueJournal journal,
+    public OverlayControl(IEntityBindings bindings, ValueJournal journal,
         IEntityHistoryResolver<IOverlayNode>? history = null)
     {
         _bindings = bindings;
-        _framework = framework;
         _values = new(journal, new HandleValuePort<OverlayId, IOverlayNode>(Resolve, SelectionId.ForOverlay,
             node => node.IsValid, history, OverlayAccessors.Create(), Unavailable), Unavailable);
     }
 
-    private IOverlayNode? Resolve(OverlayId id) => _framework.IsInFrameworkUpdateThread &&
-        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } node } &&
-        _bindings.GetOverlayId(node) == id ? node : null;
+    private IOverlayNode? Resolve(OverlayId id) =>
+        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } node } ? node : null;
 
     public OverlayReading? Read(OverlayId id) => Resolve(id) is { } node
         ? new(id, node.State) : null;

@@ -18,6 +18,10 @@ game identity on the framework thread. Logout refuses before probing native
 bodies, even before the next discovery/exit notification. Auxiliary preview
 bodies obey the same rule. Bone resolution additionally verifies the current
 slot skeleton and bone instance; a cached registry entry alone is not liveness.
+The binding registry is the one place that enforces the framework thread and
+exact-generation identity: off-thread it resolves nothing and reports
+`WrongThread`, so callers do not repeat either check. Callers keep their own
+thread check only for native work that does not go through a resolve.
 Skeleton-cache reuse also checks each native partial's identity and bone count;
 resource completion can replace those while the outer model address stays put.
 

@@ -122,11 +122,6 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     private CSCharacter* Resolve(ActorId actor, out string? detail)
     {
         detail = null;
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            detail = "Presentation writes must run on the framework thread.";
-            return null;
-        }
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
         {

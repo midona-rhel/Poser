@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -8,10 +7,9 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 public sealed class ExpressionRuntimePort(
-    IFramework framework, IEntityBindings bindings, IExpressionService expressions) : IExpressionRuntimePort
+    IEntityBindings bindings, IExpressionService expressions) : IExpressionRuntimePort
 {
-    private IActor? Resolve(ActorId actor) =>
-        framework.IsInFrameworkUpdateThread ? bindings.Resolve(actor).Value : null;
+    private IActor? Resolve(ActorId actor) => bindings.Resolve(actor).Value;
 
     public bool IsAvailable => expressions.IsAvailable;
     public bool HasActor(ActorId actor) => Resolve(actor) is not null;

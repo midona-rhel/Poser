@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -13,18 +12,16 @@ public sealed class SceneObjectControl : ISceneObjectControl
     private const string PropUnavailable = "The prop is no longer available.";
     private const string ObjectUnavailable = "The object is no longer available.";
     private readonly IEntityBindings _bindings;
-    private readonly IFramework _framework;
     private readonly ValueJournal _journal;
     private readonly IEntityHistoryResolver<IPropHandle>? _propHistory;
     private readonly EntityValues<PropId> _props;
     private readonly EntityValues<WorldObjectId> _objects;
 
-    public SceneObjectControl(IEntityBindings bindings, IFramework framework, ValueJournal journal,
+    public SceneObjectControl(IEntityBindings bindings, ValueJournal journal,
         IEntityHistoryResolver<IPropHandle>? propHistory = null,
         IEntityHistoryResolver<IWorldObject>? objectHistory = null)
     {
         _bindings = bindings;
-        _framework = framework;
         _journal = journal;
         _propHistory = propHistory;
         _props = new(journal, new HandleValuePort<PropId, IPropHandle>(Resolve, SelectionId.ForProp,
@@ -33,10 +30,10 @@ public sealed class SceneObjectControl : ISceneObjectControl
             o => o.IsValid, objectHistory, SceneObjectAccessors.WorldObjects(), ObjectUnavailable), ObjectUnavailable);
     }
 
-    private IPropHandle? Resolve(PropId id) => _framework.IsInFrameworkUpdateThread
-        && _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } entity } ? entity : null;
-    private IWorldObject? Resolve(WorldObjectId id) => _framework.IsInFrameworkUpdateThread
-        && _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } entity } ? entity : null;
+    private IPropHandle? Resolve(PropId id) =>
+        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } entity } ? entity : null;
+    private IWorldObject? Resolve(WorldObjectId id) =>
+        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } entity } ? entity : null;
 
     private IPropHandle? Current(IPropHandle original)
     {

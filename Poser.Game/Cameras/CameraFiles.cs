@@ -33,11 +33,7 @@ public sealed class CameraFiles(
 
     public SceneActionResult Export(CameraId id, string path)
     {
-        if (!framework.IsInFrameworkUpdateThread)
-            return SceneActionResult.Fail("Camera export requires the framework thread.");
-        var resolved = bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
-            bindings.GetCameraId(camera) != id)
+        if (bindings.Resolve(id) is not { Success: true, Value: { IsValid: true } camera })
             return SceneActionResult.Fail("The camera no longer exists.");
         try
         {

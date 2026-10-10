@@ -138,7 +138,9 @@ public sealed class LightBoundaryTests
             var bindings = Stub<IEntityBindings>((m, a) =>
                 m.Name switch
                 {
-                    "Resolve" when a![0] is LightId => new BindingResult<ILight>(BindingStatus.Success, Light),
+                    "Resolve" when a![0] is LightId id => id == CurrentId
+                        ? new BindingResult<ILight>(BindingStatus.Success, Light)
+                        : new BindingResult<ILight>(BindingStatus.StaleTarget),
                     "Resolve" => new BindingResult<IBone>(BindingStatus.Success, Bone),
                     "GetLightId" => CurrentId,
                     "GetBoneId" => BoneId,
@@ -163,7 +165,7 @@ public sealed class LightBoundaryTests
                 "Read" => (Poser.Domain.Transforms.PoseTransform?)Poser.Domain.Transforms.PoseTransform.Identity,
                 _ => null,
             }), History, Journal);
-            Control = new(bindings, framework, lighting, Journal, parenting);
+            Control = new(bindings, lighting, Journal, parenting);
             Files = new(framework, bindings, Stub<ISceneCreation>((_, a) =>
             {
                 Imported = (LightFile)a![0]!;

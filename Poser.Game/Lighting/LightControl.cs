@@ -1,4 +1,3 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -12,16 +11,14 @@ public sealed class LightControl : ILightControl
 {
     private const string Unavailable = "The light is no longer available.";
     private readonly IEntityBindings _bindings;
-    private readonly IFramework _framework;
     private readonly ILightingService _lighting;
     private readonly TransformParenting _parenting;
     private readonly EntityValues<LightId> _values;
 
-    public LightControl(IEntityBindings bindings, IFramework framework, ILightingService lighting,
+    public LightControl(IEntityBindings bindings, ILightingService lighting,
         ValueJournal journal, TransformParenting parenting, IEntityHistoryResolver<ILight>? history = null)
     {
         _bindings = bindings;
-        _framework = framework;
         _lighting = lighting;
         _parenting = parenting;
         Gobos = Array.AsReadOnly(lighting.Gobos.Select(g => new LightGobo(g.Path, g.Name)).ToArray());
@@ -31,9 +28,8 @@ public sealed class LightControl : ILightControl
 
     public IReadOnlyList<LightGobo> Gobos { get; }
 
-    private ILight? Resolve(LightId id) => _framework.IsInFrameworkUpdateThread &&
-        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } light } &&
-        _bindings.GetLightId(light) == id ? light : null;
+    private ILight? Resolve(LightId id) =>
+        _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } light } ? light : null;
 
     public LightReading? Read(LightId id) => Resolve(id) is { } l
         ? new(id, _lighting.IsAvailable,

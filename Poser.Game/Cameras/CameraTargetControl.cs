@@ -9,7 +9,7 @@ using Poser.Services;
 namespace Poser.Game.Cameras;
 
 public sealed class CameraTargetControl(
-    IEntityBindings bindings, IFramework framework, IVirtualCameraService cameras,
+    IEntityBindings bindings, IVirtualCameraService cameras,
     IActorManager actors, IActorSpawnService spawns, ValueJournal journal, ICameraControl values,
     IEntityHistoryResolver<IVirtualCamera>? history = null) : ICameraTargetControl
 {
@@ -21,15 +21,10 @@ public sealed class CameraTargetControl(
         var current = history is null ? original : history.Resolve(original);
         return current is { IsValid: true } ? current : null;
     }
-    private IVirtualCamera? Resolve(CameraId id) => framework.IsInFrameworkUpdateThread &&
-        bindings.Resolve(id) is { Success: true, Value: { IsValid: true } camera } &&
-        bindings.GetCameraId(camera) == id ? camera : null;
-    private IActor? Resolve(ActorId id) => framework.IsInFrameworkUpdateThread &&
-        bindings.Resolve(id) is { Success: true, Value: { } actor } &&
-        bindings.GetActorId(actor) == id ? actor : null;
-    private IBone? Resolve(BoneId id) => framework.IsInFrameworkUpdateThread &&
-        bindings.Resolve(id) is { Success: true, Value: { } bone } &&
-        bindings.GetBoneId(bone) == id ? bone : null;
+    private IVirtualCamera? Resolve(CameraId id) =>
+        bindings.Resolve(id) is { Success: true, Value: { IsValid: true } camera } ? camera : null;
+    private IActor? Resolve(ActorId id) => bindings.Resolve(id).Value;
+    private IBone? Resolve(BoneId id) => bindings.Resolve(id).Value;
 
     private (ActorId Id, IActor Actor)? GameTarget()
     {
