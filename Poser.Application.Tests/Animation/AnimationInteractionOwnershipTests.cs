@@ -3,6 +3,7 @@ using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -17,15 +18,17 @@ public sealed class AnimationInteractionOwnershipTests
     {
         var actor = ActorId.New();
         var control = new ScrubControlId(0, 0);
-        var port = Substitute.For<IAnimationRuntimePort>();
+        var port = Substitute.For<IAnimationScrubPort>();
+        var speed = Substitute.For<IAnimationSpeedPort>();
         port.EnumerateControls(actor, out Arg.Any<ulong>()).Returns(call =>
         {
             call[1] = 7UL;
             return new[] { new ScrubControlReading(control, 0, 10, 1) };
         });
-        port.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
+        speed.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
         port.SetControlTime(actor, control, Arg.Any<float>(), 7).Returns(Outcome.Ok());
-        var session = new AnimationSession(port);
+        var session = new AnimationSession(Substitute.For<IAnimationTimelinePort>(), speed,
+            Substitute.For<IAnimationStancePort>(), port, Substitute.For<IWorldRenderingRuntimePort>());
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
         Assert.True(session.BeginScrub(actor, control, first).Success);

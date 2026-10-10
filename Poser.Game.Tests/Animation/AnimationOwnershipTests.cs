@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using Poser.Application.Animation;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -18,7 +19,7 @@ public sealed class AnimationOwnershipTests
     public void Base_repeat_restores_its_first_capture()
     {
         var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
+        var session = port.Session();
 
         Assert.True(session.SetSlotLoop(Actor, AnimationSlot.Base, 0, true).Success);
         Assert.True(PlayBase(session, 42).Success);
@@ -40,7 +41,7 @@ public sealed class AnimationOwnershipTests
     {
         var port = FakePort.Create();
         port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
-        var session = new AnimationSession(port.Port);
+        var session = port.Session();
         var upper = new TimelineEntry(
             43, "Eat Pizza", AnimationKind.Emote, AnimationSlot.UpperBody,
             EmoteId: 300, EmoteIndex: 0);
@@ -91,7 +92,7 @@ public sealed class AnimationOwnershipTests
     {
         var port = FakePort.Create();
         port.ReadValue = ReadingWithSlot(AnimationSlot.Facial, 77, .6f);
-        var session = new AnimationSession(port.Port);
+        var session = port.Session();
 
         Assert.True(session.HoldExpression(Actor, 45).Success);
         port.ReadValue = ReadingWithSlot(AnimationSlot.Facial, 45, .2f);
@@ -128,24 +129,37 @@ public sealed class AnimationOwnershipTests
         };
 
     /// <summary>Records the native writes relevant to ownership restoration.</summary>
-    private class FakePort : DispatchProxy
+    private sealed class FakePort
     {
-        public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
         public ActorAnimationReading? ReadValue { get; set; }
         public BaseAnimationCapture BaseCapture { get; } =
             new(4, 0xA1B2C3D4u, 18, 27, 36);
         public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
 
-        public static FakePort Create()
+        public static FakePort Create() => new();
+
+        public AnimationSession Session() => new(
+            Proxy<IAnimationTimelinePort>(), Proxy<IAnimationSpeedPort>(),
+            Proxy<IAnimationStancePort>(), Proxy<IAnimationScrubPort>(),
+            Proxy<IWorldRenderingRuntimePort>());
+
+        private T Proxy<T>() where T : class
         {
-            var port = DispatchProxy.Create<IAnimationRuntimePort, FakePort>();
-            var proxy = (FakePort)(object)port;
-            proxy.Port = port;
-            return proxy;
+            var port = DispatchProxy.Create<T, Forwarder>();
+            ((Forwarder)(object)port).Target = this;
+            return port;
         }
 
-        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        /// <summary>Routes every port's calls into one recorder.</summary>
+        public class Forwarder : DispatchProxy
+        {
+            public FakePort Target = null!;
+            protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+                Target.Invoke(method, args);
+        }
+
+        private object? Invoke(MethodInfo? method, object?[]? args)
         {
             switch (method?.Name)
             {

@@ -112,6 +112,9 @@ public sealed class EnvironmentControlTests
         public bool IsWaterFrozen { get; set; }
         public bool IsWaterFreezeAvailable => true;
         public bool ResetWaterOnGPoseExit { get; set; }
+        public bool IsPhysicsFrozen { get; private set; }
+        public Poser.Domain.Outcome SetPhysicsFrozen(bool frozen)
+        { IsPhysicsFrozen = frozen; return Poser.Domain.Outcome.Ok(); }
         public IReadOnlyList<ActiveFestival> ActiveFestivals => [];
         public IReadOnlyDictionary<uint, FestivalEntry> FestivalList => new Dictionary<uint, FestivalEntry>();
         public bool HasFreeSlot => true;

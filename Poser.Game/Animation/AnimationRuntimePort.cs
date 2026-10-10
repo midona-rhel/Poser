@@ -18,7 +18,8 @@ using Poser.Game.Bindings;
 namespace Poser.Game.Animation;
 
 /// <summary>Provides native animation operations.</summary>
-public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
+public sealed unsafe partial class AnimationRuntimePort :
+    IAnimationTimelinePort, IAnimationSpeedPort, IAnimationStancePort, IAnimationScrubPort, IDisposable
 {
     private readonly IFramework _framework;
     // Kept for the probe harness (AnimationRuntimePort.Probe.cs), which
@@ -239,10 +240,6 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private static readonly bool HasForcedTimelineLayout =
         HasForcedTimelineLayoutFor(TimelineSequencerOffset, TimelineContainerSize);
 
-    // The physics freeze is a process-global code patch, not a per-actor
-    // enforcement; the patcher owns its site, capability state and restore.
-    private readonly PhysicsFreezePatcher _physics;
-
     public AnimationRuntimePort(
         IFramework framework,
         ISigScanner sigScanner,
@@ -302,11 +299,6 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         {
             _log.Error($"Slot-speed hook unavailable; layer speed overrides will fail explicitly: {ex.Message}");
         }
-
-        // Scan, byte validation, capability state and restore all live in
-        // the patcher; an unavailable site degrades SetPhysicsFrozen to an
-        // explicit failure with the patcher's own detail.
-        _physics = new PhysicsFreezePatcher(sigScanner, log);
     }
 
     private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
@@ -1561,12 +1553,6 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         return unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)count);
     }
 
-    // ── Physics ───────────────────────────────────────────────────────
-
-    public bool IsPhysicsFrozen => _physics.IsFrozen;
-
-    public Outcome SetPhysicsFrozen(bool frozen) => _physics.SetFrozen(frozen);
-
     public void Dispose()
     {
         _framework.Update -= OnFrameworkUpdate;
@@ -1581,10 +1567,6 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 #endif
         _enforcement.Clear();
         _byAddress.Clear();
-        // The session restores per-actor overrides before disposal; the
-        // global code patch is the patcher's own, and its dispose restores
-        // it (or reports the failure explicitly).
-        _physics.Dispose();
         GC.SuppressFinalize(this);
     }
 }

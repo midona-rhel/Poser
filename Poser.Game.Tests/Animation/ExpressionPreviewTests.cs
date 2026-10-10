@@ -4,6 +4,7 @@ using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -79,7 +80,7 @@ public sealed class ExpressionPreviewTests
                 }
                 return null;
             });
-            var port = Stub<IAnimationRuntimePort>((m, a) =>
+            Func<MethodInfo, object?[]?, object?> port = (m, a) =>
             {
                 if (m.Name == "Read") return ActorAnimationReading.Empty;
                 if (m.Name == "TimelineSlot") return AnimationSlot.Facial;
@@ -92,13 +93,15 @@ public sealed class ExpressionPreviewTests
                 if (m.ReturnType == typeof(Outcome)) return Outcome.Ok();
                 if (m.ReturnType == typeof(bool)) return true;
                 return null;
-            });
+            };
             Control = new ExpressionPreview(
                 _framework,
                 Stub<IEntityBindings>((m, a) => new BindingResult<IActor>(
                     BindingStatus.Success, (ActorId)a![0]! == Actor ? Body : null)),
                 Stub<ISessionGenerationSource>((_, _) => Session),
-                scene, new AnimationSession(port),
+                scene, new AnimationSession(Stub<IAnimationTimelinePort>(port),
+                    Stub<IAnimationSpeedPort>(port), Stub<IAnimationStancePort>(port),
+                    Stub<IAnimationScrubPort>(port), Stub<IWorldRenderingRuntimePort>(port)),
                 Stub<IFacialPoseCapture>((m, a) =>
                 {
                     if (m.Name == "get_IsPending") return false;

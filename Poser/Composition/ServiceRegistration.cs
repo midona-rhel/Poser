@@ -328,12 +328,12 @@ internal static class ServiceRegistration
     {
         // The port owns native hooks; the session owns exact restoration.
         services.AddSingleton<Game.Animation.AnimationRuntimePort>();
-        services.AddSingleton<IAnimationRuntimePort>(
-            sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
-            return new AnimationSession(sp.GetRequiredService<IAnimationRuntimePort>())
+            var port = sp.GetRequiredService<Game.Animation.AnimationRuntimePort>();
+            return new AnimationSession(port, port, port, port,
+                sp.GetRequiredService<IWorldRenderingRuntimePort>())
             {
                 Trace = message => log.Information($"[AnimState] {message}"),
             };

@@ -1,6 +1,7 @@
 using System.Reflection;
 using Poser.Application.Animation;
 using Poser.Application.Posing;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
@@ -64,11 +65,18 @@ public sealed class PoseImportCoordinatorTests
         public readonly PoseImportCoordinator Coordinator;
         public Fixture()
         {
-            var port = DispatchProxy.Create<IAnimationRuntimePort, AnimationPort>();
-            ((AnimationPort)(object)port).Events = Events;
-            Animation = new(port);
+            Animation = new(Port<IAnimationTimelinePort>(), Port<IAnimationSpeedPort>(),
+                Port<IAnimationStancePort>(), Port<IAnimationScrubPort>(),
+                Port<IWorldRenderingRuntimePort>());
             Runtime = new(Events);
             Coordinator = new(Runtime, Animation);
+        }
+
+        private T Port<T>() where T : class
+        {
+            var port = DispatchProxy.Create<T, AnimationPort>();
+            ((AnimationPort)(object)port).Events = Events;
+            return port;
         }
     }
 

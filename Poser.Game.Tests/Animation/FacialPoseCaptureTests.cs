@@ -8,6 +8,7 @@ using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Application.World;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -70,8 +71,7 @@ public sealed class FacialPoseCaptureTests
             bindingProxy.Bones = new Dictionary<BoneId, IBone> { [Bone] = boneProxy };
 
             Framework = FrameworkProxy.Create();
-            AnimationPort = AnimationPortProxy.Create();
-            Animation = new AnimationSession(AnimationPort.Port);
+            Animation = AnimationPortProxy.Session();
             TransformRuntime = new TestTransformRuntime();
             TransformRuntime.Seed(Bone, 0);
             History = new TransformHistory();
@@ -115,7 +115,6 @@ public sealed class FacialPoseCaptureTests
         public SceneSession Scene { get; }
         public IEntityBindings Bindings { get; }
         public FrameworkProxy Framework { get; }
-        public AnimationPortProxy AnimationPort { get; }
         public AnimationSession Animation { get; }
         public TestTransformRuntime TransformRuntime { get; }
         public TransformHistory History { get; }
@@ -196,15 +195,12 @@ public sealed class FacialPoseCaptureTests
 
     private class AnimationPortProxy : DispatchProxy
     {
-        public IAnimationRuntimePort Port { get; set; } = null!;
-
-        public static AnimationPortProxy Create()
-        {
-            var port = DispatchProxy.Create<IAnimationRuntimePort, AnimationPortProxy>();
-            var proxy = (AnimationPortProxy)(object)port;
-            proxy.Port = port;
-            return proxy;
-        }
+        public static AnimationSession Session() => new(
+            DispatchProxy.Create<IAnimationTimelinePort, AnimationPortProxy>(),
+            DispatchProxy.Create<IAnimationSpeedPort, AnimationPortProxy>(),
+            DispatchProxy.Create<IAnimationStancePort, AnimationPortProxy>(),
+            DispatchProxy.Create<IAnimationScrubPort, AnimationPortProxy>(),
+            DispatchProxy.Create<IWorldRenderingRuntimePort, AnimationPortProxy>());
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {

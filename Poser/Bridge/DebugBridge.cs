@@ -1451,7 +1451,7 @@ public sealed partial class DebugBridge : IDisposable
             mode = snapshot?.Mode,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
-            physicsFrozen = _port.IsPhysicsFrozen,
+            physicsFrozen = _animation.IsPhysicsFrozen,
             drawObject = DrawObjectAddress(actor),
             drawObjectVisible = snapshot?.DrawObjectVisible,
             weaponDrawn = snapshot?.WeaponDrawn,

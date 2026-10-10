@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -7,11 +6,11 @@ namespace Poser.Application.Animation;
 
 /// <summary>
 /// Native animation boundary keyed by exact actor generation. The runtime
-/// resolves the actor immediately before each memory operation. Speed
-/// overrides are enforced per frame; clearing one restores its captured
-/// value before releasing enforcement.
+/// resolves the actor immediately before each memory operation. This port
+/// owns reads, timeline playback, loops and lips; speed, stance and scrub
+/// writes sit on their own ports.
 /// </summary>
-public interface IAnimationRuntimePort
+public interface IAnimationTimelinePort
 {
     /// <summary>True when the actor resolves and can be animated at all
     /// (companions and objects without a character cannot).</summary>
@@ -68,59 +67,10 @@ public interface IAnimationRuntimePort
     /// <summary>Whether full-body repeat is available.</summary>
     bool SupportsForceLoop { get; }
 
-    /// <summary>False when the stance-transition functions (SetEmoteMode /
-    /// CancelTimeline) were not found in the running client; surfaces
-    /// disable the stance row rather than offer writes that will fail.</summary>
-    bool SupportsStance { get; }
-
     /// <summary>Owns the forced timeline id until a zero write releases it.
     /// The runtime reasserts an armed id after native animation updates.</summary>
     Outcome SetForceLoop(ActorId actor, ushort timeline);
 
-    // ── Speed ─────────────────────────────────────────────────────────
-    Outcome SetOverallSpeed(ActorId actor, float speed);
-    /// <summary>Stops enforcing overall speed; the game's own value wins
-    /// again from its next recalculation.</summary>
-    Outcome ClearOverallSpeed(ActorId actor);
-
-    /// <summary>
-    /// Rewinds every paused Havok control to local time zero. Playing
-    /// controls are unchanged, and the operation owns no persistent state.
-    /// </summary>
-    Outcome RewindPausedControls(ActorId actor);
-    Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
-    /// <summary>Releases enforcement after restoring the captured speed.</summary>
-    Outcome ClearSlotSpeed(
-        ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
-
-    // ── Lips, stance, weapon, position ────────────────────────────────
+    // ── Lips ──────────────────────────────────────────────────────────
     Outcome SetLips(ActorId actor, ushort timeline);
-    Outcome SetStance(ActorId actor, AnimationStance stance, int pose);
-    Outcome SetWeaponDrawn(ActorId actor, bool drawn);
-    Outcome SetPositionLock(ActorId actor, bool locked);
-
-    // ── Scrubbing ─────────────────────────────────────────────────────
-    /// <summary>Every currently valid Havok control, freshly enumerated.
-    /// The returned <c>SkeletonToken</c> on the reading identifies the
-    /// enumeration; writing with a stale token is refused.</summary>
-    IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
-
-    /// <summary>
-    /// Finds a slot control by its native slot index across skeleton partials.
-    /// Null means the slot is empty or has no matching control. Base and Upper
-    /// Body have verified indexes; other logical layers have no stable mapping.
-    /// </summary>
-    ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
-
-    /// <summary>Writes a control's local time. Fails when the actor,
-    /// skeleton, or control no longer matches <paramref name="token"/>,
-    /// so a scrub can never land on a replaced skeleton.</summary>
-    Outcome SetControlTime(
-        ActorId actor, ScrubControlId control, float time, ulong token);
-
-    // ── Physics ───────────────────────────────────────────────────────
-    /// <summary>Physics freeze is a global code patch, not per-actor; the
-    /// session still records who asked so the last release restores it.</summary>
-    bool IsPhysicsFrozen { get; }
-    Outcome SetPhysicsFrozen(bool frozen);
 }

@@ -10,6 +10,7 @@ using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -134,7 +135,9 @@ public sealed class PoseCommandTests
             _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
             ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
-                Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationRuntimePort>()),
+                Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
+                    Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
+                    Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
                 new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration,
                 History, new ValueJournal(History), this);
         }
