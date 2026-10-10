@@ -47,7 +47,7 @@ public class GizmoOverlayWindow : Window
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly ICameraProjection _cameraService;
     private readonly IPoseInteraction _poseInteraction;
     private readonly IIkConfigurationPort _ikPort;
@@ -179,7 +179,7 @@ public class GizmoOverlayWindow : Window
         global::Poser.Config.ConfigurationService configuration,
         SceneSession scene,
         IViewportReads viewport,
-        IEditorState editorState,
+        EditorState editorState,
         ICameraProjection cameraService,
         IPoseInteraction poseInteraction,
         IIkConfigurationPort ikPort,

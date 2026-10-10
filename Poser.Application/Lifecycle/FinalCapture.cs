@@ -43,9 +43,6 @@ public readonly record struct FinalCaptureResult(
     public bool CaptureCompleted =>
         Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
 
-    public bool DurableSuccess =>
-        Persistence == AutoSaveTerminalStatus.Written;
-
     /// <summary>Additive persistence evidence (the autosave health record as
     /// last observed); excluded from legacy positional equality and
     /// deconstruction. Its own status/detail may be less terminal than

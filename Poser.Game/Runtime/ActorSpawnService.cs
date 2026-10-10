@@ -191,22 +191,6 @@ internal sealed class SpawnOwnershipLedger
 
     public IReadOnlyList<SpawnOwnershipRecord> Snapshot => _records.Values.ToArray();
 
-    public SpawnOwnershipRecord Add(
-        SpawnNativeDescriptor descriptor,
-        CompanionKind? kind,
-        bool hasCompanionSlot)
-    {
-        var record = new SpawnOwnershipRecord(
-            Guid.NewGuid(),
-            descriptor.Index,
-            descriptor,
-            kind,
-            hasCompanionSlot);
-        _records.Add(record.Token, record);
-        record.Resolve(descriptor);
-        return record;
-    }
-
     public SpawnOwnershipRecord AddPending(
         ushort index,
         CompanionKind? kind,
@@ -467,11 +451,11 @@ internal interface IActorSpawnNativeAdapter
     SpawnNativeDescriptor? ResolveActor(nint address);
     bool DeleteExact(SpawnNativeDescriptor descriptor);
 
-    bool SetDrawState(SpawnNativeDescriptor descriptor, bool visible);
+    bool EnableDraw(SpawnNativeDescriptor descriptor);
 
     /// <summary>Writes the character's alpha. This is how an actor is HIDDEN;
     /// see <see cref="ActorSpawnNativeAdapter.SetAlpha"/> for why it is not
-    /// <see cref="SetDrawState"/>.</summary>
+    /// a draw-state write.</summary>
     bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
 
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
@@ -638,22 +622,19 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
             : null;
     }
 
-    public bool SetDrawState(SpawnNativeDescriptor descriptor, bool visible)
+    public bool EnableDraw(SpawnNativeDescriptor descriptor)
     {
         var gameObject = Revalidate(descriptor);
         if (gameObject is null)
             return false;
-        if (visible)
-            gameObject->EnableDraw();
-        else
-            gameObject->DisableDraw();
+        gameObject->EnableDraw();
         return true;
     }
 
     /// <summary>
     /// Writes the character's alpha, which is how an actor is HIDDEN.
     ///
-    /// <para>Not <see cref="SetDrawState"/>: <c>DisableDraw</c> tears the draw
+    /// <para>Not a draw-state write: <c>DisableDraw</c> tears the draw
     /// object down, and the skeleton — with the user's whole pose on it — goes
     /// with it, so re-showing rebuilt the actor standing in its animation's
     /// pose. Both references hide by fading instead, and both land on this
@@ -1631,7 +1612,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         if (_framework is null)
         {
-            _native.SetDrawState(descriptor, true);
+            _native.EnableDraw(descriptor);
             return;
         }
         // Unbounded while the spawn is live: a clone that is never drawn is
@@ -1641,7 +1622,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             ownership,
             descriptor,
             () => _native.IsReadyToDraw(descriptor) == true,
-            () => _native.SetDrawState(descriptor, true),
+            () => _native.EnableDraw(descriptor),
             timeoutMs: null,
             what: $"clone draw at index {descriptor.Index}",
             skipFrames: 2);
@@ -2098,7 +2079,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             ownership,
             descriptor,
             () => _native.IsReadyToDraw(descriptor) == true,
-            () => _native.SetDrawState(descriptor, true),
+            () => _native.EnableDraw(descriptor),
             timeoutMs: 2000,
             what: $"model chara {modelCharaId}");
     }

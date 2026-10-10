@@ -37,7 +37,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
-    private readonly IGazeService _gaze;
+    private readonly GazeService _gaze;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
     private readonly Config.ConfigurationService _configuration;
@@ -81,7 +81,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
-        IGazeService gaze,
+        GazeService gaze,
         IEventBus events,
         IFramework framework,
         Config.ConfigurationService configuration,

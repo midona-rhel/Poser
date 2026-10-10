@@ -122,7 +122,7 @@ public partial class MainWindow : Window
     /// <summary>The split flags the rows were last built under, packed.</summary>
     private int _shellMenuLayoutState = -1;
 
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
 
     private readonly ITransformFacade _cleanTransforms;
 
@@ -342,7 +342,7 @@ public partial class MainWindow : Window
         ISceneCreation creation,
         IScenePlaybackControl playback,
         ISceneDuplication duplication,
-        IEditorState editorState,
+        EditorState editorState,
         ITransformFacade cleanTransforms,
         Application.Posing.IPoseCommands cleanPose,
         PoseInspectorPane poseInspector,

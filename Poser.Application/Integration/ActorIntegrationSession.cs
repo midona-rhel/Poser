@@ -25,8 +25,7 @@ namespace Poser.Application.Integration;
 /// This class is the public compatibility facade and the owner of the
 /// per-actor override store; the MCDF workflow itself — admission,
 /// import/export phases, rollback, teardown barriers, and drain — is owned
-/// by <see cref="McdfTransaction"/>. <see cref="Changed"/> is read-model
-/// invalidation only; it never controls lifecycle.
+/// by <see cref="McdfTransaction"/>.
 /// </summary>
 public sealed class ActorIntegrationSession : IDisposable
 {
@@ -48,8 +47,6 @@ public sealed class ActorIntegrationSession : IDisposable
         _files = files;
         _mcdf = new McdfTransaction(port, files, sessions, this);
     }
-
-    public event Action? Changed;
 
     public IntegrationAvailability Penumbra => _port.Penumbra;
     public IntegrationAvailability Glamourer => _port.Glamourer;
@@ -759,7 +756,6 @@ public sealed class ActorIntegrationSession : IDisposable
             _overrides[actor] = current;
         else
             _overrides.Remove(actor);
-        Changed?.Invoke();
 
         // A teardown that left the extracted directory owned pending a
         // redraw gets its bounded release barrier now, if the transaction
@@ -1042,15 +1038,12 @@ public sealed class ActorIntegrationSession : IDisposable
         IntegrationOverrides current, BodyProfileProbe probe) =>
         ForeignTemporary(current, probe);
 
-    internal void RaiseChanged() => Changed?.Invoke();
-
     private void Mutate(ActorId actor, IntegrationOverrides updated)
     {
         if (updated.HasAny)
             _overrides[actor] = updated;
         else
             _overrides.Remove(actor);
-        Changed?.Invoke();
     }
 }
 

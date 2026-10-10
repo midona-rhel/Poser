@@ -12,6 +12,7 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Core;
 using Poser.Data;
 using Poser.Data.Config;
 using Poser.Domain.Identity;
@@ -91,7 +92,7 @@ public sealed partial class GraphicalBonePane : IDisposable
     private readonly Dictionary<BoneId, SelectionId> _dotIds = new();
 
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly IPoseInteraction _bonePosing;
 
     private readonly global::Poser.Config.ConfigurationService _configuration;
@@ -108,7 +109,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         SkeletonOverlayPresentation presentation,
         BoneMapEditorRegistry editors,
         Application.Posing.IIkConfigurationPort ikPort,
-        IEditorState editorState,
+        EditorState editorState,
         IPoseInteraction bonePosing)
     {
         _configuration = configuration;

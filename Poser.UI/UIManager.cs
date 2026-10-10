@@ -25,7 +25,7 @@ public sealed class UIManager : IUIManager
     private readonly IKeyState _keyState;
     private readonly global::Poser.Services.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -55,7 +55,7 @@ public sealed class UIManager : IUIManager
         IKeyState keyState,
         global::Poser.Services.IKeyEvents keyEvents,
         global::Poser.Application.Transforms.ValueJournal values,
-        IEditorState editorState,
+        EditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
         PoseFileInspectorSection poseFileSection,

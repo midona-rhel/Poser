@@ -19,8 +19,8 @@ public class GPoseService : IGPoseService
     private readonly IFramework _framework;
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
-    private readonly ISessionLifecycleCoordinator _lifecycle;
-    private readonly Func<IPoseImportLifecycleControl>? _importControl;
+    private readonly SessionLifecycleCoordinator _lifecycle;
+    private readonly Func<PoseImportCapture>? _importControl;
     private readonly IObjectTable? _objects;
     private int _entryDiagnosticTicks;
     private readonly object _stateGate = new();
@@ -37,8 +37,8 @@ public class GPoseService : IGPoseService
         IFramework framework,
         IEventBus eventBus,
         IPluginLog log,
-        ISessionLifecycleCoordinator lifecycle,
-        Func<IPoseImportLifecycleControl>? importControl = null,
+        SessionLifecycleCoordinator lifecycle,
+        Func<PoseImportCapture>? importControl = null,
         IObjectTable? objects = null)
     {
         _clientState = clientState;

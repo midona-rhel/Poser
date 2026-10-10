@@ -196,7 +196,7 @@ public sealed partial class PoseLibraryPane
     /// and the footer caption read it, never the worker's flags.</summary>
     private bool _autoPending;
 
-    private readonly Application.Library.IAutoSaveLibrary _autoLibrary;
+    private readonly Application.Library.AutoSaveLibrary _autoLibrary;
 
     /// <summary>Lower-cased tags per TILE. Tiles are a filtered view of the
     /// snapshot's entries, so the tag test can no longer index the entries by
@@ -356,11 +356,11 @@ public sealed partial class PoseLibraryPane
         IPosePreview preview,
         ISceneWorkflow scenes,
         ObjectPlacementPreferences placement,
-        IEnvironmentControl environment,
+        EnvironmentControl environment,
         UserNotices notices,
         ICharacterFiles characterFiles,
         Application.Library.ILibraryFileOperations fileOperations,
-        Application.Library.IAutoSaveLibrary autoLibrary)
+        Application.Library.AutoSaveLibrary autoLibrary)
     {
         _autoLibrary = autoLibrary;
         _fileOperations = fileOperations;

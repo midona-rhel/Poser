@@ -17,10 +17,12 @@ using Poser.Services;
 namespace Poser.Game;
 
 /// <summary>
-/// Service for solving inverse kinematics using native Havok solvers.
-/// Based on Brio's IKService implementation.
+/// Native Havok IK solving, based on Brio's IKService. Every solve fully
+/// re-initializes the shared native buffers from the request, so no gain,
+/// index, axis, limit, enforcement, or target can leak from a previously
+/// solved chain.
 /// </summary>
-public unsafe class IKService : IIKService
+public unsafe class IKService : IDisposable
 {
     internal event Action? BeforeCollisions;
     private readonly IPluginLog _log;
@@ -78,9 +80,9 @@ public unsafe class IKService : IIKService
     }
 
     /// <summary>
-    /// Solves the endpoint's chain toward the request. The havok pose is
-    /// resolved from the endpoint's own slot skeleton, keeping raw pointers
-    /// out of the public API.
+    /// Solves the endpoint's chain toward the request; a failed or
+    /// unavailable solver is a no-op. The havok pose is resolved from the
+    /// endpoint's own slot skeleton, keeping raw pointers out of the public API.
     /// </summary>
     public void Solve(IBone endpoint, in IkSolveRequest request)
     {

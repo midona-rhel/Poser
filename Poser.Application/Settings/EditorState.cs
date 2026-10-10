@@ -17,7 +17,7 @@ namespace Poser.Core;
 /// keybinds and the overlay can never disagree — and so a chord thrown at
 /// either of them outlives the session.</para>
 /// </summary>
-public class EditorState : IEditorState
+public class EditorState
 {
     private readonly ConfigurationService _configuration;
 

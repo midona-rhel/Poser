@@ -17,41 +17,10 @@ public interface IFinalCapturePort
     FinalCaptureResult CaptureForExit();
 }
 
-/// <summary>
-/// Coordinates the pre-publish capture/drain edge. Legacy teardown remains
-/// behind the existing GPose event and is reported as pending here. The host
-/// invokes this synchronously from its framework update callback; no
-/// cross-thread scheduling is performed by this coordinator.
-/// </summary>
 public interface ISessionGenerationSource
 {
     /// <summary>Current accepted GPose session identity, or null when inactive.</summary>
     SessionGeneration? ActiveSessionGeneration { get; }
-}
-
-public interface ISessionLifecycleCoordinator : ISessionGenerationSource
-{
-    /// <summary>
-    /// Latest point-in-time exit result, or null before an exit edge. This is a
-    /// diagnostic phase snapshot, not a completion claim for legacy teardown.
-    /// </summary>
-    SessionExitResult? LastExit { get; }
-
-    /// <summary>Marks the start of a new GPose session for this coordinator.</summary>
-    SessionGeneration? OnGposeEntered();
-
-    /// <summary>
-    /// Permanently closes session admission for unload or failed framework
-    /// dispatch. This operation is thread-safe and performs no capture or
-    /// native/event work.
-    /// </summary>
-    void InvalidateForUnload();
-
-    /// <summary>
-    /// Attempts the final capture for the current exit edge at most once and
-    /// returns before the caller publishes the legacy exit event.
-    /// </summary>
-    SessionExitResult OnGposeExit();
 }
 
 /// <summary>
@@ -74,9 +43,11 @@ public readonly record struct SessionExitResult(
 /// Exactly-once, reentrancy-safe owner of one final-capture attempt per
 /// accepted GPose exit edge. It deliberately does not own cancellation,
 /// restoration, native teardown, persistence joining, or detached-fact
-/// publication yet.
+/// publication yet. Legacy teardown remains behind the existing GPose event
+/// and is reported as pending here. The host invokes this synchronously from
+/// its framework update callback; no cross-thread scheduling is performed.
 /// </summary>
-public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
+public sealed class SessionLifecycleCoordinator : ISessionGenerationSource
 {
     private enum ExitState
     {
@@ -98,15 +69,6 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
         _finalCapture = finalCapture;
     }
 
-    public SessionExitResult? LastExit
-    {
-        get
-        {
-            lock (_gate)
-                return _hasLastExit ? _lastExit : null;
-        }
-    }
-
     public SessionGeneration? ActiveSessionGeneration
     {
         get
@@ -116,6 +78,7 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
         }
     }
 
+    /// <summary>Marks the start of a new GPose session for this coordinator.</summary>
     public SessionGeneration? OnGposeEntered()
     {
         lock (_gate)
@@ -133,6 +96,11 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
         }
     }
 
+    /// <summary>
+    /// Permanently closes session admission for unload or failed framework
+    /// dispatch. This operation is thread-safe and performs no capture or
+    /// native/event work.
+    /// </summary>
     public void InvalidateForUnload()
     {
         lock (_gate)
@@ -142,6 +110,10 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
         }
     }
 
+    /// <summary>
+    /// Attempts the final capture for the current exit edge at most once and
+    /// returns before the caller publishes the legacy exit event.
+    /// </summary>
     public SessionExitResult OnGposeExit()
     {
         lock (_gate)

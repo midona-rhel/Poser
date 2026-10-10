@@ -13,7 +13,9 @@ public static class GroupTransformIdentity
         TransformTargetKind.Prop => target.Prop!.Value.LogicalId,
         TransformTargetKind.WorldObject => target.WorldObject!.Value.LogicalId,
         TransformTargetKind.Collider => target.Collider!.Value.LogicalId,
-        _ => Guid.Empty,
+        // Bones never join a group transform; one shared fallback id would
+        // make every such target the same member.
+        _ => throw new InvalidOperationException($"A {target.Kind} target has no group identity."),
     };
 }
 

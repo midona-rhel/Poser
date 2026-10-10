@@ -11,7 +11,7 @@ using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
-public sealed class IdleModExportDialog(IIdleModExport export, UserNotices notices, IFramework framework)
+public sealed class IdleModExportDialog(IdleModExport export, UserNotices notices, IFramework framework)
 {
     private readonly string ModalId = $"##idle-export-{Guid.NewGuid():N}";
     private const string ModalTitle = "Export Idle Pose";

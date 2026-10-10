@@ -203,6 +203,10 @@ public class SceneFile
     /// seats entities in kind order.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneStructureRef>? RootOrder { get; set; }
+
+    /// <summary>Parent links between saved entities, ABSENT when the scene
+    /// has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneParentLink>? Parents { get; set; }
 
     // The same wire style every Poser document uses — numerics as
@@ -631,9 +635,6 @@ public class SceneWorldObject
     public bool AnimPaused { get; set; }
 }
 
-/// <summary>Exact bone identity inside a saved scene: the owning actor's
-/// in-document key plus the slot/partial/name triple that resolves the bone
-/// on the restored actor. Never a native index or pointer.</summary>
 /// <summary>One reference into the scene's structure: an entity of the
 /// named kind (actor, prop, worldObject, light, camera, overlay) by the
 /// key its entity list carries, or a group by its entry's key (Kind

@@ -46,7 +46,6 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
     private readonly ISessionGenerationSource _sessions;
     private SessionGeneration? _session;
     public WorldSnapshot Snapshot => _book.Snapshot;
-    public event Action? Changed;
 
     // Scene files contain spawnable copies, never candidate/native addresses.
     // These runtime-only operations bypass per-entity history because the
@@ -109,7 +108,6 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
         if ((due & WorldKinds.Object) != 0) AddObjects(false);
         if ((due & WorldKinds.Effect) != 0) AddObjects(true);
         _book.Refresh(due, entries);
-        Changed?.Invoke();
         return Snapshot;
 
         void AddObjects(bool effects)
@@ -162,7 +160,6 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
                 return new(WorldCommandStatus.Applied, _claims.Add(entity), entity);
             }, detail => _log.Warning(detail));
             _pending.Add((_session, pending));
-            Changed?.Invoke();
             return pending;
         });
         return pending == null ? failure ?? new(WorldCommandStatus.Refused) : await pending.Completion;
@@ -243,7 +240,7 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
         var session = _sessions.ActiveSessionGeneration;
         if (_session != session)
         {
-            HighlightCore(null); _book.Clear(); _claims.Clear(); _refreshed.Clear(); Changed?.Invoke();
+            HighlightCore(null); _book.Clear(); _claims.Clear(); _refreshed.Clear();
             _session = session;
         }
     }

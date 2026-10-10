@@ -422,35 +422,6 @@ public sealed class SceneFileStore
             : SceneMetadataReadOutcome.Failed(read.Failure!);
     }
 
-    public SceneReadOutcome Parse(string json)
-    {
-        if (json is null)
-        {
-            return ReadFailure(
-                SceneStoreFailureKind.Json,
-                "The scene JSON is null.");
-        }
-
-        try
-        {
-            var byteCount = Encoding.UTF8.GetByteCount(json);
-            if (byteCount > SceneFileLimits.MaxDocumentBytes)
-            {
-                return ReadFailure(
-                    SceneStoreFailureKind.SizeLimit,
-                    $"The scene JSON is {byteCount} bytes " +
-                    $"(limit {SceneFileLimits.MaxDocumentBytes}).");
-            }
-            return Decode(Encoding.UTF8.GetBytes(json), path: null);
-        }
-        catch (Exception ex)
-        {
-            return ReadFailure(
-                SceneStoreFailureKind.Json,
-                $"Parsing the scene JSON failed: {ex.Message}");
-        }
-    }
-
     public SceneWriteOutcome Write(SceneFile scene, string destination)
     {
         // The bytes are this build's shape whatever version the document was

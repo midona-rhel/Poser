@@ -10,7 +10,7 @@ using Poser.Application.Scene;
 namespace Poser.Application.AutoSave;
 
 /// <summary>Whole-scene autosave cadence, admission, deduplication and progress.</summary>
-public sealed class SceneAutoSaveService : ISceneAutoSave
+public sealed class SceneAutoSaveService : IDisposable
 {
     private readonly ConfigurationService _configuration;
     /// <summary>ARMS a capture: the bone-transform caches a scene serializes

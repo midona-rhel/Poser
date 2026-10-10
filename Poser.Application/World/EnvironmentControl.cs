@@ -8,7 +8,7 @@ namespace Poser.Application.World;
 /// <summary>Every value a surface sets on the environment — time, weather,
 /// the held sections and their values, water, festivals — as a journal
 /// step.</summary>
-public sealed class EnvironmentControl : IEnvironmentControl
+public sealed class EnvironmentControl
 {
     private readonly ValueJournal _journal;
     private readonly IEnvironmentRuntimePort _environment;

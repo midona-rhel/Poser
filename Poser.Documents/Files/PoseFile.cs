@@ -232,18 +232,6 @@ public class PoseFile
     }
 
     /// <summary>
-    /// Lossy compatibility save. Returns false for every typed validation,
-    /// serialization, temp, flush, validation, replace, or move failure; new
-    /// storage workflows use <see cref="AtomicPoseFileStore.Write"/>.
-    /// </summary>
-    public bool Save(string path)
-    {
-        // Intentionally lossy compatibility wrapper. The typed store retains
-        // the phase and any undeletable temp as recovery evidence.
-        return AtomicPoseFileStore.Default.Write(this, path).Succeeded;
-    }
-
-    /// <summary>
     /// Converts Anamnesis bone names to game bone names.
     /// Required for compatibility with old Anamnesis pose files.
     /// </summary>

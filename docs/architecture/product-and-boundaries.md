@@ -54,7 +54,7 @@ ImGui and native key conversion remain at the input boundary.
 Stagehand conversion and MCDF package storage also live in Documents; actor
 resource discovery and IPC remain in Game.
 
-Environment readings and commands cross `IEnvironmentControl`. Application owns
+Environment readings and commands cross `EnvironmentControl`. Application owns
 capture, apply ordering, gesture coalescing and history; Game implements the
 runtime ports. Scene transactions apply through that same control without a
 second history entry. UI reads detached values, not native environment services.
@@ -63,7 +63,7 @@ Library refresh/cancellation and autosave cadence/admission live in Application.
 Documents owns scans, file actions, snapshot writes and disk retention. Game
 captures detached poses/scenes and owns framework subscriptions; panel visibility
 does not drive this work. Pose and scene snapshots retain their separate formats,
-roots and limits. `ISceneAutoSave` exposes the scene snapshot root; a failed
+roots and limits. `SceneAutoSaveService` exposes the scene snapshot root; a failed
 scene snapshot is logged at Warning.
 
 Actor appearance commands own their history inverses in Application. UI

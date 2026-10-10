@@ -38,8 +38,6 @@ public sealed class AnimationSession : IAnimationPlayback
         _port = port;
     }
 
-    public IReadOnlyCollection<ActorId> OwnedActors => _overrides.Keys;
-
     public AnimationOverrides OverridesFor(ActorId actor) =>
         _overrides.TryGetValue(actor, out var value) ? value : AnimationOverrides.None;
 

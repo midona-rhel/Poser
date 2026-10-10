@@ -23,7 +23,7 @@ namespace Poser.Game.Scene;
 ///
 /// <para>Brio also scrubs the removed object out of every other actor's
 /// look-at; Poser deliberately does not. An Entity gaze target is kept BY ID
-/// and marked stale (<c>IGazeService.TargetStale</c>), so a target that leaves
+/// and marked stale (<c>GazeService.TargetStale</c>), so a target that leaves
 /// is refused by name on reapply instead of the user's intent being deleted.
 /// </para>
 ///
@@ -34,7 +34,7 @@ internal static class ActorRemovalCleanup
 {
     public static void Prepare(
         IActor actor,
-        IGazeService gaze,
+        GazeService gaze,
         ActorIntegrationSession integration,
         StableBindingRegistry bindings,
         Action<string> refuse)

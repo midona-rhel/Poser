@@ -23,7 +23,6 @@ public sealed record WorldRelease(WorldCommandStatus Status, string? Detail = nu
 public interface IWorldService
 {
     WorldSnapshot Snapshot { get; }
-    event Action? Changed;
     Task<WorldSnapshot> Refresh(WorldKinds kinds, bool force = false);
     Task<WorldAcquisition> Acquire(WorldCandidateId candidate);
     Task<WorldRelease> Release(SelectionId entity);

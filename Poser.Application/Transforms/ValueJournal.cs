@@ -41,8 +41,6 @@ public sealed class ValueJournal
         return new Resume(this);
     }
 
-    public bool IsSuspended => _suspended > 0;
-
     private sealed class Resume(ValueJournal owner) : IDisposable
     {
         private bool _done;

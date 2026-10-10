@@ -364,7 +364,7 @@ public sealed class AdoptedWorldObject : IWorldObject
 /// every release path restores that state and drops the claim. A missing or
 /// replaced native address is ignored rather than written blindly.
 /// </summary>
-public sealed class WorldObjectService : IDisposable, IWorldObjectService
+public sealed class WorldObjectService : IDisposable
 {
     private readonly IWorldObjectPort _port;
     private readonly IEventBus _events;
@@ -809,9 +809,6 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
                 : new SceneryAnimationState.Watching();
         }
     }
-
-    IWorldObject? IWorldObjectService.Spawn(string path, Transform placement, bool visible, out string? detail) =>
-        Spawn(path, placement, visible, out detail);
 
     /// <summary>Run by the Game frame-phase owner after native animation.
     /// Paused objects hold their transform and clock; anchored objects replay

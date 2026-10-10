@@ -141,8 +141,6 @@ internal static class ServiceRegistration
             new AutoSaveFinalCapturePort(
                 () => sp.GetRequiredService<IAutoSaveService>()));
         services.AddSingleton<SessionLifecycleCoordinator>();
-        services.AddSingleton<ISessionLifecycleCoordinator>(sp =>
-            sp.GetRequiredService<SessionLifecycleCoordinator>());
         services.AddSingleton<ISessionGenerationSource>(sp =>
             sp.GetRequiredService<SessionLifecycleCoordinator>());
         return services;
@@ -158,7 +156,6 @@ internal static class ServiceRegistration
             sp => sp.GetRequiredService<PosingService>());
         services.AddSingleton<ISkeletonService, SkeletonService>();
         services.AddSingleton<IKService>();
-        services.AddSingleton<IIKService>(sp => sp.GetRequiredService<IKService>());
         services.AddSingleton<Game.Posing.GazePoseFrames>();
         services.AddSingleton<BonePosingService>();
         services.AddSingleton<IBonePosingService>(
@@ -228,7 +225,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Game.Cameras.CameraTargetControl>());
         services.AddSingleton<Game.Cameras.CameraWorkspaceRuntime>();
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
-        services.AddSingleton<IEnvironmentControl, EnvironmentControl>();
+        services.AddSingleton<EnvironmentControl>();
         services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
         services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
         services.AddSingleton<Application.Companions.ICompanionRuntime, Game.Companions.CompanionRuntime>();
@@ -311,7 +308,6 @@ internal static class ServiceRegistration
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<IPoseInteraction, Game.Posing.PoseInteraction>();
         services.AddSingleton<IIkBake>(sp => sp.GetRequiredService<Game.Posing.IkBakeCapture>());
-        services.AddSingleton<IWorldObjectService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectService>());
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
         services.AddSingleton<IWorldAssetCatalog>(sp => sp.GetRequiredService<Game.WorldObjects.WorldAssetCatalog>());
         services.AddSingleton<IFacialPoseCapture>(sp => sp.GetRequiredService<Game.Animation.FacialPoseCapture>());
@@ -430,11 +426,11 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
-        services.AddSingleton<Func<Game.Posing.IPoseImportLifecycleControl>>(sp =>
+        services.AddSingleton<Func<Game.Posing.PoseImportCapture>>(sp =>
             () => sp.GetRequiredService<Game.Posing.PoseImportCapture>());
         services.AddSingleton<Game.Posing.PoseExportCapture>();
         services.AddSingleton<Application.Animation.IIdleModRuntime, Game.Animation.IdleModRuntime>();
-        services.AddSingleton<Application.Animation.IIdleModExport, Application.Animation.IdleModExport>();
+        services.AddSingleton<Application.Animation.IdleModExport>();
         services.AddSingleton<IdleModExportDialog>();
         // The pose library's CharaView preview. No force-resolve: the pane
         // holds it, and it only subscribes the framework tick while open.
@@ -458,7 +454,7 @@ internal static class ServiceRegistration
         });
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<Game.Input.GPoseMouseTargetHook>();
-        services.AddSingleton<IEditorState, EditorState>();
+        services.AddSingleton<EditorState>();
         return services;
     }
 
@@ -521,7 +517,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
-        services.AddSingleton<Application.Library.IAutoSaveLibrary, Application.Library.AutoSaveLibrary>();
+        services.AddSingleton<Application.Library.AutoSaveLibrary>();
         services.AddSingleton<Application.Library.ILibrarySceneActions, Application.Library.LibrarySceneActions>();
         services.AddSingleton<Library.IPoseLibraryService>(sp =>
         {
@@ -567,7 +563,7 @@ internal static class ServiceRegistration
     {
         // Gaze and expression are the face features; CommandRouter is the
         // /poser chat command.
-        services.AddSingleton<IGazeService, GazeService>();
+        services.AddSingleton<GazeService>();
         services.AddSingleton<IExpressionService, ExpressionService>();
         services.AddSingleton<CommandRouter>();
         return services;
@@ -625,7 +621,6 @@ internal static class ServiceRegistration
                     message => log.Error(message)),
                 message => log.Warning(message));
         });
-        services.AddSingleton<ISceneAutoSave>(sp => sp.GetRequiredService<SceneAutoSaveService>());
         return services;
     }
 

@@ -34,6 +34,8 @@ public static class SceneParenting
             notes.Add("A parent was excluded from this save; its child is saved at its current world placement.");
             return true;
         });
+        if (scene.Parents is { Count: 0 })
+            scene.Parents = null;
     }
 
     public static string? Validate(SceneFile scene)

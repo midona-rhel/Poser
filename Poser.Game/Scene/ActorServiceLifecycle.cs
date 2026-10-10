@@ -60,7 +60,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
-    private readonly IGazeService _gaze;
+    private readonly GazeService _gaze;
     private readonly Poser.Application.Integration.ActorIntegrationSession
         _integration;
     private readonly Bindings.StableBindingRegistry _bindings;
@@ -88,7 +88,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         Poser.Application.Animation.AnimationSession animation,
         IFramework framework,
         IPluginLog log,
-        IGazeService gaze,
+        GazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,

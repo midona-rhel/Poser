@@ -34,7 +34,7 @@ internal static class SceneParentingCodec
     public static void Write(SceneFile scene, IReadOnlyDictionary<SelectionId, TransformParent> links,
         IReadOnlyDictionary<Guid, ActorId> actors, Func<ActorId, ActorId?> companionOwner)
     {
-        scene.Parents = [];
+        var parents = new List<SceneParentLink>();
         foreach (var (child, link) in links)
         {
             if (Reference(child, actors, companionOwner) is not { } childRef) continue;
@@ -43,9 +43,10 @@ internal static class SceneParentingCodec
             if (targetRef == null && (link.Target.Actor ?? link.Target.Bone?.Skeleton.Actor) is { } excluded)
                 targetRef = new() { Kind = "actor", Key = excluded.LogicalId };
             if (targetRef == null) continue;
-            scene.Parents.Add(new() { Child = childRef, Target = targetRef,
+            parents.Add(new() { Child = childRef, Target = targetRef,
                 BoneName = link.Target.Bone?.CanonicalName, Slot = link.Target.Bone?.Slot ?? PoseSlot.Character,
                 Partial = link.Target.Bone?.PartialId ?? 0, Offset = link.Offset });
         }
+        scene.Parents = parents.Count > 0 ? parents : null;
     }
 }

@@ -40,7 +40,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly IPoseCommands _poseCommands;
     private readonly IActorResetControl _actorReset;
     private readonly IGazeControl _gazeValues;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly SelectionScope _selection;
     private readonly SelectionScope _workspaceSelection;
     private readonly SceneSession _scene;
@@ -194,7 +194,7 @@ public partial class PoseInspectorPane : IDisposable
         IActorResetControl actorReset,
         IPoseCommands poseCommands,
         IGazeControl gazeValues,
-        IEditorState editorState,
+        EditorState editorState,
         SceneSession scene,
         PropertiesContext properties,
         IViewportReads viewport,

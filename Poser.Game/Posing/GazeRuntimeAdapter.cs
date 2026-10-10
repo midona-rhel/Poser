@@ -9,7 +9,7 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 public sealed class GazeRuntimeAdapter(
-    IGazeService gaze, IEntityBindings bindings)
+    GazeService gaze, IEntityBindings bindings)
     : IGazeRuntimePort
 {
     public bool IsAvailable => gaze.IsAvailable;

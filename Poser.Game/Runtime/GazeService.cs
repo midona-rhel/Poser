@@ -86,7 +86,7 @@ internal sealed class GazeNativeFactory : IGazeNativeFactory
 /// the Brio/Ktisis-verified id/position union). Position mode holds a shared
 /// world anchor plus per-part positions the detour writes unchanged.
 /// </summary>
-public unsafe class GazeService : IGazeService, IDisposable
+public unsafe class GazeService : IDisposable
 {
     // LookAt controller indices for _updateLookAt function
     private const uint LookAtIndex_Body = 0;
@@ -113,8 +113,12 @@ public unsafe class GazeService : IGazeService, IDisposable
     private bool _subscribed;
     private bool _detourFaultLogged;
 
+    /// <summary>Whether the native gaze capability initialized successfully.</summary>
     public bool IsAvailable => _isAvailable && !_disposed;
 
+    /// <summary>
+    /// Stable detail for an unavailable native capability; null when available.
+    /// </summary>
     public string? UnavailableDetail { get; private set; }
 
     /// <summary>
@@ -607,6 +611,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         return body != null;
     }
 
+    /// <summary>Snapshot of the actor's managed gaze state.</summary>
     public GazeState GetGazeState(IActor actor)
     {
         if (!IsAvailable)
@@ -681,6 +686,13 @@ public unsafe class GazeService : IGazeService, IDisposable
         return Outcome.Ok();
     }
 
+    /// <summary>
+    /// One mode transition. Entering a non-Off mode with no participating
+    /// parts enables all three. Entity mode without a chosen target performs
+    /// no native override until a target is set. Off keeps the remembered
+    /// target and per-part points — only <see cref="ResetGaze"/> forgets them.
+    /// Re-entering Entity on a stale remembered target is refused.
+    /// </summary>
     public Outcome SetGazeMode(IActor actor, GazeTargetMode mode)
     {
         if (!IsAvailable)
@@ -734,6 +746,13 @@ public unsafe class GazeService : IGazeService, IDisposable
         return Outcome.Ok();
     }
 
+    /// <summary>
+    /// Changes part participation only, exactly as Brio's SetTargetType does:
+    /// a part removed from the mask is simply no longer written, so the game's
+    /// own look-at resumes owning it. The mode and target survive an empty
+    /// mask, so re-adding a part resumes what was configured. Re-adding a part
+    /// on a stale remembered target is refused; removing one never is.
+    /// </summary>
     public Outcome SetGazeParts(IActor actor, GazeTargetType parts)
     {
         if (!IsAvailable)
@@ -780,6 +799,10 @@ public unsafe class GazeService : IGazeService, IDisposable
         return Outcome.Ok();
     }
 
+    /// <summary>
+    /// Chooses the Entity-mode target and switches to Entity mode. The
+    /// source actor itself is rejected.
+    /// </summary>
     public Outcome SetGazeTarget(IActor actor, IActor target)
     {
         if (!IsAvailable)
@@ -833,6 +856,11 @@ public unsafe class GazeService : IGazeService, IDisposable
         return Outcome.Ok();
     }
 
+    /// <summary>
+    /// Position mode only: moves the shared anchor and every enabled,
+    /// unlocked part to <paramref name="position"/>. No-op in any other mode
+    /// or when no entry exists.
+    /// </summary>
     public void SetGazePosition(IActor actor, Vector3 position)
     {
         if (!IsAvailable)
@@ -850,6 +878,11 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Position mode only: writes one part's target position explicitly.
+    /// Works on locked parts too — an explicit user edit outranks a lock, and
+    /// the lock flag itself is untouched. Does not move the anchor.
+    /// </summary>
     public void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position)
     {
         if (!IsAvailable)
@@ -867,6 +900,10 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Brio's "set to camera value": <see cref="SetPartPosition"/> with the
+    /// current camera position.
+    /// </summary>
     public void SnapPartToCamera(IActor actor, GazeTargetType part)
     {
         if (!IsAvailable)
@@ -888,6 +925,11 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Freezes/unfreezes one participating part at its actual current
+    /// target. Does not change the mode, the participation mask, or other
+    /// parts.
+    /// </summary>
     public void SetPartLock(IActor actor, GazeTargetType part, bool locked)
     {
         if (!IsAvailable)
@@ -925,6 +967,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    /// <summary>Whether the given part is frozen.</summary>
     public bool IsPartLocked(IActor actor, GazeTargetType part)
     {
         if (!IsAvailable)
@@ -942,6 +985,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
+    /// <summary>Removes state and the native handle — full game default.</summary>
     public void ResetGaze(IActor actor)
     {
         if (!IsAvailable)

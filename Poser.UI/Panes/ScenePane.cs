@@ -41,7 +41,7 @@ public sealed class ScenePane
     private readonly ISceneWorkflow _workflow;
     private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
-    private readonly ISceneAutoSave _snapshots;
+    private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
     private readonly Poser.Application.Library.ILibrarySceneSave _librarySave;
 
@@ -217,7 +217,7 @@ public sealed class ScenePane
 
     public ScenePane(
         ISceneWorkflow workflow,
-        ISceneAutoSave snapshots,
+        SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,

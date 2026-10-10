@@ -79,16 +79,6 @@ public static class BoneInfoService
     public static bool IsNsfw(string boneName) => _nsfwBones.Contains(boneName);
 
     /// <summary>
-    /// Gets the translated name for a bone, or null if no translation exists.
-    /// </summary>
-    public static string? GetTranslation(string boneName)
-    {
-        if (_boneData.TryGetValue(boneName, out var data))
-            return data.Translation;
-        return null;
-    }
-
-    /// <summary>
     /// Gets the category for a bone.
     /// </summary>
     public static BoneCategory GetCategory(string boneName)

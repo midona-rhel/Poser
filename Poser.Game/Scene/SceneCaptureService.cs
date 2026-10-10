@@ -49,14 +49,14 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IEnvironmentControl _environment;
+    private readonly EnvironmentControl _environment;
     private readonly StableBindingRegistry _bindings;
     private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
-    private readonly IGazeService _gaze;
+    private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
@@ -74,14 +74,14 @@ public sealed class SceneCaptureService
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentControl environment,
+        EnvironmentControl environment,
         StableBindingRegistry bindings,
         IPoseImportCommands poses,
         IPlaceService place,
         IObjectTable objects,
         IPosingService posing,
         AnimationSession animation,
-        IGazeService gaze,
+        GazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingRuntimePort rendering,

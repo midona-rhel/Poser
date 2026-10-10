@@ -359,11 +359,11 @@ public sealed class ActorSpawnServiceOwnershipTests
             }
         }
 
-        public bool SetDrawState(SpawnNativeDescriptor descriptor, bool visible)
+        public bool EnableDraw(SpawnNativeDescriptor descriptor)
         {
             if (!Gate(descriptor))
                 return false;
-            DrawEnabled = visible;
+            DrawEnabled = true;
             return true;
         }
 
@@ -434,6 +434,10 @@ public sealed class ActorSpawnServiceOwnershipTests
             Actors = actor is null ? Array.Empty<IActor>() : [actor];
         public IReadOnlyList<IActor> Actors { get; }
         public IReadOnlyList<IActor> AuxiliaryActors { get; } = Array.Empty<IActor>();
+        public bool IsLocalPlayer(IActor actor) => false;
+        public void AdoptWorldActor(nint address) { }
+        public bool IsAdopted(IActor actor) => false;
+        public void ReleaseWorldActor(nint address) { }
         public void Dispose() { }
         public void RegisterAuxiliary(ushort objectIndex, ActorKind kind) { }
         public void UnregisterAuxiliary(ushort objectIndex) { }

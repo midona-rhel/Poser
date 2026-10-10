@@ -78,20 +78,22 @@ public sealed class SceneFileStoreTests
     [Fact]
     public void Corrupt_and_future_scene_data_have_typed_rejections()
     {
-        Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Parse("{ nope").Failure!.Kind);
+        using var fixture = new SceneFixture();
+        WriteContainer(fixture.Path, "{ nope");
+        Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Read(fixture.Path).Failure!.Kind);
 
         var json = JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options);
         json = json.Replace(
             $"\"FileVersion\": {SceneFile.CurrentVersion}",
             $"\"FileVersion\": {SceneFile.CurrentVersion + 1}",
             StringComparison.Ordinal);
-        var future = SceneFileStore.Default.Parse(json);
+        WriteContainer(fixture.Path, json);
+        var future = SceneFileStore.Default.Read(fixture.Path);
 
         Assert.False(future.Succeeded);
         Assert.Equal(SceneStoreFailureKind.FutureVersion, future.Failure!.Kind);
 
         // A bare JSON document is not a scene container.
-        using var fixture = new SceneFixture();
         File.WriteAllText(fixture.Path, JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options));
         var bare = SceneFileStore.Default.Read(fixture.Path);
         Assert.False(bare.Succeeded);

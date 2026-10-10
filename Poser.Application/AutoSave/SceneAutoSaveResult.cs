@@ -35,9 +35,3 @@ public sealed record SceneAutoSaveResult(
     public IReadOnlyList<string> Evidence =>
         RecoveryEvidencePaths ?? Array.Empty<string>();
 }
-
-/// <summary>Application-owned snapshot progress; observing it never drives the operation.</summary>
-public interface ISceneAutoSave : IDisposable
-{
-    string RootDirectory { get; }
-}

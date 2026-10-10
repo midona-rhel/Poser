@@ -20,14 +20,6 @@ using Poser.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Lazy GPose-exit seam for draining an admitted import before the
-/// scene and native providers begin teardown.</summary>
-public interface IPoseImportLifecycleControl
-{
-    bool IsPending { get; }
-    GestureResult CancelActive(string detail = "Pose import superseded.");
-}
-
 /// <summary>
 /// Applies a <see cref="PoseImportPlan"/> INSIDE the apply pass — Brio's
 /// interactive pose-file import (SkeletonPosingCapability.ImportSkeletonPose →
@@ -58,7 +50,7 @@ public interface IPoseImportLifecycleControl
 /// ports that as a second one-shot transitive batch between the apply pass
 /// and completion; the single history entry covers the CONVERGED state.
 /// </summary>
-public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
+public sealed class PoseImportCapture : IDisposable
 {
     /// <summary>Framework ticks a registered batch is given to reach a pass
     /// before the import gives up and rolls back — same guard as

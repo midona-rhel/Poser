@@ -26,7 +26,7 @@ using Poser.UI.Views;
 namespace Poser.UI;
 
 /// <summary>The info rail and the objects rail beside the grid.</summary>
-internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
+internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
 {
     private string? _detailsPath;
     private readonly List<(string Label, string Value)> _detailsRows = [];

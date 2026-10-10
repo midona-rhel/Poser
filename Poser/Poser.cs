@@ -109,7 +109,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<global::Poser.Bridge.DebugBridge>();
 #endif
         log.Debug("Load link: gaze");
-        _ = _serviceProvider.GetRequiredService<IGazeService>();
+        _ = _serviceProvider.GetRequiredService<GazeService>();
         log.Debug("Load link: integration");
         _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
         // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
@@ -253,7 +253,7 @@ public class Poser : IDalamudPlugin
         IPluginLog log,
         Action cleanup)
     {
-        var lifecycle = serviceProvider.GetService<ISessionLifecycleCoordinator>();
+        var lifecycle = serviceProvider.GetService<SessionLifecycleCoordinator>();
         try
         {
             if (framework.IsInFrameworkUpdateThread)

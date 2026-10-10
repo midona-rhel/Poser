@@ -9,14 +9,7 @@ public interface IIdleModRuntime
     Task<IdleModPackage> CaptureAsync(ActorId actor, IdleModOptions options);
 }
 
-public interface IIdleModExport
-{
-    bool Busy { get; }
-    Task<IdleModChoices> DescribeAsync(ActorId actor);
-    Task ExportAsync(ActorId actor, string destination, IdleModOptions? options = null);
-}
-
-public sealed class IdleModExport(IIdleModRuntime runtime) : IIdleModExport
+public sealed class IdleModExport(IIdleModRuntime runtime)
 {
     private int _busy;
     public bool Busy => Volatile.Read(ref _busy) != 0;

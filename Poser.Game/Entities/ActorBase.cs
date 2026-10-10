@@ -84,9 +84,4 @@ public class ActorBase : EntityBase, IActor
             return Quaternion.CreateFromAxisAngle(Vector3.UnitY, gameObject->Rotation);
         }
     }
-
-    public ActorBase(string name, nint address, ActorKind actorKind = ActorKind.None)
-        : this(EntityId.New(), name, address, actorKind)
-    {
-    }
 }

@@ -36,7 +36,7 @@ public unsafe partial class BonePosingService : IBonePosingService
     private readonly ISkeletonService _skeletonService;
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
-    private readonly IIKService _ikService;
+    private readonly IKService _ikService;
     private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
     private readonly IPosingService _posingService;
     private readonly Poser.Config.ConfigurationService _configuration;
@@ -198,7 +198,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         ISkeletonService skeletonService,
         IActorManager actorManager,
         IEventBus eventBus,
-        IIKService ikService,
+        IKService ikService,
         Poser.Game.Bindings.StableBindingRegistry bindings,
         IPosingService posingService,
         Poser.Config.ConfigurationService configuration,

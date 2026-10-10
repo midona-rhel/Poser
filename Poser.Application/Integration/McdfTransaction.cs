@@ -236,7 +236,6 @@ public sealed partial class McdfTransaction
         _progress = new McdfProgress(
             actor, operation.FileName, McdfOperationKind.Import,
             McdfPhase.Reading, 0, 0, 0, 0, true, null);
-        _owner.RaiseChanged();
         _task = Task.Run(
             () => RunImport(operation, path, cancellation, retained, retained == null ? null : retainedDirectory), CancellationToken.None);
         return IntegrationResult.Ok();
@@ -939,10 +938,7 @@ public sealed partial class McdfTransaction
             && operation.PendingGlamourerRecovery == null
             && operation.PendingBodyRecoveryJson == null;
         if (clean && failures.Count == 0)
-        {
-            _owner.RaiseChanged();
             return null;
-        }
 
         var current = _owner.OverridesFor(actor);
         bool nativeOutstanding = operation.TemporaryCollection != null
@@ -1477,7 +1473,6 @@ public sealed partial class McdfTransaction
         var cancellation = _cancellation!.Token;
         _progress = new McdfProgress(actor, operation.FileName, McdfOperationKind.Export,
             McdfPhase.CapturingExport, 0, 0, 0, 0, true, null);
-        _owner.RaiseChanged();
         _task = Task.Run(
             () => RunExport(
                 operation, path, description, glamourerState, customizeData,

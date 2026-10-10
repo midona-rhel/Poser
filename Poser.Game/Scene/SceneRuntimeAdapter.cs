@@ -55,10 +55,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IEnvironmentRuntimePort _environment;
-    private readonly IEnvironmentControl _environmentControl;
+    private readonly EnvironmentControl _environmentControl;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
-    private readonly IGazeService _gaze;
+    private readonly GazeService _gaze;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly IActorManager _actors;
@@ -95,10 +95,10 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         ILightingService lighting,
         IVirtualCameraService cameras,
         IEnvironmentRuntimePort environment,
-        IEnvironmentControl environmentControl,
+        EnvironmentControl environmentControl,
         StableBindingRegistry bindings,
         AnimationSession animation,
-        IGazeService gaze,
+        GazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingRuntimePort rendering,
         IActorManager actors,

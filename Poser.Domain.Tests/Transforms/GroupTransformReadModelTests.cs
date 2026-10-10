@@ -101,6 +101,14 @@ public sealed class GroupTransformReadModelTests
         TransformTargetId.ForActor(ActorId.New());
 
     [Fact]
+    public void Bone_targets_have_no_group_identity()
+    {
+        var skeleton = new SkeletonId(ActorId.New(), PoseSlot.Character, 0);
+        var bone = TransformTargetId.ForBone(new BoneId(skeleton, 0, 4, "j_kao"));
+        Assert.Throws<InvalidOperationException>(() => GroupTransformIdentity.LogicalId(bone));
+    }
+
+    [Fact]
     public void Captured_camera_frame_keeps_heading_but_removes_pitch_and_roll()
     {
         const float yaw = -1.2f, pitch = 1.1f, roll = 2f;

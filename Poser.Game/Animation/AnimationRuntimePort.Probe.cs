@@ -58,16 +58,6 @@ public sealed unsafe partial class AnimationRuntimePort
 
     public bool ProbeLogging => _probeTimelineHook?.IsEnabled == true;
 
-    /// <summary>A trace line from callers that have no log of their own.</summary>
-    public void ProbeTrace(string message) => _log.Information($"[AnimProbe] {message}");
-
-    /// <summary>Render flags for step tracing (0 = visible).</summary>
-    public int ProbeRenderFlags(ActorId actor)
-    {
-        var character = Resolve(actor, out _);
-        return character == null ? -1 : (int)character->GameObject.RenderFlags;
-    }
-
     /// <summary>Experiment: CancelTimeline with chosen a2/a3.</summary>
     public Outcome ProbeCancel(ActorId actor, nint a2, nint a3)
     {
@@ -134,23 +124,6 @@ public sealed unsafe partial class AnimationRuntimePort
                 state.ChildFrames[slot] = *(float*)(clip + 0xCC);
         }
         return state;
-    }
-
-    /// <summary>The GAME's window-owned gaze, read from the look-at
-    /// controller: GPose's face-camera writes LookMode.Position (3) at
-    /// controller+0x38 and, at +0x40, the world point the camera held
-    /// at the moment the toggle was flipped (a locked stare, not tracking)
-    /// (proven by the three-dump diff, 2026-09-01). Null when the game
-    /// holds no stare.</summary>
-    public System.Numerics.Vector3? ProbeGameGaze(ActorId actor)
-    {
-        var character = Resolve(actor, out _);
-        if (character == null)
-            return null;
-        var controller = (byte*)&character->LookAt.Controller;
-        if (*(int*)(controller + 0x38) != 3)
-            return null;
-        return *(System.Numerics.Vector3*)(controller + 0x40);
     }
 
     // ── The write logger ──────────────────────────────────────────────

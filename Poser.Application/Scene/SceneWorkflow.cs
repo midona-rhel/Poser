@@ -74,15 +74,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// draws.</summary>
     private static readonly TimeSpan CompanionReadyTimeout = TimeSpan.FromSeconds(5);
 
-    /// <summary>Bound for one saved character file to import. Generous because
-    /// the transaction behind it extracts a whole package and waits out its
-    /// own redraw barrier; cancelling the load cuts it short.</summary>
     /// <summary>
     /// A character-file import's bound. Real packages run to hundreds of
     /// megabytes and the import decompresses, extracts, applies and waits for
     /// a redraw, so this is minutes rather than the one minute it used to be —
     /// a bound that expires mid-import turns a working restore into a named
-    /// failure for no reason but impatience.
+    /// failure for no reason but impatience. Cancelling the load cuts it short.
     /// </summary>
     private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromMinutes(10);
 
@@ -295,11 +292,14 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         return null;
     }
 
+    /// <summary>Makes the operation current and publishes its first phase
+    /// under the publication gate, like every later step.</summary>
     private Operation Admit(
         Guid sceneScopeId,
         string fileName,
         SceneOperationKind kind,
-        SessionGeneration session)
+        SessionGeneration session,
+        ScenePhase firstPhase)
     {
         _cancellation?.Dispose();
         _cancellation = new CancellationTokenSource();
@@ -318,6 +318,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             _current = operation;
             _receipt = OperationReceipt.Pending(
                 operation.OperationId, operation.Epoch, session, operation.Target);
+            _progress = new SceneProgress(kind, fileName, firstPhase, 0, 0, true, null);
         }
         return operation;
     }
@@ -338,11 +339,9 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
         var sceneId = Guid.NewGuid();
         var operation = Admit(
-            sceneId, System.IO.Path.GetFileName(path), SceneOperationKind.Save, session);
+            sceneId, System.IO.Path.GetFileName(path), SceneOperationKind.Save, session,
+            ScenePhase.RefreshingPoses);
         var cancellation = _cancellation!.Token;
-        _progress = new SceneProgress(
-            SceneOperationKind.Save, operation.FileName,
-            ScenePhase.RefreshingPoses, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
             () => RunSave(
@@ -383,14 +382,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
         var operation = Admit(
             Guid.NewGuid(), System.IO.Path.GetFileName(path),
-            SceneOperationKind.Load, session);
+            SceneOperationKind.Load, session, ScenePhase.Reading);
         operation.Replay = replay;
         if (replay is not null)
             replay.Current = operation;
         var cancellation = _cancellation!.Token;
-        _progress = new SceneProgress(
-            SceneOperationKind.Load, operation.FileName,
-            ScenePhase.Reading, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
             () => RunLoad(operation, path, chosen, cancellation),
@@ -2146,10 +2142,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// <summary>Bounded cancel/drain before disposal: admission closes
     /// permanently, tokens cancel, and the active task is joined inside the
     /// bound. An abandoned task cannot mutate anything — every phase
-    /// re-guards on the cancelled token.</summary>
-    /// <summary>Idempotent: the container disposes a singleton once per
-    /// registration, and the workflow is registered as itself and as its
-    /// port. The second call must not cancel a disposed source.</summary>
+    /// re-guards on the cancelled token. Idempotent: the container disposes a
+    /// singleton once per registration, and the workflow is registered as
+    /// itself and as its port. The second call must not cancel a disposed
+    /// source.</summary>
     public void Dispose()
     {
         if (_disposed)

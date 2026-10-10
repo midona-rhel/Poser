@@ -9,6 +9,7 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Config;
+using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
@@ -27,7 +28,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IPoseInteraction _poseInteraction;
@@ -375,7 +376,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         SceneSession scene,
         IViewportReads viewport,
         ICameraProjection cameraService,
-        IEditorState editorState,
+        EditorState editorState,
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
         WorldAdoptionSource adoption,

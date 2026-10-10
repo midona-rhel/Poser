@@ -64,7 +64,7 @@ public enum EnvironmentTab
 public sealed class EnvironmentPane
 {
     private EnvironmentReading _reading = new();
-    private readonly IEnvironmentControl _values;
+    private readonly EnvironmentControl _values;
     private readonly ITextureProvider _textures;
     private readonly ISceneWorkflow _workflow;
 
@@ -184,7 +184,7 @@ public sealed class EnvironmentPane
         ISceneWorkflow workflow,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
-        IEnvironmentControl values)
+        EnvironmentControl values)
     {
         _configuration = configuration;
         _values = values;

@@ -37,7 +37,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private readonly IFramework _framework;
     private readonly IEnvironmentRuntimePort _environment;
-    private readonly IEnvironmentControl _environmentControl;
+    private readonly EnvironmentControl _environmentControl;
     private readonly global::Poser.UI.PoseFileInspectorSection _poseFiles;
     private readonly global::Poser.UI.PoseLibraryPane _poseLibrary;
     private readonly IPluginLog _log;
@@ -67,7 +67,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
     private readonly ISceneWorkflow _scenes;
-    private readonly IIdleModExport _idleExport;
+    private readonly IdleModExport _idleExport;
     private readonly IDataManager _idleData;
     private readonly ISigScanner _idleScanner;
     private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
@@ -90,7 +90,7 @@ public sealed partial class DebugBridge : IDisposable
         IServiceProvider services,
         global::Poser.Config.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
-        IEnvironmentControl environmentControl,
+        EnvironmentControl environmentControl,
         global::Poser.UI.PoseFileInspectorSection poseFiles,
         global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
@@ -131,7 +131,7 @@ public sealed partial class DebugBridge : IDisposable
         Application.Transforms.TransformParenting parenting,
         Application.Transforms.IParentingRuntime parentingRuntime,
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
-        IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
+        IdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
         _services = services;
         _configuration = configuration;
