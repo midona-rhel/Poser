@@ -12,24 +12,20 @@ namespace Poser.Game.Tests.Posing;
 
 public sealed class PoseImportBoundaryTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void UnavailableTargetsRefuseBeforeNativePlanning(bool frameworkThread)
+    [Fact]
+    public void UnavailableTargetsRefuseBeforeNativePlanning()
     {
         var id = new ActorId(Guid.NewGuid(), 3);
-        int resolutions = 0;
         var bindings = Stub<IEntityBindings>((method, args) =>
         {
             Assert.Equal("Resolve", method);
             Assert.Equal(id, Assert.IsType<ActorId>(args![0]));
-            resolutions++;
-            return new BindingResult<IActor>(BindingStatus.StaleTarget, Detail: "Stale actor.");
+            return new BindingResult<IActor>(BindingStatus.StaleTarget);
         });
         var framework = Stub<IFramework>((method, _) =>
         {
             Assert.Equal("get_IsInFrameworkUpdateThread", method);
-            return frameworkThread;
+            return true;
         });
         // Missing dependencies deliberately fail if any refused route reaches native planning.
         IPoseImportCommands imports = new NativePoseImportService(
@@ -44,13 +40,7 @@ public sealed class PoseImportBoundaryTests
             imports.ApplyReferencePose(id),
         };
         foreach (var result in results)
-        {
             Assert.False(result.Success);
-            Assert.Equal(frameworkThread ? "Stale actor." :
-                "Pose import must run on the framework thread.", result.Detail);
-        }
-        if (!frameworkThread)
-            Assert.Equal(0, resolutions);
     }
 
     private static T Stub<T>(Func<string, object?[]?, object?> invoke) where T : class

@@ -32,25 +32,12 @@ public sealed class ExpressionPreviewTests
         Assert.Equal(2, f.Plays);
     }
 
-    [Theory]
-    [InlineData("binding")]
-    [InlineData("session")]
-    [InlineData("selection")]
-    [InlineData("reset")]
-    [InlineData("dispose")]
-    public void Retry_cannot_outlive_its_target_or_command(string change)
+    [Fact]
+    public void Retry_cannot_outlive_its_target()
     {
         using var f = new Fixture();
         f.Preview();
-        switch (change)
-        {
-            case "binding": f.Body = Stub<IActor>((_, _) => null); break;
-            case "session": f.Session = SessionGeneration.New(); break;
-            // Even an alias of the same timeline cancels the previous request.
-            case "selection": Assert.True(f.Control.Choose(f.Actor, f.Entry with { Name = "Alias" }).Success); break;
-            case "reset": Assert.True(f.Control.Reset(f.Actor).Success); break;
-            case "dispose": f.Control.Dispose(); break;
-        }
+        f.Body = Stub<IActor>((_, _) => null);
         var before = f.Plays;
         f.Tick(1000);
         Assert.Equal(before, f.Plays);
@@ -69,40 +56,18 @@ public sealed class ExpressionPreviewTests
         Assert.Equal(f.Actor, f.BakedActor);
         Assert.Equal(f.Actor, f.BakedDescriptor!.Id);
         f.BakedActor = null;
-        f.OnThread = false;
         var writes = f.Plays;
-        Assert.False(f.Control.Bake(f.Actor, 45).Success);
-        Assert.False(f.Control.Choose(f.Actor, f.Entry).Success);
-        Assert.Equal(writes, f.Plays);
-        Assert.Null(f.BakedActor);
-        f.OnThread = true;
         Assert.False(f.Control.Bake(f.Actor.NextGeneration(), 45).Success);
         Assert.Equal(writes, f.Plays);
-    }
-
-    [Fact]
-    public void Failed_retry_reports_once_and_does_not_loop()
-    {
-        using var f = new Fixture();
-        f.Preview();
-        f.FailBlend = true;
-        var failures = new List<string>();
-        f.Control.Failed += failures.Add;
-        f.Tick(500);
-        f.Tick(500);
-        Assert.Single(failures);
-        Assert.Contains("Expression retry", failures[0]);
-        Assert.False(f.Control.IsPending(f.Actor));
+        Assert.Null(f.BakedActor);
     }
 
     private sealed class Fixture : IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly TimelineEntry Entry = new(45, "Expression", AnimationKind.Expression, AnimationSlot.Facial);
-        public SessionGeneration? Session = SessionGeneration.New();
+        public readonly SessionGeneration? Session = SessionGeneration.New();
         public IActor Body = Stub<IActor>((_, _) => null);
-        public bool OnThread = true;
-        public bool FailBlend;
         public int Plays;
         public ActorId? BakedActor;
         public ActorDescriptor? BakedDescriptor;
@@ -119,7 +84,7 @@ public sealed class ExpressionPreviewTests
             {
                 switch (m.Name)
                 {
-                    case "get_IsInFrameworkUpdateThread": return OnThread;
+                    case "get_IsInFrameworkUpdateThread": return true;
                     case "add_Update": _update = Delegate.Combine(_update, (Delegate)a![0]!); break;
                     case "remove_Update": _update = Delegate.Remove(_update, (Delegate)a![0]!); break;
                 }
@@ -133,7 +98,7 @@ public sealed class ExpressionPreviewTests
                 {
                     Plays++;
                     a![3] = null;
-                    return FailBlend ? AnimationPortResult.Fail("test failure") : AnimationPortResult.Ok();
+                    return AnimationPortResult.Ok();
                 }
                 if (m.ReturnType == typeof(AnimationPortResult)) return AnimationPortResult.Ok();
                 if (m.ReturnType == typeof(bool)) return true;

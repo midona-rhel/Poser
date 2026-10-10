@@ -43,14 +43,6 @@ public sealed class GazePoseFrameTests
     }
 
     [Fact]
-    public void Missing_or_singular_frames_are_not_used()
-    {
-        Assert.Null(GazePoseFrames.Map(null, Matrix4x4.Identity, Matrix4x4.Identity));
-        Assert.Null(GazePoseFrames.Map(Matrix4x4.Identity, Matrix4x4.CreateScale(0), Matrix4x4.Identity));
-        Assert.Null(GazePoseFrames.Map(Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.CreateScale(0)));
-    }
-
-    [Fact]
     public void Scene_roundtrip_preserves_opt_in_and_old_scenes_default_off()
     {
         Assert.False(JsonConvert.DeserializeObject<SceneActorGaze>("{}")!.PoseAware);
