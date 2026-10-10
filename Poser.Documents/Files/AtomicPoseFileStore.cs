@@ -362,277 +362,46 @@ public sealed class AtomicPoseFileStore
                 destination);
         }
 
-        string fullDestination;
-        string temporary;
-        string backup;
-        try
+        var written = AtomicFile.Write(_fileSystem, destination, bytes, new AtomicWriteOptions
         {
-            fullDestination = Path.GetFullPath(destination);
-            var directory = Path.GetDirectoryName(fullDestination)
-                ?? throw new IOException("The destination has no parent directory.");
-            var fileName = Path.GetFileName(fullDestination);
-            temporary = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
-            backup = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.bak");
-        }
-        catch (Exception ex)
-        {
-            return WriteFailure(
-                PoseFileStoreFailureKind.TemporaryCreate,
-                $"Preparing the atomic pose paths failed: {ex.Message}",
-                destination);
-        }
-
-        PoseFileStoreFailure? failure = null;
-        var failureKind = PoseFileStoreFailureKind.TemporaryCreate;
-        try
-        {
-            failureKind = PoseFileStoreFailureKind.TemporaryCreate;
-            Before(PoseFileStorePhase.CreateTemporary, temporary);
-            using (var stream = _fileSystem.CreateNew(temporary))
-            {
-                failureKind = PoseFileStoreFailureKind.TemporaryWrite;
-                Before(PoseFileStorePhase.WriteTemporary, temporary);
-                stream.Write(bytes);
-
-                failureKind = PoseFileStoreFailureKind.TemporaryFlush;
-                Before(PoseFileStorePhase.FlushTemporary, temporary);
-                _fileSystem.FlushToDisk(stream);
-            }
-
-            failureKind = PoseFileStoreFailureKind.TemporaryReopen;
-            Before(PoseFileStorePhase.ReopenTemporary, temporary);
-            var reopened = Read(temporary);
-            if (!reopened.Succeeded)
-            {
-                failure = PoseFileStoreFailure.Create(
-                    PoseFileStoreFailureKind.TemporaryReopen,
-                    $"Reopening the atomic pose temp failed: {reopened.Failure!.Detail}",
-                    temporary);
-            }
-            else if (_fileSystem.Exists(fullDestination))
-            {
-                return CommitExisting(bytes, temporary, fullDestination, backup);
-            }
-            else
-            {
-                return CommitNew(bytes, temporary, fullDestination);
-            }
-        }
-        catch (Exception ex)
-        {
-            failure = PoseFileStoreFailure.Create(
-                failureKind,
-                $"Atomic pose write failed during {failureKind}: {ex.Message}",
-                temporary);
-        }
-
-        failure ??= PoseFileStoreFailure.Create(
-            PoseFileStoreFailureKind.TemporaryReopen,
-            "The atomic pose temp was not committed.",
-            temporary);
-        return CleanupPrecommitFailure(failure, temporary);
-    }
-
-    private PoseFileWriteOutcome CommitExisting(
-        byte[] bytes,
-        string temporary,
-        string destination,
-        string backup)
-    {
-        try
-        {
-            Before(PoseFileStorePhase.ReplaceDestination, destination);
-            _fileSystem.Replace(temporary, destination, backup);
-            if (!Matches(destination, bytes))
-            {
-                return UncertainCommitFailure(
-                    PoseFileStoreFailureKind.Replace,
-                    "Replace returned without the validated bytes at the destination.",
-                    destination,
-                    temporary,
-                    backup);
-            }
-            return CleanupConfirmedCommit(bytes, destination, temporary, backup);
-        }
-        catch (Exception ex)
-        {
-            if (Matches(destination, bytes))
-                return CleanupConfirmedCommit(bytes, destination, temporary, backup);
-            return UncertainCommitFailure(
-                PoseFileStoreFailureKind.Replace,
-                $"Atomic pose replace failed: {ex.Message}",
-                destination,
-                temporary,
-                backup);
-        }
-    }
-
-    private PoseFileWriteOutcome CommitNew(
-        byte[] bytes,
-        string temporary,
-        string destination)
-    {
-        try
-        {
-            Before(PoseFileStorePhase.MoveDestination, destination);
-            _fileSystem.Move(temporary, destination);
-            if (!Matches(destination, bytes))
-            {
-                return UncertainCommitFailure(
-                    PoseFileStoreFailureKind.Move,
-                    "Move returned without the validated bytes at the destination.",
-                    destination,
-                    temporary);
-            }
-            return CleanupConfirmedCommit(bytes, destination, temporary);
-        }
-        catch (Exception ex)
-        {
-            if (Matches(destination, bytes))
-                return CleanupConfirmedCommit(bytes, destination, temporary);
-            return UncertainCommitFailure(
-                PoseFileStoreFailureKind.Move,
-                $"Atomic pose move failed: {ex.Message}",
-                destination,
-                temporary);
-        }
-    }
-
-    private PoseFileWriteOutcome CleanupConfirmedCommit(
-        ReadOnlySpan<byte> committedBytes,
-        string destination,
-        string temporary,
-        string? backup = null)
-    {
-        var cleanupErrors = new List<string>();
-        try
-        {
-            Before(PoseFileStorePhase.CleanupTemporary, temporary);
-            _fileSystem.Delete(temporary);
-        }
-        catch (Exception ex)
-        {
-            cleanupErrors.Add($"{temporary}: {ex.Message}");
-        }
-
-        if (backup is not null)
-        {
-            if (!Matches(destination, committedBytes))
-            {
-                cleanupErrors.Add(
-                    $"{backup}: destination postcondition changed before backup cleanup");
-            }
-            else
-            {
-                try
-                {
-                    Before(PoseFileStorePhase.CleanupBackup, backup);
-                    _fileSystem.Delete(backup);
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add($"{backup}: {ex.Message}");
-                }
-            }
-        }
-
-        if (cleanupErrors.Count == 0)
+            Subject = "pose",
+            KeepTemporaryOnFailure = true,
+            VerifyTemporary = temporary => Read(temporary) is { Succeeded: false } reopened
+                ? $"Reopening the atomic pose temp failed: {reopened.Failure!.Detail}"
+                : null,
+            BeforePhase = _beforePhase is null
+                ? null
+                : (phase, path) => _beforePhase(StorePhase(phase), path),
+        });
+        if (written.Succeeded)
             return PoseFileWriteOutcome.Success();
-
-        var evidence = backup is null
-            ? SurvivingCandidates(temporary)
-            : SurvivingCandidates(temporary, backup);
         return PoseFileWriteOutcome.Failed(
-            PoseFileStoreFailure.Create(
-                PoseFileStoreFailureKind.Cleanup,
-                "The pose was committed, but recovery-file cleanup failed: " +
-                string.Join("; ", cleanupErrors)),
-            evidence);
+            PoseFileStoreFailure.Create(FailureKind(written.Phase!.Value), written.Detail!, written.Path),
+            written.RecoveryEvidencePaths);
     }
 
-    private PoseFileWriteOutcome CleanupPrecommitFailure(
-        PoseFileStoreFailure failure,
-        string temporary)
+    private static PoseFileStoreFailureKind FailureKind(AtomicWritePhase phase) => phase switch
     {
-        try
-        {
-            Before(PoseFileStorePhase.CleanupTemporary, temporary);
-            _fileSystem.Delete(temporary);
-        }
-        catch (Exception cleanup)
-        {
-            failure = failure.WithDetail(
-                failure.Detail + $" The temp could not be deleted: {cleanup.Message}");
-        }
+        AtomicWritePhase.CreateTemporary => PoseFileStoreFailureKind.TemporaryCreate,
+        AtomicWritePhase.WriteTemporary => PoseFileStoreFailureKind.TemporaryWrite,
+        AtomicWritePhase.FlushTemporary => PoseFileStoreFailureKind.TemporaryFlush,
+        AtomicWritePhase.ReopenTemporary => PoseFileStoreFailureKind.TemporaryReopen,
+        AtomicWritePhase.ReplaceDestination => PoseFileStoreFailureKind.Replace,
+        AtomicWritePhase.MoveDestination => PoseFileStoreFailureKind.Move,
+        _ => PoseFileStoreFailureKind.Cleanup,
+    };
 
-        return PoseFileWriteOutcome.Failed(failure, SurvivingCandidates(temporary));
-    }
-
-    private PoseFileWriteOutcome UncertainCommitFailure(
-        PoseFileStoreFailureKind kind,
-        string detail,
-        string destination,
-        params string[] recoveryCandidates) =>
-        PoseFileWriteOutcome.Failed(
-            PoseFileStoreFailure.Create(kind, detail, destination),
-            SurvivingCandidates(recoveryCandidates));
-
-    private IReadOnlyList<string> SurvivingCandidates(params string[] candidates)
+    private static PoseFileStorePhase StorePhase(AtomicWritePhase phase) => phase switch
     {
-        var surviving = new List<string>();
-        foreach (var candidate in candidates.Distinct(StringComparer.Ordinal))
-        {
-            if (Observe(candidate) is not PathObservation.Missing)
-                surviving.Add(candidate);
-        }
-        return surviving;
-    }
-
-    private bool Matches(string path, ReadOnlySpan<byte> expected)
-    {
-        try
-        {
-            using var stream = _fileSystem.OpenRead(path);
-            if (stream.Length != expected.Length)
-                return false;
-            var buffer = new byte[8192];
-            var offset = 0;
-            while (offset < expected.Length)
-            {
-                var count = Math.Min(buffer.Length, expected.Length - offset);
-                stream.ReadExactly(buffer.AsSpan(0, count));
-                if (!buffer.AsSpan(0, count).SequenceEqual(expected.Slice(offset, count)))
-                    return false;
-                offset += count;
-            }
-            return stream.ReadByte() == -1;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private PathObservation Observe(string path)
-    {
-        try
-        {
-            using var stream = _fileSystem.OpenRead(path);
-            return PathObservation.Present;
-        }
-        catch (FileNotFoundException)
-        {
-            return PathObservation.Missing;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return PathObservation.Missing;
-        }
-        catch
-        {
-            return PathObservation.Unknown;
-        }
-    }
+        AtomicWritePhase.CreateTemporary => PoseFileStorePhase.CreateTemporary,
+        AtomicWritePhase.WriteTemporary => PoseFileStorePhase.WriteTemporary,
+        AtomicWritePhase.FlushTemporary => PoseFileStorePhase.FlushTemporary,
+        AtomicWritePhase.ReopenTemporary => PoseFileStorePhase.ReopenTemporary,
+        AtomicWritePhase.ReplaceDestination => PoseFileStorePhase.ReplaceDestination,
+        AtomicWritePhase.MoveDestination => PoseFileStorePhase.MoveDestination,
+        AtomicWritePhase.CleanupTemporary => PoseFileStorePhase.CleanupTemporary,
+        _ => PoseFileStorePhase.CleanupBackup,
+    };
 
     private PoseFileReadOutcome Decode(ReadOnlySpan<byte> bytes, string? path)
     {
@@ -1441,11 +1210,4 @@ public sealed class AtomicPoseFileStore
         string detail,
         string? path = null) =>
         PoseFileWriteOutcome.Failed(PoseFileStoreFailure.Create(kind, detail, path));
-
-    private enum PathObservation
-    {
-        Missing,
-        Present,
-        Unknown,
-    }
 }

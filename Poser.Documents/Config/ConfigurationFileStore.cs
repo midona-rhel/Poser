@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Poser.Files;
 
 namespace Poser.Config;
 
@@ -48,23 +49,10 @@ public sealed class ConfigurationFileStore(string path)
     {
         var destination = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
+        AtomicFile.Write(new SystemAtomicFileSystem(), destination, stream =>
         {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                using (var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true))
-                {
-                    JsonSerializer.Create(Settings).Serialize(writer, configuration);
-                    writer.Flush();
-                }
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(temporary, destination, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
+            using var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true);
+            JsonSerializer.Create(Settings).Serialize(writer, configuration);
+        }, new AtomicWriteOptions { Subject = "configuration" }).ThrowIfFailed();
     }
 }

@@ -250,32 +250,28 @@ public static class StageFile
         ArgumentNullException.ThrowIfNull(notes);
         var stage = FromScene(
             scene, Path.GetFileNameWithoutExtension(path), notes);
-        string temporary = path + ".tmp";
+        byte[] bytes;
         try
         {
-            string json = JsonSerializer.Serialize(
+            bytes = JsonSerializer.SerializeToUtf8Bytes(
                 stage, StageDefinition.StandardSerializerOptions);
-            File.WriteAllText(temporary, json);
-            File.Move(temporary, path, overwrite: true);
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
-            try
-            {
-                if (File.Exists(temporary))
-                    File.Delete(temporary);
-            }
-            catch (Exception)
-            {
-                return SceneWriteOutcome.Failed(SceneStoreFailure.Create(
-                    SceneStoreFailureKind.TemporaryWrite, ex.Message, path),
-                    new[] { temporary });
-            }
             return SceneWriteOutcome.Failed(SceneStoreFailure.Create(
-                SceneStoreFailureKind.TemporaryWrite, ex.Message, path));
+                SceneStoreFailureKind.Serialization, ex.Message, path));
         }
-        return SceneWriteOutcome.Success();
+
+        var written = AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
+            new AtomicWriteOptions { Subject = "stage" });
+        return written.Committed
+            ? SceneWriteOutcome.Success()
+            : SceneWriteOutcome.Failed(
+                SceneStoreFailure.Create(
+                    SceneFileStore.FailureKind(written.Phase!.Value),
+                    written.Detail!,
+                    written.Path ?? path),
+                written.RecoveryEvidencePaths);
     }
 
     private static StageDefinition FromScene(

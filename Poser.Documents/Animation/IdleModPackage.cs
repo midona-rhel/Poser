@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Poser.Files;
 
 namespace Poser.Documents.Animation;
 
@@ -21,27 +22,21 @@ public sealed record IdleModPackage(string Name, string Description, IReadOnlyLi
             throw new ArgumentException("Choose a .pmp destination.", nameof(destination));
         var directory = Path.GetDirectoryName(path)!;
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException(directory);
-        var temporary = Path.Combine(directory, $".poser-idle-{Guid.NewGuid():N}.tmp");
-        try
+        // No overwrite or backup: an existing mod export remains untouched.
+        AtomicFile.Write(new SystemAtomicFileSystem(), path, stream =>
         {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var zip = new ZipArchive(stream, ZipArchiveMode.Create))
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
+            var map = new Dictionary<string, string>();
+            for (int i = 0; i < Files.Count; i++)
             {
-                var map = new Dictionary<string, string>();
-                for (int i = 0; i < Files.Count; i++)
-                {
-                    string resource = $"files/idle-{i}.pap";
-                    map.Add(Files[i].GamePath, resource);
-                    using var entry = zip.CreateEntry(resource, CompressionLevel.Optimal).Open();
-                    entry.Write(Files[i].Bytes);
-                }
-                Json("meta.json", new { FileVersion = 3, Name, Author = "", Description, Version = "1.0", Website = "", ModTags = new[] { "Animation", "Pose" } });
-                Json("default_mod.json", new { Files = map, FileSwaps = new Dictionary<string, string>(), Manipulations = Array.Empty<object>() });
-                void Json(string name, object value) { using var entry = zip.CreateEntry(name).Open(); JsonSerializer.Serialize(entry, value); }
+                string resource = $"files/idle-{i}.pap";
+                map.Add(Files[i].GamePath, resource);
+                using var entry = zip.CreateEntry(resource, CompressionLevel.Optimal).Open();
+                entry.Write(Files[i].Bytes);
             }
-            // No overwrite or backup: an existing mod export remains untouched.
-            File.Move(temporary, path, false);
-        }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            Json("meta.json", new { FileVersion = 3, Name, Author = "", Description, Version = "1.0", Website = "", ModTags = new[] { "Animation", "Pose" } });
+            Json("default_mod.json", new { Files = map, FileSwaps = new Dictionary<string, string>(), Manipulations = Array.Empty<object>() });
+            void Json(string name, object value) { using var entry = zip.CreateEntry(name).Open(); JsonSerializer.Serialize(entry, value); }
+        }, new AtomicWriteOptions { Subject = "idle mod", Overwrite = false }).ThrowIfFailed();
     }
 }
