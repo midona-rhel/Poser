@@ -9,7 +9,7 @@ using Poser.Domain.Operations;
 using Poser.Domain.Posing;
 using Poser.Files;
 
-namespace Poser.Game.Tests.Scene;
+namespace Poser.Application.Tests.Scene;
 
 public sealed class PendingSceneCreationTests
 {

@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using static Poser.Application.Tests.Fixtures.JournalUndo;
 
 namespace Poser.Application.Tests.Transforms;
 
@@ -12,15 +13,6 @@ public sealed class ValueJournalTests
 
     private static void Set(ValueJournal journal, Target t, float value) =>
         journal.Set((t, "Opacity"), "Set opacity", () => t.Opacity, v => t.Opacity = v, value, () => t.Alive);
-
-    private static bool Undo(TransformHistory history)
-    {
-        var step = (JournalStep)history.PeekUndo()!;
-        if (!step.Undo())
-            return false;
-        history.CommitUndo(step);
-        return true;
-    }
 
     [Fact]
     public void A_drag_is_one_step_that_undoes_to_the_value_before_the_drag()

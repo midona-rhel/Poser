@@ -4,7 +4,7 @@ using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.Tests.Cameras;
+namespace Poser.Application.Tests.Presentation;
 
 public sealed class CameraSelectionPolicyTests
 {

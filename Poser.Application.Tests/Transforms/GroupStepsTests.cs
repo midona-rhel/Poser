@@ -2,21 +2,13 @@ using NSubstitute;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using static Poser.Application.Tests.Fixtures.JournalUndo;
 
-namespace Poser.Game.Tests.Journal;
+namespace Poser.Application.Tests.Transforms;
 
 public sealed class GroupStepsTests
 {
     private static SelectionId Actor() => SelectionId.ForActor(ActorId.New());
-
-    private static bool Undo(TransformHistory history)
-    {
-        var step = (JournalStep)history.PeekUndo()!;
-        if (!step.Undo())
-            return false;
-        history.CommitUndo(step);
-        return true;
-    }
 
     [Fact]
     public void Creating_and_renaming_a_group_are_steps_that_put_the_whole_model_back()

@@ -7,7 +7,7 @@ using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
-namespace Poser.Game.Tests.Animation;
+namespace Poser.Application.Tests.Animation;
 
 public sealed class AnimationInteractionOwnershipTests
 {
