@@ -55,7 +55,11 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
-    private readonly ISceneRuntime _runtime;
+    private readonly ISceneStatePort _sceneState;
+    private readonly ISceneCapturePort _capture;
+    private readonly ISceneMaterializer _materializer;
+    private readonly IActorRestorePort _actorRestore;
+    private readonly ISceneHistoryPort _historyPort;
     private readonly ISceneDocumentStore _documents;
     private readonly ISceneWorkflowObserver _observer;
     private readonly ISceneStructure _structure;
@@ -72,28 +76,36 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             : progress);
 
     public SceneWorkflow(
-        ISceneRuntime runtime,
+        ISceneStatePort sceneState,
+        ISceneCapturePort capture,
+        ISceneMaterializer materializer,
+        IActorRestorePort actorRestore,
+        ISceneHistoryPort historyPort,
         ISceneDocumentStore documents,
         ISceneWorkflowObserver observer,
         TransformHistory history,
         ISceneStructure structure,
         TransformParenting parenting)
     {
-        _runtime = runtime;
+        _sceneState = sceneState;
+        _capture = capture;
+        _materializer = materializer;
+        _actorRestore = actorRestore;
+        _historyPort = historyPort;
         _documents = documents;
         _observer = observer;
         _structure = structure;
         _parenting = parenting;
-        _loadStructure = new SceneLoadStructure(runtime, structure, parenting);
-        _rollback = new SceneLoadRollback(runtime, structure, parenting);
-        _loadHistory = new SceneLoadHistory(history, runtime, _rollback, this);
+        _loadStructure = new SceneLoadStructure(sceneState, structure, parenting);
+        _rollback = new SceneLoadRollback(sceneState, materializer, structure, parenting);
+        _loadHistory = new SceneLoadHistory(history, sceneState, historyPort, _rollback, this);
     }
 
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
     /// cheap stat over the actors in the session and nothing more.</summary>
-    public long EstimatedAppearanceBytes => _runtime.EstimateAppearanceBytes();
+    public long EstimatedAppearanceBytes => _capture.EstimateAppearanceBytes();
 
     /// <summary>The armed capture's bound. Only the contract tests set it —
     /// waiting the real bound out would make asserting the timeout a
@@ -205,7 +217,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     {
         if (AdmissionGate() is { } refused)
             return refused;
-        if (_runtime.ActiveSession is not { } session)
+        if (_sceneState.ActiveSession is not { } session)
             return Outcome.Fail(
                 "No GPose session is active; a scene save needs the exact session identity.");
 
@@ -246,7 +258,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             chosen = chosen with { PlaceRelativeToCurrentOrigin = false };
         if (AdmissionGate() is { } refused)
             return refused;
-        if (_runtime.ActiveSession is not { } session)
+        if (_sceneState.ActiveSession is not { } session)
             return Outcome.Fail(
                 "No GPose session is active; a scene load needs the exact session identity.");
         // A load that includes no category would report success over a session
@@ -262,7 +274,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         if (replay is not null)
             replay.Current = operation;
         var load = new SceneLoadTransaction(
-            this, _runtime, _documents, _loadStructure, _rollback, _loadHistory,
+            this, _sceneState, _materializer, _actorRestore, _historyPort, _documents,
+            _loadStructure, _rollback, _loadHistory,
             operation, path, chosen, cancellation);
         _flight.RaiseChanged();
         _flight.Run(() => load.Run());
@@ -311,9 +324,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             string? armRefusal;
             try
             {
-                armRefusal = await _runtime.OnFramework(() =>
-                    operation.Guard(_runtime, cancellation)
-                        ?? _runtime.ArmSceneCapture(
+                armRefusal = await _sceneState.OnFramework(() =>
+                    operation.Guard(_sceneState, cancellation)
+                        ?? _capture.ArmSceneCapture(
                             operation.SceneScopeId, description,
                             outcome =>
                             {
@@ -409,7 +422,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
-                var sealed_ = await _runtime.SealAppearance(
+                var sealed_ = await _capture.SealAppearance(
                     scene, actorIdentities, AppearanceSealTimeout,
                     cancellation);
                 notes.AddRange(sealed_.Notes);
@@ -433,7 +446,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             // thread, between the capture that produced them and the write:
             // hashing a package is file work the frame the capture ran on may
             // not spend.
-            if (_runtime.StampMcdfHashes(scene) is { Count: > 0 } stamped)
+            if (_capture.StampMcdfHashes(scene) is { Count: > 0 } stamped)
                 notes.AddRange(stamped);
 
             // The narrowed, sealed document is what gets written, so its own
@@ -457,7 +470,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             // packages sealing created are the caller's to drop now — and only
             // now: deleting them earlier would delete the bytes being saved.
             foreach (var temporary in sealTemporaries)
-                _runtime.DeleteTemporary(temporary);
+                _capture.DeleteTemporary(temporary);
             if (!written.Succeeded)
             {
                 Finish(
@@ -582,7 +595,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         // needs the framework thread this Dispose is blocking.
         try
         {
-            _runtime.AbandonChildWaits();
+            _sceneState.AbandonChildWaits();
         }
         catch (Exception)
         {

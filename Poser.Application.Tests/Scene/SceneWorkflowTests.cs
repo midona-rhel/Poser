@@ -15,7 +15,7 @@ namespace Poser.Application.Tests.Scene;
 
 /// <summary>
 /// The scene transaction's behavior contract, driven through the
-/// <see cref="ISceneRuntime"/> seam so every assertion is about admission,
+/// scene runtime ports so every assertion is about admission,
 /// ordering, guards, rollback and terminal truthfulness — never about native
 /// state. The fake runs framework actions inline, so an awaited
 /// <see cref="SceneWorkflow.Drain"/> is an exact barrier.
@@ -201,7 +201,8 @@ public sealed class SceneWorkflowTests
     /// the test does not bring its own.</summary>
     private static SceneWorkflow Workflow(FakeRuntime runtime, TransformHistory? history = null,
         ISceneStructure? structure = null, TransformParenting? parenting = null) =>
-        new(runtime, new FakeDocuments(runtime), new NoObserver(), history ?? new TransformHistory(),
+        new(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
+            history ?? new TransformHistory(),
             structure ?? new NoStructure(), parenting ?? Parenting());
 
     private static TransformParenting Parenting()
@@ -251,7 +252,8 @@ public sealed class SceneWorkflowTests
         }
     }
 
-    private sealed class FakeRuntime : ISceneRuntime, IDisposable
+    private sealed class FakeRuntime : ISceneStatePort, ISceneCapturePort, ISceneMaterializer,
+        IActorRestorePort, ISceneHistoryPort, IDisposable
     {
         public string WorldObjectName(string path) => Path.GetFileNameWithoutExtension(path);
 
@@ -287,6 +289,8 @@ public sealed class SceneWorkflowTests
         public SessionGeneration? ActiveSession => Session;
 
         public Task<T> OnFramework<T>(Func<T> func) => Task.FromResult(func());
+
+        public void AbandonChildWaits() { }
 
         private readonly Dictionary<SceneEntityHandle, string> _names = new();
         private SceneEntityHandle Token(string name)
@@ -542,6 +546,12 @@ public sealed class SceneWorkflowTests
         public void ReleaseWorldObject(SceneEntityHandle token) =>
             Record($"ReleaseWorldObject:{TokenName(token)}");
 
+        public Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
+            IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound, CancellationToken cancellation) =>
+            Task.FromResult<IReadOnlyList<SceneEntityHandle>>([]);
+
+        public SelectionId? ResolveHistoryEntity(SceneEntityHandle handle) => ResolveSceneEntity(handle);
+
         public readonly List<SceneEntityHandle> SpawnedLightTokens = new();
         public readonly List<(SceneEntityHandle Previous, SceneEntityHandle Replacement)> HistoryReplacements = new();
         public void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement) =>
@@ -728,7 +738,7 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Lead", out _), Actor("Slow", out _)),
             NeverReadyActor = "Slow",
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(),
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
             new TransformHistory(), new NoStructure(), Parenting())
         {
             ActorReadyBound = TimeSpan.FromMilliseconds(100),
@@ -765,7 +775,7 @@ public sealed class SceneWorkflowTests
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var history = new TransformHistory();
         var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(), history,
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(), history,
             new SceneStructure(groups, coordinator, state), parenting)
         {
             StructureBindingBound = TimeSpan.FromMilliseconds(100),
@@ -1045,7 +1055,7 @@ public sealed class SceneWorkflowTests
     public async Task A_pose_import_that_never_finishes_is_cancelled_not_left_armed()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), new NoObserver(),
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
             new TransformHistory(), new NoStructure(), Parenting())
         {
             PoseImportBound = TimeSpan.FromMilliseconds(100),

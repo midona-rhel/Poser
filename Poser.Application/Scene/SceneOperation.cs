@@ -57,13 +57,13 @@ internal sealed class SceneOperation : SingleFlightOperation
     /// <summary>Checked at the top of every framework-thread action before
     /// its mutations. A replaced session generation is an invalidation: the
     /// token that admitted this operation no longer exists.</summary>
-    public string? Guard(ISceneRuntime runtime, CancellationToken cancellation)
+    public string? Guard(ISceneStatePort sceneState, CancellationToken cancellation)
     {
         if (Invalidated || cancellation.IsCancellationRequested)
             return Kind == SceneOperationKind.Save
                 ? "The save was cancelled."
                 : "The load was cancelled.";
-        if (runtime.ActiveSession is not { } live || live != Session)
+        if (sceneState.ActiveSession is not { } live || live != Session)
         {
             Invalidated = true;
             return "The GPose session ended before the operation completed.";

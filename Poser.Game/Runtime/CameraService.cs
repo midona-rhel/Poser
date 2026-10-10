@@ -9,6 +9,8 @@ namespace Poser.Game;
 
 public class CameraService : ICameraProjection
 {
+    public Vector2 DisplaySize => Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
+
     public unsafe Matrix4x4 GetViewMatrix()
     {
         var cameraManager = CameraManager.Instance();

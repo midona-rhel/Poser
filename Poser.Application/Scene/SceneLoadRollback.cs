@@ -8,7 +8,8 @@ namespace Poser.Application.Scene;
 /// abort path and its committed step's undo.
 /// </summary>
 internal sealed class SceneLoadRollback(
-    ISceneRuntime runtime, ISceneStructure structure, TransformParenting parenting)
+    ISceneStatePort sceneState, ISceneMaterializer materializer, ISceneStructure structure,
+    TransformParenting parenting)
 {
     /// <summary>
     /// Framework thread only and idempotent — each token clears as it is
@@ -36,7 +37,7 @@ internal sealed class SceneLoadRollback(
         {
             try
             {
-                runtime.ApplyEnvironment(environment);
+                sceneState.ApplyEnvironment(environment);
                 operation.EnvironmentBaseline = null;
             }
             catch (Exception ex)
@@ -49,7 +50,7 @@ internal sealed class SceneLoadRollback(
         {
             try
             {
-                runtime.ApplyWorld(world);
+                sceneState.ApplyWorld(world);
                 operation.WorldBaseline = null;
             }
             catch (Exception ex)
@@ -62,7 +63,7 @@ internal sealed class SceneLoadRollback(
         {
             try
             {
-                runtime.RestoreDefaultCamera(camera);
+                materializer.RestoreDefaultCamera(camera);
                 operation.DefaultCameraBaseline = null;
             }
             catch (Exception ex)
@@ -74,17 +75,17 @@ internal sealed class SceneLoadRollback(
         // First out, because it is the one rollback step that GIVES SOMETHING
         // BACK rather than destroying it: whatever else fails below, the map
         // must not be left holding this load's displacements.
-        Release(operation.BorrowedWorldObjects, runtime.ReleaseWorldObject,
+        Release(operation.BorrowedWorldObjects, materializer.ReleaseWorldObject,
             "world object release", failures);
-        Release(operation.CreatedCameras, runtime.DestroyCamera,
+        Release(operation.CreatedCameras, materializer.DestroyCamera,
             "camera", failures);
-        Release(operation.SpawnedLights, runtime.DestroyLight,
+        Release(operation.SpawnedLights, materializer.DestroyLight,
             "light", failures);
-        Release(operation.StagedOverlays, runtime.DestroyOverlay,
+        Release(operation.StagedOverlays, materializer.DestroyOverlay,
             "overlay", failures);
-        Release(operation.SpawnedProps, runtime.DestroyProp,
+        Release(operation.SpawnedProps, materializer.DestroyProp,
             "object", failures);
-        Release(operation.SpawnedActors, runtime.DestroyActor,
+        Release(operation.SpawnedActors, materializer.DestroyActor,
             "actor", failures);
 
         return failures.Count == 0 ? null : string.Join("; ", failures);

@@ -25,7 +25,8 @@ internal sealed class SceneLoadReplay(SceneOperation current)
 /// back: the clear is not a step.
 /// </summary>
 internal sealed class SceneLoadHistory(
-    TransformHistory history, ISceneRuntime runtime, SceneLoadRollback rollback,
+    TransformHistory history, ISceneStatePort sceneState, ISceneHistoryPort historyPort,
+    SceneLoadRollback rollback,
     SceneWorkflow workflow)
 {
     public void Append(SceneOperation operation, string path, SceneLoadOptions options)
@@ -77,7 +78,7 @@ internal sealed class SceneLoadHistory(
                 operation.TerminalDetail ?? $"Loading {operation.FileName} again did not complete.");
         try
         {
-            await runtime.OnFramework(() =>
+            await sceneState.OnFramework(() =>
             {
                 completed(result);
                 return true;
@@ -95,9 +96,9 @@ internal sealed class SceneLoadHistory(
         // Register before removal publishes missing bindings. Both transform
         // patches and group snapshots follow the same replacement on redo.
         foreach (var (key, token) in load.Entities)
-            if (runtime.ResolveHistoryEntity(token) is { } entity)
+            if (historyPort.ResolveHistoryEntity(token) is { } entity)
                 history.RetainLifecycleEntity(entity, () =>
-                    load.Entities.TryGetValue(key, out var current) ? runtime.ResolveHistoryEntity(current) : null);
+                    load.Entities.TryGetValue(key, out var current) ? historyPort.ResolveHistoryEntity(current) : null);
         return rollback.Run(load.Current) is null;
     }
 }

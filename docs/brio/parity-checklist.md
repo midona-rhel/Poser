@@ -51,7 +51,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix); the tab was removed 2026-08-15 and the adoption is the viewport's own handles, marked by the sidebar footer's class glyphs (`58892b3`) |
 | 13A Companion attach UI | **Source-verified; acceptance pending** — gated attach picker + detach live in the actor context menu (user decision 2026-08-14 supersedes the 2026-08-11 "do not re-add") |
 | 13B Actor-to-bone attach | not started |
-| 14 Scene save/load | **DONE (source-verified 2026-08-15); acceptance pending** — the whole subsystem ships: capture, ordered load with per-step outcomes and `SceneLoadOptions`, autosave, and the Scene pane (`Poser.Game/Scene/SceneCaptureService.cs`, `SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneRuntimeAdapter.cs`, `Poser/UI/Panes/ScenePane.cs`), tested in `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. Scenes also record borrowed world objects and take them back on load in the same zone |
+| 14 Scene save/load | **DONE (source-verified 2026-08-15); acceptance pending** — the whole subsystem ships: capture, ordered load with per-step outcomes and `SceneLoadOptions`, autosave, and the Scene pane (`Poser.Game/Scene/SceneCaptureService.cs`, `SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneEntityRuntime.cs`, `SceneActorRuntime.cs`, `Poser/UI/Panes/ScenePane.cs`), tested in `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. Scenes also record borrowed world objects and take them back on load in the same zone |
 | 15 IPC provider | not started |
 | 16 Keybind expansion | **PARTIAL** — dual slots, 24 actions, Poser/Brio/Ktisis presets and conflict flagging shipped; Esc-clear-selection, flip, sibling select and per-actor pause still unbound |
 | 17 Import options | **PARTIAL** — (a) done, (b) filter-only (parked, user call 2026-08-11), (c) precondition restored by selective import; anchor-positions slice assigned (user decision 2026-08-14: implement now) |
@@ -476,7 +476,7 @@ when enabled).
 the v-slice below. Capture, an ordered load with per-step outcomes and caller-chosen
 `SceneLoadOptions`, autosave on a cadence, and a versioned file with typed refusals for
 too-old/too-new/damaged documents all ship (`Poser.Game/Scene/SceneCaptureService.cs`,
-`SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneRuntimeAdapter.cs`,
+`SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneEntityRuntime.cs`, `SceneActorRuntime.cs`,
 `Poser.Core/Files/SceneFileValidation.cs`), driven from `Poser/UI/Panes/ScenePane.cs` and
 covered by `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. A scene carries actors, lights,
 camera, environment and the world objects it borrowed — appearance and gaze targets stay

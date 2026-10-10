@@ -12,7 +12,7 @@ namespace Poser.Application.Scene;
 /// parent links restored over the entities the load created.
 /// </summary>
 internal sealed class SceneLoadStructure(
-    ISceneRuntime runtime, ISceneStructure structure, TransformParenting parenting)
+    ISceneStatePort sceneState, ISceneStructure structure, TransformParenting parenting)
 {
     public static Dictionary<(string Kind, Guid Key), SceneEntityHandle> Tokens(
         params (string Kind, IReadOnlyDictionary<Guid, SceneEntityHandle> Entities)[] maps)
@@ -41,11 +41,11 @@ internal sealed class SceneLoadStructure(
         string? stop = null;
         async Task<bool> Settled()
         {
-            var result = await runtime.OnFramework(() =>
+            var result = await sceneState.OnFramework(() =>
             {
-                var guard = operation.Guard(runtime, cancellation);
+                var guard = operation.Guard(sceneState, cancellation);
                 return (Stop: guard, Ready: guard == null
-                    && references.All(reference => runtime.ResolveSceneEntity(tokens[reference]) != null));
+                    && references.All(reference => sceneState.ResolveSceneEntity(tokens[reference]) != null));
             });
             stop = result.Stop;
             return result.Stop != null || result.Ready;
@@ -88,7 +88,7 @@ internal sealed class SceneLoadStructure(
                     ? SelectionId.ForActor(companion) : null;
             }
             return tokens.TryGetValue((reference.Kind, reference.Key), out var token)
-                ? runtime.ResolveSceneEntity(token) : null;
+                ? sceneState.ResolveSceneEntity(token) : null;
         }
 
         if (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 })

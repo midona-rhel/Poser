@@ -35,7 +35,10 @@ namespace Poser.Application.Scene;
 /// </summary>
 internal sealed class SceneLoadTransaction(
     SceneWorkflow workflow,
-    ISceneRuntime runtime,
+    ISceneStatePort sceneState,
+    ISceneMaterializer materializer,
+    IActorRestorePort actorRestore,
+    ISceneHistoryPort historyPort,
     ISceneDocumentStore documents,
     SceneLoadStructure structure,
     SceneLoadRollback rollback,
@@ -138,9 +141,9 @@ internal sealed class SceneLoadTransaction(
             {
                 try
                 {
-                    await runtime.OnFramework(() =>
+                    await sceneState.OnFramework(() =>
                     {
-                        runtime.HoldPoseImports(false);
+                        actorRestore.HoldPoseImports(false);
                         return true;
                     });
                 }
@@ -162,17 +165,17 @@ internal sealed class SceneLoadTransaction(
             operation, SceneOperationKind.Load, state, detail,
             _entities, _notes, Array.Empty<string>());
 
-    private string? Guard() => operation.Guard(runtime, cancellation);
+    private string? Guard() => operation.Guard(sceneState, cancellation);
 
     private SceneLoadBarriers Barriers =>
-        _barriers ??= new SceneLoadBarriers(workflow, runtime, operation, cancellation);
+        _barriers ??= new SceneLoadBarriers(workflow, sceneState, actorRestore, operation, cancellation);
 
     private async Task<string?> RollbackCreated()
     {
         Step(ScenePhase.RollingBack, cancellable: false);
         try
         {
-            return await runtime.OnFramework(() => rollback.Run(operation));
+            return await sceneState.OnFramework(() => rollback.Run(operation));
         }
         catch (Exception ex)
         {
@@ -316,7 +319,7 @@ internal sealed class SceneLoadTransaction(
     private async Task<Stop?> Place()
     {
         var origin = options.PlaceRelativeToCurrentOrigin
-            ? await runtime.OnFramework(runtime.CurrentOrigin)
+            ? await sceneState.OnFramework(sceneState.CurrentOrigin)
             : null;
         return SceneLoadPlacement.Apply(_scene, options, origin, _notes) is { } refusal
             ? Stop.Refused(refusal)
@@ -343,7 +346,7 @@ internal sealed class SceneLoadTransaction(
         // which is why the clear reports what it cost.
         Step(ScenePhase.SpawningEntities);
         bool refusedBeforeClear = false;
-        var spawnFailure = await runtime.OnFramework(() =>
+        var spawnFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -352,36 +355,36 @@ internal sealed class SceneLoadTransaction(
             {
                 // The clear cannot be undone, so a load that cannot even
                 // start its required steps refuses BEFORE it.
-                if (runtime.LoadPreflight(_actors.Count) is { } preflight)
+                if (sceneState.LoadPreflight(_actors.Count) is { } preflight)
                 {
                     refusedBeforeClear = true;
                     return $"{preflight} The session was not cleared.";
                 }
                 operation.SessionCleared = true;
-                if (runtime.ClearScene().Summary() is { } cleared)
+                if (sceneState.ClearScene().Summary() is { } cleared)
                     _notes.Add(cleared);
             }
 
             // From the first native step to the terminal, the pose slot
             // is this load's: a library or inspector import refuses
             // instead of superseding the import an actor is waiting on.
-            runtime.HoldPoseImports(true);
+            actorRestore.HoldPoseImports(true);
 
             // A baseline is captured only for what this load will WRITE:
             // restoring an environment the load never touched would undo
             // edits the user made before it.
             if (_environment is not null || options.IncludeEnvironment)
             {
-                operation.EnvironmentBaseline = runtime.CaptureEnvironmentState();
-                operation.WorldBaseline = runtime.CaptureWorldState();
+                operation.EnvironmentBaseline = sceneState.CaptureEnvironmentState();
+                operation.WorldBaseline = sceneState.CaptureWorldState();
             }
             if (_cameras.Count > 0)
                 operation.DefaultCameraBaseline =
-                    runtime.CaptureDefaultCameraState();
+                    materializer.CaptureDefaultCameraState();
 
             foreach (var actor in _actors)
             {
-                var token = runtime.SpawnActor(actor, out var detail);
+                var token = materializer.SpawnActor(actor, out var detail);
                 if (token is null)
                     return $"Actor '{actor.Name}' could not be spawned: " +
                         $"{detail ?? "the spawn failed."}";
@@ -391,7 +394,7 @@ internal sealed class SceneLoadTransaction(
 
             foreach (var prop in _props)
             {
-                var token = runtime.SpawnProp(prop, out var detail);
+                var token = materializer.SpawnProp(prop, out var detail);
                 if (token is null)
                 {
                     _entities.Add(new SceneEntityOutcome(
@@ -410,7 +413,7 @@ internal sealed class SceneLoadTransaction(
             foreach (var overlay in _overlays)
             {
                 string name = overlay.Node?.Name ?? "Overlay";
-                var token = runtime.SpawnOverlay(overlay, out var detail);
+                var token = materializer.SpawnOverlay(overlay, out var detail);
                 if (token is null)
                 {
                     _entities.Add(new SceneEntityOutcome(
@@ -431,8 +434,8 @@ internal sealed class SceneLoadTransaction(
             // a scene without it.
             foreach (var worldObject in _worldObjects)
             {
-                string name = runtime.WorldObjectName(worldObject.Path);
-                var token = runtime.AdoptWorldObject(
+                string name = materializer.WorldObjectName(worldObject.Path);
+                var token = materializer.AdoptWorldObject(
                     worldObject, out var detail);
                 if (token is null)
                 {
@@ -459,7 +462,7 @@ internal sealed class SceneLoadTransaction(
         // reported restored and then released behind the outcome's back.
         if (_spawnedWorldObjects.Count > 0)
         {
-            var unloaded = await runtime.AwaitWorldObjectsLoaded(
+            var unloaded = await materializer.AwaitWorldObjectsLoaded(
                 _spawnedWorldObjects.Select(entry => entry.Token).ToList(),
                 workflow.ActorReadyBound, cancellation);
             foreach (var (token, name) in _spawnedWorldObjects)
@@ -525,7 +528,7 @@ internal sealed class SceneLoadTransaction(
         // not N of them back to back.
         var collections = _actors
             .Where(actor => actor.Mcdf is null && actor.PenumbraCollection is not null)
-            .Select(actor => (actor.Name, Restore: runtime.RestoreCollection(
+            .Select(actor => (actor.Name, Restore: actorRestore.RestoreCollection(
                 _actorTokens[actor.Key], actor, SceneWorkflow.ActorReadyTimeout, cancellation)))
             .ToList();
         await Task.WhenAll(collections.Select(entry => entry.Restore));
@@ -539,7 +542,7 @@ internal sealed class SceneLoadTransaction(
                 return Stop.Abort(stop);
             if (actor.Mcdf is null)
                 continue;
-            var appearance = await runtime.ImportMcdf(
+            var appearance = await actorRestore.ImportMcdf(
                 path, _actorTokens[actor.Key], actor,
                 McdfImportTimeout, cancellation);
             // A missing package is a refusal by name; a package whose
@@ -565,7 +568,7 @@ internal sealed class SceneLoadTransaction(
     private async Task<Stop?> AttachCompanions()
     {
         Step(ScenePhase.ApplyingRelationships);
-        var relationshipFailure = await runtime.OnFramework(() =>
+        var relationshipFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -573,7 +576,7 @@ internal sealed class SceneLoadTransaction(
             {
                 if (actor.CompanionKind is null)
                     continue;
-                var detail = runtime.AttachCompanion(
+                var detail = actorRestore.AttachCompanion(
                     _actorTokens[actor.Key], actor);
                 if (detail != null)
                     _entities.Add(new SceneEntityOutcome(
@@ -609,7 +612,7 @@ internal sealed class SceneLoadTransaction(
         // the actor first is what makes the pose land on a held frame and the
         // load deterministic.
         Step(ScenePhase.FreezingActors);
-        var freezeFailure = await runtime.OnFramework(() =>
+        var freezeFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -623,11 +626,11 @@ internal sealed class SceneLoadTransaction(
                 // teardown a scene saved with a hidden actor threw away
                 // the pose it had just applied to it. Stated here so no
                 // later change to how an actor hides can bring that back.
-                runtime.SetActorVisibility(_actorTokens[actor.Key], actor.Visible);
-                var nameDetail = runtime.RestoreActorName(_actorTokens[actor.Key], actor);
+                actorRestore.SetActorVisibility(_actorTokens[actor.Key], actor.Visible);
+                var nameDetail = actorRestore.RestoreActorName(_actorTokens[actor.Key], actor);
                 if (nameDetail != null)
                     _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.ActorName, actor.Name, false, nameDetail));
-                var detail = runtime.FreezeActor(_actorTokens[actor.Key]);
+                var detail = actorRestore.FreezeActor(_actorTokens[actor.Key]);
                 if (detail != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Animation, actor.Name, false, detail));
@@ -636,7 +639,7 @@ internal sealed class SceneLoadTransaction(
                     // Import deltas use the live animated basis. Detaching
                     // only afterward removes the native chest/neck aim
                     // underneath those deltas, drifting every saved pose.
-                    var gazeDetail = runtime.ApplyActorGaze(
+                    var gazeDetail = actorRestore.ApplyActorGaze(
                         _actorTokens[actor.Key], actor, null);
                     if (gazeDetail != null)
                         _entities.Add(new SceneEntityOutcome(
@@ -664,11 +667,11 @@ internal sealed class SceneLoadTransaction(
 
             var token = _actorTokens[actor.Key];
             var poseResult = await Barriers.ImportPose(
-                receipt => runtime.ArmPoseImport(
+                receipt => actorRestore.ArmPoseImport(
                     token, actor, $"Scene pose: {actor.Name}", receipt));
             var placement = poseResult == null
-                ? await runtime.OnFramework(() =>
-                    Guard() ?? runtime.PlaceActor(token, actor))
+                ? await sceneState.OnFramework(() =>
+                    Guard() ?? actorRestore.PlaceActor(token, actor))
                 : poseResult;
             _entities.Add(placement == null
                 ? new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, true)
@@ -681,12 +684,12 @@ internal sealed class SceneLoadTransaction(
             if (actor.CompanionPose is not null)
             {
                 var companion = await Barriers.ImportPose(
-                    receipt => runtime.ArmCompanionPoseImport(
+                    receipt => actorRestore.ArmCompanionPoseImport(
                         token, actor, $"Scene companion pose: {actor.Name}",
                         receipt));
                 if (companion == null)
-                    companion = await runtime.OnFramework(() =>
-                        Guard() ?? runtime.PlaceCompanion(token, actor));
+                    companion = await sceneState.OnFramework(() =>
+                        Guard() ?? actorRestore.PlaceCompanion(token, actor));
                 if (companion != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Companion, actor.Name, false, companion));
@@ -704,7 +707,7 @@ internal sealed class SceneLoadTransaction(
         // Visibility is NOT here; it rode with the animation, before the pose
         // (see phase 4b).
         Step(ScenePhase.ApplyingPresentation);
-        var presentationFailure = await runtime.OnFramework(() =>
+        var presentationFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -726,7 +729,7 @@ internal sealed class SceneLoadTransaction(
                         "The actor looks at an actor this load did not restore."));
                     continue;
                 }
-                var detail = runtime.ApplyActorGaze(
+                var detail = actorRestore.ApplyActorGaze(
                     _actorTokens[actor.Key], actor, target);
                 if (detail != null)
                     _entities.Add(new SceneEntityOutcome(
@@ -745,7 +748,7 @@ internal sealed class SceneLoadTransaction(
         // cameras are created, targets re-resolve against the RESTORED actors,
         // and exactly one camera goes live.
         Step(ScenePhase.ApplyingCameras);
-        var cameraFailure = await runtime.OnFramework(() =>
+        var cameraFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -758,17 +761,17 @@ internal sealed class SceneLoadTransaction(
                 string? detail;
                 if (camera.IsDefault)
                 {
-                    detail = runtime.ApplyDefaultCamera(camera);
+                    detail = materializer.ApplyDefaultCamera(camera);
                     // The default camera mints a structure token too:
                     // without one, a saved group that held the Main
                     // Camera silently lost it on every load.
                     if (detail == null
-                        && runtime.DefaultCameraToken() is { } main)
+                        && materializer.DefaultCameraToken() is { } main)
                         _cameraTokens[camera.Key] = main;
                 }
                 else
                 {
-                    token = runtime.CreateCamera(camera, out detail);
+                    token = materializer.CreateCamera(camera, out detail);
                     if (token != null)
                     {
                         operation.CreatedCameras.Add(token);
@@ -799,7 +802,7 @@ internal sealed class SceneLoadTransaction(
                         _done++;
                         continue;
                     }
-                    var targetDetail = runtime.SetCameraTarget(
+                    var targetDetail = materializer.SetCameraTarget(
                         token, _actorTokens[targetKey],
                         camera.TargetActorName, camera.IsTargetLocked);
                     if (targetDetail != null)
@@ -824,7 +827,7 @@ internal sealed class SceneLoadTransaction(
 
             if (_cameras.Count > 0)
             {
-                var liveDetail = runtime.SetLiveCamera(
+                var liveDetail = materializer.SetLiveCamera(
                     liveIsDefault ? null : liveCamera);
                 if (liveDetail != null)
                     _entities.Add(new SceneEntityOutcome(
@@ -845,7 +848,7 @@ internal sealed class SceneLoadTransaction(
         // An unresolvable attachment is a typed refusal of that light, never
         // a world-space spawn.
         Step(ScenePhase.ApplyingLights);
-        var lightFailure = await runtime.OnFramework(() =>
+        var lightFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -868,7 +871,7 @@ internal sealed class SceneLoadTransaction(
                 SceneEntityHandle? owner = light.Attachment is { } attachment
                     ? _actorTokens[attachment.ActorKey]
                     : null;
-                var token = runtime.SpawnLight(light, owner, out var detail);
+                var token = materializer.SpawnLight(light, owner, out var detail);
                 if (token is null)
                 {
                     _entities.Add(new SceneEntityOutcome(
@@ -905,13 +908,13 @@ internal sealed class SceneLoadTransaction(
         // load into a session that froze either one must RELEASE it, or the
         // scene did not restore what it saved.
         Step(ScenePhase.ApplyingEnvironment);
-        var environmentFailure = await runtime.OnFramework(() =>
+        var environmentFailure = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
             if (_environment is { } stated)
             {
-                runtime.ApplyEnvironment(stated);
+                sceneState.ApplyEnvironment(stated);
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Environment, "Environment", true));
                 _done++;
@@ -922,7 +925,7 @@ internal sealed class SceneLoadTransaction(
             // so a load that leaves the environment out leaves them
             // exactly as the user set them.
             if (options.IncludeEnvironment &&
-                runtime.ApplyWorld(_scene.World ?? new SceneWorld())
+                sceneState.ApplyWorld(_scene.World ?? new SceneWorld())
                 is { } detail)
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.World, "World", false, detail));
@@ -946,7 +949,7 @@ internal sealed class SceneLoadTransaction(
                 workflow.StructureBindingBound, cancellation) is { } structureStop)
             return Stop.Abort(structureStop);
         Step(ScenePhase.Committing, cancellable: false);
-        var committed = await runtime.OnFramework(() =>
+        var committed = await sceneState.OnFramework(() =>
         {
             if (Guard() is { } stop)
                 return stop;
@@ -958,7 +961,7 @@ internal sealed class SceneLoadTransaction(
             {
                 foreach (var (key, previous) in replay.Entities)
                     if (structureTokens.TryGetValue(key, out var replacement))
-                        runtime.BindHistoryReplacement(previous, replacement);
+                        historyPort.BindHistoryReplacement(previous, replacement);
                 replay.Entities = structureTokens;
                 replay.Groups = operation.HistoryGroups;
             }

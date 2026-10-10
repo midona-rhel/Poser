@@ -11,7 +11,8 @@ namespace Poser.Application.Scene;
 /// policy does.
 /// </summary>
 internal sealed class SceneLoadBarriers(
-    SceneWorkflow workflow, ISceneRuntime runtime, SceneOperation operation,
+    SceneWorkflow workflow, ISceneStatePort sceneState, IActorRestorePort actorRestore,
+    SceneOperation operation,
     CancellationToken cancellation)
 {
     /// <summary>Bound for every attached companion's own body to build. It is
@@ -57,9 +58,9 @@ internal sealed class SceneLoadBarriers(
         // bound, rather than spend this actor's one attempt on a busy answer.
         (string? Refusal, bool Busy) TryArm()
         {
-            if (operation.Guard(runtime, cancellation) is { } stop)
+            if (operation.Guard(sceneState, cancellation) is { } stop)
                 return (stop, false);
-            if (runtime.PoseImportBusy)
+            if (actorRestore.PoseImportBusy)
                 return (null, true);
             return (arm(OnReceipt), false);
         }
@@ -69,7 +70,7 @@ internal sealed class SceneLoadBarriers(
         {
             try
             {
-                armed = await runtime.OnFramework(TryArm);
+                armed = await sceneState.OnFramework(TryArm);
             }
             catch (Exception ex)
             {
@@ -96,9 +97,9 @@ internal sealed class SceneLoadBarriers(
             {
                 try
                 {
-                    await runtime.OnFramework(() =>
+                    await sceneState.OnFramework(() =>
                     {
-                        runtime.CancelPoseImport(id);
+                        actorRestore.CancelPoseImport(id);
                         return true;
                     });
                 }
@@ -134,10 +135,10 @@ internal sealed class SceneLoadBarriers(
         {
             try
             {
-                await runtime.OnFramework(() =>
+                await sceneState.OnFramework(() =>
                 {
                     if (!operation.Invalidated) // The guard below reports the refusal.
-                        pending.RemoveAll(runtime.ActorReady);
+                        pending.RemoveAll(actorRestore.ActorReady);
                     return true;
                 });
             }
@@ -179,7 +180,7 @@ internal sealed class SceneLoadBarriers(
             bool ready;
             try
             {
-                ready = await runtime.OnFramework(() =>
+                ready = await sceneState.OnFramework(() =>
                 {
                     if (operation.Invalidated)
                         return true;
@@ -187,7 +188,7 @@ internal sealed class SceneLoadBarriers(
                     {
                         if (entry.CompanionPose is null)
                             continue;
-                        if (!runtime.CompanionReady(actorTokens[entry.Key]))
+                        if (!actorRestore.CompanionReady(actorTokens[entry.Key]))
                             return false;
                     }
                     return true;
