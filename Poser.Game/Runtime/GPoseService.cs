@@ -160,7 +160,7 @@ public class GPoseService : IGPoseService
         _sessionActive = false;
         if (!exit.AlreadyHandled &&
             (exit.Capture.Status == FinalCaptureStatus.Failure ||
-             exit.Capture.Persistence == FinalPersistenceStatus.RecoveryRequired))
+             exit.Capture.Persistence == AutoSaveTerminalStatus.RecoveryRequired))
         {
             _log.Error(
                 $"GPose exit final capture failed: {exit.Capture.Detail ?? exit.Capture.PersistenceDetail ?? "unknown failure"}");

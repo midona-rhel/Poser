@@ -122,7 +122,8 @@ public class Skeleton : EntityBase, ISkeleton
         IActor actor,
         Poser.Domain.Identity.PoseSlot slot,
         Func<IActor, nint> resolveCharacterBase,
-        Func<bool> showAllVieraEars)
+        Func<bool> showAllVieraEars,
+        Func<bool> showFriendlyNames)
         : base(new EntityId($"skeleton_{actor.Id.Unique}_{slot}"), "Skeleton")
     {
         Actor = actor;
@@ -130,6 +131,7 @@ public class Skeleton : EntityBase, ISkeleton
         _bonesView = _bones.AsReadOnly();
         _resolveCharacterBase = resolveCharacterBase;
         _showAllVieraEars = showAllVieraEars;
+        _showFriendlyNames = showFriendlyNames;
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
     }
@@ -293,7 +295,7 @@ public class Skeleton : EntityBase, ISkeleton
                     var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
                     var parentIndex = pose->Skeleton->ParentIndices[boneIdx];
 
-                    var bone = new Bone(this, partialIdx, boneIdx, boneName);
+                    var bone = new Bone(this, partialIdx, boneIdx, boneName, _showFriendlyNames);
                     partialBones[partialIdx][boneIdx] = bone;
                     _bones.Add(bone);
 
@@ -456,6 +458,8 @@ public class Skeleton : EntityBase, ISkeleton
     /// ear bones, so a non-Viera skeleton costs nothing.</para>
     /// </summary>
     private readonly Func<bool> _showAllVieraEars;
+    // Ktisis' ShowFriendlyBoneNames, read live by every Bone.Name.
+    private readonly Func<bool> _showFriendlyNames;
     private readonly List<Bone> _vieraEarBones = new();
     private char? _filteredEarSet;
 

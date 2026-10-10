@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Poser.Domain.Integration;
+namespace Poser.Documents.Mcdf;
 
 /// <summary>
 /// MCDF v1 format rules shared by the reader (validation) and the export

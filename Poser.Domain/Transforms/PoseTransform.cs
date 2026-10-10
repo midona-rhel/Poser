@@ -171,6 +171,43 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
+    /// <summary>Brio's <c>Transform.IsApproximatelySame</c> tolerance
+    /// (Core/Transform.cs:96-101), per component.</summary>
+    public const float ApproximateSameTolerance = 0.000001f;
+
+    /// <summary>Squared-length bound on position and scale for
+    /// <see cref="IsIdentityDeltaByLength"/>.</summary>
+    public const float IdentityDeltaLengthSquaredTolerance = 1e-12f;
+
+    /// <summary>Minimum |dot(rotation, identity)| for
+    /// <see cref="IsIdentityDeltaByLength"/>.</summary>
+    public const float IdentityDeltaMinRotationDot = 0.999999f;
+
+    /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
+    /// on an additive stack delta: position and scale are additive (zero is
+    /// identity), rotation multiplicative. Each component is tested on its
+    /// own, and |W| must lie within <paramref name="tolerance"/> of 1.</summary>
+    public static bool IsApproximatelyIdentityDelta(
+        Transform delta,
+        float tolerance = ApproximateSameTolerance) =>
+        MathF.Abs(delta.Position.X) < tolerance &&
+        MathF.Abs(delta.Position.Y) < tolerance &&
+        MathF.Abs(delta.Position.Z) < tolerance &&
+        MathF.Abs(delta.Scale.X) < tolerance &&
+        MathF.Abs(delta.Scale.Y) < tolerance &&
+        MathF.Abs(delta.Scale.Z) < tolerance &&
+        MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < tolerance;
+
+    /// <summary>Length-based identity test on an additive stack delta (the
+    /// expression blender's rule): squared position and scale lengths below
+    /// <see cref="IdentityDeltaLengthSquaredTolerance"/>, and |dot(rotation,
+    /// identity)| above <see cref="IdentityDeltaMinRotationDot"/>. Unlike
+    /// <see cref="IsApproximatelyIdentityDelta"/> it accepts |W| above 1.</summary>
+    public static bool IsIdentityDeltaByLength(Transform delta) =>
+        delta.Position.LengthSquared() < IdentityDeltaLengthSquaredTolerance &&
+        delta.Scale.LengthSquared() < IdentityDeltaLengthSquaredTolerance &&
+        MathF.Abs(Quaternion.Dot(delta.Rotation, Quaternion.Identity)) > IdentityDeltaMinRotationDot;
+
     // Reflect a model-frame delta across the YZ plane: negate X and reflect
     // the quaternion as (x, -y, -z, w).
     public static TransformDelta Mirror(TransformDelta delta)

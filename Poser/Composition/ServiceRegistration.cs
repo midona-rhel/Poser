@@ -128,11 +128,7 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<IConfigurationPersistence, HostConfigurationPersistence>();
         services.AddSingleton(sp =>
-        {
-            var configuration = new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>());
-            Core.BoneInfo.BoneInfoService.ShowFriendlyNames = configuration.Config.Skeleton.ShowFriendlyBoneNames;
-            return configuration;
-        });
+            new ConfigurationService(sp.GetRequiredService<IConfigurationPersistence>()));
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
         return services;
@@ -406,7 +402,7 @@ internal static class ServiceRegistration
             // defaults; read once at composition.
             var limits = sp.GetRequiredService<Config.ConfigurationService>()
                 .Config.Integration;
-            session.Limits = new global::Poser.Domain.Integration.McdfLimits(
+            session.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
                 limits.McdfMaxTotalBytes,
                 limits.McdfMaxFileBytes,
                 limits.McdfMaxFileCount,

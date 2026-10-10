@@ -361,7 +361,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
             var desired = _posing.ToApplySpace(bone, fileBone);
             var basis = bone.LastRawTransform;
-            if (IsApproximatelyIdentity(BonePoseInfo.Diff(desired, basis)))
+            if (TransformMath.IsApproximatelyIdentityDelta(BonePoseInfo.Diff(desired, basis)))
                 return;
 
             // Brio passes TransformComponents.All as the new stack's
@@ -579,21 +579,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             PoseSlot.Ornament => poseFile.Ornament,
             _ => null,
         };
-
-    /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
-    /// (Core/Transform.cs:96-101) on a stack delta: position and scale are
-    /// additive, rotation multiplicative.</summary>
-    private static bool IsApproximatelyIdentity(Transform delta)
-    {
-        const float tolerance = 0.000001f;
-        return MathF.Abs(delta.Position.X) < tolerance &&
-               MathF.Abs(delta.Position.Y) < tolerance &&
-               MathF.Abs(delta.Position.Z) < tolerance &&
-               MathF.Abs(delta.Scale.X) < tolerance &&
-               MathF.Abs(delta.Scale.Y) < tolerance &&
-               MathF.Abs(delta.Scale.Z) < tolerance &&
-               MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < tolerance;
-    }
 
     /// <summary>
     /// The bones the solver actually moves. Two Joint moves the resolved

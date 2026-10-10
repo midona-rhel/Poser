@@ -499,8 +499,6 @@ public class SettingsWindow : Window
         c.Skeleton.ActiveActorSource =
             (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
-        Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
-            _vm.ShowFriendlyBoneNames;
         c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
 
         c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);
