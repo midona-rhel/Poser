@@ -54,7 +54,6 @@ public interface ILightControl
     ValueWriteResult SetShadowPlaneFar(LightId id, float value);
     ValueWriteResult SetAreaAngleX(LightId id, float value);
     ValueWriteResult SetAreaAngleY(LightId id, float value);
-    ValueWriteResult SetAttachedBone(LightId id, BoneId? bone);
     ValueWriteResult ApplyGobo(LightId id, uint index);
     ValueWriteResult ClearGobo(LightId id);
 }

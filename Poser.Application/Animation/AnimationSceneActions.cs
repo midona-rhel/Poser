@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Scene;
-using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
@@ -93,37 +92,4 @@ public sealed class AnimationSceneActions
 
     public SceneActionReport ResumeAll() =>
         Run(Capture(), id => _animation.Resume(id));
-
-    /// <summary>
-    /// Restarts whatever each actor is currently playing, from its own
-    /// base slot — an actor with no animation is skipped rather than
-    /// being given one. Replay is a resuming act (the session releases
-    /// any Poser-owned pause first); <paramref name="resumed"/> counts
-    /// how many paused actors that woke, so the UI can say so.
-    /// </summary>
-    public SceneActionReport ReplayAll(out int resumed)
-    {
-        int count = 0;
-        var report = Run(Capture(), id =>
-        {
-            if (_animation.Read(id) is not { } reading)
-                return AnimationResult.Fail("unreadable");
-            ushort timeline = reading.BaseTimeline != 0
-                ? reading.BaseTimeline
-                : reading.TimelineFor(AnimationSlot.Base);
-            if (timeline == 0)
-                return AnimationResult.Ok();
-            var result = _animation.Replay(id, timeline, out bool actorResumed);
-            if (actorResumed)
-                count++;
-            return result;
-        });
-        resumed = count;
-        return report;
-    }
-
-    /// <summary>Restores every Poser-owned override on every captured
-    /// actor, leaving the scene as Poser found it.</summary>
-    public SceneActionReport StopAll() =>
-        Run(Capture(), id => _animation.ResetActor(id));
 }

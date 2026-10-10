@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Numerics;
 using Poser.Core;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
@@ -21,7 +20,6 @@ public interface IPosePreview
     string? StatusText { get; }
     string? RefusalText { get; }
     nint TextureHandle { get; }
-    Vector2 TextureSize { get; }
     void Rotate(float yawDelta, float pitchDelta = 0f);
     void Zoom(float distanceDelta);
     void Pan(float viewDelta);

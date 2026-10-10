@@ -8,7 +8,6 @@ namespace Poser.Application.Scene;
 
 public interface ISceneDuplication
 {
-    SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose);
     void DuplicateAndSelect(SelectionId id, bool withPose = false);
     void DuplicateGroup(SceneGroup group, bool withPose);
     void DuplicateSelection(bool withPose);
@@ -44,7 +43,7 @@ public sealed class SceneDuplication(
 
     /// <summary>One entity's copy receipt, or null when
     /// the kind has none or the copy failed.</summary>
-    public SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
+    private SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
     {
         var result = _creation.Duplicate(id, withPose);
         if (result.Handle is null) _failure(result.Detail ?? "The entity could not be duplicated.");

@@ -93,7 +93,7 @@ public sealed class AnimationSteps : IAnimationActions
 
     /// <summary>Restores outgoing advanced layers in their existing order.
     /// A failed restore leaves earlier successes intact and keeps the mode unchanged.</summary>
-    public AnimationResult ResetLayers(ActorId actor)
+    private AnimationResult ResetLayers(ActorId actor)
     {
         foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody,
                      AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips })

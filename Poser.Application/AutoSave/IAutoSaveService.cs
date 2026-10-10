@@ -120,14 +120,6 @@ public interface IAutoSaveService : IDisposable
     string RootDirectory { get; }
 
     /// <summary>
-    /// UTC time when the last detached snapshot was accepted for dispatch to the
-    /// existing worker, or null when none has been accepted for dispatch this
-    /// session. This does not acknowledge worker completion or durable disk
-    /// success.
-    /// </summary>
-    DateTime? LastSaveUtc { get; }
-
-    /// <summary>
     /// Terminal result of the most recent lifecycle drain. Pending means that
     /// capture or periodic work has been admitted but not joined yet.
     /// </summary>
@@ -136,17 +128,6 @@ public interface IAutoSaveService : IDisposable
     /// <summary>Most recent immutable durable health observation, when one
     /// has been admitted or recovered.</summary>
     AutoSaveHealthRecord? LastHealthRecord { get; }
-
-    /// <summary>
-    /// Takes a periodic snapshot immediately, regardless of the interval, and
-    /// returns the number of actors CAPTURED (0 when nothing had authored edits,
-    /// in which case no folder is created). The disk write runs on a worker
-    /// after this returns, so a captured actor can still fail to write; those
-    /// failures are logged. Never throws: every capture failure is logged and
-    /// the remaining actors are still attempted.
-    /// </summary>
-    /// <param name="reason">Short tag recorded in the log line, e.g. "interval".</param>
-    int SaveNow(string reason);
 
     /// <summary>
     /// Attempts exactly one synchronous final capture when applicable for a

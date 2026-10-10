@@ -437,20 +437,6 @@ public sealed class AnimationSession : IAnimationPlayback
         return ClearSpeed(actor);
     }
 
-    /// <summary>Whether ANYTHING on the actor is paused — the whole-actor
-    /// hold or any per-slot hold.</summary>
-    public bool AnyPaused(ActorId actor)
-    {
-        if (IsPaused(actor))
-            return true;
-        foreach (var (_, speed) in OverridesFor(actor).SlotSpeeds)
-        {
-            if (speed == 0f)
-                return true;
-        }
-        return false;
-    }
-
     /// <summary>Whether any live layer is actually MOVING. The sidebar
     /// button offers Pause while this is true and Resume otherwise
     /// (ruled 2026-09-01): pause stops the stack, play overrides every

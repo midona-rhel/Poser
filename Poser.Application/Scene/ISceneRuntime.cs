@@ -90,15 +90,6 @@ public interface ISceneRuntime
     /// </summary>
     System.Numerics.Vector3? CurrentOrigin();
 
-    /// <summary>
-    /// Which zone the session is in NOW. A borrowed map object means something
-    /// only where it was taken, so this is what a load compares
-    /// <see cref="SceneFile.TerritoryId"/> against before it tries to take one
-    /// again. Zero when there is no territory to read, which refuses every
-    /// borrowed entry rather than guessing. Framework thread.
-    /// </summary>
-    uint CurrentTerritoryId();
-
     /// <summary>Resolve the catalog label without exposing the native catalog to workflow policy.</summary>
     string WorldObjectName(string path);
 

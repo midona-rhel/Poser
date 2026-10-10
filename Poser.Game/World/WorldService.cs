@@ -59,15 +59,6 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
     internal bool Release(AdoptedWorldObject entity) => _objects.Release(entity);
     internal void ReleaseAll() => _objects.ReleaseAll();
 
-    public Task<WorldRelease> ReleaseSceneObjects() => _framework.RunOnFrameworkThread(() =>
-    {
-        bool allReleased = _history.ReleaseAllWorldObjects();
-        return allReleased
-            ? new WorldRelease(WorldCommandStatus.Applied)
-            : new WorldRelease(WorldCommandStatus.Refused,
-                "Some world objects could not be released; successful removals were recorded.");
-    });
-
     public WorldService(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
         WorldActorSession actorClaims, WorldObjectService objects, LightingService lights,
         SceneLifecycleHistory history, IEntityBindings bindings, AnimationSession animation, ConfigurationService config,

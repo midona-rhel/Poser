@@ -64,7 +64,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
     private readonly World.WorldService _worldObjects;
-    private readonly Poser.Services.IPlaceService _place;
 
     /// <summary>Finds an appearance package by its bytes. Held as the
     /// interface: the library owns MCDFs and will own this index too.
@@ -104,7 +103,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         IActorManager actors,
         IObjectTable objects,
         World.WorldService worldObjects,
-        Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         IBonePosingService bonePosing,
@@ -131,7 +129,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _actors = actors;
         _objects = objects;
         _worldObjects = worldObjects;
-        _place = place;
         _rendering = rendering;
         _integration = integration;
         _bindings = bindings;
@@ -546,11 +543,6 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public System.Numerics.Vector3? CurrentOrigin() =>
         _objects.LocalPlayer?.Position;
-
-    // The SAME place source the capture stamped the document from
-    // (SceneCaptureService.CaptureTerritory), so "the same territory" means one
-    // thing on both sides of the file.
-    public uint CurrentTerritoryId() => _place.Current.TerritoryId;
 
     public string WorldObjectName(string path) => WorldObjects.WorldObjectService.DisplayName(path);
 

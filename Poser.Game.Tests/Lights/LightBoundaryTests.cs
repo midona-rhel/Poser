@@ -60,7 +60,6 @@ public sealed class LightBoundaryTests
         f.CurrentId = f.Id.NextGeneration();
         Assert.Null(f.Control.Read(f.Id));
         Assert.False(f.Control.ApplyGobo(f.Id, 0).Success);
-        Assert.False(f.Control.SetAttachedBone(f.Id, null).Success);
         Assert.False(f.Files.Export(f.Id, file.Path).Success);
         Assert.Equal("keep", File.ReadAllText(file.Path));
         Assert.False(f.History.CanUndo);
@@ -72,7 +71,7 @@ public sealed class LightBoundaryTests
     }
 
     [Fact]
-    public void Gobo_and_attachment_changes_use_the_existing_history_and_refuse_stale_bones()
+    public void Gobo_changes_use_the_existing_history()
     {
         var f = new Fixture();
         Assert.True(f.Control.ApplyGobo(f.Id, 0).Success);
@@ -83,14 +82,6 @@ public sealed class LightBoundaryTests
         Assert.Null(f.Light.GoboPath);
         Assert.True(goboStep.Redo());
         Assert.Equal("test.tex", f.Light.GoboPath);
-        Assert.True(f.Control.SetAttachedBone(f.Id, f.BoneId).Success);
-        var attachStep = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.Equal(f.BoneId, f.Control.Read(f.Id)!.AttachedBone);
-        Assert.True(attachStep.Undo());
-        Assert.Null(f.Control.Read(f.Id)!.AttachedBone);
-        f.BoneAvailable = false;
-        Assert.False(f.Control.SetAttachedBone(f.Id, f.BoneId).Success);
-        Assert.Same(attachStep, f.History.PeekUndo());
     }
 
     [Fact]

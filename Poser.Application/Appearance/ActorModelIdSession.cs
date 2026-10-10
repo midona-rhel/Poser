@@ -40,10 +40,6 @@ public sealed class ActorModelIdSession
 
     public bool IsOwned(ActorId actor) => _captures.ContainsKey(actor);
 
-    /// <summary>The captured incoming model id while owned, else null.</summary>
-    public int? CaptureFor(ActorId actor) =>
-        _captures.TryGetValue(actor, out var capture) ? capture : null;
-
     /// <summary>
     /// Applies a model id. The first successful apply captures the actor's
     /// incoming id — read BEFORE the write — and later applies keep that

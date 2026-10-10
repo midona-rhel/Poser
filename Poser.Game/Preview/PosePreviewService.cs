@@ -29,10 +29,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     /// <c>CharaViewTextures[1]</c>.</summary>
     private const uint CharaViewIndex = 1;
 
-    /// <summary>Ktisis' preview node size, used until the texture reports
-    /// its own dimensions.</summary>
-    private static readonly Vector2 FallbackSize = new(192f, 320f);
-
     /// <summary>How far the body may be offset from its staged position, in
     /// native units either way. A whole body is about 1.8 tall, so this is
     /// already past both ends of it — the ceiling exists so a held button
@@ -188,17 +184,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
                 return 0;
             var texture = CharaViewTexture();
             return texture == null ? 0 : (nint)texture->D3D11ShaderResourceView;
-        }
-    }
-
-    public Vector2 TextureSize
-    {
-        get
-        {
-            var texture = _open ? CharaViewTexture() : null;
-            if (texture == null || texture->ActualWidth == 0 || texture->ActualHeight == 0)
-                return FallbackSize;
-            return new Vector2(texture->ActualWidth, texture->ActualHeight);
         }
     }
 

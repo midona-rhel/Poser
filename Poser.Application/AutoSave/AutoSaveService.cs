@@ -58,8 +58,6 @@ public class AutoSaveService : IAutoSaveService
 
     public string RootDirectory { get; }
 
-    public DateTime? LastSaveUtc { get; private set; }
-
     public AutoSaveTerminalResult LastTerminalResult
     {
         get
@@ -347,7 +345,6 @@ public class AutoSaveService : IAutoSaveService
             _workerFailure = null;
             _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
             _nextDueUtc = null;
-            LastSaveUtc = null;
         }
     }
 
@@ -479,12 +476,14 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
+    /// Takes a periodic snapshot immediately, regardless of the interval. The
+    /// interval tick and tests drive this; it is not part of the service port.
     /// Returns the number of actors CAPTURED, not the number of files that
     /// landed: the writes outlive this call. Zero therefore also covers
     /// "nothing had authored edits" and "a periodic item was coalesced into the
     /// bounded pending slot", both of which may produce zero.
     /// </summary>
-    public int SaveNow(string reason) =>
+    internal int SaveNow(string reason) =>
         CaptureAndDispatch(reason, isFinal: false).CapturedActors;
 
     private AutoSaveCaptureResult CaptureAndDispatch(string reason, bool isFinal)
@@ -642,7 +641,6 @@ public class AutoSaveService : IAutoSaveService
 
             if (dispatchAccepted)
             {
-                LastSaveUtc = nowUtc;
                 if (captureFailure != null)
                 {
                     return AutoSaveCaptureResult.Failure(

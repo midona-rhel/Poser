@@ -64,7 +64,8 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
 
     public string RootDirectory { get; }
 
-    public SceneAutoSaveResult LastResult
+    /// <summary>Latest published outcome; tests observe the cadence through it.</summary>
+    internal SceneAutoSaveResult LastResult
     {
         get
         {

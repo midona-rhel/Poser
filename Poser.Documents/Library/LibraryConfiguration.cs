@@ -270,10 +270,6 @@ public partial class LibraryConfiguration
     public string EnsureMcdfRootExists() =>
         EnsureHomeRootExists(McdfSourceName, DefaultMcdfRoot);
 
-    /// <inheritdoc cref="EnsureHomeRootExists"/>
-    public string EnsureObjectsRootExists() =>
-        EnsureHomeRootExists(ObjectsSourceName, DefaultObjectsRoot);
-
     /// <summary>
     /// A collision-safe path for a new library entry: the cleaned name as
     /// is, or with a four-digit timestamp when that file already exists — a

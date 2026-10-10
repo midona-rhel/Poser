@@ -28,6 +28,5 @@ public interface IWorldService
     Task<WorldAcquisition> Acquire(WorldCandidateId candidate);
     Task<WorldRelease> Release(SelectionId entity);
     Task<WorldRelease> Release(WorldClaimId claim);
-    Task<WorldRelease> ReleaseSceneObjects();
     void Highlight(WorldCandidateId? candidate);
 }

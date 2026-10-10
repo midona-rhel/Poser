@@ -78,19 +78,6 @@ public sealed class LightControl(
     public ValueWriteResult SetAreaAngleY(LightId id, float value) =>
         Edit(id, l => values.SetAreaAngle(l, l.AreaAngle with { Y = value }));
 
-    public ValueWriteResult SetAttachedBone(LightId id, BoneId? target)
-    {
-        if (Resolve(id) is null)
-            return new(false, "The light is no longer available.");
-        if (target is { } boneId)
-        {
-            if (bindings.Resolve(boneId) is not { Success: true, Value: { Skeleton.IsValid: true } resolved } ||
-                bindings.GetBoneId(resolved) != boneId)
-                return new(false, "The bone is no longer available.");
-        }
-        return parenting.Attach(SelectionId.ForLight(id), target is { } parent ? SelectionId.ForBone(parent) : null);
-    }
-
     public ValueWriteResult ApplyGobo(LightId id, uint index)
     {
         if (Resolve(id) is not { } light)

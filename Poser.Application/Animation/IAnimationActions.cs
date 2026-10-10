@@ -12,5 +12,4 @@ public interface IAnimationActions
     AnimationResult ResetSlot(ActorId actor, AnimationSlot slot);
     AnimationResult SetLoop(ActorId actor, AnimationSlot slot, bool on);
     AnimationResult ResetGeneral(ActorId actor);
-    AnimationResult ResetLayers(ActorId actor);
 }

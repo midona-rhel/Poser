@@ -747,18 +747,6 @@ public sealed class SceneWorkflowTests
             return detail is null ? Token($"overlay:{name}") : null;
         }
 
-        /// <summary>Which zone the fake session is standing in. It matches the
-        /// territory <see cref="SceneWith"/> stamps, so a document's borrowed
-        /// entries are attempted unless a test moves one of the two apart.
-        /// </summary>
-        public uint Territory = HomeTerritory;
-
-        public uint CurrentTerritoryId()
-        {
-            Record("CurrentTerritoryId");
-            return Territory;
-        }
-
         public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
         {
             Record($"AdoptWorldObject:{data.Path}");
