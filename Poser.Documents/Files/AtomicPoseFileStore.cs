@@ -176,50 +176,13 @@ internal enum PoseFileStorePhase
     CleanupBackup,
 }
 
-internal interface IPoseFileStoreFileSystem
-{
-    Stream OpenRead(string path);
-    Stream CreateNew(string path);
-    void FlushToDisk(Stream stream);
-    bool Exists(string path);
-    void Replace(string source, string destination, string backup);
-    void Move(string source, string destination);
-    void Delete(string path);
-}
-
-internal sealed class SystemPoseFileStoreFileSystem : IPoseFileStoreFileSystem
-{
-    public Stream OpenRead(string path) => new FileStream(
-        path,
-        FileMode.Open,
-        FileAccess.Read,
-        FileShare.Read,
-        bufferSize: 4096,
-        FileOptions.SequentialScan);
-
-    public Stream CreateNew(string path) => new FileStream(
-        path,
-        FileMode.CreateNew,
-        FileAccess.Write,
-        FileShare.None,
-        bufferSize: 4096,
-        FileOptions.SequentialScan);
-
-    public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
-    public bool Exists(string path) => File.Exists(path);
-    public void Replace(string source, string destination, string backup) =>
-        File.Replace(source, destination, backup);
-    public void Move(string source, string destination) => File.Move(source, destination);
-    public void Delete(string path) => File.Delete(path);
-}
-
 /// <summary>
 /// Typed ordinary-pose codec and same-directory atomic store. Operations are
 /// synchronous and stateless. Callers must not mutate a pose during
 /// <see cref="Write"/>; concurrent writes use last-successful-writer filesystem
 /// semantics. Destination and parent paths are trusted inputs, and reparse
 /// points follow operating-system behavior rather than a containment guarantee.
-/// The optional seams are internal and feature-specific for persistence tests.
+/// The optional seams are internal, for persistence tests.
 /// </summary>
 public sealed class AtomicPoseFileStore
 {
@@ -227,21 +190,21 @@ public sealed class AtomicPoseFileStore
 
     public static AtomicPoseFileStore Default { get; } = new();
 
-    private readonly IPoseFileStoreFileSystem _fileSystem;
+    private readonly IAtomicFileSystem _fileSystem;
     private readonly Action<PoseFileStorePhase, string?>? _beforePhase;
 
     public AtomicPoseFileStore()
-        : this(new SystemPoseFileStoreFileSystem(), null)
+        : this(new SystemAtomicFileSystem(), null)
     {
     }
 
     internal AtomicPoseFileStore(Action<PoseFileStorePhase, string?> beforePhase)
-        : this(new SystemPoseFileStoreFileSystem(), beforePhase)
+        : this(new SystemAtomicFileSystem(), beforePhase)
     {
     }
 
     internal AtomicPoseFileStore(
-        IPoseFileStoreFileSystem fileSystem,
+        IAtomicFileSystem fileSystem,
         Action<PoseFileStorePhase, string?>? beforePhase = null)
     {
         _fileSystem = fileSystem;

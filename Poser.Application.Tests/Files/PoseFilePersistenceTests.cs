@@ -341,9 +341,9 @@ public sealed class PoseFilePersistenceTests
             "{\"Bones\":{\"j_kao\":{\"Position\":\"", position,
             "\",\"Rotation\":\"0, 0, 0, 1\",\"Scale\":\"1, 1, 1\"}}}}");
 
-    private sealed class DestinationLossFileSystem : IPoseFileStoreFileSystem
+    private sealed class DestinationLossFileSystem : IAtomicFileSystem
     {
-        private readonly SystemPoseFileStoreFileSystem _inner = new();
+        private readonly SystemAtomicFileSystem _inner = new();
 
         public Stream OpenRead(string path) => _inner.OpenRead(path);
         public Stream CreateNew(string path) => _inner.CreateNew(path);

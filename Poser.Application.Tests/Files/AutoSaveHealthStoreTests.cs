@@ -89,10 +89,10 @@ public sealed class AutoSaveHealthStoreTests
         }
     }
 
-    private sealed class MutableHealthFileSystem : IAutoSaveHealthFileSystem
+    private sealed class MutableHealthFileSystem : IAtomicFileSystem
     {
-        private readonly IAutoSaveHealthFileSystem _inner =
-            new SystemAutoSaveHealthFileSystem();
+        private readonly IAtomicFileSystem _inner =
+            new SystemAtomicFileSystem();
 
         public bool FailReplace { get; set; }
         public Stream OpenRead(string path) => _inner.OpenRead(path);

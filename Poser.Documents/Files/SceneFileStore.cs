@@ -232,14 +232,14 @@ public sealed class SceneFileStore
 {
     public static SceneFileStore Default { get; } = new();
 
-    private readonly IPoseFileStoreFileSystem _fileSystem;
+    private readonly IAtomicFileSystem _fileSystem;
 
     public SceneFileStore()
-        : this(new SystemPoseFileStoreFileSystem())
+        : this(new SystemAtomicFileSystem())
     {
     }
 
-    internal SceneFileStore(IPoseFileStoreFileSystem fileSystem)
+    internal SceneFileStore(IAtomicFileSystem fileSystem)
     {
         _fileSystem = fileSystem;
     }

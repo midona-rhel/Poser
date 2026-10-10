@@ -264,32 +264,6 @@ public sealed class AutoSaveHealthRecoveryResult
     public bool Succeeded => !PromotionAttempted || Write!.Succeeded;
 }
 
-internal interface IAutoSaveHealthFileSystem
-{
-    Stream OpenRead(string path);
-    Stream CreateNew(string path);
-    void FlushToDisk(Stream stream);
-    bool Exists(string path);
-    void Replace(string source, string destination, string backup);
-    void Move(string source, string destination);
-    void Delete(string path);
-}
-
-internal sealed class SystemAutoSaveHealthFileSystem : IAutoSaveHealthFileSystem
-{
-    public Stream OpenRead(string path) => new FileStream(
-        path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-
-    public Stream CreateNew(string path) => new FileStream(
-        path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan);
-
-    public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
-    public bool Exists(string path) => File.Exists(path);
-    public void Replace(string source, string destination, string backup) => File.Replace(source, destination, backup);
-    public void Move(string source, string destination) => File.Move(source, destination);
-    public void Delete(string path) => File.Delete(path);
-}
-
 /// <summary>Bounded atomic root-level autosave health storage.</summary>
 public sealed class AutoSaveHealthStore
 {
@@ -302,14 +276,14 @@ public sealed class AutoSaveHealthStore
         PropertyNamingPolicy = null,
     };
 
-    private readonly IAutoSaveHealthFileSystem _fileSystem;
+    private readonly IAtomicFileSystem _fileSystem;
 
     public AutoSaveHealthStore(string rootDirectory)
-        : this(rootDirectory, new SystemAutoSaveHealthFileSystem())
+        : this(rootDirectory, new SystemAtomicFileSystem())
     {
     }
 
-    internal AutoSaveHealthStore(string rootDirectory, IAutoSaveHealthFileSystem fileSystem)
+    internal AutoSaveHealthStore(string rootDirectory, IAtomicFileSystem fileSystem)
     {
         RootDirectory = rootDirectory;
         HealthPath = Path.Combine(rootDirectory, FileName);

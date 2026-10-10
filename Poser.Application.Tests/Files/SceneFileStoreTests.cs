@@ -469,7 +469,7 @@ internal sealed class SceneFixture : IDisposable
     }
 }
 
-internal sealed class FailingSceneFileSystem : IPoseFileStoreFileSystem
+internal sealed class FailingSceneFileSystem : IAtomicFileSystem
 {
     public Stream OpenRead(string path) => File.OpenRead(path);
     public Stream CreateNew(string path) => throw new IOException("injected scene write failure");
