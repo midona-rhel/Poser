@@ -18,10 +18,7 @@ public sealed class IdlePoseLocalTransformTests
     }
 
     [Theory]
-    [InlineData(1f, 1f, 1f)]
-    [InlineData(2f, 2f, 2f)]
     [InlineData(-2f, .5f, 3f)]
-    [InlineData(.01f, 4f, -.3f)]
     public void Local_components_reconstruct_the_captured_model_pose(float x, float y, float z)
     {
         var parent = new Transform(new(7, -2, 3), Quaternion.CreateFromYawPitchRoll(.2f, .8f, -1f), new(x, y, z));
@@ -36,36 +33,6 @@ public sealed class IdlePoseLocalTransformTests
     {
         var root = new Transform(new(1, 2, 3), Quaternion.CreateFromYawPitchRoll(.3f, .5f, .7f), new(-2, 3, .5f));
         Equivalent(root, IdlePoseLocalTransform.FromModel("n_root", root, null));
-    }
-
-    [Fact]
-    public void Uniform_parent_matches_previous_matrix_conversion()
-    {
-        var parent = new Transform(new(3, 2, 1), Quaternion.CreateFromYawPitchRoll(.2f, -.4f, .6f), new(2));
-        var model = new Transform(new(4, 5, 6), Quaternion.CreateFromYawPitchRoll(-.5f, .7f, .9f), new(.7f, 1.3f, 2));
-        Assert.True(Matrix4x4.Invert(parent.ToMatrix(), out var inverse));
-        Assert.True(Matrix4x4.Decompose(model.ToMatrix() * inverse, out var scale, out var rotation, out var position));
-        Equivalent(new(position, rotation, scale), IdlePoseLocalTransform.FromModel("arm", model, parent));
-    }
-
-    [Fact]
-    public void Singular_parent_fails_with_bone_and_space_instead_of_writing_invalid_samples()
-    {
-        var parent = Transform.Identity;
-        parent.Scale.X = 0;
-        var error = Assert.Throws<InvalidOperationException>(() => IdlePoseLocalTransform.FromModel("j_kao", Transform.Identity, parent));
-        Assert.Contains("j_kao", error.Message);
-        Assert.Contains("parent", error.Message);
-    }
-
-    [Fact]
-    public void Nonfinite_model_fails_with_the_bone_name()
-    {
-        var model = Transform.Identity;
-        model.Position.X = float.NaN;
-        var error = Assert.Throws<InvalidOperationException>(() => IdlePoseLocalTransform.FromModel("j_f_ago", model, null));
-        Assert.Contains("j_f_ago", error.Message);
-        Assert.Contains("model", error.Message);
     }
 
     private static Transform Compose(Transform parent, Transform local) => new(

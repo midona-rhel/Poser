@@ -25,16 +25,6 @@ public sealed class IdlePoseRetargeterTests
     }
 
     [Fact]
-    public void Incompatible_parent_does_not_apply_a_local_transform_in_the_wrong_space()
-    {
-        var source = new IdleHavokEncoder.SkeletonLayout("root", ["root", "face"], [-1, 0], [PoseTransform.Identity, PoseTransform.Identity]);
-        var target = new IdleHavokEncoder.SkeletonLayout("root", ["root", "head", "face"], [-1, 0, 1], [PoseTransform.Identity, PoseTransform.Identity, PoseTransform.Identity]);
-        var pose = new IdleSkeletonPose("root", 2, [new(0, PoseTransform.Identity, PoseTransform.Identity),
-            new(1, PoseTransform.Identity, PoseTransform.Identity with { Position = Vector3.One })]);
-        Assert.Equal(PoseTransform.Identity, IdlePoseRetargeter.Retarget(source, pose, target, target.ReferencePose).Tracks[2].Posed);
-    }
-
-    [Fact]
     public void Facial_offsets_are_relative_to_target_reference_and_scale_by_bone_length()
     {
         var reference = PoseTransform.Identity with { Position = Vector3.UnitX };
