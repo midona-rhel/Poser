@@ -93,19 +93,6 @@ public class UIConfiguration
         }
         Keybinds.Clear();
     }
-    public UIColorEntry Background { get; set; } = new(2 /* WindowBg */);
-    public UIColorEntry ControlBackground { get; set; } = new(7 /* FrameBg */);
-    public UIColorEntry Text { get; set; } = new(0 /* Text */);
-    public UIColorEntry TextDisabled { get; set; } = new(1 /* TextDisabled */);
-    public UIColorEntry Border { get; set; } = new(5 /* Border */);
-    public UIColorEntry SelectionActive { get; set; } = new(24 /* Header */);
-    public UIColorEntry SelectionActiveHovered { get; set; } = new(25 /* HeaderHovered */);
-    public UIColorEntry SelectionHovered { get; set; } = new(25 /* HeaderHovered */);
-    public UIColorEntry TitleBar { get; set; } = new(10 /* TitleBg */);
-    public UIColorEntry TitleBarActive { get; set; } = new(11 /* TitleBgActive */);
-    public UIColorEntry Button { get; set; } = new(21 /* Button */);
-    public UIColorEntry ButtonHovered { get; set; } = new(22 /* ButtonHovered */);
-    public UIColorEntry ButtonActive { get; set; } = new(23 /* ButtonActive */);
 }
 
 public sealed record WindowPlacement(System.Numerics.Vector2 Position, System.Numerics.Vector2 Size);

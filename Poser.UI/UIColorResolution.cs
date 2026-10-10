@@ -15,10 +15,4 @@ public static class UIColorResolution
         config.HoveredBoneColor == SkeletonConfiguration.DefaultHoveredBoneColor
             ? ImGui.ColorConvertFloat4ToU32(Vector4.Lerp(Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f))
             : config.HoveredBoneColor;
-
-    public static Vector4 Resolve(this UIColorEntry entry) =>
-        entry.UseCustomColor ? entry.CustomColor : ImGui.GetStyle().Colors[entry.ThemeColorIndex];
-
-    public static uint ResolveU32(this UIColorEntry entry) =>
-        ImGui.ColorConvertFloat4ToU32(entry.Resolve());
 }
