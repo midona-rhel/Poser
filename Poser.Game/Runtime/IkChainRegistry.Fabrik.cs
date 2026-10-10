@@ -4,36 +4,13 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Entities;
 
+using static Poser.Game.IkChainShapes;
+using static Poser.Game.IkHeldTargets;
+
 namespace Poser.Game;
 
-public unsafe partial class BonePosingService
+internal sealed unsafe partial class IkChainRegistry
 {
-    private static bool HasFabrikChildren(IBone bone) => bone.ChildBones.Any(b =>
-        !b.IsHiddenBone && b.PartialId == bone.PartialId && ReferenceEquals(b.Skeleton, bone.Skeleton));
-
-    internal static List<IBone> FabrikMembers(IBone tip, IkChainConfig config)
-    {
-        var result = new List<IBone>();
-        for (IBone? bone = tip; bone != null && result.Count <= config.ParentDepth; bone = bone.ParentBone)
-        {
-            // A Havok pose cannot address indices from a different partial.
-            if (bone != tip && bone.IsHiddenBone || bone.PartialId != tip.PartialId || !ReferenceEquals(bone.Skeleton, tip.Skeleton)) break;
-            result.Add(bone);
-        }
-        result.Reverse();
-        var child = tip;
-        for (int i = 0; i < config.ChildDepth; i++)
-        {
-            var children = child.ChildBones.Where(b => !b.IsHiddenBone
-                && b.PartialId == tip.PartialId && ReferenceEquals(b.Skeleton, tip.Skeleton)).ToArray();
-            // A depth does not identify a branch: stop rather than picking one arbitrarily.
-            if (children.Length != 1) break;
-            child = children[0];
-            result.Add(child);
-        }
-        return result;
-    }
-
     public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config)
     {
         var previous = GetIkConfiguration(endpoint);
@@ -44,7 +21,7 @@ public unsafe partial class BonePosingService
             return config.Enabled && config.TargetMode == IkTargetMode.Actor
                 && (config.ActorAnchor == null || previous != null && config.ActorAnchor == previous.ActorAnchor
                     && (config.Solver != previous.Solver || config.CcdDepth != previous.CcdDepth))
-                ? config with { ActorAnchor = CaptureActorAnchor(endpoint, config) } : config;
+                ? config with { ActorAnchor = _held.CaptureActorAnchor(endpoint, config) } : config;
         }
         if (config.Fabrik == null && config.Enabled
             || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
@@ -70,8 +47,8 @@ public unsafe partial class BonePosingService
         RefreshCache(tip);
         var poses = members.Select(bone =>
         {
-            var pose = ToApplySpace(bone, bone.LastTransform);
-            var authored = GetIkModification(bone) ?? Transform.Identity;
+            var pose = _stacks.ToApplySpace(bone, bone.LastTransform);
+            var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
             return new FabrikBonePose(bone.BoneName, bone.PartialId, pose.Position, pose.Rotation,
                 authored.Position, authored.Rotation);
         }).ToArray();
@@ -105,13 +82,13 @@ public unsafe partial class BonePosingService
             var reference = potential.Select(bone =>
             {
                 var displayed = bone.LastTransform;
-                var applied = ToApplySpace(bone, displayed);
-                var authored = GetIkModification(bone) ?? Transform.Identity;
+                var applied = _stacks.ToApplySpace(bone, displayed);
+                var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
                 var saved = control?.Bones.FirstOrDefault(b => b.Name == bone.BoneName && b.Partial == bone.PartialId);
                 var pose = saved ?? new FabrikBonePose(bone.BoneName, bone.PartialId,
                     applied.Position, applied.Rotation, authored.Position, authored.Rotation);
                 if (saved != null)
-                    displayed = FromApplySpace(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
+                    displayed = _stacks.FromApplySpace(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
                 var anchor = new FabrikTarget(IkTargetMode.Actor, displayed.Position, displayed.Rotation,
                     pose.AuthoredPosition, pose.AuthoredRotation, HoldRotation: false);
                 // Old saved controls have no reference span: retain their exact
@@ -135,7 +112,7 @@ public unsafe partial class BonePosingService
         if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return null;
         var source = endpoint;
         RefreshCache(source);
-        var authored = GetIkModification(source) ?? Transform.Identity;
+        var authored = _stacks.GetIkModification(source) ?? Transform.Identity;
         var model = source.LastTransform;
         if (mode == IkTargetMode.Actor)
             return new(mode, model.Position, model.Rotation, authored.Position, authored.Rotation);
@@ -185,12 +162,12 @@ public unsafe partial class BonePosingService
             rotation = Quaternion.Normalize(Quaternion.Inverse(
                 Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation) * rotation);
         }
-        var applied = ToApplySpace(bone, new Transform(position, rotation, Vector3.One));
+        var applied = _stacks.ToApplySpace(bone, new Transform(position, rotation, Vector3.One));
         position = applied.Position;
         rotation = applied.Rotation;
         if (movable)
         {
-            var authored = GetIkModification(bone) ?? Transform.Identity;
+            var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
             position += authored.Position - target.AuthoredPosition;
             rotation = Quaternion.Normalize(rotation * Quaternion.Inverse(target.AuthoredRotation) * authored.Rotation);
         }
@@ -216,20 +193,20 @@ public unsafe partial class BonePosingService
         if (root == null || tip == null || handle == null) return delta;
         // Reach is measured in the solver's pre-reparent frame. Only the
         // distance limit feeds back into authored coordinates, never contact lag.
-        var displayed = FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
-        var requested = ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
+        var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
+        var requested = _stacks.ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
         var source = control.Bones.Select(b => b.Position).ToArray();
         var limited = FabrikSolver.MoveHandle(source, control.HandleIndex, root.Value.Position, tip.Value.Position,
             handle.Value.Position, requested.Position - handle.Value.Position);
-        var start = fromAuthoredBaseline ? displayed.Position : FromApplySpace(bone, requested with
+        var start = fromAuthoredBaseline ? displayed.Position : _stacks.FromApplySpace(bone, requested with
         {
             Position = FabrikSolver.ClampHandle(source, control.HandleIndex,
                 root.Value.Position, tip.Value.Position, handle.Value.Position)
         }).Position;
-        return FromApplySpace(bone, requested with { Position = limited }).Position - start;
+        return _stacks.FromApplySpace(bone, requested with { Position = limited }).Position - start;
     }
 
-    private void ApplyFabrikControls(SkeletonKey key, Skeleton skeleton)
+    public void ApplyFabrikControls(SkeletonKey key, Skeleton skeleton)
     {
         if (_ikImports.Contains(key.Actor)) return;
         foreach (var (identity, state) in _ikChains)
@@ -267,7 +244,7 @@ public unsafe partial class BonePosingService
         {
             var resolved = ResolveFabrikTarget(bone, target, movable);
             if (resolved is not { } value || bone.Skeleton is not Skeleton skeleton) return target;
-            var visible = FromApplySpace(bone, new Transform(value.Position, value.Rotation, Vector3.One));
+            var visible = _stacks.FromApplySpace(bone, new Transform(value.Position, value.Rotation, Vector3.One));
             var position = visible.Position;
             var rotation = visible.Rotation;
             if (!modelSpace && target.Mode != IkTargetMode.Actor)
@@ -310,21 +287,10 @@ public unsafe partial class BonePosingService
         if (members.Count != control.Bones.Length) return "The saved FABRIK chain does not match this skeleton.";
         FabrikTarget Baseline(FabrikTarget target, IBone bone)
         {
-            var authored = GetIkModification(bone) ?? Transform.Zero;
+            var authored = _stacks.GetIkModification(bone) ?? Transform.Zero;
             return target with { AuthoredPosition = authored.Position, AuthoredRotation = authored.Rotation };
         }
         return SetIkConfiguration(tip, config with { Fabrik = control with
             { Handle = Baseline(control.Handle, tip) } });
-    }
-
-    private Transform FromApplySpace(IBone bone, Transform applied)
-    {
-        var root = bone;
-        while (!root.IsPartialRoot && root.ParentBone is { } parent && parent.PartialId == bone.PartialId)
-            root = parent;
-        if (!root.IsPartialRoot || root.IsSkeletonRoot) return applied;
-        return _partialFrames.TryGetValue((SkeletonKey.Of(bone.Skeleton), bone.PartialId, root.BoneIndex), out var frame)
-            && frame.Before.Scale.X != 0 && frame.Before.Scale.Y != 0 && frame.Before.Scale.Z != 0
-                ? frame.ToDisplay(applied) : applied;
     }
 }

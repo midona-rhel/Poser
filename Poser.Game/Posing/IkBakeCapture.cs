@@ -590,7 +590,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     internal static List<IBone> AffectedBones(IBone endpoint, IkChainConfig config)
     {
         if (config.Solver == IkSolver.Ccd)
-            return BonePosingService.NativeIkMembers(endpoint, config);
+            return IkChainShapes.NativeIkMembers(endpoint, config);
         var result = new List<IBone>();
         void Add(IBone? bone)
         {

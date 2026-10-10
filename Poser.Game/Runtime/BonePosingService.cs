@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
@@ -13,6 +13,7 @@ using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
 using Poser.Core;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Domain.Identity;
 using Poser.Services;
@@ -24,172 +25,26 @@ namespace Poser.Game;
 /// <summary>
 /// Service for manipulating bone transforms using game hooks.
 /// Simple delta-based system like Brio - bones rotate around themselves.
+///
+/// <para>The facade over the posing engine's owners: <see cref="PoseStackStore"/>
+/// (authored stacks and apply space), <see cref="IkChainRegistry"/> (session
+/// IK), <see cref="TransitiveActionScheduler"/> (in-pass batches), and the two
+/// native passes, <see cref="BoneApplyPass"/> and <see cref="BoneSnapshotPass"/>.
+/// It keeps the authored-edit entry point, linked bones, and the actor and
+/// GPose lifecycle that purges them all together.</para>
 /// </summary>
-public unsafe partial class BonePosingService : IBonePosingService
+public unsafe class BonePosingService : IBonePosingService
 {
-    private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
-    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Root),
-        Poser.Game.Posing.PartialPoseFrame> _partialFrames = new();
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
-    private readonly IGPoseService _gPoseService;
-    private readonly ISkeletonService _skeletonService;
-    private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
-    private readonly IKService _ikService;
-    private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
-    private readonly IPosingService _posingService;
     private readonly Poser.Config.ConfigurationService _configuration;
 
-    /// <summary>Poses parked across a redraw, keyed by stable actor identity
-    /// rather than by any of the three things a rebuild invalidates (address,
-    /// skeleton instance, draw object).</summary>
-
-    // Hook for intercepting bone physics updates
-    private delegate nint UpdateBonePhysicsDelegate(nint a1);
-    private readonly Hook<UpdateBonePhysicsDelegate>? _updateBonePhysicsHook;
-
-    // Hook for finalizing skeletons before rendering (takes final snapshot)
-    private delegate void FinalizeSkeletonsDelegate(nint a1);
-    private readonly Hook<FinalizeSkeletonsDelegate>? _finalizeSkeletonsHook;
-
-    /// <summary>
-    /// EXACT runtime skeleton identity: actor address, slot, and the built
-    /// skeleton instance's unique id. Replacing a slot creates a new
-    /// skeleton instance, so the replacement can never inherit the old
-    /// skeleton's pose state through a reused (address, slot) pair.
-    /// </summary>
-    /// <summary>
-    /// A pose store's address: the ACTOR and the SLOT, by name. Deliberately
-    /// not the skeleton instance and not the actor's pointer.
-    ///
-    /// <para>This key used to carry <c>skeleton.Id.Unique</c>, a fresh id per
-    /// Skeleton object. A redraw builds a new Skeleton, so the authored pose
-    /// ended up filed under a key nothing would look up again — and every
-    /// piece of machinery that existed to survive a redraw (the carryover
-    /// parking lot, the two adoption points, the migration in the
-    /// skeleton-created handler) existed only to move poses from the dead key
-    /// to the live one. Keyed by name, the store simply stays where it is and
-    /// the next apply pass lands it on whatever skeleton is current.</para>
-    ///
-    /// <para>The bone stacks inside were already name-keyed
-    /// (<c>SkeletonPoseInfo.GetPoseInfo(name, partial)</c>). Only the outer key
-    /// was instance-bound.</para>
-    /// </summary>
-    private readonly record struct SkeletonKey(
-        string Actor,
-        PoseSlot Slot)
-    {
-        public static SkeletonKey Of(ISkeleton skeleton) => new(
-            skeleton.Actor.Id.Unique,
-            skeleton.Slot);
-    }
-
-    // Pose info per (actor, slot) — never per skeleton instance.
-    private readonly Dictionary<SkeletonKey, SkeletonPoseInfo> _poseInfos = new();
-
-    // Track which slot skeletons need updating this frame (have modifications)
-    private readonly HashSet<SkeletonKey> _skeletonsToUpdate = new();
-
-    // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
-    private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
-
-    /// <summary>One-frame apply-pass leases taken by
-    /// <see cref="RequestRawTransformRefresh"/>; cleared by every rebuild, so
-    /// a caller that still needs live raw asks again next tick.</summary>
-    private readonly HashSet<SkeletonKey> _rawRefreshRequests = new();
-
-    /// <summary>
-    /// Actions registered from OUTSIDE the apply pass to run INSIDE it, once,
-    /// per bone — Brio's <c>SkeletonPosingCapability._transitiveActions</c>
-    /// (Capabilities/Posing/SkeletonPosingCapability.cs:35). Brio keeps the
-    /// list on the per-actor capability and clears it when the posing interval
-    /// ends (SkeletonPosingCapability.cs:238-241, raised from
-    /// SkeletonService.EndPosingInverval, SkeletonService.cs:375-379); Poser
-    /// keys it by the exact slot-skeleton instance the caller registered
-    /// against, so a replaced skeleton can never inherit another's batch.
-    /// </summary>
-    private sealed class TransitiveActionSet
-    {
-        public required ISkeleton Skeleton;
-        public readonly List<Action<IBone, BonePoseInfo>> Actions = new();
-
-        /// <summary>Set by the pass that ran the actions. False at interval
-        /// end means the batch was dropped without ever executing — Brio has
-        /// no counterpart because Brio's pass visits every registered
-        /// skeleton unconditionally.</summary>
-        public bool Executed;
-    }
-
-    private readonly Dictionary<SkeletonKey, TransitiveActionSet> _transitiveActions = new();
-
-    /// <summary>Session IK state per exact endpoint: validated chain
-    /// configuration, resolved native chain, and the Fixed-mode capture.
-    /// Keyed by the exact skeleton instance, so a replacement never
-    /// inherits configuration or targets.</summary>
-    private sealed class IkChainState
-    {
-        public required Poser.Domain.Posing.IkChainConfig Config;
-        public Poser.Domain.Posing.IkResolvedChain Chain;
-        /// <summary>The held target: World mode keeps the tip's world
-        /// point, Bone mode keeps the tip's world OFFSET from the target
-        /// bone. Translation is the authored delta at capture, so a later
-        /// drag moves the target by exactly what was dragged.</summary>
-        public HeldTarget? HeldCapture;
-        public IBone? TargetBone;
-        public SelectionId? TargetEntity;
-        public bool PreviewModelSpace;
-        public readonly Poser.Game.Posing.BepuIkCollisionState CollisionState = new();
-    }
-
-    /// <summary>What a held chain captured: World mode's world point and
-    /// rotation, or Bone mode's offset and relative rotation from the
-    /// target bone, plus the authored deltas at capture so a later drag or
-    /// turn moves the target by exactly that much.</summary>
-    private readonly record struct HeldTarget(
-        Vector3 Target,
-        Quaternion Rotation,
-        Vector3 Translation,
-        Quaternion RotationDelta);
-
-    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), IkChainState>
-        _ikChains = new();
-    private readonly HashSet<string> _ikImports = new();
-
-    public void SetIkImportSuppressed(string actorKey, bool suppressed)
-    {
-        if (suppressed) _ikImports.Add(actorKey);
-        else _ikImports.Remove(actorKey);
-    }
-
-    // Pre-layer animated baseline per modified concrete bone, captured by the
-    // native skeleton update hook (read by GetAnimatedBaseline).
-    private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), Transform>
-        _animatedBaselines = new();
-
-    /// <summary>Reused snapshot buffers for the two per-frame passes that must
-    /// iterate a collection they may mutate. Both are single-threaded (physics
-    /// detour / framework update) and never nested, so one instance each keeps
-    /// the steady state free of per-frame arrays.</summary>
-    private readonly List<SkeletonKey> _updatePassBuffer = new();
-    private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
-        _baselineRemovalBuffer = new();
-
-    /// <summary>Reused snapshot buffers for the finalize pass — same hazard,
-    /// same idiom as <see cref="_updatePassBuffer"/>: the pass may purge or
-    /// re-add entries in BOTH live sets, which would throw mid-enumeration
-    /// inside the FinalizeSkeletons native frame. (Skeleton changes found
-    /// here are published on the next framework update, never in this
-    /// frame.) Single-threaded (render detour), never nested.</summary>
-    private readonly List<SkeletonKey> _finalizePassBuffer = new();
-    private readonly List<SkeletonKey> _finalizeCachePassBuffer = new();
-
-    private bool _isUpdating = false;
-
-    // One-shot fault flags: the detours run every frame, so a repeating
-    // fault must not turn the log into a firehose.
-    private bool _physicsDetourFaultLogged;
-    private bool _finalizeDetourFaultLogged;
+    private readonly PoseStackStore _stacks = new();
+    private readonly TransitiveActionScheduler _transitive;
+    private readonly IkChainRegistry _ik;
+    private readonly BoneApplyPass _apply;
+    private readonly BoneSnapshotPass _snapshot;
 
     public BonePosingService(
         IPluginLog log,
@@ -206,43 +61,25 @@ public unsafe partial class BonePosingService : IBonePosingService
         ISigScanner scanner,
         Poser.Game.Posing.GazePoseFrames gazeFrames)
     {
-        _gazeFrames = gazeFrames;
         _log = log;
         _framework = framework;
-        _gPoseService = gPoseService;
-        _skeletonService = skeletonService;
-        _actorManager = actorManager;
         _eventBus = eventBus;
-        _ikService = ikService;
-        _bindings = bindings;
-        _posingService = posingService;
         _configuration = configuration;
+        _transitive = new TransitiveActionScheduler(log);
+        _ik = new IkChainRegistry(
+            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings));
 
-        // Hook UpdateBonePhysics - this is called during skeleton updates
-        try
-        {
-            var updateBonePhysicsAddress = scanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ?? 45 33 E4");
-            _updateBonePhysicsHook = hooking.HookFromAddress<UpdateBonePhysicsDelegate>(updateBonePhysicsAddress, UpdateBonePhysicsDetour);
-            _updateBonePhysicsHook.Enable();
-            _log.Debug("BonePosingService: UpdateBonePhysics hook initialized");
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"BonePosingService: Failed to hook UpdateBonePhysics: {ex.Message}");
-        }
+        _apply = new BoneApplyPass(
+            log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,
+            _stacks, _ik, _transitive, PurgeSkeletonState);
+        _snapshot = new BoneSnapshotPass(
+            log, gPoseService, skeletonService, actorManager, _apply, _transitive);
 
-        // Hook FinalizeSkeletons - called before rendering, takes final snapshot
-        try
-        {
-            var finalizeSkeletonsAddress = scanner.ScanText("40 53 57 41 54 41 55 48 83 EC ?? ?? 48 ?? ?? ?? ?? ?? ?? ?? 4C") /* Brio 0.8 sig; JMP in Framework.TaskRenderGraphicsRender */;
-            _finalizeSkeletonsHook = hooking.HookFromAddress<FinalizeSkeletonsDelegate>(finalizeSkeletonsAddress, FinalizeSkeletonsDetour);
-            _finalizeSkeletonsHook.Enable();
-            _log.Debug("BonePosingService: FinalizeSkeletons hook initialized");
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"BonePosingService: Failed to hook FinalizeSkeletons: {ex.Message}");
-        }
+        // The two native hooks, in their original order: UpdateBonePhysics
+        // (the apply pass), then FinalizeSkeletons (the snapshot). Both are
+        // enabled only once everything either detour reads exists.
+        _apply.InstallHook(hooking, scanner);
+        _snapshot.InstallHook(hooking, scanner);
 
         _framework.Update += OnFrameworkUpdate;
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
@@ -251,63 +88,13 @@ public unsafe partial class BonePosingService : IBonePosingService
         _log.Debug("BonePosingService initialized");
     }
 
-    private nint UpdateBonePhysicsDetour(nint a1)
-    {
-        var result = _updateBonePhysicsHook!.Original(a1);
-
-        if (!_gPoseService.IsGPosing || _isUpdating)
-            return result;
-
-        _isUpdating = true;
-        try
-        {
-            ApplyAllBoneTransforms();
-        }
-        catch (Exception ex)
-        {
-            // Never fault the native physics update (CharacterFinalizeDetour
-            // standard): a managed fault here would unwind into the game's
-            // render graph.
-            if (!_physicsDetourFaultLogged)
-            {
-                _physicsDetourFaultLogged = true;
-                _log.Error($"BonePosingService: apply pass faulted (logged once): {ex}");
-            }
-        }
-        finally
-        {
-            _isUpdating = false;
-        }
-
-        return result;
-    }
+    public void SetIkImportSuppressed(string actorKey, bool suppressed) =>
+        _ik.SetIkImportSuppressed(actorKey, suppressed);
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        _skeletonsToUpdate.Clear();
-
-        foreach (var (slotKey, poseInfo) in _poseInfos)
-        {
-            // A registered batch qualifies the skeleton on its own. Brio gets
-            // this for free — its pass takes every skeleton that has a posing
-            // capability (SkeletonService.cs:227-231) — while Poser's pass is
-            // opt-in per stack/chain, and a bake registers its actions exactly
-            // when it has just cleared both.
-            if (poseInfo.IsOverridden || HasEnabledChains(slotKey) ||
-                _transitiveActions.ContainsKey(slotKey) ||
-                _rawRefreshRequests.Contains(slotKey))
-            {
-                _skeletonsToUpdate.Add(slotKey);
-                continue;
-            }
-
-            RemoveAnimatedBaselines(slotKey);
-        }
-
-        _skeletonsToUpdateCache.Clear();
-        // The lease is one rebuild long. A settling bake re-requests on every
-        // tick it waits; when it stops, the skeleton leaves the pass again.
-        _rawRefreshRequests.Clear();
+        _apply.Rebuild();
+        _snapshot.ClearCacheRequests();
     }
 
     /// <summary>
@@ -315,100 +102,49 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// (SkeletonPosingCapability.cs:52-55). The action runs once for every
     /// bone of this slot skeleton, inside the physics-detour apply pass, at
     /// the point where the bone's existing stacks have been applied and its
-    /// transform caches refreshed — see
-    /// <see cref="ApplyTransformsWithPerBoneUpdate"/>.
+    /// transform caches refreshed.
     /// </summary>
     public void RegisterTransitiveAction(
         ISkeleton skeleton,
         Action<IBone, BonePoseInfo> action)
     {
-        var key = SkeletonKey.Of(skeleton);
-        if (!_transitiveActions.TryGetValue(key, out var set))
-            _transitiveActions[key] = set =
-                new TransitiveActionSet { Skeleton = skeleton };
-        set.Actions.Add(action);
+        _transitive.Register(skeleton, action);
 
         // Materialize the pose store so the per-frame rebuild can see the
         // skeleton at all, and register directly for the pass that is still
         // ahead of us this frame (registration from a framework update
         // precedes this frame's detour; registration from UI draw follows it
         // and is picked up by the next rebuild).
-        GetPoseInfo(skeleton);
-        _skeletonsToUpdate.Add(key);
+        _stacks.GetPoseInfo(skeleton);
+        _apply.Schedule(SkeletonKey.Of(skeleton));
     }
 
-    public event Action<TransitiveActionOutcome>? TransitiveActionsEnded;
-
-    /// <summary>Brio's <c>SkeletonPosingCapability.ExecuteTransitiveActions</c>
-    /// (SkeletonPosingCapability.cs:57-60).</summary>
-    private static void ExecuteTransitiveActions(
-        TransitiveActionSet set,
-        IBone bone,
-        BonePoseInfo poseInfo)
+    public event Action<TransitiveActionOutcome>? TransitiveActionsEnded
     {
-        var actions = set.Actions;
-        for (var i = 0; i < actions.Count; i++)
-            actions[i](bone, poseInfo);
+        add => _transitive.TransitiveActionsEnded += value;
+        remove => _transitive.TransitiveActionsEnded -= value;
     }
 
-    /// <summary>
-    /// Brio's <c>SkeletonService.EndPosingInverval</c> → <c>SkeletonUpdateEnd</c>
-    /// → <c>SkeletonPosingCapability.OnSkeletonUpdateEnd</c>: every registered
-    /// batch is dropped when the interval ends, whether or not a pass consumed
-    /// it. Poser reports the outcome so a caller that needs to know its actions
-    /// ran (the IK bake, which owes a history entry) is never left waiting.
-    /// </summary>
-    private void EndTransitiveActions()
-    {
-        if (_transitiveActions.Count == 0)
-            return;
-        var ended = _transitiveActions.Values.ToArray();
-        _transitiveActions.Clear();
-        foreach (var set in ended)
-            RaiseTransitiveActionsEnded(set);
-    }
-
-    private void RaiseTransitiveActionsEnded(TransitiveActionSet set)
-    {
-        try
-        {
-            TransitiveActionsEnded?.Invoke(
-                new TransitiveActionOutcome(set.Skeleton, set.Executed));
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"BonePosingService: transitive action outcome handler threw: {ex.Message}");
-        }
-    }
-
-    public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton)
-    {
-        _skeletonsToUpdateCache.Add(SkeletonKey.Of(skeleton));
-    }
+    public void RegisterSkeletonForCacheUpdate(ISkeleton skeleton) =>
+        _snapshot.Register(SkeletonKey.Of(skeleton));
 
     /// <summary>
     /// One frame's membership in the apply pass, for a caller that needs
     /// <see cref="IBone.LastRawTransform"/> refreshed on a skeleton that
     /// carries nothing the pass would otherwise select it for. The pose store
-    /// is materialized because the rebuild in <see cref="OnFrameworkUpdate"/>
-    /// only walks skeletons it already knows.
+    /// is materialized because the per-frame rebuild only walks skeletons it
+    /// already knows.
     /// </summary>
     public void RequestRawTransformRefresh(ISkeleton skeleton)
     {
-        GetPoseInfo(skeleton);
-        _rawRefreshRequests.Add(SkeletonKey.Of(skeleton));
+        _stacks.GetPoseInfo(skeleton);
+        _apply.RequestRawRefresh(SkeletonKey.Of(skeleton));
     }
 
     /// <summary>The frozen animated/reference baseline beneath the authored
     /// layers; a bone without applied layers has no captured baseline, and its
     /// current transform IS its baseline.</summary>
-    public Transform GetAnimatedBaseline(IBone bone) =>
-        bone is not VirtualBone && _animatedBaselines.TryGetValue(
-            (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex),
-            out var baseline)
-            ? baseline
-            : bone.LastTransform;
+    public Transform GetAnimatedBaseline(IBone bone) => _stacks.GetAnimatedBaseline(bone);
 
     /// <summary>Actor teardown: purge every runtime pose store belonging to
     /// an address that no longer hosts a live actor.</summary>
@@ -417,7 +153,7 @@ public unsafe partial class BonePosingService : IBonePosingService
         var live = new HashSet<string>(StringComparer.Ordinal);
         foreach (var actor in e.Actors)
             live.Add(actor.Id.Unique);
-        foreach (var key in _poseInfos.Keys.Where(key => !live.Contains(key.Actor)).ToArray())
+        foreach (var key in _stacks.Keys.Where(key => !live.Contains(key.Actor)).ToArray())
             PurgeSkeletonState(key);
     }
 
@@ -426,597 +162,31 @@ public unsafe partial class BonePosingService : IBonePosingService
     /// inherits configuration or fixed targets).</summary>
     private void PurgeSkeletonState(SkeletonKey key)
     {
-        foreach (var frame in _partialFrames.Keys.Where(x => x.Skeleton == key).ToArray())
-            _partialFrames.Remove(frame);
-        _poseInfos.Remove(key);
-        _skeletonsToUpdate.Remove(key);
-        _skeletonsToUpdateCache.Remove(key);
-        _rawRefreshRequests.Remove(key);
+        _stacks.RemovePartialFrames(key);
+        _stacks.RemovePoseInfo(key);
+        _apply.Unschedule(key);
+        _snapshot.Unregister(key);
         // A batch registered against a skeleton that is going away can never
         // execute; report it so its owner can roll back instead of waiting.
-        if (_transitiveActions.Remove(key, out var orphaned))
-            RaiseTransitiveActionsEnded(orphaned);
-        RemoveAnimatedBaselines(key);
-        foreach (var chainKey in _ikChains.Keys
-                     .Where(chainKey => chainKey.Skeleton == key)
-                     .ToArray())
-            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
+        _transitive.Orphan(key);
+        _stacks.RemoveAnimatedBaselines(key);
+        _ik.Purge(key);
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent e)
     {
         if (!e.IsGPosing)
         {
-            _log.Information($"[GPoseLifetime] ik-cleanup-before chains={_ikChains.Count} poseSlots={_poseInfos.Count}");
-            EndTransitiveActions();
-            _poseInfos.Clear();
-            _skeletonsToUpdate.Clear();
-            _animatedBaselines.Clear();
-            _partialFrames.Clear();
-            foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
-            _ikChains.Clear();
-            _ikImports.Clear();
+            _log.Information($"[GPoseLifetime] ik-cleanup-before chains={_ik.Count} poseSlots={_stacks.Count}");
+            _transitive.EndTransitiveActions();
+            _stacks.Clear();
+            _apply.ClearUpdateSet();
+            _ik.ClearAll();
             _log.Information("[GPoseLifetime] ik-cleanup-complete chains=0");
         }
     }
 
-
-    private void ApplyAllBoneTransforms()
-    {
-        _gazeFrames.BeginPass();
-        // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
-        // runs, so it iterates a snapshot — a REUSED buffer, because this runs
-        // in the physics detour every frame and the old ToArray() charged the
-        // steady state one array per frame.
-        _updatePassBuffer.Clear();
-        foreach (var key in _skeletonsToUpdate)
-            _updatePassBuffer.Add(key);
-
-        for (var i = 0; i < _updatePassBuffer.Count; i++)
-        {
-            var slotKey = _updatePassBuffer[i];
-            if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
-                continue;
-
-            var actor = FindActor(slotKey.Actor);
-
-            if (actor == null)
-            {
-                PurgeSkeletonState(slotKey);
-                continue;
-            }
-
-            // A REPLACED skeleton is not a reason to drop the pose — it is
-            // exactly where the pose belongs. The store is keyed by actor and
-            // slot, so the apply pass lands the same authored stacks on
-            // whatever instance the slot currently holds.
-            //
-            // A MISSING skeleton is not a reason either: every redraw passes
-            // through frames where the actor has no character base, and
-            // purging there threw the pose away right before the rebuilt
-            // skeleton arrived to receive it. While the ACTOR exists the pose
-            // waits; only actor teardown purges.
-            var skeleton = _skeletonService.GetSkeleton(actor, slotKey.Slot) as Skeleton;
-            if (skeleton == null || !skeleton.IsValid)
-                continue;
-
-            ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
-        }
-    }
-
-    /// <summary>
-    /// Apply skeleton transforms following Brio's exact pattern:
-    /// 1. Apply transforms with per-bone LastTransform update
-    /// 2. Full cache update after apply
-    /// 3. Reparent partials
-    /// 4. Full cache update after reparent
-    /// </summary>
-    private void ApplySkeletonTransforms(SkeletonKey slotKey, Skeleton skeleton, SkeletonPoseInfo poseInfo)
-    {
-        // The slot skeleton resolves its OWN native pointer; a weapon or
-        // ornament stack is applied through that slot's skeleton only.
-        var gameSkeleton = skeleton.GetGameSkeletonPointer();
-        if (gameSkeleton == null)
-            return;
-
-        var gazeFrame = _gazeFrames.Before(skeleton);
-#if DEBUG
-        if (slotKey.Slot == PoseSlot.Character)
-            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-before");
-#endif
-        // STEP 1: Apply transforms AND update LastTransform per-bone (like Brio ApplyBrioTransforms)
-        _transitiveActions.TryGetValue(slotKey, out var actions);
-        ApplyTransformsWithPerBoneUpdate(
-            slotKey,
-            skeleton,
-            gameSkeleton,
-            poseInfo,
-            actions);
-        ApplyFabrikControls(slotKey, skeleton);
-        // Brio's pass has no such flag: every skeleton it registers is
-        // visited every frame, so a registered action always runs. Poser
-        // records the fact so a dropped batch is distinguishable from an
-        // executed one at interval end.
-        if (actions != null)
-            actions.Executed = true;
-
-        // STEP 2: Full cache update after apply (like Brio line 242)
-        UpdateAllLastTransforms(skeleton, gameSkeleton);
-
-        // STEP 3: Reparent partials (like Brio line 243)
-        ReparentPartials(skeleton, gameSkeleton);
-
-        // STEP 4: Full cache update after reparent (like Brio line 244)
-        UpdateAllLastTransforms(skeleton, gameSkeleton);
-        if (gazeFrame is { } captured) _gazeFrames.After(captured);
-#if DEBUG
-        if (slotKey.Slot == PoseSlot.Character)
-            Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-after");
-#endif
-    }
-
-    /// <summary>
-    /// Apply transforms with per-bone LastTransform update - exactly like Brio's ApplyBrioTransforms.
-    /// Updates LastTransform IMMEDIATELY after applying each bone's stacks.
-    /// </summary>
-    private void ApplyTransformsWithPerBoneUpdate(
-        SkeletonKey slotKey,
-        Skeleton skeleton,
-        GameSkeleton* gameSkeleton,
-        SkeletonPoseInfo poseInfo,
-        TransitiveActionSet? actions)
-    {
-        var partialCount = gameSkeleton->PartialSkeletonCount;
-
-        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
-
-            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
-            var boneCount = pose->Skeleton->Bones.Length;
-            // Capture the attachment map before this partial's edits run.
-            // Its parent partial has already been posed in this pass.
-            for (int rootIndex = 0; rootIndex < boneCount; rootIndex++)
-            {
-                var root = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, rootIndex);
-                if (root is not { IsPartialRoot: true, IsSkeletonRoot: false, ParentBone: { } parent })
-                    continue;
-                var frameKey = (slotKey, partialIdx, rootIndex);
-                _partialFrames.Remove(frameKey);
-                var rootSpace = pose->AccessBoneModelSpace(rootIndex, hkaPose.PropagateOrNot.DontPropagate);
-                var parentPose = gameSkeleton->PartialSkeletons[parent.PartialId].GetHavokPose(0);
-                var parentSpace = parentPose == null ? null : parentPose->AccessBoneModelSpace(
-                    parent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
-                if (rootSpace == null || parentSpace == null)
-                    continue;
-                var attached = ReadTransform(parentSpace);
-                if (root.PartialRootScale is { } scale)
-                    attached.Scale = scale;
-                var frame = new Poser.Game.Posing.PartialPoseFrame(ReadTransform(rootSpace), attached);
-                if (frame.IsInvertible)
-                    _partialFrames[frameKey] = frame;
-            }
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
-                if (bone == null)
-                    continue;
-
-                // The resolved bone's name IS the native name this index would
-                // have marshaled (it was resolved BY that name on both paths),
-                // so the pose store is keyed identically without the marshal.
-                var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
-                _ikChains.TryGetValue(
-                    (slotKey, partialIdx, boneIdx), out var chainState);
-                if (chainState?.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
-                    chainState = null; // Authored spans solve once around the selected handle, after pose layers.
-                // Import deltas must be measured against the ordinary pose,
-                // before IK moves parents underneath the remaining file bones.
-                if (_ikImports.Contains(slotKey.Actor))
-                    chainState = null;
-                bool fixedHold = chainState is
-                {
-                    Config.Enabled: true,
-                    HeldCapture: not null,
-                };
-                // Brio visits every bone unconditionally (SkeletonService.cs:98-127)
-                // because a transitive action may append a stack to a bone
-                // that has none. With no batch registered the pass keeps
-                // Poser's cheap skip; with one, every bone is visited.
-                if (!bonePoseInfo.HasStacks && !fixedHold && actions == null)
-                    continue;
-
-                var baselineSpace = pose->AccessBoneModelSpace(
-                    boneIdx,
-                    hkaPose.PropagateOrNot.DontPropagate);
-                if (baselineSpace == null)
-                    continue;
-                var animatedBaseline = ReadTransform(baselineSpace);
-
-                // Brio SkeletonService.cs:108 — the stack count taken BEFORE
-                // the existing stacks are applied. Everything past it is what
-                // the transitive actions appended, and only those are applied
-                // a second time below.
-                var snapshotCount = bonePoseInfo.Stacks.Count;
-
-                if (bonePoseInfo.HasStacks)
-                {
-                    // Apply ALL stacks for this bone (like Brio lines 108-112)
-                    foreach (var stack in bonePoseInfo.Stacks)
-                    {
-                        ApplyBoneTransform(pose, boneIdx,
-                            HeldPoseStack(stack, fixedHold), bone, fixedHold ? null : chainState);
-                    }
-                }
-                if (fixedHold)
-                {
-                    // An armed Fixed chain with no authored stack still holds
-                    // its captured target against the running animation.
-                    ApplyFixedHold(pose, boneIdx, bone, chainState!, bonePoseInfo.IkModification());
-                }
-
-                // Brio captures both caches immediately after applying each bone.
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-                if (modelSpace != null)
-                {
-                    var transform = ReadTransform(modelSpace);
-                    bone.LastRawTransform = transform;
-                    bone.LastTransform = transform;
-                    if (bonePoseInfo.HasStacks || fixedHold)
-                    {
-                        _animatedBaselines[
-                            (slotKey, partialIdx, boneIdx)] =
-                            animatedBaseline;
-                    }
-
-                    // Brio SkeletonService.cs:119-127: the actions run against
-                    // the caches this pass has just refreshed — the running,
-                    // post-parent basis an absolute write must be diffed
-                    // against — and whatever they appended is applied here,
-                    // in this bone's turn, before the loop moves to its
-                    // children.
-                    if (actions != null)
-                    {
-                        ExecuteTransitiveActions(actions, bone, bonePoseInfo);
-                        for (var i = snapshotCount; i < bonePoseInfo.Stacks.Count; i++)
-                            ApplyBoneTransform(
-                                pose, boneIdx, HeldPoseStack(bonePoseInfo.Stacks[i], fixedHold),
-                                bone, fixedHold ? null : chainState);
-                        if (fixedHold && bonePoseInfo.Stacks.Count != snapshotCount)
-                            ApplyFixedHold(pose, boneIdx, bone, chainState!, bonePoseInfo.IkModification());
-                    }
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Resolves the SAME managed bone the name path resolves for a native bone,
-    /// without marshaling anything while the skeleton's prebuilt map still
-    /// describes this pose. <paramref name="map"/> is handed out by
-    /// <see cref="Skeleton.GetNativeBoneMap"/> only after the native
-    /// <c>hkaSkeleton</c> pointer and bone count have been matched against the
-    /// build, so an invalid handle — a rebound partial, a partial the build
-    /// never saw, a resized bone array — falls back to marshaling the native
-    /// name and asking <see cref="Skeleton.GetBoneByName"/>, exactly as before.
-    /// </summary>
-    private readonly HashSet<(long, int)> _mapFallbackLogged = new();
-
-    /// <summary>Which skeleton build each slot last seeded a FULL snapshot
-    /// for. One full pass per build fills every bone once; after that the
-    /// finalize walk copies only bones a reader touched recently.</summary>
-    private readonly Dictionary<SkeletonKey, long> _snapshotSeededRevision = new();
-
-    private static Bone? ResolveNativeBone(
-        Skeleton skeleton,
-        Skeleton.NativeBoneMap map,
-        hkaPose* pose,
-        int partialIdx,
-        int boneIdx)
-    {
-        if (map.IsValid)
-            return map[boneIdx];
-
-        var rawBone = pose->Skeleton->Bones[boneIdx];
-        var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
-        return skeleton.GetBoneByName(boneName, partialIdx);
-    }
-
-    /// <summary>Refreshes both transform caches at the same two points as Brio:
-    /// after applying stacks and after partial reparenting.</summary>
-    private void UpdateAllLastTransforms(Skeleton skeleton, GameSkeleton* gameSkeleton)
-    {
-        var partialCount = gameSkeleton->PartialSkeletonCount;
-
-        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
-
-            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
-            // The fallback path resolves EVERY bone BY NAME, allocating a
-            // managed copy of the native name per bone per frame — the
-            // third-of-a-core in the profile if it is what actually runs.
-            // One line per build says which path this partial is on.
-            if (!boneMap.IsValid && _mapFallbackLogged.Add(
-                    (skeleton.BuildRevision, partialIdx)))
-                _log.Debug(
-                    $"Bone snapshot FALLBACK for {skeleton.Actor.Name} " +
-                    $"{skeleton.Slot} partial {partialIdx} rev " +
-                    $"{skeleton.BuildRevision}: the native map failed " +
-                    "validation; resolving " +
-                    $"{pose->Skeleton->Bones.Length} bones by name each frame.");
-            var boneCount = pose->Skeleton->Bones.Length;
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
-                if (bone == null)
-                    continue;
-
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-                if (modelSpace != null)
-                {
-                    var transform = new Transform
-                    {
-                        Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
-                        Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
-                        Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
-                    };
-                    bone.LastRawTransform = transform;
-                    bone.LastTransform = transform;
-                }
-            }
-        }
-    }
-
-    private void ReparentPartials(Skeleton skeleton, GameSkeleton* gameSkeleton)
-    {
-        var partialCount = gameSkeleton->PartialSkeletonCount;
-
-        for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
-
-            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
-            var boneCount = pose->Skeleton->Bones.Length;
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
-                if (bone == null)
-                    continue;
-
-                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
-                {
-                    // Brio performs this access for EVERY partial root and
-                    // only afterwards checks whether a parent exists (Brio
-                    // SkeletonService.cs:152-153): AccessBoneModelSpace with
-                    // Propagate natively syncs the root's model-space entry
-                    // and invalidates its descendants, a side effect that
-                    // must happen even when no parent transform is written.
-                    var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
-                    // The Propagate side effect above is the point of the call
-                    // and has already happened; the null check only gates the
-                    // WRITE below, matching every other model-space deref in
-                    // this file (check-then-use, never fail-open).
-                    if (modelSpace == null)
-                        continue;
-
-                    var parentBone = bone.ParentBone;
-                    if (parentBone == null)
-                        continue;
-                    var parentPartial = &gameSkeleton->PartialSkeletons[parentBone.PartialId];
-                    var parentPose = parentPartial->GetHavokPose(0);
-
-                    Vector3 pos;
-                    Quaternion rot;
-                    Vector3 scale;
-
-                    // A pose that exists but cannot hand back the parent's
-                    // model-space entry falls through to the cached transform
-                    // arm rather than dereferencing null.
-                    var parentModelSpace = parentPose == null
-                        ? null
-                        : parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
-
-                    if (parentModelSpace != null)
-                    {
-                        pos = new Vector3(parentModelSpace->Translation.X, parentModelSpace->Translation.Y, parentModelSpace->Translation.Z);
-                        rot = new Quaternion(parentModelSpace->Rotation.X, parentModelSpace->Rotation.Y, parentModelSpace->Rotation.Z, parentModelSpace->Rotation.W);
-                        scale = new Vector3(parentModelSpace->Scale.X, parentModelSpace->Scale.Y, parentModelSpace->Scale.Z);
-                    }
-                    else
-                    {
-                        var parent = parentBone.LastTransform;
-                        pos = parent.Position;
-                        rot = parent.Rotation;
-                        scale = parent.Scale;
-                    }
-
-                    // An owned root scale (a duplicate's captured head
-                    // scaling) stands in for the parent's.
-                    if (bone.PartialRootScale is { } owned)
-                        scale = owned;
-                    modelSpace->Translation = *(hkVector4f*)(&pos);
-                    modelSpace->Rotation = *(hkQuaternionf*)(&rot);
-                    modelSpace->Scale = *(hkVector4f*)(&scale);
-                }
-            }
-        }
-    }
-
-    // A handle edit supplies the solver target, not a direct translation of
-    // the tip beforehand. Directly moving it first changes the limb lengths
-    // and can leave Two Joint solving an already-displaced endpoint.
-    internal static BonePoseTransformInfo HeldPoseStack(BonePoseTransformInfo stack, bool held) =>
-        held && stack.IkTransform == null && stack.Layer == null
-            ? stack with { Transform = stack.Transform with { Position = Vector3.Zero } }
-            : stack;
-
-    /// <summary>Solve the held target after applying the pose-only stack values.</summary>
-    private void ApplyFixedHold(hkaPose* pose, int boneIdx, IBone bone, IkChainState ik, Transform authored)
-    {
-        if (ResolveHeld(ik, bone, authored.Position, authored.Rotation, pose) is not { } held)
-            return;
-        var target = held.Position;
-        var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-        var currentRotation = new Quaternion(
-            rotSpace->Rotation.X, rotSpace->Rotation.Y,
-            rotSpace->Rotation.Z, rotSpace->Rotation.W);
-        bool holdRotation = ik.Config.HoldsEndRotation;
-        _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-            target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
-        if (!ik.Config.EnforceConstraints)
-        {
-            var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
-            modelSpace->Translation = *(hkVector4f*)(&target);
-        }
-        if (holdRotation)
-        {
-            // The tip keeps the held rotation too; its children ride along.
-            var heldSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
-            var heldRotation = held.Rotation;
-            heldSpace->Rotation = *(hkQuaternionf*)(&heldRotation);
-        }
-    }
-
-    private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone bone, IkChainState? ik)
-    {
-        // Delta mode: ADD to Havok state (like Brio)
-
-        // Older action units use the partial root; Ktisis 847f3673 samples
-        // parent-local deltas. Resolve that parent from THIS Havok pass, not
-        // a last-frame cache that already contains the authored expression.
-        bool relative = info.Frame != TransformFrame.BoneLocal;
-        var headRotation = Quaternion.Identity;
-        if (relative)
-        {
-            int frameIndex = info.Frame == TransformFrame.ParentRelative
-                ? pose->Skeleton->ParentIndices[boneIdx] : 0;
-            var rootSpace = frameIndex >= 0
-                ? pose->AccessBoneModelSpace(frameIndex, hkaPose.PropagateOrNot.DontPropagate) : null;
-            if (rootSpace != null)
-                headRotation = new Quaternion(rootSpace->Rotation.X, rootSpace->Rotation.Y, rootSpace->Rotation.Z, rootSpace->Rotation.W);
-        }
-        var framedDelta = info.Frame == TransformFrame.ParentRelative
-            ? PoseMath.ProjectExpressionDelta(info.Transform, headRotation) : info.Transform;
-
-        // Position
-        var prop = info.PropagateComponents.HasFlag(TransformComponents.Position);
-        var modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        var beforePos = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z);
-        var positionDelta = info.Frame == TransformFrame.HeadRelative
-            ? Vector3.Transform(info.Transform.Position, headRotation) : framedDelta.Position;
-        var tempPos = beforePos + positionDelta;
-        bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
-        bool fixedMode = armed && ik!.HeldCapture != null;
-        bool rotationEnforcedByIk = false;
-        Quaternion? heldRotation = null;
-        if (armed && (fixedMode || info.Transform.Position != Vector3.Zero))
-        {
-            // Brio-style live IK: the stored delta is the TARGET offset; the
-            // chain is solved every frame, so undo/redo stay pure delta
-            // operations. Fixed mode targets the captured model-space point
-            // shifted by the authored translation moved since capture, so
-            // mode changes never jump or double-apply an existing edit.
-            var target = tempPos;
-
-            // Requested end rotation, computed BEFORE the solve so optional
-            // enforcement receives the value the direct apply would produce.
-            var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-            var rotBefore = new Quaternion(
-                rotSpace->Rotation.X, rotSpace->Rotation.Y,
-                rotSpace->Rotation.Z, rotSpace->Rotation.W);
-            var requestedRotation = info.Frame == TransformFrame.HeadRelative
-                ? Quaternion.Normalize(headRotation * info.Transform.Rotation * Quaternion.Inverse(headRotation) * rotBefore)
-                : Quaternion.Normalize(rotBefore * info.Transform.Rotation);
-
-            // A held target brings its own rotation when the chain holds
-            // rotation: the solver aims at it and the write below keeps it.
-            if (fixedMode
-                && ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation, pose)
-                    is { } held)
-            {
-                target = held.Position;
-                if (ik.Config.HoldsEndRotation)
-                {
-                    requestedRotation = held.Rotation;
-                    heldRotation = held.Rotation;
-                }
-            }
-
-            _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-                target, requestedRotation, ik!.Config, ik.Chain));
-            // When the solver enforces the end rotation, it is not applied a
-            // second time below.
-            rotationEnforcedByIk =
-                ik.Config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
-                ik.Config.EnforceEndRotation;
-            if (!ik.Config.EnforceConstraints)
-            {
-                modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-                modelSpace->Translation = *(hkVector4f*)(&target);
-            }
-        }
-        else
-        {
-            modelSpace->Translation = *(hkVector4f*)(&tempPos);
-        }
-
-        // Rotation (skipped when the Two Joint solver enforced it)
-        if (!rotationEnforcedByIk)
-        {
-            prop = info.PropagateComponents.HasFlag(TransformComponents.Rotation);
-            modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-            // A zero basis takes the delta as its whole rotation — the
-            // same reading the delta was taken with (BonePoseInfo.UsableBasis).
-            var beforeRot = BonePoseInfo.UsableBasis(new Quaternion(
-                modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W));
-            var tempRot = info.Frame == TransformFrame.HeadRelative
-                ? Quaternion.Normalize(headRotation * info.Transform.Rotation * Quaternion.Inverse(headRotation) * beforeRot)
-                : Quaternion.Normalize(beforeRot * info.Transform.Rotation);
-            if (heldRotation is { } keep)
-                tempRot = keep;
-            modelSpace->Rotation = *(hkQuaternionf*)(&tempRot);
-        }
-
-        // Scale
-        prop = info.PropagateComponents.HasFlag(TransformComponents.Scale);
-        modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
-        var beforeScale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z);
-        var tempScale = info.Frame == TransformFrame.ParentRelative
-            ? beforeScale * (Vector3.One + info.Transform.Scale)
-            : beforeScale + info.Transform.Scale;
-        modelSpace->Scale = *(hkVector4f*)(&tempScale);
-    }
-
-    /// <summary>
-    /// The store for one (actor, slot), created on first use.
-    ///
-    /// <para>A plain lookup. It used to be an adoption point — purging stale
-    /// instance-keyed stores, taking a parked pose, re-asserting the model
-    /// transform — because the key carried the skeleton instance and a redraw
-    /// filed the pose under a dead key. The key is names now, so there is
-    /// nothing to adopt and nothing to purge: the store the caller gets is the
-    /// one the pose was authored into, whichever skeleton is live.</para>
-    /// </summary>
-    public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
-    {
-        var slotKey = SkeletonKey.Of(skeleton);
-        if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
-        {
-            poseInfo = new SkeletonPoseInfo();
-            _poseInfos[slotKey] = poseInfo;
-        }
-        return poseInfo;
-    }
+    public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton) => _stacks.GetPoseInfo(skeleton);
 
     // Default OFF: the eye pair (BoneLinkCatalog j_f_eye_l/r) made a left-eye
     // drag mirror into the right by default (user 2026-08-11: disable it).
@@ -1026,16 +196,7 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     private bool _propagatingLinks;
 
-    public Transform ToApplySpace(IBone bone, Transform visible)
-    {
-        var root = bone;
-        while (!root.IsPartialRoot && root.ParentBone is { } parent && parent.PartialId == bone.PartialId)
-            root = parent;
-        if (!root.IsPartialRoot || root.IsSkeletonRoot)
-            return visible;
-        return _partialFrames.TryGetValue((SkeletonKey.Of(bone.Skeleton), bone.PartialId, root.BoneIndex), out var frame)
-            ? frame.ToApply(visible) : visible;
-    }
+    public Transform ToApplySpace(IBone bone, Transform visible) => _stacks.ToApplySpace(bone, visible);
 
     public void ApplyTransform(IBone bone, Transform newTransform, Transform originalTransform)
     {
@@ -1050,13 +211,13 @@ public unsafe partial class BonePosingService : IBonePosingService
 
         var applied = ToApplySpace(bone, newTransform);
         var original = ToApplySpace(bone, originalTransform);
-        if (!_ikImports.Contains(SkeletonKey.Of(bone.Skeleton).Actor)
+        if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
             && GetIkConfiguration(bone) is { Enabled: true, TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
         {
             // Keep existing handle edits attached to the external parent, but
             // interpret each new drag in the current model axes, not old axes.
             applied.Position = original.Position + anchor.ToReferenceDelta(
-                applied.Position - original.Position, ActorParentFrame(bone, anchor));
+                applied.Position - original.Position, _ik.Held.ActorParentFrame(bone, anchor));
         }
         bonePoseInfo.Apply(applied, original);
 
@@ -1098,834 +259,83 @@ public unsafe partial class BonePosingService : IBonePosingService
 
     }
 
-    /// <summary>Brio's <c>EligibleForIK</c> — a parent for the solver to walk
-    /// into, and not a hidden one (<c>Brio/Game/Posing/Skeletons/Bone.cs:68</c>).
-    /// Native CCD also requires that parent to belong to the same Havok pose,
-    /// matching the partial/skeleton boundary in its parent traversal.</summary>
-    internal static bool IsCcdEligible(IBone bone) =>
-        bone is not VirtualBone &&
-        bone.ParentBone is { IsHiddenBone: false } parent &&
-        parent.PartialId == bone.PartialId && ReferenceEquals(parent.Skeleton, bone.Skeleton);
+    // ── IK ───────────────────────────────────────────────────────────────
 
-    public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
-    {
-        if (bone is VirtualBone)
-            return null;
-        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
-        if (definition == null && !IsCcdEligible(bone) && !HasFabrikChildren(bone))
-            return null;
-        var key = ChainKey(bone);
-        if (_ikChains.TryGetValue(key, out var state))
-            return state.Config;
-        return definition == null
-            ? Poser.Domain.Posing.IkChainConfig.DefaultsForChain()
-            : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
-    }
+    public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone) =>
+        _ik.GetIkConfiguration(bone);
 
-    public IReadOnlyList<Poser.Services.IkConfiguredChain> GetIkChains(
-        ISkeleton skeleton)
-    {
-        var key = SkeletonKey.Of(skeleton);
-        List<Poser.Services.IkConfiguredChain>? chains = null;
-        foreach (var (chainKey, state) in _ikChains)
-        {
-            if (chainKey.Skeleton != key)
-                continue;
-            var endpoint = (skeleton as Skeleton)?
-                .GetBone(chainKey.Partial, chainKey.Bone);
-            if (endpoint == null)
-                continue;
-            (chains ??= new()).Add(new Poser.Services.IkConfiguredChain(
-                endpoint,
-                state.Config,
-                ChainMemberNames(endpoint, state.Config)));
-        }
-        return (IReadOnlyList<Poser.Services.IkConfiguredChain>?)chains
-            ?? Array.Empty<Poser.Services.IkConfiguredChain>();
-    }
+    public IReadOnlyList<Poser.Services.IkConfiguredChain> GetIkChains(ISkeleton skeleton) =>
+        _ik.GetIkChains(skeleton);
 
-    /// <summary>Which bones the configured solver actually moves. CCD walks
-    /// the endpoint's own parents to the configured depth — the same walk
-    /// IKService.GetBonesToDepth and IkBakeCapture.AffectedBones make, because
-    /// the chain is not declared anywhere to read it from.</summary>
-    internal static IReadOnlyList<string> ChainMemberNames(
-        IBone endpoint,
-        Poser.Domain.Posing.IkChainConfig config)
-    {
-        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
-            return control.Bones.Select(b => b.Name).ToArray();
-        if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
-            return FabrikMembers(endpoint, config).Select(b => b.BoneName).ToArray();
-        var names = new List<string> { endpoint.BoneName };
-        if (config.Solver != Poser.Domain.Posing.IkSolver.TwoJoint)
-            return NativeIkMembers(endpoint, config).AsEnumerable().Reverse().Select(b => b.BoneName).ToArray();
+    public string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config) =>
+        _ik.SetIkConfiguration(bone, config);
 
-        if (Poser.Domain.Posing.IkChains.ForEndpoint(endpoint.BoneName)
-            is not { } definition)
-            return names;
-        names.Add(definition.Endpoint);
-        names.Add(definition.FirstJoint);
-        names.Add(definition.SecondJoint);
-        if (definition.FirstTwist != null)
-            names.Add(definition.FirstTwist);
-        if (definition.SecondTwist != null)
-            names.Add(definition.SecondTwist);
-        return names;
-    }
+    public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config) =>
+        _ik.PrepareIkConfiguration(endpoint, config);
 
-    public string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config)
-    {
-        if (bone is VirtualBone)
-            return "Virtual bones cannot use IK.";
-        if (config.Solver == IkSolver.Ccd && !IsCcdEligible(bone))
-            return $"{bone.BoneName} has no parent in the same skeleton partial for CCD to bend.";
-        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
-        if (definition == null)
-        {
-            if (!IsCcdEligible(bone) && !(config.Solver is (IkSolver.Fabrik or IkSolver.Rope) && HasFabrikChildren(bone)))
-                return $"{bone.BoneName} has no parent for IK to bend.";
-            if (config.ValidateUndeclared() is { } rejected)
-                return rejected;
-            return StoreIkConfiguration(
-                bone,
-                config,
-                // CCD reads only the endpoint; the joint slots stay unresolved
-                // so nothing can mistake this for a Two Joint chain.
-                new Poser.Domain.Posing.IkResolvedChain(
-                    -1, -1, -1, -1, (short)bone.BoneIndex));
-        }
-        if (config.Validate() is { } invalid)
-            return invalid;
-        var chain = ResolveChain(bone, definition);
-        if (config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
-            !chain.TwoJointAvailable)
-            return "The Two Joint chain does not resolve on this skeleton.";
-        return StoreIkConfiguration(bone, config, chain);
-    }
+    public FabrikTarget? CaptureFabrikTarget(IBone endpoint, IkTargetMode mode,
+        BoneId? bone = null, SelectionId? entity = null) =>
+        _ik.CaptureFabrikTarget(endpoint, mode, bone, entity);
 
-    private string? StoreIkConfiguration(
-        IBone bone,
-        Poser.Domain.Posing.IkChainConfig config,
-        Poser.Domain.Posing.IkResolvedChain chain)
-    {
-        var key = ChainKey(bone);
-        _ikChains.TryGetValue(key, out var previous);
-        if (config.Enabled && GetIkChains(bone.Skeleton).Any(other => other.Config.Enabled
-            && other.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null }
-            && !ReferenceEquals(other.Endpoint, bone) && other.Endpoint.PartialId == bone.PartialId
-            && ChainMemberNames(bone, config).Any(name => other.Bones.Contains(name))))
-            return "This chain overlaps an active FABRIK chain. Reduce Depth or disable the other chain.";
-        if (config is { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope,
-                Fabrik.ReferenceBones: not null })
-        {
-            var members = FabrikMembers(bone, config);
-            if (!config.Fabrik.TrySelectSpan(members.Select(b => (b.BoneName, b.PartialId)).ToArray(),
-                    members.IndexOf(bone), out _))
-                return "The skeleton changed beyond this IK reference. Reset IK and reselect its solver before changing its depth.";
-        }
-        config = PrepareIkConfiguration(bone, config);
-        if (config.Solver is (IkSolver.Fabrik or IkSolver.Rope))
-        {
-            if (config.Fabrik == null && config.Enabled && config.ParentDepth + config.ChildDepth > 0)
-                return "This depth reaches no bones. Increase Parent depth or Child depth.";
-            if (config.Fabrik != null && FabrikOverlap(bone, config))
-                return "This FABRIK chain overlaps another active IK chain. Reduce Depth or disable the other chain.";
-        }
-        var state = previous ?? new IkChainState { Config = config };
-        state.Chain = chain;
-        if (previous != null && (previous.Config.Enabled != config.Enabled
-            || previous.Config.Collisions != config.Collisions || previous.Config.Solver != config.Solver
-            || previous.Config.Fabrik != config.Fabrik || previous.Config.SwivelDegrees != config.SwivelDegrees))
-            state.CollisionState.Reset();
+    public IkChainConfig? SnapshotFabrik(IBone tip, bool modelSpace = false) =>
+        _ik.SnapshotFabrik(tip, modelSpace);
 
-        // Fixed-target lifecycle: capture on entering Fixed or enabling a
-        // Fixed chain; disabling retains tuning but clears the capture.
-        var mode = config.TargetMode;
-        bool fresh = previous == null
-            || previous.Config.TargetMode != mode
-            || !previous.Config.Enabled
-            || state.HeldCapture == null;
-        if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
-            config = config with { ActorAnchor = null };
-        state.Config = config.Normalized();
-        if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
-        {
-            state.HeldCapture = config.ActorAnchor is { } actorAnchor
-                ? new(actorAnchor.Position, actorAnchor.Rotation,
-                    actorAnchor.AuthoredPosition, actorAnchor.AuthoredRotation) : null;
-            state.TargetBone = null;
-            state.TargetEntity = null;
-        }
-        else if (!config.Enabled)
-        {
-            // Disabling keeps the picked bone and the tuning; the capture
-            // is retaken when the chain comes back.
-            state.HeldCapture = null;
-        }
-        else if (mode == Poser.Domain.Posing.IkTargetMode.World && fresh)
-        {
-            state.TargetBone = null;
-            state.TargetEntity = null;
-            state.HeldCapture = CaptureWorld(bone);
-        }
-        else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
-        {
-            if (state.TargetBone is not { } targetBone)
-                state.HeldCapture = null;
-            else if (fresh)
-                state.HeldCapture = CaptureBoneOffset(bone, targetBone);
-        }
-        else if (mode == IkTargetMode.Entity && fresh)
-        {
-            state.HeldCapture = state.TargetEntity is { } entity
-                ? CaptureEntityOffset(bone, entity) : null;
-        }
+    public string? RestoreFabrik(IBone tip, IkChainConfig config) =>
+        _ik.RestoreFabrik(tip, config);
 
-        _ikChains[key] = state;
-        // Materialize the pose-info entry so the per-frame update loop
-        // visits this skeleton even before any stack exists.
-        GetPoseInfo(bone.Skeleton);
-        return null;
-    }
+    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false) =>
+        _ik.ClampIkTranslation(bone, delta, fromAuthoredBaseline);
 
-    public string? SetIkBoneTarget(IBone endpoint, IBone target)
-    {
-        if (ReferenceEquals(endpoint, target))
-            return "A bone cannot follow itself.";
-        if (target.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid)
-            return "That bone is not drawn.";
-        var config = GetIkConfiguration(endpoint);
-        if (config == null)
-            return "This bone cannot use IK.";
-        var key = ChainKey(endpoint);
-        _ikChains.TryGetValue(key, out var state);
-        if (state == null)
-        {
-            // Nothing stored yet: the defaults are stored first, then aimed.
-            var stored = SetIkConfiguration(endpoint, config);
-            if (stored != null)
-                return stored;
-            _ikChains.TryGetValue(key, out state);
-            if (state == null)
-                return "This bone cannot use IK.";
-        }
-        state.TargetBone = target;
-        state.TargetEntity = null;
-        state.Config = state.Config with
-        {
-            TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
-        };
-        state.HeldCapture = state.Config.Enabled
-            ? CaptureBoneOffset(endpoint, target)
-            : null;
-        return null;
-    }
+    public string? SetIkBoneTarget(IBone endpoint, IBone target) =>
+        _ik.SetIkBoneTarget(endpoint, target);
 
-    public IBone? GetIkBoneTarget(IBone endpoint) =>
-        _ikChains.TryGetValue(ChainKey(endpoint), out var state)
-            ? state.TargetBone
-            : null;
+    public IBone? GetIkBoneTarget(IBone endpoint) => _ik.GetIkBoneTarget(endpoint);
 
-    public string? SetIkEntityTarget(IBone endpoint, SelectionId target)
-    {
-        if (ResolveIkEntityTransform(_bindings, target) == null)
-            return "That scene target is unavailable or has no world transform.";
-        var config = GetIkConfiguration(endpoint);
-        if (config == null)
-            return "This bone cannot use IK.";
-        var capture = CaptureEntityOffset(endpoint, target);
-        if (capture == null)
-            return "The IK endpoint or scene target is not drawn.";
-        if (!_ikChains.TryGetValue(ChainKey(endpoint), out var state))
-        {
-            var error = SetIkConfiguration(endpoint, config);
-            if (error != null)
-                return error;
-            state = _ikChains[ChainKey(endpoint)];
-        }
-        state.TargetBone = null;
-        state.TargetEntity = target;
-        state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
-        state.HeldCapture = state.Config.Enabled ? capture : null;
-        return null;
-    }
+    public string? SetIkEntityTarget(IBone endpoint, SelectionId target) =>
+        _ik.SetIkEntityTarget(endpoint, target);
 
-    public SelectionId? GetIkEntityTarget(IBone endpoint) =>
-        _ikChains.TryGetValue(ChainKey(endpoint), out var state) ? state.TargetEntity : null;
-
-    internal static Transform? ResolveIkEntityTransform(IEntityBindings bindings, SelectionId target)
-    {
-        Transform? transform = target switch
-        {
-            { Prop: { } prop } => bindings.Resolve(prop) is { Success: true, Value: { } live }
-                ? live.Transform : (Transform?)null,
-            { WorldObject: { } world } => bindings.Resolve(world) is { Success: true, Value: { } live }
-                ? live.Transform : (Transform?)null,
-            { Light: { } light } => bindings.Resolve(light) is { Success: true, Value: { } live }
-                ? live.Transform : (Transform?)null,
-            _ => null,
-        };
-        // Resolve the exact stable generation each time; never retain a native handle.
-        return transform is { } value
-            && Domain.Transforms.TransformMath.IsFinite(value.Position)
-            && Domain.Transforms.TransformMath.IsFinite(value.Rotation)
-            && value.Rotation.LengthSquared() > 1e-6f
-                ? value : (Transform?)null;
-    }
-
-    private HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target)
-    {
-        RefreshCache(endpoint);
-        if (BoneWorld.Of(endpoint) is not { } tip
-            || ResolveIkEntityTransform(_bindings, target) is not { } anchor)
-            return null;
-        var authored = GetIkModification(endpoint);
-        // As in Bone mode, position is a world-space offset; only the held
-        // orientation follows the anchor's rotation, with no scale inheritance.
-        return new HeldTarget(tip.Position - anchor.Position,
-            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
-            authored?.Position ?? Vector3.Zero,
-            authored?.Rotation ?? Quaternion.Identity);
-    }
-
-    /// <summary>World mode's capture: the tip's world position and
-    /// rotation now, with the authored deltas they were taken under.</summary>
-    private HeldTarget? CaptureWorld(IBone endpoint)
-    {
-        RefreshCache(endpoint);
-        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip)
-            return null;
-        var authored = GetIkModification(endpoint);
-        return new HeldTarget(
-            tip.Position, tip.Rotation,
-            authored?.Position ?? Vector3.Zero,
-            authored?.Rotation ?? Quaternion.Identity);
-    }
-
-    /// <summary>Bone mode's capture: the tip's world offset and rotation
-    /// RELATIVE to the target bone now, with the authored deltas.</summary>
-    private HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target)
-    {
-        RefreshCache(endpoint);
-        RefreshCache(target);
-        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip
-            || global::Poser.Entities.BoneWorld.Of(target) is not { } anchor)
-            return null;
-        var authored = GetIkModification(endpoint);
-        return new HeldTarget(
-            tip.Position - anchor.Position,
-            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
-            authored?.Position ?? Vector3.Zero,
-            authored?.Rotation ?? Quaternion.Identity);
-    }
-
-    /// <summary>The held target in the endpoint's model space this frame:
-    /// the captured world point and rotation (World) or the target bone's
-    /// world transform with the captured offsets (Bone), brought into model
-    /// space through the skeleton's matrix, then moved and turned by what
-    /// was authored since capture. Null when it cannot be resolved.</summary>
-    private (Vector3 Position, Quaternion Rotation)? ResolveHeld(
-        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null)
-    {
-        if (ik.HeldCapture is not { } capture)
-            return null;
-        if (ik.PreviewModelSpace)
-            return (capture.Target + authoredPosition - capture.Translation,
-                Quaternion.Normalize(capture.Rotation
-                    * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
-        if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
-        {
-            return actorAnchor.Resolve(authoredPosition, authoredRotation, ActorParentFrame(endpoint, actorAnchor, pose));
-        }
-        Vector3 worldPosition;
-        Quaternion worldRotation;
-        switch (ik.Config.TargetMode)
-        {
-            case Poser.Domain.Posing.IkTargetMode.World:
-                worldPosition = capture.Target;
-                worldRotation = capture.Rotation;
-                break;
-            case Poser.Domain.Posing.IkTargetMode.Bone:
-                if (ik.TargetBone is not { } targetBone
-                    || targetBone.Skeleton is not global::Poser.Entities.Skeleton targetSkeleton
-                    || !targetSkeleton.IsValid)
-                    return null;
-                targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-                if (global::Poser.Entities.BoneWorld.Of(targetBone) is not { } anchor)
-                    return null;
-                worldPosition = anchor.Position + capture.Target;
-                worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
-                break;
-            case IkTargetMode.Entity:
-                if (ik.TargetEntity is not { } entity
-                    || ResolveIkEntityTransform(_bindings, entity) is not { } entityTransform)
-                    return null;
-                worldPosition = entityTransform.Position + capture.Target;
-                worldRotation = Quaternion.Normalize(entityTransform.Rotation * capture.Rotation);
-                break;
-            default:
-                return null;
-        }
-        if (endpoint.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid
-            || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var toModel))
-            return null;
-        var position = Vector3.Transform(worldPosition, toModel)
-            + (authoredPosition - capture.Translation);
-        // System.Numerics multiplies right-to-left: the world rotation is
-        // frame * model (model first, then the actor's frame), so model =
-        // frame⁻¹ * world. The authored turn since capture rides on the
-        // end, where the delta stack puts it.
-        var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
-        if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(frame) || frame.LengthSquared() < 1e-6f)
-            return null;
-        var rotation = Quaternion.Normalize(
-            Quaternion.Inverse(Quaternion.Normalize(frame)) * worldRotation
-            * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
-        if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(position) || !global::Poser.Domain.Transforms.TransformMath.IsFinite(rotation))
-            return null;
-        return (position, rotation);
-    }
-
-    /// <summary>A bone the apply pass never visits (no stack) keeps a
-    /// stale cached transform; a capture reads the live pose.</summary>
-    private static void RefreshCache(IBone bone)
-    {
-        if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
-            skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-    }
-
-    private Transform? GetIkModification(IBone bone) =>
-        _poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var pose)
-            ? pose.GetPoseInfo(bone.BoneName, bone.PartialId).IkModification()
-            : (Transform?)null;
+    public SelectionId? GetIkEntityTarget(IBone endpoint) => _ik.GetIkEntityTarget(endpoint);
 
     /// <summary>Snapshot enabled constraints into the preview's own model frame.
     /// No native bones or live scene targets are retained by the copied state.</summary>
-    public void CopyPreviewIk(IActor? source, IActor preview)
-    {
-        if (preview.ActorKind != ActorKind.Preview || source?.ActorKind == ActorKind.Preview)
-            return;
-        foreach (var slot in Enum.GetValues<PoseSlot>())
-        {
-            if (_skeletonService.GetSkeleton(preview, slot) is not Skeleton destination)
-                continue;
-            ClearIkConfigurations(destination);
-            if (source == null || _skeletonService.GetSkeleton(source, slot) is not Skeleton origin)
-                continue;
-            foreach (var summary in GetIkChains(origin))
-            {
-                if (!summary.Config.Enabled
-                    || destination.GetBoneByName(summary.Endpoint.BoneName, summary.Endpoint.PartialId) is not { } tip)
-                    continue;
-                RefreshCache(summary.Endpoint);
-                var original = _ikChains[ChainKey(summary.Endpoint)];
-                if (summary.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null }
-                    && SnapshotFabrik(summary.Endpoint, modelSpace: true) is { } snapshot)
-                {
-                    RestoreFabrik(tip, snapshot);
-                    continue;
-                }
-                var authored = GetIkModification(summary.Endpoint) ?? Transform.Zero;
-                var target = ResolveHeld(original, summary.Endpoint, authored.Position, authored.Rotation)
-                    ?? (summary.Endpoint.LastTransform.Position, summary.Endpoint.LastTransform.Rotation);
-                // Copy value stacks for the chain as well: an authored-only
-                // pose export carries the tip delta but not the solved joints.
-                // Reusing those exported joints would double-apply the solve.
-                foreach (var name in summary.Bones.Distinct())
-                {
-                    if (origin.GetBoneByName(name, summary.Endpoint.PartialId) is not { } from
-                        || destination.GetBoneByName(name, summary.Endpoint.PartialId) is not { } to)
-                        continue;
-                    GetPoseInfo(destination).GetPoseInfo(to.BoneName, to.PartialId)
-                        .ReplaceStacks(GetPoseInfo(origin).GetPoseInfo(from.BoneName, from.PartialId).Stacks);
-                }
-                // A frozen model-space target rotates/pans with CharaView, not
-                // with the live light/bone it was sampled from.
-                if (SetIkConfiguration(tip, summary.Config with
-                    { TargetMode = IkTargetMode.Actor, ActorAnchor = null }) != null)
-                    continue;
-                var copied = _ikChains[ChainKey(tip)];
-                copied.PreviewModelSpace = true;
-                var baseline = GetIkModification(tip) ?? Transform.Zero;
-                copied.HeldCapture = new HeldTarget(target.Item1, target.Item2,
-                    baseline.Position, baseline.Rotation);
-            }
-        }
-    }
+    public void CopyPreviewIk(IActor? source, IActor preview) => _ik.CopyPreviewIk(source, preview);
 
-    public bool IsIkTwoJointAvailable(IBone bone)
-    {
-        if (bone is VirtualBone)
-            return false;
-        var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
-        return definition != null && ResolveChain(bone, definition).TwoJointAvailable;
-    }
+    public bool IsIkTwoJointAvailable(IBone bone) => _ik.IsIkTwoJointAvailable(bone);
 
-    public void ClearIkConfigurations(ISkeleton skeleton)
-    {
-        var key = SkeletonKey.Of(skeleton);
-        foreach (var chainKey in _ikChains.Keys
-                     .Where(chainKey => chainKey.Skeleton == key)
-                     .ToArray())
-            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
+    public void ClearIkConfigurations(ISkeleton skeleton) => _ik.ClearIkConfigurations(skeleton);
 
-    }
+    public bool HasEnabledIk(ISkeleton skeleton) => _ik.HasEnabledIk(skeleton);
 
-    private bool HasEnabledChains(SkeletonKey key)
-    {
-        foreach (var (chainKey, state) in _ikChains)
-        {
-            if (chainKey.Skeleton == key && state.Config.Enabled)
-                return true;
-        }
-        return false;
-    }
+    // ── stacks ───────────────────────────────────────────────────────────
 
-    private static (SkeletonKey Skeleton, int Partial, int Bone) ChainKey(IBone bone) =>
-        (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex);
+    public void ResetBone(IBone bone) => _stacks.ResetBone(bone);
 
-    /// <summary>Resolves the chain inside the endpoint's OWN skeleton and
-    /// partial; missing optional twists resolve to native index -1 and a
-    /// missing mandatory joint makes Two Joint unavailable.</summary>
-    private static Poser.Domain.Posing.IkResolvedChain ResolveChain(
-        IBone endpoint,
-        Poser.Domain.Posing.IkChainDefinition definition)
-    {
-        short Index(string? name)
-        {
-            if (name == null)
-                return -1;
-            var resolved = (endpoint.Skeleton as Skeleton)?
-                .GetBoneByName(name, endpoint.PartialId);
-            return resolved == null ? (short)-1 : (short)resolved.BoneIndex;
-        }
+    public void ResetSkeleton(ISkeleton skeleton) => _stacks.ResetSkeleton(skeleton);
 
-        return new Poser.Domain.Posing.IkResolvedChain(
-            Index(definition.FirstJoint),
-            Index(definition.FirstTwist),
-            Index(definition.SecondJoint),
-            Index(definition.SecondTwist),
-            (short)endpoint.BoneIndex);
-    }
+    public bool HasModifications(IBone bone) => _stacks.HasModifications(bone);
 
-    public bool HasEnabledIk(ISkeleton skeleton) =>
-        HasEnabledChains(SkeletonKey.Of(skeleton));
+    public Transform? GetModification(IBone bone) => _stacks.GetModification(bone);
 
-    public void ResetBone(IBone bone)
-    {
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        bonePoseInfo.ClearStacks();
-        _animatedBaselines.Remove(
-            (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex));
+    public IReadOnlyList<BonePoseTransformInfo> CapturePoseStacks(IBone bone) =>
+        _stacks.CapturePoseStacks(bone);
 
-    }
+    public void RestorePoseStacks(IBone bone, IReadOnlyList<BonePoseTransformInfo> stacks) =>
+        _stacks.RestorePoseStacks(bone, stacks);
 
-    public void ResetSkeleton(ISkeleton skeleton)
-    {
-        var slotKey = SkeletonKey.Of(skeleton);
-        if (_poseInfos.TryGetValue(slotKey, out var poseInfo))
-        {
-            poseInfo.Clear();
-        }
-        RemoveAnimatedBaselines(slotKey);
-    }
-
-    public bool HasModifications(IBone bone)
-    {
-        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
-            return false;
-
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        return bonePoseInfo.HasStacks;
-    }
-
-    public Transform? GetModification(IBone bone)
-    {
-        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
-            return null;
-
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        if (!bonePoseInfo.HasStacks)
-            return null;
-
-        var combined = Transform.Zero;
-        foreach (var stack in bonePoseInfo.Stacks)
-        {
-            combined = new Transform
-            {
-                Position = combined.Position + stack.Transform.Position,
-                Rotation = Quaternion.Normalize(combined.Rotation * stack.Transform.Rotation),
-                Scale = combined.Scale + stack.Transform.Scale
-            };
-        }
-        return combined;
-    }
-
-    public IReadOnlyList<BonePoseTransformInfo> CapturePoseStacks(IBone bone)
-    {
-        if (!_poseInfos.TryGetValue(SkeletonKey.Of(bone.Skeleton), out var poseInfo))
-            return Array.Empty<BonePoseTransformInfo>();
-
-        return poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).Stacks.ToArray();
-    }
-
-    public void RestorePoseStacks(IBone bone, IReadOnlyList<BonePoseTransformInfo> stacks)
-    {
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-        bonePoseInfo.RestoreInteractiveStacks(stacks);
-    }
-
-    /// <summary>
-    /// FinalizeSkeletonsDetour - matches Brio's FinalizeSkeletonUpdate exactly.
-    /// STEP 5: Final update for ALL modified skeletons after engine is done.
-    /// </summary>
-    private void FinalizeSkeletonsDetour(nint a1)
-    {
-        _finalizeSkeletonsHook!.Original(a1);
-
-        // Never fault the native render frame (CharacterFinalizeDetour
-        // standard): everything after Original is managed bookkeeping.
-        try
-        {
-            FinalizeSkeletons();
-        }
-        catch (Exception ex)
-        {
-            if (!_finalizeDetourFaultLogged)
-            {
-                _finalizeDetourFaultLogged = true;
-                _log.Error($"BonePosingService: finalize pass faulted (logged once): {ex}");
-            }
-        }
-    }
-
-    private void FinalizeSkeletons()
-    {
-        if (!_gPoseService.IsGPosing)
-        {
-            // Brio's interval does not end outside gpose either, but a batch
-            // registered on the way out would then wait forever; end it as
-            // not executed.
-            EndTransitiveActions();
-            return;
-        }
-
-        // The snapshot exists FOR its readers: the overlay, the inspector,
-        // the matrix. No fresh reader, no walk — a hidden UI stops paying a
-        // third of a core for transforms nobody looks at.
-        if (!BoneSnapshotDemand.Wanted())
-            return;
-
-        // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
-        // This takes a final snapshot now the engine is done touching skeletons.
-        // Both sets are snapshotted FIRST: the pass can mutate both live
-        // sets — the same mutation-during-enumeration hazard
-        // ApplyAllBoneTransforms already snapshots against.
-        _finalizePassBuffer.Clear();
-        foreach (var key in _skeletonsToUpdate)
-            _finalizePassBuffer.Add(key);
-        _finalizeCachePassBuffer.Clear();
-        foreach (var key in _skeletonsToUpdateCache)
-            _finalizeCachePassBuffer.Add(key);
-
-        for (var i = 0; i < _finalizePassBuffer.Count; i++)
-        {
-            UpdateSkeletonCache(_finalizePassBuffer[i]);
-        }
-
-        // Also update overlay-only skeletons that don't have modifications.
-        // Dedupe against the SNAPSHOT, not the live set: an entry the event
-        // handler re-adds during the first loop was not updated by it.
-        for (var i = 0; i < _finalizeCachePassBuffer.Count; i++)
-        {
-            var slotKey = _finalizeCachePassBuffer[i];
-            if (!_finalizePassBuffer.Contains(slotKey))
-            {
-                UpdateSkeletonCache(slotKey);
-            }
-        }
-
-        // Brio SkeletonService.cs:266 — the posing interval ends here, and
-        // with it every registered transitive action.
-        EndTransitiveActions();
-    }
-
-    /// <summary>Indexed scan, not foreach: <c>Actors</c> is an interface-typed
-    /// list, so foreach boxes an enumerator on every call and these callers run
-    /// per posed skeleton per frame inside the detours.</summary>
-    private IActor? FindActor(string actorId)
-    {
-        var actors = _actorManager.Actors;
-        for (var i = 0; i < actors.Count; i++)
-        {
-            if (actors[i].Id.Unique == actorId)
-                return actors[i];
-        }
-        // The CharaView preview body poses through the same apply pass; a miss
-        // here purges its pose state on the very next frame.
-        var auxiliary = _actorManager.AuxiliaryActors;
-        for (var i = 0; i < auxiliary.Count; i++)
-        {
-            if (auxiliary[i].Id.Unique == actorId)
-                return auxiliary[i];
-        }
-        return null;
-    }
-
-    private void UpdateSkeletonCache(SkeletonKey slotKey)
-    {
-        var actor = FindActor(slotKey.Actor);
-        if (actor == null)
-            return;
-
-        var skeleton = _skeletonService.GetSkeleton(actor, slotKey.Slot) as Skeleton;
-        if (skeleton == null || !skeleton.IsValid)
-            return;
-
-        var gameSkeleton = skeleton.GetGameSkeletonPointer();
-        if (gameSkeleton == null)
-            return;
-
-        // The walk is pull-driven: only bones whose transform something READ
-        // in the last couple of frames are copied — an overlay mask shows
-        // dozens of a skeleton's hundreds. A new build seeds one full pass.
-        bool seedAll = !_snapshotSeededRevision.TryGetValue(slotKey, out var seededRev)
-            || seededRev != skeleton.BuildRevision;
-        if (seedAll)
-            _snapshotSeededRevision[slotKey] = skeleton.BuildRevision;
-
-        for (int partialIdx = 0; partialIdx < gameSkeleton->PartialSkeletonCount; partialIdx++)
-        {
-            var partial = &gameSkeleton->PartialSkeletons[partialIdx];
-            var pose = partial->GetHavokPose(0);
-            if (pose == null)
-                continue;
-
-            var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
-            // The fallback resolves EVERY bone BY NAME, allocating a managed
-            // copy of the native name per bone per frame — the
-            // third-of-a-core in the profile if it is what actually runs.
-            if (!boneMap.IsValid && _mapFallbackLogged.Add(
-                    (skeleton.BuildRevision, partialIdx)))
-                _log.Debug(
-                    $"Bone snapshot FALLBACK for {skeleton.Actor.Name} " +
-                    $"{skeleton.Slot} partial {partialIdx} rev " +
-                    $"{skeleton.BuildRevision}: the native map failed " +
-                    "validation; resolving " +
-                    $"{pose->Skeleton->Bones.Length} bones by name each frame.");
-            var boneCount = pose->Skeleton->Bones.Length;
-            for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
-            {
-                var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
-                if (bone == null)
-                    continue;
-                if (!seedAll && !bone.TransformWanted)
-                    continue;
-
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
-                if (modelSpace != null)
-                {
-                    bone.LastTransform = new Transform
-                    {
-                        Position = new Vector3(modelSpace->Translation.X, modelSpace->Translation.Y, modelSpace->Translation.Z),
-                        Rotation = new Quaternion(modelSpace->Rotation.X, modelSpace->Rotation.Y, modelSpace->Rotation.Z, modelSpace->Rotation.W),
-                        Scale = new Vector3(modelSpace->Scale.X, modelSpace->Scale.Y, modelSpace->Scale.Z)
-                    };
-                }
-            }
-        }
-    }
-
-    public void FlipBone(IBone bone)
-    {
-        if (bone is VirtualBone)
-            return;
-
-        var poseInfo = GetPoseInfo(bone.Skeleton);
-        var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-
-        // Get current rotation and convert to euler
-        var currentRotation = bone.LastTransform.Rotation;
-        var euler = QuaternionToEuler(currentRotation);
-
-        // Flip: X = 180 - X, Y = -Y (matching Brio's approach)
-        euler.X = 180f - euler.X;
-        euler.Y = -euler.Y;
-
-        var newRotation = EulerToQuaternion(euler);
-
-        // Create new transform with flipped rotation
-        var newTransform = new Transform
-        {
-            Position = bone.LastTransform.Position,
-            Rotation = newRotation,
-            Scale = bone.LastTransform.Scale
-        };
-
-        // LastRawTransform is the posed value (anim ⊕ existing stacks), so the
-        // diff is only valid on top of those stacks — they must survive, like
-        // Brio's PosingCapability.FlipBone which accumulates and never clears.
-        bonePoseInfo.Apply(ToApplySpace(bone, newTransform), ToApplySpace(bone, bone.LastRawTransform));
-
-    }
+    public void FlipBone(IBone bone) => _stacks.FlipBone(bone);
 
     public string? GetMirrorBoneName(string boneName) => PoseMath.GetMirrorBoneName(boneName);
 
-    private static Vector3 QuaternionToEuler(Quaternion r) => PoseMath.QuaternionToEuler(r);
-
-    private static Quaternion EulerToQuaternion(Vector3 euler) => PoseMath.EulerToQuaternion(euler);
-
-    private static Transform ReadTransform(hkQsTransformf* transform) =>
-        new()
-        {
-            Position = new Vector3(
-                transform->Translation.X,
-                transform->Translation.Y,
-                transform->Translation.Z),
-            Rotation = new Quaternion(
-                transform->Rotation.X,
-                transform->Rotation.Y,
-                transform->Rotation.Z,
-                transform->Rotation.W),
-            Scale = new Vector3(
-                transform->Scale.X,
-                transform->Scale.Y,
-                transform->Scale.Z),
-        };
-
-    /// <summary>Runs every frame for every registered-but-unposed skeleton
-    /// (OnFrameworkUpdate), so it collects into a reused buffer instead of the
-    /// LINQ chain + array it used to allocate per skeleton per frame.</summary>
-    private void RemoveAnimatedBaselines(SkeletonKey slotKey)
-    {
-        if (_animatedBaselines.Count == 0)
-            return;
-
-        _baselineRemovalBuffer.Clear();
-        foreach (var key in _animatedBaselines.Keys)
-        {
-            if (key.Skeleton == slotKey)
-                _baselineRemovalBuffer.Add(key);
-        }
-
-        for (var i = 0; i < _baselineRemovalBuffer.Count; i++)
-            _animatedBaselines.Remove(_baselineRemovalBuffer[i]);
-    }
-
     public void Dispose()
     {
-        foreach (var chain in _ikChains.Values) chain.CollisionState.Dispose();
-        _ikChains.Clear();
-        _updateBonePhysicsHook?.Dispose();
-        _finalizeSkeletonsHook?.Dispose();
+        _ik.DisposeChains();
+        _apply.Dispose();
+        _snapshot.Dispose();
         _framework.Update -= OnFrameworkUpdate;
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
-        EndTransitiveActions();
-        _poseInfos.Clear();
-        _animatedBaselines.Clear();
+        _transitive.EndTransitiveActions();
+        _stacks.ClearStoresAndBaselines();
         GC.SuppressFinalize(this);
     }
 }

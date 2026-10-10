@@ -23,9 +23,9 @@ public sealed class FabrikSpanTests
         var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = depth };
         var expected = nodes.Skip(2).ToArray();
 
-        Assert.Equal(expected.Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[4].Bone, config));
+        Assert.Equal(expected.Select(n => n.Bone), IkChainShapes.NativeIkMembers(nodes[4].Bone, config));
         Assert.Equal(expected.Select(n => n.Bone), IkBakeCapture.AffectedBones(nodes[4].Bone, config));
-        Assert.Equal(expected.Reverse().Select(n => n.Name), BonePosingService.ChainMemberNames(nodes[4].Bone, config));
+        Assert.Equal(expected.Reverse().Select(n => n.Name), IkChainShapes.ChainMemberNames(nodes[4].Bone, config));
     }
 
     [Fact]
@@ -33,11 +33,11 @@ public sealed class FabrikSpanTests
     {
         var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd };
         var nodes = Chain(2);
-        Assert.True(BonePosingService.IsCcdEligible(nodes[1].Bone));
-        Assert.Equal(2, BonePosingService.NativeIkMembers(nodes[1].Bone, config).Count);
+        Assert.True(IkChainShapes.IsCcdEligible(nodes[1].Bone));
+        Assert.Equal(2, IkChainShapes.NativeIkMembers(nodes[1].Bone, config).Count);
         nodes[0].Partial = 1;
-        Assert.False(BonePosingService.IsCcdEligible(nodes[1].Bone));
-        Assert.Single(BonePosingService.NativeIkMembers(nodes[1].Bone, config));
+        Assert.False(IkChainShapes.IsCcdEligible(nodes[1].Bone));
+        Assert.Single(IkChainShapes.NativeIkMembers(nodes[1].Bone, config));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class FabrikSpanTests
         var nodes = Chain(5);
         string[] names = ["j_sebo_c", "j_sako_l", "j_ude_a_l", "j_ude_b_l", "j_te_l"];
         for (int i = 0; i < nodes.Length; i++) nodes[i].Name = names[i];
-        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
+        var members = IkChainShapes.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
         Assert.Equal(nodes.Skip(2).Select(n => n.Bone), members);
         Assert.Same(nodes[1].Bone, members[0].ParentBone);
     }
@@ -56,11 +56,11 @@ public sealed class FabrikSpanTests
     {
         var nodes = Chain(6);
         var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = 2 };
-        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, config);
+        var members = IkChainShapes.NativeIkMembers(nodes[^1].Bone, config);
         Assert.Equal(nodes.Skip(3).Select(n => n.Bone), members);
         Assert.Same(nodes[2].Bone, members[0].ParentBone);
         nodes[3].Partial = 1;
-        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[^1].Bone, config));
+        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), IkChainShapes.NativeIkMembers(nodes[^1].Bone, config));
     }
 
     [Fact]
@@ -68,26 +68,26 @@ public sealed class FabrikSpanTests
     {
         // The selected bone sits between its parent and child spans in native order.
         var straight = Chain(7);
-        Assert.Equal(straight.Skip(1).Take(5).Select(n => n.Bone), BonePosingService.FabrikMembers(straight[3].Bone,
+        Assert.Equal(straight.Skip(1).Take(5).Select(n => n.Bone), IkChainShapes.FabrikMembers(straight[3].Bone,
             IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 }));
 
         var forked = Chain(5);
         forked[2].Children.Add(new Node(forked[0].Skeleton).Bone);
-        Assert.Equal(new[] { forked[1].Bone, forked[2].Bone }, BonePosingService.FabrikMembers(forked[1].Bone,
+        Assert.Equal(new[] { forked[1].Bone, forked[2].Bone }, IkChainShapes.FabrikMembers(forked[1].Bone,
             IkChainConfig.DefaultsForChain() with { ParentDepth = 0, ChildDepth = 10 }));
 
         var config = IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 };
         var nodes = Chain(5);
         nodes[1].Partial = 1;
-        Assert.Equal(nodes.Skip(2).Select(n => n.Bone), BonePosingService.FabrikMembers(nodes[2].Bone, config));
+        Assert.Equal(nodes.Skip(2).Select(n => n.Bone), IkChainShapes.FabrikMembers(nodes[2].Bone, config));
         nodes = Chain(5);
         nodes[3].Partial = 1;
-        Assert.Equal(nodes.Take(3).Select(n => n.Bone), BonePosingService.FabrikMembers(nodes[2].Bone, config));
+        Assert.Equal(nodes.Take(3).Select(n => n.Bone), IkChainShapes.FabrikMembers(nodes[2].Bone, config));
 
         nodes = Chain(4);
         nodes[1].Hidden = true;
         nodes[2].Hidden = true;
-        var span = BonePosingService.FabrikMembers(nodes[2].Bone,
+        var span = IkChainShapes.FabrikMembers(nodes[2].Bone,
             IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 1 });
         Assert.Equal(new[] { nodes[2].Bone, nodes[3].Bone }, span);
     }

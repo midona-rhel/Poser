@@ -19,13 +19,13 @@ public sealed class IkSceneTargetTests
             Scale = new Vector3(0.1f),
         };
         var edit = new Poser.Core.BonePoseTransformInfo(Poser.Domain.Posing.TransformComponents.All, transform);
-        var held = BonePosingService.HeldPoseStack(edit, true);
+        var held = BoneApplyPass.HeldPoseStack(edit, true);
         Assert.Equal(Vector3.Zero, held.Transform.Position);
         Assert.Equal(transform.Rotation, held.Transform.Rotation);
         Assert.Equal(transform.Scale, held.Transform.Scale);
-        Assert.Equal(edit, BonePosingService.HeldPoseStack(edit, false));
+        Assert.Equal(edit, BoneApplyPass.HeldPoseStack(edit, false));
         var imported = edit with { IkTransform = Transform.Zero };
-        Assert.Equal(imported, BonePosingService.HeldPoseStack(imported, true));
+        Assert.Equal(imported, BoneApplyPass.HeldPoseStack(imported, true));
         Assert.Equal(transform.Position, edit.Transform.Position);
     }
 
@@ -45,18 +45,18 @@ public sealed class IkSceneTargetTests
         bool present = true;
         var bindings = Bind<ILight>(id, () => transform, () => present);
 
-        Assert.Equal(transform.Position, BonePosingService.ResolveIkEntityTransform(bindings, selected)!.Value.Position);
+        Assert.Equal(transform.Position, IkChainShapes.ResolveIkEntityTransform(bindings, selected)!.Value.Position);
         transform.Position += new Vector3(7, -1, 2);
         transform.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.7f);
-        var moved = BonePosingService.ResolveIkEntityTransform(bindings, selected)!.Value;
+        var moved = IkChainShapes.ResolveIkEntityTransform(bindings, selected)!.Value;
         Assert.Equal(transform.Position, moved.Position);
         Assert.Equal(transform.Rotation, moved.Rotation);
-        Assert.Null(BonePosingService.ResolveIkEntityTransform(bindings, replacement));
+        Assert.Null(IkChainShapes.ResolveIkEntityTransform(bindings, replacement));
         transform.Position = new Vector3(float.NaN);
-        Assert.Null(BonePosingService.ResolveIkEntityTransform(bindings, selected));
+        Assert.Null(IkChainShapes.ResolveIkEntityTransform(bindings, selected));
         transform.Position = Vector3.Zero;
         present = false;
-        Assert.Null(BonePosingService.ResolveIkEntityTransform(bindings, selected));
+        Assert.Null(IkChainShapes.ResolveIkEntityTransform(bindings, selected));
     }
 
     private static IEntityBindings Bind<T>(object id, Func<Transform> transform,
