@@ -586,10 +586,10 @@ internal sealed class McdfImport(
                 var reapplied = port.ApplyTemporaryBodyProfile(actor, workingJson);
                 if (reapplied.Success && reapplied.Value != default)
                 {
-                    var owner = owner.OverridesFor(actor);
-                    if (owner.TemporaryBodyProfile != null)
+                    var overrides = owner.OverridesFor(actor);
+                    if (overrides.TemporaryBodyProfile != null)
                         owner.MutateOverrides(
-                            actor, owner with { TemporaryBodyProfile = reapplied.Value });
+                            actor, overrides with { TemporaryBodyProfile = reapplied.Value });
                     operation.PendingBodyRecoveryJson = null;
                 }
                 else
