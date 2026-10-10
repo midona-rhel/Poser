@@ -97,7 +97,7 @@ public sealed class ActorAvailabilityTests
             Assert.True(actors.IsAdopted(Assert.Single(actors.Actors)));
             draw->Object.Position = moved;
             actors.ReleaseWorldActor(address);
-            Assert.Equal(taken, draw->Object.Position);
+            Assert.Equal(taken, (System.Numerics.Vector3)draw->Object.Position);
 
             // A different object now stands at the same slot and address.
             actors.AdoptWorldActor(address);
@@ -106,7 +106,7 @@ public sealed class ActorAvailabilityTests
             objectId = 8;
             Assert.False(actors.IsAdopted(adopted));
             actors.Dispose(); // the GPose-exit restore path
-            Assert.Equal(moved, draw->Object.Position);
+            Assert.Equal(moved, (System.Numerics.Vector3)draw->Object.Position);
         }
         finally
         {
