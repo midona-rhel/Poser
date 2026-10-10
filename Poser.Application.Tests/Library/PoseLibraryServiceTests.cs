@@ -30,7 +30,7 @@ public sealed class PoseLibraryServiceTests
         using var service = fixture.CreateService(
             path => path.Equals(broken, StringComparison.Ordinal)
                 ? throw new IOException("injected subtree failure")
-                : true,
+                : Directory.Exists(path),
             new LibrarySourceConfig { Name = "Healthy A", Path = healthy },
             new LibrarySourceConfig { Name = "Broken B", Path = brokenRoot },
             new LibrarySourceConfig { Name = "Missing C", Path = missing });
