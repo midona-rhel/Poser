@@ -717,7 +717,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
 
             var delta = BonePoseInfo.FilterDelta(
                 BonePoseInfo.Diff(desired, basis), entry.Components);
-            if (IsApproximatelyIdentity(delta))
+            if (TransformMath.IsApproximatelyIdentityDelta(delta))
                 return;
 
             // Propagation stays All (Brio PoseImporter.cs:35, 3rd argument):
@@ -1663,7 +1663,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
 
     private static bool ApproximatelySame(PoseTransform left, PoseTransform right)
     {
-        const float tolerance = 0.000001f;
+        const float tolerance = TransformMath.ApproximateSameTolerance;
         return Vector3.DistanceSquared(left.Position, right.Position) < tolerance * tolerance &&
                Vector3.DistanceSquared(left.Scale, right.Scale) < tolerance * tolerance &&
                1f - MathF.Abs(Quaternion.Dot(
@@ -1700,21 +1700,6 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         import.Invalidated = true;
         if (ReferenceEquals(Volatile.Read(ref _pending), import))
             Volatile.Write(ref _pending, null);
-    }
-
-    /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
-    /// (Core/Transform.cs:96-101) on a stack delta: position and scale are
-    /// additive, rotation multiplicative.</summary>
-    private static bool IsApproximatelyIdentity(Transform delta)
-    {
-        const float tolerance = 0.000001f;
-        return MathF.Abs(delta.Position.X) < tolerance &&
-               MathF.Abs(delta.Position.Y) < tolerance &&
-               MathF.Abs(delta.Position.Z) < tolerance &&
-               MathF.Abs(delta.Scale.X) < tolerance &&
-               MathF.Abs(delta.Scale.Y) < tolerance &&
-               MathF.Abs(delta.Scale.Z) < tolerance &&
-               MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < tolerance;
     }
 
     /// <summary>A pending import never outlives the session: its registered

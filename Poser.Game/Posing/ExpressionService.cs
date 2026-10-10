@@ -7,6 +7,7 @@ using System.Text.Json;
 using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
 
@@ -352,7 +353,7 @@ public class ExpressionService : IExpressionService
             foreach (var bone in ResolveExpressionBones(byName, boneName))
             {
                 var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-                if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
+                if (blended.TryGetValue(boneName, out var delta) && !TransformMath.IsIdentityDeltaByLength(delta))
                     info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.All, TransformFrame.ParentRelative);
                 else info.RemoveLayer(ExpressionLayer);
             }
@@ -400,9 +401,4 @@ public class ExpressionService : IExpressionService
                 _log.Debug($"ExpressionService: {unit.Id} ({catalogKey}) resolves {line}");
         }
     }
-
-    private static bool IsIdentityDelta(Transform delta)
-        => delta.Position.LengthSquared() < 1e-12f
-           && delta.Scale.LengthSquared() < 1e-12f
-           && MathF.Abs(Quaternion.Dot(delta.Rotation, Quaternion.Identity)) > 0.999999f;
 }
