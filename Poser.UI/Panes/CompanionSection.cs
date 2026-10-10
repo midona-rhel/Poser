@@ -6,7 +6,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Companions;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Application.Catalog;
 using static Poser.UI.Widgets.Themes;

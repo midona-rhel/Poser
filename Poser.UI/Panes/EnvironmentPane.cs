@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
-using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
 using Poser.Documents.Files;

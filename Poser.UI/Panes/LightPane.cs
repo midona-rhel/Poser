@@ -12,7 +12,6 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Presentation;
-using Poser.Services;
 using Poser.Application.Transforms;
 using Poser.UI.Widgets;
 using Poser.Domain.Posing;

@@ -4,7 +4,6 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
-using Poser.Services;
 using Poser.UI.Composition;
 using System;
 using System.Collections.Generic;

@@ -1,6 +1,5 @@
 using Poser.Application.Selection;
 using Poser.Domain;
-using Poser.Services;
 using System;
 using System.Collections.Generic;
 using System.Numerics;

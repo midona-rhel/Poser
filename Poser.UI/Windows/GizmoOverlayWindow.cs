@@ -13,7 +13,6 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Posing;
-using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;

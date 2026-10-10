@@ -1,6 +1,6 @@
 using Dalamud.Plugin.Services;
-using Poser.Services;
 using System;
+using Poser.UI;
 
 namespace Poser;
 

@@ -12,7 +12,6 @@ using System.Numerics;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Dalamud.Bindings.ImGui;
-using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
 using Poser.Documents.Files;

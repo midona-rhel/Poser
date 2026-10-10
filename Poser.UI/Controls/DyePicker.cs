@@ -4,7 +4,6 @@ using System.Numerics;
 using System;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Integration;
-using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Application.Catalog;
 using static Poser.UI.Widgets.ImageWidgets;

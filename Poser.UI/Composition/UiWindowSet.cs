@@ -1,5 +1,4 @@
 using Dalamud.Interface.Windowing;
-using Poser.Services;
 using System;
 using System.Collections.Generic;
 using Poser.Application.Selection;

@@ -13,7 +13,6 @@ using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;

@@ -8,7 +8,6 @@ using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
 using Poser.Application.Diagnostics;
 using Poser.Application.Scene;
-using Poser.Services;
 using Poser.Documents.Files;
 using Poser.Application.Settings;
 

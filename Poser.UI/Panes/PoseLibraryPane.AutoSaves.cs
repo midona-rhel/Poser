@@ -14,7 +14,6 @@ using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Services;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;

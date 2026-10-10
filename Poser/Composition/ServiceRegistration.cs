@@ -23,7 +23,6 @@ using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Game.Transforms;
 using Poser.Lifecycle;
-using Poser.Services;
 using Poser.UI;
 using Poser.UI.Composition;
 

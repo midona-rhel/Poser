@@ -8,7 +8,6 @@ using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 using Poser.UI.Widgets;

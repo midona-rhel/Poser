@@ -4,7 +4,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
-using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Domain;
 using Poser.Domain.Scene;

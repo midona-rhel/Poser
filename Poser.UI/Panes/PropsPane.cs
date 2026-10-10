@@ -1,6 +1,5 @@
 using Poser.Application.Selection;
 using System;
-using Poser.Services;
 using Poser.Application.Presentation;
 using System.Numerics;
 using Poser.Application.Scene;

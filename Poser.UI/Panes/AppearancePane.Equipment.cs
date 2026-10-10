@@ -6,7 +6,6 @@ using Dalamud.Bindings.ImGui;
 using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Services;
 using Poser.UI.Widgets;
 using static Poser.UI.Widgets.AxisWellWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;

@@ -1,7 +1,6 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.Services;
 
 using Poser.Application.Viewport;
 using static Poser.UI.Widgets.Themes;
