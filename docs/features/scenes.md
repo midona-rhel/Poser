@@ -214,7 +214,21 @@ mid-publication is waited for. The bound is per actor: an actor still not
 pose-ready when it runs out stays in the session, is named in the result, and
 leaves every later phase; the other actors load on. A spawned actor's first
 draw is held until the game reports it ready, for as long as the spawn lives,
-so a busy frame delays the body rather than losing it.
+so a busy frame delays the body rather than losing it. A companion body is
+waited for with the same three-part test.
+
+The per-actor steps wait for shared single-flight slots instead of refusing on
+a busy one. Each pose import waits, within its bound, for the pose slot (an
+import, IK bake or open transform gesture); from its first native step to its
+terminal the load holds that slot, so pose imports it did not start (library,
+inspector, presets) are refused rather than superseding its own. An import
+that does not finish within its bound, or whose load is cancelled, is
+cancelled by its operation id and never left armed. Character-file imports
+wait for the MCDF slot — which a clear-first load's own teardown can hold for
+seconds — and report it busy only at the bound. Housing furniture is waited
+for until its model streams in; one still loading at the readiness bound is
+kept and named in the result, never released afterwards. Every wait honours
+cancellation, and a cancelled load always ends Cancelled.
 
 Each phase checks that the load is still running and belongs to the same
 session. Character files come before body-dependent state because import
@@ -437,7 +451,8 @@ takes precedence. Choosing a stain clears that tint in the same history edit.
 The backend follows Brio's `SGLService`/`FurnitureObject`: one owned shared-group
 layout contains the furnishing's entire child graph. Children are not independent
 borrow candidates. Graphics edits wait for layout readiness; a fresh load that
-times out after 15 seconds is removed. Release/GPose exit tears down the owning
+times out after 15 seconds is removed, unless a scene load already named it as
+still loading and kept it. Release/GPose exit tears down the owning
 layout, never individual children. Raw BG debug controls do not apply. Furniture's
 Night toggle applies the scenery day/night byte only to its BG child models,
 not to the owning layout or its light nodes. Its visible effect is asset-dependent.

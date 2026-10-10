@@ -56,8 +56,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// is a named refusal, never the scene's rollback.</summary>
     private static readonly TimeSpan ActorReadyTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>Bound for one armed pose import to reach its terminal
-    /// receipt.</summary>
+    /// <summary>Bound for the shared pose slot to come free, and then for one
+    /// armed pose import to reach its terminal receipt.</summary>
     private static readonly TimeSpan PoseImportTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>Bound for the armed whole-scene capture to answer. The refresh
@@ -143,6 +143,10 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
     /// <summary>The actor readiness bound, settable for the same reason.</summary>
     internal TimeSpan ActorReadyBound { get; init; } = ActorReadyTimeout;
+
+    /// <summary>The pose slot and pose import bound, settable for the same
+    /// reason.</summary>
+    internal TimeSpan PoseImportBound { get; init; } = PoseImportTimeout;
 
     /// <summary>Raised after any progress/receipt publication; UI reads the
     /// immutable snapshots, never workflow internals.</summary>
@@ -564,10 +568,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
             var settled = await Task.WhenAny(
                 completion.Task,
-                Task.Delay(CaptureBound, CancellationToken.None));
+                Task.Delay(CaptureBound, cancellation));
             if (settled != completion.Task)
             {
-                Finish(false, "The scene capture did not finish within its bound.");
+                Finish(false, cancellation.IsCancellationRequested
+                    ? "The save was cancelled."
+                    : "The scene capture did not finish within its bound.");
                 return;
             }
             var captured = completion.Task.Result;
@@ -977,6 +983,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             var worldObjectTokens = new Dictionary<Guid, SceneEntityHandle>();
             var lightTokens = new Dictionary<Guid, SceneEntityHandle>();
             var cameraTokens = new Dictionary<Guid, SceneEntityHandle>();
+            // Named once their models have streamed, below.
+            var spawnedWorldObjects = new List<(SceneEntityHandle Token, string Name)>();
             Step(ScenePhase.SpawningEntities);
             bool refusedBeforeClear = false;
             var spawnFailure = await _runtime.OnFramework(() =>
@@ -997,6 +1005,11 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     if (_runtime.ClearScene().Summary() is { } cleared)
                         notes.Add(cleared);
                 }
+
+                // From the first native step to the terminal, the pose slot
+                // is this load's: a library or inspector import refuses
+                // instead of superseding the import an actor is waiting on.
+                _runtime.HoldPoseImports(true);
 
                 // A baseline is captured only for what this load will WRITE:
                 // restoring an environment the load never touched would undo
@@ -1074,8 +1087,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     }
                     operation.BorrowedWorldObjects.Add(token);
                     worldObjectTokens[worldObject.Key] = token;
-                    entities.Add(
-                        new SceneEntityOutcome("World object", name, true));
+                    spawnedWorldObjects.Add((token, name));
                 }
                 return null;
             });
@@ -1090,7 +1102,24 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 await Abort(spawnFailure);
                 return;
             }
-            done = props.Count;
+            done = props.Count + overlays.Count + worldObjects.Count;
+
+            // Housing furniture streams its model in after the spawn. One
+            // that has not loaded by the bound is KEPT and named — never
+            // reported restored and then released behind the outcome's back.
+            if (spawnedWorldObjects.Count > 0)
+            {
+                var unloaded = await _runtime.AwaitWorldObjectsLoaded(
+                    spawnedWorldObjects.Select(entry => entry.Token).ToList(),
+                    ActorReadyBound, cancellation);
+                foreach (var (token, name) in spawnedWorldObjects)
+                    entities.Add(new SceneEntityOutcome(
+                        "World object", name, true,
+                        unloaded.Contains(token)
+                            ? $"Its model did not finish loading within {ActorReadyBound.TotalSeconds:0} " +
+                              "seconds. It was kept and appears once the game streams it in."
+                            : null));
+            }
 
             // An actor whose body did not draw within the bound is OPTIONAL:
             // it stays in the session (the load's undo still removes it) and
@@ -1103,6 +1132,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     var actor = actors.First(entry => actorTokens[entry.Key] == token);
                     actors.Remove(actor);
                     actorTokens.Remove(actor.Key);
+                    done++;
                     entities.Add(new SceneEntityOutcome(
                         "Actor", actor.Name, false,
                         $"The actor's body did not finish drawing within {ActorReadyBound.TotalSeconds:0} " +
@@ -1603,6 +1633,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 await Abort(committed);
             }
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A wait that honours the token throws; the cancel is still the
+            // user's, so it is reported as one rather than as a failure.
+            await Abort("The load was cancelled.");
+        }
         catch (Exception ex)
         {
             var leftover = await RollbackCreated();
@@ -1615,6 +1651,26 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                     ? OperationReceiptState.Failed
                     : OperationReceiptState.RolledBack,
                 detail);
+        }
+        finally
+        {
+            // Not during unload: Dispose blocks the framework thread this hop
+            // needs, and the slot goes with the plugin.
+            if (!_disposed)
+            {
+                try
+                {
+                    await _runtime.OnFramework(() =>
+                    {
+                        _runtime.HoldPoseImports(false);
+                        return true;
+                    });
+                }
+                catch (Exception)
+                {
+                    // The framework thread is gone; so is the slot.
+                }
+            }
         }
     }
 
@@ -1682,7 +1738,8 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// <paramref name="arm"/> — and awaits its TERMINAL receipt within a
     /// bound. Returns null on Applied, else the detail.
     ///
-    /// <para>Pending receipts are DROPPED rather than latched. The import
+    /// <para>Pending receipts never complete the wait; they only name the
+    /// operation to cancel if the wait ends first. The import
     /// engine acknowledges an admitted import by publishing a Pending receipt
     /// synchronously from inside <paramref name="arm"/>
     /// through the shared import coordinator,
@@ -1700,28 +1757,77 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     {
         var completion = new TaskCompletionSource<OperationReceipt>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        string? refusal;
-        try
+        Guid? admitted = null;
+        void OnReceipt(OperationReceipt receipt)
         {
-            refusal = await _runtime.OnFramework(() =>
-                Guard(operation, cancellation)
-                    ?? arm(receipt =>
-                    {
-                        if (receipt.State != OperationReceiptState.Pending)
-                            completion.TrySetResult(receipt);
-                    }));
+            if (receipt.State == OperationReceiptState.Pending)
+                admitted = receipt.OperationId;
+            else
+                completion.TrySetResult(receipt);
         }
-        catch (Exception ex)
+
+        // The slot is shared with every other pose feature, and an IK bake or
+        // an open gesture holds it for a moment: WAIT for it, within the
+        // bound, rather than spend this actor's one attempt on a busy answer.
+        (string? Refusal, bool Busy) TryArm()
         {
-            return $"The pose import dispatch failed: {ex.Message}";
+            if (Guard(operation, cancellation) is { } stop)
+                return (stop, false);
+            if (_runtime.PoseImportBusy)
+                return (null, true);
+            return (arm(OnReceipt), false);
         }
-        if (refusal != null)
-            return refusal;
+        var slotDeadline = DateTime.UtcNow + PoseImportBound;
+        while (true)
+        {
+            (string? Refusal, bool Busy) armed;
+            try
+            {
+                armed = await _runtime.OnFramework(TryArm);
+            }
+            catch (Exception ex)
+            {
+                return $"The pose import dispatch failed: {ex.Message}";
+            }
+            if (!armed.Busy)
+            {
+                if (armed.Refusal != null)
+                    return armed.Refusal;
+                break;
+            }
+            if (DateTime.UtcNow >= slotDeadline)
+                return "Another pose edit held the pose import for the whole bound, so the pose was not restored.";
+            await Task.Delay(50, cancellation);
+        }
 
         var finished = await Task.WhenAny(
-            completion.Task, Task.Delay(PoseImportTimeout, CancellationToken.None));
+            completion.Task, Task.Delay(PoseImportBound, cancellation));
         if (finished != completion.Task)
-            return "The pose import did not finish within its bound.";
+        {
+            // Never leave the child armed: landing after this answer would
+            // pose an actor behind the terminal receipt, or after rollback.
+            if (admitted is { } id)
+            {
+                try
+                {
+                    await _runtime.OnFramework(() =>
+                    {
+                        _runtime.CancelPoseImport(id);
+                        return true;
+                    });
+                }
+                catch (Exception)
+                {
+                    // The framework thread is gone, and the import with it.
+                }
+            }
+            // The cancel publishes the import's own Cancelled terminal; only
+            // one that had already applied stands.
+            if (completion.Task is not { IsCompleted: true, Result.State: OperationReceiptState.Applied })
+                return cancellation.IsCancellationRequested
+                    ? "The load was cancelled."
+                    : "The pose import did not finish within its bound, so it was cancelled.";
+        }
 
         var receipt = completion.Task.Result;
         return receipt.State == OperationReceiptState.Applied

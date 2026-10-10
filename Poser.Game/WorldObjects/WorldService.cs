@@ -56,6 +56,8 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
     internal AdoptedWorldObject? Spawn(string path, Transform placement, bool visible, out string? detail) =>
         _objects.Spawn(path, placement, visible, out detail);
     internal bool Release(AdoptedWorldObject entity) => _objects.Release(entity);
+    internal bool IsLoading(AdoptedWorldObject entity) => _objects.IsLoading(entity);
+    internal void KeepUnloaded(AdoptedWorldObject entity) => _objects.KeepUnloaded(entity);
     internal void ReleaseAll() => _objects.ReleaseAll();
 
     public WorldService(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,

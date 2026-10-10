@@ -93,6 +93,7 @@ public sealed class PoseImportCoordinatorTests
         private readonly List<(int Ticks, Action Action)> _queue = [];
         public readonly List<(PoseImportOperation Operation, bool Expression)> Applied = [];
         public bool IsPending => _current != null;
+        public bool AdmissionBusy => IsPending;
         public bool IsFrameworkThread => true;
         public bool FreezeOnImport => false;
         public bool IsCurrent(PoseImportOperation operation) => ReferenceEquals(_current, operation);

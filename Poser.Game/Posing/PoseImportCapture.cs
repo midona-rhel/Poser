@@ -298,6 +298,11 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
     /// entry has been appended (or the whole edit rolled back).</summary>
     public bool IsPending => Volatile.Read(ref _pending) != null;
 
+    /// <summary>The transient refusals of <see cref="Reserve"/>: a caller that
+    /// waits these out instead of spending its attempt gets admitted.</summary>
+    public bool AdmissionBusy =>
+        IsPending || _ikBake.IsPending || _gestures.ActiveGesture != null;
+
     public bool IsCurrent(PoseImportOperation operation) =>
         Volatile.Read(ref _pending) is { } import &&
         ReferenceEquals(import.Operation, operation) &&

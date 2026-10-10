@@ -46,6 +46,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private readonly SceneCaptureService _capture;
     private readonly Poser.Config.ConfigurationService _configuration;
     private readonly IPoseImportCommands _poses;
+    private readonly PoseImportCoordinator _imports;
     private readonly IActorSpawnService _spawns;
     private readonly ISkeletonService _skeletons;
     private readonly IPosingService _posing;
@@ -86,6 +87,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         ISessionGenerationSource sessions,
         SceneCaptureService capture,
         IPoseImportCommands poses,
+        PoseImportCoordinator imports,
         IActorSpawnService spawns,
         ISkeletonService skeletons,
         IPosingService posing,
@@ -140,6 +142,7 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         _handles = new(() => ActiveSession);
         _capture = capture;
         _poses = poses;
+        _imports = imports;
         _spawns = spawns;
         _skeletons = skeletons;
         _posing = posing;
@@ -390,6 +393,40 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     /// provider was unavailable. <c>Delete</c> is false while the exporter may
     /// still own the destination file.
     /// </summary>
+    /// <summary>
+    /// Starts one character-file child once the single-flight MCDF slot is
+    /// free. The slot can be held for seconds by this operation's own
+    /// teardown (a clear-first load's reset releasing its package directory),
+    /// so a busy slot is WAITED out within the bound; only a slot still held
+    /// at the deadline is refused. <paramref name="begin"/> runs on the
+    /// framework thread with the slot free and returns its own refusal.
+    /// </summary>
+    private async Task<string?> BeginMcdfChild(
+        Func<string?> begin, string busy, string cancelled, TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        var deadline = DateTime.UtcNow + bound;
+        while (true)
+        {
+            Task? holder = null;
+            var refusal = await _framework.RunOnFrameworkThread(() =>
+            {
+                if (!_integration.McdfBusy)
+                    return begin();
+                holder = _integration.PendingCompletion;
+                return null;
+            });
+            if (holder is null)
+                return refusal;
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                return busy;
+            await Task.WhenAny(holder, Task.Delay(remaining, cancellation));
+            if (cancellation.IsCancellationRequested)
+                return cancelled;
+        }
+    }
+
     private async Task<(string? Refusal, bool Delete)> ExportAppearance(
         Poser.Domain.Identity.ActorId id,
         string name,
@@ -398,17 +435,16 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         System.Threading.CancellationToken cancellation)
     {
         Guid? operationId = null;
-        var refusal = await _framework.RunOnFrameworkThread(() =>
+        var refusal = await BeginMcdfChild(() =>
         {
-            if (_integration.McdfBusy)
-                return "another character-file operation is running.";
             var started = _integration.BeginExport(
                 id, destination, $"Scene appearance: {name}");
             if (!started.Success)
                 return started.Detail ?? "the appearance could not be packaged.";
             operationId = _integration.McdfReceipt?.OperationId;
             return null;
-        });
+        }, "another character-file operation held the slot for the whole bound.",
+            "the save was cancelled.", bound, cancellation);
         if (refusal != null)
             return (refusal, true);
 
@@ -670,9 +706,14 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     private void Trace(string message) =>
         _log?.Debug($"Scene pose leg: {message}");
 
-    public bool ActorReady(SceneEntityHandle actor)
+    public bool ActorReady(SceneEntityHandle actor) =>
+        Posable(_handles.Require<IActor>(actor, SceneEntityKind.Actor));
+
+    /// <summary>The three-part test above, for an actor or a companion body:
+    /// a companion's skeleton races its bone bindings exactly as an actor's
+    /// does after a redraw.</summary>
+    private bool Posable(IActor candidate)
     {
-        var candidate = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(candidate);
         if (!ActorPoseReadiness.IsReady(skeletons, _bindings) ||
             _bindings.GetActorId(candidate) is not { } id)
@@ -809,14 +850,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             }
 
             Guid? operationId = null;
-            var refusal = await _framework.RunOnFrameworkThread(() =>
+            var refusal = await BeginMcdfChild(() =>
             {
                 var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
                 if (target == null) return "The actor is no longer available.";
                 if (_bindings.GetActorId(target) is not { } id)
                     return "The actor has no stable identity to import a character file onto.";
-                if (_integration.McdfBusy)
-                    return "Another character-file operation is running.";
                 var started = _integration.BeginImport(id, source);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
@@ -824,7 +863,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 // the id of THIS operation is readable the moment it is admitted.
                 operationId = _integration.McdfReceipt?.OperationId;
                 return null;
-            });
+            }, "Another character-file operation held the slot for the whole bound.",
+                "The load was cancelled.", bound, cancellation);
             if (refusal != null)
                 return SceneMcdfOutcome.Refused(refusal);
 
@@ -941,8 +981,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
         if (_bindings.GetActorId(target) is not { } actorId)
             return "The actor is no longer available.";
-        var result = _poses.ImportPose(
-            actorId, data.Pose!, SceneImportOptions, description, onReceipt);
+        var result = _imports.AdmitHeld(this, () => _poses.ImportPose(
+            actorId, data.Pose!, SceneImportOptions, description, onReceipt));
         if (!result.Success)
             Trace($"import refused for {target.Name}: {result.Detail}");
         return result.Success ? null : result.Detail ?? "The pose import refused.";
@@ -950,7 +990,20 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
 
     public bool CompanionReady(SceneEntityHandle actor) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion &&
-        _skeletons.GetSkeletons(companion).Count > 0;
+        Posable(companion);
+
+    public bool PoseImportBusy => _imports.IsSlotBusy;
+
+    public void HoldPoseImports(bool held)
+    {
+        if (held)
+            _imports.Hold(this);
+        else
+            _imports.Release(this);
+    }
+
+    public void CancelPoseImport(Guid operationId) =>
+        _imports.Cancel(operationId, "The scene load stopped waiting for this pose import.");
 
     public string? ArmCompanionPoseImport(
         SceneEntityHandle actor,
@@ -960,12 +1013,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     {
         if (_spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } companion)
             return "The companion's body could not be resolved, so its pose was not restored.";
-        if (_skeletons.GetSkeletons(companion).Count == 0)
+        if (!Posable(companion))
             return "The companion's skeleton had not built, so its pose was not restored.";
         if (_bindings.GetActorId(companion) is not { } companionId)
             return "The companion is no longer available.";
-        var result = _poses.ImportPose(
-            companionId, data.CompanionPose!, SceneImportOptions, description, onReceipt);
+        var result = _imports.AdmitHeld(this, () => _poses.ImportPose(
+            companionId, data.CompanionPose!, SceneImportOptions, description, onReceipt));
         return result.Success
             ? null
             : result.Detail ?? "The companion pose import refused.";
@@ -1199,6 +1252,37 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
                 handle.AnimationPaused = true;
         }
         return handle == null ? null : _handles.Track(SceneEntityKind.WorldObject, handle);
+    }
+
+    public async Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
+        IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        var deadline = DateTime.UtcNow + bound;
+        while (true)
+        {
+            bool expired = DateTime.UtcNow >= deadline;
+            var loading = await OnFramework(() =>
+            {
+                var pending = new List<SceneEntityHandle>();
+                foreach (var token in worldObjects)
+                {
+                    if (_handles.Resolve<IWorldObject>(token, SceneEntityKind.WorldObject)
+                            is not WorldObjects.AdoptedWorldObject handle
+                        || !_worldObjects.IsLoading(handle))
+                        continue;
+                    pending.Add(token);
+                    // Same framework action as the answer: no timed release
+                    // can land between the load naming it and keeping it.
+                    if (expired)
+                        _worldObjects.KeepUnloaded(handle);
+                }
+                return pending;
+            });
+            if (loading.Count == 0 || expired)
+                return loading;
+            await Task.Delay(50, cancellation);
+        }
     }
 
     public void ReleaseWorldObject(SceneEntityHandle token) =>

@@ -171,6 +171,33 @@ public interface ISceneRuntime
         string description,
         Action<OperationReceipt> onReceipt);
 
+    /// <summary>Whether the single-flight pose slot would refuse or supersede
+    /// an import right now: one is armed or applying, an IK bake is applying,
+    /// or a transform gesture is open. A load waits this out instead of
+    /// spending an actor's one attempt on it. Framework thread.</summary>
+    bool PoseImportBusy => false;
+
+    /// <summary>Holds the pose slot for the running load: until released, an
+    /// import that is not the load's own refuses instead of superseding the
+    /// load's. Framework thread.</summary>
+    void HoldPoseImports(bool held) { }
+
+    /// <summary>Cancels the load's own pose import by the operation id its
+    /// Pending receipt carried, when it is still the one armed — a wait that
+    /// timed out or was cancelled never leaves its child armed. Framework
+    /// thread.</summary>
+    void CancelPoseImport(Guid operationId) { }
+
+    /// <summary>Waits, within <paramref name="bound"/>, for spawned world
+    /// objects whose models are still streaming (housing furniture). Answers
+    /// the ones still not loaded at the bound: they are KEPT and no longer
+    /// released on a timer, so the load can name them instead of reporting a
+    /// restore that later disappears.</summary>
+    Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
+        IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound,
+        System.Threading.CancellationToken cancellation) =>
+        Task.FromResult<IReadOnlyList<SceneEntityHandle>>(Array.Empty<SceneEntityHandle>());
+
     /// <summary>Arms the ONE atomic pose import for this actor. Returns the
     /// refusal detail, or null when armed — the terminal
     /// <see cref="OperationReceipt"/> arrives through the callback.</summary>

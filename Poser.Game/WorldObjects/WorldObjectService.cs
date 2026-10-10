@@ -1109,6 +1109,17 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
             _port.WriteFurnitureLights(handle.Address, lights);
     }
 
+    /// <summary>Whether a spawned furniture piece is still streaming its
+    /// model.</summary>
+    internal bool IsLoading(AdoptedWorldObject handle) =>
+        _loadingFurniture.ContainsKey(handle) && !_port.IsBgReady(handle.Address);
+
+    /// <summary>Keeps a piece that has not loaded: a scene load waited for it
+    /// and named it, so the timed release below must not take it away behind
+    /// that outcome. The night dressing still lands once it streams in.</summary>
+    internal void KeepUnloaded(AdoptedWorldObject handle) =>
+        _loadingFurniture.Remove(handle);
+
     internal void PumpFurnitureLoads(DateTime now)
     {
         foreach (var (handle, deadline) in _loadingFurniture.ToArray())

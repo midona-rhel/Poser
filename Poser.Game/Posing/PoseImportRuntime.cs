@@ -22,6 +22,7 @@ public sealed class PoseImportRuntime(
     ConfigurationService configuration, IFramework framework, IPluginLog log) : IPoseImportRuntime
 {
     public bool IsPending => capture.IsPending;
+    public bool AdmissionBusy => capture.AdmissionBusy;
     public bool IsFrameworkThread => framework.IsInFrameworkUpdateThread;
     public bool FreezeOnImport => configuration.Config.FreezeActorOnPoseImport;
     public bool IsCurrent(PoseImportOperation operation) => capture.IsCurrent(operation);

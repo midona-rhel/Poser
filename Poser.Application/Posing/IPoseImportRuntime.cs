@@ -21,6 +21,9 @@ public sealed class PoseImportOperation(OperationReceipt pending)
 public interface IPoseImportRuntime
 {
     bool IsPending { get; }
+    /// <summary>Whether a reservation would be refused for a transient reason:
+    /// an import or IK bake is applying, or a transform gesture is open.</summary>
+    bool AdmissionBusy { get; }
     bool IsFrameworkThread { get; }
     bool FreezeOnImport { get; }
     bool IsCurrent(PoseImportOperation operation);

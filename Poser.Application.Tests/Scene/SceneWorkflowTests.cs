@@ -393,9 +393,28 @@ public sealed class SceneWorkflowTests
             Action<OperationReceipt> onReceipt)
         {
             Record($"ArmPoseImport:{data.Name}");
-            PublishPoseReceipts(description, onReceipt, null);
+            if (PoseNeverFinishes)
+                onReceipt(OperationReceipt.Pending(Guid.NewGuid(), OperationEpoch.First, Session!.Value,
+                    new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1), description));
+            else
+                PublishPoseReceipts(description, onReceipt, null);
             return null;
         }
+
+        /// <summary>Polls the pose slot answers busy for (an IK bake, another
+        /// feature's import) before it frees.</summary>
+        public int PoseBusyPolls;
+        public bool PoseImportBusy => Interlocked.Decrement(ref PoseBusyPolls) >= 0;
+        /// <summary>An armed import that only ever acknowledges.</summary>
+        public bool PoseNeverFinishes;
+        public bool HeldPoseImports;
+        public bool EverHeldPoseImports;
+        public void HoldPoseImports(bool held)
+        {
+            HeldPoseImports = held;
+            EverHeldPoseImports |= held;
+        }
+        public void CancelPoseImport(Guid operationId) => Record("CancelPoseImport");
 
         public bool CompanionReady(SceneEntityHandle actor)
         {
@@ -937,6 +956,66 @@ public sealed class SceneWorkflowTests
     }
 
     // ── issue #41: one failure mode per load phase ───────────────────────
+
+    // ── issue #437: per-actor steps wait, and never leave work armed ─────
+
+    [Fact]
+    public async Task A_busy_pose_slot_is_waited_for_and_progress_reaches_its_total()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
+        scene.WorldObjects = [WorldObject("bg/example.mdl")];
+        var runtime = new FakeRuntime { ReadResult = scene, PoseBusyPolls = 3 };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        var last = (Done: 0, Total: 0);
+        load.Changed += () =>
+        {
+            if (load.Progress is { Outcome: null, EntitiesTotal: > 0 } progress)
+                last = (progress.EntitiesDone, progress.EntitiesTotal);
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Equal(3, last.Total);
+        Assert.Equal(last.Total, last.Done);
+        Assert.True(runtime.EverHeldPoseImports);
+        Assert.False(runtime.HeldPoseImports);
+    }
+
+    [Fact]
+    public async Task A_pose_import_that_never_finishes_is_cancelled_not_left_armed()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime))
+        {
+            PoseImportBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Contains("CancelPoseImport", runtime.Calls);
+        var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal(("Actor", "Lead"), (refusal.Kind, refusal.Name));
+        Assert.Contains("cancelled", refusal.Detail);
+    }
+
+    [Fact]
+    public async Task Cancelling_during_a_pose_import_ends_cancelled_and_cancels_the_import()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        runtime.AfterCall = call => { if (call == "ArmPoseImport:Lead") load.Cancel(); };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Cancelled, load.Receipt!.State);
+        Assert.Contains("CancelPoseImport", runtime.Calls);
+        Assert.Equal(new[] { "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.False(runtime.HeldPoseImports);
+    }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so
     /// a per-phase failure can be asserted to keep everything the OTHER phases
