@@ -281,7 +281,7 @@ internal sealed unsafe class FurnitureLayoutDriver
     private static void ApplyNightState(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object* graphics, bool night)
     {
         if (graphics != null && graphics->GetObjectType() == ObjectType.BgObject)
-            NativeWorldObjectPort.WriteModelNightState((BgObject*)graphics, night);
+            BgObjectNative.WriteModelNightState((BgObject*)graphics, night);
     }
 
     internal void Destroy(nint address)

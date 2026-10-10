@@ -10,14 +10,14 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed class FurnitureLoadTracker
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IBgObjectPort _port;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isAdopted;
     private readonly Func<AdoptedWorldObject, bool> _release;
     private readonly Dictionary<AdoptedWorldObject, DateTime> _loading = new();
 
     public FurnitureLoadTracker(
-        IWorldObjectPort port,
+        IBgObjectPort port,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isAdopted,
         Func<AdoptedWorldObject, bool> release)

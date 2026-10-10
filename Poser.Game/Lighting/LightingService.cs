@@ -66,7 +66,7 @@ public sealed unsafe class LightingService : ILightingService
     private readonly IEventBus _events;
     private readonly IObjectTable _objects;
     private readonly IGameInteropProvider _hooks;
-    private readonly IWorldObjectPort _worldGraph;
+    private readonly IWorldGraphPort _worldGraph;
 
     /// <summary>Light.Create — the game allocates and returns the object;
     /// the plugin never allocates one itself.</summary>
@@ -123,7 +123,7 @@ public sealed unsafe class LightingService : ILightingService
         IEventBus events,
         IObjectTable objects,
         IGameInteropProvider hooks,
-        IWorldObjectPort worldGraph)
+        IWorldGraphPort worldGraph)
     {
         _framework = framework;
         _log = log;

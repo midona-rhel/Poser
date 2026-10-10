@@ -16,9 +16,9 @@ internal sealed class SceneryAnimationHold
     /// without one lets the countdown lapse.</summary>
     private const int AnimationPauseRetryTicks = 600;
 
-    private readonly IWorldObjectPort _port;
+    private readonly IBgObjectPort _port;
 
-    public SceneryAnimationHold(IWorldObjectPort port) => _port = port;
+    public SceneryAnimationHold(IBgObjectPort port) => _port = port;
 
     public void WritePaused(AdoptedWorldObject handle)
     {
