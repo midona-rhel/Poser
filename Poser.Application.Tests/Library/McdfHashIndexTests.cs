@@ -2,7 +2,6 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
-using Poser.Library;
 using Poser.Documents.Library;
 
 namespace Poser.Tests.Library;

@@ -4,7 +4,6 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Library;
 
 namespace Poser.UI;
 

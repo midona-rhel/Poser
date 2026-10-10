@@ -2,7 +2,6 @@
 using System.Numerics;
 using Poser.Domain.Operations;
 using Poser.Domain.Companions;
-using Poser.Files;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Application.Selection;

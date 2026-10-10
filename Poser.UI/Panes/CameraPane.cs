@@ -7,8 +7,6 @@ using Dalamud.Bindings.ImGui;
 using Poser.Application.Scene;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
-using Poser.Config;
-using Poser.Core;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -75,10 +73,10 @@ public sealed class CameraPane
     private readonly ICameraControl _values;
     private readonly ISceneCreation _creation;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public CameraPane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         PropertiesContext properties,
         ICameraTargetControl targets,

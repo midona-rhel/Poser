@@ -7,6 +7,7 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Services;
+using Poser.Application.Events;
 using static Poser.Game.GazeEntryStore;
 using static Poser.Game.GazeNativeDriver;
 

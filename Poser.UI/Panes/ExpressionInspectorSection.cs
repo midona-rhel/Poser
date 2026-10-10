@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
-using Poser.Config;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;

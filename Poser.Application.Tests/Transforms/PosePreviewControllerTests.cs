@@ -1,7 +1,6 @@
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Files;
 using Xunit;
 using Poser.Documents.Files;
 

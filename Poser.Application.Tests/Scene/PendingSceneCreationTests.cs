@@ -7,7 +7,6 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Posing;
-using Poser.Files;
 
 namespace Poser.Application.Tests.Scene;
 

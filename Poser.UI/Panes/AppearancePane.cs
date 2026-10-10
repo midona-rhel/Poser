@@ -18,6 +18,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Application.Catalog;
 using static Poser.UI.Widgets.AxisWellWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.ColorWellWidgets;
@@ -150,7 +151,7 @@ public sealed partial class AppearancePane
     /// <summary>Folder used by character-file browsers.</summary>
     private string _mcdfPath;
 
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
     private readonly PoseFileInspectorSection _poseFiles;
 
     public AppearancePane(
@@ -162,7 +163,7 @@ public sealed partial class AppearancePane
         PropertiesContext properties,
         CompanionSection companions,
         ITextureProvider textures,
-        Config.ConfigurationService config,
+        Application.Settings.ConfigurationService config,
         IInvisibleSkinService invisibleSkin,
         UserNotices notices,
         IActorValueControl values,

@@ -5,6 +5,8 @@ using Poser.Domain.Operations;
 using Poser.Core;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Application.AutoSave;
+using Poser.Application.Events;
 
 namespace Poser.Game;
 

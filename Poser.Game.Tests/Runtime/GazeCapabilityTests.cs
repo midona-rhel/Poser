@@ -15,6 +15,8 @@ using Poser.Services;
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 using StableActorId = Poser.Domain.Identity.ActorId;
 
 namespace Poser.Game.Tests.Runtime;

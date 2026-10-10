@@ -1,11 +1,9 @@
 using Poser.Application.Scene;
-using Poser.Config;
 using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Files;
-using Poser.Library;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Library;
 

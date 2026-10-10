@@ -6,6 +6,7 @@ using Poser.Core;
 using Poser.Domain;
 using Poser.Game.Animation;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Game.Environment;
 

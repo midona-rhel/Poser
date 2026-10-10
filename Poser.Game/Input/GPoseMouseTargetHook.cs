@@ -1,7 +1,7 @@
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
-using Poser.Config;
+using Poser.Application.Settings;
 
 namespace Poser.Game.Input;
 

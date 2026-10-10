@@ -1,6 +1,5 @@
 using Poser.Application.Transforms;
 using Poser.Domain;
-using Poser.Files;
 using Poser.Domain.Scene;
 using Poser.Documents.Files;
 

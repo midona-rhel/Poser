@@ -5,6 +5,8 @@ using Poser.Core;
 using Poser.Game.Cameras;
 using Poser.Services;
 using System.Numerics;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Tests.Cameras;
 

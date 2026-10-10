@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Documents.Config;
 
-namespace Poser.Config;
+namespace Poser.Application.Settings;
 
 /// <summary>
 /// Service for managing plugin configuration with persistence.

@@ -17,6 +17,7 @@ using Poser.Application.Posing;
 using Poser.Services;
 using Xunit;
 using Poser.Domain.Transforms;
+using Poser.Application.Events;
 
 namespace Poser.Tests;
 

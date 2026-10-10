@@ -17,6 +17,7 @@ using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Domain.Identity;
 using Poser.Services;
+using Poser.Application.Lifecycle;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 

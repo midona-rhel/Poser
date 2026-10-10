@@ -95,7 +95,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     /// cannot name them, so the production ports' dependencies are taken
     /// here and handed straight to those ports.</summary>
     public SceneLifecycleHistory(
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,

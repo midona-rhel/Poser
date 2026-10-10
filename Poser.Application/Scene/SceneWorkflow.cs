@@ -10,7 +10,6 @@ using Poser.Domain.Operations;
 using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
-using Poser.Files;
 using Poser.Documents.Files;
 using Poser.Documents.Scene;
 

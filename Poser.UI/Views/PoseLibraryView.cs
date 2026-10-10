@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Library;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
 using static Poser.UI.Widgets.ActionBarWidgets;

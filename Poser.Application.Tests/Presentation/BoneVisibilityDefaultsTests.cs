@@ -1,6 +1,5 @@
 using Newtonsoft.Json;
 using Poser.Application.Presentation;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Documents.Config;
 

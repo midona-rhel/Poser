@@ -7,14 +7,13 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Config;
-using Poser.Library;
 
 using Poser.Domain.Cameras;
 using Poser.Domain.Library;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 using Poser.Documents.Library;
+using Poser.Application.Library;
 using static Poser.UI.Widgets.FilterPillWidgets;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.ScrollRegionWidgets;

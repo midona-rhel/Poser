@@ -3,7 +3,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.World;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
-using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
@@ -14,6 +13,7 @@ using Poser.Game.Lighting;
 using Poser.Game.Scene;
 using Poser.Services;
 using Poser.Domain.Transforms;
+using Poser.Application.Settings;
 
 namespace Poser.Game.WorldObjects;
 

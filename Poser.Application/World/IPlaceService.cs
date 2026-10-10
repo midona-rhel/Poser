@@ -1,4 +1,4 @@
-﻿namespace Poser.Services;
+﻿namespace Poser.Application.World;
 
 /// <summary>
 /// Where the session is, in the two forms a document keeps: the durable

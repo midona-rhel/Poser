@@ -1,7 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Application.World;
 using Poser.Domain.Scene;
-using Poser.Files;
 using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.World;

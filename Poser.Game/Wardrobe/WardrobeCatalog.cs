@@ -2,6 +2,7 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Domain.Integration;
 using Poser.Services;
+using Poser.Application.Catalog;
 
 namespace Poser.Game.Wardrobe;
 

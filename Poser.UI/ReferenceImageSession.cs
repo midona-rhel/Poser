@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
-using Poser.Config;
 using Poser.UI.Widgets;
 using Poser.Documents.Config;
+using Poser.Application.Settings;
 
 namespace Poser.UI;
 

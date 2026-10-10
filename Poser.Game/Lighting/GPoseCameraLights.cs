@@ -7,6 +7,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Poser.Core;
 using Poser.Domain.Scene;
 using Poser.Services;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Lighting;
 

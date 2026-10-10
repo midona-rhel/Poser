@@ -7,6 +7,7 @@ using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Game.Overlays;
 

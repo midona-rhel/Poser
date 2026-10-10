@@ -8,6 +8,8 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Core;
 using Poser.Services;
 using Poser.Domain.Transforms;
+using Poser.Application.Catalog;
+using Poser.Application.Events;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSWeapon = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Weapon;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;

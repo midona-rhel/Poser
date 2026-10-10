@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Poser.Services;
 using Poser.Documents.AutoSave;
 
-namespace Poser.Files;
+namespace Poser.Application.AutoSave;
 
 /// <summary>
 /// Serial owner of the single autosave health record: admission generations,

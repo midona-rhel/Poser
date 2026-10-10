@@ -3,6 +3,7 @@ using Poser.Application.Transforms;
 using Poser.Services;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Transforms;
 

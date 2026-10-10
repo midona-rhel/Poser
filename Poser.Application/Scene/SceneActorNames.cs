@@ -1,6 +1,5 @@
-using Poser.Config;
-using Poser.Files;
 using Poser.Documents.Files;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Scene;
 

@@ -9,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
-using Poser.Files;
 using Poser.Documents.Files;
 
 namespace Poser.UI;

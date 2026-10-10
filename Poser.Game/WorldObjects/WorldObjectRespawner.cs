@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Domain;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Game.WorldObjects;
 

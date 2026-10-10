@@ -7,19 +7,19 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
-using Poser.Files;
 using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Integration;
-using Poser.Library;
 using Poser.Services;
 
 using Poser.Application.Posing;
 using Poser.UI.Widgets;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
+using Poser.Application.AutoSave;
+using Poser.Application.Library;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.DialogWidgets;
@@ -46,7 +46,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly IPoseImportCommands _imports;
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
-    private readonly Config.ConfigurationService _config;
+    private readonly Application.Settings.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
     private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
@@ -106,7 +106,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         PropertiesContext properties,
-        Config.ConfigurationService config,
+        Application.Settings.ConfigurationService config,
         IAutoSaveService autoSave,
         IPosePreview preview,
         ITextureProvider textures,

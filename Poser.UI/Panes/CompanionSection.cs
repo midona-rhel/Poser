@@ -8,6 +8,7 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Application.Catalog;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;

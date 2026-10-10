@@ -4,11 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Poser.Config;
 using Poser.Domain.Library;
 using Poser.Documents.Library;
+using Poser.Application.Settings;
 
-namespace Poser.Library;
+namespace Poser.Application.Library;
 
 /// <inheritdoc cref="IPoseLibraryService"/>
 public sealed class PoseLibraryService : IPoseLibraryService

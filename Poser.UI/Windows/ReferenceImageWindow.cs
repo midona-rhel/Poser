@@ -4,7 +4,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Poser.Config;
 using Poser.UI.Widgets;
 using Poser.Documents.Config;
 using static Poser.UI.Widgets.SliderWidgets;

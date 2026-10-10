@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Poser.Application.Presentation;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;

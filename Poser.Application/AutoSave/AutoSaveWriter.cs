@@ -2,10 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain;
-using Poser.Services;
 using Poser.Documents.AutoSave;
 
-namespace Poser.Files;
+namespace Poser.Application.AutoSave;
 
 /// <summary>Immutable capture admitted to the autosave writer.</summary>
 internal readonly record struct AutoSaveSnapshotJob(

@@ -8,8 +8,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Integration;
-using Poser.Config;
-using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
 
@@ -19,6 +17,8 @@ using Poser.Domain;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 using Poser.Documents.Library;
+using Poser.Application.AutoSave;
+using Poser.Application.Library;
 
 namespace Poser.UI;
 public class SettingsWindow : Window
@@ -39,10 +39,10 @@ public class SettingsWindow : Window
     private bool _openLibrary;
     private bool _openSkeleton;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public SettingsWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,

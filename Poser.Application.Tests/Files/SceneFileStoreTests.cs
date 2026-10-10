@@ -6,8 +6,6 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Diagnostics;
-using Poser.Files;
-using Poser.Services;
 using Poser.Documents.Files;
 
 namespace Poser.Tests.Files;

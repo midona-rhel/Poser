@@ -2,14 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Config;
-using Poser.Application.AutoSave;
 using CapturedPose = Poser.Documents.AutoSave.NamedAutoSavePose;
-using Poser.Services;
 using Poser.Documents.AutoSave;
 using Poser.Documents.Config;
+using Poser.Application.Settings;
 
-namespace Poser.Files;
+namespace Poser.Application.AutoSave;
 
 /// <summary>
 /// Pose autosave cadence, admission and the exit/final-capture state machine.

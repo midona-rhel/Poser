@@ -78,10 +78,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private static readonly string[] PhysicsPrefixes =
         { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public ActorServiceLifecycle(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IActorSpawnService spawns,
         IPosingService posing,
         ISkeletonService skeletons,
@@ -127,7 +127,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         var target = (IActor)actor;
         return _bindings.GetActorId(target) is { } id
             ? _configuration.GetDisplayName(id.LogicalId, target.Name)
-            : Config.ConfigurationService.StripObjectIndex(target.Name);
+            : Application.Settings.ConfigurationService.StripObjectIndex(target.Name);
     }
 
     public void SetName(object actor, string name) =>

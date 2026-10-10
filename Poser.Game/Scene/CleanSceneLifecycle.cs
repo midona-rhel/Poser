@@ -6,6 +6,7 @@ using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Game.Scene;
 
@@ -40,7 +41,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly GazeService _gaze;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
     private readonly SceneGroups _groups;
     private readonly GroupTransformState _groupTransforms;
 
@@ -84,7 +85,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         GazeService gaze,
         IEventBus events,
         IFramework framework,
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
         SceneGroups groups,
         GroupTransformState groupTransforms,
         IPluginLog? log = null,

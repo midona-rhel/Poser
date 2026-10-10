@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Core;
 

@@ -7,7 +7,6 @@ using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Services;
 
 namespace Poser.Application.Tests.Transforms;
 

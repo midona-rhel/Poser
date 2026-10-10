@@ -1,6 +1,5 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Poser.Config;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 

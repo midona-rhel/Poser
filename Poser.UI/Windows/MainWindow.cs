@@ -11,7 +11,6 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
@@ -23,6 +22,10 @@ using Poser.UI.Views;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Preferences;
+using Poser.Application.Catalog;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
@@ -325,10 +328,10 @@ public partial class MainWindow : Window
 
     public Func<bool>? GetInspectorWindowOpen { get; set; }
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public MainWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IGPoseService gPoseService,
         PropertiesContent properties,
         IActorSceneControl actorControl,

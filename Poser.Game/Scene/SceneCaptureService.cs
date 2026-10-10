@@ -64,7 +64,7 @@ public sealed class SceneCaptureService
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly WorldObjects.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
-    private readonly Poser.Config.ConfigurationService _configuration;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
 
     public SceneCaptureService(
         IFramework framework,
@@ -89,7 +89,7 @@ public sealed class SceneCaptureService
         IWorldRenderingRuntimePort rendering,
         WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
-        Poser.Config.ConfigurationService configuration)
+        Poser.Application.Settings.ConfigurationService configuration)
     {
         _configuration = configuration;
         _anchors = anchors;
@@ -298,7 +298,7 @@ public sealed class SceneCaptureService
                 // Save the authored nickname, not a transient anonymous UI mask
                 // or the generated native name needed by appearance providers.
                 Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
-                    ?? Poser.Config.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
+                    ?? Poser.Application.Settings.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
                 SpawnedKind = spawnedKind,
                 // Every loaded character is a clone of the local player, so

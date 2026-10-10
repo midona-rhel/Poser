@@ -3,8 +3,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Library;
-using Poser.Files;
-using Poser.Library;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Documents.Files;

@@ -20,6 +20,8 @@ using SceneCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Camera;
 using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
 
 using Poser.Domain.Cameras;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Cameras;
 
@@ -102,10 +104,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     private bool _disposed;
 
-    private readonly global::Poser.Config.ConfigurationService ? _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService ? _configuration;
 
     public VirtualCameraService(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IFramework framework,

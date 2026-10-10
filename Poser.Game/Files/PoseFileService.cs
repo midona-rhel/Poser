@@ -11,6 +11,7 @@ using Poser.Entities;
 using Poser.Services;
 using Poser.Documents.Files;
 using Poser.Documents.Files.Converters;
+using Poser.Application.Posing;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace Poser.Files;

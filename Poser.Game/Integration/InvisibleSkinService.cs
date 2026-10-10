@@ -9,6 +9,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
+using Poser.Application.Appearance;
 
 using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 

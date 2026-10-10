@@ -11,6 +11,7 @@ using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
 using Poser.Domain.Identity;
+using Poser.Application.Events;
 
 namespace Poser.Game;
 

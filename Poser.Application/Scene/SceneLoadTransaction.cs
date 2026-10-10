@@ -1,6 +1,5 @@
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
-using Poser.Files;
 using Poser.Documents.Files;
 using Poser.Documents.Scene;
 

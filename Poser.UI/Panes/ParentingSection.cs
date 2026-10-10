@@ -11,7 +11,7 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 public sealed class ParentingSection(ITransformParenting parenting, SceneSession scene, UserNotices notices,
-    Config.ConfigurationService configuration)
+    Application.Settings.ConfigurationService configuration)
 {
     private sealed record Choice(SelectionId Id, string Name, string Kind);
     private static readonly string[] Modes = ["None", "Entity", "Bone"];

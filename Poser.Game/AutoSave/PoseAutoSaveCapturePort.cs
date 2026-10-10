@@ -4,6 +4,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
 using Poser.Documents.Files;
+using Poser.Application.World;
 
 namespace Poser.Game.AutoSave;
 

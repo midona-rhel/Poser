@@ -12,7 +12,6 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Services;
 using Poser.UI.Controls;
@@ -20,6 +19,7 @@ using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
 using Poser.Documents.Data;
 using Poser.Documents.Data.Config;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.DropdownWidgets;
 using static Poser.UI.Widgets.FilterPillWidgets;
 using static Poser.UI.Widgets.ScrollRegionWidgets;
@@ -101,12 +101,12 @@ public sealed partial class GraphicalBonePane : IDisposable
     private readonly EditorState _editorState;
     private readonly IPoseInteraction _bonePosing;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly BoneMapEditorRegistry _editors;
 
     public GraphicalBonePane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         PropertiesContext properties,
         ITextureProvider textureProvider,

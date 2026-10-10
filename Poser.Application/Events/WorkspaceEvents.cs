@@ -1,4 +1,4 @@
-namespace Poser.Core;
+namespace Poser.Application.Events;
 
 // Portable notifications only. Native payload events stay in Game.
 public interface IEvent { }

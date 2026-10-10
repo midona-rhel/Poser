@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain.Identity;
 using Poser.Entities;
+using Poser.Application.Events;
 
 namespace Poser.Core;
 

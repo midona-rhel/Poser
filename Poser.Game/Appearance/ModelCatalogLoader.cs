@@ -8,6 +8,7 @@ using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Appearance;
 using Poser.Domain.Appearance;
+using Poser.Application.Catalog;
 
 namespace Poser.Game.Appearance;
 

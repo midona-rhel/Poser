@@ -1,6 +1,6 @@
 using System;
-using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Application.Settings;
 
 namespace Poser.Tests.Core;
 

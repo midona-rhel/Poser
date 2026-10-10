@@ -1,9 +1,7 @@
-using Poser.Config;
-using Poser.Services;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 
-namespace Poser.Core;
+namespace Poser.Application.Settings;
 
 /// <summary>
 /// Tracks editor-wide state: gizmo settings.

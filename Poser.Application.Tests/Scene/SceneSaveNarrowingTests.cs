@@ -3,7 +3,6 @@ using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Files;
 using Poser.Tests.Files;
 using Poser.Documents.Files;
 

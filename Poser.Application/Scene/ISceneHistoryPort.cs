@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
-using Poser.Files;
 
 namespace Poser.Application.Scene;
 

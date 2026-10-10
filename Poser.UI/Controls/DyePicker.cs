@@ -6,6 +6,7 @@ using Dalamud.Bindings.ImGui;
 using Poser.Domain.Integration;
 using Poser.Services;
 using Poser.UI.Widgets;
+using Poser.Application.Catalog;
 using static Poser.UI.Widgets.ImageWidgets;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.Themes;

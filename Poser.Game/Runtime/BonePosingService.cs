@@ -17,6 +17,8 @@ using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Domain.Identity;
 using Poser.Services;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
@@ -38,7 +40,7 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
     private readonly IEventBus _eventBus;
-    private readonly Poser.Config.ConfigurationService _configuration;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
 
     private readonly PoseStackStore _stacks = new();
     private readonly TransitiveActionScheduler _transitive;
@@ -56,7 +58,7 @@ public unsafe class BonePosingService : IBonePosingService
         IKService ikService,
         Poser.Game.Bindings.StableBindingRegistry bindings,
         IPosingService posingService,
-        Poser.Config.ConfigurationService configuration,
+        Poser.Application.Settings.ConfigurationService configuration,
         IGameInteropProvider hooking,
         ISigScanner scanner,
         Poser.Game.Posing.GazePoseFrames gazeFrames)

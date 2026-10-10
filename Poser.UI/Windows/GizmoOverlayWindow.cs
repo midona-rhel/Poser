@@ -6,7 +6,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
 using Poser.Application.Scene;
@@ -21,6 +20,7 @@ using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using LegacyTransform = Poser.Domain.Transforms.Transform;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.TablerIconWidgets;
 using static Poser.UI.Widgets.Themes;
 
@@ -177,10 +177,10 @@ public class GizmoOverlayWindow : Window
             _beginSuppressed = false;
     }
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public GizmoOverlayWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         IViewportReads viewport,
         EditorState editorState,

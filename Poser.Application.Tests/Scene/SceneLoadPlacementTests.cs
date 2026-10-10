@@ -1,7 +1,6 @@
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Domain.Scene;
-using Poser.Files;
 using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Scene;

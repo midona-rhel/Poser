@@ -9,7 +9,6 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;

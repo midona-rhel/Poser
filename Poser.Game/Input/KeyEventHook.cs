@@ -5,6 +5,7 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Poser.Services;
+using Poser.Application.Input;
 
 namespace Poser.Game.Input;
 

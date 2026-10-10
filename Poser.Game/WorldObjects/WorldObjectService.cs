@@ -10,6 +10,7 @@ using Poser.Services;
 
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
+using Poser.Application.Events;
 
 namespace Poser.Game.WorldObjects;
 

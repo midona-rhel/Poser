@@ -2,7 +2,7 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
-using Poser.Library;
+using Poser.Application.Library;
 
 namespace Poser.Game.Scene;
 

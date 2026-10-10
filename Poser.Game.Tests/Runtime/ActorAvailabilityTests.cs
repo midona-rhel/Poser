@@ -9,6 +9,8 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 using NativeDrawObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject;
 using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;

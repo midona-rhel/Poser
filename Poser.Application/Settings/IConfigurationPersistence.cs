@@ -1,6 +1,6 @@
 using Poser.Documents.Config;
 
-namespace Poser.Config;
+namespace Poser.Application.Settings;
 
 /// <summary>The host locates storage; settings behavior owns migrations and notifications.</summary>
 public interface IConfigurationPersistence

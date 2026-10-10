@@ -1,7 +1,6 @@
 using System;
-using Poser.Files;
-using Poser.Services;
 using Poser.Documents.AutoSave;
+using Poser.Application.AutoSave;
 
 namespace Poser.Application.Lifecycle;
 

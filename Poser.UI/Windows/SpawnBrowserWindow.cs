@@ -9,7 +9,6 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -18,6 +17,8 @@ using Poser.Services;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Domain;
+using Poser.Application.Catalog;
+using Poser.Application.Settings;
 
 namespace Poser.UI;
 
@@ -114,7 +115,7 @@ public sealed class SpawnBrowserWindow : Window
         ITextureProvider textures,
         UserNotices notices,
         ReferenceImageSession referenceImages,
-        global::Poser.Library.IPoseLibraryService library,
+        global::Poser.Application.Library.IPoseLibraryService library,
         Application.Library.ILibrarySceneActions libraryScene,
         IPlacementAnchorSource anchors,
         IWorldAssetCatalog assets,
@@ -651,7 +652,7 @@ public sealed class SpawnBrowserWindow : Window
         _refilter = true;
     }
 
-    private readonly global::Poser.Library.IPoseLibraryService _library;
+    private readonly global::Poser.Application.Library.IPoseLibraryService _library;
     private readonly Application.Library.ILibrarySceneActions _libraryScene;
     private readonly IPlacementAnchorSource _anchors;
     private readonly IWorldAssetCatalog _assets;

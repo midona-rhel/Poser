@@ -8,10 +8,10 @@ using System.Threading.Tasks;
 using Poser.Application.Scene;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.UI.Widgets;
 using Poser.Domain.Scene;
+using Poser.Application.Catalog;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;

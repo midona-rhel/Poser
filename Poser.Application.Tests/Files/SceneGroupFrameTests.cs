@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Text.Json;
-using Poser.Files;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;

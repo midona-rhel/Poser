@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Domain.Integration;
 
-namespace Poser.Services;
+namespace Poser.Application.Catalog;
 
 /// <summary>The character-making data the Appearance view draws from:
 /// the races and clans by name, the menu per clan and gender, the

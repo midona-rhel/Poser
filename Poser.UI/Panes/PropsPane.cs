@@ -4,8 +4,8 @@ using Poser.Services;
 using Poser.Application.Presentation;
 using System.Numerics;
 using Poser.Application.Scene;
-using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Application.Catalog;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;

@@ -1,8 +1,7 @@
 using System;
-using Poser.Files;
 using Poser.Documents.AutoSave;
 
-namespace Poser.Services;
+namespace Poser.Application.AutoSave;
 
 public enum AutoSaveCaptureStatus
 {

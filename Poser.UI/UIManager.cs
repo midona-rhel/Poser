@@ -4,8 +4,6 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
-using Poser.Config;
-using Poser.Core;
 using Poser.Services;
 using Poser.UI.Composition;
 using System;
@@ -15,6 +13,9 @@ using Poser.Application.Transforms;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;
 using static Poser.UI.Widgets.ValueEdits;
@@ -29,7 +30,7 @@ public sealed class UIManager : IUIManager
     private readonly ITransformFacade _cleanTransforms;
     private readonly UserNotices _notices;
     private readonly IKeyState _keyState;
-    private readonly global::Poser.Services.IKeyEvents _keyEvents;
+    private readonly global::Poser.Application.Input.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
     private readonly EditorState _editorState;
     private readonly ConfigurationService _configService;
@@ -61,7 +62,7 @@ public sealed class UIManager : IUIManager
         ITransformFacade cleanTransforms,
         UserNotices notices,
         IKeyState keyState,
-        global::Poser.Services.IKeyEvents keyEvents,
+        global::Poser.Application.Input.IKeyEvents keyEvents,
         global::Poser.Application.Transforms.ValueJournal values,
         EditorState editorState,
         ConfigurationService configService,
@@ -449,7 +450,7 @@ public sealed class UIManager : IUIManager
     /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
-    private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Services.KeyEventKind kind)
+    private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Application.Input.KeyEventKind kind)
         => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
             _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
 
@@ -457,7 +458,7 @@ public sealed class UIManager : IUIManager
         || ImGui.GetIO().WantTextInput || _windows.Settings.IsRebindingShortcut
         || _capturingShortcutThisFrame;
 
-    private bool ProcessShortcutKey(KeyChord chord, global::Poser.Services.KeyEventKind kind)
+    private bool ProcessShortcutKey(KeyChord chord, global::Poser.Application.Input.KeyEventKind kind)
     {
         var key = (VirtualKey)chord.Key;
         if (ShortcutsSuppressed)
@@ -476,7 +477,7 @@ public sealed class UIManager : IUIManager
                 continue;
             switch (kind)
             {
-                case global::Poser.Services.KeyEventKind.Down:
+                case global::Poser.Application.Input.KeyEventKind.Down:
                     if (!bind.Down)
                     {
                         bind.Down = true;
@@ -484,10 +485,10 @@ public sealed class UIManager : IUIManager
                     }
                     handled = true;
                     break;
-                case global::Poser.Services.KeyEventKind.Held:
+                case global::Poser.Application.Input.KeyEventKind.Held:
                     handled = true;
                     break;
-                case global::Poser.Services.KeyEventKind.Released:
+                case global::Poser.Application.Input.KeyEventKind.Released:
                     if (bind.Down)
                     {
                         bind.Down = false;
@@ -502,7 +503,7 @@ public sealed class UIManager : IUIManager
 #if DEBUG
     // Diagnostic input follows the real chord resolver and deferred draw-frame
     // dispatch, without sending keys to the game or desktop.
-    public object DebugShortcut(string chord, global::Poser.Services.KeyEventKind kind)
+    public object DebugShortcut(string chord, global::Poser.Application.Input.KeyEventKind kind)
     {
         bool suppressed = ShortcutsSuppressed;
         bool consumed = ProcessShortcutKey(KeyChord.Parse(chord), kind);

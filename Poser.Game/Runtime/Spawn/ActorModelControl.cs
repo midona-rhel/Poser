@@ -2,6 +2,7 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Application.Events;
 
 namespace Poser.Game;
 

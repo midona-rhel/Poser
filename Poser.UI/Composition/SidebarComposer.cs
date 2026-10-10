@@ -9,7 +9,6 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
@@ -26,7 +25,7 @@ internal sealed partial class SidebarComposer
 {
     private static readonly bool[] RootTreeLines = Array.Empty<bool>();
     private readonly AppShellViewModel _vm;
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
     private readonly SceneSession _scene;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
@@ -86,7 +85,7 @@ internal sealed partial class SidebarComposer
 
     public SidebarComposer(
         AppShellViewModel vm,
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         SceneGroups groups,
         SelectionSession selection,

@@ -1,11 +1,11 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
 using Poser.Files;
 using Poser.Game.Bindings;
+using Poser.Application.Settings;
 
 namespace Poser.Game.Posing;
 

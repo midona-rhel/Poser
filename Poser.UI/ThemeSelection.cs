@@ -2,7 +2,6 @@ using System;
 using Microsoft.Win32;
 using System.Collections.Generic;
 using System.Numerics;
-using Poser.Config;
 using Poser.Documents.Config;
 using static Poser.UI.Widgets.Themes;
 

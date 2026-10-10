@@ -17,7 +17,6 @@ using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Config;
 using Poser.Core;
 using Poser.Files;
 using Poser.Game;
@@ -25,7 +24,6 @@ using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Game.Transforms;
-using Poser.Library;
 using Poser.Lifecycle;
 using Poser.Services;
 using Poser.UI;
@@ -34,6 +32,9 @@ using Poser.UI.Composition;
 using Poser.Application.Viewport;
 using Poser.Documents.AutoSave;
 using Poser.Documents.Library;
+using Poser.Application.Catalog;
+using Poser.Application.Events;
+using Poser.Application.Settings;
 
 namespace Poser.Composition;
 
@@ -433,7 +434,7 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<Application.Integration.IntegrationOwnership>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.
-            var limits = sp.GetRequiredService<Config.ConfigurationService>()
+            var limits = sp.GetRequiredService<Application.Settings.ConfigurationService>()
                 .Config.Integration;
             mcdf.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
                 limits.McdfMaxTotalBytes,
@@ -517,7 +518,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Posing.IActorColliderCapture>(sp => sp.GetRequiredService<Game.Posing.ActorColliderCapture>());
         services.AddSingleton<Game.Runtime.SceneFramePhaseService>();
         services.AddSingleton<Game.Input.KeyEventHook>();
-        services.AddSingleton<global::Poser.Services.IKeyEvents>(
+        services.AddSingleton<global::Poser.Application.Input.IKeyEvents>(
             sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
         services.AddSingleton<IEnvironmentRuntimePort, Game.Environment.EnvironmentService>();
         services.AddStartable<IEnvironmentRuntimePort>(StartStage.Environment);
@@ -556,12 +557,12 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
         services.AddSingleton<Application.Library.AutoSaveLibrary>();
         services.AddSingleton<Application.Library.ILibrarySceneActions, Application.Library.LibrarySceneActions>();
-        services.AddSingleton<Library.IPoseLibraryService>(sp =>
+        services.AddSingleton<Application.Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();
             // Create every configured library root before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
-            var library = new Library.PoseLibraryService(config);
+            var library = new Application.Library.PoseLibraryService(config);
             // ONE scan at startup; after it, Poser knows what it saves —
             // every entry save requests its own rescan, and the refresh
             // button covers files changed outside Poser.

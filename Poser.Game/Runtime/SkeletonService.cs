@@ -6,6 +6,8 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game;
 
@@ -33,9 +35,9 @@ public class SkeletonService : ISkeletonService
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), Skeleton> _skeletons = new();
     private readonly Dictionary<(EntityId Actor, PoseSlot Slot), bool> _changed = new();
 
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
 
-    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, IFramework framework, Config.ConfigurationService configuration)
+    public SkeletonService(IPluginLog log, IGPoseService gPoseService, IEventBus eventBus, IActorManager actors, IFramework framework, Application.Settings.ConfigurationService configuration)
     {
         _framework = framework;
         _configuration = configuration;

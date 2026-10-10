@@ -20,6 +20,8 @@ using Poser.Services;
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 using static Poser.Game.GazeEntryStore;
 using static Poser.Game.GazeNativeDriver;
 

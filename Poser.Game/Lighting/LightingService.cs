@@ -17,6 +17,8 @@ using PoserTransform = Poser.Domain.Transforms.Transform;
 
 using Poser.Application.Viewport;
 using Poser.Domain.Posing;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Lighting;
 

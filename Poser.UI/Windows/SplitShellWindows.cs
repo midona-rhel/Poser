@@ -32,7 +32,7 @@ public sealed class SidebarPartWindow : Window
     private Vector2 _lastLogicalSize = new(300f, 520f);
     private float _savedHeight = 520f;
 
-    public SidebarPartWindow(MainWindow main, Config.ConfigurationService configuration)
+    public SidebarPartWindow(MainWindow main, Application.Settings.ConfigurationService configuration)
         : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -377,7 +377,7 @@ public sealed class InspectorPartWindow : Window
     private Vector2 _lastLogicalSize = new(282f, 560f);
     private float _savedHeight = 560f;
 
-    public InspectorPartWindow(MainWindow main, Config.ConfigurationService configuration)
+    public InspectorPartWindow(MainWindow main, Application.Settings.ConfigurationService configuration)
         : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |

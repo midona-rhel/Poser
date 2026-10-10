@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Config;
-using Poser.Files;
 using Poser.Application.Scene;
 using Poser.Documents.AutoSave;
 using Poser.Documents.Config;
 using Poser.Documents.Files;
+using Poser.Application.Settings;
 
 namespace Poser.Application.AutoSave;
 

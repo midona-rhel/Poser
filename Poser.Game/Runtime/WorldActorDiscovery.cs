@@ -7,6 +7,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Services;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game;
 

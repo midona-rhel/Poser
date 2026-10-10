@@ -184,7 +184,7 @@ public sealed class SceneCreation : ISceneCreation
             });
             return clone;
         }
-        string name = Config.ConfigurationService.StripObjectIndex(source.Name);
+        string name = Application.Settings.ConfigurationService.StripObjectIndex(source.Name);
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
         var posed = _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);

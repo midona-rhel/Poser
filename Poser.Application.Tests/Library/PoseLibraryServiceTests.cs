@@ -5,13 +5,12 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Poser.Config;
-using Poser.Files;
-using Poser.Library;
 using Poser.Tests.Files;
 using Poser.Domain.Library;
 using Poser.Documents.Files;
 using Poser.Documents.Library;
+using Poser.Application.Library;
+using Poser.Application.Settings;
 
 namespace Poser.Tests.Library;
 

@@ -8,9 +8,11 @@ using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
-using Poser.Config;
 using Poser.Game.Posing;
 using Poser.Domain.Transforms;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
 
 using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 

@@ -11,7 +11,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Transforms;
 using Poser.Application.Posing;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Services;
 using Poser.Application.Scene;
@@ -20,7 +19,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.UI.Controls;
 using Poser.UI.Views;
-using Poser.Files;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
@@ -28,6 +26,7 @@ using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.FilterPillWidgets;
@@ -195,10 +194,10 @@ public partial class PoseInspectorPane : IDisposable
         "How much the foot helps reach the target",
     ];
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public PoseInspectorPane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IPoseInteraction interaction,
         ITransformFacade cleanTransforms,
         IActorResetControl actorReset,

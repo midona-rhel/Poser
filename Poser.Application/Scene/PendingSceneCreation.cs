@@ -3,7 +3,6 @@ using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Domain.Operations;
-using Poser.Files;
 using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;

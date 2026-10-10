@@ -11,7 +11,6 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
@@ -35,7 +34,7 @@ internal sealed partial class EntityContextMenus
     private readonly CameraPane _cameraPane;
     private readonly Application.Posing.IPoseCommands _cleanPose;
     private readonly CompanionSection _companions;
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly global::Poser.Application.Scene.GroupSteps _groupSteps;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly Application.Presentation.ILightControl _lightControl;
@@ -100,7 +99,7 @@ internal sealed partial class EntityContextMenus
         CameraPane cameraPane,
         Application.Posing.IPoseCommands cleanPose,
         CompanionSection companions,
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         global::Poser.Application.Scene.GroupSteps groupSteps,
         global::Poser.Application.Scene.SceneGroups groups,
         Application.Presentation.ILightControl lightControl,

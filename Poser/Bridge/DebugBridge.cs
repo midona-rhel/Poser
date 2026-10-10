@@ -22,6 +22,8 @@ using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.Application.Transforms;
+using Poser.Application.Input;
+using Poser.Application.Lifecycle;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.Bridge;
@@ -57,8 +59,8 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
-    private readonly global::Poser.Library.IPoseLibraryService _library;
-    private readonly global::Poser.Services.ISpawnCatalogService _catalog;
+    private readonly global::Poser.Application.Library.IPoseLibraryService _library;
+    private readonly global::Poser.Application.Catalog.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
@@ -85,13 +87,13 @@ public sealed partial class DebugBridge : IDisposable
     private readonly Application.Viewport.ICameraProjection _cameraProjection;
     private readonly CancellationTokenSource _stop = new();
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly IServiceProvider _services;
     private Task<SelectionRemovalResult>? _selectionRemovalProbe;
 
     public DebugBridge(
         IServiceProvider services,
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
         EnvironmentControl environmentControl,
         global::Poser.UI.PropertiesContent properties,
@@ -115,9 +117,9 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Services.IBonePosingService bonePosing,
         Application.Posing.IIkConfigurationPort ikConfiguration,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
-        global::Poser.Services.ISpawnCatalogService catalog,
+        global::Poser.Application.Catalog.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
-        global::Poser.Library.IPoseLibraryService library,
+        global::Poser.Application.Library.IPoseLibraryService library,
         ITransformFacade transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
         global::Poser.UI.SkeletonOverlayWindow overlay,

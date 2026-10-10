@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
-using Poser.Files;
 using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
@@ -178,10 +177,10 @@ public sealed class EnvironmentPane
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public EnvironmentPane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         ITextureProvider textures,
         ISceneWorkflow workflow,
         UserNotices notices,

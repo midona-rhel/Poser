@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Config;
+using Poser.Application.Settings;
 
 namespace Poser.UI;
 

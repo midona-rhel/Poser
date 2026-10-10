@@ -10,7 +10,6 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NSubstitute;
 using NSubstitute.Core;
-using Poser.Config;
 using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Entities;
@@ -20,6 +19,10 @@ using Poser.Domain.Transforms;
 using Poser.Documents.AutoSave;
 using Poser.Documents.Config;
 using Poser.Documents.Files;
+using Poser.Application.AutoSave;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
 
 namespace Poser.Tests.Fixtures;
 

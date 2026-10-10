@@ -8,8 +8,6 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Config;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
@@ -18,6 +16,7 @@ using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
+using Poser.Application.Settings;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
@@ -372,10 +371,10 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         WorldAdoptionCandidate Candidate,
         Vector2 ReleasePoint);
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public SkeletonOverlayWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IPoseInteraction poseInteraction,
         SceneSession scene,
         IViewportReads viewport,

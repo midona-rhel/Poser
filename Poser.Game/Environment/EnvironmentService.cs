@@ -7,6 +7,7 @@ using Lumina.Excel;
 using Poser.Core;
 using Poser.Services;
 using Poser.Domain.Scene;
+using Poser.Application.Events;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 using CSHousingManager = FFXIVClientStructs.FFXIV.Client.Game.HousingManager;

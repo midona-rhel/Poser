@@ -10,6 +10,8 @@ using Poser.Game.Integration;
 using Poser.Services;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Tests.Runtime;
 

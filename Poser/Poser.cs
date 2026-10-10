@@ -11,7 +11,6 @@ using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Lifecycle;
 using Poser.Composition;
-using Poser.Config;
 using Poser.Core;
 using Poser.Game;
 using Poser.Game.Posing;
@@ -22,6 +21,7 @@ using Poser.UI;
 using Poser.UI.Widgets;
 using Poser.Domain;
 using Poser.Domain.Posing.BoneInfo;
+using Poser.Application.Settings;
 
 namespace Poser;
 

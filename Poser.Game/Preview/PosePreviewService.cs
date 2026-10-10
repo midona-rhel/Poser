@@ -17,6 +17,7 @@ using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Actors;
 using Poser.Documents.Files;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.Preview;
 
