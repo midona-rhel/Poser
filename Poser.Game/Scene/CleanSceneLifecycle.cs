@@ -37,6 +37,12 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly IEventBus _events;
     private readonly IFramework _framework;
     private readonly Config.ConfigurationService _configuration;
+    private readonly SceneGroups _groups;
+    private readonly GroupTransformState _groupTransforms;
+
+    /// <summary>The user-facing notice for a teardown that left owned state
+    /// behind. Null under tests; the log line is written either way.</summary>
+    private readonly Action<string>? _reportFailure;
 
     private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
 
@@ -70,11 +76,17 @@ public sealed class CleanSceneLifecycle : IDisposable
         IEventBus events,
         IFramework framework,
         Config.ConfigurationService configuration,
+        SceneGroups groups,
+        GroupTransformState groupTransforms,
         IPluginLog? log = null,
+        Action<string>? reportFailure = null,
         GroupTransformCoordinator? groupCoordinator = null,
         IGroupTransformSource? groupSource = null)
     {
         _log = log;
+        _reportFailure = reportFailure;
+        _groups = groups;
+        _groupTransforms = groupTransforms;
         _bindings = bindings;
         _scene = scene;
         _gestures = gestures;
@@ -369,7 +381,9 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
         Refresh();
 
-    private void OnGPoseExiting(GPoseExitingEvent _) => _presentation.ResetAll();
+    private void OnGPoseExiting(GPoseExitingEvent _) =>
+        Report("GPose exiting.", RunSteps(
+            [new("Presentation", () => Failure(_presentation.ResetAll()))]));
 
     private void OnGPoseChanged(GPoseStateChangedEvent evt)
     {
@@ -398,25 +412,107 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void ResetOwnedState(string reason) =>
         ResetOwnedStateForLifecycle(
             reason,
-            detail => { _facialCapture.CancelPending(detail); },
-            () => { _animation.ResetAll(); },
-            () => { _presentation.ResetAll(); },
-            () => { _modelId.ResetAll(); },
-            () => { _integration.ResetAll(); });
+            detail =>
+            {
+                // The receipt is the capture's last operation, not this
+                // cancel's result; a cancel has nothing of its own to fail.
+                _facialCapture.CancelPending(detail);
+                return null;
+            },
+            () => Failure(_animation.ResetAll()),
+            () => Failure(_presentation.ResetAll()),
+            () => Failure(_modelId.ResetAll()),
+            () => Failure(_integration.ResetAll()),
+            () =>
+            {
+                // Groups are scene state: they end with the session and the
+                // plugin, like every entity they hold.
+                _groups.Clear();
+                _groupTransforms.Clear();
+                return null;
+            },
+            message => Report(reason, message));
 
-    /// <summary>One teardown order for GPose exit and plugin disposal.</summary>
-    internal static void ResetOwnedStateForLifecycle(
-        string reason,
-        Action<string> cancelFacialCapture,
-        Action resetAnimation,
-        Action resetPresentation,
-        Action resetModelId,
-        Action resetIntegration)
+    private static string? Failure(Poser.Application.Animation.AnimationResult result) =>
+        result.Success ? null : result.Detail ?? "failed";
+
+    private static string? Failure(Poser.Application.Presentation.PresentationResult result) =>
+        result.Success ? null : result.Detail ?? "failed";
+
+    private static string? Failure(Poser.Domain.Integration.IntegrationResult result) =>
+        result.Success ? null : result.Detail ?? "failed";
+
+    /// <summary>One named teardown step; returns its failure, or null.</summary>
+    internal readonly record struct TeardownStep(string Name, Func<string?> Run);
+
+    /// <summary>
+    /// Runs every step in order and collects each failure under its name. A
+    /// throwing step is a failure like any other and does not skip the
+    /// steps after it; nothing is retried here.
+    /// </summary>
+    internal static IReadOnlyList<string> RunSteps(IReadOnlyList<TeardownStep> steps)
     {
-        cancelFacialCapture(reason);
-        resetAnimation();
-        resetPresentation();
-        resetModelId();
-        resetIntegration();
+        var failures = new List<string>();
+        foreach (var step in steps)
+        {
+            string? failure;
+            try
+            {
+                failure = step.Run();
+            }
+            catch (Exception ex)
+            {
+                failure = ex.Message;
+            }
+            if (failure != null)
+                failures.Add($"{step.Name}: {failure}");
+        }
+        return failures;
+    }
+
+    private void Report(string reason, IReadOnlyList<string> failures)
+    {
+        if (failures.Count > 0)
+            Report(reason, string.Join(" | ", failures));
+    }
+
+    private void Report(string reason, string message)
+    {
+        _log?.Error($"Scene teardown ({reason}) left owned state unrestored: {message}");
+        try
+        {
+            _reportFailure?.Invoke($"Restoring the scene failed: {message}");
+        }
+        catch (Exception)
+        {
+            // The notice surface may already be gone at unload; the log has it.
+        }
+    }
+
+    /// <summary>One teardown order for GPose exit and plugin disposal. Every
+    /// step runs; their failures are reported once, together, in this order.
+    /// </summary>
+    internal static IReadOnlyList<string> ResetOwnedStateForLifecycle(
+        string reason,
+        Func<string, string?> cancelFacialCapture,
+        Func<string?> resetAnimation,
+        Func<string?> resetPresentation,
+        Func<string?> resetModelId,
+        Func<string?> resetIntegration,
+        Func<string?> clearGroups,
+        Action<string> report)
+    {
+        var failures = RunSteps(
+        [
+            new("Facial capture", () => cancelFacialCapture(reason)),
+            new("Animation", resetAnimation),
+            new("Presentation", resetPresentation),
+            new("Model id", resetModelId),
+            new("Appearance", resetIntegration),
+            new("Groups", clearGroups),
+        ]);
+        if (failures.Count > 0)
+            report(string.Join(" | ", failures));
+        return failures;
     }
 }
