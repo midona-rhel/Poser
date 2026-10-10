@@ -345,27 +345,14 @@ public partial class MainWindow : Window
         EditorState editorState,
         ITransformFacade cleanTransforms,
         Application.Posing.IPoseCommands cleanPose,
-        PoseInspectorPane poseInspector,
-        AnimationPane animationPane,
-        AppearancePane appearancePane,
-        LightPane lightPane,
-        CameraPane cameraPane,
         Application.Presentation.ICameraTargetControl cameraTargets,
-        EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
-        ScenePane scenePane,
-        PoseFileInspectorSection poseFileSection,
         IAnimationPlayback animation,
         IAnimationCatalogLoader animationCatalog,
         ICompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,
-        GraphicalBonePane graphicalBonePane,
         IPropCatalog propService,
-        PropsPane propsPane,
-        WorldObjectsPane worldObjectsPane,
-        OverlayPane overlayPane,
         Application.Posing.IActorColliderCapture actorColliderCapture,
-        CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         BoneVisibilityPresetService bonePresets,
         ReferenceImageSession referenceImages,
@@ -379,7 +366,6 @@ public partial class MainWindow : Window
         global::Poser.Application.Scene.GroupSteps groupSteps,
         global::Poser.Application.Transforms.GroupTransformState groupTransforms,
         global::Poser.Application.Transforms.GroupTransformCoordinator groupCoordinator,
-        Controls.EntityNameModal names,
         Controls.IssueReportModal issueReport,
         ISceneWorkflow sceneWorkflow,
         ICameraProjection gameCamera,
@@ -391,6 +377,22 @@ public partial class MainWindow : Window
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
+        // The main surface's panes are its properties content's own, so the
+        // sidebar's verbs reach the instances the inspector draws.
+        var poseInspector = properties.PoseInspector;
+        var animationPane = properties.AnimationPanel;
+        var appearancePane = properties.AppearancePanel;
+        var lightPane = properties.LightPanel;
+        var cameraPane = properties.CameraPanel;
+        var environmentPane = properties.EnvironmentPanel;
+        var scenePane = properties.ScenePanel;
+        var poseFileSection = properties.PoseFiles;
+        var graphicalBonePane = properties.BoneMap;
+        var propsPane = properties.PropsPanel;
+        var worldObjectsPane = properties.WorldObjectsPanel;
+        var overlayPane = properties.OverlayPanel;
+        var companions = appearancePane.Companions;
+        var names = properties.Names;
         _configuration = configuration;
         _properties = properties;
         _properties.Bind(_vm);

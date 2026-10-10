@@ -16,8 +16,8 @@ public sealed class WorldAcquisitionControlTests
         var world = (World)(object)service;
         var sessions = new Sessions();
         var selection = new SelectionSession();
-        var failures = new List<string>();
-        var control = new WorldAcquisitionControl(service, sessions, selection, failures.Add);
+        var failures = new Fixtures.NoticeLog();
+        var control = new WorldAcquisitionControl(service, sessions, selection, failures);
         var target = SelectionId.ForActor(ActorId.New());
         control.Acquire(new(Guid.NewGuid()));
         sessions.ActiveSessionGeneration = SessionGeneration.New();

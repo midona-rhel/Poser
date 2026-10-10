@@ -58,7 +58,7 @@ public sealed class UIManager : IUIManager
         EditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
-        PoseFileInspectorSection poseFileSection,
+        PropertiesContent properties,
         Application.Input.CameraInputState cameraInput,
         Application.Presentation.ICameraControl cameraControl,
         SceneSession scene,
@@ -79,7 +79,7 @@ public sealed class UIManager : IUIManager
         _editorState = editorState;
         _configService = configService;
         _windows = windows;
-        _poseFileSection = poseFileSection;
+        _poseFileSection = properties.PoseFiles;
         _cameraInput = cameraInput;
         _cameraControl = cameraControl;
         _scene = scene;

@@ -68,6 +68,7 @@ public sealed partial class AppearancePane
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
     private readonly CompanionSection _companions;
+    public CompanionSection Companions => _companions;
     private readonly ITextureProvider _textures;
 
     /// <summary>Stores action results for the notification channel.</summary>

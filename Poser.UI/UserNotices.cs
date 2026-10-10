@@ -23,7 +23,7 @@ namespace Poser.UI;
 /// where a thing would be. Those explain an absence IN PLACE and must stay
 /// where the absence is.</para>
 /// </summary>
-public sealed class UserNotices
+public sealed class UserNotices : global::Poser.Application.Presentation.IUserNotices
 {
     /// <summary>Every notification wears the plugin's name, because it is
     /// shown outside any Poser window.</summary>

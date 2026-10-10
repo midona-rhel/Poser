@@ -70,8 +70,8 @@ public sealed class LifecycleHistoryBatchTests
         {
             // Undo journal: count refusals before the entry leaves history.
             var history = new TransformHistory();
-            var notices = new List<string>();
-            var journal = new UndoJournal(history, new Runner(history), _ => true, notices.Add);
+            var notices = new Fixtures.NoticeLog();
+            var journal = new UndoJournal(history, new Runner(history), _ => true, notices);
             history.Append(Refusing(action));
             int journalRefusals = 0;
             while (history.CanUndo && journalRefusals < 3)

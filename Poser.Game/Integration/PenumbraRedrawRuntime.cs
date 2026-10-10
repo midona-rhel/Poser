@@ -13,7 +13,7 @@ namespace Poser.Game.Integration;
 
 internal sealed class PenumbraRedrawRuntime(
     IDalamudPluginInterface plugin, IFramework framework,
-    Lazy<StableBindingRegistry> bindings, Lazy<ISkeletonService> skeletons,
+    Lazy<StableBindingRegistry> bindings, ISkeletonService skeletons,
     ISessionGenerationSource sessions, Func<bool> available,
     Func<ActorId, IntegrationResult> request) : IActorRedrawRuntime
 {
@@ -43,7 +43,7 @@ internal sealed class PenumbraRedrawRuntime(
         // the actor manager's own frame scan picks up anything that did not.
         if (Resolve(target.Actor) != target
             || bindings.Value.Resolve(target.Actor) is not { Success: true, Value: { } actor }) return false;
-        return ActorPoseReadiness.IsReady(skeletons.Value.GetSkeletons(actor), bindings.Value);
+        return ActorPoseReadiness.IsReady(skeletons.GetSkeletons(actor), bindings.Value);
     }
 
     public IntegrationResult Request(ActorId actor) => request(actor);

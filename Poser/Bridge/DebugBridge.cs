@@ -91,7 +91,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Config.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
         EnvironmentControl environmentControl,
-        global::Poser.UI.PoseFileInspectorSection poseFiles,
+        global::Poser.UI.PropertiesContent properties,
         global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
         IPluginLog log,
@@ -136,7 +136,7 @@ public sealed partial class DebugBridge : IDisposable
         _services = services;
         _configuration = configuration;
         _environmentControl = environmentControl;
-        _poseFiles = poseFiles;
+        _poseFiles = properties.PoseFiles;
         _poseLibrary = poseLibrary;
         _idleExport = idleExport;
         _idleData = idleData; _idleScanner = idleScanner;
@@ -1084,7 +1084,7 @@ public sealed partial class DebugBridge : IDisposable
                     .SelectMany(s => s.Bones).Where(b => b.BoneName == name && b.PartialId == partial).ToArray();
                 if (matches.Length != 1 || _bindings.GetBoneId(matches[0]) is not { } boneId)
                     return Json(new { error = "Expected one exact bound bone." });
-                var pane = (global::Poser.UI.GraphicalBonePane)_services.GetService(typeof(global::Poser.UI.GraphicalBonePane))!;
+                var pane = ((global::Poser.UI.PropertiesContent)_services.GetService(typeof(global::Poser.UI.PropertiesContent))!).BoneMap;
                 var map = query.GetValueOrDefault("map", "Body");
                 var actions = pane.AddToPresetActions(boneId).FirstOrDefault(item => item.Label == map).SubmenuItems;
                 if (actions == null) return Json(new { error = "No preset actions for this actor/map." });

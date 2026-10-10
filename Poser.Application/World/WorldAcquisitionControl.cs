@@ -11,7 +11,7 @@ public interface IWorldAcquisitionControl
 
 /// <summary>Borrow completion and selection advance independently of the overlay that initiated them.</summary>
 public sealed class WorldAcquisitionControl(IWorldService world, ISessionGenerationSource sessions,
-    SelectionSession selection, Action<string> reportFailure) : IWorldAcquisitionControl
+    SelectionSession selection, Presentation.IUserNotices notices) : IWorldAcquisitionControl
 {
     private (SessionGeneration Session, Task<WorldAcquisition> Result)? _pending;
 
@@ -30,7 +30,7 @@ public sealed class WorldAcquisitionControl(IWorldService world, ISessionGenerat
         _pending = null;
         if (pending.Result.IsCompletedSuccessfully && pending.Result.Result is { Success: true, Entity: { } entity })
             selection.Select(entity);
-        else reportFailure(pending.Result.IsCompletedSuccessfully
+        else notices.Refused(pending.Result.IsCompletedSuccessfully
             ? pending.Result.Result.Detail ?? "That world asset could not be borrowed."
             : "The world borrowing command failed.");
     }

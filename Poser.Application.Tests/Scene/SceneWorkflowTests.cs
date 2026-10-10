@@ -825,8 +825,8 @@ public sealed class SceneWorkflowTests
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         var history = new TransformHistory();
-        var notices = new List<string>();
-        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices.Add);
+        var notices = new Fixtures.NoticeLog();
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices);
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
         Assert.True(load.BeginLoad("shot.xivs", new SceneLoadOptions { ClearExistingScene = true }).Success);
         await load.Drain;
@@ -853,7 +853,7 @@ public sealed class SceneWorkflowTests
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         var history = new TransformHistory();
-        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, _ => { });
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, new Fixtures.NoticeLog());
         using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;

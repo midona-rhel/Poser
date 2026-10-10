@@ -19,7 +19,7 @@ public interface ILibrarySceneSave
 
 /// <summary>One library-save admission policy; Documents allocates paths and SceneWorkflow owns capture/write.</summary>
 public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene,
-    ConfigurationService config, IPoseLibraryService library, Action<string> reportNotice) : ILibrarySceneSave
+    ConfigurationService config, IPoseLibraryService library, Presentation.IUserNotices notices) : ILibrarySceneSave
 {
     public Outcome SaveEntry(SelectionId target, string name) =>
         Entry(target, out var options, out var extension) is { } refused
@@ -74,7 +74,7 @@ public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene
         if (keys.Length < 2) return Outcome.Fail("The group needs at least two members to save.");
         bool owned = members.All(member => member.Actor is not { } actor
             || scene.Snapshot.FindActor(actor) is { IsOwned: true });
-        if (!owned) reportNotice("The group holds an actor that is not yours; it is saved without appearance.");
+        if (!owned) notices.Note("The group holds an actor that is not yours; it is saved without appearance.");
         return Save(config.Config.Library.ResolveObjectsRoot(), name, SceneFile.GroupEntryExtension,
             SceneSaveOptions.Only(SceneCategories.All & ~SceneCategories.Environment, keys) with
             {

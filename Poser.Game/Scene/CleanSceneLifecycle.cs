@@ -46,7 +46,7 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     /// <summary>The user-facing notice for a teardown that left owned state
     /// behind. Null under tests; the log line is written either way.</summary>
-    private readonly Action<string>? _reportFailure;
+    private readonly Poser.Application.Presentation.IUserNotices? _notices;
 
     private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
 
@@ -88,12 +88,12 @@ public sealed class CleanSceneLifecycle : IDisposable
         SceneGroups groups,
         GroupTransformState groupTransforms,
         IPluginLog? log = null,
-        Action<string>? reportFailure = null,
+        Poser.Application.Presentation.IUserNotices? notices = null,
         GroupTransformCoordinator? groupCoordinator = null,
         IGroupTransformSource? groupSource = null)
     {
         _log = log;
-        _reportFailure = reportFailure;
+        _notices = notices;
         _groups = groups;
         _groupTransforms = groupTransforms;
         _bindings = bindings;
@@ -509,7 +509,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _log?.Error($"Scene teardown ({reason}) left owned state unrestored: {message}");
         try
         {
-            _reportFailure?.Invoke($"Restoring the scene failed: {message}");
+            _notices?.Failed($"Restoring the scene failed: {message}");
         }
         catch (Exception)
         {

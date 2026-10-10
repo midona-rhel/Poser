@@ -30,8 +30,6 @@ public class Poser : IDalamudPlugin
     private readonly ServiceProvider _serviceProvider;
     private readonly Dalamud.Interface.ManagedFontAtlas.IFontAtlas _standbyFontAtlas;
     private readonly ICommandManager _commandManager;
-    private readonly System.Threading.CancellationTokenSource _warmupCancel = new();
-    private readonly System.Threading.Tasks.Task _warmup;
 
     public Poser(
         IDalamudPluginInterface pluginInterface,
@@ -85,73 +83,13 @@ public class Poser : IDalamudPlugin
         Crystarium.FloatingSurface.ConfigureEffects(
             configuration.Config.UI.FillOpacity,
             configuration.Config.UI.BackdropBlur);
-        // Resolving these lazy singletons activates their subscriptions in runtime order before UI draws.
-        log.Debug("Load stage: auto-save");
-        _ = _serviceProvider.GetRequiredService<AutoSaveRuntime>();
-        log.Debug("Load link: prop spawns");
-        _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
-        log.Debug("Load link: overlay nodes");
-        _ = _serviceProvider.GetRequiredService<Game.Overlays.OverlayNodeService>();
-        log.Debug("Load link: world objects");
-        _ = _serviceProvider.GetRequiredService<Game.WorldObjects.WorldObjectService>();
-        log.Debug("Load link: lighting");
-        _ = _serviceProvider.GetRequiredService<ILightingService>();
-        log.Debug("Load link: cameras");
-        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
-        log.Debug("Load link: environment");
-        _ = _serviceProvider.GetRequiredService<IEnvironmentRuntimePort>();
-        log.Debug("Load link: bindings");
-        _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
-        log.Debug("Load link: animation");
-        _ = _serviceProvider.GetRequiredService<Application.Animation.AnimationSession>();
-#if DEBUG
-        log.Debug("Load link: debug bridge");
-        _ = _serviceProvider.GetRequiredService<global::Poser.Bridge.DebugBridge>();
-#endif
-        log.Debug("Load link: gaze");
-        _ = _serviceProvider.GetRequiredService<GazeService>();
-        log.Debug("Load link: integration");
-        _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
-        // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
-        var wardrobeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.WardrobeCatalog>();
-        var customizeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.CustomizeCatalog>();
-        var warmupToken = _warmupCancel.Token;
-        _warmup = System.Threading.Tasks.Task.Run(() =>
-        {
-            try
-            {
-                wardrobeCatalog.Warm(warmupToken);
-                customizeCatalog.Warm(warmupToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Unload: the catalogs load on demand if anything still asks.
-            }
-            catch (Exception ex)
-            {
-                log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
-            }
-        });
-        startup.OnFailure(StopWarmup);
-        log.Debug("Load link: world rendering");
-        _ = _serviceProvider.GetRequiredService<IWorldRenderingRuntimePort>();
-        log.Debug("Load link: scene workflow");
-        _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
-        _ = _serviceProvider.GetRequiredService<Game.Scene.SceneCreationRuntime>();
-        _ = _serviceProvider.GetRequiredService<Game.Cameras.CameraWorkspaceRuntime>();
-        _ = _serviceProvider.GetRequiredService<Game.Transforms.ParentingFrameRuntime>();
-        log.Debug("Load stage: scene auto-save");
-        _serviceProvider.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
-            _serviceProvider.GetRequiredService<SceneAutoSaveService>());
-        log.Debug("Load stage: scene lifecycle");
-        _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
+        // Every feature registered its own startables; this is the one place
+        // they run, in StartStage order, before any UI draws.
+        Startables.StartAll(_serviceProvider, log);
         startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);
         global::Poser.UI.Crystarium.Log = message =>
             _serviceProvider.GetRequiredService<
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
-        log.Debug("Load stage: target sync");
-        _ = _serviceProvider.GetRequiredService<TargetSyncService>();
-        _ = _serviceProvider.GetRequiredService<Game.Input.GPoseMouseTargetHook>();
         // The other polarity's fonts warm on a second atlas, so the atlas
         // the UI draws with is never rebuilt once it is up: the rebuild's
         // landing frame was the one frame the whole UI went missing.
@@ -284,19 +222,9 @@ public class Poser : IDalamudPlugin
         }
     }
 
-    /// <summary>The warm-up reads through provider-owned catalogs, so it is
-    /// stopped before the provider goes; a sheet already being read gets a
-    /// short grace period rather than an unbounded join.</summary>
-    private void StopWarmup()
-    {
-        _warmupCancel.Cancel();
-        _warmup.Wait(TimeSpan.FromSeconds(1));
-        _warmupCancel.Dispose();
-    }
-
     public void Dispose()
     {
-        StopWarmup();
+        _serviceProvider.GetRequiredService<global::Poser.Lifecycle.AppearanceCatalogWarmup>().Dispose();
         var framework = _serviceProvider.GetRequiredService<IFramework>();
         var gpose = _serviceProvider.GetRequiredService<IGPoseService>();
         var log = _serviceProvider.GetRequiredService<IPluginLog>();

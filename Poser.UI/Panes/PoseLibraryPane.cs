@@ -352,7 +352,7 @@ public sealed partial class PoseLibraryPane
         SceneSession scene,
         ActorIntegrationSession integration,
         IAutoSaveService autoSave,
-        PoseFileInspectorSection files,
+        PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
         ObjectPlacementPreferences placement,
@@ -378,7 +378,7 @@ public sealed partial class PoseLibraryPane
         _scene = scene;
         _integration = integration;
         _autoSave = autoSave;
-        _files = files;
+        _files = properties.PoseFiles;
         _notices = notices;
         _previewBinder = new PosePreviewController(previewRuntime, capture);
 

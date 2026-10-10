@@ -45,6 +45,23 @@ public sealed partial class PropertiesContent
     private readonly OverlayPane _overlayPane;
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly GraphicalBonePane _map;
+
+    // The surface's own panes, for the window that hosts this content: each
+    // surface owns one set, so a host's verbs reach the inspector it shows.
+    public PoseInspectorPane PoseInspector => _poseInspector;
+    public AnimationPane AnimationPanel => _animationPane;
+    public AppearancePane AppearancePanel => _appearancePane;
+    public LightPane LightPanel => _lightPane;
+    public CameraPane CameraPanel => _cameraPane;
+    public EnvironmentPane EnvironmentPanel => _environmentPane;
+    public ScenePane ScenePanel => _scenePane;
+    public PropsPane PropsPanel => _propsPane;
+    public WorldObjectsPane WorldObjectsPanel => _worldObjectsPane;
+    public OverlayPane OverlayPanel => _overlayPane;
+    public PoseFileInspectorSection PoseFiles => _poseFiles;
+    public GraphicalBonePane BoneMap => _map;
+    public EntityNameModal Names => _names;
+
     private AppShellViewModel _vm = new();
     private PropertiesContext? _inspectorContext;
     private PoseInspectorPane? _pinnedInspector;

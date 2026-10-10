@@ -133,7 +133,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         Lazy<StableBindingRegistry> bindings,
         IActorManager actors,
         IObjectTable objects,
-        Lazy<ISkeletonService> skeletons,
+        ISkeletonService skeletons,
         Poser.Application.Lifecycle.ISessionGenerationSource sessions)
     {
         _pluginInterface = pluginInterface;

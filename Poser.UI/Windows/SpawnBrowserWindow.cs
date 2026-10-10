@@ -107,8 +107,7 @@ public sealed class SpawnBrowserWindow : Window
         IPendingSceneCreation pendingCreation,
         SceneSession scene,
         IPropCatalog propService,
-        LightPane lightPane,
-        CameraPane cameraPane,
+        PropertiesContent properties,
         ISpawnCatalogService catalog,
         SelectionSession selection,
         ConfigurationService configuration,
@@ -121,8 +120,6 @@ public sealed class SpawnBrowserWindow : Window
         IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
-        ScenePane scenePane,
-        AppearancePane appearancePane,
         Dalamud.Plugin.Services.IPluginLog log)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
@@ -133,8 +130,9 @@ public sealed class SpawnBrowserWindow : Window
         _pendingCreation = pendingCreation;
         _scene = scene;
         _propService = propService;
-        _lightPane = lightPane;
-        _cameraPane = cameraPane;
+        // The main surface's panes: the browser opens their dialogs.
+        _lightPane = properties.LightPanel;
+        _cameraPane = properties.CameraPanel;
         _catalog = catalog;
         _selection = selection;
         _configuration = configuration;
@@ -146,8 +144,8 @@ public sealed class SpawnBrowserWindow : Window
         _assets = assets;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
-        _scenePane = scenePane;
-        _appearance = appearancePane;
+        _scenePane = properties.ScenePanel;
+        _appearance = properties.AppearancePanel;
         _icons = new GameIconResolver(textures);
         _log = log;
 

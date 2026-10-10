@@ -239,6 +239,19 @@ failed, or needs recovery. Results from an old session or operation are ignored.
 
 ## Session lifecycle
 
+Startup: the host builds the provider (`ValidateOnBuild`), applies the theme,
+then runs every registered startable once, in `StartStage` order:
+auto-save, prop spawns, overlay nodes, world objects, lighting, virtual
+cameras, environment, stable bindings, animation, (Debug: debug bridge), gaze,
+actor integration, appearance-catalog warm-up, world rendering, scene
+workflow, scene creation, camera workspace, parenting frames, scene
+auto-save snapshots, clean scene lifecycle, target sync, GPose mouse target,
+character-file pump. Each feature module registers its own entries; the enum
+is the one order. Fonts, texture uploaders, the UI manager and the `/poser`
+command follow. Shutdown reverses it: warm-up cancel, framework-thread GPose
+exit, pose-import and session invalidation, command removal, UI manager (Draw unhooked), uploaders and fonts, then
+the provider disposes its singletons in reverse construction order.
+
 The host keeps failed-startup cleanup armed until activation finishes. The
 provider owns service disposal; host-owned fonts, command registration and
 global UI callbacks are unwound separately in reverse acquisition order. On

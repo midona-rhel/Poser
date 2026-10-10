@@ -127,6 +127,10 @@ The rail pins entity targets (always the actor root), while
 posing content still follows that actor's globally selected bones. Separate
 presentation graphs share commands/history, never mutable selection or gesture
 state. Collapsing the rail preserves content width and does not change other hosts.
+Every host's graph, the main window's included, is built by one presentation
+scope that creates and disposes its panes; pane types are never container
+singletons. The main window, its sidebar menus, the spawn browser and the
+library reach the main graph's panes, never a second copy.
 Main and popped-out Properties use the same minimum content width, adding
 only their currently attached Sidebar/Inspector columns to the outer width.
 Pop-outs follow the workspace's manipulation fade, retaining live shell-drag

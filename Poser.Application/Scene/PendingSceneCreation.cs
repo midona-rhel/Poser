@@ -20,7 +20,7 @@ public sealed class PendingSceneCreation(
     SelectionSession selection,
     IPoseImportCommands imports,
     IAnimationPlayback animation,
-    Action<string> reportFailure) : IPendingSceneCreation
+    Presentation.IUserNotices notices) : IPendingSceneCreation
 {
     // Preserve the library's binding deadline; actual redraw readiness remains owned by Game.
     private const int BindingFrames = 120;
@@ -57,7 +57,7 @@ public sealed class PendingSceneCreation(
                 if (++pending.Frames >= BindingFrames)
                 {
                     _pending.Remove(pending);
-                    reportFailure("The created entity never became ready.");
+                    notices.Failed("The created entity never became ready.");
                 }
                 continue;
             }
@@ -70,7 +70,7 @@ public sealed class PendingSceneCreation(
             {
                 var paused = animation.Pause(actor);
                 if (!paused.Success)
-                    reportFailure(paused.Detail ?? "The new actor could not be frozen.");
+                    notices.Failed(paused.Detail ?? "The new actor could not be frozen.");
             }
             if (pending.Path is null)
                 continue;
@@ -93,11 +93,11 @@ public sealed class PendingSceneCreation(
                 if (receipt.State != OperationReceiptState.Applied)
                 {
                     reported = true;
-                    reportFailure("Apply: " + (receipt.Detail ?? receipt.State.ToString()));
+                    notices.Failed("Apply: " + (receipt.Detail ?? receipt.State.ToString()));
                 }
             });
             if (!result.Success && !reported)
-                reportFailure("Apply: " + (result.Detail ?? "The pose could not be applied."));
+                notices.Failed("Apply: " + (result.Detail ?? "The pose could not be applied."));
         }
     }
 }

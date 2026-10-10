@@ -56,7 +56,7 @@ public sealed class ResultValueJournalTests
         var history = new TransformHistory();
         var target = new Target();
         Set(new ValueJournal(history), target, 8);
-        var undo = new UndoJournal(history, new Runner(history), _ => true, _ => { });
+        var undo = new UndoJournal(history, new Runner(history), _ => true, new Fixtures.NoticeLog());
         target.Reject = true;
         for (int i = 0; i < 3; i++)
         {
@@ -86,8 +86,8 @@ public sealed class ResultValueJournalTests
         var target = new Target();
         Set(journal, earlier, 5);
         Set(journal, target, 8);
-        var notices = new List<string>();
-        var undo = new UndoJournal(history, new Runner(history), _ => true, notices.Add);
+        var notices = new Fixtures.NoticeLog();
+        var undo = new UndoJournal(history, new Runner(history), _ => true, notices);
         target.Reject = target.Permanent = true;
         var refused = undo.Undo();
         Assert.False(refused.Success);

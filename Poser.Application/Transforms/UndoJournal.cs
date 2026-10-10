@@ -32,7 +32,7 @@ public sealed class UndoJournal
     private readonly TransformHistory _history;
     private readonly IUndoRunner _runner;
     private readonly Func<string, bool> _assetExists;
-    private readonly Action<string> _notice;
+    private readonly Presentation.IUserNotices _notices;
     private HistoryEntry? _restoring;
     private CancellationTokenSource? _replayCancellation;
     private ulong _historyRevision;
@@ -41,12 +41,12 @@ public sealed class UndoJournal
         TransformHistory history,
         IUndoRunner runner,
         Func<string, bool> assetExists,
-        Action<string> notice)
+        Presentation.IUserNotices notices)
     {
         _history = history;
         _runner = runner;
         _assetExists = assetExists;
-        _notice = notice;
+        _notices = notices;
         _history.PatchAppended += () =>
         {
             _historyRevision++;
@@ -106,7 +106,7 @@ public sealed class UndoJournal
                 _refused = null;
                 _history.Drop(entry);
                 var reason = (entry as InverseEntry)?.FailureDetail?.Invoke() ?? result.Detail;
-                _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
+                _notices.Note(reason ?? $"{entry.Description} could not be restored and was discarded.");
                 return result;
             case RefusalAction.Keep:
                 _refused = null;
@@ -119,7 +119,7 @@ public sealed class UndoJournal
         }
         _refused = null;
         _history.Drop(entry);
-        _notice($"{entry.Description} could not be undone twice and was discarded.");
+        _notices.Note($"{entry.Description} could not be undone twice and was discarded.");
         return result;
     }
 
@@ -174,7 +174,7 @@ public sealed class UndoJournal
 
     private GestureResult Refuse(string why)
     {
-        _notice(why);
+        _notices.Note(why);
         return GestureResult.Fail(why);
     }
 

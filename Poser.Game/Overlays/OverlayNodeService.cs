@@ -193,14 +193,14 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     private readonly IOverlayNodePort _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
-    private readonly Lazy<ValueJournal> _journal;
+    private readonly ValueJournal _journal;
     private readonly List<OverlayNodeHandle> _nodes = new();
 
     private int _nextId;
     private bool _disposed;
 
     public OverlayNodeService(
-        IOverlayNodePort port, IEventBus events, IPluginLog log, Lazy<ValueJournal> journal)
+        IOverlayNodePort port, IEventBus events, IPluginLog log, ValueJournal journal)
     {
         _port = port;
         _events = events;
@@ -222,7 +222,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             var handle = _nodes[i];
             var before = handle.Position;
             handle.AdoptDraggedPosition(position);
-            _journal.Value.Record(handle, "Move overlay", before, handle.Position,
+            _journal.Record(handle, "Move overlay", before, handle.Position,
                 ValueWrites.Unchecked<Vector2>(next => handle.Position = next), () => handle.IsValid);
             return;
         }
