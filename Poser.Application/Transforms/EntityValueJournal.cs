@@ -27,23 +27,17 @@ public sealed class EntityValueJournal<TEntity>(
         return current is not null && isValid(current) ? current : null;
     }
 
-    public void Set<T>(TEntity original, string property, string description,
-        Func<TEntity, T> read, Action<TEntity, T> write, T value)
-    {
-        if (Current(original) is not { } current) return;
-        journal.Set((original, property), description, () => read(current),
-            next => { if (Current(original) is { } live) write(live, next); },
-            value, () => Current(original) is not null);
-    }
-
-    /// <summary>A write that can refuse: a gone entity, or one that goes
-    /// stale before the write, fails with detail and journals nothing.</summary>
-    public ValueWriteResult TrySet<T>(TEntity original, string property, string description,
-        Func<TEntity, T> read, Func<TEntity, T, ValueWriteResult> write, T value, string unavailable)
+    /// <summary>Writes through the restored instance. A gone entity, or one
+    /// that goes stale before the write, fails with detail and journals nothing.</summary>
+    public ValueWriteResult Set<T>(TEntity original, string property, string description,
+        Func<TEntity, T> read, Action<TEntity, T> assign, T value, string unavailable)
     {
         if (Current(original) is not { } current) return new(false, unavailable);
-        return journal.TrySet((original, property), description, () => read(current),
-            next => Current(original) is { } live ? write(live, next) : new(false, unavailable),
-            value, () => Current(original) is not null);
+        return journal.Set((original, property), description, () => read(current), next =>
+        {
+            if (Current(original) is not { } live) return new(false, unavailable);
+            assign(live, next);
+            return ValueWriteResult.Ok();
+        }, value, () => Current(original) is not null);
     }
 }

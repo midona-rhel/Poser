@@ -16,13 +16,13 @@ public sealed class ExpressionSession(ValueJournal journal, IExpressionRuntimePo
     private static ValueWriteResult Missing() => new(false, "The actor is no longer available.");
 
     public ValueWriteResult SetWeight(ActorId actor, string unitId, float weight) =>
-        !HasActor(actor) ? Missing() : journal.TrySet((actor, unitId), "Set expression",
+        !HasActor(actor) ? Missing() : journal.Set((actor, unitId), "Set expression",
             () => runtime.GetWeight(actor, unitId),
             value => runtime.Write(actor, [(unitId, value)], reset: false),
             weight, () => HasActor(actor));
 
     public ValueWriteResult SetPair(ActorId actor, string leftId, string rightId, float weight) =>
-        !HasActor(actor) ? Missing() : journal.TrySet((actor, leftId, rightId), "Set expression pair",
+        !HasActor(actor) ? Missing() : journal.Set((actor, leftId, rightId), "Set expression pair",
             () => (runtime.GetWeight(actor, leftId), runtime.GetWeight(actor, rightId)),
             pair => runtime.Write(actor, [(leftId, pair.Item1), (rightId, pair.Item2)], reset: false),
             (weight, weight), () => HasActor(actor));
@@ -36,8 +36,8 @@ public sealed class ExpressionSession(ValueJournal journal, IExpressionRuntimePo
         if (before.Length == 0) return ValueWriteResult.Ok();
         var result = runtime.Write(actor, [], reset: true);
         if (result.Success)
-            journal.RecordResult("Reset expression", before, Array.Empty<(string Id, float Weight)>(),
-                weights => runtime.Write(actor, weights, reset: true), () => HasActor(actor), SelectionId.ForActor(actor));
+            journal.Record(SelectionId.ForActor(actor), "Reset expression", before, Array.Empty<(string Id, float Weight)>(),
+                weights => runtime.Write(actor, weights, reset: true), () => HasActor(actor));
         return result;
     }
 }

@@ -23,15 +23,17 @@ public sealed class LightSession
 
     public void Seal() => _journal.Seal();
 
+    private const string Unavailable = "The light is no longer available.";
+
     private ILight? Live(ILight light) => _values.Current(light);
 
     private void Set<T>(ILight l, string property, string description, Func<ILight, T> read, Action<ILight, T> write, T value)
-        => _values.Set(l, property, description, read, write, value);
+        => _values.Set(l, property, description, read, write, value, Unavailable);
 
     public void SetName(ILight l, string v) => Set(l, "Name", "Rename light", x => x.Name, (x, value) => x.Name = value, v);
     public void SetKind(ILight l, LightKind v) => Set(l, "Kind", "Set light type", x => x.Kind, (x, value) => x.Kind = value, v);
-    public ValueWriteResult SetIsOn(ILight l, bool v) => _values.TrySet(l, "IsOn", v ? "Switch light on" : "Switch light off",
-        x => x.IsOn, (x, value) => { x.IsOn = value; return ValueWriteResult.Ok(); }, v, "The light is no longer available.");
+    public ValueWriteResult SetIsOn(ILight l, bool v) => _values.Set(l, "IsOn", v ? "Switch light on" : "Switch light off",
+        x => x.IsOn, (x, value) => x.IsOn = value, v, Unavailable);
     public void SetColor(ILight l, Vector3 v) => Set(l, "Color", "Set light colour", x => x.Color, (x, value) => x.Color = value, v);
     public void SetIntensity(ILight l, float v) => Set(l, "Intensity", "Set light intensity", x => x.Intensity, (x, value) => x.Intensity = value, v);
     public void SetRange(ILight l, float v) => Set(l, "Range", "Set light range", x => x.Range, (x, value) => x.Range = value, v);
@@ -55,7 +57,7 @@ public sealed class LightSession
         var before = Current(l);
         if (!_lighting.ApplyGobo(l, gobo))
             return false;
-        _journal.RecordFor(l, "Set gobo", before, gobo, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
+        _journal.Record(l, "Set gobo", before, gobo, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
         return true;
     }
 
@@ -65,7 +67,7 @@ public sealed class LightSession
         if (before is null)
             return;
         _lighting.ClearGobo(l);
-        _journal.RecordFor(l, "Clear gobo", before, (GoboEntry?)null, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
+        _journal.Record(l, "Clear gobo", before, (GoboEntry?)null, next => PutCurrent(l, next), () => Live(l) is { IsValid: true });
     }
 
     private GoboEntry? Current(ILight l)
@@ -78,12 +80,14 @@ public sealed class LightSession
         return new GoboEntry(path, path);
     }
 
-    private void PutCurrent(ILight original, GoboEntry? gobo)
+    private ValueWriteResult PutCurrent(ILight original, GoboEntry? gobo)
     {
-        if (Live(original) is not { IsValid: true } l) return;
+        if (Live(original) is not { IsValid: true } l) return new(false, Unavailable);
         if (gobo is null)
+        {
             _lighting.ClearGobo(l);
-        else
-            _lighting.ApplyGobo(l, gobo);
+            return ValueWriteResult.Ok();
+        }
+        return _lighting.ApplyGobo(l, gobo) ? ValueWriteResult.Ok() : new(false, "The texture could not be applied.");
     }
 }

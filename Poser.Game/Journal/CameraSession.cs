@@ -29,6 +29,8 @@ public sealed class CameraSession
 
     public void Seal() => _journal.Seal();
 
+    private const string Unavailable = "The camera is no longer available.";
+
     public bool SetPortrait(IVirtualCamera c, bool value)
     {
         if (_values.Current(c) is not { IsLocked: false } current) return false;
@@ -48,12 +50,11 @@ public sealed class CameraSession
     {
         if (_values.Current(c) is not { IsLocked: false })
             return false;
-        _values.Set(c, property, description, read, write, value);
-        return true;
+        return _values.Set(c, property, description, read, write, value, Unavailable).Success;
     }
 
-    public void SetLocked(IVirtualCamera c, bool v) =>
-        _values.Set(c, "IsLocked", v ? "Lock camera" : "Unlock camera", camera => camera.IsLocked, (camera, x) => camera.IsLocked = x, v);
+    public ValueWriteResult SetLocked(IVirtualCamera c, bool v) =>
+        _values.Set(c, "IsLocked", v ? "Lock camera" : "Unlock camera", camera => camera.IsLocked, (camera, x) => camera.IsLocked = x, v, Unavailable);
 
     public bool SetName(IVirtualCamera c, string v) => Set(c, "Name", "Rename camera", camera => camera.Name, (camera, x) => camera.Name = x, v);
     public bool SetZoom(IVirtualCamera c, float v) => Set(c, "Zoom", "Set camera zoom", camera => camera.Zoom, (camera, x) => camera.Zoom = x, v);
@@ -100,11 +101,12 @@ public sealed class CameraSession
         var before = ResetState.Read(camera);
         camera.ResetProperties();
         var after = ResetState.Read(camera);
-        _journal.Record("Reset camera properties", before, after, state =>
+        _journal.Record((_cameras, original), "Reset camera properties", before, after, state =>
         {
-            if (_values.Current(original) is not { } live) return;
+            if (_values.Current(original) is not { } live) return new(false, Unavailable);
             PutTarget(live, state.Target);
             state.Apply(live);
+            return ValueWriteResult.Ok();
         }, () => _values.Current(original) is not null);
         return true;
     }
@@ -154,11 +156,13 @@ public sealed class CameraSession
         if (ReferenceEquals(before, c))
             return;
         _cameras.SetLive(c);
-        _journal.Record("Switch camera", before, c, next =>
+        // Keys led by the camera service name no entity: these steps stay
+        // global, as they were before results.
+        _journal.Record(_cameras, "Switch camera", before, c, ValueWrites.Unchecked<IVirtualCamera?>(next =>
         {
             if (next is not null && _values.Current(next) is { } live)
                 _cameras.SetLive(live);
-        });
+        }));
     }
 
     /// <summary>Centres the live camera; a landed centre is one step.</summary>
@@ -173,9 +177,15 @@ public sealed class CameraSession
         var result = center();
         if (!result.Success || camera is null)
             return result;
-        _journal.RecordFor(camera,
+        _journal.Record(camera,
             "Centre camera", before, (camera.PositionOffset, camera.Zoom),
-            next => { if (_values.Current(camera) is { } live) { live.PositionOffset = next.Item1; live.Zoom = next.Item2; } },
+            next =>
+            {
+                if (_values.Current(camera) is not { } live) return new(false, Unavailable);
+                live.PositionOffset = next.Item1;
+                live.Zoom = next.Item2;
+                return ValueWriteResult.Ok();
+            },
             () => _values.Current(camera) is not null);
         return result;
     }
@@ -189,7 +199,7 @@ public sealed class CameraSession
         var before = c.TargetActorId;
         if (!_cameras.SetTargetActor(c, actor, actorId, displayName))
             return false;
-        _journal.Record("Follow actor", before, (ActorId?)actorId, next => PutTarget(c, next), () => _values.Current(c) is not null);
+        _journal.Record((_cameras, c), "Follow actor", before, (ActorId?)actorId, next => PutTarget(c, next), () => _values.Current(c) is not null);
         return true;
     }
 
@@ -197,20 +207,22 @@ public sealed class CameraSession
     {
         var before = c.TargetActorId;
         _cameras.ClearTargetActor(c);
-        _journal.Record("Stop following", before, (ActorId?)null, next => PutTarget(c, next), () => _values.Current(c) is not null);
+        _journal.Record((_cameras, c), "Stop following", before, (ActorId?)null, next => PutTarget(c, next), () => _values.Current(c) is not null);
     }
 
-    private void PutTarget(IVirtualCamera original, ActorId? target)
+    private ValueWriteResult PutTarget(IVirtualCamera original, ActorId? target)
     {
-        if (_values.Current(original) is not { } c) return;
+        if (_values.Current(original) is not { } c) return new(false, Unavailable);
         if (target is not { } id)
         {
             _cameras.ClearTargetActor(c);
-            return;
+            return ValueWriteResult.Ok();
         }
+        // A followed actor that is gone has nothing to restore, as before.
         var resolved = _bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } actor)
-            return;
-        _cameras.SetTargetActor(c, actor, id, actor.Name);
+            return ValueWriteResult.Ok();
+        return _cameras.SetTargetActor(c, actor, id, actor.Name)
+            ? ValueWriteResult.Ok() : new(false, "The camera could not follow the actor.");
     }
 }

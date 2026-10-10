@@ -14,7 +14,7 @@ public sealed class CompanionSession(ICompanionRuntime runtime, ValueJournal jou
             return new(false, "The attachment relationship changed.");
         // The child is replaced by this operation. Replay follows the exact owner
         // slot, not the old child or whatever is selected when Undo is pressed.
-        return journal.TrySet((expectedOwner, "Companion"),
+        return journal.Set((expectedOwner, "Companion"),
             attachment is null ? "Remove companion" : "Set companion",
             () => current.Attachment, next => runtime.Set(expectedOwner, next), attachment,
             () => runtime.IsResolvable(expectedOwner));

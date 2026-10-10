@@ -48,8 +48,7 @@ public sealed class CameraControl(
     public ValueWriteResult SetLocked(CameraId id, bool value)
     {
         if (Resolve(id) is not { } camera) return new(false, "The camera is no longer available.");
-        values.SetLocked(camera, value);
-        return ValueWriteResult.Ok();
+        return values.SetLocked(camera, value);
     }
 
     private ValueWriteResult Edit(CameraId id, Func<IVirtualCamera, bool> write)

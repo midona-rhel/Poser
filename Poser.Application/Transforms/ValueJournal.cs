@@ -8,6 +8,14 @@ public readonly record struct ValueWriteResult(bool Success, string? Detail = nu
     public static ValueWriteResult Ok() => new(true);
 }
 
+/// <summary>Adapts a write that cannot report a refusal. Only for runtimes
+/// whose setters are still void (environment, animation, IK, parenting).</summary>
+public static class ValueWrites
+{
+    public static Func<T, ValueWriteResult> Unchecked<T>(Action<T> write) =>
+        value => { write(value); return ValueWriteResult.Ok(); };
+}
+
 /// <summary>
 /// Value changes as journal steps. A set reads the old value, writes the
 /// new one and appends one step whose undo writes the old value back.
@@ -62,74 +70,15 @@ public sealed class ValueJournal
 
     /// <summary>
     /// Writes <paramref name="value"/> and journals the change. Nothing is
-    /// written or journaled when the value already holds.
+    /// written or journaled when the value already holds. A refused (or
+    /// throwing) write returns its detail and leaves history, redo and the
+    /// staged after value unchanged.
     /// </summary>
     /// <param name="key">What is being set: the target and the property.
     /// Equal keys share a baseline within a continuous edit.</param>
     /// <param name="alive">Whether the target still exists; a dead target
     /// makes the step's undo and redo no-ops.</param>
-    public void Set<T>(
-        object key,
-        string description,
-        Func<T> read,
-        Action<T> write,
-        T value,
-        Func<bool>? alive = null)
-    {
-        if (_editing == 0) CommitPending();
-        var current = read();
-        if (EqualityComparer<T>.Default.Equals(current, value))
-            return;
-        if (_suspended > 0)
-        {
-            write(value);
-            return;
-        }
-        write(value);
-        var before = current;
-        JournalStep Step(T after) => new(
-            description, () => Put(alive, write, before), () => Put(alive, write, after))
-        {
-            BeforeValue = before,
-            AfterValue = after,
-            AffectedEntities = Scope(key),
-        };
-        if (_editing > 0) Stage(key, before, value, Step);
-        else _history.Append(Step(value));
-    }
-
-    /// <summary>
-    /// Journals a change that has already been written — for a write that
-    /// can refuse, so only a landed change is a step. Continuous controls
-    /// stage the original before and latest after; other calls append once.
-    /// </summary>
-    public void Record<T>(
-        string description,
-        T before,
-        T after,
-        Action<T> write,
-        Func<bool>? alive = null,
-        SelectionId? entity = null)
-    {
-        if (_editing == 0) CommitPending();
-        if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
-            return;
-        JournalStep Step(T next) => new(
-            description,
-            () => Put(alive, write, before),
-            () => Put(alive, write, next))
-        {
-            BeforeValue = before,
-            AfterValue = next,
-            AffectedEntities = entity is { } id ? new[] { id } : null,
-        };
-        if (_editing > 0) Stage((entity, description, typeof(T)), before, after, Step);
-        else _history.Append(Step(after));
-    }
-
-    /// <summary>Like Set, but a refused write never changes history or the
-    /// staged after value. Refused inverses retain their existing result behavior.</summary>
-    public ValueWriteResult TrySet<T>(object key, string description, Func<T> read,
+    public ValueWriteResult Set<T>(object key, string description, Func<T> read,
         Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
     {
         if (_editing == 0) CommitPending();
@@ -139,49 +88,62 @@ public sealed class ValueJournal
         var result = WriteResult(write, value);
         if (!result.Success || _suspended > 0)
             return result;
-        JournalStep Step(T after) => ResultStep(description, before, after, () => after, write, alive)
+        JournalStep Step(T after) => ResultStep(description, before, after, write, alive)
             with { AffectedEntities = Scope(key) };
         if (_editing > 0) Stage(key, before, value, Step);
         else _history.Append(Step(value));
         return result;
     }
 
-    /// <summary>Records an already successful transaction whose inverses can refuse.</summary>
-    public void RecordResult<T>(string description, T before, T after,
-        Func<T, ValueWriteResult> write, Func<bool>? alive = null, SelectionId? entity = null)
+    /// <summary>
+    /// Journals a change that has already landed, so only a landed change is
+    /// a step. The key's owner scopes the step; a key that names no entity
+    /// leaves it global. Continuous controls stage the original before and
+    /// latest after; other calls append once.
+    /// </summary>
+    public void Record<T>(object key, string description, T before, T after,
+        Func<T, ValueWriteResult> write, Func<bool>? alive = null)
     {
         if (_editing == 0) CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
-        JournalStep Step(T next) => ResultStep(description, before, next, () => next, write, alive)
-            with { AffectedEntities = entity is { } id ? new[] { id } : null };
-        if (_editing > 0) Stage((entity, description, typeof(T)), before, after, Step);
+        JournalStep Step(T next) => ResultStep(description, before, next, write, alive)
+            with { AffectedEntities = Scope(key) };
+        if (_editing > 0) Stage((key, description, typeof(T)), before, after, Step);
         else _history.Append(Step(after));
     }
 
-    /// <summary>Records an entity-local write whose owner is a legacy runtime handle.</summary>
-    public void RecordFor<T>(object owner, string description, T before, T after,
-        Action<T> write, Func<bool>? alive = null) =>
-        Record(description, before, after, write, alive, Scope(owner)?.SingleOrDefault());
-
+    // An inverse that returns a refusal is kept for retry; one that throws
+    // is dropped on the second consecutive refusal, as before results.
     private static JournalStep ResultStep<T>(string description, T before, T after,
-        Func<T> latest, Func<T, ValueWriteResult> write, Func<bool>? alive)
+        Func<T, ValueWriteResult> write, Func<bool>? alive)
     {
         string? failure = null;
-        bool PutResult(T value)
+        bool threw = false;
+        bool Put(T value)
         {
             failure = null;
+            threw = false;
             if (alive is not null && !alive())
                 return true;
-            var result = WriteResult(write, value);
-            failure = result.Detail;
-            return result.Success;
+            try
+            {
+                var result = write(value);
+                failure = result.Detail;
+                return result.Success;
+            }
+            catch (Exception ex)
+            {
+                threw = true;
+                failure = ex.Message;
+                return false;
+            }
         }
-        return new JournalStep(description, () => PutResult(before), () => PutResult(latest()))
+        return new JournalStep(description, () => Put(before), () => Put(after))
         {
             BeforeValue = before,
             AfterValue = after,
-            OnRefusal = () => RefusalAction.Keep,
+            OnRefusal = () => threw ? RefusalAction.DropOnRepeat : RefusalAction.Keep,
             FailureDetail = () => failure,
         };
     }
@@ -228,7 +190,7 @@ public sealed class ValueJournal
     public ValueWriteResult Adjust<T>(object key, string description, Func<T> read,
         Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
     {
-        if (_editing > 0) return TrySet(key, description, read, write, value, alive);
+        if (_editing > 0) return Set(key, description, read, write, value, alive);
         if (_staged.Count > 0) Seal();
         if (_pending is { } prior && !prior.Key.Equals(key))
             Seal();
@@ -245,7 +207,7 @@ public sealed class ValueJournal
         }
         var box = new Box<T> { Value = value };
         _pending = new PendingEdit(key, next => box.Value = (T)next,
-            () => RecordResult(description, before, box.Value, write, alive, Scope(key)?.SingleOrDefault()));
+            () => Record(key, description, before, box.Value, write, alive));
         return result;
     }
 
@@ -294,21 +256,6 @@ public sealed class ValueJournal
 
     private sealed record PendingEdit(object Key, Action<object> SetAfter, Action Commit);
     private sealed record StagedValue(Action<object?> SetAfter, Func<JournalStep?> Build);
-
-    private static bool Put<T>(Func<bool>? alive, Action<T> write, T value)
-    {
-        if (alive is not null && !alive())
-            return true;
-        try
-        {
-            write(value);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     private sealed class Box<T>
     {

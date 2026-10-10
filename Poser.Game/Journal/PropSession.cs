@@ -20,12 +20,14 @@ public sealed class PropSession
 
     public void Seal() => _journal.Seal();
 
+    private const string Unavailable = "The prop is no longer available.";
+
     public void SetName(IPropHandle p, string value) =>
-        _values.Set(p, "Name", "Rename prop", entity => entity.Name, (entity, v) => entity.Name = v, value);
+        _values.Set(p, "Name", "Rename prop", entity => entity.Name, (entity, v) => entity.Name = v, value, Unavailable);
 
     public ValueWriteResult SetVisible(IPropHandle p, bool value) =>
-        _values.TrySet(p, "Visible", value ? "Show prop" : "Hide prop", entity => entity.Visible,
-            (entity, v) => { entity.Visible = v; return ValueWriteResult.Ok(); }, value, "The prop is no longer available.");
+        _values.Set(p, "Visible", value ? "Show prop" : "Hide prop", entity => entity.Visible,
+            (entity, v) => entity.Visible = v, value, Unavailable);
 
     /// <summary>Respawns the prop as <paramref name="model"/>. False with
     /// the refusal when the respawn did not happen; nothing is journaled
@@ -35,11 +37,12 @@ public sealed class PropSession
         var before = p.Model;
         if (!p.Respawn(model, out refusal))
             return false;
-        _journal.RecordFor(p,
+        _journal.Record(p,
             "Change prop model",
             before,
             model,
-            next => _values.Current(p)?.Respawn(next, out _),
+            next => _values.Current(p) is not { } live ? new(false, Unavailable)
+                : live.Respawn(next, out var why) ? ValueWriteResult.Ok() : new(false, why),
             () => _values.Current(p) is not null);
         return true;
     }

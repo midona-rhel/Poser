@@ -51,7 +51,7 @@ public sealed class CustomizeSession : ICustomizeControl
         if (before == value)
             return IntegrationResult.Ok();
         IntegrationResult result = IntegrationResult.Ok();
-        var written = _journal.TrySet((actor, key), description,
+        var written = _journal.Set((actor, key), description,
             () => before,
             next =>
             {
@@ -101,12 +101,12 @@ public sealed class CustomizeSession : ICustomizeControl
         var result = Apply(actor, after);
         if (!result.Success)
             return result;
-        _journal.RecordResult<IReadOnlyDictionary<CustomizeKey, int>>(description, before, after,
+        _journal.Record<IReadOnlyDictionary<CustomizeKey, int>>(SelectionId.ForActor(actor), description, before, after,
             next =>
             {
                 var applied = Apply(actor, next);
                 return new ValueWriteResult(applied.Success, applied.Detail);
-            }, () => Alive(actor), SelectionId.ForActor(actor));
+            }, () => Alive(actor));
         return result;
     }
 

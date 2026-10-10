@@ -20,16 +20,18 @@ public sealed class WorldObjectSession
     /// <summary>Closes the open step; a new drag starts a new one.</summary>
     public void Seal() => _journal.Seal();
 
+    private const string Unavailable = "The object is no longer available.";
+
     private void Set<T>(IWorldObject worldObject, string property, string description,
         Func<IWorldObject, T> read, Action<IWorldObject, T> write, T value) =>
-        _values.Set(worldObject, property, description, read, write, value);
+        _values.Set(worldObject, property, description, read, write, value, Unavailable);
 
     public void SetName(IWorldObject o, string value) =>
         Set(o, "Name", "Rename object", x => x.Name, (x, v) => x.Name = v, value);
 
     public ValueWriteResult SetVisible(IWorldObject o, bool value) =>
-        _values.TrySet(o, "Visible", value ? "Show object" : "Hide object", x => x.Visible,
-            (x, v) => { x.Visible = v; return ValueWriteResult.Ok(); }, value, "The object is no longer available.");
+        _values.Set(o, "Visible", value ? "Show object" : "Hide object", x => x.Visible,
+            (x, v) => x.Visible = v, value, Unavailable);
 
     public void SetOpacity(IWorldObject o, float value) =>
         Set(o, "Opacity", "Set object opacity", x => x.Opacity, (x, v) => x.Opacity = v, value);

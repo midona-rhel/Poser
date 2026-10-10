@@ -46,7 +46,7 @@ public sealed class AppearanceColorSession(
     private ValueWriteResult Change(ActorId actor, AppearanceColorChannel channel, Vector4? value)
     {
         ValueWriteResult result = new(false, "The colour change did not run.");
-        var guarded = runner.RunValueTransition(() => result = journal.TrySet<Vector4?>(
+        var guarded = runner.RunValueTransition(() => result = journal.Set<Vector4?>(
             (actor, channel), value.HasValue ? $"Set custom {channel} colour" : $"Reset custom {channel} colour",
             () => Override(actor, channel), next => Put(actor, channel, next), value,
             alive: () => bindings.Resolve(actor).Success));

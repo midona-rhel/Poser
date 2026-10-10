@@ -53,10 +53,10 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)
             return result;
-        _journal.Record(
+        _journal.Record(target.ToSelectionId(),
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
-            before, config, next => Write(target, next),
-            () => target.Bone is { } bone && _bindings.Resolve(bone).Success, target.ToSelectionId());
+            before, config, next => Written(Write(target, next)),
+            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }
 
@@ -98,6 +98,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             : null;
     }
 
+    private static ValueWriteResult Written(IkPortResult result) => new(result.Success, result.Detail);
+
     private IkPortResult Write(TransformTargetId target, IkChainConfig config)
     {
         if (_gestures.ActiveGesture != null)
@@ -133,8 +135,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         // chain's target mode step (an IK set) carries the way back.
         if (!result.Success || before is not { } previous || previous == bone)
             return result;
-        _journal.Record("Set IK bone target", previous, bone,
-            next => WriteBoneTarget(target, next),
+        _journal.Record(this, "Set IK bone target", previous, bone,
+            next => Written(WriteBoneTarget(target, next)),
             () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
         return result;
     }
@@ -198,8 +200,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         var before = EntityTarget(target);
         var result = WriteEntityTarget(target, entity);
         if (result.Success && before is { } previous && previous != entity)
-            _journal.Record("Set IK scene target", previous, entity,
-                next => WriteEntityTarget(target, next),
+            _journal.Record(this, "Set IK scene target", previous, entity,
+                next => Written(WriteEntityTarget(target, next)),
                 () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }

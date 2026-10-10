@@ -12,7 +12,7 @@ public sealed class DeferredValueJournalTests
         int value = 4;
         ValueWriteResult Write(int next) { value = next; return ValueWriteResult.Ok(); }
         journal.Adjust("swivel", "Set IK", () => value, Write, 30);
-        journal.Record("Toggle", false, true, _ => { });
+        journal.Record("toggle", "Toggle", false, true, _ => ValueWriteResult.Ok());
         var toggle = Assert.IsType<JournalStep>(history.PeekUndo());
         history.CommitUndo(toggle);
         Assert.True(Assert.IsType<JournalStep>(history.PeekUndo()).Undo());

@@ -70,7 +70,7 @@ public sealed class ActorValueSession : IActorValueControl
     {
         if (!Alive(actor))
             return PresentationResult.Fail("The actor is no longer available.");
-        var result = _journal.TrySet((actor, property), description, read, next =>
+        var result = _journal.Set((actor, property), description, read, next =>
         {
             var applied = write(next);
             return new ValueWriteResult(applied.Success, applied.Detail);
@@ -86,11 +86,11 @@ public sealed class ActorValueSession : IActorValueControl
         var result = _presentation.ResetActor(actor);
         if (!result.Success)
             return result;
-        _journal.RecordResult("Reset appearance", before, (PresentationOverrides?)null, next =>
+        _journal.Record(SelectionId.ForActor(actor), "Reset appearance", before, (PresentationOverrides?)null, next =>
         {
             var restored = _presentation.RestoreOverrides(actor, next);
             return new ValueWriteResult(restored.Success, restored.Detail);
-        }, () => Alive(actor), SelectionId.ForActor(actor));
+        }, () => Alive(actor));
         return result;
     }
 
@@ -101,7 +101,7 @@ public sealed class ActorValueSession : IActorValueControl
     {
         if (ReadVisibility(actor) is not { } before)
             return new(false, "The actor is no longer available.");
-        return _journal.TrySet(
+        return _journal.Set(
             (actor, "Visible"),
             visible ? "Show actor" : "Hide actor",
             () => before,

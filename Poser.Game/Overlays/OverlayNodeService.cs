@@ -222,8 +222,8 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             var handle = _nodes[i];
             var before = handle.Position;
             handle.AdoptDraggedPosition(position);
-            _journal.Value.RecordFor(handle, "Move overlay", before, handle.Position,
-                next => handle.Position = next, () => handle.IsValid);
+            _journal.Value.Record(handle, "Move overlay", before, handle.Position,
+                ValueWrites.Unchecked<Vector2>(next => handle.Position = next), () => handle.IsValid);
             return;
         }
     }

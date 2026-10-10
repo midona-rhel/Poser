@@ -216,12 +216,14 @@ Explicit multi-frame restoration waits for completion before advancing history;
 it is separate from automatic fallback. Individual runtime writes still enforce
 their own identity and availability checks.
 
-A refused inverse never moves the cursor and reports its detail. What happens
-next is one per-entry decision shared by global undo, scoped undo and each
-child of a removal batch: keep the entry for retry (result-aware value writes,
-disruptive restores, group restores waiting for member poses, and lifecycle
-entries by default), drop it on the second consecutive refusal (other journal
-steps), or drop it at once when the refusal is permanent (an unrestorable
+Every value write reports a result: a refused initial write appends nothing
+and leaves redo intact. A refused inverse never moves the cursor and reports
+its detail. What happens next is one per-entry decision shared by global undo,
+scoped undo and each child of a removal batch: keep the entry for retry (value
+writes that return a refusal, disruptive restores, group restores waiting for
+member poses, and lifecycle entries by default), drop it on the second
+consecutive refusal (a value write that throws, other journal steps), or drop
+it at once when the refusal is permanent (an unrestorable
 borrowed world object, or a batch whose children are all discarded).
 
 A step that came from a file (a pose import, a scene load) checks the
