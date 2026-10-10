@@ -2,10 +2,15 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.PopoverWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class DropdownWidgets
 {
     /// <summary>The dropdown scrolls after seven visible rows.</summary>
     private const int DropVisibleRows = 7;

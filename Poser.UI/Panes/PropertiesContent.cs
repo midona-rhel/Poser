@@ -12,6 +12,8 @@ using Poser.Domain.Scene;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.TextWidgets;
 
 namespace Poser.UI;
 
@@ -84,7 +86,7 @@ public sealed partial class PropertiesContent
     private readonly ShellTab[] _furnitureTabs = [new() { Label = "Furniture" }];
     private readonly ShellTab[] _environmentTabs = [new() { Label = "Lighting" }, new() { Label = "Sky" }, new() { Label = "Atmosphere" }, new() { Label = "World" }];
     private static readonly string[] CameraTrackingModeOptions = ["Follow", "Pan", "Follow and pan", "None"];
-    private readonly Crystarium.SearchPicker<BoneChoice> _cameraTrackingBonePicker = new("camera-tracking-bones");
+    private readonly SearchPicker<BoneChoice> _cameraTrackingBonePicker = new("camera-tracking-bones");
     private IReadOnlyList<BoneChoice> _cameraBoneChoices = Array.Empty<BoneChoice>();
     private CameraId? _cameraBonePickerCamera;
     private ActorId? _cameraBonePickerActor;
@@ -159,7 +161,7 @@ public sealed partial class PropertiesContent
         if (_inspectorContext?.IsAvailable != true)
         {
             _pinnedInspector?.CancelInteraction();
-            Crystarium.TextAt(origin, "Target unavailable", new TextStyle());
+            TextAt(origin, "Target unavailable", new TextStyle());
             return;
         }
         _pinnedRail!.Draw(origin, size);

@@ -3,10 +3,13 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class ImageWidgets
 {
     /// <summary>Image element. Renders an <see cref="IImageSource"/> at the given size.</summary>
     public static void Image(IImageSource source, Vector2 size, Vector4? tint = null)

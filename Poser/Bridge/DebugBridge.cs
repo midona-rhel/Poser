@@ -22,6 +22,7 @@ using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
 using Poser.Application.Transforms;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.Bridge;
 
@@ -964,7 +965,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/fonts":
             {
-                var typography = global::Poser.UI.Crystarium.ActiveTheme.Typography;
+                var typography = ActiveTheme.Typography;
                 object Probe(float size)
                 {
                     var handle = global::Poser.UI.FontRegistry.Resolve(

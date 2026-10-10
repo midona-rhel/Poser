@@ -8,6 +8,8 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -41,7 +43,7 @@ public sealed class OverlayPane
 
     /// <summary>The status sheet's icons, flat and searchable. The rows are a
     /// snapshot minted at open, not per frame.</summary>
-    private readonly Crystarium.SearchPicker<StatusIconChoice> _iconPicker =
+    private readonly SearchPicker<StatusIconChoice> _iconPicker =
         new("overlay-status-icon");
 
     private readonly List<StatusIconChoice> _iconChoices = new();
@@ -109,7 +111,7 @@ public sealed class OverlayPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        Crystarium.Page("overlay", origin, size, page =>
+        Page("overlay", origin, size, page =>
         {
             if (SelectedNode() is not { } node)
             {
@@ -152,7 +154,7 @@ public sealed class OverlayPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void PlacementRows(
-        Crystarium.FormScope form, OverlayReading node)
+        FormScope form, OverlayReading node)
     {
         if (node.State.Collider is { } collider)
         {
@@ -258,7 +260,7 @@ public sealed class OverlayPane
     /// gizmo has nothing to say about a node that lives in the viewport's own
     /// coordinates.</para>
     /// </summary>
-    public void DrawRailPlacement(Crystarium.FormScope form)
+    public void DrawRailPlacement(FormScope form)
     {
         if (SelectedNode() is not { } node)
             return;
@@ -269,7 +271,7 @@ public sealed class OverlayPane
 
     /// <summary>The X and Y wells. Both surfaces draw these, so the pixel
     /// format, the per-pixel rate and the wheel step are stated once.</summary>
-    private void ScreenPointRows(Crystarium.FormScope form, OverlayReading node)
+    private void ScreenPointRows(FormScope form, OverlayReading node)
     {
         var position = node.State.Position;
         form.Cells(cells =>
@@ -296,7 +298,7 @@ public sealed class OverlayPane
         help: "Where the overlay sits, in screen pixels from the top-left");
     }
 
-    private void DraggableRow(Crystarium.FormScope form, OverlayReading node)
+    private void DraggableRow(FormScope form, OverlayReading node)
     {
         form.Switch(
             "Drag on screen",
@@ -308,7 +310,7 @@ public sealed class OverlayPane
     /// <summary>The node's own words. The LABEL is the kind's, because "Line"
     /// and "Effect" are what the tab calls the same field — a rail row that
     /// renamed it would read as a second, different setting.</summary>
-    private void TextRow(Crystarium.FormScope form, OverlayReading node)
+    private void TextRow(FormScope form, OverlayReading node)
     {
         bool status = node.State.Kind is not (
             OverlayNodeKind.Talk or OverlayNodeKind.Balloon);
@@ -322,7 +324,7 @@ public sealed class OverlayPane
                 : "The words this overlay draws");
     }
 
-    private void ContentRows(Crystarium.FormScope form, OverlayReading node)
+    private void ContentRows(FormScope form, OverlayReading node)
     {
         switch (node.State.Kind)
         {
@@ -338,7 +340,7 @@ public sealed class OverlayPane
         }
     }
 
-    private void TalkRows(Crystarium.FormScope form, OverlayReading node)
+    private void TalkRows(FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Speaker",
@@ -371,7 +373,7 @@ public sealed class OverlayPane
         FontSizeRow(form, node);
     }
 
-    private void BalloonRows(Crystarium.FormScope form, OverlayReading node)
+    private void BalloonRows(FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Line",
@@ -415,7 +417,7 @@ public sealed class OverlayPane
         FontSizeRow(form, node);
     }
 
-    private void StatusRows(Crystarium.FormScope form, OverlayReading node)
+    private void StatusRows(FormScope form, OverlayReading node)
     {
         form.TextInput(
             "Effect",
@@ -445,7 +447,7 @@ public sealed class OverlayPane
                 help: "Any status icon the game declares"));
     }
 
-    private void FontSizeRow(Crystarium.FormScope form, OverlayReading node)
+    private void FontSizeRow(FormScope form, OverlayReading node)
     {
         form.NumericSlider(
             "Text size",
@@ -459,7 +461,7 @@ public sealed class OverlayPane
     }
 
     private void LifetimeRows(
-        Crystarium.FormScope form, OverlayReading node)
+        FormScope form, OverlayReading node)
     {
         form.Actions(string.Empty, actions =>
         {

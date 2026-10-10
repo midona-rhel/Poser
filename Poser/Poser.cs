@@ -20,6 +20,8 @@ using Poser.Game.Scene;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.UI;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.HostHooks;
 
 namespace Poser;
 
@@ -80,14 +82,14 @@ public class Poser : IDalamudPlugin
             configuration.Config.UI.Theme,
             configuration.Config.UI.AccentIndex);
         // Install the saved surface recipe before any UI draws.
-        Crystarium.FloatingSurface.ConfigureEffects(
+        FloatingSurface.ConfigureEffects(
             configuration.Config.UI.FillOpacity,
             configuration.Config.UI.BackdropBlur);
         // Every feature registered its own startables; this is the one place
         // they run, in StartStage order, before any UI draws.
         Startables.StartAll(_serviceProvider, log);
-        startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);
-        global::Poser.UI.Crystarium.Log = message =>
+        startup.OnFailure(() => Log = null);
+        Log = message =>
             _serviceProvider.GetRequiredService<
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         // The other polarity's fonts warm on a second atlas, so the atlas
@@ -112,12 +114,12 @@ public class Poser : IDalamudPlugin
                 "Crystarium icon");
             return ((nint)wrap.Handle.Handle, wrap);
         };
-        startup.OnFailure(() => Crystarium.IconTextureUploader = null);
-        startup.OnFailure(() => Crystarium.PanelShadowTextureUploader = null);
-        startup.OnFailure(() => Crystarium.FloatingSurface.BackdropBlurAvailable = false);
-        Crystarium.IconTextureUploader = textureUploader;
-        Crystarium.PanelShadowTextureUploader = textureUploader;
-        Crystarium.FloatingSurface.BackdropBlurAvailable = true;
+        startup.OnFailure(() => IconTextureUploader = null);
+        startup.OnFailure(() => PanelShadowTextureUploader = null);
+        startup.OnFailure(() => FloatingSurface.BackdropBlurAvailable = false);
+        IconTextureUploader = textureUploader;
+        PanelShadowTextureUploader = textureUploader;
+        FloatingSurface.BackdropBlurAvailable = true;
         log.Debug("Load stage: UI manager");
         var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
         // Unwinds before the fonts and uploaders registered above.
@@ -239,10 +241,10 @@ public class Poser : IDalamudPlugin
                 // Draw stops before any resource it draws with is released;
                 // the provider's later dispose of the manager is a no-op.
                 _serviceProvider.GetRequiredService<IUIManager>().Dispose();
-                Crystarium.IconTextureUploader = null;
-                Crystarium.PanelShadowTextureUploader = null;
-                Crystarium.Log = null;
-                Crystarium.FloatingSurface.BackdropBlurAvailable = false;
+                IconTextureUploader = null;
+                PanelShadowTextureUploader = null;
+                Log = null;
+                FloatingSurface.BackdropBlurAvailable = false;
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });

@@ -1,9 +1,9 @@
 using System;
 using Dalamud.Bindings.ImGui;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class ValueEdits
 {
     /// <summary>
     /// Raised when a slider, well or field commits: the drag released, the

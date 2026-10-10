@@ -1,9 +1,9 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class WindowMovement
 {
     private static uint _titleDragId;
     private static Vector2 _titleDragOffset;

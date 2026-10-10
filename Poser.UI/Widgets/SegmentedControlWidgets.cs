@@ -2,10 +2,13 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class SegmentedControlWidgets
 {
     public static bool SegmentedControl(
         string id,

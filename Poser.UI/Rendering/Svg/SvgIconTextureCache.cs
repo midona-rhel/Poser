@@ -6,29 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
-
-public static partial class Crystarium
-{
-    public static Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)>?
-        IconTextureUploader
-    {
-        get => SvgIconTextureCache.Uploader;
-        set => SvgIconTextureCache.Uploader = value;
-    }
-
-    /// <summary>Whether bounded startup icon warming has finished.</summary>
-    public static bool StartupIconsReady => SvgIconTextureCache.StartupIconsReady;
-
-    /// <summary>Advances bounded startup icon warming on the UI thread.</summary>
-    public static void PumpStartupIcons(float libraryIconSize) =>
-        SvgIconTextureCache.PumpStartupIcons(libraryIconSize);
-
-    /// <summary>Diagnostics sink — the host wires it to its debug log.
-    /// Poser.UI stays free of Dalamud, so the seam is one delegate.</summary>
-    public static Action<string>? Log;
-}
 
 internal static class SvgIconTextureCache
 {
@@ -280,7 +260,7 @@ internal static class SvgIconTextureCache
     {
         if (_uploader is null)
             return;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float styleAlpha = ImGui.GetStyle().Alpha;
         float libraryFallbackSide = LibraryFallbackSide(
@@ -550,7 +530,6 @@ internal static class SvgIconTextureCache
         });
         Pump();
     }
-
 
     private sealed class RasterJob
     {
@@ -999,7 +978,7 @@ internal static class SvgIconTextureCache
         System.Diagnostics.Debug.WriteLine(
             "Crystarium: no IconTextureUploader is registered — every icon "
             + "falls back to the per-pixel painter. Register one at host "
-            + "startup (Crystarium.IconTextureUploader).");
+            + "startup (HostHooks.IconTextureUploader).");
 #endif
     }
 }

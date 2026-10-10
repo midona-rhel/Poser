@@ -4,10 +4,23 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.AxisWellWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.CheckboxWidgets;
+using static Poser.UI.Widgets.ColorWellWidgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.ProgressBarWidgets;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.SliderWidgets;
+using static Poser.UI.Widgets.SwitchWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class PageForm
 {
     // The host supplies persisted UI preferences, independent of ImGui's
     // window/actor ID stack. The renderer remains usable without a config host.
@@ -46,10 +59,10 @@ public static partial class Crystarium
 
     private const int SectionChevronChannel = 0;
 
-    private static Vector4 FormLabelColor => ActiveTheme.FormLabel;
-    private static Vector4 FormHintColor => ActiveTheme.FormHint;
-    private static Vector4 FormValueColor => ActiveTheme.FormValue;
-    private static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
+    internal static Vector4 FormLabelColor => ActiveTheme.FormLabel;
+    internal static Vector4 FormHintColor => ActiveTheme.FormHint;
+    internal static Vector4 FormValueColor => ActiveTheme.FormValue;
+    internal static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
     /// <summary>Two half-width tracks fit above this logical content
     /// width; below it the tracks stack into one column. Chosen so a
@@ -636,7 +649,7 @@ public static partial class Crystarium
             {
                 ImGui.SetCursorScreenPos(row.CenterControl(
                     ActiveTheme.Controls.WorkspaceHeight));
-                Crystarium.SliderWell(
+                SliderWell(
                     controlId, value, minimum, maximum,
                     next =>
                     {
@@ -657,7 +670,7 @@ public static partial class Crystarium
             {
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
-            Crystarium.Slider(
+            SliderWidgets.Slider(
                 controlId, value, minimum, maximum, next =>
                 {
                     displayedValue = next;
@@ -695,7 +708,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new Vector2(
                     bandOrigin.X,
                     row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
-                Crystarium.AxisWell(
+                AxisWell(
                     Ids.Join(controlId, "-value"),
                     "",
                     displayedValue,
@@ -752,7 +765,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - switchWidth * 2f,
                 row.CenterControl(switchHeight).Y));
-            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
+            SwitchWidgets.Switch(id, value, onChange, controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
 
@@ -794,7 +807,7 @@ public static partial class Crystarium
                         - actionWidth - actionGap - switchWidth * 2f,
                     row.CenterControl(switchHeight).Y));
             }
-            Crystarium.Switch(id, value, onChange, controlStyle, disabled);
+            SwitchWidgets.Switch(id, value, onChange, controlStyle, disabled);
             DrawActions(
                 actionScope.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
@@ -821,7 +834,7 @@ public static partial class Crystarium
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.CheckboxSize)));
-            Crystarium.Checkbox(
+            CheckboxWidgets.Checkbox(
                 id, value, onChange, controlStyle, disabled, help);
             _page.EndRow(row, id, help);
         }
@@ -872,7 +885,7 @@ public static partial class Crystarium
                     Disabled = itemDisabled,
                 };
                 float captionWidth =
-                    Crystarium.MeasureText(item.Caption, captionStyle).X;
+                    MeasureText(item.Caption, captionStyle).X;
                 float itemX = pitch > 0f ? originX + column * pitch : x;
                 float itemWidth = boxSide + gap * 0.75f + captionWidth;
                 // Each line contains at least one item.
@@ -885,7 +898,7 @@ public static partial class Crystarium
                 float top = row.Origin.Y + line * rowHeight;
                 ImGui.SetCursorScreenPos(new(
                     itemX, top + (rowHeight - boxSide) * 0.5f));
-                Crystarium.Checkbox(
+                CheckboxWidgets.Checkbox(
                     Ids.Join(id, "-", item.Caption), item.Value, item.OnChange,
                     default, itemDisabled, item.Help);
                 float captionX = itemX + boxSide + gap * 0.75f;
@@ -925,7 +938,7 @@ public static partial class Crystarium
             float x = row.Origin.X + (indent ? gap * 2f : 0f);
             ImGui.SetCursorScreenPos(new(
                 x, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
-            Crystarium.Checkbox(
+            CheckboxWidgets.Checkbox(
                 id, value, onChange, default, disabled, help, partial);
             var captionStyle = new TextStyle
             {
@@ -963,7 +976,7 @@ public static partial class Crystarium
                 style, row.ControlWidth / row.Scale, fillByDefault: true);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.NavigationHeight)));
-            Crystarium.SegmentedControl(
+            SegmentedControl(
                 id, items, selected, onChange, controlStyle);
             _page.EndRow(row, id, help);
         }
@@ -983,7 +996,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.Dropdown(id, items, selected, onChange,
+            DropdownWidgets.Dropdown(id, items, selected, onChange,
                 controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
@@ -1011,7 +1024,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height,
                 ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.ActionDropdown(
+            DropdownWidgets.ActionDropdown(
                 id,
                 items,
                 selected,
@@ -1061,8 +1074,8 @@ public static partial class Crystarium
                 pickerStyle.Height,
                 ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-            Crystarium.Button(
-                Crystarium.TruncateText(
+            ButtonWidgets.Button(
+                TruncateText(
                     value,
                     new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                     MathF.Max(1f,
@@ -1108,7 +1121,7 @@ public static partial class Crystarium
                 Workspace(style), triggerWidth / row.Scale, fillByDefault: true);
             float renderedTriggerWidth = ResolveButtonWidth(
                 value, triggerStyle, triggerWidth / row.Scale) * row.Scale;
-            string display = Crystarium.TruncateText(
+            string display = TruncateText(
                 value,
                 new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                 MathF.Max(1f,
@@ -1117,7 +1130,7 @@ public static partial class Crystarium
             float controlHeight = ControlSizing.Height(
                 triggerStyle.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-            Crystarium.Button(
+            ButtonWidgets.Button(
                 display, select, style: triggerStyle,
                 disabled: !available, help: disabledHelp, variant: variant, id: id);
 
@@ -1126,7 +1139,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     row.ControlOrigin.X + row.ControlWidth - resetWidth,
                     row.CenterControl(controlHeight).Y));
-                Crystarium.Button(
+                ButtonWidgets.Button(
                     "Reset", reset, style: resetStyle,
                     help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
                     variant: variant,
@@ -1205,7 +1218,7 @@ public static partial class Crystarium
             }
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.AxisWell(
+            AxisWell(
                 Ids.Join(id, "-value"),
                 "",
                 value,
@@ -1252,7 +1265,7 @@ public static partial class Crystarium
             float displayed = value;
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.AxisWell(
+            AxisWell(
                 Ids.Join(id, "-value"),
                 "",
                 value,
@@ -1274,7 +1287,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new(
                 row.ControlOrigin.X + wellWidth * row.Scale + gap,
                 row.CenterControl(ActiveTheme.Controls.SliderHeight).Y));
-            Crystarium.Slider(
+            SliderWidgets.Slider(
                 Ids.Join(id, "-slider"),
                 displayed,
                 minimum,
@@ -1301,7 +1314,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.TextInput(id, value, onChange,
+            TextInputWidgets.TextInput(id, value, onChange,
                 controlStyle, placeholder, disabled);
             _page.EndRow(row, id, help);
         }
@@ -1332,7 +1345,7 @@ public static partial class Crystarium
                 WorkspaceInRegion(style, fieldWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
-            Crystarium.TextInput(id, value, onChange,
+            TextInputWidgets.TextInput(id, value, onChange,
                 controlStyle, placeholder, disabled);
             DrawActions(
                 actionScope.Items,
@@ -1399,7 +1412,7 @@ public static partial class Crystarium
                 return;
             }
             ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
-            Crystarium.SwatchPalette(
+            SwatchPalette(
                 id, colors, selected, onChange, names);
             _page.EndRow(row, id, help);
         }
@@ -1569,12 +1582,12 @@ public static partial class Crystarium
                 Color = warning ? ActiveTheme.Warning : FormHintColor,
             };
             var wrap = TextConstraint.Wrap(row.Width);
-            float height = Crystarium.MeasureText(text, style, wrap).Y;
+            float height = MeasureText(text, style, wrap).Y;
             float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
             // One line seats exactly as a Status row does; more lines start at
             // that same seat and run on, so a paragraph beside single-line
             // rows shares their first baseline.
-            Crystarium.TextInBand(
+            TextInBand(
                 row.Origin, new(row.Width, band), text, style, wrap);
             _page.EndRow(
                 row, id, help,
@@ -1612,7 +1625,7 @@ public static partial class Crystarium
                 Color = FormLabelColor,
                 Disabled = disabled,
             };
-            float textWidth = Crystarium.MeasureText(text, style).X;
+            float textWidth = MeasureText(text, style).X;
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float height = ActiveTheme.Controls.FormRowHeight * row.Scale;
             LabelInBand(row.Origin, new(textWidth, height), text, style);
@@ -1837,7 +1850,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     originX + i * (width + gap),
                     controlY));
-                Crystarium.AxisWell(
+                AxisWell(
                     Ids.Join(id, "-", axes[i]),
                     axes[i],
                     axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
@@ -1929,7 +1942,7 @@ public static partial class Crystarium
                     row.ControlOrigin.X,
                     row.CenterControl(
                         ActiveTheme.Controls.WorkspaceHeight).Y));
-                Crystarium.AxisWell(
+                AxisWell(
                     Ids.Join(rowId, "-", axes[i]),
                     axes[i],
                     axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
@@ -2065,7 +2078,7 @@ public static partial class Crystarium
                     rowY
                         + (ActiveTheme.Controls.FormRowHeight - side)
                         * 0.5f * _row.Scale));
-                Crystarium.ColorWell(
+                ColorWellWidgets.ColorWell(
                     Ids.Join(_id, "-", item.Label),
                     item.Value ?? Vector4.Zero,
                     item.OnChange,
@@ -2139,7 +2152,7 @@ public static partial class Crystarium
             float displayed = value;
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.SliderHeight));
-            Crystarium.Slider(
+            SliderWidgets.Slider(
                 id, value, minimum, maximum,
                 next =>
                 {
@@ -2171,7 +2184,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new Vector2(
                     bandOrigin.X,
                     Center(ActiveTheme.Controls.WorkspaceHeight).Y));
-                Crystarium.AxisWell(
+                AxisWell(
                     Ids.Join(id, "-value"),
                     "",
                     displayed,
@@ -2204,7 +2217,7 @@ public static partial class Crystarium
             var seat = Center(ActiveTheme.Controls.SwitchHeight);
             ImGui.SetCursorScreenPos(new Vector2(
                 Origin.X + Width - switchWidth * 2f, seat.Y));
-            Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
+            SwitchWidgets.Switch(id, value, onChange, Constrain(), disabled, help);
         }
 
         /// <summary>Draws a numeric value well.</summary>
@@ -2218,7 +2231,7 @@ public static partial class Crystarium
                 Center(ActiveTheme.Controls.WorkspaceHeight));
             // The well FILLS its cell: the CELL is the honestly-sized
             // unit, and a 52px well adrift in it reads as broken.
-            Crystarium.AxisWell(
+            AxisWell(
                 Ids.Join(id, "-value"),
                 "",
                 value,
@@ -2241,7 +2254,7 @@ public static partial class Crystarium
         {
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.ColorWellSize));
-            Crystarium.ColorWell(
+            ColorWellWidgets.ColorWell(
                 id, value, onChange, Constrain(), rgbOnly, disabled, help);
         }
 
@@ -2256,8 +2269,8 @@ public static partial class Crystarium
             });
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.Button(
-                Crystarium.TruncateText(
+            ButtonWidgets.Button(
+                TruncateText(
                     label,
                     new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                     MathF.Max(
@@ -2295,7 +2308,7 @@ public static partial class Crystarium
             });
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.TextInput(
+            TextInputWidgets.TextInput(
                 id, value, onChange, style, placeholder, disabled);
         }
 
@@ -2313,8 +2326,8 @@ public static partial class Crystarium
             float controlHeight = ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.WorkspaceHeight);
             ImGui.SetCursorScreenPos(Center(controlHeight));
-            Crystarium.Button(
-                Crystarium.TruncateText(
+            ButtonWidgets.Button(
+                TruncateText(
                     value,
                     new TextStyle { Size = ActiveTheme.Typography.LabelSize },
                     MathF.Max(
@@ -2337,7 +2350,7 @@ public static partial class Crystarium
             });
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
-            Crystarium.Dropdown(
+            DropdownWidgets.Dropdown(
                 id, items, selected, onChange, style, disabled, help);
         }
 
@@ -2525,7 +2538,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     x,
                     top + (band - height) * 0.5f * scale));
-                Crystarium.IconButton(
+                ButtonWidgets.IconButton(
                     glyph,
                     action.OnClick,
                     style with { Height = UiHeight.Fixed(height) },
@@ -2570,7 +2583,7 @@ public static partial class Crystarium
         ControlStyle style, float width) =>
         InRegion(Workspace(style), width, fillByDefault: true);
 
-    private static ControlStyle Workspace(ControlStyle style) =>
+    internal static ControlStyle Workspace(ControlStyle style) =>
         style.Height.Kind == UiHeightKind.Natural
             ? style with { Height = UiHeight.Workspace }
             : style;
@@ -2647,25 +2660,20 @@ public static partial class Crystarium
             opacity: opacity);
     }
 
-    private static void RegisterHelp(string id, Vector2 min, Vector2 max,
+    internal static void RegisterHelp(string id, Vector2 min, Vector2 max,
         string? help)
     {
         if (!string.IsNullOrEmpty(help) && HoverHelp.HelpHovered(min, max))
             HoverHelp.Explain(id, min, max, help!);
     }
 
-    private static Vector2 MeasureText(string text, float size,
-        FontWeight weight, FontFamily family = FontFamily.Default)
-        => Crystarium.MeasureText(text,
-            new TextStyle { Size = size, Weight = weight, Family = family });
-
-    private static void DrawText(Vector2 position, float width, float size,
+    internal static void DrawText(Vector2 position, float width, float size,
         FontWeight weight, Vector4 color, string text,
         FontFamily family = FontFamily.Default)
     {
         if (!(width > 0f))
             return;
-        Crystarium.TextAt(position, text,
+        TextAt(position, text,
             new TextStyle { Size = size, Weight = weight, Family = family, Color = color },
             TextConstraint.Truncate(width));
     }
@@ -2704,9 +2712,8 @@ public static partial class Crystarium
         if (!(width > 0f))
             return;
         var style = new TextStyle { Size = size, Family = family, Color = color };
-        Crystarium.TextInBand(
+        TextInBand(
             position, new(width, height), text, style,
             TextConstraint.Truncate(width, TextAlign.End));
     }
-
 }

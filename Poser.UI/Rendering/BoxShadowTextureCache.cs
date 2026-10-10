@@ -5,17 +5,6 @@ using Dalamud.Bindings.ImGui;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
-{
-    /// <summary>Host hook for uploading a baked panel-shadow RGBA8 asset.</summary>
-    public static Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)>?
-        PanelShadowTextureUploader
-    {
-        get => BoxShadowTextureCache.Uploader;
-        set => BoxShadowTextureCache.Uploader = value;
-    }
-}
-
 /// <summary>
 /// Bounded cache for soft outset shadow paint. Each entry is a fixed-size
 /// rounded shadow ring whose edge strips stretch with the panel; position and

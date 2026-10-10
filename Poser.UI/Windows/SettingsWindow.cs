@@ -15,6 +15,7 @@ using Poser.Services;
 using Poser.UI.Views;
 
 using Poser.Domain.Cameras;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 public class SettingsWindow : Window
@@ -146,7 +147,7 @@ public class SettingsWindow : Window
             _configuration.ApplyChange(save: false);
             var ui = _configuration.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
-            Crystarium.FloatingSurface.ConfigureEffects(
+            FloatingSurface.ConfigureEffects(
                 ui.FillOpacity, ui.BackdropBlur);
         }
         _snapshot = null;
@@ -304,7 +305,7 @@ public class SettingsWindow : Window
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
-            OnSurfaceEffectsPreview = Crystarium.FloatingSurface.ConfigureEffects,
+            OnSurfaceEffectsPreview = FloatingSurface.ConfigureEffects,
         };
         vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
         vm.OnBrowseFolder = (start, chosen) =>
@@ -421,7 +422,7 @@ public class SettingsWindow : Window
         var c = svc.Config;
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
-        Crystarium.FloatingSurface.ConfigureEffects(
+        FloatingSurface.ConfigureEffects(
             c.UI.FillOpacity, c.UI.BackdropBlur);
         svc.ApplyChange();
         _library.RequestScan();

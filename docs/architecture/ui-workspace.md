@@ -338,8 +338,10 @@ Responsive-grid audits check normal, narrow, and wide panes in game for order,
 wrapping, clipping or overlap, attached actions, and unused space. Visual
 acceptance remains manual under the [testing contract](../process/testing.md).
 
-Crystarium and Picto are first-party UI work. Crystarium supplies the shared
-controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
+The widget toolkit is first-party UI work. `Poser.UI.Widgets` supplies the
+shared controls, text, icons, placement, scrolling, and motion as one static
+class per widget family (`ButtonWidgets`, `TextWidgets`, `FloatingMenu`, …);
+call sites import them with `using static`. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.

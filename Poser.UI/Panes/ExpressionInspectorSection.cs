@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
 using Poser.Config;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -47,10 +48,10 @@ public sealed class ExpressionInspectorSection
     /// window's row belongs to that window's own animation pane.
     /// </summary>
     public void Draw(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId? actorId,
         bool paired, // both hosts pair now; kept for call-site stability
-        Action<Crystarium.FormScope, ActorId>? expressionRow = null)
+        Action<FormScope, ActorId>? expressionRow = null)
     {
         using var profile = FrameProfiler.Scope(
             paired ? "Surface · EXPRESSION" : "Rail · EXPRESSION");
@@ -265,7 +266,7 @@ public sealed class ExpressionInspectorSection
 
     /// <summary>Bounded sliders or unbounded numeric drags, using the same journal.</summary>
     private void DrawUnit(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         string id,
         string label,
@@ -304,7 +305,7 @@ public sealed class ExpressionInspectorSection
     /// <summary>Two unrelated single units share one surface row, each
     /// under its own label with its own value.</summary>
     private void DrawSinglePair(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         (string Id, string Label, bool Bidirectional) first,
         (string Id, string Label, bool Bidirectional) second)
@@ -326,7 +327,7 @@ public sealed class ExpressionInspectorSection
     /// The pair cells carry no percentage readout — the row has no width
     /// for two of them.</summary>
     private void DrawPair(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         string leftLabel,
         string rightLabel,
@@ -360,7 +361,7 @@ public sealed class ExpressionInspectorSection
     /// <summary>One half of a pair: the cell slider with its numeric
     /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
-        Crystarium.FormPairCell cell,
+        FormPairCell cell,
         ActorId actor,
         string id,
         float minimum,
@@ -391,7 +392,7 @@ public sealed class ExpressionInspectorSection
                 ? label[..^2] + " right"
                 : label;
 
-    private void DrawReset(Crystarium.FormScope form, ActorId actor)
+    private void DrawReset(FormScope form, ActorId actor)
     {
         bool active = _expressions.HasActiveExpression(actor);
         form.Actions("Expression", actions => actions.Button(

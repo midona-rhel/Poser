@@ -5,13 +5,17 @@ using System;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Integration;
 using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ImageWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
 // Equipment, props and furniture share the named, colour-backed dye menu.
 internal sealed class DyePicker(string id)
 {
-    private readonly Crystarium.SearchPicker<DyeEntry> _picker = new(id);
+    private readonly SearchPicker<DyeEntry> _picker = new(id);
     private List<DyeEntry>? _rows;
 
     public void Open(string title, IWardrobeCatalog catalog, byte current)
@@ -29,13 +33,13 @@ internal sealed class DyePicker(string id)
 
     public (string Owner, DyeEntry Item)? Draw() => _picker.Draw();
 
-    public static void Cell(Crystarium.FormPairCell cell, string id,
+    public static void Cell(FormPairCell cell, string id,
         IWardrobeCatalog catalog, byte current, Action choose, Action clear)
     {
         var dye = current == 0 ? null : catalog.Dye(current);
-        float height = Crystarium.ActiveTheme.Controls.WorkspaceHeight;
+        float height = ActiveTheme.Controls.WorkspaceHeight;
         ImGui.SetCursorScreenPos(cell.Center(height));
-        Crystarium.ColorTile(id, dye is null ? null : Color(dye.Color),
+        ColorTile(id, dye is null ? null : Color(dye.Color),
             cell.Width / cell.Scale, height,
             () => { if (ImGui.GetIO().KeyCtrl) clear(); else choose(); },
             label: dye is null ? "None" : null, help: dye?.Name ?? "Choose dye");

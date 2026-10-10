@@ -3,6 +3,16 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowMovement;
 
 namespace Poser.UI.Views;
 
@@ -387,7 +397,7 @@ public sealed class AppShellViewModel
     internal Action<bool>? AnimationToggled;
     internal Action<bool>? PhysicsToggled;
     internal Action? CollapseToggled;
-    internal Action<Crystarium.ActionBarScope>? WorkspaceRightActions;
+    internal Action<ActionBarScope>? WorkspaceRightActions;
 }
 
 /// <summary>
@@ -459,7 +469,7 @@ public static class AppShellView
 
     /// <summary>Shared glass fill for sidebar and rail panels.</summary>
     private static Vector4 Glass =>
-        Crystarium.FloatingSurface.FillColor;
+        FloatingSurface.FillColor;
 
     /// <summary>The workspace ground. The same glass — same alpha, same blur
     /// behind it — mixed over the app ground instead of over the panels' raised
@@ -468,32 +478,32 @@ public static class AppShellView
     /// SurfaceRaised. SurfaceSunken is reserved for input wells: picto's surface-2 is
     /// brighter than surface-1 — an input well, not a ground.</summary>
     private static Vector4 WellGlass =>
-        Crystarium.ActiveTheme.Surface with { W = Glass.W };
+        ActiveTheme.Surface with { W = Glass.W };
     private static Vector4 BorderPrimary =>
-        Crystarium.ActiveTheme.Chrome.ControlBorder;
+        ActiveTheme.Chrome.ControlBorder;
     private static Vector4 BorderSecondary =>
-        Crystarium.ActiveTheme.FormSeparator;
+        ActiveTheme.FormSeparator;
 
     /// <summary>Shared height for titlebar and modal bars.</summary>
     public static float TitlebarHeight =>
-        Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        ActiveTheme.Floating.ModalBarHeight;
 
     /// <inheritdoc cref="TitlebarHeight"/>
     public static float CollapsedBarHeight => TitlebarHeight;
-    public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
-    public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
-    public static float StatusbarHeight => Crystarium.ActiveTheme.Shell.StatusbarHeight;
+    public static float RowHeight => ActiveTheme.Controls.ListRowHeight;
+    public static float ToolbarHeight => ActiveTheme.Shell.ToolbarHeight;
+    public static float StatusbarHeight => ActiveTheme.Shell.StatusbarHeight;
 
     /// <summary>The sidebar's whole footer: the world-class band over the
     /// status band. Two bands of the one height, so a glyph sits in its band
     /// exactly as the live dot sits in the one below.</summary>
     public static float FooterHeight => StatusbarHeight * 2f;
-    public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
-    public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
-    public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
+    public static float ScrollbarWidth => ActiveTheme.Scrollbar.GutterWidth;
+    public static float MainHorizontalPadding => ActiveTheme.Page.Inset;
+    public static float RailWidth => ActiveTheme.Shell.RailWidth;
     public const float MinimumWorkspaceWidth = 1110f;
     public static float MinimumPropertiesWidth => MinimumWorkspaceWidth
-        - Crystarium.ActiveTheme.Shell.SidebarDefaultWidth - RailWidth;
+        - ActiveTheme.Shell.SidebarDefaultWidth - RailWidth;
 
     /// <summary>Hoists the model-forwarding callbacks once per model, per the
     /// codebase's own idiom (PoseLibraryView, SpawnBrowserView, ShellSidebar):
@@ -540,7 +550,7 @@ public static class AppShellView
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
         ArgumentNullException.ThrowIfNull(vm);
-        using var disclosure = Crystarium.UseSectionDisclosure(vm.SectionDisclosure);
+        using var disclosure = UseSectionDisclosure(vm.SectionDisclosure);
         EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
         var min = origin;
@@ -553,11 +563,11 @@ public static class AppShellView
             max);
         try
         {
-            float radius = Crystarium.ActiveTheme.Radii.Window;
+            float radius = ActiveTheme.Radii.Window;
 
             // Draw the shared blur and elevation once; each column supplies
             // its own translucent ground and the final edge.
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 dl, min, max, radius, fill: false, border: false);
 
             // The workspace ground uses the same glass treatment over the
@@ -600,7 +610,7 @@ public static class AppShellView
             // gesture twin. Every bar item was submitted by the call above,
             // so a hovered button keeps its own clicks.
             if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-                && !Crystarium.WindowTitleControlHovered())
+                && !WindowTitleControlHovered())
             {
                 var barMouse = ImGui.GetMousePos();
                 if (barMouse.X >= min.X && barMouse.X < max.X
@@ -609,7 +619,7 @@ public static class AppShellView
                     vm.CollapseToggled?.Invoke();
             }
 
-            Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + TitlebarHeight * s));
+            WindowTitleDrag(min, new Vector2(max.X, min.Y + TitlebarHeight * s));
 
             if (vm.Collapsed)
             {
@@ -658,7 +668,7 @@ public static class AppShellView
     private static void DrawTitlebar(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
@@ -751,10 +761,10 @@ public static class AppShellView
                 : "Target";
             string[] modes = [kind, "Environment", "Scene"];
             float kindSlot = WidestKindWidth() ;
-            var segSize = Crystarium.MeasureSegmentedControl(modes);
+            var segSize = MeasureSegmentedControl(modes);
             float pillPadding = theme.Spacing.Six * s;
             float fixedWidth = segSize.X
-                - (Crystarium.MeasureText(
+                - (MeasureText(
                         kind, KindMeasureStyle).X + pillPadding * 2f)
                 + kindSlot + pillPadding * 2f;
             // The selector docks on the CONTENT side of the divider
@@ -772,14 +782,14 @@ public static class AppShellView
             ImGui.SetCursorScreenPos(new Vector2(
                 selectorRight - theme.Page.ActionGap * s - fixedWidth,
                 min.Y + (height - segSize.Y) * 0.5f));
-            Crystarium.SegmentedControl(
+            SegmentedControl(
                 "##content-mode",
                 modes,
                 vm.InspectorMode,
                 onMode,
                 itemWidth: index => index == 0
                     ? kindSlot + pillPadding * 2f
-                    : Crystarium.MeasureText(
+                    : MeasureText(
                         modes[index], KindMeasureStyle).X + pillPadding * 2f,
                 itemHelp: index => index switch
                 {
@@ -803,7 +813,7 @@ public static class AppShellView
             {
                 float pinSize = theme.Controls.SmallIconSize * s;
                 var pinMin = titleMin + new Vector2(0f, (height - pinSize) * 0.5f);
-                Crystarium.IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text,
+                IconIn(pinMin, pinMin + new Vector2(pinSize), "pin-filled", theme.Chrome.Text,
                     flipX: true);
                 titleMin.X += pinSize + theme.Page.ActionGap * s;
             }
@@ -812,8 +822,8 @@ public static class AppShellView
             {
                 if (!vm.PropertiesOnly)
                     DrawMainTitleOutline(titleMin,
-                        MathF.Min(titleWidth, Crystarium.MeasureText(title, titleStyle).X), height, s, dl);
-                Crystarium.TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle);
+                        MathF.Min(titleWidth, MeasureText(title, titleStyle).X), height, s, dl);
+                TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle);
             }
         }
     }
@@ -821,7 +831,7 @@ public static class AppShellView
     private static void DrawMainTitleOutline(
         Vector2 textMin, float textWidth, float height, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var padding = new Vector2(theme.Spacing.Four * s, theme.Spacing.Four * s);
         dl.AddRect(new Vector2(textMin.X - padding.X, textMin.Y + padding.Y),
             new Vector2(textMin.X + textWidth + padding.X, textMin.Y + height - padding.Y),
@@ -836,15 +846,15 @@ public static class AppShellView
         AppShellViewModel vm, float x, float top, float height, float s,
         ImDrawListPtr dl, bool pill = true)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var nameStyle = new TextStyle
         {
             Size = theme.Typography.BodySize,
             Weight = FontWeight.SemiBold,
             Color = theme.Chrome.Text,
         };
-        float nameWidth = Crystarium.MeasureText("Poser", nameStyle).X;
-        Crystarium.TextInBand(
+        float nameWidth = MeasureText("Poser", nameStyle).X;
+        TextInBand(
             new Vector2(x, top), new Vector2(nameWidth, height),
             "Poser", nameStyle);
         if (!pill || !vm.GPoseActive)
@@ -857,7 +867,7 @@ public static class AppShellView
             Weight = FontWeight.Medium,
             Color = success,
         };
-        float textWidth = Crystarium.MeasureText("GPose", pillStyle).X;
+        float textWidth = MeasureText("GPose", pillStyle).X;
         float pillHeight = PillHeight * s;
         float dot = DotSize * s;
         var pillMin = new Vector2(
@@ -875,7 +885,7 @@ public static class AppShellView
             pillMin.Y + (pillHeight - dot) * 0.5f);
         dl.AddCircleFilled(
             dotMin + new Vector2(dot * 0.5f), dot * 0.5f, U32(success));
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(dotMin.X + dot + theme.Spacing.Three * s, pillMin.Y),
             new Vector2(textWidth, pillHeight),
             "GPose",
@@ -886,8 +896,8 @@ public static class AppShellView
     /// <summary>What <see cref="DrawBrandPill"/> spans, screen px.</summary>
     private static float MeasureBrandPill(AppShellViewModel vm, float s)
     {
-        var theme = Crystarium.ActiveTheme;
-        float width = Crystarium.MeasureText(
+        var theme = ActiveTheme;
+        float width = MeasureText(
             "Poser",
             new TextStyle
             {
@@ -896,7 +906,7 @@ public static class AppShellView
             }).X;
         if (!vm.GPoseActive)
             return width;
-        float text = Crystarium.MeasureText(
+        float text = MeasureText(
             "GPose",
             new TextStyle
             {
@@ -918,7 +928,7 @@ public static class AppShellView
     private static void DrawCellActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float y = top + (height - side * s) * 0.5f;
         float x = right;
@@ -926,12 +936,12 @@ public static class AppShellView
         {
             var labelStyle = new TextStyle
             { Size = theme.Typography.LabelSize };
-            float labelWidth = Crystarium.MeasureText(
+            float labelWidth = MeasureText(
                 "Library", labelStyle).X;
             float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
             x -= buttonWidth * s;
             ImGui.SetCursorScreenPos(new Vector2(x, y));
-            Crystarium.Button(
+            Button(
                 "Library",
                 onLibrary,
                 style: ControlStyle.Square(side) with
@@ -949,7 +959,7 @@ public static class AppShellView
     private static void DrawGizmoCluster(
         AppShellViewModel vm, float x, float top, float height, float s)
     {
-        float gap = Crystarium.ActiveTheme.Page.ActionGap * s;
+        float gap = ActiveTheme.Page.ActionGap * s;
         x = Segments(
             x, top, height,
             "##shell-gizmo-operation",
@@ -1018,7 +1028,7 @@ public static class AppShellView
     /// <summary>The label style the selector's segments measure with —
     /// the pill's own face.</summary>
     private static TextStyle KindMeasureStyle => new()
-    { Size = Crystarium.ActiveTheme.Typography.LabelSize };
+    { Size = ActiveTheme.Typography.LabelSize };
 
     /// <summary>The widest kind name the selector's first segment can
     /// carry — its FIXED slot, so selection changes never move it.</summary>
@@ -1029,7 +1039,7 @@ public static class AppShellView
             ["Target", "Actor", "Object", "Camera", "Light", "Overlay",
                 "Selection"])
             widest = MathF.Max(
-                widest, Crystarium.MeasureText(kind, KindMeasureStyle).X);
+                widest, MeasureText(kind, KindMeasureStyle).X);
         return widest;
     }
 
@@ -1039,7 +1049,7 @@ public static class AppShellView
     private static float DrawTitleActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Page.ActionGap) * s;
         float y = top + (height - side * s) * 0.5f;
@@ -1076,7 +1086,7 @@ public static class AppShellView
     private static void DrawSidebar(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float rule = 1f * s;
         // The chassis carries the divider on its right edge; everything inside
         // stops at it.
@@ -1122,7 +1132,7 @@ public static class AppShellView
     private static void DrawWorldClasses(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float side = theme.Controls.SwitchHeight;
         float step = (side + theme.Page.ActionGap) * s;
         float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
@@ -1133,7 +1143,7 @@ public static class AppShellView
             ImGui.SetCursorScreenPos(new Vector2(x, y));
             // Captured per glyph: the callback outlives this loop iteration.
             int index = i;
-            if (Crystarium.TemporaryIconToggle(
+            if (TemporaryIconToggle(
                     entry.Icon,
                     selected: false,
                     style: ControlStyle.Square(side),
@@ -1151,7 +1161,7 @@ public static class AppShellView
     private static void DrawStatusbar(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float height = max.Y - min.Y;
         float dot = DotSize * s;
         var dotMin = new Vector2(
@@ -1165,14 +1175,14 @@ public static class AppShellView
             Color = theme.TextMuted,
             Family = FontFamily.Mono,
         };
-        float leftWidth = Crystarium.MeasureText(vm.StatusLeft, style).X;
-        Crystarium.TextInBand(
+        float leftWidth = MeasureText(vm.StatusLeft, style).X;
+        TextInBand(
             new Vector2(dotMin.X + dot + StatusTextGap * s, min.Y),
             new Vector2(leftWidth, height),
             vm.StatusLeft,
             style);
-        float rightWidth = Crystarium.MeasureText(vm.StatusRight, style).X;
-        Crystarium.TextInBand(
+        float rightWidth = MeasureText(vm.StatusRight, style).X;
+        TextInBand(
             new Vector2(max.X - StatusInset * s - rightWidth, min.Y),
             new Vector2(rightWidth, height),
             vm.StatusRight,
@@ -1186,19 +1196,19 @@ public static class AppShellView
             if (!(available > 0f))
                 return;
             var branchStyle = style with { Color = theme.Accent };
-            string? fitted = Crystarium.FitTruncated(vm.BranchLabel, branchStyle, available);
+            string? fitted = FitTruncated(vm.BranchLabel, branchStyle, available);
             string shown = fitted ?? vm.BranchLabel;
-            float shownWidth = fitted is null ? Crystarium.MeasureText(shown, branchStyle).X : available;
+            float shownWidth = fitted is null ? MeasureText(shown, branchStyle).X : available;
             var branchMin = new Vector2(rightEdge - shownWidth, min.Y);
             ImGui.SetCursorScreenPos(branchMin);
             ImGui.InvisibleButton("##build-branch", new Vector2(shownWidth, height));
             bool hovered = ImGui.IsItemHovered();
             ImGui.SetCursorScreenPos(branchMin);
-            Crystarium.TextInBand(
+            TextInBand(
                 branchMin, new Vector2(shownWidth, height), shown, branchStyle,
                 fitted is null ? TextConstraint.Intrinsic : TextConstraint.Truncate(shownWidth));
             if (hovered && fitted is not null)
-                Crystarium.HoverHelp.Preview(
+                HoverHelp.Preview(
                     "build-branch", branchMin,
                     branchMin + new Vector2(shownWidth, height), vm.BranchLabel);
         }
@@ -1210,7 +1220,7 @@ public static class AppShellView
     private static void DrawSidebarResize(
         AppShellViewModel vm, float edge, float top, float bottom, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         ImGui.SetCursorScreenPos(new Vector2(edge - 3f * s, top));
         ImGui.InvisibleButton("##sidebar-resize", new Vector2(6f * s, bottom - top));
         if (ImGui.IsItemHovered() || ImGui.IsItemActive())
@@ -1242,11 +1252,11 @@ public static class AppShellView
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
             // lands the first tab's label on the content inset, because the
             // pill's dark chrome is decoration and not padding.
-            var size = Crystarium.MeasureSegmentedControl(_tabLabels);
+            var size = MeasureSegmentedControl(_tabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
                 min.X + inset,
                 min.Y + (ToolbarHeight * s - size.Y) * 0.5f));
-            Crystarium.SegmentedControl(
+            SegmentedControl(
                 "##shell-tabs",
                 _tabLabels,
                 _tabActive,
@@ -1257,7 +1267,7 @@ public static class AppShellView
         // Actor physics occupies one stable right-aligned slot on every
         // workspace tab: a tab change never replaces it with selection text and
         // never moves it.
-        Crystarium.ActionBar(
+        ActionBar(
             "shell-workspace-actions",
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, ToolbarHeight * s),
@@ -1286,7 +1296,7 @@ public static class AppShellView
         var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
         // The footer band is the shell's, under every view.
         float footerHeight =
-            Crystarium.ActiveTheme.Floating.ModalBarHeight * s;
+            ActiveTheme.Floating.ModalBarHeight * s;
         var childSize = new Vector2(
             max.X - min.X - 1f * s - leftEdge,
             MathF.Max(0f, max.Y - toolbarBottom - 1f * s - footerHeight));
@@ -1330,7 +1340,7 @@ public static class AppShellView
             else
             {
                 ImGui.SetCursorScreenPos(viewportCursor);
-                Crystarium.ScrollRegion(
+                ScrollRegion(
                     vm.ContentScrollId,
                     childSize.X / s,
                     childSize.Y / s,
@@ -1377,7 +1387,7 @@ public static class AppShellView
     private static void DrawContentFooter(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         ImGui.GetWindowDrawList().AddRectFilled(
             min, new Vector2(max.X, min.Y + MathF.Max(1f, s)),
             U32(BorderSecondary));
@@ -1431,7 +1441,7 @@ public static class AppShellView
         float s,
         ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         // The panel ground, once — the same coat the sidebar's chassis wears
         // and the same one this rail's titlebar cell wears, so the column is
         // one glass from the bar to the window's bottom.
@@ -1452,7 +1462,7 @@ public static class AppShellView
     internal static void DrawRailContent(
         AppShellViewModel vm, Vector2 min, Vector2 max)
     {
-        using var disclosure = Crystarium.UseSectionDisclosure(vm.SectionDisclosure);
+        using var disclosure = UseSectionDisclosure(vm.SectionDisclosure);
         float s = ImGuiHelpers.GlobalScale;
         RailScrollSeam(vm, min, max, (max.X - min.X) / s, s);
     }
@@ -1461,9 +1471,9 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 railMin, Vector2 max,
         float railWidth, float s)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f * s));
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             "##shell-rail",
             railWidth / s - 1f,
             (max.Y - railMin.Y) / s - 24f,
@@ -1487,7 +1497,7 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 min, Vector2 max)
     {
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var dl = ImGui.GetWindowDrawList();
         float rule = 1f * s;
         float footerTop = max.Y - FooterHeight * s;
@@ -1518,7 +1528,7 @@ public static class AppShellView
         string? help = null)
     {
         ImGui.SetCursorScreenPos(position);
-        Crystarium.IconButton(
+        IconButton(
             icon, onClick, ControlStyle.Square(side), disabled, help, id, flipX);
     }
 
@@ -1531,7 +1541,7 @@ public static class AppShellView
         string? help = null)
     {
         ImGui.SetCursorScreenPos(position);
-        Crystarium.IconButton(
+        IconButton(
             icon, onClick, ControlStyle.Square(side), help: help, id: id);
     }
 
@@ -1547,10 +1557,10 @@ public static class AppShellView
         Action<int> onChange,
         Func<int, string?>? itemHelp = null)
     {
-        var size = Crystarium.MeasureSegmentedControl(items);
+        var size = MeasureSegmentedControl(items);
         ImGui.SetCursorScreenPos(
             new Vector2(x, bandTop + (bandHeight - size.Y) * 0.5f));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             id, items, selected, onChange, itemHelp: itemHelp);
         return x + size.X;
     }
@@ -1566,10 +1576,10 @@ public static class AppShellView
         Func<int, bool>? itemDisabled = null,
         Func<int, string?>? itemHelp = null)
     {
-        var size = Crystarium.MeasureSegmentedControl(items);
+        var size = MeasureSegmentedControl(items);
         ImGui.SetCursorScreenPos(
             new Vector2(x, bandTop + (bandHeight - size.Y) * 0.5f));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             id,
             items,
             selected,
@@ -1583,8 +1593,8 @@ public static class AppShellView
         ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
 
     private static void DrawOuterGlassBorder(Vector2 min, Vector2 max) =>
-        Crystarium.FloatingSurface.DrawBorder(
-            min, max, Crystarium.ActiveTheme.Radii.Window);
+        FloatingSurface.DrawBorder(
+            min, max, ActiveTheme.Radii.Window);
 
     private static void SyncTabs(AppShellViewModel vm)
     {
@@ -1650,7 +1660,7 @@ public static class AppShellView
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
-        Crystarium.CancelAxisEdit();
+        AxisWellWidgets.CancelAxisEdit();
     }
 
     // ── the split shell's standalone parts ───────────────────────────────
@@ -1668,7 +1678,7 @@ public static class AppShellView
     {
         EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
         SyncKeybindHelp(vm);
@@ -1737,7 +1747,7 @@ public static class AppShellView
         float s = ImGuiHelpers.GlobalScale;
         if (compact)
             return MeasureBrandPill(vm, s);
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float gap = theme.Page.ActionGap * s;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
@@ -1749,9 +1759,9 @@ public static class AppShellView
             + CenterInset * s
             + icons
             + CenterInset * s - theme.Spacing.Two * s
-            + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
-            + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
-            + Crystarium.MeasureSegmentedControl(PivotItems).X + gap
-            + Crystarium.MeasureSegmentedControl(SymmetryItems).X;
+            + MeasureSegmentedControl(GizmoIcons).X + gap
+            + MeasureSegmentedControl(SpaceItems).X + gap
+            + MeasureSegmentedControl(PivotItems).X + gap
+            + MeasureSegmentedControl(SymmetryItems).X;
     }
 }

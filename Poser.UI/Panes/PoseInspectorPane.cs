@@ -27,6 +27,16 @@ using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
 using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.TransformGridWidgets;
 
 namespace Poser.UI;
 
@@ -57,7 +67,7 @@ public partial class PoseInspectorPane : IDisposable
     public Func<bool>? HasHumanoidMap;
 
     // The Expression workspace supplies this window's picker row.
-    public Action<Crystarium.FormScope, ActorId>? DrawExpressionRow;
+    public Action<FormScope, ActorId>? DrawExpressionRow;
 
     public Func<bool>? GetMapMirror;
     public Action<bool>? SetMapMirror;
@@ -149,14 +159,14 @@ public partial class PoseInspectorPane : IDisposable
     private static readonly string[] CcdSolverItems = ["CCD", "FABRIK", "Rope"];
     private static readonly string[] TargetModeItems = ["Actor", "World", "Bone", "Scene entity"];
     private sealed record IkEntityChoice(SelectionId Id, string Name, string Kind);
-    private readonly Crystarium.SearchPicker<IkEntityChoice> _ikEntityPicker = new("ik-entity-target");
+    private readonly SearchPicker<IkEntityChoice> _ikEntityPicker = new("ik-entity-target");
     private IReadOnlyList<IkEntityChoice> _ikEntityChoices = Array.Empty<IkEntityChoice>();
 
     /// <summary>Bone-mode target picking: the actor whose bones the list
     /// shows, the picker, and the choices the host builds (its categorised
     /// bone list, shared with the camera's tracking picker).</summary>
     private global::Poser.Domain.Identity.ActorId? _ikBoneActor;
-    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice> _ikBonePicker =
+    private readonly SearchPicker<global::Poser.UI.BoneChoice> _ikBonePicker =
         new("ik-bone-target");
     private IReadOnlyList<global::Poser.UI.BoneChoice> _ikBoneChoices =
         Array.Empty<global::Poser.UI.BoneChoice>();
@@ -404,16 +414,16 @@ public partial class PoseInspectorPane : IDisposable
             ImGui.SetCursorScreenPos(
                 origin + new Vector2(
                     0f,
-                    Crystarium.ActiveTheme.Spacing.Four * s));
-            Crystarium.Text(
+                    ActiveTheme.Spacing.Four * s));
+            Text(
                 "Select an actor or bone in the sidebar.",
                 new TextStyle
                 {
-                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                    Color = Crystarium.ActiveTheme.FormHint,
+                    Size = ActiveTheme.Typography.LabelSize,
+                    Color = ActiveTheme.FormHint,
                 });
             cursor.Y +=
-                Crystarium.ActiveTheme.Controls.FormRowHeight * s;
+                ActiveTheme.Controls.FormRowHeight * s;
         }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
     }
@@ -614,10 +624,10 @@ public partial class PoseInspectorPane : IDisposable
             string title,
             bool open,
             Action<bool> setOpen,
-            Action<Crystarium.FormScope> content,
+            Action<FormScope> content,
             bool divider = true)
         {
-            _cursor.Y += Crystarium.Section(
+            _cursor.Y += PageForm.Section(
                 $"{_prefix}-{id}",
                 title,
                 _cursor,
@@ -769,14 +779,14 @@ public partial class PoseInspectorPane : IDisposable
         float bodyHeight = Math.Max(1f, height - tabsHeight);
 
         float segmentedHeightPx =
-            Crystarium.ActiveTheme.Controls.NavigationHeight;
+            ActiveTheme.Controls.NavigationHeight;
         ImGui.SetCursorScreenPos(cursor + new Vector2(
             0f,
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
         bool humanoid = HasHumanoidMap?.Invoke() ?? true;
         if (!humanoid && _poseView == 1) _poseView = 0;
         int visibleView = !humanoid && _poseView > 1 ? _poseView - 1 : _poseView;
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             "##pose-surface",
             humanoid ? new[] { "Body", "Face", "Matrix", "3D", "Expression", "Other" }
                 : new[] { "Bones", "Matrix", "3D", "Expression", "Other" },
@@ -787,7 +797,7 @@ public partial class PoseInspectorPane : IDisposable
         if (humanoid && _poseView is 0 or 1)
         {
             bool swapped = GetMapMirror?.Invoke() ?? false;
-            Crystarium.ActionBar(
+            ActionBar(
                 "pose-surface-mirror",
                 cursor,
                 new Vector2(
@@ -805,12 +815,12 @@ public partial class PoseInspectorPane : IDisposable
         {
             var resetStyle = ControlStyle.Workspace;
             var resetSize =
-                Crystarium.MeasureButton("Reset View", resetStyle);
+                MeasureButton("Reset View", resetStyle);
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + width + AppShellView.ScrollbarWidth * s
                     - resetSize.X,
                 cursor.Y + (tabsHeight - resetSize.Y) * 0.5f));
-            Crystarium.Button(
+            Button(
                 "Reset View",
                 Reset3DCamera,
                 style: resetStyle,
@@ -832,7 +842,7 @@ public partial class PoseInspectorPane : IDisposable
                 cursor.Y + tabsHeight),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(
-                    Crystarium.ActiveTheme.FormSeparator)));
+                    ActiveTheme.FormSeparator)));
 
         var bodyOrigin = new Vector2(cursor.X, cursor.Y + tabsHeight);
         ImGui.SetCursorScreenPos(bodyOrigin);
@@ -882,7 +892,7 @@ public partial class PoseInspectorPane : IDisposable
         {
             ImGui.SetCursorScreenPos(cursor);
             if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
-                Crystarium.TextAt(new Vector2(cursor.X, cursor.Y + 8f * s), "Select an actor to use the map.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+                TextAt(new Vector2(cursor.X, cursor.Y + 8f * s), "Select an actor to use the map.", new TextStyle { Size = ActiveTheme.Typography.LabelSize, Color = ActiveTheme.FormHint });
             return viewportHeight;
         }
 
@@ -911,7 +921,7 @@ public partial class PoseInspectorPane : IDisposable
         out Vector2 min,
         out Vector2 max)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
         max = cursor + new Vector2(width, viewportHeight)
             - new Vector2(0f, theme.Page.Inset * s);
@@ -926,9 +936,9 @@ public partial class PoseInspectorPane : IDisposable
         float s,
         Func<Vector2, float, float> body)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         ImGui.SetCursorScreenPos(min);
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             id,
             (max.X - min.X) / s,
             (max.Y - min.Y) / s,
@@ -963,17 +973,17 @@ public partial class PoseInspectorPane : IDisposable
                 if (actor == null ||
                     (!_expressionSection.CanDraw && DrawExpressionRow == null))
                 {
-                    Crystarium.TextAt(
+                    TextAt(
                         origin,
                         "Select an actor to edit its expression.",
                         new TextStyle
                         {
-                            Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                            Color = Crystarium.ActiveTheme.FormHint,
+                            Size = ActiveTheme.Typography.LabelSize,
+                            Color = ActiveTheme.FormHint,
                         });
                     return 0f;
                 }
-                return Crystarium.Section(
+                return PageForm.Section(
                     "pose-surface-expression",
                     "Expression",
                     origin,
@@ -1005,13 +1015,13 @@ public partial class PoseInspectorPane : IDisposable
             {
                 if (actor == null && skeleton == null)
                 {
-                    Crystarium.TextAt(
+                    TextAt(
                         origin,
                         "Select an actor to use these actions.",
                         new TextStyle
                         {
-                            Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                            Color = Crystarium.ActiveTheme.FormHint,
+                            Size = ActiveTheme.Typography.LabelSize,
+                            Color = ActiveTheme.FormHint,
                         });
                     return 0f;
                 }
@@ -1057,13 +1067,13 @@ public partial class PoseInspectorPane : IDisposable
         float s)
     {
         using var profile = FrameProfiler.Scope("Surface · Matrix");
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
         float toolbarHeight = theme.Controls.WorkspaceHeight * s;
         ImGui.SetCursorScreenPos(min);
-        Crystarium.FilterPill(
+        FilterPill(
             "##pose-matrix-filter",
             _matrixFilter,
             next =>
@@ -1159,7 +1169,7 @@ public partial class PoseInspectorPane : IDisposable
         SkeletonDescriptor skeleton)
     {
         if (_interaction.GetPropagation(skeleton.Id) is not { } propagation) return;
-        Crystarium.ActionBar(
+        ActionBar(
             "pose-parenting-footer",
             cursor,
             size,
@@ -1215,7 +1225,7 @@ public partial class PoseInspectorPane : IDisposable
 
     private void Reset3DCamera()
     {
-        var camera = Crystarium.ActiveTheme.Pose3D;
+        var camera = ActiveTheme.Pose3D;
         _orbitYaw = camera.InitialYaw;
         _orbitPitch = camera.InitialPitch;
         _orbitZoom = 1f;
@@ -1224,8 +1234,8 @@ public partial class PoseInspectorPane : IDisposable
 
     private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
-        var camera = Crystarium.ActiveTheme.Pose3D;
-        float inset = Crystarium.ActiveTheme.Page.Inset * s;
+        var camera = ActiveTheme.Pose3D;
+        float inset = ActiveTheme.Page.Inset * s;
         var min = origin + new Vector2(inset, inset);
         var max = origin + new Vector2(width, height) - new Vector2(inset, inset);
         if (max.X <= min.X || max.Y <= min.Y)
@@ -1235,15 +1245,15 @@ public partial class PoseInspectorPane : IDisposable
             min,
             max,
             ImGui.ColorConvertFloat4ToU32(
-                Crystarium.ActiveTheme.Chrome.UnavailableFill),
-            Crystarium.ActiveTheme.Radii.Surface * s);
+                ActiveTheme.Chrome.UnavailableFill),
+            ActiveTheme.Radii.Surface * s);
         dl.AddRect(
             min,
             max,
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(
-                    Crystarium.ActiveTheme.FormSeparator)),
-            Crystarium.ActiveTheme.Radii.Surface * s);
+                    ActiveTheme.FormSeparator)),
+            ActiveTheme.Radii.Surface * s);
 
         ImGui.SetCursorScreenPos(min);
         ImGui.InvisibleButton("##pose-3d", canvasSize);
@@ -1303,7 +1313,7 @@ public partial class PoseInspectorPane : IDisposable
         if (positions.Count == 0)
         {
             dl.PushClipRect(min, max, true);
-            Crystarium.TextAt(min + new Vector2( Crystarium.ActiveTheme.Page.Inset) * s, "No skeleton.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+            TextAt(min + new Vector2( ActiveTheme.Page.Inset) * s, "No skeleton.", new TextStyle { Size = ActiveTheme.Typography.LabelSize, Color = ActiveTheme.FormHint });
             dl.PopClipRect();
             return height;
         }
@@ -1324,7 +1334,7 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         uint lineCol = ImGui.ColorConvertFloat4ToU32(
-            Crystarium.ActiveTheme.Glass.BorderTop);
+            ActiveTheme.Glass.BorderTop);
         BoneDescriptor? hovered = null;
         float bestDist = camera.HoverRadius * s;
         var mouse = ImGui.GetMousePos();
@@ -1344,8 +1354,8 @@ public partial class PoseInspectorPane : IDisposable
                     : camera.DotRadius) * s,
                 ImGui.ColorConvertFloat4ToU32(
                     isSel
-                        ? Crystarium.ActiveTheme.Text
-                        : Crystarium.ActiveTheme.Accent));
+                        ? ActiveTheme.Text
+                        : ActiveTheme.Accent));
             float dist = Vector2.Distance(mouse, p);
             if (dist < bestDist) { bestDist = dist; hovered = bone; }
         }
@@ -1353,7 +1363,7 @@ public partial class PoseInspectorPane : IDisposable
         {
             {
                 var mouse3 = ImGui.GetMousePos();
-                Crystarium.HoverHelp.Preview("pose-orbit-dot",
+                HoverHelp.Preview("pose-orbit-dot",
                     mouse3 - new Vector2(4f, 4f), mouse3 + new Vector2(4f, 4f),
                     hovered.DisplayName);
             }
@@ -1363,7 +1373,7 @@ public partial class PoseInspectorPane : IDisposable
             else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 _workspaceSelection.Toggle(hoveredId);
         }
-        Crystarium.TextAt(min + new Vector2( Crystarium.ActiveTheme.Page.Inset, canvasSize.Y / s - Crystarium.ActiveTheme.Page.Inset - Crystarium.ActiveTheme.Typography.CaptionSize) * s, "left drag: orbit · middle drag: pan · wheel: zoom · click: select", new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.FormHint });
+        TextAt(min + new Vector2( ActiveTheme.Page.Inset, canvasSize.Y / s - ActiveTheme.Page.Inset - ActiveTheme.Typography.CaptionSize) * s, "left drag: orbit · middle drag: pan · wheel: zoom · click: select", new TextStyle { Size = ActiveTheme.Typography.CaptionSize, Color = ActiveTheme.FormHint });
         dl.PopClipRect();
 
         return height;
@@ -1372,7 +1382,7 @@ public partial class PoseInspectorPane : IDisposable
 
 
     // Axis rows update one shared transform gesture.
-    private void DrawTransform(Crystarium.FormScope form)
+    private void DrawTransform(FormScope form)
     {
         using var profile = FrameProfiler.Scope("Rail · TRANSLATION");
         var (transform, canEdit) = ReadTransform();
@@ -1476,8 +1486,8 @@ public partial class PoseInspectorPane : IDisposable
         var displayEuler = swap ? SwapXY(euler) : euler;
         form.Custom(
             string.Empty,
-            Crystarium.TransformGridHeightFor(capsule ? 2 : 3),
-            row => Crystarium.TransformGrid(
+            TransformGridHeightFor(capsule ? 2 : 3),
+            row => TransformGrid(
                 "rail-transform",
                 row.Origin,
                 row.Width,
@@ -1559,7 +1569,7 @@ public partial class PoseInspectorPane : IDisposable
     }
 
     private void DrawTransformClipboard(
-        Crystarium.FormScope form,
+        FormScope form,
         Transform current,
         bool canEdit)
     {
@@ -1605,7 +1615,7 @@ public partial class PoseInspectorPane : IDisposable
     // Refusals are scoped to their target actor.
     private (ActorId Actor, string Text)? _gazeRefusal;
 
-    private void DrawGaze(Crystarium.FormScope form, ActorId actor, bool wide)
+    private void DrawGaze(FormScope form, ActorId actor, bool wide)
     {
         using var profile = FrameProfiler.Scope(
             wide ? "Surface · GAZE" : "Rail · GAZE");
@@ -1702,15 +1712,15 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         const string atHelp = "Choose which actor this one looks at";
-        form.Custom("Mode", Crystarium.ActiveTheme.Controls.WorkspaceHeight, row =>
+        form.Custom("Mode", ActiveTheme.Controls.WorkspaceHeight, row =>
         {
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             float gap = theme.Page.ActionGap * row.Scale;
             float poseWidth = (theme.Controls.CheckboxSize + theme.Spacing.Three) * row.Scale
-                + Crystarium.MeasureText("Pose-aware", new TextStyle
+                + MeasureText("Pose-aware", new TextStyle
                     { Size = theme.Typography.CaptionSize, Weight = FontWeight.Regular }).X;
             float atWidth = wide
-                ? Crystarium.MeasureText("At", new TextStyle
+                ? MeasureText("At", new TextStyle
                     { Size = theme.Typography.LabelSize, Weight = FontWeight.Regular }).X
                 : 0f;
             // The choices share the remaining row; the trailing checkbox stays
@@ -1718,8 +1728,8 @@ public partial class PoseInspectorPane : IDisposable
             float choiceWidth = MathF.Max(1f,
                 (row.ControlWidth - poseWidth - atWidth - gap * (wide ? 3f : 1f))
                 / (wide ? 2f : 1f) / row.Scale);
-            Crystarium.ActionBar("gaze-mode-row", row.ControlOrigin,
-                new Vector2(row.ControlWidth, Crystarium.ActiveTheme.Controls.WorkspaceHeight * row.Scale),
+            ActionBar("gaze-mode-row", row.ControlOrigin,
+                new Vector2(row.ControlWidth, ActiveTheme.Controls.WorkspaceHeight * row.Scale),
                 actions =>
                 {
                     actions.Dropdown("Mode", GazeModeOptions, ModeIndex(), PickMode,
@@ -1765,7 +1775,7 @@ public partial class PoseInspectorPane : IDisposable
     }
 
     private void DrawGazeParts(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         GazeReading state,
         bool wide,
@@ -1785,7 +1795,7 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         void LockIcon(
-            Crystarium.ActionScope actions,
+            ActionScope actions,
             string label,
             GazeTargetType part,
             bool enabled)
@@ -1802,7 +1812,7 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         void CameraIcon(
-            Crystarium.ActionScope actions,
+            ActionScope actions,
             string label,
             GazeTargetType part,
             bool enabled)
@@ -1820,7 +1830,7 @@ public partial class PoseInspectorPane : IDisposable
         }
 
         void PointIcon(
-            Crystarium.ActionScope actions,
+            ActionScope actions,
             string label,
             GazeTargetType part,
             bool enabled)
@@ -1946,7 +1956,7 @@ public partial class PoseInspectorPane : IDisposable
     }
 
     private void DrawIkChainList(
-        Crystarium.FormScope form,
+        FormScope form,
         BoneId selected,
         TransformTargetId selectedTarget)
     {
@@ -2028,7 +2038,7 @@ public partial class PoseInspectorPane : IDisposable
     /// <summary>Bone mode's rows: whose bone, which bone (a list or a pick
     /// in the view). The pick keeps the tip's offset from the bone.</summary>
     private void DrawIkBoneTarget(
-        Crystarium.FormScope form,
+        FormScope form,
         global::Poser.Domain.Identity.BoneId endpoint,
         TransformTargetId ikTarget, bool fabrik = false)
     {
@@ -2110,7 +2120,7 @@ public partial class PoseInspectorPane : IDisposable
             : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
                 query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-    private void DrawIkEntityTarget(Crystarium.FormScope form, TransformTargetId endpoint, bool fabrik = false)
+    private void DrawIkEntityTarget(FormScope form, TransformTargetId endpoint, bool fabrik = false)
     {
         var current = fabrik
             ? _ikPort.Get(endpoint)?.Fabrik?.Handle.Entity
@@ -2170,7 +2180,7 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    private void DrawIk(Crystarium.FormScope form)
+    private void DrawIk(FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             return;
@@ -2465,7 +2475,7 @@ public partial class PoseInspectorPane : IDisposable
             _notices.Failed($"Bake: {failed.Detail}");
     }
 
-    private void DrawActorIk(Crystarium.FormScope form)
+    private void DrawActorIk(FormScope form)
     {
         PumpBakeQueue();
         var actorId = OwningActorId();
@@ -2516,7 +2526,7 @@ public partial class PoseInspectorPane : IDisposable
 
 
     private void DrawPoseActions(
-        Crystarium.FormScope form,
+        FormScope form,
         SkeletonDescriptor skeleton,
         bool wide)
     {
@@ -2558,7 +2568,7 @@ public partial class PoseInspectorPane : IDisposable
                     ? $"Apply the stashed pose to this actor. Stashed from {_poseCommands.StashedFrom} at {_poseCommands.StashedAt:HH:mm:ss} UTC."
                     : "Nothing stashed yet");
         });
-        void Resets(Crystarium.ActionScope actions)
+        void Resets(ActionScope actions)
         {
             if (boneId is { } resetId)
             {

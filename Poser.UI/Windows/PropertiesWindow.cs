@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Poser.UI.Composition;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -91,7 +92,7 @@ public sealed class PropertiesWindow : Window, IDisposable
         else SizeCondition = ImGuiCond.FirstUseEver;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
         ResizeAccent.Push();
     }
 

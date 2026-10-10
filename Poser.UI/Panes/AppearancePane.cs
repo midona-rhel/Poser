@@ -17,6 +17,14 @@ using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.AxisWellWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.ColorWellWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -85,7 +93,7 @@ public sealed partial class AppearancePane
     private bool _openWetSurface = true;
     private bool _openExternalAppearance = true;
 
-    private readonly Crystarium.SearchPicker<ExternalItem> _picker =
+    private readonly SearchPicker<ExternalItem> _picker =
         new("appearance-external");
 
     private static readonly Func<ExternalItem, string> ItemName =
@@ -97,7 +105,7 @@ public sealed partial class AppearancePane
     private ActorId? _pickerActor;
 
     // Model picker state.
-    private readonly Crystarium.SearchPicker<ModelCatalogEntry> _modelPicker =
+    private readonly SearchPicker<ModelCatalogEntry> _modelPicker =
         new("appearance-model");
     private ActorId? _modelPickerActor;
     private int _modelKindIndex;
@@ -135,9 +143,9 @@ public sealed partial class AppearancePane
     private bool _bodyBlocked;
     private string _bodyBlockedDetail = string.Empty;
 
-    private readonly Crystarium.FileDialog _mcdfImportBrowser =
+    private readonly FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf", ".chara" }, isSaveMode: false);
-    private readonly Crystarium.FileDialog _mcdfExportBrowser =
+    private readonly FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
     /// <summary>Folder used by character-file browsers.</summary>
     private string _mcdfPath;
@@ -222,7 +230,7 @@ public sealed partial class AppearancePane
         DrainCustomizePickers();
 
         float s = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float band = global::Poser.UI.Views.AppShellView.ToolbarHeight * s;
         float pill = theme.Controls.NavigationHeight * s;
         var selectedId = _selection.PrimaryActor;
@@ -233,7 +241,7 @@ public sealed partial class AppearancePane
         if (attached)
             _view = 0;
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, (band - pill) * 0.5f));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             "##appearance-view", attached ? AttachedViewLabels : ViewLabels, _view,
             next => _view = next,
             alignFirstTabToCursor: true,
@@ -254,14 +262,14 @@ public sealed partial class AppearancePane
 
         float bodyHeight = MathF.Max(1f, size.Y - band);
         ImGui.SetCursorScreenPos(new Vector2(shellLeft, origin.Y + band));
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             "appearance-body",
             shellWidth / s,
             bodyHeight / s,
             region =>
             {
                 var cursor = ImGui.GetCursorScreenPos();
-                Crystarium.Page("appearance", cursor,
+                Page("appearance", cursor,
                     new Vector2(region.ContentWidth * s, bodyHeight), page =>
                 {
                     if (_selection.PrimaryActor is not { } actor)
@@ -297,7 +305,7 @@ public sealed partial class AppearancePane
             });
     }
 
-    private void DrawActorView(Crystarium.PageScope page, ActorId actor)
+    private void DrawActorView(PageScope page, ActorId actor)
     {
         {
             _modelLoader.EnsureLoaded();
@@ -359,7 +367,7 @@ public sealed partial class AppearancePane
     }
 
     private void DrawAttachedActorView(
-        Crystarium.PageScope page,
+        PageScope page,
         ActorId actor)
     {
         bool supported = _presentation.IsSupported(actor)
@@ -388,7 +396,7 @@ public sealed partial class AppearancePane
     }
 
     private void DrawAttachmentSection(
-        Crystarium.PageScope page,
+        PageScope page,
         ActorId actor)
     {
         if (_companions.ActionsFor(actor) is not { } state)
@@ -428,7 +436,7 @@ public sealed partial class AppearancePane
     }
 
     /// <summary>Edits the actor's model id and supports named model search.</summary>
-    private void ModelRows(Crystarium.FormScope form, ActorId id)
+    private void ModelRows(FormScope form, ActorId id)
     {
         if (_integration.ReadModel(id) is not { } current)
         {
@@ -441,7 +449,7 @@ public sealed partial class AppearancePane
             _modelText = ModelIdText(current);
         }
 
-        form.Custom("Model", Crystarium.ActiveTheme.Controls.FormRowHeight,
+        form.Custom("Model", ActiveTheme.Controls.FormRowHeight,
             row => DrawModelRow(row, id, current),
             help: "What this actor draws as");
     }
@@ -450,9 +458,9 @@ public sealed partial class AppearancePane
     /// steppers (the texture-selector shape), and the verbs. A step or a
     /// committed edit applies immediately — one click, one change.</summary>
     private void DrawModelRow(
-        Crystarium.FormRowScope row, ActorId id, int current)
+        FormRowScope row, ActorId id, int current)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float s = row.Scale;
         float side = theme.Controls.WorkspaceHeight * s;
         float gap = theme.Page.ActionGap * s;
@@ -469,7 +477,7 @@ public sealed partial class AppearancePane
 
         // The picker IS the value display: the name opens the search.
         ImGui.SetCursorScreenPos(new Vector2(row.ControlOrigin.X, top));
-        Crystarium.Button(
+        Button(
             ModelDisplayName(current),
             () => OpenModelPicker(id),
             style: ControlStyle.Workspace with
@@ -479,7 +487,7 @@ public sealed partial class AppearancePane
 
         float x = row.ControlOrigin.X + nameW + gap;
         ImGui.SetCursorScreenPos(new Vector2(x, top));
-        Crystarium.IconButton(
+        IconButton(
             TablerIcon.Minus,
             () => { StepModelId(-1); ApplyModelId(id); },
             square, current <= 0, "Previous model id",
@@ -492,7 +500,7 @@ public sealed partial class AppearancePane
             System.Globalization.CultureInfo.InvariantCulture,
             out var parsed) ? parsed : current;
         ImGui.SetCursorScreenPos(new Vector2(x, top));
-        Crystarium.AxisWell(
+        AxisWell(
             "appearance-model-id",
             string.Empty,
             draft,
@@ -509,7 +517,7 @@ public sealed partial class AppearancePane
         x += wellW + tight;
 
         ImGui.SetCursorScreenPos(new Vector2(x, top));
-        Crystarium.IconButton(
+        IconButton(
             TablerIcon.Plus,
             () => { StepModelId(1); ApplyModelId(id); },
             square, false, "Next model id",
@@ -517,7 +525,7 @@ public sealed partial class AppearancePane
 
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
-        Crystarium.Button("Reset",
+        Button("Reset",
             () => ReportModel(_integration.ResetModel(id), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
@@ -612,7 +620,7 @@ public sealed partial class AppearancePane
             : TablerIcon.Paw,
         Badge = _modelEntryBadge,
         Strip = new PickerStrip(ModelKindLabels, _modelKindIndex, _setModelKind),
-        Width = Crystarium.ActiveTheme.Picker.WideWidth,
+        Width = ActiveTheme.Picker.WideWidth,
     };
 
     private IReadOnlyList<ModelCatalogEntry> ComputeModelSearch(string search)
@@ -713,7 +721,7 @@ public sealed partial class AppearancePane
     }
 
     private void BasicPresentationRows(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -735,7 +743,7 @@ public sealed partial class AppearancePane
     }
 
     private void GeneralRows(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -788,7 +796,7 @@ public sealed partial class AppearancePane
     }
 
     private void CharacterTintRow(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -805,18 +813,18 @@ public sealed partial class AppearancePane
     /// <summary>One row of equidistant tint cells — character, main
     /// hand, off hand — under their own header.</summary>
     private void TintRow(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
     {
         void ColorCell(
-            Crystarium.FormPairCell cell, string what,
+            FormPairCell cell, string what,
             PresentationModel model)
         {
             ImGui.SetCursorScreenPos(cell.Center(
-                Crystarium.ActiveTheme.Controls.ColorWellSize));
-            Crystarium.ColorWell(
+                ActiveTheme.Controls.ColorWellSize));
+            ColorWell(
                 $"appearance-tint-{what}",
                 TintFor(owned, reading, model) ?? Vector4.One,
                 value => Report(
@@ -835,7 +843,7 @@ public sealed partial class AppearancePane
     }
 
     private void WetSurfaceRows(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         PresentationOverrides owned,
         PresentationReading reading)
@@ -869,7 +877,7 @@ public sealed partial class AppearancePane
     }
 
     private void ExternalAppearanceRows(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         IntegrationOverrides external)
     {
@@ -945,7 +953,7 @@ public sealed partial class AppearancePane
     }
 
     private void CharacterFileRows(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         IntegrationOverrides external)
     {

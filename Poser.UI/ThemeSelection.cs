@@ -3,6 +3,7 @@ using Microsoft.Win32;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Config;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -65,7 +66,7 @@ internal static class ThemeSelection
     }
 
     public static void Apply(UITheme selection, int accentIndex) =>
-        Crystarium.UseTheme(Resolve(selection, accentIndex));
+        UseTheme(Resolve(selection, accentIndex));
 
     private static bool WindowsUsesLightApps()
     {

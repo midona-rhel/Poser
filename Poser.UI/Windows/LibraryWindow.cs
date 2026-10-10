@@ -5,6 +5,12 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
 using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowMovement;
 
 namespace Poser.UI;
 
@@ -105,7 +111,7 @@ public sealed class LibraryWindow : Window
         base.PreDraw();
         // Collapse pins the window to its bar, exactly the shell's own
         // collapse; restore hands back the remembered height.
-        float bar = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        float bar = ActiveTheme.Floating.ModalBarHeight;
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
             {
@@ -133,27 +139,27 @@ public sealed class LibraryWindow : Window
             SizeCondition = ImGuiCond.FirstUseEver;
         }
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
-        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, ActiveTheme.TextDim);
+        ImGui.PushStyleColor(ImGuiCol.Border, ActiveTheme.Border);
         // Resize feedback — the grip and the lit border edge — is the
         // theme's accent, never Dalamud's global highlight.
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);
-        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.Button, ActiveTheme.SurfaceRaised);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, ActiveTheme.SurfaceSunken);
+        ImGui.PushStyleColor(ImGuiCol.Header, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, ActiveTheme.AccentActive);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowRounding,
-            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+            ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -169,7 +175,7 @@ public sealed class LibraryWindow : Window
             return;
         using var manipulationFade = Controls.ManipulationHide.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         var dl = ImGui.GetWindowDrawList();
@@ -181,10 +187,10 @@ public sealed class LibraryWindow : Window
             // coat the main content well wears. The chrome's own glass
             // fill stands DOWN for it: two stacked translucent coats read
             // as one opaque slab.
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window, fill: false);
             var well = theme.Surface with
-            { W = Crystarium.FloatingSurface.FillColor.W };
+            { W = FloatingSurface.FillColor.W };
             dl.AddRectFilled(
                 min + new Vector2(1f, 1f) * s,
                 max - new Vector2(1f, 1f) * s,
@@ -257,7 +263,7 @@ public sealed class LibraryWindow : Window
     /// strip keeps its own band below.</summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float height = theme.Floating.ModalBarHeight * s;
         float inset = theme.Page.Inset * s;
 
@@ -267,8 +273,8 @@ public sealed class LibraryWindow : Window
             Weight = FontWeight.SemiBold,
             Color = theme.Chrome.Text,
         };
-        float titleWidth = Crystarium.MeasureText("Library", titleStyle).X;
-        Crystarium.TextInBand(
+        float titleWidth = MeasureText("Library", titleStyle).X;
+        TextInBand(
             new Vector2(min.X + inset, min.Y),
             new Vector2(titleWidth, height),
             "Library",
@@ -280,7 +286,7 @@ public sealed class LibraryWindow : Window
         float actionX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         float actionY = min.Y + (height - closeSide * s) * 0.5f;
         ImGui.SetCursorScreenPos(new Vector2(actionX, actionY));
-        Crystarium.IconButton(
+        IconButton(
             _collapsed ? "chevron-down" : "chevron-up",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
@@ -290,7 +296,7 @@ public sealed class LibraryWindow : Window
             id: "##library-collapse");
         ImGui.SetCursorScreenPos(new Vector2(
             actionX - theme.Page.ActionGap * s - closeSide * s, actionY));
-        Crystarium.IconButton(
+        IconButton(
             "x",
             () => IsOpen = false,
             ControlStyle.Square(closeSide),
@@ -301,16 +307,16 @@ public sealed class LibraryWindow : Window
         var explorerStyle = ControlStyle.Square(closeSide) with
         {
             Width = UiWidth.Fixed(
-                Crystarium.MeasureText(explorerLabel,
+                MeasureText(explorerLabel,
                     new TextStyle { Size = theme.Typography.LabelSize }).X / s
                 + theme.Spacing.Six * 2f)
         };
-        var explorerSize = Crystarium.MeasureButton(explorerLabel, explorerStyle);
+        var explorerSize = MeasureButton(explorerLabel, explorerStyle);
         ImGui.SetCursorScreenPos(new Vector2(
             actionX - (theme.Page.ActionGap + closeSide) * s
                 - theme.Page.ActionGap * s - explorerSize.X,
             min.Y + (height - explorerSize.Y) * 0.5f));
-        Crystarium.Button(explorerLabel, _main.LibraryPane.OpenLibraryInExplorer,
+        Button(explorerLabel, _main.LibraryPane.OpenLibraryInExplorer,
             style: explorerStyle, help: "Open the configured Poser library root",
             id: "##library-open-explorer");
 
@@ -325,14 +331,14 @@ public sealed class LibraryWindow : Window
         // gesture twin, the shell's own rule. The title actions above keep
         // their clicks.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !Crystarium.WindowTitleControlHovered())
+            && !WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
-        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
+        WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 
@@ -351,18 +357,18 @@ public sealed class LibraryWindow : Window
     private float DrawTypeStrip(
         Vector2 min, Vector2 max, float top, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float height = theme.Floating.ModalBarHeight * s;
         float inset = theme.Page.Inset * s;
 
         var pane = _main.LibraryPane;
         int active = Array.IndexOf(
             StripOrder, (PoseLibraryPane.LibraryType)pane.SelectedType);
-        var stripSize = Crystarium.MeasureSegmentedControl(StripLabels);
+        var stripSize = MeasureSegmentedControl(StripLabels);
         ImGui.SetCursorScreenPos(new Vector2(
             min.X + inset,
             top + (height - stripSize.Y) * 0.5f));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             "##library-type",
             StripLabels,
             active < 0 ? 0 : active,
@@ -380,7 +386,7 @@ public sealed class LibraryWindow : Window
             == PoseLibraryPane.LibraryType.Objects)
         {
             float buttonSide =
-                Crystarium.ActiveTheme.Controls.ShellIconAction * s;
+                ActiveTheme.Controls.ShellIconAction * s;
             float gap = theme.Spacing.Three * s;
             // The union leads; the kinds follow. No reset — all-on IS the
             // neutral state, and the union restores it (ruled 2026-09-01).
@@ -396,7 +402,7 @@ public sealed class LibraryWindow : Window
             // The union is a true toggle: all on, or — pressed again while
             // everything is on — all off (ruled 2026-09-01).
             ImGui.SetCursorScreenPos(seat);
-            Crystarium.TemporaryIconToggle(
+            TemporaryIconToggle(
                 TablerIcon.LayersUnion,
                 allActive,
                 allActive ? pane.SetKindFilterNone : pane.SetKindFilterAll,
@@ -411,7 +417,7 @@ public sealed class LibraryWindow : Window
             {
                 bool latched = pane.KindFilterContains(kind, worldKind);
                 ImGui.SetCursorScreenPos(seat);
-                Crystarium.TemporaryIconToggle(
+                TemporaryIconToggle(
                     icon,
                     latched,
                     () => pane.ToggleKindFilter(kind, worldKind),

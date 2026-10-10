@@ -12,6 +12,13 @@ using Poser.Entities;
 using Poser.Library;
 
 using Poser.Domain.Cameras;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI.Views;
 public sealed record IntegrationStatusVm(
@@ -26,9 +33,9 @@ public sealed class SettingsViewModel
     public float BoneDotRadius = 5f;
     public float MapDotRadius = 6f;
     public Vector4 OverlaySelected =
-        Crystarium.ActiveTheme.Palette.Primary;
+        ActiveTheme.Palette.Primary;
     public Vector4 OverlayHovered = Vector4.Lerp(
-        Crystarium.ActiveTheme.Palette.Primary, Vector4.One, 0.35f);
+        ActiveTheme.Palette.Primary, Vector4.One, 0.35f);
     public Vector4 OverlayInactive =
         new(148f / 255f, 163f / 255f, 184f / 255f, 1f);
     public Vector4 OverlayIkChain =
@@ -247,10 +254,10 @@ public static partial class SettingsView
     public const int LibraryPage = 7;
     public const int SkeletonPage = 2;
     public static float DesignWidth =>
-        Crystarium.ActiveTheme.Settings.Width;
+        ActiveTheme.Settings.Width;
 
     public static float DesignHeight =>
-        Crystarium.ActiveTheme.Settings.Height;
+        ActiveTheme.Settings.Height;
     private const float NavigationPillRadius = 5f;
 
     /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>
@@ -284,13 +291,13 @@ public static partial class SettingsView
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var size = new Vector2(
             theme.Settings.Width,
             theme.Settings.Height) * scale;
 
-        var rects = Crystarium.WindowFrame(
+        var rects = WindowFrame(
             "settings",
             origin,
             size,
@@ -324,14 +331,14 @@ public static partial class SettingsView
         SettingsViewModel vm,
         WindowFrameRect rail)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset;
         // The search sits above the pages and reaches across every one of
         // them: while it holds text, the body shows what matches.
         float searchHeight = theme.Controls.SearchHeight;
         ImGui.SetCursorScreenPos(rail.Min + new Vector2(inset, inset) * scale);
-        Crystarium.FilterPill(
+        FilterPill(
             "##settings-search",
             vm.Search,
             next => vm.Search = next,
@@ -375,7 +382,7 @@ public static partial class SettingsView
         float height,
         float inset)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(
@@ -401,9 +408,9 @@ public static partial class SettingsView
         float glyph = theme.Controls.SmallIconSize * scale;
         var slotMin = new Vector2(hit.ScreenMin.X + inset, hit.ScreenMin.Y);
         var glyphMin = slotMin + new Vector2(0f, (height - glyph) * 0.5f);
-        Crystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
+        IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
         float labelX = slotMin.X + glyph + theme.Controls.SearchIconGap * scale;
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(labelX, hit.ScreenMin.Y),
             new Vector2(hit.ScreenMax.X - labelX - inset, height),
             label,
@@ -421,7 +428,7 @@ public static partial class SettingsView
         float scale = ImGuiHelpers.GlobalScale;
         float height = body.Size.Y;
         ImGui.SetCursorScreenPos(body.Min);
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             "##settings-page-scroll",
             body.Size.X / scale,
             height / scale,
@@ -433,9 +440,9 @@ public static partial class SettingsView
                     vm.ResetPageScroll = false;
                 }
                 vm.LibraryContentWidth = MathF.Min(
-                    region.ContentWidth - Crystarium.ActiveTheme.Page.Inset,
-                    Crystarium.ActiveTheme.Page.MaximumContentWidth);
-                Crystarium.Page(
+                    region.ContentWidth - ActiveTheme.Page.Inset,
+                    ActiveTheme.Page.MaximumContentWidth);
+                Page(
                     "settings-page",
                     ImGui.GetCursorScreenPos(),
                     new Vector2(region.ContentWidth * scale, height),
@@ -447,7 +454,7 @@ public static partial class SettingsView
                             DrawSearch(vm, page);
                     },
                     labelColumnWidth:
-                        Crystarium.ActiveTheme.Settings.LabelColumnWidth);
+                        ActiveTheme.Settings.LabelColumnWidth);
             });
     }
 
@@ -455,7 +462,7 @@ public static partial class SettingsView
     /// whose title matches shows whole, otherwise the rows whose label or
     /// hover matches. Section titles carry their page's name; refining the
     /// query does not fade the result page out and back in.</summary>
-    private static void DrawSearch(SettingsViewModel vm, Crystarium.PageScope page)
+    private static void DrawSearch(SettingsViewModel vm, PageScope page)
     {
         double now = ImGui.GetTime();
         string typed = vm.Search.Trim();
@@ -520,7 +527,7 @@ public static partial class SettingsView
 
     private static void DrawCategory(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.DisclosureScope = "settings/" + Nav[vm.Category].Label;
         switch (vm.Category)
@@ -557,7 +564,7 @@ public static partial class SettingsView
 
     private static void DrawGeneral(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Behavior", form =>
         {
@@ -685,7 +692,7 @@ public static partial class SettingsView
 
     private static void ResetRow(
         SettingsViewModel vm,
-        Crystarium.FormScope form,
+        FormScope form,
         ConfigResetScope scope,
         string label,
         string help)
@@ -714,7 +721,7 @@ public static partial class SettingsView
 
     private static void DrawDisplay(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Theme", form =>
         {
@@ -776,7 +783,7 @@ public static partial class SettingsView
 
     private static void DrawSkeleton(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Bones", form =>
         {
@@ -829,7 +836,7 @@ public static partial class SettingsView
         {
             foreach (var name in new List<string>(vm.DefaultBonePresets.Keys))
                 form.Checkboxes(name,
-                    new Crystarium.CheckItem("Default", vm.DefaultBonePresets[name], next => vm.DefaultBonePresets[name] = next));
+                    new CheckItem("Default", vm.DefaultBonePresets[name], next => vm.DefaultBonePresets[name] = next));
         });
         page.Section("Bone map defaults", form =>
         {
@@ -1000,7 +1007,7 @@ public static partial class SettingsView
 
     private static void DrawGizmo(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Size", form =>
             form.Slider(
@@ -1137,7 +1144,7 @@ public static partial class SettingsView
 
     private static void DrawCamera(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("New free cameras", form =>
         {
@@ -1216,7 +1223,7 @@ public static partial class SettingsView
 
     private static void DrawUi(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Layout", form =>
         {
@@ -1274,7 +1281,7 @@ public static partial class SettingsView
 
     private static void DrawKeybinds(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("Preset", form =>
         {
@@ -1359,7 +1366,7 @@ public static partial class SettingsView
 
     private static void DrawKeybindRow(
         SettingsViewModel vm,
-        Crystarium.FormScope form,
+        FormScope form,
         KeybindAction action)
     {
         var slots = vm.Bindings[action.Id];
@@ -1387,34 +1394,34 @@ public static partial class SettingsView
     }
 
     private static void DrawKeybindLabel(
-        SettingsViewModel vm, string action, Crystarium.FormRowScope row)
+        SettingsViewModel vm, string action, FormRowScope row)
     {
         bool ownsFeedback = vm.RebindRefusalAction == action;
         float progress = Motion.Progress(
             ImGui.GetID($"##keybind-feedback-{action}"),
             ownsFeedback && vm.RebindingAction == action
                 && ImGui.GetTime() < vm.RebindRefusalUntil,
-            Crystarium.ActiveTheme.Motion.Slow);
+            ActiveTheme.Motion.Slow);
         float opacity = new Transition(0f, Easing.EaseInOut).Evaluate(progress);
         var size = new Vector2(row.LabelWidth, row.RowHeight * row.Scale);
         if (size.X <= 0f) return;
-        var style = new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize };
-        var normal = Crystarium.ActiveTheme.FormLabel;
+        var style = new TextStyle { Size = ActiveTheme.Typography.LabelSize };
+        var normal = ActiveTheme.FormLabel;
         normal.W *= 1f - opacity;
-        Crystarium.TextInBand(row.Origin, size, action,
+        TextInBand(row.Origin, size, action,
             style with { Color = normal }, TextConstraint.Truncate(size.X));
         if (ownsFeedback && opacity > 0f)
         {
-            var warning = Crystarium.ActiveTheme.Warning;
+            var warning = ActiveTheme.Warning;
             warning.W *= opacity;
-            Crystarium.TextInBand(row.Origin, size, vm.RebindRefusal,
+            TextInBand(row.Origin, size, vm.RebindRefusal,
                 style with { Color = warning }, TextConstraint.Truncate(size.X));
         }
     }
 
     private static void DrawKeybindSlot(
         SettingsViewModel vm,
-        Crystarium.ActionScope actions,
+        ActionScope actions,
         KeybindAction action,
         KeybindSlots slots,
         int slot)
@@ -1465,7 +1472,7 @@ public static partial class SettingsView
 
     private static void DrawAbout(
         SettingsViewModel vm,
-        Crystarium.PageScope page)
+        PageScope page)
     {
         page.Section("About", form =>
         {
@@ -1474,7 +1481,7 @@ public static partial class SettingsView
                 "Release notes",
                 () => vm.OnOpenReleaseNotes?.Invoke(),
                 help: "Browse all release notes through your installed version"));
-            form.ReadOnly("Stack", "Crystarium · Poser.UI");
+            form.ReadOnly("Stack", "Poser.UI widgets");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));

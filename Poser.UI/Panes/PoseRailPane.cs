@@ -10,6 +10,12 @@ using Poser.UI.Views;
 using Poser.Application.Viewport;
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
 
 namespace Poser.UI;
 
@@ -68,9 +74,9 @@ public class PoseRailPane
     /// height, so a folded-small inspector ends on the orb.</summary>
     private const float OrbBottomMargin = 32f;
 
-    private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
-    private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
-    private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
+    private static Vector4 AxisX => ActiveTheme.Palette.AxisX;
+    private static Vector4 AxisY => ActiveTheme.Palette.AxisY;
+    private static Vector4 AxisZ => ActiveTheme.Palette.AxisZ;
 
     public PoseRailPane(
         PoseInspectorPane inspector,
@@ -100,24 +106,24 @@ public class PoseRailPane
         if (_inspector.IsMultiEntitySelection)
         {
             var (multiWho, multiSub) = _inspector.MultiselectHeader();
-            Crystarium.TextAt(cursor, multiWho, new TextStyle
+            TextAt(cursor, multiWho, new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.BodySize,
+                Size = ActiveTheme.Typography.BodySize,
                 Weight = FontWeight.Medium,
-                Color = Crystarium.ActiveTheme.Text,
+                Color = ActiveTheme.Text,
             });
             if (multiSub.Length > 0)
-                Crystarium.TextAt(
+                TextAt(
                     cursor + new Vector2(0f, 17f) * s, multiSub,
                     new TextStyle
                     {
-                        Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                        Color = Crystarium.ActiveTheme.TextMuted,
+                        Size = ActiveTheme.Typography.CaptionSize,
+                        Color = ActiveTheme.TextMuted,
                     });
             cursor.Y += (multiSub.Length > 0 ? 36f : 22f) * s;
 
             ImGui.SetCursorScreenPos(cursor);
-            if (Crystarium.Button("Move to camera",
+            if (Button("Move to camera",
                     id: "rail-multi-camera",
                     help: "Place the selection in front of the camera",
                     style: ControlStyle.Workspace))
@@ -132,7 +138,7 @@ public class PoseRailPane
             if (_inspector.CanGroupDeselect)
             {
                 ImGui.SameLine(0f, 6f * s);
-                if (Crystarium.Button("Deselect", id: "rail-multi-deselect",
+                if (Button("Deselect", id: "rail-multi-deselect",
                         help: "Drop the whole selection",
                         style: ControlStyle.Workspace))
                     _inspector.GroupDeselect();
@@ -150,9 +156,9 @@ public class PoseRailPane
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)
         {
-            Crystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
+            TextAt(cursor, who, new TextStyle { Size = ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = ActiveTheme.Text });
             if (sub.Length > 0)
-                Crystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
+                TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = ActiveTheme.Typography.CaptionSize, Color = ActiveTheme.TextMuted, Family = FontFamily.Mono });
 
             if (linked >= 2)
             {
@@ -160,31 +166,31 @@ public class PoseRailPane
                 string count = linked.ToString();
                 var countStyle = new TextStyle
                 {
-                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                    Size = ActiveTheme.Typography.CaptionSize,
                     Weight = FontWeight.Medium,
-                    Color = Crystarium.ActiveTheme.AccentHover,
+                    Color = ActiveTheme.AccentHover,
                 };
-                float pillW = (16f + 8f + Crystarium.MeasureText(count, countStyle).X / s) * s;
+                float pillW = (16f + 8f + MeasureText(count, countStyle).X / s) * s;
                 var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
                 var pmax = pmin + new Vector2(pillW, 18f * s);
                 dl.AddRectFilled(
                     pmin,
                     pmax,
                     ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.AccentFill)),
-                    Crystarium.ActiveTheme.Radii.Surface * s);
+                        ColorEx.ApplyAlpha(ActiveTheme.Chrome.AccentFill)),
+                    ActiveTheme.Radii.Surface * s);
                 ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
-                Crystarium.Icon(
+                Icon(
                     "link",
                     11f,
-                    Crystarium.ActiveTheme.AccentHover);
-                Crystarium.TextInBand(
+                    ActiveTheme.AccentHover);
+                TextInBand(
                     pmin + new Vector2(19f, 0f) * s,
                     new Vector2(pillW - 19f * s, 18f * s),
                     count, countStyle,
                     TextAlign.Start, besideIcon: true);
-                if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
-                    Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
+                if (HoverHelp.HelpHovered(pmin, pmax))
+                    HoverHelp.Explain("rail-linked-pill", pmin, pmax,
                         "Edits apply to all the bones counted here");
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
@@ -209,7 +215,7 @@ public class PoseRailPane
                     : bone
                         ? "Reset every selected bone"
                         : "Nothing to reset here";
-            if (Crystarium.Button(resetLabel,
+            if (Button(resetLabel,
                     id: "rail-reset",
                     help: resetHelp,
                     style: ControlStyle.Workspace,
@@ -223,7 +229,7 @@ public class PoseRailPane
                     _inspector.ResetSelectedBones();
             }
             ImGui.SameLine(0f, 6f * s);
-            if (Crystarium.Button("Select children", id: "rail-children",
+            if (Button("Select children", id: "rail-children",
                     help: bone
                         ? "Add descendant bones to the selection"
                         : "Bones only",
@@ -237,18 +243,18 @@ public class PoseRailPane
             // The empty head keeps the populated head's TWO rows — the
             // name seat and the sub seat, each a dash — so nothing
             // restyles or reflows when a selection lands.
-            Crystarium.TextAt(cursor, "-", new TextStyle
+            TextAt(cursor, "-", new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.BodySize,
+                Size = ActiveTheme.Typography.BodySize,
                 Weight = FontWeight.Medium,
-                Color = Crystarium.ActiveTheme.Text,
+                Color = ActiveTheme.Text,
             });
-            Crystarium.TextAt(
+            TextAt(
                 cursor + new Vector2(0f, 17f) * s, "-",
                 new TextStyle
                 {
-                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                    Color = Crystarium.ActiveTheme.TextMuted,
+                    Size = ActiveTheme.Typography.CaptionSize,
+                    Color = ActiveTheme.TextMuted,
                     Family = FontFamily.Mono,
                 });
             cursor.Y += 36f * s;
@@ -257,11 +263,11 @@ public class PoseRailPane
             // never reflows the rail. The gizmo below draws inert the
             // same way.
             ImGui.SetCursorScreenPos(cursor);
-            Crystarium.Button("Reset transform", id: "rail-reset",
+            Button("Reset transform", id: "rail-reset",
                 help: "Nothing to reset here",
                 style: ControlStyle.Workspace, disabled: true);
             ImGui.SameLine(0f, 6f * s);
-            Crystarium.Button("Select children", id: "rail-children",
+            Button("Select children", id: "rail-children",
                 help: "Bones only",
                 style: ControlStyle.Workspace, disabled: true);
             cursor.Y += 36f * s;
@@ -353,11 +359,11 @@ public class PoseRailPane
 
         if (ImGui.IsItemDeactivated() || (_joyCameraId is not null && _joyCameraId != camera?.Id))
         {
-            Crystarium.Commit("##rail-camera-joystick");
+            Commit("##rail-camera-joystick");
             _joyCameraId = null;
         }
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
@@ -372,7 +378,7 @@ public class PoseRailPane
                 float delta = angle - _joyRollStartAngle;
                 if (delta > MathF.PI) delta -= MathF.Tau;
                 if (delta < -MathF.PI) delta += MathF.Tau;
-                Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                ChangeValue("##rail-camera-joystick", () =>
                     _cameraValues.Set(camera.Id, CameraProperties.Roll, _joyRollStartValue + delta));
                 // The same hide and readout a world drag gets.
                 ManipulationDrag.HoldFromShell(
@@ -399,14 +405,14 @@ public class PoseRailPane
                 // A free camera turns the way the stick points; its
                 // rotation runs the other way from an orbit pan.
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
-                    Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                    ChangeValue("##rail-camera-joystick", () =>
                         _cameraValues.Set(camera.Id, CameraProperties.Rotation, camera.Rotation with
                     {
                         X = camera.Rotation.X - stepX,
                         Y = camera.Rotation.Y - stepY,
                     }));
                 else
-                    Crystarium.ChangeValue("##rail-camera-joystick", () =>
+                    ChangeValue("##rail-camera-joystick", () =>
                         _cameraValues.Set(camera.Id, CameraProperties.Pan, camera.Pan with
                     {
                         X = camera.Pan.X + stepX,
@@ -442,7 +448,7 @@ public class PoseRailPane
         if (hovered && !active)
         {
             bool overRing = mouseDistance > discRadius + 2f * s;
-            Crystarium.HoverHelp.Explain("rail-camera-joystick",
+            HoverHelp.Explain("rail-camera-joystick",
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
                 overRing ? "Roll the camera" : "Pan the camera");
         }
@@ -482,7 +488,7 @@ public class PoseRailPane
             _padOffset = Vector2.Zero;
         }
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Glass.Luminosity)));
 
@@ -493,7 +499,7 @@ public class PoseRailPane
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
-                Crystarium.ChangeValue("##rail-overlay-pad",
+                ChangeValue("##rail-overlay-pad",
                     () => _overlayValues.Update(id, OverlayProperties.Position, position => position + step));
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
@@ -512,7 +518,7 @@ public class PoseRailPane
 
         if (ImGui.IsItemDeactivated())
         {
-            Crystarium.Commit("##rail-overlay-pad");
+            Commit("##rail-overlay-pad");
             _padOverlayId = null;
         }
 
@@ -527,7 +533,7 @@ public class PoseRailPane
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)));
 
         if (hovered && !active)
-            Crystarium.HoverHelp.Explain("rail-overlay-pad",
+            HoverHelp.Explain("rail-overlay-pad",
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
                 "Move the overlay");
 
@@ -563,7 +569,7 @@ public class PoseRailPane
 
         dl.AddCircleFilled(center, widgetRadius + 12f * s,
             ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Glass.Luminosity)));
+                ColorEx.ApplyAlpha(ActiveTheme.Glass.Luminosity)));
 
         // The inspector's own direction-only projection, straight at the
         // fixed widget centre — no perspective and no recentring, so the
@@ -650,7 +656,7 @@ public class PoseRailPane
             // Ring emphasis only — no cursor-following markers.
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
             var ringMouse = ImGui.GetMousePos();
-            Crystarium.HoverHelp.Explain("rail-gizmo-ring",
+            HoverHelp.Explain("rail-gizmo-ring",
                 ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
                 $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring to rotate · Shift faster, Ctrl finer · "
                 + (_lockedAxis == hoverAxis

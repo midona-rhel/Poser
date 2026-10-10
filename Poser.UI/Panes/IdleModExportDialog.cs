@@ -8,6 +8,10 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -15,7 +19,7 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
 {
     private readonly string ModalId = $"##idle-export-{Guid.NewGuid():N}";
     private const string ModalTitle = "Export Idle Pose";
-    private readonly Crystarium.FileDialog _dialog = new("Save and Export Idle Pose", new[] { ".pmp" }, isSaveMode: true)
+    private readonly FileDialog _dialog = new("Save and Export Idle Pose", new[] { ".pmp" }, isSaveMode: true)
         { ConfirmLabel = "Save and Export" };
     private readonly HashSet<int> _races = [];
     private IdleModChoices? _choices;
@@ -74,9 +78,9 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
         string? problem = string.IsNullOrWhiteSpace(_name) || _name.Length > 128 ? "Enter a mod name (up to 128 characters)."
             : _races.Count == 0 ? "Select a race and gender."
             : slots.Length == 0 ? "No shared standing pose slot is available." : null;
-        Crystarium.Dialog(ModalId, _open, value => _open = value, ModalTitle,
+        Dialog(ModalId, _open, value => _open = value, ModalTitle,
             size: DialogSize.Medium, height: 650f,
-            body: () => Crystarium.Page("idle-export-options", ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail(), page =>
+            body: () => Page("idle-export-options", ImGui.GetCursorScreenPos(), ImGui.GetContentRegionAvail(), page =>
             {
                 page.Section("Mod", form =>
                 {
@@ -93,7 +97,7 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
                         var female = choices.Targets[i + 1];
                         form.Checkboxes(male.Label[..^5], Item(male, "Male"), Item(female, "Female"));
                     }
-                    Crystarium.CheckItem Item(IdleModTarget target, string label) => new(label,
+                    CheckItem Item(IdleModTarget target, string label) => new(label,
                         _races.Contains(target.RaceSexId), value =>
                         { if (value) _races.Add(target.RaceSexId); else _races.Remove(target.RaceSexId); },
                         target.RaceSexId == choices.SourceRaceSexId ? "Source actor's race and gender; preserves the captured pose and skeleton."
@@ -102,9 +106,9 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
             }, labelColumnWidth: 125f),
             footer: () =>
             {
-                if (Crystarium.Button("Cancel", id: "idle-export-cancel")) CloseOptions();
+                if (Button("Cancel", id: "idle-export-cancel")) CloseOptions();
                 ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-                if (Crystarium.Button("Save and Export", variant: ButtonVariant.Primary, disabled: problem != null || Busy,
+                if (Button("Save and Export", variant: ButtonVariant.Primary, disabled: problem != null || Busy,
                     help: problem, id: "idle-export-save"))
                 {
                     _pendingOptions = new IdleModOptions(_name.Trim(), _slot, _races.Order().ToImmutableArray());

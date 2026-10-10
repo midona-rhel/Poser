@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Interface.ManagedFontAtlas;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -118,7 +119,7 @@ public static class FontRegistry
         _atlas = atlas;
         _standbyAtlas = standbyAtlas;
         _fontDirectory = fontDirectory;
-        Activate(Crystarium.ActiveTheme);
+        Activate(ActiveTheme);
     }
 
     internal static bool Registered => _atlas != null;

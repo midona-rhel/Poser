@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -132,7 +133,7 @@ internal sealed partial class EntityContextMenus
 
     private static void DrawMoreAction(IReadOnlyList<ContextMenuItem> items, List<Action?> more)
     {
-        int clicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
+        int clicked = FloatingMenu.ConsumeSubmenuClick(out int parent);
         if (InvokeComposedAction(items, parent, clicked)) return;
         if (parent >= 0 && parent < items.Count && items[parent].Label == "More"
             && clicked >= 0 && clicked < more.Count)
@@ -155,8 +156,8 @@ internal sealed partial class EntityContextMenus
         var actions = items.Select(item => item.OnInvoke).ToArray();
         var more = MoveMoreActions(ref items, ref actions);
         if (requested) { requested = false; OpenContextMenu(menu, items); }
-        Crystarium.FloatingMenu.Refresh(menu, items);
-        int clicked = Crystarium.FloatingMenu.Draw(menu);
+        FloatingMenu.Refresh(menu, items);
+        int clicked = FloatingMenu.Draw(menu);
         if (clicked >= 0 && clicked < actions.Length) actions[clicked]?.Invoke();
         DrawMoreAction(items, more);
     }

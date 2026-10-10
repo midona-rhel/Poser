@@ -1,10 +1,11 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class SwitchWidgets
 {
     /// <summary>
     /// iOS-style toggle switch — pixel transcription of picto
@@ -22,12 +23,12 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float logicalHeight = ControlSizing.Height(
-            style.Height, Crystarium.ActiveTheme.Controls.SwitchHeight);
+            style.Height, ActiveTheme.Controls.SwitchHeight);
         float controlScale =
-            logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
+            logicalHeight / ActiveTheme.Controls.SwitchHeight;
         float logicalWidth = ControlSizing.Width(
             style,
-            Crystarium.ActiveTheme.Controls.SwitchWidth * controlScale,
+            ActiveTheme.Controls.SwitchWidth * controlScale,
             ImGui.GetContentRegionAvail().X / scale);
         var size = new Vector2(
             logicalWidth,
@@ -70,9 +71,9 @@ public static partial class Crystarium
         float logicalWidth = (max.X - min.X) / scale;
         float logicalHeight = (max.Y - min.Y) / scale;
         float controlScale =
-            logicalHeight / Crystarium.ActiveTheme.Controls.SwitchHeight;
+            logicalHeight / ActiveTheme.Controls.SwitchHeight;
         // Shared control disabled fade.
-        float opacity = disabled ? Crystarium.ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
+        float opacity = disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
         float eased = value ? 1f : 0f;
         if (identity != 0)
@@ -80,18 +81,18 @@ public static partial class Crystarium
                 identity, value, SwitchTransition.DurationSeconds));
 
         var trackColor = ColorEx.PremultipliedLerp(
-                Crystarium.ActiveTheme.Chrome.SwitchOff,   // rgba(128,128,128,.25)
-                Crystarium.ActiveTheme.Chrome.Primary,     // --color-primary
+                ActiveTheme.Chrome.SwitchOff,   // rgba(128,128,128,.25)
+                ActiveTheme.Chrome.Primary,     // --color-primary
                 eased)
             .Fade(opacity);
         dl.AddRectFilled(min, max,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(trackColor)),
-            Crystarium.ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
+            ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
         // knob: 16px circle, left 2px (off) / 14px (on), bottom 2px
-        float knobInset = Crystarium.ActiveTheme.Spacing.One * controlScale;
+        float knobInset = ActiveTheme.Spacing.One * controlScale;
         float knobSize =
-            Crystarium.ActiveTheme.Controls.SwitchKnobSize * controlScale;
+            ActiveTheme.Controls.SwitchKnobSize * controlScale;
         float knobTravel = logicalWidth - knobSize - knobInset * 2f;
         float knobLeft = (knobInset + knobTravel * eased) * scale;
         float knobRadius = knobSize * 0.5f * scale;
@@ -101,14 +102,14 @@ public static partial class Crystarium
 
         // knob drop shadow (0 1px 3px rgba(0,0,0,.2)) — cheap two-ring approximation
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchShadow.Fade(opacity))), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.Chrome.SwitchShadow.Fade(opacity))), 32);
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.Chrome.SwitchHighlight.Fade(opacity))), 32);
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.Chrome.SwitchHighlight.Fade(opacity))), 32);
 
         // Knob is white in every scheme, opacity .6 off → 1 on per the spec.
         var knobColor = ColorEx.PremultipliedLerp(
-                Crystarium.ActiveTheme.Chrome.SwitchKnob.Fade(0.6f),
-                Crystarium.ActiveTheme.Chrome.SwitchKnob,
+                ActiveTheme.Chrome.SwitchKnob.Fade(0.6f),
+                ActiveTheme.Chrome.SwitchKnob,
                 eased)
             .Fade(opacity);
         dl.AddCircleFilled(center, knobRadius,

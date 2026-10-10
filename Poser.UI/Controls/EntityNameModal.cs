@@ -2,6 +2,11 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
@@ -60,7 +65,7 @@ public sealed class EntityNameModal
         float height = NamePromptHeight + (_validate is null ? 0f : ProblemLineHeight);
         // Footer idiom, not body buttons: the footer bar right-aligns its
         // children, and the height fits one input with no dead band.
-        Crystarium.Dialog(
+        Dialog(
             _windowId,
             _open,
             next => _open = next,
@@ -68,7 +73,7 @@ public sealed class EntityNameModal
             height: height,
             body: () =>
             {
-                Crystarium.TextInput(
+                TextInput(
                     "##name-entity-input", _value,
                     next => _value = _sanitize is { } sanitize ? sanitize(next) : next,
                     placeholder: _placeholder);
@@ -76,10 +81,10 @@ public sealed class EntityNameModal
                     return;
                 // The problem line is reserved whether or not there is one,
                 // so the footer never moves while typing.
-                var theme = Crystarium.ActiveTheme;
+                var theme = ActiveTheme;
                 float scale = ImGuiHelpers.GlobalScale;
                 ImGui.Dummy(new Vector2(0f, 4f * scale));
-                Crystarium.TextAt(
+                TextAt(
                     ImGui.GetCursorScreenPos(), problem ?? string.Empty,
                     new TextStyle
                     {
@@ -92,21 +97,21 @@ public sealed class EntityNameModal
             {
                 // Enter is the blue button: the modal is one input, and
                 // done is done.
-                bool submit = problem is null && Crystarium.DialogHasKeyboardFocus() && (
+                bool submit = problem is null && DialogHasKeyboardFocus() && (
                     ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
                     ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
                 if (_clear is { } clear)
                 {
-                    if (Crystarium.Button("Clear", id: "name-entity-clear", help: _clearHelp))
+                    if (Button("Clear", id: "name-entity-clear", help: _clearHelp))
                     {
                         clear();
                         _open = false;
                     }
                 }
-                else if (Crystarium.Button("Cancel", id: "name-entity-cancel"))
+                else if (Button("Cancel", id: "name-entity-cancel"))
                     _open = false;
                 ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-                if (Crystarium.Button(
+                if (Button(
                         _confirm,
                         variant: ButtonVariant.Primary,
                         disabled: problem is not null,

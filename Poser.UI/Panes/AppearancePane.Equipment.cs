@@ -7,6 +7,13 @@ using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.AxisWellWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.ImageWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -56,10 +63,10 @@ public sealed partial class AppearancePane
     private WardrobeState? _wardrobeState;
     private string? _wardrobeDetail;
 
-    private readonly Crystarium.SearchPicker<WardrobeItem> _itemPicker = new("appearance-item");
+    private readonly SearchPicker<WardrobeItem> _itemPicker = new("appearance-item");
     private readonly Controls.DyePicker _dyePicker = new("appearance-dye");
-    private readonly Crystarium.SearchPicker<FacewearEntry> _facewearPicker = new("appearance-facewear");
-    private readonly Crystarium.SearchPicker<PropRow> _propPicker = new("appearance-prop");
+    private readonly SearchPicker<FacewearEntry> _facewearPicker = new("appearance-facewear");
+    private readonly SearchPicker<PropRow> _propPicker = new("appearance-prop");
     private ActorId? _wardrobePickerActor;
     private EquipSlot _pickerSlot;
     private int _pickerDye;
@@ -89,7 +96,7 @@ public sealed partial class AppearancePane
 
     // ── the view ────────────────────────────────────────────────────────
 
-    private void DrawEquipmentView(Crystarium.PageScope page, ActorId actor)
+    private void DrawEquipmentView(PageScope page, ActorId actor)
     {
         var glamourer = _integration.Glamourer;
         bool ready = glamourer.Available && _appearanceAccess.CanEdit;
@@ -134,13 +141,13 @@ public sealed partial class AppearancePane
             FacewearRow(form, actor, state, ready, blocked);
             form.EndPair();
             form.Checkboxes("Show",
-                new Crystarium.CheckItem("Hat", state?.HatVisible ?? true,
+                new CheckItem("Hat", state?.HatVisible ?? true,
                     on => Switch(actor, MetaSwitch.HatVisible, on),
                     ready ? "Show the headgear" : blocked, !ready),
-                new Crystarium.CheckItem("Visor", state?.VisorToggled ?? false,
+                new CheckItem("Visor", state?.VisorToggled ?? false,
                     on => Switch(actor, MetaSwitch.VisorToggled, on),
                     ready ? "Flip the visor" : blocked, !ready),
-                new Crystarium.CheckItem("Weapon", state?.WeaponVisible ?? true,
+                new CheckItem("Weapon", state?.WeaponVisible ?? true,
                     on => Switch(actor, MetaSwitch.WeaponVisible, on),
                     ready ? "Show the weapons" : blocked, !ready));
             // The outfits are a labelled row of verbs, not a section.
@@ -177,10 +184,10 @@ public sealed partial class AppearancePane
     /// off and right-click on a dye box clears that dye, "None"
     /// leads the dye list, and clothes come off through Remove all.</summary>
     private void ItemRow(
-        Crystarium.FormScope form, ActorId actor, EquipSlot slot,
+        FormScope form, ActorId actor, EquipSlot slot,
         WardrobeState? state, bool ready, string? blocked)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float tile = theme.Controls.FormRowHeight * CardTile;
         form.Custom(SlotName(slot), tile, row =>
         {
@@ -195,7 +202,7 @@ public sealed partial class AppearancePane
                 : null;
 
             ImGui.SetCursorScreenPos(origin);
-            Crystarium.ImageTile(
+            ImageTile(
                 $"wardrobe-{slot}-tile",
                 ResolveIcon(item?.Icon ?? FallbackIcon(slot)),
                 tile,
@@ -217,10 +224,10 @@ public sealed partial class AppearancePane
                 Color = theme.Text,
                 Disabled = !ready,
             };
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x, origin.Y),
                 new Vector2(width, half),
-                Crystarium.TruncateText(
+                TruncateText(
                     worn is { } w2 ? WornName(w2, item) : "—", nameStyle, width),
                 nameStyle);
 
@@ -236,7 +243,7 @@ public sealed partial class AppearancePane
                 var dye = dyeId != 0 ? _wardrobe.Dye(dyeId) : null;
                 int index = which;
                 ImGui.SetCursorScreenPos(new Vector2(x + which * (dyeW + gap), second));
-                Crystarium.ColorTile(
+                ColorTile(
                     $"wardrobe-{slot}-dye{which}",
                     dye is { } paint ? DyeColor(paint.Color) : null,
                     dyeW / s,
@@ -256,14 +263,14 @@ public sealed partial class AppearancePane
 
     /// <summary>Under a weapon's card, the one verb: a prop in its place.</summary>
     private void PropVerbRow(
-        Crystarium.FormScope form, ActorId actor, EquipSlot slot,
+        FormScope form, ActorId actor, EquipSlot slot,
         bool ready, string? blocked)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         form.Custom(string.Empty, theme.Controls.FormRowHeight, row =>
         {
             ImGui.SetCursorScreenPos(row.CenterControl(theme.Controls.WorkspaceHeight));
-            Crystarium.Button("Prop",
+            Button("Prop",
                 () => OpenPropPicker(actor, slot),
                 style: ControlStyle.Workspace with { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
                 disabled: !ready,
@@ -273,10 +280,10 @@ public sealed partial class AppearancePane
     }
 
     private void FacewearRow(
-        Crystarium.FormScope form, ActorId actor,
+        FormScope form, ActorId actor,
         WardrobeState? state, bool ready, string? blocked)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float tile = theme.Controls.FormRowHeight * CardTile;
         form.Custom("Face", tile, row =>
         {
@@ -289,7 +296,7 @@ public sealed partial class AppearancePane
             var entry = WardrobeIds.IsNoFacewear(worn) ? null : FacewearById(worn);
 
             ImGui.SetCursorScreenPos(origin);
-            Crystarium.ImageTile(
+            ImageTile(
                 "wardrobe-facewear-tile",
                 ResolveIcon(entry?.Icon ?? FallbackIcon(null)),
                 tile,
@@ -310,10 +317,10 @@ public sealed partial class AppearancePane
                 Color = theme.Text,
                 Disabled = !ready,
             };
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x, origin.Y),
                 new Vector2(width, half),
-                Crystarium.TruncateText(
+                TruncateText(
                     state is null ? "—" : entry?.Name ?? "None", nameStyle, width),
                 nameStyle);
         }, help: "Glasses and other facewear");
@@ -322,10 +329,10 @@ public sealed partial class AppearancePane
     /// <summary>The raw ids behind a slot: model, weapon type on weapons,
     /// variant. A committed well wears the ids as they stand.</summary>
     private void ModelIdRow(
-        Crystarium.FormScope form, ActorId actor, EquipSlot slot,
+        FormScope form, ActorId actor, EquipSlot slot,
         WardrobeState? state, bool ready, string? blocked)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         bool weapon = slot is EquipSlot.MainHand or EquipSlot.OffHand;
         form.Custom(SlotName(slot), theme.Controls.FormRowHeight, row =>
         {
@@ -340,7 +347,7 @@ public sealed partial class AppearancePane
             {
                 int index = weapon ? i : (i == 0 ? 0 : 2);
                 ImGui.SetCursorScreenPos(new Vector2(x, seat.Y));
-                Crystarium.AxisWell(
+                AxisWell(
                     $"wardrobe-{slot}-id{index}",
                     string.Empty,
                     draft[index],
@@ -535,7 +542,7 @@ public sealed partial class AppearancePane
                 Query = ItemSearch,
                 Texture = _wardrobeItemTexture,
                 Badge = _wardrobeItemBadge,
-                Width = Crystarium.ActiveTheme.Picker.WideWidth,
+                Width = ActiveTheme.Picker.WideWidth,
             });
     }
 

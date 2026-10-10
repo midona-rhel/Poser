@@ -5,6 +5,7 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -73,7 +74,7 @@ public sealed class SelectionSection
         if (!ArmedFor(selected))
             _armed = Array.Empty<SelectionId>();
 
-        float height = Crystarium.Section(
+        float height = Section(
             "selection-group",
             "Selection",
             origin,
@@ -90,7 +91,7 @@ public sealed class SelectionSection
     }
 
     private void Rows(
-        Crystarium.FormScope form,
+        FormScope form,
         IReadOnlyList<SelectionId> selected,
         ResolvedGroup group)
     {

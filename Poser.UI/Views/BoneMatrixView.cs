@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Views;
 
@@ -52,19 +55,19 @@ public sealed class BoneMatrixViewModel
 public static class BoneMatrixView
 {
     private static Vector4 TextPrimary =>
-        Crystarium.ActiveTheme.Chrome.Text;
+        ActiveTheme.Chrome.Text;
     private static Vector4 TextSecondary =>
-        Crystarium.ActiveTheme.TextDim;
+        ActiveTheme.TextDim;
     private static Vector4 BorderPrimary =>
-        Crystarium.ActiveTheme.Chrome.ControlBorder;
+        ActiveTheme.Chrome.ControlBorder;
     private static Vector4 BorderSecond =>
-        Crystarium.ActiveTheme.FormSeparator;
+        ActiveTheme.FormSeparator;
     private static Vector4 Primary =>
-        Crystarium.ActiveTheme.Chrome.Primary;
+        ActiveTheme.Chrome.Primary;
     private static Vector4 Primary50 =>
-        Crystarium.ActiveTheme.Chrome.PrimaryFocus;
+        ActiveTheme.Chrome.PrimaryFocus;
     private static Vector4 SurfaceHover =>
-        Crystarium.ActiveTheme.Chrome.ControlFill;
+        ActiveTheme.Chrome.ControlFill;
 
     /// <summary>Draws the matrix flowing downward from origin; returns total height.</summary>
     public static float Draw(
@@ -73,7 +76,7 @@ public static class BoneMatrixView
         float width,
         string idPrefix = "mx")
     {
-        var metrics = Crystarium.ActiveTheme.Matrix;
+        var metrics = ActiveTheme.Matrix;
         float s = ImGuiHelpers.GlobalScale;
         float logicalWidth = width / s;
         var dl = ImGui.GetWindowDrawList();
@@ -102,20 +105,20 @@ public static class BoneMatrixView
             // pad-bottom → hairline at +32, rows begin at +41 (1px line + 8px margin).
             var sectionStyle = new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                Size = ActiveTheme.Typography.CaptionSize,
                 Weight = FontWeight.SemiBold,
                 Color = TextSecondary,
             };
-            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
+            TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
             ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
             ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
                 new Vector2(
                     MathF.Min(
                         width,
-                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
+                        MeasureText(section.Title, sectionStyle).X + 18f * s),
                     24f * s));
             if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
+                HoverHelp.Explain($"bmv-section-{sectionIndex}",
                     ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
                     "Select every bone in this group · Ctrl adds to the selection");
             if (ImGui.IsItemClicked())
@@ -165,7 +168,7 @@ public static class BoneMatrixView
     private static void DrawRow(BoneMatrixViewModel vm, BoneMatrixRow row, ImDrawListPtr dl,
         Vector2 pos, float width, float s, string id)
     {
-        var metrics = Crystarium.ActiveTheme.Matrix;
+        var metrics = ActiveTheme.Matrix;
         // pills right-aligned; label fills the rest, right-aligned with ellipsis
         float pillsW = (row.Pills.Count * metrics.PillSize
             + (row.Pills.Count - 1) * metrics.PillGap) * s;
@@ -173,12 +176,12 @@ public static class BoneMatrixView
 
         var labelStyle = new TextStyle
         {
-            Size = Crystarium.ActiveTheme.Typography.LabelSize,
+            Size = ActiveTheme.Typography.LabelSize,
             Color = TextSecondary,
         };
         float labelAvail = labelRight - pos.X;
         if (labelAvail > 0f)
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(pos.X, pos.Y),
                 new Vector2(labelAvail, metrics.RowHeight * s),
                 row.Label, labelStyle,
@@ -225,12 +228,12 @@ public static class BoneMatrixView
             {
                 var pillLabelStyle = new TextStyle
                 {
-                    Size = Crystarium.ActiveTheme.Typography.ShortcutSize,
+                    Size = ActiveTheme.Typography.ShortcutSize,
                     Weight = FontWeight.SemiBold,
                     Family = FontFamily.Mono,
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
-                Crystarium.TextInBand(
+                TextInBand(
                     new Vector2(center.X - radius, center.Y - radius),
                     new Vector2(metrics.PillSize, metrics.PillSize) * s,
                     pill.Label, pillLabelStyle,

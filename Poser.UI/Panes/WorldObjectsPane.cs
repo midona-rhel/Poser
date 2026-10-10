@@ -10,6 +10,8 @@ using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -40,7 +42,7 @@ public sealed class WorldObjectsPane
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
-    private readonly Crystarium.SearchPicker<WorldAsset>
+    private readonly SearchPicker<WorldAsset>
         _assetPicker = new("world-object-asset");
 
     /// <summary>The combined picker list — models and effects both, told
@@ -96,7 +98,7 @@ public sealed class WorldObjectsPane
             _respawn = null;
             _respawnTarget = null;
         }
-        Crystarium.Page("world-object", origin, size, page =>
+        Page("world-object", origin, size, page =>
         {
             if (SelectedWorldObject() is not { } worldObject)
             {
@@ -182,7 +184,7 @@ public sealed class WorldObjectsPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void ObjectRows(
-        Crystarium.FormScope form, WorldObjectReading worldObject)
+        FormScope form, WorldObjectReading worldObject)
     {
         // Identity first: the name is Poser's to give even on a borrowed
         // thing; the model path below stays the map's fact.

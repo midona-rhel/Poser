@@ -5,6 +5,8 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -13,8 +15,8 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
 {
     private sealed record Choice(SelectionId Id, string Name, string Kind);
     private static readonly string[] Modes = ["None", "Entity", "Bone"];
-    private readonly Crystarium.SearchPicker<Choice> _entities = new("parent-entity");
-    private readonly Crystarium.SearchPicker<BoneChoice> _bones = new("parent-bone");
+    private readonly SearchPicker<Choice> _entities = new("parent-entity");
+    private readonly SearchPicker<BoneChoice> _bones = new("parent-bone");
     private Choice[] _entityChoices = [];
     private IReadOnlyList<BoneChoice> _boneChoices = [];
     private SelectionId? _child, _observedTarget, _editing;
@@ -41,7 +43,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
         else _child = null; // Reconcile from the committed relationship on the next draw.
     }
 
-    public void Draw(Crystarium.FormScope form, SelectionId child)
+    public void Draw(FormScope form, SelectionId child)
     {
         var target = parenting.Read(child)?.Target;
         if (_child != child || _observedTarget != target)

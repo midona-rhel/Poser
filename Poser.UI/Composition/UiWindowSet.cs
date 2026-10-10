@@ -4,6 +4,8 @@ using Poser.Services;
 using System;
 using System.Collections.Generic;
 using Poser.Application.Selection;
+using static Poser.UI.Widgets.HostHooks;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI.Composition;
 
@@ -67,9 +69,9 @@ public sealed class UiWindowSet : IDisposable
         _overlayPresentation = overlayPresentation;
         _worldAdoption = worldAdoption;
         _configService = configService;
-        Crystarium.ReadSectionOpen = key =>
+        ReadSectionOpen = key =>
             !_configService.Config.UI.SectionDisclosure.TryGetValue(key, out var open) || open;
-        Crystarium.WriteSectionOpen = (key, open) =>
+        WriteSectionOpen = (key, open) =>
         {
             _configService.Config.UI.SectionDisclosure[key] = open;
             // UI memory is not a settings change: do not reopen hidden split
@@ -160,7 +162,7 @@ public sealed class UiWindowSet : IDisposable
     {
         if (_primaryOpenRequested
             && !Main.IsOpen
-            && Crystarium.StartupIconsReady
+            && StartupIconsReady
             && previewBackingReady)
             ApplyPrimaryOpen(true);
     }
@@ -328,8 +330,8 @@ public sealed class UiWindowSet : IDisposable
         Main.OnPopOutRequested -= QueueProperties;
         CloseProperties();
         PumpProperties();
-        Crystarium.ReadSectionOpen = null;
-        Crystarium.WriteSectionOpen = null;
+        ReadSectionOpen = null;
+        WriteSectionOpen = null;
         _referenceImages.OnAdded -= AddReferenceWindow;
         _referenceImages.OnRemoved -= DismissReferenceWindow;
         _referenceWindows.Clear();

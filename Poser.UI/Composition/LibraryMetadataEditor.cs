@@ -6,6 +6,12 @@ using Poser.Application.Library;
 using Poser.Files;
 using Poser.Library;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -34,7 +40,7 @@ internal sealed class LibraryMetadataEditor(
     /// <summary>The picker for a preview image. Its own dialog rather than the
     /// pose browser's: the extensions differ, and a dialog remembers the
     /// folder it was last in.</summary>
-    private readonly Crystarium.FileDialog _metaImageBrowser =
+    private readonly FileDialog _metaImageBrowser =
         new("Preview image", new[] { ".png", ".jpg", ".jpeg" });
 
     /// <summary>Where the image picker last landed, so a second edit opens
@@ -77,7 +83,7 @@ internal sealed class LibraryMetadataEditor(
     {
         if (!_metaOpen)
             return;
-        Crystarium.Dialog(
+        Dialog(
             "##library-metadata",
             _metaOpen,
             next => _metaOpen = next,
@@ -86,7 +92,7 @@ internal sealed class LibraryMetadataEditor(
             body: () =>
         {
             float scale = ImGuiHelpers.GlobalScale;
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             var captionStyle = new TextStyle
             {
                 Size = theme.Typography.CaptionSize,
@@ -95,20 +101,20 @@ internal sealed class LibraryMetadataEditor(
             float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
             float rowGap = 8f * scale;
 
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(), "Author", captionStyle);
             ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextInput(
+            TextInput(
                 "##library-metadata-author", _metaAuthor,
                 next => _metaAuthor = next,
                 placeholder: "Author");
             ImGui.Dummy(new Vector2(0f, rowGap));
 
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(),
                 "Tags (comma-separated)", captionStyle);
             ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextInput(
+            TextInput(
                 "##library-metadata-tags", _metaTags,
                 next => _metaTags = next,
                 placeholder: "tag, tag");
@@ -116,10 +122,10 @@ internal sealed class LibraryMetadataEditor(
 
             // Description and the preview image have serialized on both sides
             // since the format existed; only the editor was missing.
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(), "Description", captionStyle);
             ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextInput(
+            TextInput(
                 "##library-metadata-description", _metaDescription,
                 next => _metaDescription = next,
                 placeholder: "What this pose is for");
@@ -128,7 +134,7 @@ internal sealed class LibraryMetadataEditor(
             bool willHaveImage = _metaImage.Remove
                 ? false
                 : _metaImage.Base64 is { Length: > 0 } || _metaHadImage;
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(),
                 willHaveImage ? "Preview image: stored" : "Preview image: none",
                 captionStyle);
@@ -140,7 +146,7 @@ internal sealed class LibraryMetadataEditor(
             {
                 Width = UiWidth.Fixed(MathF.Max(1f, half)),
             };
-            if (Crystarium.Button(
+            if (Button(
                     willHaveImage ? "Replace image" : "Add image",
                     style: pairStyle,
                     id: "library-metadata-image-set"))
@@ -159,7 +165,7 @@ internal sealed class LibraryMetadataEditor(
                             _notices.Failed("Preview image", read.Detail);
                     });
             ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
+            if (Button(
                     "Remove image",
                     style: pairStyle,
                     disabled: !willHaveImage,
@@ -167,7 +173,7 @@ internal sealed class LibraryMetadataEditor(
                 _metaImage = PosePreviewImageEdit.Cleared;
             ImGui.Dummy(new Vector2(0f, rowGap));
 
-            if (Crystarium.Button(
+            if (Button(
                     "Save",
                     variant: ButtonVariant.Primary,
                     style: pairStyle,
@@ -194,7 +200,7 @@ internal sealed class LibraryMetadataEditor(
                 _metaOpen = false;
             }
             ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
+            if (Button(
                     "Cancel", style: pairStyle, id: "library-metadata-cancel"))
                 _metaOpen = false;
         });

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 internal static class GlassChrome
@@ -38,13 +39,13 @@ internal static class GlassChrome
     {
         get
         {
-            var color = Crystarium.ActiveTheme.Glass.Background;
+            var color = ActiveTheme.Glass.Background;
             return color with { W = color.W * _fillOpacity };
         }
     }
 
     internal static Vector4 OpaqueBackgroundColor =>
-        Crystarium.ActiveTheme.Glass.Background with { W = 1f };
+        ActiveTheme.Glass.Background with { W = 1f };
 
     public static void PrependBlur(
         ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding,

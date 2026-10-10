@@ -1,6 +1,6 @@
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class PopoverWidgets
 {
     /// <summary>
     /// Opens the popover, dropdown, colour picker or modal registered

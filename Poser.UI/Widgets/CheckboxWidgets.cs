@@ -2,10 +2,11 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class CheckboxWidgets
 {
     public static Vector2 MeasureCheckbox(ControlStyle style = default)
     {

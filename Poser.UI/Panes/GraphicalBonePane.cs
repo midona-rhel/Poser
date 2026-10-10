@@ -19,6 +19,12 @@ using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Controls;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -172,7 +178,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         _mapBackground = !humanoid ? null : liveDraft != null ? liveDraft.Background : preset?.Background;
         _mapTemplate = !humanoid ? null : liveDraft != null ? liveDraft.Template : preset?.Template;
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         // The filter is a FIXED HEADER over the map: it breathes off the
         // surface top and closes with a separator, exactly as the matrix's
@@ -184,7 +190,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             + theme.Controls.WorkspaceHeight * scale
             + theme.Page.ActionGap * scale;
         ImGui.SetCursorScreenPos(bandOrigin);
-        if (!editing) Crystarium.FilterPill(
+        if (!editing) FilterPill(
             "##graphical-bone-filter",
             _filter,
             next => _filter = next,
@@ -197,7 +203,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (!humanoid)
         {
             ImGui.SetCursorScreenPos(bandOrigin + new Vector2(contentArea.X - 158f * scale, 0));
-            Crystarium.Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top", "Branches"], _generatedView,
+            Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top", "Branches"], _generatedView,
                 value => { _generatedView = value; _generatedLayoutSize = Vector2.Zero; },
                 ControlStyle.Workspace with { Width = UiWidth.Fixed(158f) });
         }
@@ -222,7 +228,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (!humanoid)
         {
             ImGui.SetCursorScreenPos(origin);
-            Crystarium.ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
+            ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
                 scope =>
                 {
                     EnsureGeneratedBones(actor, new(scope.ContentWidth, mapArea.Y / scale));
@@ -446,15 +452,15 @@ public sealed partial class GraphicalBonePane : IDisposable
         float s = ImGuiHelpers.GlobalScale;
         var style = new TextStyle
         {
-            Size = Crystarium.ActiveTheme.Typography.LabelSize,
-            Color = Crystarium.ActiveTheme.FormHint,
+            Size = ActiveTheme.Typography.LabelSize,
+            Color = ActiveTheme.FormHint,
         };
         // Wrapped to a comfortable measure and centred horizontally; the run
         // sits at the page's upper third, where a reader looks first, rather
         // than at a vertical centre that would need the wrapped height.
         float wrap = MathF.Max(1f, MathF.Min(contentArea.X - 32f * s, 360f * s));
         var origin = ImGui.GetCursorScreenPos();
-        Crystarium.TextAt(
+        TextAt(
             origin + new Vector2(
                 (contentArea.X - wrap) * 0.5f,
                 contentArea.Y * 0.35f),
@@ -725,7 +731,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (hoveredName != null
             && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
         {
-            Crystarium.HoverHelp.Preview("gbp-dot",
+            HoverHelp.Preview("gbp-dot",
                 mouse - new Vector2(4f, 4f),
                 mouse + new Vector2(4f, 4f),
                 hoveredName);
@@ -741,8 +747,8 @@ public sealed partial class GraphicalBonePane : IDisposable
             min,
             min + size,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                Crystarium.ActiveTheme.SurfaceRaised)),
-            Crystarium.ActiveTheme.Radii.Surface * ImGuiHelpers.GlobalScale);
+                ActiveTheme.SurfaceRaised)),
+            ActiveTheme.Radii.Surface * ImGuiHelpers.GlobalScale);
     }
 
     private IDalamudTextureWrap? GetTexture(string imageName)

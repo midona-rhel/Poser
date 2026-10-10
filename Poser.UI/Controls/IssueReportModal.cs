@@ -3,6 +3,11 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Diagnostics;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.CheckboxWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
@@ -46,11 +51,11 @@ public sealed class IssueReportModal
     {
         if (!_open)
             return;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var style = new TextStyle { Size = theme.Typography.LabelSize, Color = theme.Text };
         var hint = new TextStyle { Size = theme.Typography.CaptionSize, Color = theme.FormHint };
-        Crystarium.Dialog(
+        Dialog(
             "##issue-report",
             _open,
             next => _open = next,
@@ -60,21 +65,21 @@ public sealed class IssueReportModal
             {
                 Paragraph(Intro, style, scale);
                 ImGui.Dummy(new Vector2(0f, Gap * scale));
-                Crystarium.Checkbox(
+                Checkbox(
                     "##issue-include-scene", _includeScene,
                     next => _includeScene = next,
                     help: "Add the scene to the report");
                 ImGui.SameLine(0f, 8f * scale);
-                Crystarium.TextAt(ImGui.GetCursorScreenPos(), "Include the scene", style);
+                TextAt(ImGui.GetCursorScreenPos(), "Include the scene", style);
                 ImGui.Dummy(new Vector2(0f, Gap * scale));
                 Paragraph(SceneNote, hint, scale);
             },
             footer: () =>
             {
-                if (Crystarium.Button("Cancel", id: "issue-cancel", disabled: _saving))
+                if (Button("Cancel", id: "issue-cancel", disabled: _saving))
                     _open = false;
                 ImGui.SameLine(0f, 8f * scale);
-                if (Crystarium.Button(
+                if (Button(
                         _saving ? "Saving…" : "Save report",
                         variant: ButtonVariant.Primary,
                         disabled: _saving,
@@ -120,9 +125,9 @@ public sealed class IssueReportModal
         float width = ImGui.GetContentRegionAvail().X;
         var origin = ImGui.GetCursorScreenPos();
         var constraint = TextConstraint.Wrap(width / scale);
-        var size = Crystarium.MeasureText(text, style, constraint);
+        var size = MeasureText(text, style, constraint);
         float height = MathF.Max(size.Y, (style.Size ?? 14f) * scale);
-        Crystarium.TextInBand(origin, new Vector2(width, height), text, style, constraint, TextAlign.Start);
+        TextInBand(origin, new Vector2(width, height), text, style, constraint, TextAlign.Start);
         ImGui.Dummy(new Vector2(width, height));
     }
 }

@@ -18,6 +18,7 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Services;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -676,7 +677,7 @@ public sealed class SpawnBrowserWindow : Window
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
-    private readonly Crystarium.SearchPicker<WorldAsset>
+    private readonly SearchPicker<WorldAsset>
         _assetPicker = new("spawn-world-asset");
 
     private int _libraryRevision = -1;

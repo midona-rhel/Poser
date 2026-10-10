@@ -2,10 +2,11 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class TablerIconWidgets
 {
     /// <summary>
     /// Inline (cursor-flow) Tabler icon at a LOGICAL CSS-pixel size —
@@ -45,7 +46,7 @@ public static partial class Crystarium
     /// the latched on-state's whole vocabulary. It falls back to the outline
     /// when Tabler ships no filled variant, so a caller never has to know
     /// which glyphs have one.</summary>
-    private static void IconInComposited(
+    internal static void IconInComposited(
         Vector2 min, Vector2 max, TablerIcon icon,
         float opacity = 1f, Vector4 background = default,
         bool flipX = false, float? strokeWidth = null,
@@ -57,7 +58,7 @@ public static partial class Crystarium
             groupOpacity: opacity, groupBackground: background);
 
     /// <inheritdoc cref="IconInComposited(Vector2, Vector2, TablerIcon, float, Vector4, bool, float?, bool)"/>
-    private static void IconInComposited(
+    internal static void IconInComposited(
         Vector2 min, Vector2 max, string name,
         float opacity = 1f, Vector4 background = default,
         bool flipX = false, float? strokeWidth = null,

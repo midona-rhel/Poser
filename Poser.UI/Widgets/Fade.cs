@@ -1,10 +1,9 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.UI;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class Fade
 {
     /// <summary>Where the current draw list stands: pass it to
     /// <see cref="FadeSince"/> after drawing to fade what was drawn.</summary>

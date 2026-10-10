@@ -8,6 +8,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Config;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -68,7 +69,7 @@ public sealed class ReferenceImageSession : IDisposable
     private readonly ConfigurationService _configuration;
     private readonly UserNotices _notices;
 
-    private readonly Crystarium.FileDialog _browser =
+    private readonly FileDialog _browser =
         new("Add Reference Image", ImageExtensions);
 
     private readonly List<ReferenceImageInstance> _instances = new();

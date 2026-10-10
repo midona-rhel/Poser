@@ -1,9 +1,9 @@
 using System;
 using System.Globalization;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class SliderReadout
 {
     /// <summary>Four significant digits, stepped by magnitude: integers
     /// from one thousand up, one decimal through the hundreds, two through

@@ -78,7 +78,7 @@ internal static class Ids
     }
 
     /// <summary>The form row identity, <c>$"##{page}-{section}-{label}"</c>:
-    /// the one id every <see cref="Crystarium.FormScope"/> row is built from,
+    /// the one id every <see cref="PageForm.FormScope"/> row is built from,
     /// and the memo's hottest caller.</summary>
     internal static string Row(string page, string section, string label)
     {

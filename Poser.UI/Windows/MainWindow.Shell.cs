@@ -18,6 +18,7 @@ using Poser.Domain.Companions;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -31,17 +32,17 @@ public partial class MainWindow
         if (_shellMenuOpenRequested)
         {
             _shellMenuOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
+            FloatingMenu.Open(
                 "##shell-burger-menu",
                 _shellMenuAnchor,
                 _shellMenuItems,
-                Crystarium.FloatingMenu.MeasureWidth(_shellMenuItems));
+                FloatingMenu.MeasureWidth(_shellMenuItems));
         }
-        Crystarium.FloatingMenu.Refresh("##shell-burger-menu", _shellMenuItems);
-        int clicked = Crystarium.FloatingMenu.Draw("##shell-burger-menu");
+        FloatingMenu.Refresh("##shell-burger-menu", _shellMenuItems);
+        int clicked = FloatingMenu.Draw("##shell-burger-menu");
         if (clicked >= 0 && clicked < _shellMenuItems.Length)
             InvokeShellCommand((ShellCommand)clicked);
-        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+        int subClicked = FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
         if (subClicked >= 0 && subParent >= 0
             && subParent < _shellMenuItems.Length)

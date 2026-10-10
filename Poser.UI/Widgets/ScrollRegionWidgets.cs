@@ -3,10 +3,14 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.TreeRowWidgets;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class ScrollRegionWidgets
 {
     /// <param name="gutterWidth">The reserved bar width, logical; null takes
     /// the theme's shell gutter. A floating surface may state a narrower bar
@@ -22,7 +26,7 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float gutter = gutterWidth
-            ?? Crystarium.ActiveTheme.Scrollbar.GutterWidth;
+            ?? ActiveTheme.Scrollbar.GutterWidth;
         PushScrollbarStyle(gutter);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         bool visible = ImGui.BeginChild(
@@ -112,31 +116,31 @@ public static partial class Crystarium
         {
             var origin = ImGui.GetCursorScreenPos()
                 + new Vector2(
-                    Crystarium.ActiveTheme.Spacing.Four,
-                    Crystarium.ActiveTheme.Spacing.Three) * _scale;
+                    ActiveTheme.Spacing.Four,
+                    ActiveTheme.Spacing.Three) * _scale;
             DrawText(
                 origin,
                 ContentWidth * _scale,
-                Crystarium.ActiveTheme.Typography.CaptionSize,
+                ActiveTheme.Typography.CaptionSize,
                 FontWeight.Regular,
                 FormHintColor,
                 text);
             ImGui.Dummy(new Vector2(
                 ContentWidth * _scale,
-                Crystarium.ActiveTheme.Controls.ListRowHeight * _scale));
+                ActiveTheme.Controls.ListRowHeight * _scale));
         }
     }
 
     private static void PushScrollbarStyle(float? gutterWidth = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var text = Crystarium.ActiveTheme.Text;
+        var text = ActiveTheme.Text;
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarSize,
-            (gutterWidth ?? Crystarium.ActiveTheme.Scrollbar.GutterWidth) * scale);
+            (gutterWidth ?? ActiveTheme.Scrollbar.GutterWidth) * scale);
         ImGui.PushStyleVar(
             ImGuiStyleVar.ScrollbarRounding,
-            Crystarium.ActiveTheme.Scrollbar.Radius * scale);
+            ActiveTheme.Scrollbar.Radius * scale);
         ImGui.PushStyleColor(ImGuiCol.ScrollbarBg, Vector4.Zero);
         ImGui.PushStyleColor(
             ImGuiCol.ScrollbarGrab,
@@ -170,7 +174,7 @@ public static partial class Crystarium
 
         var draw = ImGui.GetWindowDrawList();
         float scale = ImGuiHelpers.GlobalScale;
-        float gutter = Crystarium.ActiveTheme.Scrollbar.GutterWidth * scale;
+        float gutter = ActiveTheme.Scrollbar.GutterWidth * scale;
         float right = ImGui.GetWindowPos().X + ImGui.GetWindowSize().X;
         float left = right - gutter;
         float center = (left + right) * 0.5f;

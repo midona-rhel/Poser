@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Poser.Services;
 
 using Poser.Application.Viewport;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
@@ -375,9 +376,9 @@ public static class RotationGizmoRings
             {
                 var axisColor = a switch
                 {
-                    0 => Crystarium.ActiveTheme.Palette.AxisX,
-                    1 => Crystarium.ActiveTheme.Palette.AxisY,
-                    _ => Crystarium.ActiveTheme.Palette.AxisZ,
+                    0 => ActiveTheme.Palette.AxisX,
+                    1 => ActiveTheme.Palette.AxisY,
+                    _ => ActiveTheme.Palette.AxisZ,
                 };
                 bool hot = hoverAxis == a || dragAxis == a;
                 float alpha = (frontPass ? (hot ? 1f : 0.85f) : 0.12f)
@@ -510,7 +511,7 @@ public static class ManipulationHide
     public static bool Hidden => Opacity <= 0f;
 
     /// <summary>Scopes the fade over one window's draw: pushes the global
-    /// alpha (which every Crystarium color multiplies through) while the
+    /// alpha (which every widget color multiplies through) while the
     /// shell is mid-fade, and pops it on ANY exit path.</summary>
     public static FadeHandle FadeScope()
     {

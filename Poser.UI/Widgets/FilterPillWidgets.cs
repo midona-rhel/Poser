@@ -1,4 +1,6 @@
-namespace Poser.UI;
+using static Poser.UI.Widgets.TextInputWidgets;
+
+namespace Poser.UI.Widgets;
 
 /// <summary>
 /// Shared filter/search field used by navigation and collection surfaces —
@@ -11,7 +13,7 @@ namespace Poser.UI;
 /// 26px workspace rhythm ask for it explicitly through
 /// <see cref="ControlStyle"/>.</para>
 /// </summary>
-public static partial class Crystarium
+public static class FilterPillWidgets
 {
     public static bool FilterPill(
         string id,

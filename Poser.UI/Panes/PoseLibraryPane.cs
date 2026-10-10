@@ -24,6 +24,9 @@ using Poser.Files;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
 
 namespace Poser.UI;
 
@@ -409,7 +412,7 @@ public sealed partial class PoseLibraryPane
         // The rail's "Options" is a BUTTON, so the menu hangs off it — the
         // same seat rule the Apply menu below already follows.
         _vm.OnImportMenu = () => _files.RequestImportMenu(
-            withPresets: false, target: CurrentApplyTarget(), anchor: Crystarium.ButtonSeat);
+            withPresets: false, target: CurrentApplyTarget(), anchor: ButtonSeat);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
@@ -524,7 +527,7 @@ public sealed partial class PoseLibraryPane
     /// every tab (left-aligned, user rule), the Objects tab's placement
     /// choice sits at the bottom where the spawn happens, and the status
     /// stays last.</summary>
-    private void DrawFooterLead(Crystarium.ActionBarScope scope)
+    private void DrawFooterLead(ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
         scope.Label(_vm.Status);
@@ -820,8 +823,8 @@ public sealed partial class PoseLibraryPane
 
         var tiles = _vm.Tiles;
         // Menu actions use tile indices; a refreshed/sorted list is a new target set.
-        Crystarium.FloatingMenu.Dismiss(TileMenuId);
-        Crystarium.FloatingMenu.Dismiss("##library-apply-target");
+        FloatingMenu.Dismiss(TileMenuId);
+        FloatingMenu.Dismiss("##library-apply-target");
         tiles.Clear();
         _tileTags.Clear();
         _tileAuthors.Clear();

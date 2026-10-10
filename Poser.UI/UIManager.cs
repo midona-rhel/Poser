@@ -12,6 +12,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Transforms;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.HostHooks;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
 
 namespace Poser.UI;
 
@@ -95,10 +100,10 @@ public sealed class UIManager : IUIManager
         _keyEvents.KeyEvent += OnKeyEvent;
         // A released drag or an accepted typed value seals the journal's
         // open step, so every control's edit is one step, press to release.
-        Crystarium.ValueCommitted += _values.CommitEdit;
-        Crystarium.ValueEditBegan += _values.BeginEdit;
-        Crystarium.ValueEditEnded += _values.EndEdit;
-        Crystarium.ValueEditingIdle += _values.Seal;
+        ValueCommitted += _values.CommitEdit;
+        ValueEditBegan += _values.BeginEdit;
+        ValueEditEnded += _values.EndEdit;
+        ValueEditingIdle += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested += OpenSkeletonSettings;
@@ -139,13 +144,13 @@ public sealed class UIManager : IUIManager
         _capturingShortcutThisFrame = _windows.Settings.IsRebindingShortcut;
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
-        if (!Crystarium.AdvanceTheme())
+        if (!AdvanceTheme())
             return;
 
         // Cache warming runs before primary windows can draw. Scoped so the
         // ledger can see it: the un-attributed spikes lived exactly here.
         using (FrameProfiler.Scope("Shell · icon pump"))
-            Crystarium.PumpStartupIcons(_configService.Config.Library.IconSize);
+            PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
         using (FrameProfiler.Scope("Shell · preview backing"))
             previewBackingReady = !_windows.IsPrimaryOpen
@@ -156,7 +161,7 @@ public sealed class UIManager : IUIManager
         // whole frame. The close is unconditional — a window that threw must
         // not leave the ledger open across frames.
         FrameProfiler.BeginFrame();
-        global::Poser.UI.Crystarium.BeginTextFrame();
+        BeginTextFrame();
         try
         {
             Interactive.BeginFrame();
@@ -181,16 +186,16 @@ public sealed class UIManager : IUIManager
                 _releaseNotes.Draw();
             }
             using (FrameProfiler.Scope("Shell · floating menus"))
-                Crystarium.FloatingMenu.EndFrame();
+                FloatingMenu.EndFrame();
             using (FrameProfiler.Scope("Shell · hover help"))
                 if (!_uiHidden)
-                    Crystarium.HoverHelp.Render();
+                    HoverHelp.Render();
             using (FrameProfiler.Scope("Shell · interactive end"))
                 Interactive.EndFrame();
         }
         finally
         {
-            Crystarium.EndValueFrame();
+            EndValueFrame();
             FrameProfiler.EndFrame();
         }
         // Hide-while-manipulating (#77): the windows fade down while a
@@ -596,10 +601,10 @@ public sealed class UIManager : IUIManager
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _keyEvents.KeyEvent -= OnKeyEvent;
-        Crystarium.ValueCommitted -= _values.CommitEdit;
-        Crystarium.ValueEditBegan -= _values.BeginEdit;
-        Crystarium.ValueEditEnded -= _values.EndEdit;
-        Crystarium.ValueEditingIdle -= _values.Seal;
+        ValueCommitted -= _values.CommitEdit;
+        ValueEditBegan -= _values.BeginEdit;
+        ValueEditEnded -= _values.EndEdit;
+        ValueEditingIdle -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested -= OpenSkeletonSettings;

@@ -2,8 +2,12 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
 /// <summary>
 /// GlassInput — <c>src/shared/ui/GlassInput/GlassInput.module.css</c> and
@@ -45,7 +49,7 @@ namespace Poser.UI;
 /// edit's existing idiom); the CSS declares no <c>::selection</c>.</item>
 /// </list>
 /// </summary>
-public static partial class Crystarium
+public static class TextInputWidgets
 {
     public static bool TextInput(
         string id,
@@ -101,7 +105,7 @@ public static partial class Crystarium
     /// input against what already shipped — no field here is near that.</summary>
     private const int NativeInputMaxBytes = 510;
 
-    private static bool TextInputCore(
+    internal static bool TextInputCore(
         string id,
         string value,
         Action<string> onChange,

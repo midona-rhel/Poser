@@ -15,6 +15,8 @@ using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Application.Posing;
 using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -1088,7 +1090,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             // What kind of thing it is, the handle's own shape and colour
             // already say; a type suffix is the overlay describing itself
             // where the pointer asked what it was on.
-            Crystarium.HoverHelp.Preview("sow-adopt",
+            HoverHelp.Preview("sow-adopt",
                 overlayMouse - new Vector2(4f, 4f),
                 overlayMouse + new Vector2(4f, 4f),
                 adopt.Name,
@@ -1097,14 +1099,14 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         if (hasHoveredLight && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
-            Crystarium.HoverHelp.Preview("sow-light",
+            HoverHelp.Preview("sow-light",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
                 lights[hoveredLightIndex].Name, animated: false);
         }
         else if (hasHoveredGroup && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
-            Crystarium.HoverHelp.Preview("sow-group",
+            HoverHelp.Preview("sow-group",
                 overlayMouse - new Vector2(4f, 4f),
                 overlayMouse + new Vector2(4f, 4f),
                 groupDots[hoveredGroupIndex].Name, animated: false);
@@ -1113,7 +1115,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         {
             var hoveredActor = actors[hoveredActorIndex];
             var overlayMouse = ImGui.GetMousePos();
-            Crystarium.HoverHelp.Preview("sow-actor",
+            HoverHelp.Preview("sow-actor",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
                 hoveredActor.Name,
                 animated: false);
@@ -1662,7 +1664,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     {
         if (adopts.Count == 0)
             return;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         uint resting = ImGui.ColorConvertFloat4ToU32(theme.TextDim);
         uint engaged = ImGui.ColorConvertFloat4ToU32(theme.Accent);
 
@@ -1761,7 +1763,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         if (_hoveredBones.Count == 0)
             return;
         float s = ImGuiHelpers.GlobalScale;
-        float gap = Crystarium.ActiveTheme.Floating.AnchorGap;
+        float gap = ActiveTheme.Floating.AnchorGap;
         int marked = -1;
         if (brio)
             for (int i = 0; i < _hoveredBones.Count; i++)
@@ -1770,8 +1772,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         var anchor = brio
             ? mousePos + new Vector2(MathF.Max(0f, 15f - gap), 10f) * s
             : mousePos + new Vector2(MathF.Max(0f, 20f - gap), 0f) * s;
-        _listWidth ??= Crystarium.FloatingSurface.HoverListWidth(_hoverLabels);
-        Crystarium.FloatingSurface.HoverList(
+        _listWidth ??= FloatingSurface.HoverListWidth(_hoverLabels);
+        FloatingSurface.HoverList(
             HoverListOwnerId,
             anchor,
             _hoverLabels,
@@ -1791,7 +1793,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             _popupLabels.Add(_hoverLabels[i]);
         }
         _popupAnchor = at;
-        _popupWidth = Crystarium.FloatingSurface.HoverListWidth(_popupLabels);
+        _popupWidth = FloatingSurface.HoverListWidth(_popupLabels);
         _popupOpen = true;
         _clusterLocked = false;
     }
@@ -1815,7 +1817,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             if (_selection.IsSelected(_popupItems[i].Id))
                 selectedIndex = i;
         bool multi = io.KeyCtrl || io.KeyShift;
-        int clicked = Crystarium.FloatingSurface.HoverList(
+        int clicked = FloatingSurface.HoverList(
             HoverListOwnerId,
             _popupAnchor,
             _popupLabels,

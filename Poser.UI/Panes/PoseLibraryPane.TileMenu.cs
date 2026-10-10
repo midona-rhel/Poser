@@ -20,6 +20,7 @@ using Poser.Files;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -42,15 +43,15 @@ public sealed partial class PoseLibraryPane
             if (_vm.MenuTile >= 0 && _vm.MenuTile < _vm.Tiles.Count)
             {
                 BuildTileMenu(_vm.MenuTile);
-                Crystarium.FloatingMenu.Dismiss(TileMenuId);
-                Crystarium.FloatingMenu.Open(
+                FloatingMenu.Dismiss(TileMenuId);
+                FloatingMenu.Open(
                     TileMenuId, ImGui.GetMousePos(), _menuItems.ToArray(),
-                    Crystarium.FloatingMenu.MeasureWidth(_menuItems.ToArray()));
+                    FloatingMenu.MeasureWidth(_menuItems.ToArray()));
             }
         }
 
-        int clicked = Crystarium.FloatingMenu.Draw(TileMenuId);
-        int moveClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick();
+        int clicked = FloatingMenu.Draw(TileMenuId);
+        int moveClicked = FloatingMenu.ConsumeSubmenuClick();
         if (moveClicked >= 0 && moveClicked < _moveDestinations.Count
             && _movePath is { } movePath)
         {

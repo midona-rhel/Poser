@@ -6,6 +6,7 @@ using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
 using Poser.Domain.Identity;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -68,7 +69,7 @@ public sealed class PropsPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        Crystarium.Page("prop", origin, size, page =>
+        Page("prop", origin, size, page =>
         {
             if (SelectedProp() is not { } prop)
             {
@@ -119,7 +120,7 @@ public sealed class PropsPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void PropRows(Crystarium.FormScope form, PropReading prop)
+    private void PropRows(FormScope form, PropReading prop)
     {
         // Identity first, the camera pattern: the name leads the page.
         form.TextInput(

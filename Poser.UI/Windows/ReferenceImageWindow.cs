@@ -5,6 +5,11 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.SliderWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI;
 
@@ -28,7 +33,7 @@ namespace Poser.UI;
 /// around it. Only the 1px glass edge survives, and it is drawn under the
 /// picture's own alpha so a picture at the floor wears a floor-alpha edge.
 /// Hovered, the standard title bar FADES IN over the top — the same
-/// <see cref="Crystarium.WindowFrame"/> bar every floating surface wears,
+/// <see cref="WindowFrameWidgets.WindowFrame"/> bar every floating surface wears,
 /// carrying the picture's name, its opacity control and the close action. The
 /// bar overlays; it never takes layout, so the aspect ratio is the whole
 /// window's and the picture is never letterboxed. It keeps its own opacity:
@@ -273,7 +278,7 @@ public sealed class ReferenceImageWindow : Window
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowRounding,
-            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+            ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -297,7 +302,7 @@ public sealed class ReferenceImageWindow : Window
             _session.SetPlacement(
                 _image, min / MathF.Max(scale, 0.01f), _observed);
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var draw = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
             _ownerId, InteractionLayer.FloatingWindow, min, max);
@@ -309,7 +314,7 @@ public sealed class ReferenceImageWindow : Window
             {
                 // Nothing to see through: the empty state stands on the full
                 // chassis.
-                Crystarium.FloatingSurface.DrawChrome(
+                FloatingSurface.DrawChrome(
                     draw, min, max, theme.Radii.Window);
                 DrawEmptyState(min, size);
             }
@@ -335,7 +340,7 @@ public sealed class ReferenceImageWindow : Window
     private void DrawPicture(
         ImDrawListPtr draw, Vector2 min, Vector2 max, float scale)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float opacity = _image.Entry.Opacity;
         draw.AddImageRounded(
             new ImTextureID(_image.Handle),
@@ -351,7 +356,7 @@ public sealed class ReferenceImageWindow : Window
             ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * opacity);
         try
         {
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 draw, min, max, theme.Radii.Window,
                 shadow: false,
                 blur: false,
@@ -367,14 +372,14 @@ public sealed class ReferenceImageWindow : Window
     /// — a loading picture and a missing one are different absences.</summary>
     private void DrawEmptyState(Vector2 min, Vector2 size)
     {
-        Crystarium.TextInBand(
+        TextInBand(
             min,
             size,
             _image.Failure ?? "Reading the picture…",
             new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                Color = Crystarium.ActiveTheme.FormHint,
+                Size = ActiveTheme.Typography.CaptionSize,
+                Color = ActiveTheme.FormHint,
             },
             TextAlign.Center);
     }
@@ -407,7 +412,7 @@ public sealed class ReferenceImageWindow : Window
         if (fade <= 0.001f)
             return;
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float barHeight = theme.Floating.ModalBarHeight * scale;
         ImGui.PushStyleVar(ImGuiStyleVar.Alpha, fade);
         try
@@ -420,11 +425,11 @@ public sealed class ReferenceImageWindow : Window
                 new Vector2(min.X + size.X, min.Y + barHeight),
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(
-                        Crystarium.FloatingSurface.FillColor)),
+                        FloatingSurface.FillColor)),
                 theme.Radii.Window * scale,
                 ImDrawFlags.RoundCornersTop);
 
-            Crystarium.WindowFrame(
+            WindowFrame(
                 _frameId,
                 min,
                 size,
@@ -452,7 +457,7 @@ public sealed class ReferenceImageWindow : Window
     /// </summary>
     private void DrawTitleContent(WindowFrameRect bar)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Floating.HeaderInset * scale;
         float gap = theme.Page.ActionGap * scale;
@@ -471,12 +476,12 @@ public sealed class ReferenceImageWindow : Window
             Color = theme.Chrome.Text,
         };
         if (labelWidth > 0f)
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(bar.Min.X + inset, bar.Min.Y),
                 new Vector2(labelWidth, bar.Size.Y),
                 _image.Name,
                 labelStyle,
-                Crystarium.MeasureText(_image.Name, labelStyle).X > labelWidth
+                MeasureText(_image.Name, labelStyle).X > labelWidth
                     ? TextConstraint.Truncate(labelWidth)
                     : TextConstraint.Intrinsic);
 
@@ -484,7 +489,7 @@ public sealed class ReferenceImageWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(
             trackLeft, bar.Min.Y + (bar.Size.Y - trackHeight) * 0.5f));
         var image = _image;
-        Crystarium.Slider(
+        Slider(
             _opacityId,
             image.Entry.Opacity,
             ReferenceImageConfiguration.MinimumOpacity,
@@ -495,7 +500,7 @@ public sealed class ReferenceImageWindow : Window
                 + "transparent — a window you cannot see is one you cannot "
                 + "close.");
 
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(trackRight - readout, bar.Min.Y),
             new Vector2(readout, bar.Size.Y),
             (image.Entry.Opacity * 100f).ToString(

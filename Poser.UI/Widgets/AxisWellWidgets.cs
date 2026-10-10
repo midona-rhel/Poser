@@ -3,14 +3,18 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.SliderReadout;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
 
-namespace Poser.UI;
+namespace Poser.UI.Widgets;
 
-public static partial class Crystarium
+public static class AxisWellWidgets
 {
-    private static uint? _axisEditId;
-    private static float _axisEditValue;
-    private static bool _axisEditNeedsFocus;
+    internal static uint? _axisEditId;
+    internal static float _axisEditValue;
+    internal static bool _axisEditNeedsFocus;
 
     public static bool AxisWell(
         string id,
@@ -105,7 +109,7 @@ public static partial class Crystarium
         _axisEditNeedsFocus = false;
     }
 
-    private static bool EditAxisWell(
+    internal static bool EditAxisWell(
         string id,
         string axis,
         float value,

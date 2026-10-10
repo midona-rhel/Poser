@@ -19,6 +19,9 @@ using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using LegacyTransform = Poser.Transform;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -428,7 +431,7 @@ public class GizmoOverlayWindow : Window
         bool chromeHidden)
     {
         // The held glyph is bright; diverged markers are dim.
-        var accent = Crystarium.ActiveTheme.Palette.Primary;
+        var accent = ActiveTheme.Palette.Primary;
         var held = ColorEx.ApplyAlpha(accent with { W = 1f });
         var diverged = ColorEx.ApplyAlpha(accent with { W = 0.45f });
 
@@ -447,9 +450,9 @@ public class GizmoOverlayWindow : Window
             foreach (var offset in GlyphOutlineOffsets)
             {
                 var shifted = at + offset * outline;
-                Crystarium.IconIn(shifted - half, shifted + half, name, shade);
+                IconIn(shifted - half, shifted + half, name, shade);
             }
-            Crystarium.IconIn(at - half, at + half, name, color);
+            IconIn(at - half, at + half, name, color);
         }
 
         // Keep diverged markers clear of the held glyph.
@@ -945,9 +948,9 @@ public class GizmoOverlayWindow : Window
                 new Vector4(1f, 1f, 1f, 1f),
             _ => gesture.Handle.Axis switch
             {
-                0 => Crystarium.ActiveTheme.Palette.AxisX,
-                1 => Crystarium.ActiveTheme.Palette.AxisY,
-                _ => Crystarium.ActiveTheme.Palette.AxisZ,
+                0 => ActiveTheme.Palette.AxisX,
+                1 => ActiveTheme.Palette.AxisY,
+                _ => ActiveTheme.Palette.AxisZ,
             },
         };
         uint fill = ImGui.ColorConvertFloat4ToU32(
@@ -1053,7 +1056,7 @@ public class GizmoOverlayWindow : Window
         };
 
         var min = mouse + new Vector2(18f, 14f) * uiScale;
-        Crystarium.HoverHelp.Readout(min, text);
+        HoverHelp.Readout(min, text);
     }
 
     /// <summary>The readout of a drag held on a shell control, drawn here
@@ -1061,7 +1064,7 @@ public class GizmoOverlayWindow : Window
     private static void DrawShellDragReadout()
     {
         if (ManipulationDrag.ShellReadout is { } readout)
-            Crystarium.HoverHelp.Readout(readout.Min, readout.Text);
+            HoverHelp.Readout(readout.Min, readout.Text);
     }
 
     /// <summary>Draws the current free-camera speed notice.</summary>
@@ -1075,10 +1078,10 @@ public class GizmoOverlayWindow : Window
 
         float uiScale = ImGuiHelpers.GlobalScale;
         string text = notice.Text;
-        var size = Crystarium.HoverHelp.ReadoutSize(text);
+        var size = HoverHelp.ReadoutSize(text);
         var min = ImGui.GetMousePos() + new Vector2(18f, -14f) * uiScale
             - new Vector2(0f, size.Y);
-        Crystarium.HoverHelp.Readout(min, text, opacity);
+        HoverHelp.Readout(min, text, opacity);
     }
 
     /// <summary>Freezes the handle mapping and opens the transform gesture.</summary>

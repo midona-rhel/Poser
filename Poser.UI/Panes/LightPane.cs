@@ -17,6 +17,10 @@ using Poser.Application.Presentation;
 using Poser.Files;
 using Poser.Services;
 using Poser.Application.Transforms;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -51,7 +55,7 @@ public sealed class LightPane
 
     /// <summary>The gobo library's visual surface: the shared texture grid,
     /// walking the library by index with each tile captioned by NAME.</summary>
-    private readonly Crystarium.TexturePicker _goboGrid;
+    private readonly TexturePicker _goboGrid;
     private LightId? _goboTarget;
 
 
@@ -60,9 +64,9 @@ public sealed class LightPane
     private readonly HashSet<string> _missingGobos = new(StringComparer.Ordinal);
 
 
-    private readonly Crystarium.FileDialog _saveBrowser =
+    private readonly FileDialog _saveBrowser =
         new("Save Light", new[] { ".xivl" }, isSaveMode: true);
-    private readonly Crystarium.FileDialog _loadBrowser =
+    private readonly FileDialog _loadBrowser =
         new("Load Light", new[] { ".xivl" });
     private readonly global::Poser.UI.Controls.RememberedFolder _folder =
         new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
@@ -122,7 +126,7 @@ public sealed class LightPane
         _textures = textures;
         // The library is embedded and fixed by the time the pane composes,
         // so its count is the walk and its names are the captions.
-        _goboGrid = new Crystarium.TexturePicker(
+        _goboGrid = new TexturePicker(
             "light-gobo",
             GoboPreview,
             (uint)values.Gobos.Count,
@@ -153,10 +157,10 @@ public sealed class LightPane
     private void DrawPlacementBand(Vector2 origin, Vector2 size, string? path)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        float inset = ActiveTheme.Page.Inset * scale;
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             "##light-placement-mode",
             PlacementModeLabels,
             (int)_placement.Mode,
@@ -209,9 +213,9 @@ public sealed class LightPane
         string id,
         Vector2 origin,
         Vector2 size,
-        Action<Crystarium.PageScope, LightId, LightReading> sections)
+        Action<PageScope, LightId, LightReading> sections)
     {
-        Crystarium.Page(id, origin, size, page =>
+        Page(id, origin, size, page =>
         {
             var (lightId, light) = TargetLight();
             if (light == null)
@@ -235,7 +239,7 @@ public sealed class LightPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void GeneralRows(Crystarium.FormScope form, LightReading light)
+    private void GeneralRows(FormScope form, LightReading light)
     {
         if (!light.Available)
             form.Status("Lighting is unavailable: game signatures not found.");
@@ -268,7 +272,7 @@ public sealed class LightPane
         });
     }
 
-    private void LightRows(Crystarium.FormScope form, LightReading light)
+    private void LightRows(FormScope form, LightReading light)
     {
         form.ColorWells("Color", wells =>
         {
@@ -457,7 +461,7 @@ public sealed class LightPane
             : TextureProbe.Ready;
     }
 
-    private void ShadowRows(Crystarium.FormScope form, LightReading light)
+    private void ShadowRows(FormScope form, LightReading light)
     {
         form.Cells(cells =>
         {
@@ -503,13 +507,13 @@ public sealed class LightPane
         });
     }
 
-    private void AttachRows(Crystarium.FormScope form, LightReading light) =>
+    private void AttachRows(FormScope form, LightReading light) =>
         _parenting.Draw(form, SelectionId.ForLight(light.Id));
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
     /// bound it.</summary>
-    private void FileRows(Crystarium.FormScope form, LightReading light)
+    private void FileRows(FormScope form, LightReading light)
     {
         form.Actions("Light file", actions =>
         {
@@ -535,7 +539,7 @@ public sealed class LightPane
     }
 
     private void ActionRows(
-        Crystarium.FormScope form, LightId lightId, LightReading light)
+        FormScope form, LightId lightId, LightReading light)
     {
         form.Actions("Light", actions =>
         {

@@ -22,6 +22,7 @@ using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 using Poser.Application.Transforms;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -627,22 +628,22 @@ public partial class MainWindow : Window
     private static void PushShellStyles()
     {
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
-        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, ActiveTheme.TextDim);
+        ImGui.PushStyleColor(ImGuiCol.Border, ActiveTheme.Border);
         // Resize feedback — the grip and the lit border edge — is the
         // theme's accent, never Dalamud's global highlight.
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);
-        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.Button, ActiveTheme.SurfaceRaised);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, ActiveTheme.SurfaceSunken);
+        ImGui.PushStyleColor(ImGuiCol.Header, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, ActiveTheme.AccentActive);
 
         // The shell is the window chrome — the ImGui window must contribute
         // nothing; the retained shell owns its padding and borders.
@@ -685,7 +686,7 @@ public partial class MainWindow : Window
         _vm.UndoShortcut = PoserKeybinds.Effective(ui, "Undo");
         _vm.RedoShortcut = PoserKeybinds.Effective(ui, "Redo");
         if (ui.DetachedShell)
-            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+            minimum -= ActiveTheme.Shell.SidebarDefaultWidth;
         // A split inspector hands the rail's column back too.
         if (ui.SplitInspector)
             minimum -= Views.AppShellView.RailWidth;
