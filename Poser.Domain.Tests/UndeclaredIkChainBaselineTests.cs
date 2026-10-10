@@ -7,11 +7,10 @@ namespace Poser.Domain.Tests;
 /// Acceptance for a chain that has no declared definition — CCD armed on an
 /// arbitrary bone.
 ///
-/// <para><see cref="IkPolicy"/> stays the FIXED-chain decision: it answers for
-/// the four declared arm and leg endpoints only. A bone that heads no chain is
-/// judged by <see cref="IkChainConfig.ValidateUndeclared"/> instead, whose one
-/// extra rule is that Two Joint needs a definition's named joints and twists
-/// while CCD needs nothing but the endpoint's own parent walk. That is Brio's
+/// <para>A bone that heads no declared arm or leg chain is judged by
+/// <see cref="IkChainConfig.ValidateUndeclared"/>, whose one extra rule is
+/// that Two Joint needs a definition's named joints and twists while CCD
+/// needs nothing but the endpoint's own parent walk. That is Brio's
 /// split: every bone carries CCD options, and Two Joint is offered
 /// additionally for <c>j_te*</c> / <c>j_asi_d*</c>.</para>
 /// </summary>
