@@ -2,7 +2,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public sealed class SceneParentLink
 {

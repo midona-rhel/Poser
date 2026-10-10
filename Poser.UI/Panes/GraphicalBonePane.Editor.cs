@@ -10,6 +10,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
+using Poser.Documents.Config;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.CheckboxWidgets;
 using static Poser.UI.Widgets.DropdownWidgets;

@@ -10,6 +10,8 @@ using Poser.Files;
 using Poser.Library;
 using Poser.Tests.Files;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 
 namespace Poser.Tests.Library;
 

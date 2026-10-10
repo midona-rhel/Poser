@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 internal static class Utf8Bom
 {

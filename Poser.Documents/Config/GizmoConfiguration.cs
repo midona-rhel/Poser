@@ -1,4 +1,4 @@
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// The world gizmo's own options: size, snapping, and whether the gizmo

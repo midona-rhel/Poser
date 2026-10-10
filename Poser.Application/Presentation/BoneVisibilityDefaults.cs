@@ -1,5 +1,6 @@
 using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Documents.Config;
 
 namespace Poser.Application.Presentation;
 

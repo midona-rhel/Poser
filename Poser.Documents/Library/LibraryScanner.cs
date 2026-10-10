@@ -4,10 +4,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Poser.Files;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 public sealed record LibrarySourceSpec(string Name, string Path, bool Enabled);
 

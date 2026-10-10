@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>File operations behind the atomic same-directory stores; tests
 /// substitute it to inject failures.</summary>

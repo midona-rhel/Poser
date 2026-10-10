@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Config;
+using Poser.Documents.Config;
 
 namespace Poser.Tests.Core;
 

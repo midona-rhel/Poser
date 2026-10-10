@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 public enum UITheme
 {
     Auto,

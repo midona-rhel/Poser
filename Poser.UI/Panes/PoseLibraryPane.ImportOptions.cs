@@ -19,6 +19,7 @@ using Poser.Files;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
+using Poser.Documents.Files;
 
 namespace Poser.UI;
 
@@ -99,7 +100,7 @@ public sealed partial class PoseLibraryPane
         // menu's Smart checkbox.
         if (path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) &&
             PoseFile.Load(path) is { } file &&
-            Poser.Files.PoseFileClassification.IsExpressionOnly(file))
+            Poser.Documents.Files.PoseFileClassification.IsExpressionOnly(file))
         {
             // Re-derived as the Expression type pair, never patched onto this
             // build: a rail with Body checked has the face already excluded,

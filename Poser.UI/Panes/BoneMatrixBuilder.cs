@@ -8,6 +8,7 @@ using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.UI.Views;
 using Poser.Domain.Posing.BoneInfo;
+using Poser.Documents.Files.Converters;
 
 namespace Poser.UI;
 

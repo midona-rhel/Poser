@@ -20,6 +20,8 @@ using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 
 namespace Poser.UI;
 

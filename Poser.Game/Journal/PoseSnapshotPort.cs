@@ -11,6 +11,7 @@ using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Journal;
 

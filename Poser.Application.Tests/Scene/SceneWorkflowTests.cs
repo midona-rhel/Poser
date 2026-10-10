@@ -1,5 +1,4 @@
-﻿using Poser.Scene;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 using Poser.Domain.Operations;
 using Poser.Domain.Companions;
@@ -10,6 +9,8 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Domain.Scene;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Application.Tests.Scene;
 

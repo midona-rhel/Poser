@@ -25,6 +25,8 @@ using Poser.Services;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Files;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 

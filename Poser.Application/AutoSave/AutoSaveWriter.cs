@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain;
 using Poser.Services;
+using Poser.Documents.AutoSave;
 
 namespace Poser.Files;
 

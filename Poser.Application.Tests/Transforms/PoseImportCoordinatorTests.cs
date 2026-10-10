@@ -7,6 +7,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Transforms;
 

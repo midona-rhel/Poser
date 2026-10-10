@@ -442,7 +442,7 @@ public sealed partial class DebugBridge : IDisposable
                     return Json(ui.DebugShortcut(chord,
                         Enum.Parse<KeyEventKind>(query.GetValueOrDefault("kind", "Down"), true)));
                 }
-                return Json(global::Poser.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
+                return Json(global::Poser.Documents.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
             }
             case "/selection":
             {

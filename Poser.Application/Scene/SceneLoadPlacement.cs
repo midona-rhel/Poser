@@ -1,7 +1,8 @@
 using System.Numerics;
 using Poser.Domain.Scene;
 using Poser.Files;
-using Poser.Scene;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Application.Scene;
 

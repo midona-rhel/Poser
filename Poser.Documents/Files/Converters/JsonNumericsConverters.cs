@@ -4,7 +4,7 @@ using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Poser.Files.Converters;
+namespace Poser.Documents.Files.Converters;
 
 // Brio (and Anamnesis before it) serialize numerics as comma-space separated strings,
 // e.g. "Position": "0.1, 1, -0.05". These converters replicate that wire format exactly

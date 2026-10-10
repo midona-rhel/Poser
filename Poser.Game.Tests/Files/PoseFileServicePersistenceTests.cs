@@ -11,6 +11,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
 using Poser.Domain.Transforms;
+using Poser.Documents.Files;
 
 namespace Poser.Tests.Files;
 

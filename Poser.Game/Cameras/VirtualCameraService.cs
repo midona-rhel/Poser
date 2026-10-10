@@ -51,12 +51,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// settings save takes effect on the next frame, not the next GPose
     /// session.
     /// </summary>
-    internal Config.CameraConfiguration CameraSettings =>
+    internal Documents.Config.CameraConfiguration CameraSettings =>
         _configuration is { } service
             ? service.Config.Camera
             : FallbackCameraSettings;
 
-    private static readonly Config.CameraConfiguration
+    private static readonly Documents.Config.CameraConfiguration
         FallbackCameraSettings = new();
 
     private readonly IPluginLog _log;

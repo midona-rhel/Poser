@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Options for importing pose files. Controls which components are applied.

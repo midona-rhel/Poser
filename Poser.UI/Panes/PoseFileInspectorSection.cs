@@ -18,6 +18,8 @@ using Poser.Services;
 
 using Poser.Application.Posing;
 using Poser.UI.Widgets;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 using static Poser.UI.Widgets.ActionBarWidgets;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.DialogWidgets;
@@ -236,7 +238,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private Vector2 _filterAnchor;
 
     public PoseImportOptions ApplyCategoryFilter(PoseImportOptions options) =>
-        Files.ImportBoneCategories.ApplyDisabledCategories(
+        Documents.Files.ImportBoneCategories.ApplyDisabledCategories(
             options, _disabledCategories);
 
     // Context menus target the clicked actor; dialogs freeze that exact generation.
@@ -1800,7 +1802,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 actions.Button("All", () => _disabledCategories.Clear());
                 actions.Button("None", () =>
                 {
-                    foreach (var group in Files.ImportBoneCategories.Groups)
+                    foreach (var group in Documents.Files.ImportBoneCategories.Groups)
                         foreach (var category in group.Categories)
                             _disabledCategories.Add(category.Id);
                 });
@@ -1824,7 +1826,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     form =>
                     {
                         bool first = true;
-                        foreach (var group in Files.ImportBoneCategories.Groups)
+                        foreach (var group in Documents.Files.ImportBoneCategories.Groups)
                         {
                             var categories = group.Categories;
                             int enabled = 0;

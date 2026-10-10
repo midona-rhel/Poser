@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Poser.Domain.Identity;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Posing;
 

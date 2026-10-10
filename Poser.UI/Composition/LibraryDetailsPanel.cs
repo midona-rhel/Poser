@@ -22,6 +22,7 @@ using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Views;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;

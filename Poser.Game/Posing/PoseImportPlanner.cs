@@ -17,6 +17,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Posing;
 

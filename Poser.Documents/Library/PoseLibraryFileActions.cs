@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Poser.Files;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>What a library file action was asked to do.</summary>
 public enum PoseLibraryFileActionKind : byte

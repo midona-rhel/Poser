@@ -3,9 +3,9 @@ using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
-using Poser.Data.Config;
+using Poser.Documents.Data.Config;
 
-namespace Poser.Data;
+namespace Poser.Documents.Data;
 
 /// <summary>
 /// Reads graphical bone position configuration from JSON.

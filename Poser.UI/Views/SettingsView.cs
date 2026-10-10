@@ -13,6 +13,8 @@ using Poser.Library;
 using Poser.Domain.Cameras;
 using Poser.Domain.Library;
 using Poser.Domain.Preferences;
+using Poser.Documents.Config;
+using Poser.Documents.Library;
 using static Poser.UI.Widgets.FilterPillWidgets;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.ScrollRegionWidgets;
@@ -1497,13 +1499,13 @@ public static partial class SettingsView
         {
             form.Actions("Repositories", actions =>
             {
-                foreach (var project in Config.FirstRunNotice.Upstream)
+                foreach (var project in Documents.Config.FirstRunNotice.Upstream)
                     actions.Button(
                         project.Name,
                         () => vm.OnOpenUrl?.Invoke(project.Url),
                         help: project.Url);
             });
-            foreach (var project in Config.FirstRunNotice.Upstream)
+            foreach (var project in Documents.Config.FirstRunNotice.Upstream)
                 form.ReadOnly(project.Name, project.Credit);
             form.Status(
                 "Poser is derivative of and heavily inspired by these projects.");

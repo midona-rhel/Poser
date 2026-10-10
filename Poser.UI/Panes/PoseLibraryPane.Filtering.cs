@@ -21,6 +21,7 @@ using Poser.Services;
 using Poser.UI.Views;
 using Poser.Domain.Library;
 using Poser.Domain.Scene;
+using Poser.Documents.AutoSave;
 
 namespace Poser.UI;
 

@@ -2,9 +2,9 @@ using System.Globalization;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Poser.Files;
+using Poser.Documents.Files;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>Configuration JSON and recovery, independent of the plugin host.</summary>
 public sealed class ConfigurationFileStore(string path)

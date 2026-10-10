@@ -3,7 +3,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text.Json.Serialization;
 
-namespace Poser.Data.Config;
+namespace Poser.Documents.Data.Config;
 
 /// <summary>
 /// Configuration for graphical bone selection UI.

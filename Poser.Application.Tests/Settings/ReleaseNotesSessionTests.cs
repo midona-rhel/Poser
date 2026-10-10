@@ -1,5 +1,6 @@
 using Poser.Application.Settings;
 using Poser.Config;
+using Poser.Documents.Config;
 
 namespace Poser.Application.Tests.Settings;
 

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Domain.Preferences;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// One named overlay bone-visibility set (Ktisis <c>PresetConfig.Presets</c>).

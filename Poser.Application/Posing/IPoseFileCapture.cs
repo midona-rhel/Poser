@@ -2,6 +2,7 @@ using System;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Posing;
 

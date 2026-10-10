@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Tests.Files;
 

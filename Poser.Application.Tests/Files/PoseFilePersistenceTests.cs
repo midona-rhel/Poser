@@ -6,6 +6,8 @@ using System.Text;
 using Poser.Files;
 using Poser.Library;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 
 namespace Poser.Tests.Files;
 

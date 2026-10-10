@@ -3,7 +3,7 @@ using System.Numerics;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// One light's document, embedded in a scene container (a .xivl entry is

@@ -1,6 +1,5 @@
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
-using Poser.Scene;
 using Poser.Domain.Posing;
 using System;
 using System.Collections.Generic;

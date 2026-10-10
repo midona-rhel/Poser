@@ -7,8 +7,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Poser.Domain.Transforms;
+using Poser.Documents.Files.Converters;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Brio-compatible pose file format (.pose).

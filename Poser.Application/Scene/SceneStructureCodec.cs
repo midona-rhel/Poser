@@ -1,6 +1,7 @@
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 

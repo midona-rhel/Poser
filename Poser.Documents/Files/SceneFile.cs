@@ -11,7 +11,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Domain.Scene;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Poser scene file format (.xivs): one versioned JSON

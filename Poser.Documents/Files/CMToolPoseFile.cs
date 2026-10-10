@@ -4,8 +4,9 @@ using System.IO;
 using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
+using Poser.Documents.Files.Converters;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Legacy CMTool .cmp pose file (Anamnesis-era; MIT-licensed format, structure

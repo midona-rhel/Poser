@@ -4,8 +4,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using Poser.Config;
 using Poser.Application.AutoSave;
-using CapturedPose = Poser.Files.NamedAutoSavePose;
+using CapturedPose = Poser.Documents.AutoSave.NamedAutoSavePose;
 using Poser.Services;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Config;
 
 namespace Poser.Files;
 

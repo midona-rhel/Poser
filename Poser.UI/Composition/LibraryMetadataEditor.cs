@@ -7,6 +7,8 @@ using Poser.Files;
 using Poser.Library;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.DialogWidgets;
 using static Poser.UI.Widgets.TextInputWidgets;

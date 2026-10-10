@@ -2,7 +2,7 @@ using System;
 using System.Numerics;
 using Poser.Domain.Scene;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// One virtual camera's document, embedded in a scene container (a .xivc

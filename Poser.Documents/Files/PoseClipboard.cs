@@ -6,7 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// The pose clipboard's wire format, Brio-compatible both ways.

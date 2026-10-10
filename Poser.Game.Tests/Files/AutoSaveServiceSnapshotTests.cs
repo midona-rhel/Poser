@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using Poser.Files;
 using Poser.Tests.Fixtures;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Files;
 
 namespace Poser.Tests.Files;
 

@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 // Zero is deliberately legacy: old JSON must not acquire ownership by name.
 public enum LibrarySourceKind { Legacy, Custom, PoserPoses, PoserScenes, PoserMcdfs, PoserObjects, Brio, Anamnesis }

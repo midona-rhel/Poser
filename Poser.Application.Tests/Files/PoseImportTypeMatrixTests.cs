@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Files;
 

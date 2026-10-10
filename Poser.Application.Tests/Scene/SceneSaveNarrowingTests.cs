@@ -5,6 +5,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Files;
 using Poser.Tests.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Scene;
 

@@ -1,4 +1,4 @@
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>
 /// Per-source traversal and aggregate publication bounds. A source that

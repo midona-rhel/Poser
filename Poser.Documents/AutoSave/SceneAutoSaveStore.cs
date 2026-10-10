@@ -1,6 +1,7 @@
 using System.Globalization;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.AutoSave;
 
 /// <summary>Whole-scene snapshot filenames and disk retention, separate from pose snapshots.</summary>
 public sealed class SceneAutoSaveStore

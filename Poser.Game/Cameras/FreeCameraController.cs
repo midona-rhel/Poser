@@ -54,7 +54,7 @@ internal sealed unsafe class FreeCameraController
         _keyState = keyState;
     }
 
-    private Config.CameraConfiguration CameraSettings => _owner.CameraSettings;
+    private Documents.Config.CameraConfiguration CameraSettings => _owner.CameraSettings;
 
     private Vector3? TrackedPivot => _owner.TrackedPivot;
 

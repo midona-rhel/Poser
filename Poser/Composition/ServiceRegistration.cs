@@ -32,6 +32,8 @@ using Poser.UI;
 using Poser.UI.Composition;
 
 using Poser.Application.Viewport;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Library;
 
 namespace Poser.Composition;
 
@@ -489,7 +491,7 @@ internal static class ServiceRegistration
         services.AddStartable<CleanSceneLifecycle>(StartStage.SceneLifecycle);
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
-        services.AddSingleton(sp => new global::Poser.Files.ObjectPlacementPreferences
+        services.AddSingleton(sp => new global::Poser.Documents.Files.ObjectPlacementPreferences
         {
             // The session's live choice starts at the configured default.
             Mode = sp.GetRequiredService<ConfigurationService>()

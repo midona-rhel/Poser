@@ -1,6 +1,7 @@
 using System.Globalization;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.AutoSave;
 
 public sealed record NamedAutoSavePose(string ActorName, string FileName, PoseFile Pose);
 public sealed record PoseSnapshotWriteResult(bool Success, int Written,

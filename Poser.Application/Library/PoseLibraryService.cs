@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Poser.Config;
 using Poser.Domain.Library;
+using Poser.Documents.Library;
 
 namespace Poser.Library;
 

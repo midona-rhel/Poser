@@ -6,6 +6,7 @@ using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Posing;
 
@@ -40,7 +41,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
             || _skeletons.GetSkeleton(current) is not { } skeleton)
             return null;
         return new(
-            Poser.Files.PoseFileClassification.IsExpressionOnly(pose),
+            Poser.Documents.Files.PoseFileClassification.IsExpressionOnly(pose),
             PoseFileService.IsBodyOnlyPose(pose),
             PoseFileService.IsDawntrailSkeleton(skeleton)
                 && PoseFileService.IsLikelyDawntrailPose(pose),

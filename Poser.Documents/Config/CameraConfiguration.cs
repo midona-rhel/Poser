@@ -1,6 +1,6 @@
 using Poser.Domain.Cameras;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// The camera decisions that are the USER's rather than any one camera's:

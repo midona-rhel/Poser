@@ -62,7 +62,7 @@ public class GizmoOverlayWindow : Window
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
 
-    private Config.GizmoConfiguration GizmoConfig =>
+    private Documents.Config.GizmoConfiguration GizmoConfig =>
         _configuration.Config.Gizmo;
 
     /// <summary>Configured handle span before UI scaling.</summary>

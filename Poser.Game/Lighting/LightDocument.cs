@@ -1,5 +1,6 @@
 using Poser.Entities;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Lighting;
 

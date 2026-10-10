@@ -1,5 +1,6 @@
 using Poser.Library;
 using Poser.Services;
+using Poser.Documents.Library;
 
 namespace Poser.Application.Library;
 

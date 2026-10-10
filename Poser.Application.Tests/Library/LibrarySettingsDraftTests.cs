@@ -4,6 +4,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using Poser.Library;
 using Poser.Domain.Library;
+using Poser.Documents.Library;
 
 namespace Poser.Tests.Library;
 

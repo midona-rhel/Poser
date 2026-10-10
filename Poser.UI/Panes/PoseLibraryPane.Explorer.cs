@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using Poser.Library;
+using Poser.Documents.Library;
 
 namespace Poser.UI;
 

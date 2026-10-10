@@ -14,6 +14,7 @@ using System.Linq;
 using Poser.Application.Transforms;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
+using Poser.Documents.Config;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;
 using static Poser.UI.Widgets.ValueEdits;

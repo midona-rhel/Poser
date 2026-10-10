@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Documents.Animation;
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>
 /// One configured root the library scans.

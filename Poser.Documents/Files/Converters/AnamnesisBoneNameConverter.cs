@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files.Converters;
 
 /// <summary>
 /// Converts Anamnesis bone naming to game bone names. Table transcribed verbatim

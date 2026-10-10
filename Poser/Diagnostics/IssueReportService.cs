@@ -11,6 +11,7 @@ using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Files;
 using Poser.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Diagnostics;
 

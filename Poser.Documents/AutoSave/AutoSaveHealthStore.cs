@@ -4,8 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.AutoSave;
 
 public enum AutoSaveHealthStatus
 {

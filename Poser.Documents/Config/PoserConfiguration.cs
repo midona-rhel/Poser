@@ -1,7 +1,7 @@
 using Poser.Domain.Scene;
-using Poser.Library;
+using Poser.Documents.Library;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// Main configuration for Poser plugin.

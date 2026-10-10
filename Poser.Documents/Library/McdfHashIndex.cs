@@ -4,7 +4,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>
 /// Finds an appearance package in the user's MCDF library BY ITS CONTENT,

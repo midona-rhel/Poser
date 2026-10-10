@@ -4,6 +4,7 @@ using System.Linq;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Documents.Config;
 
 namespace Poser.UI;
 

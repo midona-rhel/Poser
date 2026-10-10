@@ -2,6 +2,8 @@
 using Poser.Files;
 using Poser.Game.Scene;
 using Poser.Library;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
 
 namespace Poser.Game.Tests.Scene;
 

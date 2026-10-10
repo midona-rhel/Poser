@@ -2,7 +2,6 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
-using Poser.Scene;
 using Poser.Application.AutoSave;
 using System;
 using System.Collections.Concurrent;
@@ -19,6 +18,7 @@ using Poser.Library;
 using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
 using static Poser.UI.Widgets.ButtonWidgets;
 using static Poser.UI.Widgets.DialogWidgets;
 using static Poser.UI.Widgets.PageForm;
@@ -65,10 +65,10 @@ public sealed class ScenePane
     // The Stagehand seam: a Stage is a plain .json in Documents\Stages,
     // and both dialogs open there so the two plugins read one folder.
     private readonly FileDialog _stageSaveBrowser =
-        new("Export Stage", new[] { global::Poser.Files.StageFile.Extension },
+        new("Export Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension },
             isSaveMode: true);
     private readonly FileDialog _stageLoadBrowser =
-        new("Import Stage", new[] { global::Poser.Files.StageFile.Extension });
+        new("Import Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension });
 
     /// <summary>ONE dialog serves every "from file" row in the portal: an
     /// entry's kind lives in its extension, and the load takes any of
@@ -1128,7 +1128,7 @@ public sealed class ScenePane
     /// dialog has somewhere to land.</summary>
     private static string StageFolder()
     {
-        string folder = global::Poser.Files.StageFile.DefaultFolder;
+        string folder = global::Poser.Documents.Scene.StageFile.DefaultFolder;
         try
         {
             Directory.CreateDirectory(folder);
@@ -1145,9 +1145,9 @@ public sealed class ScenePane
         StageFolder(), path =>
     {
         if (!path.EndsWith(
-                global::Poser.Files.StageFile.Extension,
+                global::Poser.Documents.Scene.StageFile.Extension,
                 StringComparison.OrdinalIgnoreCase))
-            path += global::Poser.Files.StageFile.Extension;
+            path += global::Poser.Documents.Scene.StageFile.Extension;
         var started = _workflow.BeginSave(
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,

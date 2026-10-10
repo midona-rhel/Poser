@@ -2,7 +2,6 @@ using Poser.Application.World;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using Poser.Domain.Identity;
 using System.Collections.Generic;
@@ -20,6 +19,8 @@ using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
 using Poser.Domain.Scene;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Game.Scene;
 
@@ -46,7 +47,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     /// <summary>Finds an appearance package by its bytes. Held as the
     /// interface: the library owns MCDFs and will own this index too.
     /// </summary>
-    private readonly Poser.Library.IMcdfHashIndex _mcdfHashes;
+    private readonly Poser.Documents.Library.IMcdfHashIndex _mcdfHashes;
 
     private readonly IPluginLog _log;
 
@@ -61,7 +62,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         Poser.Application.Integration.IntegrationSelectors integration,
         Poser.Application.Integration.McdfTransaction mcdf,
         IActorManager actors,
-        Poser.Library.IMcdfHashIndex mcdfHashes,
+        Poser.Documents.Library.IMcdfHashIndex mcdfHashes,
         IPluginLog log)
     {
         _handles = handles;

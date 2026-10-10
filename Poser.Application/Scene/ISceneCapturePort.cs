@@ -1,11 +1,11 @@
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 

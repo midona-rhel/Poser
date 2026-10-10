@@ -6,8 +6,9 @@ using System.Text.Json;
 using Poser.Domain.Scene;
 using Stagehand.Definitions;
 using Stagehand.Definitions.Objects;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.Scene;
 
 /// <summary>
 /// The Stagehand Stage seam: a Stage definition (their plain-JSON world-dressing

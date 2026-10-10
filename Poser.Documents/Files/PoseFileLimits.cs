@@ -1,4 +1,4 @@
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>Hard bounds for the ordinary Brio-compatible <c>.pose</c> codec.</summary>
 public static class PoseFileLimits

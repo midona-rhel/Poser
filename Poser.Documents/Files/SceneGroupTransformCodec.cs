@@ -5,7 +5,7 @@ using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public static class SceneGroupTransformCodec
 {

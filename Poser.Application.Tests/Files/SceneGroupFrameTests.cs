@@ -4,9 +4,10 @@ using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using Poser.Files;
-using Poser.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Tests.Files;
 

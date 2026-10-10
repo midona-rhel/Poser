@@ -50,7 +50,7 @@ public class ActorColliderMeshTests
         Assert.True(Vector3.Distance(vertices[3], new(-2, 2, 0)) < .0001f);
         var captured = new IkCollider { Shape = IkColliderShape.Mesh, Mesh = new(vertices.ToArray(), indices.ToArray()) };
         bones["arm"] = Matrix4x4.CreateTranslation(100, 0, 0);
-        var options = global::Poser.Files.SceneFile.JsonOptions;
+        var options = global::Poser.Documents.Files.SceneFile.JsonOptions;
         var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(captured, options), options)!;
         Assert.Equal(captured.Mesh.Vertices, restored.Mesh!.Vertices);
         Assert.Equal(captured.Mesh.Indices, restored.Mesh.Indices);

@@ -1,8 +1,8 @@
 using System.Globalization;
-using Poser.Files;
 using Poser.Domain.Library;
+using Poser.Documents.Files;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>One snapshot folder as the worker read it. Every string a mint
 /// reads is already formatted here, so the pass on the draw thread writes

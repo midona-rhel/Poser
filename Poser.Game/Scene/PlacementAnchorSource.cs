@@ -7,6 +7,7 @@ using Poser.Files;
 using Poser.Services;
 
 using Poser.Application.Viewport;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Scene;
 

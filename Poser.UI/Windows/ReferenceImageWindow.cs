@@ -6,6 +6,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
 using Poser.UI.Widgets;
+using Poser.Documents.Config;
 using static Poser.UI.Widgets.SliderWidgets;
 using static Poser.UI.Widgets.TextWidgets;
 using static Poser.UI.Widgets.Themes;

@@ -4,6 +4,9 @@ using Poser.Application.AutoSave;
 using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Files;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Config;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.AutoSave;
 

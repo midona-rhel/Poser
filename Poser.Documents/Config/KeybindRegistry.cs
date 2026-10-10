@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Preferences;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>One action's two chords. Both are ordinary config text
 /// (<see cref="KeyChord"/>'s vocabulary); empty is unbound.</summary>

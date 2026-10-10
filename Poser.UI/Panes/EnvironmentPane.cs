@@ -1,6 +1,5 @@
 using Poser.Application.World;
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -11,6 +10,7 @@ using Poser.Files;
 using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
+using Poser.Documents.Files;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
@@ -1056,12 +1056,12 @@ public sealed class EnvironmentPane
     {
         var root = _configuration.Config.Library
             .ResolveObjectsRoot();
-        if (!global::Poser.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
+        if (!global::Poser.Documents.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
         {
             _notices.Refused(detail);
             return;
         }
-        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
+        var path = global::Poser.Documents.Library.LibraryConfiguration.NewEntryPath(
             root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(
             path, null, SceneSaveOptions.Only(SceneCategories.Environment));

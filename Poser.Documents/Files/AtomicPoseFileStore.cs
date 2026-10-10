@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public enum PoseFileStoreFailureKind
 {

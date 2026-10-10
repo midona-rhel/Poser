@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>Steps of one atomic write, in order; also the failure phase.</summary>
 internal enum AtomicWritePhase

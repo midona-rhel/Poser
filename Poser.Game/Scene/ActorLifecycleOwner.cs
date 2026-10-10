@@ -5,6 +5,7 @@ using Poser.Application.Transforms;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Domain.Transforms;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Scene;
 

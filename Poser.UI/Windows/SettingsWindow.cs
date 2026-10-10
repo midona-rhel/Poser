@@ -17,6 +17,8 @@ using Poser.Domain.Cameras;
 using Poser.UI.Widgets;
 using Poser.Domain;
 using Poser.Domain.Preferences;
+using Poser.Documents.Config;
+using Poser.Documents.Library;
 
 namespace Poser.UI;
 public class SettingsWindow : Window

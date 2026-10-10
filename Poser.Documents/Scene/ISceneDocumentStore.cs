@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
-using Poser.Files;
+using Poser.Documents.Files;
 
-namespace Poser.Scene;
+namespace Poser.Documents.Scene;
 
 public sealed record SceneDocumentRead(SceneReadOutcome Outcome, IReadOnlyList<string> Notes);
 public sealed record SceneDocumentWrite(SceneWriteOutcome Outcome, IReadOnlyList<string> Notes);

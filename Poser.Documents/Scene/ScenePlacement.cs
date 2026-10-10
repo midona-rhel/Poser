@@ -1,9 +1,9 @@
 using System;
 using System.Numerics;
 using Poser.Domain.Scene;
-using Poser.Files;
+using Poser.Documents.Files;
 
-namespace Poser.Scene;
+namespace Poser.Documents.Scene;
 
 /// <summary>
 /// The relative-placement rebase: one pure pass over a READ document that
@@ -136,7 +136,7 @@ public static class ScenePlacementRebase
 
     public static string? Rebase(
         SceneFile scene,
-        Poser.Files.PlacementAnchorData saved,
+        Poser.Documents.Files.PlacementAnchorData saved,
         Vector3 currentPosition,
         float currentYaw)
     {

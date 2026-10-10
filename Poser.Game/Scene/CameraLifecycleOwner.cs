@@ -7,6 +7,7 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Scene;
 

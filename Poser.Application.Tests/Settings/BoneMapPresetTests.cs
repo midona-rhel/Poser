@@ -4,6 +4,7 @@ using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
+using Poser.Documents.Config;
 
 namespace Poser.Application.Tests.Settings;
 

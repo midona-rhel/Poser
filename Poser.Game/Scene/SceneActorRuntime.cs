@@ -2,7 +2,6 @@ using Poser.Application.World;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using Poser.Domain.Identity;
 using System.Collections.Generic;
@@ -21,6 +20,7 @@ using Poser.Game.Posing;
 using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Scene;
 

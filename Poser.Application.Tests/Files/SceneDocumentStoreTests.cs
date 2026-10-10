@@ -1,5 +1,6 @@
 using System.IO;
 using Poser.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Tests.Files;
 

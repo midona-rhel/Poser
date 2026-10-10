@@ -19,6 +19,7 @@ using Poser.Services;
 using Poser.Application.Transforms;
 using Poser.UI.Widgets;
 using Poser.Domain.Posing;
+using Poser.Documents.Files;
 using static Poser.UI.Widgets.PageForm;
 using static Poser.UI.Widgets.SegmentedControlWidgets;
 using static Poser.UI.Widgets.Themes;

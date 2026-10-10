@@ -1,7 +1,6 @@
 using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +11,8 @@ using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Files;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Application.Scene;
 

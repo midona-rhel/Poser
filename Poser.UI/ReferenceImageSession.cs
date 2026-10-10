@@ -9,6 +9,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Config;
 using Poser.UI.Widgets;
+using Poser.Documents.Config;
 
 namespace Poser.UI;
 

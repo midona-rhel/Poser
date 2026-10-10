@@ -275,7 +275,7 @@ public sealed class SceneLifecycleHistoryTests
     {
         var placement = Transform.Identity;
         placement.Position = position;
-        return new ActorState(placement, visible, new Poser.Files.PoseFile());
+        return new ActorState(placement, visible, new Poser.Documents.Files.PoseFile());
     }
 
     private static readonly PropModel Apple =

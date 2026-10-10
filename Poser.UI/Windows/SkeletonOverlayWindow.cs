@@ -17,6 +17,7 @@ using Poser.Application.Posing;
 using Poser.Services;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
+using Poser.Documents.Config;
 using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
@@ -480,7 +481,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
-        bool brio = Config.BonePickBehavior == BonePickBehavior.Brio;
+        bool brio = Documents.Config.BonePickBehavior == BonePickBehavior.Brio;
         // The lists are painted on the foreground and never sit under
         // the pointer, so nothing travels into them.
         bool listTravel = false;
@@ -1202,7 +1203,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     {
         if (!Config.DimInactiveActors)
             return null;
-        var source = Config.ActiveActorSource;
+        var source = Documents.Config.ActiveActorSource;
         if (source is ActiveActorSource.Target or ActiveActorSource.Both
             && _actors_GPoseTargetLineage() is { } targetLineage)
             return targetLineage;
@@ -1454,7 +1455,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     {
         if (!bone.IsHovered || _hoveredBones.Count == 0)
             return false;
-        if (Config.BonePickBehavior == BonePickBehavior.Brio)
+        if (Documents.Config.BonePickBehavior == BonePickBehavior.Brio)
             return true;
         return _hoveredBones[_hoverIndex].Id.Equals(bone.Id);
     }
@@ -1614,7 +1615,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // also opens the popup on it, frozen.
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || target is not { } pressed)
             return;
-        bool brioPress = Config.BonePickBehavior == BonePickBehavior.Brio;
+        bool brioPress = Documents.Config.BonePickBehavior == BonePickBehavior.Brio;
         var io = ImGui.GetIO();
         bool additive = brioPress ? io.KeyShift : io.KeyCtrl || (pressed.Bone != null && io.KeyShift);
         SelectNow(pressed, additive);

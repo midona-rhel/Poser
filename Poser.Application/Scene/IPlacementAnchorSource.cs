@@ -9,7 +9,7 @@ using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Files;
-using Poser.Scene;
+using Poser.Documents.Files;
 
 namespace Poser.Services;
 
