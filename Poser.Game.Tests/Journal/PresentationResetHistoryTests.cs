@@ -40,7 +40,7 @@ public sealed class PresentationResetHistoryTests
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         f.Port.RefuseSet = true;
         Assert.False(step.Undo());
-        Assert.True(step.RetainOnFailure);
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(step));
         f.Port.RefuseSet = false;
         Assert.True(step.Undo());
         Assert.Equal(Vector4.One, f.Port.Tint);

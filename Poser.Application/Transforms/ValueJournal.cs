@@ -181,7 +181,7 @@ public sealed class ValueJournal
         {
             BeforeValue = before,
             AfterValue = after,
-            RetainOnFailure = true,
+            OnRefusal = () => RefusalAction.Keep,
             FailureDetail = () => failure,
         };
     }
@@ -267,7 +267,8 @@ public sealed class ValueJournal
                 AfterValue = steps.Select(step => step.AfterValue).ToArray(),
                 AffectedEntities = steps.All(step => step.AffectedEntities is not null)
                     ? steps.SelectMany(step => step.AffectedEntities!).Distinct().ToArray() : null,
-                RetainOnFailure = steps.Any(step => step.RetainOnFailure),
+                OnRefusal = () => steps.Any(step => RefusalPolicy.Decide(step) == RefusalAction.Keep)
+                    ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
                 FailureDetail = () => steps.Select(step => step.FailureDetail?.Invoke()).FirstOrDefault(detail => detail is not null),
             });
         }

@@ -64,7 +64,9 @@ public sealed class GroupSteps
                 () => Put(ref before, out deferredCapture),
                 () => Put(ref after, out deferredCapture))
             {
-                HasDeferredGroupCapture = () => deferredCapture,
+                // A restore waiting for readable member poses must not discard
+                // its preserved authored state on repeated temporary refusal.
+                OnRefusal = () => deferredCapture ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
             });
         return result;
     }

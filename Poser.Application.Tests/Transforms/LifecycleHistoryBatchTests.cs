@@ -1,5 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Tests.Transforms;
 
@@ -45,7 +46,7 @@ public sealed class LifecycleHistoryBatchTests
         var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
         Assert.False(entry.Undo());
         Assert.Equal("Waiting for earlier entity", entry.FailureDetail!());
-        Assert.False(entry.DropOnFailure!());
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(entry));
         available = true;
         Assert.True(entry.Undo());
         Assert.Equal(2, earlier);
@@ -53,6 +54,66 @@ public sealed class LifecycleHistoryBatchTests
         Assert.True(entry.Redo());
         Assert.True(entry.Undo());
         Assert.Equal(2, later);
+    }
+
+    [Fact]
+    public void Same_refusal_policy_drives_undo_journal_and_batch()
+    {
+        static JournalStep Refusing(RefusalAction action) =>
+            new(action.ToString(), () => false, () => true)
+                { OnRefusal = () => action, FailureDetail = () => $"{action} refused" };
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(new JournalStep("Plain", () => false, () => true)));
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(new SceneLifecyclePatch("Lifecycle", () => false, () => true)));
+
+        foreach (var (action, expectedRefusals) in new[]
+            { (RefusalAction.Keep, 3), (RefusalAction.DropOnRepeat, 2), (RefusalAction.DropNow, 1) })
+        {
+            // Undo journal: count refusals before the entry leaves history.
+            var history = new TransformHistory();
+            var notices = new List<string>();
+            var journal = new UndoJournal(history, new Runner(history), _ => true, notices.Add);
+            history.Append(Refusing(action));
+            int journalRefusals = 0;
+            while (history.CanUndo && journalRefusals < 3)
+            {
+                Assert.False(journal.Undo().Success);
+                journalRefusals++;
+            }
+
+            // Batch: the same step as the only child of a lifecycle batch.
+            var batchHistory = new TransformHistory();
+            batchHistory.RecordLifecycleBatch("Batch", () => batchHistory.Append(Refusing(action)));
+            var batch = Assert.IsType<SceneLifecyclePatch>(batchHistory.PeekUndo());
+            int batchRefusals = 0;
+            while (batchRefusals < 3)
+            {
+                Assert.False(batch.Undo());
+                batchRefusals++;
+                Assert.Equal($"{action} refused", batch.FailureDetail!());
+                if (RefusalPolicy.Decide(batch) == RefusalAction.DropNow) break;
+            }
+
+            Assert.Equal(expectedRefusals, journalRefusals);
+            Assert.Equal(expectedRefusals, batchRefusals);
+        }
+    }
+
+    private sealed class Runner(TransformHistory history) : IUndoRunner
+    {
+        public GestureResult Undo() => Apply(true);
+        public GestureResult Redo() => Apply(false);
+        public GestureResult Undo(SelectionId entity) => Apply(true, entity);
+        public GestureResult Redo(SelectionId entity) => Apply(false, entity);
+        public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => Replay(step, before);
+        public GestureResult Replay(JournalStep step, bool before) =>
+            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
+        private GestureResult Apply(bool before, SelectionId? entity = null)
+        {
+            var entry = (InverseEntry)(before ? history.PeekUndo(entity) : history.PeekRedo(entity))!;
+            if (!(before ? entry.Undo() : entry.Redo())) return GestureResult.Fail("Refused");
+            if (before) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
+            return GestureResult.Ok();
+        }
     }
 
     [Fact]

@@ -314,9 +314,9 @@ public sealed class SceneLifecycleHistoryTests
         public bool Undo()
         {
             var entry = History.PeekUndo()!;
-            if (!(entry switch { SceneLifecyclePatch p => p.Undo(), JournalStep p => p.Undo(), _ => false }))
+            if (!(entry is InverseEntry inverse && inverse.Undo()))
             {
-                if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop } patch && shouldDrop())
+                if (entry is SceneLifecyclePatch patch && RefusalPolicy.Decide(patch) == RefusalAction.DropNow)
                 {
                     History.Drop(entry);
                     Notices.Add(patch.FailureDetail?.Invoke() ?? "Lifecycle restore refused.");
@@ -330,9 +330,9 @@ public sealed class SceneLifecycleHistoryTests
         public bool Redo()
         {
             var entry = History.PeekRedo()!;
-            if (!(entry switch { SceneLifecyclePatch p => p.Redo(), JournalStep p => p.Redo(), _ => false }))
+            if (!(entry is InverseEntry inverse && inverse.Redo()))
             {
-                if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop } patch && shouldDrop())
+                if (entry is SceneLifecyclePatch patch && RefusalPolicy.Decide(patch) == RefusalAction.DropNow)
                 {
                     History.Drop(entry);
                     Notices.Add(patch.FailureDetail?.Invoke() ?? "Lifecycle restore refused.");
