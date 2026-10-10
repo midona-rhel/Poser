@@ -235,6 +235,16 @@ chains the bake disarmed.
 Transport (play, pause, scrub, speed) is never a step. Choosing a
 timeline and toggling loop are. A locked camera never journals.
 
+Each entity property (lights, overlays, cameras, props, world objects) is
+declared once per kind and written by stable ID through one path: bind the
+exact current entity, apply the kind's refusal policy, then journal under
+(entity, property) so continuous edits stage. A stale ID writes nothing and
+appends nothing. Transport properties (effect pause and speed, scenery
+animation pause) write and report but never journal. Undo and redo re-resolve
+the bound instance through the history-only resolver, so a lifecycle restore
+that replaced the native wrapper still receives its edits; public IDs are
+never repaired.
+
 Show and Hide report a result per target. A refused or stale target writes
 nothing and appends nothing; every surface (sidebar eye, context menu,
 selection section) shows the same refusal notice. One target is its own value

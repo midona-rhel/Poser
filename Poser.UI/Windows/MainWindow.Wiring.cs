@@ -241,7 +241,7 @@ public partial class MainWindow
                 return;
             if (!handle.IsVfx)
                 return;
-            _objectControl.SetVfxPaused(pausedId, !handle.VfxPaused);
+            _objectControl.Set(pausedId, Application.Presentation.WorldObjectProperties.VfxPaused, !handle.VfxPaused);
             row.Paused = _objectControl.Read(pausedId)?.VfxPaused ?? row.Paused;
         };
         // The scenery row's sun/moon seat: the same night state the
@@ -253,7 +253,7 @@ public partial class MainWindow
                 return;
             if (_objectControl.Read(nightId) is not { IsVfx: false } handle)
                 return;
-            _objectControl.SetNightState(nightId, !handle.NightState);
+            _objectControl.Set(nightId, Application.Presentation.WorldObjectProperties.NightState, !handle.NightState);
             row.Night = _objectControl.Read(nightId)?.NightState ?? row.Night;
         };
         _vm.OnColliderCollision = row =>

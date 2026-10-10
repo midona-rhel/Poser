@@ -13,31 +13,3 @@ public interface IEntityHistoryBinding<TEntity> : IEntityHistoryResolver<TEntity
 {
     void BindReplacement(TEntity original, TEntity replacement);
 }
-
-/// <summary>Property history resolves its entity again at replay time, so
-/// lifecycle restoration can replace a runtime wrapper without losing edits.</summary>
-public sealed class EntityValueJournal<TEntity>(
-    ValueJournal journal,
-    Func<TEntity, bool> isValid,
-    IEntityHistoryResolver<TEntity>? resolver = null) where TEntity : class
-{
-    public TEntity? Current(TEntity original)
-    {
-        var current = resolver is null ? original : resolver.Resolve(original);
-        return current is not null && isValid(current) ? current : null;
-    }
-
-    /// <summary>Writes through the restored instance. A gone entity, or one
-    /// that goes stale before the write, fails with detail and journals nothing.</summary>
-    public ValueWriteResult Set<T>(TEntity original, string property, string description,
-        Func<TEntity, T> read, Action<TEntity, T> assign, T value, string unavailable)
-    {
-        if (Current(original) is not { } current) return new(false, unavailable);
-        return journal.Set((original, property), description, () => read(current), next =>
-        {
-            if (Current(original) is not { } live) return new(false, unavailable);
-            assign(live, next);
-            return ValueWriteResult.Ok();
-        }, value, () => Current(original) is not null);
-    }
-}

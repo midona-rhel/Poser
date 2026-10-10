@@ -10,8 +10,6 @@ public static class HistoryEntityLookup
     {
         IActor actor when bindings.GetActorId(actor) is { } id => SelectionId.ForActor(id),
         IBone bone when bindings.GetBoneId(bone) is { } id => SelectionId.ForBone(id),
-        IPropHandle prop when bindings.GetPropId(prop) is { } id => SelectionId.ForProp(id),
-        IWorldObject world when bindings.GetWorldObjectId(world) is { } id => SelectionId.ForWorldObject(id),
         IOverlayNode overlay when bindings.GetOverlayId(overlay) is { } id => SelectionId.ForOverlay(id),
         _ => null,
     };

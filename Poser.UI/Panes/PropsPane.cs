@@ -125,13 +125,13 @@ public sealed class PropsPane
         form.TextInput(
             "Name",
             prop.Name,
-            next => _values.SetName(prop.Id, next),
+            next => _values.Set(prop.Id, PropProperties.Name, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,
-            next => _values.SetVisible(prop.Id, next),
+            next => _values.Set(prop.Id, PropProperties.Visible, next),
             help: "Hide this object without destroying it");
         // The dyes bake at creation, so choosing one respawns the weapon
         // in place — handle, name, and placement survive.

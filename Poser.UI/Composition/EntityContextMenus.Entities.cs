@@ -812,7 +812,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
             () => OpenEntityRename(
-                "Rename object", prop.Name, next => _objectControl.SetName(propId, next)),
+                "Rename object", prop.Name, next => _objectControl.Set(propId, Application.Presentation.PropProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForProp(propId)),
             () => OpenEntityRename(
                 "Save prop to library", prop.Name,
@@ -985,7 +985,7 @@ internal sealed partial class EntityContextMenus
             () => SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), !worldObject.Visible),
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
-                next => _objectControl.SetName(worldObjectId, next)),
+                next => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.Name, next)),
             () =>
             {
                 DuplicateAndSelect(SelectionId.ForWorldObject(worldObjectId));
@@ -1019,18 +1019,18 @@ internal sealed partial class EntityContextMenus
         {
             stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",
                 worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-            stateActions.Add(() => _objectControl.SetVfxPaused(worldObjectId, !worldObject.VfxPaused));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.VfxPaused, !worldObject.VfxPaused));
         }
         else
         {
             stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
                 worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
-            stateActions.Add(() => _objectControl.SetNightState(worldObjectId, !worldObject.NightState));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.NightState, !worldObject.NightState));
             if (!worldObject.Spawned)
             {
                 stateItems.Add(new(worldObject.AnimationPaused ? "Play" : "Pause",
                     worldObject.AnimationPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-                stateActions.Add(() => _objectControl.SetAnimationPaused(worldObjectId, !worldObject.AnimationPaused));
+                stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.AnimationPaused, !worldObject.AnimationPaused));
             }
         }
         items = stateItems.Concat(items).ToArray();

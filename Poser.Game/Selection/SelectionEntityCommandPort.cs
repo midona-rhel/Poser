@@ -12,7 +12,6 @@ using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Game.Journal;
 using Poser.Services;
 
 namespace Poser.Game.Selection;
@@ -23,7 +22,8 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
-    private readonly EntitySessions _sessions;
+    private readonly Poser.Application.Presentation.IActorValueControl _actorValues;
+    private readonly Poser.Application.Presentation.ISceneObjectControl _objectValues;
     private readonly Poser.Application.Presentation.ILightControl _lights;
     private readonly Poser.Application.Presentation.IOverlayControl _overlayValues;
     private readonly IActorManager _actorManager;
@@ -43,7 +43,8 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     public SelectionEntityCommandPort(
         SceneSession scene,
         IEntityBindings bindings,
-        EntitySessions sessions,
+        Poser.Application.Presentation.IActorValueControl actorValues,
+        Poser.Application.Presentation.ISceneObjectControl objectValues,
         Poser.Application.Presentation.ILightControl lights,
         Poser.Application.Presentation.IOverlayControl overlayValues,
         IActorManager actorManager,
@@ -61,7 +62,8 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     {
         _scene = scene;
         _bindings = bindings;
-        _sessions = sessions;
+        _actorValues = actorValues;
+        _objectValues = objectValues;
         _lights = lights;
         _overlayValues = overlayValues;
         _actorManager = actorManager;
@@ -123,7 +125,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                 if (!CurrentActor(actorId, out var actor)) return Gone();
                 if (!ActorOwnershipMatches(actorId, actor))
                     return new(false, "The actor's ownership changed; select it again.");
-                return _sessions.Actors.SetVisibility(actorId, visible);
+                return _actorValues.SetVisibility(actorId, visible);
             case { Light: { } lightId }:
                 if (!CurrentLight(lightId, out var light)) return Gone();
                 if ((current.Removal == SelectionRemoval.Release)
@@ -131,14 +133,14 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                     return new(false, "The light's ownership changed; select it again.");
                 return _lights.Set(lightId, Poser.Application.Presentation.LightProperties.IsOn, visible);
             case { Prop: { } propId }:
-                return CurrentProp(propId, out var prop)
-                    ? _sessions.Props.SetVisible(prop, visible) : Gone();
+                return CurrentProp(propId, out _)
+                    ? _objectValues.Set(propId, Poser.Application.Presentation.PropProperties.Visible, visible) : Gone();
             case { Overlay: { } overlayId }:
                 return CurrentOverlay(overlayId, out _)
                     ? _overlayValues.Set(overlayId, Poser.Application.Presentation.OverlayProperties.Visible, visible) : Gone();
             case { WorldObject: { } worldId }:
-                return CurrentWorldObject(worldId, out var world)
-                    ? _sessions.WorldObjects.SetVisible(world, visible) : Gone();
+                return CurrentWorldObject(worldId, out _)
+                    ? _objectValues.Set(worldId, Poser.Application.Presentation.WorldObjectProperties.Visible, visible) : Gone();
             default:
                 return new(false, "That entity cannot be shown or hidden.");
         }
