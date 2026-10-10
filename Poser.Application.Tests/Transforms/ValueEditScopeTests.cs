@@ -1,7 +1,7 @@
 using Poser.Application.Diagnostics;
 using Poser.Application.Transforms;
 
-namespace Poser.Game.Tests.Journal;
+namespace Poser.Application.Tests.Transforms;
 
 public class ValueEditScopeTests
 {

@@ -3,7 +3,7 @@ using Poser.Domain.Integration;
 using Poser.Documents.Appearance;
 using Xunit;
 
-namespace Poser.Game.Tests.Integration;
+namespace Poser.Application.Tests.Integration;
 
 public sealed class CharaRequestTests
 {

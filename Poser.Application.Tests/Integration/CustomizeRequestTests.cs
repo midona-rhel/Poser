@@ -2,7 +2,7 @@ using Newtonsoft.Json.Linq;
 using Poser.Domain.Integration;
 using Poser.Documents.Appearance;
 
-namespace Poser.Game.Tests.Integration;
+namespace Poser.Application.Tests.Integration;
 
 public sealed class CustomizeRequestTests
 {

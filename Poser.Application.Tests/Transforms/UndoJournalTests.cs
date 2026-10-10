@@ -2,7 +2,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
 using Poser.Domain.Identity;
 
-namespace Poser.Game.Tests.Journal;
+namespace Poser.Application.Tests.Transforms;
 
 public sealed class UndoJournalTests
 {

@@ -7,7 +7,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Documents.Mcdf;
 
-namespace Poser.Game.Tests;
+namespace Poser.Application.Tests.Integration;
 
 public sealed class McdfFileBoundaryTests
 {

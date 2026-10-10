@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class PoseImportTypeMatrixTests
 {
