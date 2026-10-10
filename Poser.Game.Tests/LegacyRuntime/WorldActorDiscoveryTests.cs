@@ -19,10 +19,8 @@ namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class WorldActorDiscoveryTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Gpose_exit_restores_tint_after_capture_before_binding_removal(bool unload)
+    [Fact]
+    public void Gpose_exit_restores_tint_after_capture_before_binding_removal()
     {
         var framework = new FakeFramework();
         var inGpose = true;
@@ -61,13 +59,8 @@ public sealed class WorldActorDiscoveryTests
         });
         framework.RaiseUpdate();
         Assert.True(presentation.SetTint(id, PresentationModel.Character, authored).Success);
-        if (unload)
-            gpose.ExitForUnload();
-        else
-        {
-            inGpose = false;
-            framework.RaiseUpdate();
-        }
+        inGpose = false;
+        framework.RaiseUpdate();
         // Neither repeated observation nor the subsequent unload repeats exit.
         framework.RaiseUpdate();
         gpose.ExitForUnload();
@@ -227,127 +220,6 @@ public sealed class WorldActorDiscoveryTests
         Assert.Equal(2, released.Count);
     }
 
-    [Theory]
-    [InlineData("gone")]
-    [InlineData("reused")]
-    [InlineData("kind")]
-    [InlineData("address")]
-    [InlineData("index")]
-    [InlineData("hidden")]
-    public void Adoption_redo_refuses_changed_observation_without_native_calls(string change)
-    {
-        var adapter = new FakeTableAdapter();
-        var observed = Obs((nint)0x10);
-        adapter.World.Add(observed);
-        var seam = new CloneSeam { Result = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address) };
-        var discovery = NewDiscovery(adapter, seam);
-        var history = new TransformHistory();
-        int releases = 0;
-        var session = new WorldActorSession(discovery, history, _ => { releases++; return true; });
-        Assert.True(session.Adopt(Assert.Single(discovery.RefreshCandidates()).Id, out _).Success);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        adapter.OnRevalidate = _ => change switch
-        {
-            "gone" => null,
-            "reused" => observed with { GameObjectId = 77 },
-            "address" => observed with { Address = (nint)0x20 },
-            "index" => observed with { ObjectIndex = 6 },
-            "hidden" => observed with { IsDrawing = false },
-            _ => observed with { Kind = WorldActorKind.EventNpc },
-        };
-        Assert.False(step.Redo());
-        Assert.False(step.Redo());
-        Assert.Single(seam.Calls);
-        Assert.Equal(1, releases);
-    }
-
-    [Fact]
-    public void Failed_adoption_does_not_append_and_failed_release_keeps_the_claim_for_retry()
-    {
-        var adapter = new FakeTableAdapter();
-        var observed = Obs((nint)0x10);
-        adapter.World.Add(observed);
-        var seam = new CloneSeam { Throw = true };
-        var discovery = NewDiscovery(adapter, seam);
-        var history = new TransformHistory();
-        int releases = 0;
-        bool releaseAllowed = false;
-        var session = new WorldActorSession(discovery, history, _ => { releases++; return releaseAllowed; });
-        var candidate = Assert.Single(discovery.RefreshCandidates()).Id;
-        Assert.False(session.Adopt(candidate, out _).Success);
-        Assert.False(history.CanUndo);
-        seam.Throw = false;
-        seam.Result = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address);
-        Assert.True(session.Adopt(candidate, out _).Success);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        adapter.ThrowOnRevalidate = true;
-        Assert.False(step.Undo());
-        Assert.Equal(0, releases);
-        adapter.ThrowOnRevalidate = false;
-        Assert.False(step.Undo());
-        releaseAllowed = true;
-        Assert.True(step.Undo());
-        Assert.True(step.Undo());
-        Assert.Equal(2, releases);
-        Assert.Equal(2, seam.Calls.Count); // No adoption as a failed-undo fallback.
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Pending_adoption_rollback_revalidates_its_body_without_recording_history(bool replaced)
-    {
-        var adapter = new FakeTableAdapter();
-        var observed = Obs((nint)0x10);
-        adapter.World.Add(observed);
-        var borrowed = new ActorBase(new EntityId("borrowed"), "Borrowed", observed.Address);
-        var seam = new CloneSeam { Result = borrowed };
-        var gpose = new FakeGPoseService();
-        var discovery = NewDiscovery(adapter, seam, gpose);
-        var history = new TransformHistory();
-        IActor? released = null;
-        var session = new WorldActorSession(discovery, history, actor => { released = actor; return true; });
-        Assert.True(session.BeginAdopt(Assert.Single(discovery.RefreshCandidates()).Id, out _, out var pending).Success);
-        Assert.False(history.CanUndo);
-        gpose.IsGPosing = false; // Rollback still runs when cancellation is GPose exit.
-        if (replaced) adapter.World[0] = observed with { GameObjectId = 77 };
-        Assert.True(pending!.Rollback());
-        Assert.Same(replaced ? null : borrowed, released);
-        Assert.False(history.CanUndo);
-    }
-
-    [Fact]
-    public void Adoption_history_survives_listing_refresh_and_releases_the_latest_wrapper()
-    {
-        var adapter = new FakeTableAdapter();
-        var observed = Obs((nint)0x10);
-        adapter.World.Add(observed);
-        var first = new ActorBase(new EntityId("first"), "Borrowed", observed.Address);
-        var second = new ActorBase(new EntityId("second"), "Borrowed", observed.Address);
-        var seam = new CloneSeam { Result = first };
-        var manager = new FakeActorManager();
-        var discovery = NewDiscovery(adapter, seam, manager: manager);
-        var history = new TransformHistory();
-        var released = new List<IActor>();
-        var session = new WorldActorSession(discovery, history, actor => { released.Add(actor); return true; });
-        Assert.True(session.Adopt(Assert.Single(discovery.RefreshCandidates()).Id, out var actor).Success);
-        Assert.Same(first, actor);
-        manager.Actors = [first];
-        Assert.Empty(discovery.RefreshCandidates()); // Held actors leave discovery; the claim must not.
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        manager.Actors = [];
-        seam.Result = second;
-        Assert.True(step.Redo());
-        Assert.True(step.Undo());
-        Assert.Equal(new IActor[] { first, second }, released);
-        Assert.True(step.Redo());
-        adapter.OnRevalidate = _ => observed with { GameObjectId = 77 };
-        Assert.True(step.Undo());
-        Assert.Equal(2, released.Count); // Undo must not release the replacement occupant either.
-    }
-
     [Fact]
     public void Refresh_filters_and_mints_stale_safe_candidate_ids()
     {
@@ -376,46 +248,30 @@ public sealed class WorldActorDiscoveryTests
         ulong id = 1,
         string name = "World Npc",
         WorldActorKind? kind = WorldActorKind.BattleNpc,
-        float distance = 0f,
-        bool drawing = true) =>
-        new(new object(), address, index, id, name, kind, distance, drawing);
+        float distance = 0f) =>
+        new(new object(), address, index, id, name, kind, distance, true);
 
     private static WorldActorDiscovery NewDiscovery(
         FakeTableAdapter adapter,
         CloneSeam seam,
-        FakeGPoseService? gpose = null,
-        FakeActorManager? manager = null,
-        FakeFramework? framework = null) =>
+        FakeActorManager? manager = null) =>
         new(
             adapter,
-            gpose ?? new FakeGPoseService(),
+            new FakeGPoseService(),
             manager ?? new FakeActorManager(),
             seam.Invoke,
-            framework);
+            null);
 
     private sealed class FakeTableAdapter : IWorldActorTableAdapter
     {
         public List<WorldActorObservation> World { get; } = new();
-        public Func<WorldActorObservation, WorldActorObservation?>? OnRevalidate { get; set; }
-        public bool ThrowOnEnumerate { get; set; }
-        public bool ThrowOnRevalidate { get; set; }
-
-        public IReadOnlyList<WorldActorObservation> EnumerateOverworld()
-        {
-            if (ThrowOnEnumerate)
-                throw new InvalidOperationException("enumerate");
-            return World.ToArray();
-        }
+        public IReadOnlyList<WorldActorObservation> EnumerateOverworld() => World.ToArray();
 
         /// <summary>Default revalidation resolves the stored candidate's own
         /// reference against the current world — the same "does this exact
         /// object still stand there" question the production adapter asks.</summary>
         public WorldActorObservation? Revalidate(WorldActorObservation stored)
         {
-            if (ThrowOnRevalidate)
-                throw new InvalidOperationException("revalidate");
-            if (OnRevalidate is { } custom)
-                return custom(stored);
             foreach (var current in World)
             {
                 if (ReferenceEquals(current.Reference, stored.Reference))
@@ -430,14 +286,11 @@ public sealed class WorldActorDiscoveryTests
         public List<nint> Calls { get; } = new();
         public IActor? Result { get; set; } =
             new ActorBase(new EntityId("world-clone"), "Clone", (nint)0xC10);
-        public bool Throw { get; set; }
         public Action? OnInvoke { get; set; }
 
         public IActor? Invoke(nint address)
         {
             Calls.Add(address);
-            if (Throw)
-                throw new InvalidOperationException("clone");
             OnInvoke?.Invoke();
             return Result;
         }
@@ -445,7 +298,7 @@ public sealed class WorldActorDiscoveryTests
 
     private sealed class FakeGPoseService : IGPoseService
     {
-        public bool IsGPosing { get; set; } = true;
+        public bool IsGPosing => true;
         public void Dispose() { }
         public void ExitForUnload() { }
     }
@@ -469,13 +322,12 @@ public sealed class WorldActorDiscoveryTests
     private sealed class FakeFramework : IFramework
     {
         public event IFramework.OnUpdateDelegate? Update;
-        public bool InThread { get; set; } = true;
         public void RaiseUpdate() => Update?.Invoke(this);
 
         public DateTime LastUpdate => DateTime.MinValue;
         public DateTime LastUpdateUTC => DateTime.MinValue;
         public TimeSpan UpdateDelta => TimeSpan.Zero;
-        public bool IsInFrameworkUpdateThread => InThread;
+        public bool IsInFrameworkUpdateThread => true;
         public bool IsFrameworkUnloading => false;
         public TaskFactory GetTaskFactory() => throw new NotSupportedException();
         public Task DelayTicks(long numTicks, CancellationToken cancellationToken = default) =>

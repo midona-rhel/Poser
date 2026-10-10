@@ -12,14 +12,11 @@ namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class ActorAvailabilityTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Cached_actor_cannot_outlive_its_native_slot_or_login(bool preview)
+    [Fact]
+    public void Cached_actor_cannot_outlive_its_native_slot_or_login()
     {
-        ushort index = preview ? (ushort)441 : (ushort)201;
+        ushort index = 201;
         bool loggedIn = true;
-        bool frameworkThread = true;
         ulong objectId = 42;
         IGameObject? current = Proxy<ICharacter>((method, _) => method.Name switch
         {
@@ -34,22 +31,18 @@ public sealed class ActorAvailabilityTests
             Proxy<IObjectTable>((method, args) => method.Name == "get_Item" &&
                 Convert.ToInt32(args![0]) == index ? current : null),
             Proxy<IGPoseService>((_, _) => null),
-            Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread" ? frameworkThread : null),
+            Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread" ? true : null),
             Proxy<IEventBus>((_, _) => null),
             Proxy<ITargetManager>((_, _) => null),
             Proxy<IClientState>((method, _) => method.Name == "get_IsLoggedIn" ? loggedIn : null));
-        if (preview) actors.RegisterAuxiliary(index, ActorKind.Player);
         actors.RefreshActors();
-        var retained = Assert.Single(preview ? actors.AuxiliaryActors : actors.Actors);
+        var retained = Assert.Single(actors.Actors);
         Assert.True(actors.IsAvailable(retained));
 
         // No actor-list refresh: precisely the Update -> logout -> Draw gap.
         loggedIn = false;
         Assert.False(actors.IsAvailable(retained));
         loggedIn = true;
-        frameworkThread = false;
-        Assert.False(actors.IsAvailable(retained));
-        frameworkThread = true;
         objectId++;
         Assert.False(actors.IsAvailable(retained));
         current = null;

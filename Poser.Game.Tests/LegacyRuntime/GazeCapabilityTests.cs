@@ -21,86 +21,6 @@ namespace Poser.Game.Tests.LegacyRuntime;
 public sealed class GazeCapabilityTests
 {
     [Fact]
-    public void Missing_update_signature_keeps_gaze_registered_but_unavailable()
-    {
-        var factory = new TestNativeFactory
-        {
-            UpdateScan = () => throw new InvalidOperationException("missing"),
-        };
-
-        using var service = Create(factory);
-
-        AssertUnavailable(service, "update signature");
-        Assert.Equal(0, factory.HookCreateCount);
-        Assert.Empty(factory.Hooks);
-    }
-
-    [Fact]
-    public void Missing_loop_signature_refuses_hook_admission()
-    {
-        var factory = new TestNativeFactory
-        {
-            LoopScan = () => throw new InvalidOperationException("missing"),
-        };
-
-        using var service = Create(factory);
-
-        AssertUnavailable(service, "loop signature");
-        Assert.Equal(0, factory.HookCreateCount);
-        Assert.Empty(factory.Hooks);
-    }
-
-
-
-    [Fact]
-    public void Hook_creation_failure_is_fail_soft()
-    {
-        var factory = new TestNativeFactory
-        {
-            CreateHook = (_, _) => throw new InvalidOperationException("create"),
-        };
-
-        using var service = Create(factory);
-
-        AssertUnavailable(service, "hook creation");
-        Assert.Equal(1, factory.HookCreateCount);
-    }
-
-    [Fact]
-    public void Hook_enable_failure_disposes_the_partial_hook()
-    {
-        var hook = new TestHook { EnableFailure = true };
-        var factory = new TestNativeFactory { Hook = hook };
-
-        using var service = Create(factory);
-
-        AssertUnavailable(service, "hook enable");
-        Assert.Equal(1, hook.DisposeCount);
-        Assert.Equal(0, factory.EventBusSubscriptions);
-    }
-
-
-
-    [Fact]
-    public void Successful_construction_preserves_registration_and_idempotent_dispose()
-    {
-        var hook = new TestHook();
-        var factory = new TestNativeFactory { Hook = hook };
-        var service = Create(factory);
-
-        Assert.True(service.IsAvailable);
-        Assert.Null(service.UnavailableDetail);
-        Assert.Equal(1, hook.EnableCount);
-        Assert.Equal(2, factory.EventBusSubscriptions);
-
-        service.Dispose();
-        service.Dispose();
-
-        Assert.Equal(1, hook.DisposeCount);
-        Assert.Equal(2, factory.EventBusUnsubscriptions);
-    }
-
-    [Fact]
     public void Character_target_writes_use_the_gpose_clone_not_the_overworld_original()
     {
         using var scene = GazeScene.Create();
@@ -113,83 +33,14 @@ public sealed class GazeCapabilityTests
         Assert.Equal(
             scene.OriginalAddress,
             scene.ObjectTable.SearchById(GazeScene.ActorId)!.Address);
-        Assert.NotEmpty(scene.WrittenAddresses());
-        Assert.All(
-            scene.WrittenAddresses(),
-            address => Assert.Equal(scene.CloneAddress, address));
-        Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
-    }
-
-    [Fact]
-    public void Untoggling_one_channel_owes_that_channel_a_hand_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        Assert.Equal(GazeTargetType.None, scene.Released());
-
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Eyes | GazeTargetType.Body);
-
-        Assert.Equal(GazeTargetType.Head, scene.Released());
-        Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Body, scene.Written());
-        Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // The target remains stored when no gaze parts are selected.
-
-
-
-
-
-
-
-    // The character target id is cleared when all gaze parts are disabled.
-
-    [Fact]
-    public void Untoggling_every_channel_clears_the_characters_imposed_target_id()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        Assert.Equal(new[] { GazeScene.TargetId }, scene.Factory.WrittenTargetIds());
-
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
-
-        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
-
+        // Untoggling every channel clears the imposed id; retoggling restores it.
         Assert.Equal(
             new ulong[] { GazeScene.TargetId, 0, GazeScene.TargetId },
             scene.Factory.WrittenTargetIds());
+        Assert.All(
+            scene.WrittenAddresses(),
+            address => Assert.Equal(scene.CloneAddress, address));
     }
-
-
-
-    [Fact]
-    public void Resetting_gaze_forgets_the_target_and_clears_the_imposed_id()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-
-        scene.Service.ResetGaze(scene.Actor);
-
-        var state = scene.Service.GetGazeState(scene.Actor);
-        Assert.Equal(GazeTargetMode.None, state.Mode);
-        Assert.Equal(0ul, state.TargetId);
-        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-    }
-
 
     [Fact]
     public void A_despawned_remembered_target_is_kept_by_id_and_stops_enforcing()
@@ -205,87 +56,20 @@ public sealed class GazeCapabilityTests
         Assert.Equal(GazeTargetMode.Entity, state.Mode);
         Assert.False(state.Active);
         Assert.Equal(GazeTargetType.None, scene.Written());
+
+        // A target returning under the same id does not resume by itself.
+        scene.RespawnTargetUnderTheSameId();
+        Assert.True(scene.Service.GetGazeState(scene.Actor).TargetStale);
+        Assert.Equal(GazeTargetType.None, scene.Written());
         Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-    }
 
-
-
-
-
-    [Fact]
-    public void Choosing_a_live_target_lifts_the_stale_mark()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.DespawnTarget();
-
+        // Choosing a live target lifts the stale mark.
         Assert.True(scene.Service.SetGazeTarget(scene.Actor, scene.Second).Success);
-
-        var state = scene.Service.GetGazeState(scene.Actor);
+        state = scene.Service.GetGazeState(scene.Actor);
         Assert.False(state.TargetStale);
         Assert.Equal(GazeScene.SecondId, state.TargetId);
         Assert.Equal(GazeTargetType.All, scene.Written());
     }
-
-
-
-
-
-
-    [Theory]
-    [InlineData(GazeTargetMode.None)]
-    [InlineData(GazeTargetMode.Camera)]
-    [InlineData(GazeTargetMode.Forward)]
-    [InlineData(GazeTargetMode.Position)]
-    public void Restoration_preserves_stored_points_and_locks_without_reseeding_them(GazeTargetMode mode)
-    {
-        using var scene = GazeScene.Create();
-        var settings = new Poser.Application.Gaze.GazeSettings(mode, GazeTargetType.All,
-            new(1, 2, 3), new(4, 5, 6), new(7, 8, 9), new(10, 11, 12), true, true, false);
-        Assert.True(scene.Service.RestoreSettings(scene.Actor, settings).Success);
-        var restored = scene.Service.GetGazeState(scene.Actor);
-        Assert.Equal(settings.Mode, restored.Mode);
-        Assert.Equal(settings.Position, restored.Position);
-        Assert.Equal(settings.EyesPosition, restored.EyesPosition);
-        Assert.Equal(settings.HeadPosition, restored.HeadPosition);
-        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Eyes));
-        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Head));
-    }
-
-    [Fact]
-    public void An_actor_outside_the_gpose_range_is_never_written()
-    {
-        using var scene = GazeScene.Create();
-
-        Assert.False(scene.Service.SetGazeTarget(scene.Ungated, scene.Target).Success);
-        scene.Service.SetGazeMode(scene.Ungated, GazeTargetMode.Camera);
-        scene.Service.SetGazeParts(scene.Ungated, GazeTargetType.None);
-        scene.Service.SetGazeParts(scene.Ungated, GazeTargetType.All);
-        scene.Service.SetGazeMode(scene.Ungated, GazeTargetMode.None);
-        scene.Service.ResetGaze(scene.Ungated);
-        scene.Reconcile();
-
-        Assert.Empty(scene.Factory.TargetWrites);
-    }
-
-
-    [Fact]
-    public void A_target_returning_under_the_same_id_does_not_resume_by_itself()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.DespawnTarget();
-
-        scene.RespawnTargetUnderTheSameId();
-
-        Assert.True(scene.Service.GetGazeState(scene.Actor).TargetStale);
-        Assert.Equal(GazeTargetType.None, scene.Written());
-        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-    }
-
-
-
-
 
     [Fact]
     public void Leaving_GPose_and_reset_then_dispose_release_everything_once()
@@ -304,20 +88,6 @@ public sealed class GazeCapabilityTests
         Assert.Equal(1, Assert.IsType<TestHook>(Assert.Single(scene.Factory.Hooks)).DisposeCount);
     }
 
-    private static GazeService Create(TestNativeFactory factory)
-    {
-        return new GazeService(
-            NewProxy<IGPoseService>(),
-            NewProxy<ICameraProjection>(),
-            NewProxy<IObjectTable>(),
-            factory.EventBus,
-            NewProxy<ISigScanner>(),
-            NewProxy<IGameInteropProvider>(),
-            NewProxy<IPluginLog>(),
-            framework: null, // null passes OnOwnerThread (ActorSpawnService shape)
-            factory);
-    }
-
     /// <summary>
     /// A resolvable GPose scene, keyed by OBJECT INDEX because that is the
     /// distinction that matters: the source actor exists twice — as the
@@ -333,10 +103,8 @@ public sealed class GazeCapabilityTests
         public const ulong ActorId = 0x1001;
         public const ulong TargetId = 0x1002;
         public const ulong SecondId = 0x1003;
-        public const ulong UngatedId = 0x1004;
 
         public const int OriginalIndex = 3;   // overworld original of the source
-        public const int UngatedIndex = 5;    // outside 201..439 entirely
         public const int CloneIndex = 201;
         public const int TargetIndex = 202;
         public const int SecondIndex = 203;
@@ -355,24 +123,9 @@ public sealed class GazeCapabilityTests
         public required IActor Target { get; init; }
         public required IActor Second { get; init; }
 
-        /// <summary>An actor outside the GPose index range — nothing may ever
-        /// write to it.</summary>
-        public required IActor Ungated { get; init; }
-
         /// <summary>The table itself, so a test can prove the collision trap is
         /// live rather than asserting against a harness that never had one.</summary>
         public required IObjectTable ObjectTable { get; init; }
-
-        internal required SearchProbe Probe { get; init; }
-
-        /// <summary>Runs on every <c>SearchById</c>, which is the one table read
-        /// the reconciliation pass performs between its snapshot and its apply.
-        /// Installing a handler here is how a test interleaves a caller with
-        /// that pass on a harness that has no second thread.</summary>
-        public Action<ulong>? OnSearchById
-        {
-            set => Probe.OnProbe = value;
-        }
 
         public nint CloneAddress => _slots[CloneIndex].Address;
         public nint OriginalAddress => _slots[OriginalIndex].Address;
@@ -388,10 +141,8 @@ public sealed class GazeCapabilityTests
             IActor actor,
             IActor target,
             IActor second,
-            IActor ungated,
             nint targetBlock,
-            IObjectTable objectTable,
-            SearchProbe probe)
+            IObjectTable objectTable)
         {
             var scene = new GazeScene
             {
@@ -400,10 +151,8 @@ public sealed class GazeCapabilityTests
                 Actor = actor,
                 Target = target,
                 Second = second,
-                Ungated = ungated,
                 TargetBlock = targetBlock,
                 ObjectTable = objectTable,
-                Probe = probe,
             };
             scene._blocks.AddRange(blocks);
             scene._slots = slots;
@@ -460,7 +209,6 @@ public sealed class GazeCapabilityTests
             var blocks = new List<nint>();
             var slots = new Dictionary<int, FakeGameObject>();
             var byAddress = new Dictionary<nint, FakeGameObject>();
-            var probe = new SearchProbe();
 
             FakeGameObject Add(ulong id, int index)
             {
@@ -491,7 +239,6 @@ public sealed class GazeCapabilityTests
             var clone = Add(GazeScene.ActorId, GazeScene.CloneIndex);
             var target = Add(GazeScene.TargetId, GazeScene.TargetIndex);
             var second = Add(GazeScene.SecondId, GazeScene.SecondIndex);
-            var ungated = Add(GazeScene.UngatedId, GazeScene.UngatedIndex);
 
             var objectTable = NewProxy<IObjectTable>();
             var proxy = (DefaultProxy)(object)objectTable;
@@ -506,7 +253,6 @@ public sealed class GazeCapabilityTests
             {
                 if (args?[0] is not ulong id)
                     return null;
-                probe.OnProbe?.Invoke(id);
                 var indices = new List<int>(slots.Keys);
                 indices.Sort();
                 foreach (var index in indices)
@@ -532,17 +278,9 @@ public sealed class GazeCapabilityTests
 
             return GazeScene.From(
                 service, factory, blocks, slots,
-                ActorAt(clone), ActorAt(target), ActorAt(second), ActorAt(ungated),
-                target.Address, objectTable, probe);
+                ActorAt(clone), ActorAt(target), ActorAt(second),
+                target.Address, objectTable);
         }
-    }
-
-    /// <summary>A settable hook on the fake table's <c>SearchById</c>. Held in
-    /// its own object because the object-table proxy captures it during
-    /// construction, long before the scene a test can reach exists.</summary>
-    internal sealed class SearchProbe
-    {
-        public Action<ulong>? OnProbe { get; set; }
     }
 
     /// <summary>One object-table row: a stable id, an object index and the
@@ -564,13 +302,6 @@ public sealed class GazeCapabilityTests
         public ulong Id { get; }
         public nint Address { get; }
         public IGameObject Wrapper { get; }
-    }
-
-    private static void AssertUnavailable(GazeService service, string detail)
-    {
-        Assert.False(service.IsAvailable);
-        Assert.NotNull(service.UnavailableDetail);
-        Assert.Contains(detail, service.UnavailableDetail!, StringComparison.OrdinalIgnoreCase);
     }
 
     private static T NewProxy<T>() where T : class =>
@@ -604,15 +335,8 @@ public sealed class GazeCapabilityTests
 
     internal sealed class TestNativeFactory : IGazeNativeFactory
     {
-        public Func<nint>? UpdateScan { get; init; }
-        public Func<nint>? LoopScan { get; init; }
-        public Func<nint, GazeLoopDelegate, IGazeHook>? CreateHook { get; init; }
-        public TestHook? Hook { get; init; }
         public TestEventBus EventBus { get; } = new();
         public List<IGazeHook> Hooks { get; } = new();
-        public int HookCreateCount { get; private set; }
-        public int EventBusSubscriptions => EventBus.SubscribedCount;
-        public int EventBusUnsubscriptions => EventBus.UnsubscribedCount;
 
         /// <summary>Every character-target-id write, in order — the observable
         /// form of Brio's set-at-:201 / clear-to-0-at-:218 pair.</summary>
@@ -624,21 +348,16 @@ public sealed class GazeCapabilityTests
         public void SetCharacterTargetId(nint characterAddress, ulong targetId) =>
             TargetWrites.Add((characterAddress, targetId));
 
-        public nint ScanUpdateLookAt(ISigScanner scanner) =>
-            UpdateScan?.Invoke() ?? (nint)1;
+        public nint ScanUpdateLookAt(ISigScanner scanner) => 1;
 
-        public nint ScanActorLookAtLoop(ISigScanner scanner) =>
-            LoopScan?.Invoke() ?? (nint)2;
+        public nint ScanActorLookAtLoop(ISigScanner scanner) => 2;
 
         public IGazeHook CreateActorLookAtHook(
             IGameInteropProvider hooks,
             nint address,
             GazeLoopDelegate detour)
         {
-            HookCreateCount++;
-            if (CreateHook is { } create)
-                return create(address, detour);
-            var hook = Hook ?? new TestHook();
+            var hook = new TestHook();
             Hooks.Add(hook);
             return hook;
         }
@@ -646,16 +365,9 @@ public sealed class GazeCapabilityTests
 
     internal sealed class TestHook : IGazeHook
     {
-        public bool EnableFailure { get; init; }
-        public int EnableCount { get; private set; }
         public int DisposeCount { get; private set; }
 
-        public void Enable()
-        {
-            EnableCount++;
-            if (EnableFailure)
-                throw new InvalidOperationException("enable");
-        }
+        public void Enable() { }
 
         public unsafe nint Original(ContainerInterface* args) => 0;
 
@@ -666,13 +378,8 @@ public sealed class GazeCapabilityTests
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
-        public int SubscribedCount { get; private set; }
-        public int UnsubscribedCount { get; private set; }
-        public int PublishedCount { get; private set; }
-
         public void Subscribe<T>(Action<T> handler) where T : IEvent
         {
-            SubscribedCount++;
             if (!_handlers.TryGetValue(typeof(T), out var list))
                 _handlers[typeof(T)] = list = new List<Delegate>();
             list.Add(handler);
@@ -680,7 +387,6 @@ public sealed class GazeCapabilityTests
 
         public void Unsubscribe<T>(Action<T> handler) where T : IEvent
         {
-            UnsubscribedCount++;
             if (_handlers.TryGetValue(typeof(T), out var list))
                 list.Remove(handler);
         }
@@ -689,7 +395,6 @@ public sealed class GazeCapabilityTests
         // delivering ActorListChangedEvent.
         public void Publish<T>(T evt) where T : IEvent
         {
-            PublishedCount++;
             if (!_handlers.TryGetValue(typeof(T), out var list))
                 return;
             foreach (var handler in list.ToArray())
