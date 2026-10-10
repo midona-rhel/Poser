@@ -491,30 +491,26 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         CancelActive(active);
     }
 
-    public GestureResult Undo() => UndoCore(null);
-    public GestureResult Undo(SelectionId entity) => UndoCore(entity);
-
-    private GestureResult UndoCore(SelectionId? entity)
+    /// <summary>
+    /// Runs one direction of the synchronous entry <see cref="UndoJournal"/>
+    /// peeked, through the shared transition and recovery barrier, and commits
+    /// it only when it lands. A refused entry remains available to retry.
+    /// </summary>
+    public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
-        if (RecoverPending() is { } recovered)
-            return recovered;
+        var verb = undo ? "undo" : "redo";
+        if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
         using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
-        if (_active != null)
-            return GestureResult.Fail("Cancel the active gesture before undo.");
-        var entry = History.PeekUndo(entity);
-        if (entry == null)
-            return GestureResult.Fail("Nothing to undo.");
-        if (entry is JournalStep { CompleteReplay: not null })
-            return GestureResult.Fail("This step requires the asynchronous undo journal.");
+        if (transition == null) return Busy();
+        if (_active != null) return GestureResult.Fail($"Cancel the active gesture before {verb}.");
+        Action commit = undo
+            ? () => History.CommitUndo(entry, entity)
+            : () => History.CommitRedo(entry, entity);
         if (entry is InverseEntry inverse)
-            return RunLifecycle(
-                inverse.Undo,
-                $"Could not undo {inverse.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry, entity), inverse.FailureDetail);
-        var patch = (TransformPatch)entry;
-        return RestorePatch(patch, true, () => History.CommitUndo(patch, entity));
+            return RunLifecycle(undo ? inverse.Undo : inverse.Redo,
+                $"Could not {verb} {inverse.Description.ToLowerInvariant()}.",
+                commit, inverse.FailureDetail);
+        return RestorePatch((TransformPatch)entry, undo, commit);
     }
 
     /// <summary>
@@ -539,48 +535,17 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
-    public GestureResult Replay(JournalStep step, bool before) => ReplayCore(step, before, null);
-    public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => ReplayCore(step, before, entity);
-
-    private GestureResult ReplayCore(JournalStep step, bool before, SelectionId? entity)
+    public GestureResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
         if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
         using var transition = TryEnterTransition();
         if (transition == null) return Busy();
         if (_active != null) return GestureResult.Fail("Cancel the active gesture before undo or redo.");
-        if ((before ? History.PeekUndo(entity) : History.PeekRedo(entity))?.Id != step.Id)
-            return GestureResult.Fail("The history changed before replay.");
         // The journal owns async snapshot completion; do not hold this
         // synchronous transition across the import (rollback also needs it).
         return RunLifecycle(before ? step.Undo : step.Redo,
             $"Could not {(before ? "undo" : "redo")} {step.Description.ToLowerInvariant()}.",
             () => { }, step.FailureDetail);
-    }
-
-    public GestureResult Redo() => RedoCore(null);
-    public GestureResult Redo(SelectionId entity) => RedoCore(entity);
-
-    private GestureResult RedoCore(SelectionId? entity)
-    {
-        if (RecoverPending() is { } recovered)
-            return recovered;
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
-        if (_active != null)
-            return GestureResult.Fail("Cancel the active gesture before redo.");
-        var entry = History.PeekRedo(entity);
-        if (entry == null)
-            return GestureResult.Fail("Nothing to redo.");
-        if (entry is JournalStep { CompleteReplay: not null })
-            return GestureResult.Fail("This step requires the asynchronous undo journal.");
-        if (entry is InverseEntry inverse)
-            return RunLifecycle(
-                inverse.Redo,
-                $"Could not redo {inverse.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry, entity), inverse.FailureDetail);
-        var patch = (TransformPatch)entry;
-        return RestorePatch(patch, false, () => History.CommitRedo(patch, entity));
     }
 
     public GestureResult RunValueTransition(Action action)

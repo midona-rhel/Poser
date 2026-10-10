@@ -156,24 +156,19 @@ public sealed class UndoJournalTests
 
     private sealed class Runner(TransformHistory history) : IUndoRunner
     {
-        public GestureResult Undo() => Apply(true);
-        public GestureResult Redo() => Apply(false);
-        public GestureResult Undo(SelectionId entity) => Apply(true, entity);
-        public GestureResult Redo(SelectionId entity) => Apply(false, entity);
-        public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => Replay(step, before);
-        public GestureResult Replay(JournalStep step, bool before) =>
+        public GestureResult? RecoverPending() => null;
+        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
             (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
-        private GestureResult Apply(bool before, SelectionId? entity = null)
+        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
-            var entry = before ? history.PeekUndo(entity) : history.PeekRedo(entity);
             bool success = entry switch
             {
-                JournalStep step => before ? step.Undo() : step.Redo(),
-                SceneLifecyclePatch step => before ? step.Undo() : step.Redo(),
+                JournalStep step => undo ? step.Undo() : step.Redo(),
+                SceneLifecyclePatch step => undo ? step.Undo() : step.Redo(),
                 _ => false,
             };
             if (!success) return GestureResult.Fail("Refused");
-            if (before) history.CommitUndo(entry!, entity); else history.CommitRedo(entry!, entity);
+            if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
             return GestureResult.Ok();
         }
     }

@@ -77,10 +77,10 @@ public sealed class GroupTransformStateTests
         Assert.Equal(once, f.Live);
         var after = f.Snapshot;
         Assert.Equal(before.Controls.Rotation, after.Controls.Rotation);
-        Assert.True(f.Service.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Equal(native, f.Live);
         Assert.True(before.ContentEquals(f.Snapshot));
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.Equal(once, f.Live);
         Assert.True(after.ContentEquals(f.Snapshot));
         Assert.True(f.Coordinator.TryReadWorldSelection(mode, out var final, out _));
@@ -107,9 +107,9 @@ public sealed class GroupTransformStateTests
         var after = f.Snapshot;
         Assert.True(MathF.Abs(Quaternion.Dot(local, after.Controls.Rotation)) > .99999f);
         var committed = f.Live.ToDictionary();
-        Assert.True(f.Service.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.True(before.ContentEquals(f.Snapshot));
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.True(after.ContentEquals(f.Snapshot));
         Assert.Equal(committed, f.Live);
         var id = f.Begin();
@@ -141,11 +141,11 @@ public sealed class GroupTransformStateTests
         f.Perform(new(Vector3.One, Quaternion.Identity, Vector3.One));
         var after = f.Snapshot;
         f.FailRestore = true;
-        Assert.False(f.Service.Undo().Success);
+        Assert.False(f.Journal.Undo().Success);
         Assert.Same(after, f.Snapshot);
         Assert.True(f.History.CanUndo);
         f.FailRestore = false;
-        Assert.True(f.Service.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.True(before.ContentEquals(f.Snapshot));
         Assert.False(f.History.CanUndo);
         Assert.True(f.History.CanRedo);
@@ -159,9 +159,9 @@ public sealed class GroupTransformStateTests
         var controls = f.Snapshot.Controls;
         f.Rebind();
         Assert.Equal(controls, f.Snapshot.Controls);
-        Assert.True(f.Service.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Equal(Vector3.Zero, f.Live[f.Targets[0]].Position);
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.Equal(controls, f.Snapshot.Controls);
     }
 
@@ -206,19 +206,19 @@ public sealed class GroupTransformStateTests
         Assert.True(f.Coordinator.TryReadSelection(GroupScaleMode.SizesAndSpacing, out var display, out _));
         Assert.Equal(authored.Controls.Rotation, display.Rotation);
         Assert.Equal(authored.Controls.OwnScale, display.Scale);
-        Assert.True(f.Service.Undo().Success); // unlock
+        Assert.True(f.Journal.Undo().Success); // unlock
         Assert.True(f.Groups.Find(parent.Id)!.Locked);
         Assert.True(authored.ContentEquals(f.State.NamedSnapshot(child.Id)!));
-        Assert.True(f.Service.Undo().Success); // lock
+        Assert.True(f.Journal.Undo().Success); // lock
         Assert.False(f.Groups.Find(parent.Id)!.Locked);
         Assert.True(authored.ContentEquals(f.State.NamedSnapshot(child.Id)!));
-        Assert.True(f.Service.Undo().Success); // transform
+        Assert.True(f.Journal.Undo().Success); // transform
         Assert.True(initial.ContentEquals(f.State.NamedSnapshot(child.Id)!));
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.True(authored.ContentEquals(f.State.NamedSnapshot(child.Id)!));
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.True(authored.ContentEquals(f.State.NamedSnapshot(child.Id)!));
-        Assert.True(f.Service.Redo().Success);
+        Assert.True(f.Journal.Redo().Success);
         Assert.True(authored.ContentEquals(f.State.NamedSnapshot(child.Id)!));
     }
 
@@ -234,6 +234,7 @@ public sealed class GroupTransformStateTests
         public readonly TransformHistory History = new();
         public readonly GroupTransformCoordinator Coordinator;
         public readonly TransformGestureService Service;
+        public readonly UndoJournal Journal;
         public Dictionary<TransformTargetId, PoseTransform> Live = new();
         public TransformTargetId[] Targets;
         public SelectionId[] Selected => Targets.Select(target => SelectionId.ForActor(target.Actor!.Value)).ToArray();
@@ -253,6 +254,7 @@ public sealed class GroupTransformStateTests
             Coordinator = new(Scene, Groups, State, this);
             Service = new(Scene, this, History, groupTransforms: State, groupSource: this,
                 groupCoordinator: Coordinator);
+            Journal = new(History, Service, _ => true, new Fixtures.NoticeLog());
             foreach (var member in Selected) Selection.Add(member);
         }
         public void Publish() => Assert.True(Scene.TryRefresh(new SceneSnapshot(++_revision,

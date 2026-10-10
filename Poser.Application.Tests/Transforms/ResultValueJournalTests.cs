@@ -1,5 +1,6 @@
 using Poser.Application.Transforms;
 using Poser.Domain;
+using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Tests.Transforms;
@@ -124,14 +125,15 @@ public sealed class ResultValueJournalTests
 
     private sealed class Runner(TransformHistory history) : IUndoRunner
     {
-        public GestureResult Undo() => Run(true);
-        public GestureResult Redo() => Run(false);
-        private GestureResult Run(bool before)
+        public GestureResult? RecoverPending() => null;
+        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            GestureResult.Fail("Deferred history replay is not supported by this runner.");
+        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
-            var step = (JournalStep)(before ? history.PeekUndo()! : history.PeekRedo()!);
-            if (!(before ? step.Undo() : step.Redo()))
+            var step = (JournalStep)entry;
+            if (!(undo ? step.Undo() : step.Redo()))
                 return GestureResult.Fail(step.FailureDetail?.Invoke() ?? "failed");
-            if (before) history.CommitUndo(step); else history.CommitRedo(step);
+            if (undo) history.CommitUndo(step, entity); else history.CommitRedo(step, entity);
             return GestureResult.Ok();
         }
     }

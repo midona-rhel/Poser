@@ -49,6 +49,7 @@ public sealed class TransformParentingTests
             [new(a, "Parent", LightKind.Point), new(b, "Child", LightKind.Point)], [], [])).Accepted);
         var port = new ParentedTransformPort(r, parents);
         using var gestures = new TransformGestureService(scene, port, history);
+        var journal = new UndoJournal(history, gestures, _ => true, new Fixtures.NoticeLog());
         Assert.True(gestures.Begin(new([TransformTargetId.ForLight(b), TransformTargetId.ForLight(a)],
             TransformOperation.Translate, TransformSpace.World, PivotMode.PerTarget)).Success);
         var id = gestures.ActiveGesture!.Value;
@@ -57,15 +58,15 @@ public sealed class TransformParentingTests
         parents.Evaluate();
         Assert.Equal(At(5), r.Values[parent]); Assert.Equal(At(7), r.Values[child]);
         Assert.Equal(At(2), parents.Read(child)!.Offset);
-        Assert.True(gestures.Undo().Success); parents.Evaluate();
+        Assert.True(journal.Undo().Success); parents.Evaluate();
         Assert.Equal(At(0), r.Values[parent]); Assert.Equal(At(2), r.Values[child]);
-        Assert.True(gestures.Redo().Success); parents.Evaluate();
+        Assert.True(journal.Redo().Success); parents.Evaluate();
         Assert.Equal(At(5), r.Values[parent]); Assert.Equal(At(7), r.Values[child]);
         var commands = new TransformCommandService(scene, port, history, gestures);
         Assert.True(commands.SetAbsolute(TransformTargetId.ForLight(b), At(9), "Offset").Success);
         r.Values[parent] = At(20); parents.Evaluate();
-        Assert.True(gestures.Undo().Success); Assert.Equal(At(22), r.Values[child]);
-        Assert.True(gestures.Redo().Success); Assert.Equal(At(24), r.Values[child]);
+        Assert.True(journal.Undo().Success); Assert.Equal(At(22), r.Values[child]);
+        Assert.True(journal.Redo().Success); Assert.Equal(At(24), r.Values[child]);
     }
 
     [Fact]

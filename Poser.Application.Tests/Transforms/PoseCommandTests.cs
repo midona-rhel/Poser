@@ -71,7 +71,7 @@ public sealed class PoseCommandTests
         var mirror = Assert.IsType<TransformPatch>(f.History.PeekUndo());
         Assert.Contains(mirror.After, state => state.Target == f.Model);
         Assert.Equal(original[f.Model].Transform.Position, f.Live[f.Model].Transform.Position);
-        Assert.True(f.Gestures.Undo().Success);
+        Assert.True(f.Journal.Undo().Success);
         Assert.Equal(original[f.Model], f.Live[f.Model]);
     }
 

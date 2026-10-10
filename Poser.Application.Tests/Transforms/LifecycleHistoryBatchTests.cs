@@ -100,18 +100,14 @@ public sealed class LifecycleHistoryBatchTests
 
     private sealed class Runner(TransformHistory history) : IUndoRunner
     {
-        public GestureResult Undo() => Apply(true);
-        public GestureResult Redo() => Apply(false);
-        public GestureResult Undo(SelectionId entity) => Apply(true, entity);
-        public GestureResult Redo(SelectionId entity) => Apply(false, entity);
-        public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => Replay(step, before);
-        public GestureResult Replay(JournalStep step, bool before) =>
+        public GestureResult? RecoverPending() => null;
+        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
             (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
-        private GestureResult Apply(bool before, SelectionId? entity = null)
+        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
-            var entry = (InverseEntry)(before ? history.PeekUndo(entity) : history.PeekRedo(entity))!;
-            if (!(before ? entry.Undo() : entry.Redo())) return GestureResult.Fail("Refused");
-            if (before) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
+            var inverse = (InverseEntry)entry;
+            if (!(undo ? inverse.Undo() : inverse.Redo())) return GestureResult.Fail("Refused");
+            if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
             return GestureResult.Ok();
         }
     }
