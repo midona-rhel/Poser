@@ -235,7 +235,10 @@ failed, or needs recovery. Results from an old session or operation are ignored.
 
 The host keeps failed-startup cleanup armed until activation finishes. The
 provider owns service disposal; host-owned fonts, command registration and
-global UI callbacks are unwound separately in reverse acquisition order.
+global UI callbacks are unwound separately in reverse acquisition order. On
+unload the host first cancels the catalog warm-up (with a short bounded wait),
+and unhooks Draw by disposing the UI manager before any font, atlas or
+texture uploader is released; only then does the provider dispose.
 Cleanup failures are logged without replacing the original startup exception.
 Rollback never resolves additional services merely to dispose them.
 
@@ -248,18 +251,19 @@ When GPose closes, Poser asks for one final autosave before cleanup. Taking or
 queuing that snapshot does not prove it was saved. GPose cleanup is reported
 separately, and the background worker receives snapshots only. Autosave rules
 are in [files-and-transfer.md](../features/files-and-transfer.md).
-After final capture, `GPoseExitingEvent` restores presentation while actor
-bindings still exist; only then does `GPoseStateChangedEvent(false)` clear
-actors and bindings. Normal exit and plugin unload share this ordering.
-Destroyed native bodies are skipped, not written through retained bindings.
+After final capture, `GPoseExitingEvent` runs the whole owned-state teardown
+while spawns, clones and actor bindings still exist; only then does
+`GPoseStateChangedEvent(false)` clear actors, destroy spawns and drop
+bindings. The teardown therefore does not depend on DI subscription order.
+Normal exit and plugin unload share this ordering. Destroyed native bodies
+are skipped, not written through retained bindings.
 
 `CleanSceneLifecycle` owns the ordered teardown: cancel facial capture, then
-reset animation, presentation, model id and appearance (MCDF), then clear
-scene groups and their transform state. Every step runs even when an earlier
-one fails. Each step returns its result. Failures are logged and shown
-together in one notice, in teardown order. The presentation restore on
-`GPoseExitingEvent` reports the same way. Nothing is retried here; owners
-keep failed state retryable themselves. On plugin disposal the groups are
+reset animation, presentation, model id and appearance (Penumbra collection,
+Glamourer state, MCDF), then clear scene groups and their transform state.
+Every step runs even when an earlier one fails. Each step returns its result.
+Failures are logged and shown together in one notice, in teardown order.
+Nothing is retried here; owners keep failed state retryable themselves. On plugin disposal the groups are
 also cleared directly after that reset, because an off-thread disposal's
 bounded framework hop can abandon the reset.
 

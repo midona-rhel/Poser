@@ -30,6 +30,8 @@ public class Poser : IDalamudPlugin
     private readonly ServiceProvider _serviceProvider;
     private readonly Dalamud.Interface.ManagedFontAtlas.IFontAtlas _standbyFontAtlas;
     private readonly ICommandManager _commandManager;
+    private readonly System.Threading.CancellationTokenSource _warmupCancel = new();
+    private readonly System.Threading.Tasks.Task _warmup;
 
     public Poser(
         IDalamudPluginInterface pluginInterface,
@@ -113,18 +115,24 @@ public class Poser : IDalamudPlugin
         // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
         var wardrobeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.WardrobeCatalog>();
         var customizeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.CustomizeCatalog>();
-        _ = System.Threading.Tasks.Task.Run(() =>
+        var warmupToken = _warmupCancel.Token;
+        _warmup = System.Threading.Tasks.Task.Run(() =>
         {
             try
             {
-                wardrobeCatalog.Warm();
-                customizeCatalog.Warm();
+                wardrobeCatalog.Warm(warmupToken);
+                customizeCatalog.Warm(warmupToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Unload: the catalogs load on demand if anything still asks.
             }
             catch (Exception ex)
             {
                 log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
             }
         });
+        startup.OnFailure(StopWarmup);
         log.Debug("Load link: world rendering");
         _ = _serviceProvider.GetRequiredService<IWorldRenderingRuntimePort>();
         log.Debug("Load link: scene workflow");
@@ -173,7 +181,9 @@ public class Poser : IDalamudPlugin
         Crystarium.PanelShadowTextureUploader = textureUploader;
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
         log.Debug("Load stage: UI manager");
-        _ = _serviceProvider.GetRequiredService<IUIManager>();
+        var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
+        // Unwinds before the fonts and uploaders registered above.
+        startup.OnFailure(uiManager.Dispose);
         if (!_commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open Poser."
@@ -274,8 +284,19 @@ public class Poser : IDalamudPlugin
         }
     }
 
+    /// <summary>The warm-up reads through provider-owned catalogs, so it is
+    /// stopped before the provider goes; a sheet already being read gets a
+    /// short grace period rather than an unbounded join.</summary>
+    private void StopWarmup()
+    {
+        _warmupCancel.Cancel();
+        _warmup.Wait(TimeSpan.FromSeconds(1));
+        _warmupCancel.Dispose();
+    }
+
     public void Dispose()
     {
+        StopWarmup();
         var framework = _serviceProvider.GetRequiredService<IFramework>();
         var gpose = _serviceProvider.GetRequiredService<IGPoseService>();
         var log = _serviceProvider.GetRequiredService<IPluginLog>();
@@ -287,6 +308,9 @@ public class Poser : IDalamudPlugin
             () =>
             {
                 _commandManager.RemoveHandler(CommandName);
+                // Draw stops before any resource it draws with is released;
+                // the provider's later dispose of the manager is a no-op.
+                _serviceProvider.GetRequiredService<IUIManager>().Dispose();
                 Crystarium.IconTextureUploader = null;
                 Crystarium.PanelShadowTextureUploader = null;
                 Crystarium.Log = null;

@@ -43,10 +43,12 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
     }
 
     /// <summary>Reads the sheets and the colour file now, off the draw
-    /// thread, so the first Appearance view pays nothing.</summary>
-    public void Warm()
+    /// thread, so the first Appearance view pays nothing. Cancellation stops
+    /// between loads; an unread one still loads on first use.</summary>
+    public void Warm(CancellationToken cancel)
     {
         LoadNames();
+        cancel.ThrowIfCancellationRequested();
         LoadMenus();
     }
 

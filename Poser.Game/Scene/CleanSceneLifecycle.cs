@@ -394,33 +394,31 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
         Refresh();
 
-    private void OnGPoseExiting(GPoseExitingEvent _) =>
-        Report("GPose exiting.", RunSteps(
-            [new("Presentation", () => Failure(_presentation.ResetAll()))]));
-
-    private void OnGPoseChanged(GPoseStateChangedEvent evt)
+    /// <summary>
+    /// Leaving GPose is the last chance to write into the actors Poser
+    /// overrode, so everything owned is put back here rather than dropped
+    /// when they disappear. GPoseService publishes this after the final
+    /// capture and before the state change, so it runs while every spawn,
+    /// clone and binding is still alive: the state-change subscribers that
+    /// unbind actors and destroy spawns subscribed first (DI order) and
+    /// would otherwise run before this restore. Normal exit and plugin
+    /// unload share this edge. The game's own GPose actors can still be gone
+    /// already (the edge is observed after IsGPosing flips), so the MCDF
+    /// teardown keeps its by-name Glamourer release for them.
+    /// </summary>
+    private void OnGPoseExiting(GPoseExitingEvent _)
     {
-        if (!evt.IsGPosing)
-        {
-            _refreshQueue.Cancel();
-            if (_gestures.ActiveGesture is { } gesture)
-                _gestures.Cancel(gesture);
-            _history.Clear();
-            // GPoseService captured the final save before this exit notification.
-            _configuration.ResetSessionNames();
-            // Leaving GPose is the last chance to write into the actors
-            // Poser overrode, so everything owned is put back here rather
-            // than dropped when they disappear. "Last chance" is not
-            // "guaranteed": the edge is observed after IsGPosing has
-            // already flipped, so the clone may ALREADY be destroyed and
-            // the exact generation unresolvable by the time this runs.
-            // Owners that hold state the object does not own must carry
-            // their own fallback — see the MCDF teardown's by-name
-            // Glamourer release in runtime-appearance.md.
-            ResetOwnedState("GPose exited.");
-        }
-        Refresh();
+        _refreshQueue.Cancel();
+        if (_gestures.ActiveGesture is { } gesture)
+            _gestures.Cancel(gesture);
+        _history.Clear();
+        // GPoseService captured the final save before this exit notification.
+        _configuration.ResetSessionNames();
+        ResetOwnedState("GPose exited.");
     }
+
+    private void OnGPoseChanged(GPoseStateChangedEvent _) =>
+        Refresh();
 
     private void ResetOwnedState(string reason) =>
         ResetOwnedStateForLifecycle(
