@@ -605,10 +605,10 @@ public sealed partial class DebugBridge : IDisposable
                 var result = query.GetValueOrDefault("action") switch
                 {
                     "live" => _cameraControl.SetLive(cameraId, true),
-                    "angle" => _cameraControl.SetAngle(cameraId, new(Number("x"), Number("y"))),
-                    "pan" => _cameraControl.SetPan(cameraId, new(Number("x"), Number("y"))),
-                    "roll" => _cameraControl.SetRoll(cameraId, Number("x")),
-                    "fov" => _cameraControl.SetFoV(cameraId, Number("x")),
+                    "angle" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Angle, new(Number("x"), Number("y"))),
+                    "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
+                    "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
+                    "fov" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.FoV, Number("x")),
                     _ => new Application.Transforms.ValueWriteResult(false, "Unknown camera command."),
                 };
                 _cameraControl.Seal();

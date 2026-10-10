@@ -139,7 +139,7 @@ public sealed class SelectionEntityCommandPortTests
             });
             var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
             Framework = (FrameworkProxy)(object)framework;
-            var sessions = new EntitySessions(null!, null!, null!, null!);
+            var sessions = new EntitySessions(null!, null!, null!);
             var lights = new LightControl(bindings, Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread"
                     ? true : throw new InvalidOperationException(method.Name)),
                 lighting, new ValueJournal(History), null!);

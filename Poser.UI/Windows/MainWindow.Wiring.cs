@@ -345,7 +345,7 @@ public partial class MainWindow
             if (row.Tag is not SelectionId { Camera: { } rowCameraId }
                 || _cameraControl.Read(rowCameraId) is not { } camera)
                 return;
-            _cameraControl.SetLocked(rowCameraId, !camera.IsLocked);
+            _cameraControl.Set(rowCameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked);
             row.CameraLocked = _cameraControl.Read(rowCameraId)?.IsLocked ?? row.CameraLocked;
         };
         _vm.OnOverlayVisibility = row =>

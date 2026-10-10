@@ -883,10 +883,10 @@ internal sealed partial class EntityContextMenus
         var actions = new List<Action?>
         {
             () => _cameraControl.SetLive(cameraId, !camera.IsLive),
-            () => _cameraControl.SetLocked(cameraId, !camera.IsLocked),
+            () => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
-                "Rename camera", camera.Name, next => _cameraControl.SetName(cameraId, next)),
+                "Rename camera", camera.Name, next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
             () => _cameraPane.OpenSave(cameraId),
             () => OpenEntityRename(

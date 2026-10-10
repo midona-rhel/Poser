@@ -5,7 +5,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Cameras;
-using Poser.Game.Journal;
 using Poser.Services;
 
 namespace Poser.Game.Tests.Cameras;
@@ -63,11 +62,13 @@ public sealed class CameraTargetControlTests
         public readonly BoneId BoneId;
         public readonly IVirtualCamera Camera;
         public readonly TransformHistory History = new();
+        public readonly ValueJournal Journal;
         public readonly CameraTargetControl Control;
 
         public Fixture()
         {
             CurrentActorId = ActorId;
+            Journal = new(History);
             BoneId = new(new(ActorId, PoseSlot.Character, 0), 0, 1, "head");
             var actor = Stub<IActor>((method, _) => method == "get_Name" ? "Actor" : throw new InvalidOperationException(method));
             var bone = Stub<IBone>((method, _) => throw new InvalidOperationException(method));
@@ -114,7 +115,7 @@ public sealed class CameraTargetControlTests
             });
             Control = new(bindings, Stub<IFramework>((_, _) => true), cameras,
                 Stub<IActorManager>((method, _) => method == "GetGPoseTarget" ? actor : throw new InvalidOperationException(method)),
-                null!, new CameraSession(new ValueJournal(History), cameras, bindings));
+                null!, Journal, new CameraControl(bindings, Stub<IFramework>((_, _) => true), cameras, Journal));
         }
     }
 

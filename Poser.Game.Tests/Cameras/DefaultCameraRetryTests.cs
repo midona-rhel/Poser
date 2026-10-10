@@ -55,18 +55,19 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         setup.Bus.Publish(new GPoseStateChangedEvent(true));
         var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
         var history = new Poser.Application.Transforms.TransformHistory();
-        var session = new Poser.Game.Journal.CameraSession(
-            new Poser.Application.Transforms.ValueJournal(history), service, null!);
+        var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
+        var control = new CameraControl(new CameraBinding(camera, id), setup.Framework, service,
+            new Poser.Application.Transforms.ValueJournal(history));
         camera.FoV = 0.4f;
         camera.Zoom = 7f;
         camera.FixedPosition = new Vector3(1, 2, 3);
         camera.TogglePortraitMode();
         var roll = camera.Roll;
         camera.IsLocked = true;
-        Assert.False(session.ResetProperties(camera));
+        Assert.False(control.ResetProperties(id).Success);
         Assert.False(history.CanUndo);
         camera.IsLocked = false;
-        Assert.True(session.ResetProperties(camera));
+        Assert.True(control.ResetProperties(id).Success);
         Assert.Null(camera.FixedPosition);
         Assert.False(camera.IsPortraitMode);
         var reset = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
@@ -137,6 +138,30 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
             Calls++;
             return Value;
         }
+    }
+
+    private static IEntityBindings CameraBinding(Poser.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id)
+    {
+        var bindings = DispatchProxy.Create<IEntityBindings, CameraBindingProxy>();
+        ((CameraBindingProxy)(object)bindings).Bind(camera, id);
+        return bindings;
+    }
+
+    public class CameraBindingProxy : DispatchProxy
+    {
+        private Poser.Entities.IVirtualCamera _camera = null!;
+        private Poser.Domain.Identity.CameraId _id;
+
+        public void Bind(Poser.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id) =>
+            (_camera, _id) = (camera, id);
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method!.Name switch
+            {
+                "Resolve" when args![0] is Poser.Domain.Identity.CameraId => new BindingResult<Poser.Entities.IVirtualCamera>(BindingStatus.Success, _camera),
+                "GetCameraId" => _id,
+                _ => throw new InvalidOperationException(method.Name),
+            };
     }
 
     private static T NewProxy<T>() where T : class =>

@@ -5,7 +5,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Cameras;
-using Poser.Game.Journal;
+using Poser.Application.Presentation;
 using Poser.Services;
 
 namespace Poser.Game.Tests.Cameras;
@@ -30,13 +30,15 @@ public sealed class CameraControlTests
     }
 
     [Fact]
-    public void Lock_blocks_framing_but_allows_switching_back_to_main_camera()
+    public void A_locked_camera_refuses_and_journals_nothing_but_still_switches_live()
     {
         var f = new Fixture();
         f.Camera.IsLocked = true;
-        Assert.False(f.Control.SetPosition(f.Id, Vector3.One).Success);
+        var refused = f.Control.Set(f.Id, CameraProperties.Position, Vector3.One);
+        Assert.Equal((false, "Unlock the camera first."), (refused.Success, refused.Detail));
         Assert.False(f.Control.SetPortrait(f.Id, true).Success);
         Assert.False(f.Control.ResetPosition(f.Id).Success);
+        Assert.Equal(Vector3.Zero, f.Camera.Position);
         Assert.False(f.History.CanUndo);
         Assert.True(f.Control.SetLive(f.Id, true).Success);
         Assert.Same(f.Camera, f.Live);
@@ -77,8 +79,7 @@ public sealed class CameraControlTests
                 throw new InvalidOperationException(m.Name);
             });
             Journal = new(History);
-            Control = new(bindings, Stub<IFramework>((_, _) => true), cameras,
-                new CameraSession(Journal, cameras, bindings));
+            Control = new(bindings, Stub<IFramework>((_, _) => true), cameras, Journal);
         }
     }
 
