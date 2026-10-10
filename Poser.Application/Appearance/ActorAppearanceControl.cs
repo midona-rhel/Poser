@@ -1,5 +1,6 @@
 using Poser.Application.Integration;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Application.Presentation;
@@ -47,18 +48,12 @@ public sealed class ActorAppearanceControl(
     public IntegrationResult Redraw(ActorId actor) =>
         history.Run(actor, "Redraw", () => integration.Redraw(actor));
 
-    public PresentationResult SetModel(ActorId actor, int value) =>
+    public Outcome SetModel(ActorId actor, int value) =>
         ModelStep(actor, "Set model id", () => model.Apply(actor, value));
 
-    public PresentationResult ResetModel(ActorId actor) =>
+    public Outcome ResetModel(ActorId actor) =>
         ModelStep(actor, "Reset model id", () => model.Reset(actor));
 
-    private PresentationResult ModelStep(ActorId actor, string description, Func<PresentationResult> verb)
-    {
-        var result = history.Run(actor, description, () => AsIntegration(verb()));
-        return result.Success ? PresentationResult.Ok() : PresentationResult.Fail(result.Detail ?? "Refused.");
-    }
-
-    private static IntegrationResult AsIntegration(PresentationResult result) =>
-        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail ?? "Refused.");
+    private Outcome ModelStep(ActorId actor, string description, Func<Outcome> verb) =>
+        history.Run(actor, description, () => IntegrationResult.From(verb())).Outcome;
 }

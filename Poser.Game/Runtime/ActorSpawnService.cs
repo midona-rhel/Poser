@@ -1278,7 +1278,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                     var reset = inheritSource
                         ? appearanceSource is { } original && _native.ResolveActor(sourceAddress) == original
                             ? _spawnAppearance.CopySpawnAppearance(sourceAddress, seeded.Address)
-                            : IntegrationPortResult.Fail("The duplicate's appearance source is no longer available.")
+                            : IntegrationResult.Fail("The duplicate's appearance source is no longer available.")
                         : _spawnAppearance.ResetSpawnAppearance(seeded.Address);
                     if (!reset.Success)
                         _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {reset.Detail}");
@@ -1592,7 +1592,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (_collections is null || sourceAddress == nint.Zero)
             return;
         EnsureCurrent(ownership);
-        IntegrationPortResult result;
+        IntegrationResult result;
         try
         {
             // A duplicate carries a snapshot of its source's mods (a locked

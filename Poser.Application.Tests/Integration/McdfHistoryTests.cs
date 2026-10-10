@@ -183,10 +183,10 @@ public sealed class McdfHistoryTests
             if (method.Name == nameof(IIntegrationRuntimePort.AssignTemporaryCollection))
             {
                 Assignments++;
-                return IntegrationPortResult.Ok();
+                return IntegrationResult.Ok();
             }
             if (method.Name == nameof(IIntegrationRuntimePort.RedrawAndWait))
-                return Task.FromResult(IntegrationPortResult.Ok());
+                return Task.FromResult(IntegrationResult.Ok());
             return method.Name switch
             {
                 "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
@@ -200,8 +200,8 @@ public sealed class McdfHistoryTests
                         ? new(new Dictionary<string, string> { ["model"] = "mod/model" }, "") : null),
                 nameof(IIntegrationRuntimePort.CreateTemporaryCollection) => IntegrationValue<Guid>.Ok(Guid.NewGuid()),
                 nameof(IIntegrationRuntimePort.AddTemporaryMods) =>
-                    IntegrationPortResult.Ok(),
-                nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) => IntegrationPortResult.Ok(),
+                    IntegrationResult.Ok(),
+                nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) => IntegrationResult.Ok(),
                 nameof(IIntegrationRuntimePort.IsResolvable) => true,
                 nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Test actor"),
                 _ => throw new NotSupportedException(method.Name),
@@ -247,8 +247,8 @@ public sealed class McdfHistoryTests
             return Task.FromResult(FailCopy ? IntegrationValue<McdfPackage>.Fail("Copy refused")
                 : IntegrationValue<McdfPackage>.Ok(package with { OperationDirectory = destination.Path }));
         }
-        public IntegrationPortResult DeleteOperationDirectory(McdfOperationDirectory directory)
-        { Deleted.Add(directory.Path); return IntegrationPortResult.Ok(); }
+        public IntegrationResult DeleteOperationDirectory(McdfOperationDirectory directory)
+        { Deleted.Add(directory.Path); return IntegrationResult.Ok(); }
         public IntegrationValue<McdfSummary> ReadSummary(string path) => throw new NotSupportedException();
         public IntegrationValue<McdfExportInspection> InspectExportCandidates(string root,
             IReadOnlyDictionary<string, IReadOnlyList<string>> resources, CancellationToken cancellation) =>

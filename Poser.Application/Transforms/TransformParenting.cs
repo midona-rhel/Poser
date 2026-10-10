@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
@@ -19,7 +20,7 @@ public interface ITransformParenting
 {
     TransformParent? Read(SelectionId child);
     bool CanParent(SelectionId child);
-    ValueWriteResult Attach(SelectionId child, SelectionId? target);
+    Outcome Attach(SelectionId child, SelectionId? target);
 }
 
 /// <summary>One relationship owner; native following and UI do not own offsets or history.</summary>
@@ -36,7 +37,7 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
     public ActorId? CompanionOwner(ActorId actor) => runtime.CompanionOwner(actor);
     public ActorId? ResolveCompanion(ActorId owner) => runtime.ResolveCompanion(owner);
 
-    public ValueWriteResult Attach(SelectionId child, SelectionId? target)
+    public Outcome Attach(SelectionId child, SelectionId? target)
     {
         runtime.BeginRead();
         if (!runtime.CanEdit(child)) return new(false, "Unlock the entity or its group before changing its parent.");
@@ -55,7 +56,7 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         journal.Record((this, child), target == null ? "Detach entity" : "Parent entity", before, link,
             ValueWrites.Unchecked<TransformParent?>(value => Set(history.ResolveLifecycleEntity(child), Rebind(value))),
             () => runtime.Read(history.ResolveLifecycleEntity(child)) != null);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 
     public bool Import(SelectionId child, TransformParent link)

@@ -1,5 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
@@ -15,10 +16,10 @@ public sealed class ActorSceneControl(IEntityBindings bindings,
         ? new(spawns.GetSpawnedKind(actor), spawns.HasCompanionSlot(actor),
             spawns.IsSpawnedActor(actor) || spawns.RemovalRefusal(actor) == null) : null;
 
-    public ValueWriteResult SetGameTarget(ActorId id)
+    public Outcome SetGameTarget(ActorId id)
     {
         if (Resolve(id) is not { } actor) return new(false, "The actor is no longer available.");
         actors.SetGPoseTarget(actor);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 }

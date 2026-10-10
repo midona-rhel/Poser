@@ -168,7 +168,7 @@ public sealed class AppearanceControlTests
             }
             Writes.Add(method.Name);
             if (Refuse || method.Name == nameof(IIntegrationRuntimePort.SetItem) && (EquipSlot)args![1]! == RefuseSlot)
-                return IntegrationPortResult.Fail("Write refused");
+                return IntegrationResult.Fail("Write refused");
             switch (method.Name)
             {
                 case nameof(IIntegrationRuntimePort.SetItem):
@@ -183,7 +183,7 @@ public sealed class AppearanceControlTests
                     break;
                 default: throw new NotSupportedException(method.Name);
             }
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
     }
 }

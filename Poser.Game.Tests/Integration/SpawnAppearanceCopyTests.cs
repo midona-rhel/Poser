@@ -21,7 +21,7 @@ public sealed class SpawnAppearanceCopyTests
                 keys.Add(key);
                 return key == 0 ? (6, null) : (success, source);
             },
-            () => IntegrationPortResult.Ok(),
+            () => IntegrationResult.Ok(),
             (state, index, key, flags) =>
             {
                 writes++;
@@ -59,7 +59,7 @@ public sealed class SpawnAppearanceCopyTests
         var calls = new List<string>();
         var result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
             (_, _) => { calls.Add("read source"); return (0, new JObject()); },
-            () => { calls.Add("initialize target"); return IntegrationPortResult.Ok(); },
+            () => { calls.Add("initialize target"); return IntegrationResult.Ok(); },
             (_, _, _, _) => { calls.Add("apply copy"); return 0; });
         Assert.True(result.Success);
         Assert.Equal(new[] { "read source", "initialize target", "apply copy" }, calls);
@@ -67,7 +67,7 @@ public sealed class SpawnAppearanceCopyTests
         // A refused target initialization never applies the copy.
         result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
             (_, _) => (0, new JObject()),
-            () => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
+            () => IntegrationResult.Refused(GlamourerAccess.ForeignHeld),
             (_, _, _, _) => throw new InvalidOperationException("Must not apply to a refused target."));
         Assert.False(result.Success);
         Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);

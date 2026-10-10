@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Gaze;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -26,33 +27,33 @@ public sealed class GazeRuntimeAdapter(
             gaze.IsPartLocked(actor, GazeTargetType.Body)) { PoseAware = state.PoseAware }, target, state.Active, state.TargetStale);
     }
 
-    private GazeResult WithActor(ActorId id, Func<IActor, GazeResult> change)
+    private Outcome WithActor(ActorId id, Func<IActor, Outcome> change)
     {
-        if (!IsAvailable) return GazeResult.Refused(UnavailableDetail ?? "Gaze unavailable.");
+        if (!IsAvailable) return Outcome.Fail(UnavailableDetail ?? "Gaze unavailable.");
         return bindings.Resolve(id) is { Success: true, Value: { } actor }
-            ? change(actor) : GazeResult.Refused("This actor is no longer available.");
+            ? change(actor) : Outcome.Fail("This actor is no longer available.");
     }
 
-    private GazeResult Write(ActorId id, Action<IActor> change) =>
-        WithActor(id, actor => { change(actor); return GazeResult.Ok(); });
+    private Outcome Write(ActorId id, Action<IActor> change) =>
+        WithActor(id, actor => { change(actor); return Outcome.Ok(); });
 
-    public GazeResult RestoreSettings(ActorId actor, GazeSettings settings) =>
+    public Outcome RestoreSettings(ActorId actor, GazeSettings settings) =>
         WithActor(actor, live => gaze.RestoreSettings(live, settings));
 
-    public GazeResult SetMode(ActorId actor, GazeTargetMode mode) =>
+    public Outcome SetMode(ActorId actor, GazeTargetMode mode) =>
         WithActor(actor, live => gaze.SetGazeMode(live, mode));
-    public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>
+    public Outcome SetParts(ActorId actor, GazeTargetType parts) =>
         WithActor(actor, live => gaze.SetGazeParts(live, parts));
-    public GazeResult SetTarget(ActorId actor, ActorId target) =>
+    public Outcome SetTarget(ActorId actor, ActorId target) =>
         WithActor(actor, live => bindings.Resolve(target) is { Success: true, Value: { } other }
-            ? gaze.SetGazeTarget(live, other) : GazeResult.Refused("The gaze target is no longer available."));
-    public GazeResult SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
+            ? gaze.SetGazeTarget(live, other) : Outcome.Fail("The gaze target is no longer available."));
+    public Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
         Write(actor, live => gaze.SetPartLock(live, part, locked));
-    public GazeResult SnapPartToCamera(ActorId actor, GazeTargetType part) =>
+    public Outcome SnapPartToCamera(ActorId actor, GazeTargetType part) =>
         Write(actor, live => gaze.SnapPartToCamera(live, part));
-    public GazeResult Reset(ActorId actor) => Write(actor, gaze.ResetGaze);
-    public GazeResult SetGazePosition(ActorId actor, Vector3 position) =>
+    public Outcome Reset(ActorId actor) => Write(actor, gaze.ResetGaze);
+    public Outcome SetGazePosition(ActorId actor, Vector3 position) =>
         Write(actor, live => gaze.SetGazePosition(live, position));
-    public GazeResult SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
+    public Outcome SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
         Write(actor, live => gaze.SetPartPosition(live, part, position));
 }

@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Domain;
 using Poser.Services;
 
 using Poser.Domain.Scene;
@@ -278,7 +279,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
-    public Task<WorldObjectRespawnResult> Respawn(string path) =>
+    public Task<Outcome> Respawn(string path) =>
         _owner.Respawn(this, path);
 
     /// <summary>Placement captured when the object was adopted and restored on
@@ -377,7 +378,7 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     private sealed record PendingRespawn(
         WorldObjectIncarnation Fresh, string Path, DateTime Deadline,
-        TaskCompletionSource<WorldObjectRespawnResult> Completion);
+        TaskCompletionSource<Outcome> Completion);
 
     private int _nextId;
     private bool _disposed;
@@ -477,11 +478,11 @@ public sealed class WorldObjectService : IDisposable, IWorldObjectService
 
     /// <summary>Replaces a spawned object's native body without changing its
     /// scene identity. Completion includes renderer readiness and property replay.</summary>
-    internal Task<WorldObjectRespawnResult> Respawn(
+    internal Task<Outcome> Respawn(
         AdoptedWorldObject handle, string path)
     {
-        static Task<WorldObjectRespawnResult> Refused(string detail) =>
-            Task.FromResult(new WorldObjectRespawnResult(false, detail));
+        static Task<Outcome> Refused(string detail) =>
+            Task.FromResult(new Outcome(false, detail));
         if (_disposed || _teardownOnly || !handle.Spawned
             || !_adopted.Contains(handle))
             return Refused("Only a spawned object can respawn.");

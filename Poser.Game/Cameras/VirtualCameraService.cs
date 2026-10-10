@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Transforms;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Keys;
@@ -475,31 +476,31 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// mid-body pivot while retaining its orientation and zoom. Validation completes
     /// before the first camera setter: stale, hidden, or undrawn actors leave
     /// the shot untouched.</summary>
-    public CameraCenterResult CenterOnActor(IActor actor)
+    public Outcome CenterOnActor(IActor actor)
     {
         if (!IsAvailable)
-            return CameraCenterResult.Refused("Center: the camera is unavailable.");
+            return Outcome.Fail("Center: the camera is unavailable.");
         if (actor.Address == nint.Zero ||
             _objectTable?.CreateObjectReference(actor.Address) is not { } resolved ||
             !resolved.IsValid())
-            return CameraCenterResult.Refused("Center: that actor is no longer available.");
+            return Outcome.Fail("Center: that actor is no longer available.");
 
         var gameObject = (GameObject*)resolved.Address;
         var drawObject = gameObject->DrawObject;
         if (!gameObject->IsReadyToDraw() ||
             drawObject == null || !drawObject->IsVisible)
-            return CameraCenterResult.Refused("Center: that actor is not drawn yet.");
+            return Outcome.Fail("Center: that actor is not drawn yet.");
 
         var native = Native;
         if (!_gPose.IsGPosing || native == null ||
             _live is not { IsLive: true } camera)
-            return CameraCenterResult.Refused("Center: the game camera is not ready.");
+            return Outcome.Fail("Center: the game camera is not ready.");
         if (camera.Kind == CameraKind.Free)
-            return CameraCenterResult.Refused("Center: switch from the free camera first.");
+            return Outcome.Fail("Center: switch from the free camera first.");
         if (camera.IsLocked)
-            return CameraCenterResult.Refused("Center: unlock the camera first.");
+            return Outcome.Fail("Center: unlock the camera first.");
         if (camera.FixedPosition != null)
-            return CameraCenterResult.Refused("Center: clear the camera position pin first.");
+            return Outcome.Fail("Center: clear the camera position pin first.");
 
         Vector3 drawOrigin = drawObject->Object.Position;
         float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
@@ -519,55 +520,55 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return TranslateOrbitPivot(camera, pivot, baseLookAt);
     }
 
-    internal static CameraCenterResult TranslateOrbitPivot(
+    internal static Outcome TranslateOrbitPivot(
         IVirtualCamera camera, Vector3 pivot, Vector3 currentPivot)
     {
         var offset = camera.PositionOffset + (pivot - currentPivot);
         if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(currentPivot)
             || !TransformMath.IsFinite(offset))
-            return CameraCenterResult.Refused("Center: no usable actor or camera pivot.");
+            return Outcome.Fail("Center: no usable actor or camera pivot.");
         // PositionOffset translates both the eye and look-at in the camera
         // detour. Do not refit distance/FOV: this command moves the current shot.
         camera.PositionOffset = offset;
-        return CameraCenterResult.Centered();
+        return Outcome.Ok();
     }
 
     /// <summary>Centers on the selected bone's live model-space transform.
     /// The skeleton cache and object-table draw checks happen before either
     /// camera setter so a replaced or undrawn identity cannot move the shot.
     /// </summary>
-    public CameraCenterResult CenterOnBone(IBone bone)
+    public Outcome CenterOnBone(IBone bone)
     {
         if (!IsAvailable)
-            return CameraCenterResult.Refused("Center: the camera is unavailable.");
+            return Outcome.Fail("Center: the camera is unavailable.");
         if (bone.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
-            return CameraCenterResult.Refused("Center: that bone is no longer available.");
+            return Outcome.Fail("Center: that bone is no longer available.");
 
         var actor = skeleton.Actor;
         if (actor.Address == nint.Zero ||
             _objectTable?.CreateObjectReference(actor.Address) is not { } resolved ||
             !resolved.IsValid())
-            return CameraCenterResult.Refused("Center: that actor is no longer available.");
+            return Outcome.Fail("Center: that actor is no longer available.");
         var gameObject = (GameObject*)resolved.Address;
         var drawObject = gameObject->DrawObject;
         if (!gameObject->IsReadyToDraw() || drawObject == null ||
             !drawObject->IsVisible)
-            return CameraCenterResult.Refused("Center: that bone is not drawn yet.");
+            return Outcome.Fail("Center: that bone is not drawn yet.");
 
         var native = Native;
         if (!_gPose.IsGPosing || native == null ||
             _live is not { IsLive: true } camera)
-            return CameraCenterResult.Refused("Center: the game camera is not ready.");
+            return Outcome.Fail("Center: the game camera is not ready.");
         if (camera.Kind == CameraKind.Free)
-            return CameraCenterResult.Refused("Center: switch from the free camera first.");
+            return Outcome.Fail("Center: switch from the free camera first.");
         if (camera.IsLocked)
-            return CameraCenterResult.Refused("Center: unlock the camera first.");
+            return Outcome.Fail("Center: unlock the camera first.");
         if (camera.FixedPosition != null)
-            return CameraCenterResult.Refused("Center: clear the camera position pin first.");
+            return Outcome.Fail("Center: clear the camera position pin first.");
 
         skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
         if (BoneWorld.Of(bone) is not { } world)
-            return CameraCenterResult.Refused("Center: no usable bone or camera pivot.");
+            return Outcome.Fail("Center: no usable bone or camera pivot.");
         float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
         float actorHeight = reportedHeight is >= 0.5f and <= 5f
             ? reportedHeight
@@ -582,11 +583,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(baseLookAt) ||
             !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
             zoomLimits.X > zoomLimits.Y)
-            return CameraCenterResult.Refused("Center: no usable bone or camera pivot.");
+            return Outcome.Fail("Center: no usable bone or camera pivot.");
 
         camera.PositionOffset += pivot - baseLookAt;
         camera.Zoom = Math.Clamp(framingHeight * 2f, zoomLimits.X, zoomLimits.Y);
-        return CameraCenterResult.Centered();
+        return Outcome.Ok();
     }
 
     /// <summary>The spawned camera's default name. Bare number, no "#": every

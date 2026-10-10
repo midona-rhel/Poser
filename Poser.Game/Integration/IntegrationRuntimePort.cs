@@ -338,35 +338,35 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 : IntegrationValue<CollectionAssignment>.Fail("Penumbra cannot identify this actor.");
         });
 
-    public IntegrationPortResult SetIndividualCollection(ActorId actor, Guid collection) =>
+    public IntegrationResult SetIndividualCollection(ActorId actor, Guid collection) =>
         Guarded(Penumbra, "Set collection", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             return ChangeIndividualCollection(actor, index, new(true, collection));
         });
 
-    public IntegrationPortResult RestoreCollection(ActorId actor, CollectionBaseline baseline) =>
+    public IntegrationResult RestoreCollection(ActorId actor, CollectionBaseline baseline) =>
         Guarded(Penumbra, "Restore collection", () =>
         {
             if (baseline.InheritedCollection is { } inherited)
                 return RestoreInheritedCollection(actor, inherited);
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             return ChangeIndividualCollection(actor, index, baseline);
         });
 
-    private IntegrationPortResult ChangeIndividualCollection(ActorId actor, int index, CollectionBaseline next)
+    private IntegrationResult ChangeIndividualCollection(ActorId actor, int index, CollectionBaseline next)
     {
         var address = _bindings.Value.Resolve(actor).Value!.Address;
         var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
-        if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify this actor.");
+        if (!valid) return IntegrationResult.Fail("Penumbra cannot identify this actor.");
         bool hasOwned = _duplicateCollections.TryGetValue(address, out var owned);
         if (!individual && effective != Guid.Empty && (!hasOwned || effective != owned)
             && !_getCollections.InvokeFunc().ContainsKey(effective))
-            return IntegrationPortResult.Fail("Another plugin now owns the actor's temporary collection.");
+            return IntegrationResult.Fail("Another plugin now owns the actor's temporary collection.");
         var (ec, _) = next.HadIndividualAssignment
             ? _setCollectionForObject.InvokeFunc(index, next.IndividualCollection, true, false)
             : _setCollectionForObject.InvokeFunc(index, null, false, true);
@@ -380,12 +380,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         if (deleted is PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing)
         {
             _duplicateCollections.Remove(address);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
         var (rollback, _) = individual
             ? _setCollectionForObject.InvokeFunc(index, effective, true, false)
             : _setCollectionForObject.InvokeFunc(index, null, false, true);
-        return IntegrationPortResult.Fail($"The duplicate collection could not be released (code {deleted}); "
+        return IntegrationResult.Fail($"The duplicate collection could not be released (code {deleted}); "
             + (PenumbraResult(rollback, "restoring the assignment").Success
                 ? "the previous assignment was restored." : $"restoring the previous assignment also failed (code {rollback})."));
     }
@@ -400,12 +400,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     $"Penumbra failed creating the temporary collection (code {createEc}).");
         });
 
-    public IntegrationPortResult AssignTemporaryCollection(Guid collection, ActorId actor) =>
+    public IntegrationResult AssignTemporaryCollection(Guid collection, ActorId actor) =>
         Guarded(Penumbra, "Assign temporary collection", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             // forceAssignment is REQUIRED for actors with an ordinary
             // individual assignment (force:false answers
             // CharacterCollectionExists) and is what lets the temporary
@@ -420,12 +420,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 && _duplicateCollections.ContainsKey(_bindings.Value.Resolve(actor).Value!.Address))
                 _displacedDuplicateCollections[collection] = actor;
             return assignEc == PenumbraEcSuccess
-                ? IntegrationPortResult.Ok()
-                : IntegrationPortResult.Fail(
+                ? IntegrationResult.Ok()
+                : IntegrationResult.Fail(
                     $"Penumbra failed assigning the temporary collection (code {assignEc}).");
         });
 
-    public IntegrationPortResult AddTemporaryMods(
+    public IntegrationResult AddTemporaryMods(
         Guid collection, IReadOnlyDictionary<string, string> paths, string manipulations) =>
         Guarded(Penumbra, "Temporary mods", () =>
         {
@@ -459,7 +459,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     "Penumbra reports no collection for this actor.");
         });
 
-    public IntegrationPortResult AddInvisibleSkinMods(
+    public IntegrationResult AddInvisibleSkinMods(
         Guid collection, IReadOnlyDictionary<string, string> paths) =>
         Guarded(Penumbra, "Invisible skin", () =>
         {
@@ -472,7 +472,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return PenumbraResult(ec, "adding the invisible-skin mod");
         });
 
-    public IntegrationPortResult RemoveInvisibleSkinMods(Guid collection) =>
+    public IntegrationResult RemoveInvisibleSkinMods(Guid collection) =>
         Guarded(Penumbra, "Invisible skin cleanup", () =>
         {
             int ec = _removeTemporaryMod.InvokeFunc(
@@ -480,7 +480,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return PenumbraResult(ec, "removing the invisible-skin mod");
         });
 
-    public IntegrationPortResult DeleteTemporaryCollection(Guid collection) =>
+    public IntegrationResult DeleteTemporaryCollection(Guid collection) =>
         Guarded(Penumbra, "Delete temporary collection", () =>
         {
             int ec = _deleteTemporaryCollection.InvokeFunc(collection);
@@ -488,10 +488,10 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // idempotent cleanup success, like Customize+ ProfileNotFound
             // and Glamourer NothingDone.
             if (ec is not (PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing))
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     $"Penumbra failed deleting the temporary collection (code {ec}).");
             if (!_displacedDuplicateCollections.TryGetValue(collection, out var actor))
-                return IntegrationPortResult.Ok();
+                return IntegrationResult.Ok();
             int index = ResolveIndex(actor, out _);
             if (index >= 0
                 && _duplicateCollections.TryGetValue(_bindings.Value.Resolve(actor).Value!.Address, out var inherited))
@@ -500,18 +500,18 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 // still-owned collection. Reattach that collection without force:
                 // a later external assignment must never be displaced by cleanup.
                 var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
-                if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify the actor during collection cleanup.");
+                if (!valid) return IntegrationResult.Fail("Penumbra cannot identify the actor during collection cleanup.");
                 if (!individual && effective != inherited
                     && (effective == Guid.Empty || _getCollections.InvokeFunc().ContainsKey(effective)))
                 {
                     int restored = _assignTemporaryCollection.InvokeFunc(inherited, index, false);
                     if (restored != PenumbraEcSuccess)
-                        return IntegrationPortResult.Fail(
+                        return IntegrationResult.Fail(
                             $"Penumbra failed restoring the duplicate's collection (code {restored}).");
                 }
             }
             _displacedDuplicateCollections.Remove(collection);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         });
 
     public IntegrationValue<string> GetActorMetaManipulations(ActorId actor) =>
@@ -554,17 +554,17 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         });
 #endif
 
-    public IntegrationPortResult RequestRedraw(ActorId actor) =>
+    public IntegrationResult RequestRedraw(ActorId actor) =>
         Guarded(Penumbra, "Redraw", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             _redrawObject.InvokeAction(index, 0);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         });
 
-    public Task<IntegrationPortResult> RedrawAndWait(
+    public Task<IntegrationResult> RedrawAndWait(
         ActorId actor, TimeSpan timeout, CancellationToken cancellation) =>
         _redraw.RedrawAndWait(actor, timeout, cancellation);
 
@@ -587,21 +587,21 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return CaptureInheritedCollection(_bindings.Value.Resolve(actor).Value!.Address);
         });
 
-    public IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot) =>
+    public IntegrationResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot) =>
         Guarded(Penumbra, "Restore inherited collection", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             var address = _bindings.Value.Resolve(actor).Value!.Address;
             var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
-            if (!valid) return IntegrationPortResult.Fail("Penumbra cannot identify this actor.");
+            if (!valid) return IntegrationResult.Fail("Penumbra cannot identify this actor.");
             // History may outlive an external reassignment. Never force away
             // another plugin's temporary collection to restore our duplicate.
             if (!individual && effective != Guid.Empty
                 && (!_duplicateCollections.TryGetValue(address, out var owned) || owned != effective)
                 && !_getCollections.InvokeFunc().ContainsKey(effective))
-                return IntegrationPortResult.Fail("Another plugin now owns the actor's temporary collection.");
+                return IntegrationResult.Fail("Another plugin now owns the actor's temporary collection.");
             return RestoreInheritedCollection(address, snapshot);
         });
 
@@ -632,7 +632,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     /// one, another plugin's temporary one, or nothing — and the copy's
     /// meta and race-specific models follow (the ordinary assignment left a
     /// Miqo'te copy on Midlander fallback models).</summary>
-    public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
+    public IntegrationResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
         Guarded(Penumbra, "Inherit collection", () =>
         {
             if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
@@ -640,7 +640,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int sourceIndex = IndexOf(sourceAddress);
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
             if (trees.Length == 0 || trees[0] is not { } tree)
-                return IntegrationPortResult.Fail("Penumbra reported no resources for the source.");
+                return IntegrationResult.Fail("Penumbra reported no resources for the source.");
             var redirects = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, sourceIndex));
             string manipulations = _getMetaManipulations.InvokeFunc(sourceIndex) ?? string.Empty;
             return RestoreInheritedCollection(cloneAddress, new(redirects, manipulations));
@@ -664,7 +664,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         return redirects;
     }
 
-    public IntegrationPortResult RestoreInheritedCollection(nint cloneAddress, SpawnCollectionSnapshot snapshot) =>
+    public IntegrationResult RestoreInheritedCollection(nint cloneAddress, SpawnCollectionSnapshot snapshot) =>
         Guarded(Penumbra, "Restore inherited collection", () =>
         {
             if (AddressPair(cloneAddress, cloneAddress) is { } refusal) return refusal;
@@ -674,7 +674,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             var (createEc, collection) = _createTemporaryCollection.InvokeFunc(
                 "Poser", $"Poser duplicate {cloneIndex}");
             if (createEc != PenumbraEcSuccess)
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     $"Penumbra failed creating the duplicate's collection (code {createEc}).");
             if (redirects.Count > 0 || manipulations.Length > 0)
             {
@@ -683,7 +683,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 if (modEc != PenumbraEcSuccess)
                 {
                     _deleteTemporaryCollection.InvokeFunc(collection);
-                    return IntegrationPortResult.Fail(
+                    return IntegrationResult.Fail(
                         $"Penumbra failed filling the duplicate's collection (code {modEc}).");
                 }
             }
@@ -691,7 +691,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             if (assignEc != PenumbraEcSuccess)
             {
                 _deleteTemporaryCollection.InvokeFunc(collection);
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     $"Penumbra failed assigning the duplicate's collection (code {assignEc}).");
             }
             // A fresh body's seed assignment is no longer its authored collection.
@@ -704,7 +704,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return PenumbraResult(clearEc, "clearing the duplicate's seed collection");
         });
 
-    public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) =>
+    public IntegrationResult AssignPlayerCollection(nint cloneAddress) =>
         Guarded(Penumbra, "Player collection", () =>
         {
             if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
@@ -714,13 +714,13 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return stale;
             var (valid, _, (id, _)) = _getCollectionForObject.InvokeFunc(0);
             if (!valid)
-                return IntegrationPortResult.Fail("Penumbra cannot identify the player.");
+                return IntegrationResult.Fail("Penumbra cannot identify the player.");
             var (ec, _) = _setCollectionForObject.InvokeFunc(
                 IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
             return PenumbraResult(ec, "assigning the player's collection");
         });
 
-    public IntegrationPortResult ReleaseCollection(nint cloneAddress) =>
+    public IntegrationResult ReleaseCollection(nint cloneAddress) =>
         Guarded(Penumbra, "Release collection", () =>
         {
             if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
@@ -735,25 +735,25 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 : deleted;
         });
 
-    public IntegrationPortResult DiscardCollection(nint cloneAddress) =>
+    public IntegrationResult DiscardCollection(nint cloneAddress) =>
         Guarded(Penumbra, "Discard collection", () =>
             _framework.IsInFrameworkUpdateThread
                 ? DeleteDuplicateCollection(cloneAddress)
-                : IntegrationPortResult.Fail(
+                : IntegrationResult.Fail(
                     "External integration calls must run on the framework thread."));
 
     /// <summary>Deletes the duplicate's own temporary collection by its GUID.
     /// It needs no live object, so it also serves a clone that vanished
     /// first; the ledger entry goes either way, so no later body at the
     /// address inherits it.</summary>
-    private IntegrationPortResult DeleteDuplicateCollection(nint cloneAddress)
+    private IntegrationResult DeleteDuplicateCollection(nint cloneAddress)
     {
         if (!_duplicateCollections.Remove(cloneAddress, out var own))
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         int ec = _deleteTemporaryCollection.InvokeFunc(own);
         return ec is PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing
-            ? IntegrationPortResult.Ok()
-            : IntegrationPortResult.Fail(
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail(
                 $"Penumbra failed deleting the duplicate's collection (code {ec}).");
     }
 
@@ -761,13 +761,13 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     /// framework thread, and two addresses that are actually objects. The
     /// stable-id calls get both from actor resolution, which by definition
     /// cannot run for a clone that has no binding yet.</summary>
-    private IntegrationPortResult? AddressPair(nint first, nint second)
+    private IntegrationResult? AddressPair(nint first, nint second)
     {
         if (!_framework.IsInFrameworkUpdateThread)
-            return IntegrationPortResult.Fail(
+            return IntegrationResult.Fail(
                 "External integration calls must run on the framework thread.");
         return first == nint.Zero || second == nint.Zero
-            ? IntegrationPortResult.Fail("The clone or its source has no address.")
+            ? IntegrationResult.Fail("The clone or its source has no address.")
             : null;
     }
 
@@ -799,12 +799,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return IntegrationValue<string>.Ok(state);
         });
 
-    public IntegrationPortResult ApplyDesign(ActorId actor, Guid design) =>
+    public IntegrationResult ApplyDesign(ActorId actor, Guid design) =>
         Guarded(Glamourer, "Apply design", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             // The API's documented design default: Once | Equipment |
             // Customization — applied once, no persistent lock.
             int ec = _applyDesign.InvokeFunc(
@@ -812,12 +812,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return GlamourerResult(ec, "applying the design", actor);
         });
 
-    public IntegrationPortResult HoldGlamourerState(ActorId actor, string state) =>
+    public IntegrationResult HoldGlamourerState(ActorId actor, string state) =>
         Guarded(Glamourer, "Hold state", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             // Fixed + locked: without Once the state maps to IpcFixed, and
             // the Lock flag with Poser's key keeps automation off the
             // imported look until UnlockGlamourerState releases it.
@@ -826,15 +826,15 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return GlamourerResult(ec, "holding the actor state");
         });
 
-    public IntegrationPortResult RestoreGlamourerState(ActorId actor, string state) =>
+    public IntegrationResult RestoreGlamourerState(ActorId actor, string state) =>
         Guarded(Glamourer, "Restore state", () =>
         {
             var access = ProbeGlamourerAccess(actor);
             if (access.Kind is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.Unavailable)
-                return IntegrationPortResult.Refused(access);
+                return IntegrationResult.Refused(access);
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             // One-shot manual restoration: Once maps to IpcManual, no Lock
             // flag — after a restore no Poser fixed state or lock remains.
             int ec = _applyState.InvokeFunc(
@@ -842,19 +842,19 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             return GlamourerResult(ec, "restoring the actor state");
         });
 
-    public IntegrationPortResult UnlockGlamourerState(ActorId actor) =>
+    public IntegrationResult UnlockGlamourerState(ActorId actor) =>
         Guarded(Glamourer, "Unlock", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             int ec = _unlockState.InvokeFunc(index, LockKey);
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone
-                ? IntegrationPortResult.Ok()
+                ? IntegrationResult.Ok()
                 : GlamourerResult(ec, "releasing Poser's lock");
         });
 
-    public IntegrationPortResult UnlockGlamourerStateByName(string name) =>
+    public IntegrationResult UnlockGlamourerStateByName(string name) =>
         GuardedByName(name, "Unlock by name", () =>
         {
             // Poser's key is the only thing that may release this state; a
@@ -866,11 +866,11 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             int ec = _unlockStateName.InvokeFunc(name, LockKey);
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone
                 or GlamourerEcActorNotFound
-                ? IntegrationPortResult.Ok()
+                ? IntegrationResult.Ok()
                 : GlamourerResult(ec, "releasing Poser's lock by name");
         });
 
-    public IntegrationPortResult RestoreGlamourerStateByName(string name, string state) =>
+    public IntegrationResult RestoreGlamourerStateByName(string name, string state) =>
         GuardedByName(name, "Restore state by name", () =>
         {
             // The by-index restore's exact flags: Once maps to IpcManual, no
@@ -882,7 +882,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 state, name, LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone
                 or GlamourerEcActorNotFound
-                ? IntegrationPortResult.Ok()
+                ? IntegrationResult.Ok()
                 : GlamourerResult(ec, "restoring the captured state by name");
         });
 
@@ -890,20 +890,20 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     /// availability gate, a real name, and the framework thread — the
     /// by-index guard normally supplies the last one through actor
     /// resolution, which by definition cannot run here.</summary>
-    private IntegrationPortResult GuardedByName(
-        string name, string what, Func<IntegrationPortResult> call) =>
+    private IntegrationResult GuardedByName(
+        string name, string what, Func<IntegrationResult> call) =>
         Guarded(Glamourer, what, () =>
         {
             if (!_framework.IsInFrameworkUpdateThread)
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     "External integration calls must run on the framework thread.");
             return string.IsNullOrEmpty(name)
-                ? IntegrationPortResult.Fail(
+                ? IntegrationResult.Fail(
                     "No character name was captured for this import, so its Glamourer state cannot be addressed by name.")
                 : call();
         });
 
-    public IntegrationPortResult OpenGlamourer(ActorId actor)
+    public IntegrationResult OpenGlamourer(ActorId actor)
     {
         // Force a fresh availability check at the click boundary.
         _nextGlamourerCheck = DateTime.MinValue;
@@ -911,9 +911,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             _openActorIndex.InvokeAction(index);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         });
     }
 
@@ -973,7 +973,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     $"Customize+ failed applying the temporary profile (code {ec}).");
         });
 
-    public IntegrationPortResult DeleteTemporaryBodyProfileById(Guid profile) =>
+    public IntegrationResult DeleteTemporaryBodyProfileById(Guid profile) =>
         Guarded(CustomizePlus, "Delete profile", () =>
         {
             int ec = _deleteTemporaryProfileById.InvokeFunc(profile);
@@ -982,8 +982,8 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             // InvalidCharacter on this path as "not an error").
             return ec is CustomizeEcSuccess or CustomizeEcProfileNotFound
                     or CustomizeEcInvalidCharacter
-                ? IntegrationPortResult.Ok()
-                : IntegrationPortResult.Fail(
+                ? IntegrationResult.Ok()
+                : IntegrationResult.Fail(
                     $"Customize+ failed deleting the temporary profile (code {ec}).");
         });
 
@@ -991,35 +991,35 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
 
     // ── the wardrobe ─────────────────────────────────────────────────────
 
-    public IntegrationPortResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
+    public IntegrationResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2) =>
         Guarded(Glamourer, "Set item", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             // A byte[] crosses Dalamud IPC as a base64 string and cannot become the
             // provider's IReadOnlyList<byte>; a List<byte> crosses as a JSON array.
             int ec = _setItem.InvokeFunc(index, (byte)slot, itemId, new List<byte> { dye1, dye2 }, 0u, ApplyOnce);
             return GlamourerResult(ec, "setting the item", actor);
         });
 
-    public IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId) =>
+    public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId) =>
         Guarded(Glamourer, "Set facewear", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             const byte glasses = 1;
             int ec = _setBonusItem.InvokeFunc(index, glasses, bonusItemId, 0u, ApplyOnce);
             return GlamourerResult(ec, "setting the facewear", actor);
         });
 
-    public IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) =>
+    public IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on) =>
         Guarded(Glamourer, "Set switch", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             int ec = _setMetaState.InvokeFunc(index, (ulong)which, on, 0u, ApplyOnce);
             return GlamourerResult(ec, "setting the switch", actor);
         });
@@ -1120,12 +1120,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         return new CustomizeState(values, modelId);
     }
 
-    public IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
+    public IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
         Guarded(Glamourer, "Set look", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             var (ec, state) = _getState.InvokeFunc(index, 0u);
             if (ec is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state is null)
             {
@@ -1134,7 +1134,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             }
             var request = CustomizeRequest.Build(state, values);
             if (!request.Success || request.Value is null)
-                return IntegrationPortResult.Fail(request.Detail ?? "The customization request is invalid.");
+                return IntegrationResult.Fail(request.Detail ?? "The customization request is invalid.");
             // A string crosses as base64 to Glamourer; a JObject is read as JSON.
             int rc = _applyState.InvokeFunc(request.Value, index, 0u, ApplyOnce | ApplyCustomization);
             return GlamourerResult(rc, "setting the look", actor);
@@ -1176,12 +1176,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             Flag("VieraEars", "Show", true));
     }
 
-    public IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson) =>
+    public IntegrationResult ApplyGlamourerStateJson(ActorId actor, string stateJson) =>
         Guarded(Glamourer, "Apply state", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             Newtonsoft.Json.Linq.JObject parsed;
             try
             {
@@ -1189,26 +1189,26 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             }
             catch (Newtonsoft.Json.JsonException ex)
             {
-                return IntegrationPortResult.Fail($"The state is not JSON: {ex.Message}");
+                return IntegrationResult.Fail($"The state is not JSON: {ex.Message}");
             }
             // A string crosses as base64 to Glamourer; a JObject is read as JSON.
             int ec = _applyState.InvokeFunc(parsed, index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return GlamourerResult(ec, "applying the state", actor);
         });
 
-    public IntegrationPortResult RevertGlamourerState(ActorId actor) =>
+    public IntegrationResult RevertGlamourerState(ActorId actor) =>
         Guarded(Glamourer, "Revert", () =>
         {
             int index = ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationPortResult.Fail(detail!);
+                return IntegrationResult.Fail(detail!);
             int ec = _revertState.InvokeFunc(index, 0u, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return GlamourerResult(ec, "reverting the state", actor);
         });
 
-    public IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
+    public IntegrationResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
     {
-        if (!Glamourer.Available) return IntegrationPortResult.Ok();
+        if (!Glamourer.Available) return IntegrationResult.Ok();
         return Guarded(Glamourer, "Initialize duplicate appearance", () =>
         {
             if (AddressPair(sourceAddress, targetAddress) is { } refusal) return refusal;
@@ -1217,9 +1217,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         });
     }
 
-    internal static IntegrationPortResult CopySpawnAppearance(int sourceIndex, int targetIndex,
+    internal static IntegrationResult CopySpawnAppearance(int sourceIndex, int targetIndex,
         Func<int, uint, (int, Newtonsoft.Json.Linq.JObject?)> readState,
-        Func<IntegrationPortResult> prepareTarget,
+        Func<IntegrationResult> prepareTarget,
         Func<object, int, uint, ulong, int> applyState)
     {
         var (read, state) = readState(sourceIndex, 0u);
@@ -1229,9 +1229,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         if (read == GlamourerEcInvalidKey)
             (read, state) = readState(sourceIndex, LockKey);
         if (read == GlamourerEcInvalidKey)
-            return IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld);
+            return IntegrationResult.Refused(GlamourerAccess.ForeignHeld);
         if (read is not (GlamourerEcSuccess or GlamourerEcNothingDone) || state == null)
-            return IntegrationPortResult.Fail($"Could not read source appearance (code {read}).");
+            return IntegrationResult.Fail($"Could not read source appearance (code {read}).");
         var prepared = prepareTarget();
         if (!prepared.Success) return prepared;
         int applied = applyState(state.DeepClone(), targetIndex, 0u,
@@ -1239,22 +1239,22 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         return GlamourerResult(applied, "initializing the duplicate's appearance");
     }
 
-    public IntegrationPortResult ResetSpawnAppearance(nint address)
+    public IntegrationResult ResetSpawnAppearance(nint address)
     {
         // A missing optional provider has no retained state to clear.
-        if (!Glamourer.Available) return IntegrationPortResult.Ok();
+        if (!Glamourer.Available) return IntegrationResult.Ok();
         return Guarded(Glamourer, "Initialize spawn appearance", () =>
         {
             if (AddressPair(address, address) is { } refusal) return refusal;
             if (_objects[IndexOf(address)] is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter target
                 || target.Address != address)
-                return IntegrationPortResult.Fail("The owned spawn is no longer a player-kind object.");
+                return IntegrationResult.Fail("The owned spawn is no longer a player-kind object.");
             string name = target.Name.TextValue;
             // This API is name-based. Restrict it to the freshly self-identified
             // Poser body and refuse any live same-name actor, including its source.
             if (!name.StartsWith("Poser ", StringComparison.Ordinal)
                 || _objects.Any(other => other.Address != address && other.Name.TextValue == name))
-                return IntegrationPortResult.Fail("The owned spawn's appearance identity is not unique.");
+                return IntegrationResult.Fail("The owned spawn's appearance identity is not unique.");
             // Both BaseData and ModelData survive slot reuse. Revert restores the
             // stale baseline, and ApplyState can return Success while refusing a
             // non-human -> human change. Forget only this new body's unheld state;
@@ -1273,18 +1273,18 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 : IntegrationValue<Guid>.Fail($"Glamourer failed saving the design (code {ec}).");
         });
 
-    private static IntegrationPortResult Guarded(
-        IntegrationAvailability availability, string what, Func<IntegrationPortResult> call)
+    private static IntegrationResult Guarded(
+        IntegrationAvailability availability, string what, Func<IntegrationResult> call)
     {
         if (!availability.Available)
-            return IntegrationPortResult.Fail(availability.Detail);
+            return IntegrationResult.Fail(availability.Detail);
         try
         {
             return call();
         }
         catch (Exception ex)
         {
-            return IntegrationPortResult.Fail($"{what}: {ex.Message}");
+            return IntegrationResult.Fail($"{what}: {ex.Message}");
         }
     }
 
@@ -1303,10 +1303,10 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         }
     }
 
-    private static IntegrationPortResult PenumbraResult(int ec, string what) =>
+    private static IntegrationResult PenumbraResult(int ec, string what) =>
         ec is PenumbraEcSuccess or PenumbraEcNothingChanged
-            ? IntegrationPortResult.Ok()
-            : IntegrationPortResult.Fail($"Penumbra failed {what} (code {ec}).");
+            ? IntegrationResult.Ok()
+            : IntegrationResult.Fail($"Penumbra failed {what} (code {ec}).");
 
     private IntegrationValue<T> GlamourerReadFailure<T>(ActorId actor, int code)
     {
@@ -1318,20 +1318,20 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             : IntegrationValue<T>.Refused(access);
     }
 
-    private IntegrationPortResult GlamourerResult(int code, string what, ActorId actor)
+    private IntegrationResult GlamourerResult(int code, string what, ActorId actor)
     {
         if (code != GlamourerEcInvalidKey)
             return GlamourerResult(code, what);
         var access = ProbeGlamourerAccess(actor);
         return access.CanEdit
-            ? IntegrationPortResult.Fail("Glamourer appearance access changed during the command; try again.")
-            : IntegrationPortResult.Refused(access);
+            ? IntegrationResult.Fail("Glamourer appearance access changed during the command; try again.")
+            : IntegrationResult.Refused(access);
     }
 
-    private static IntegrationPortResult GlamourerResult(int ec, string what) => ec switch
+    private static IntegrationResult GlamourerResult(int ec, string what) => ec switch
     {
-        GlamourerEcSuccess or GlamourerEcNothingDone => IntegrationPortResult.Ok(),
-        GlamourerEcInvalidKey => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
-        _ => IntegrationPortResult.Fail($"Glamourer failed {what} (code {ec})."),
+        GlamourerEcSuccess or GlamourerEcNothingDone => IntegrationResult.Ok(),
+        GlamourerEcInvalidKey => IntegrationResult.Refused(GlamourerAccess.ForeignHeld),
+        _ => IntegrationResult.Fail($"Glamourer failed {what} (code {ec})."),
     };
 }

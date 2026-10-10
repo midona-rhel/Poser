@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Transforms;
 using System;
 using Poser.Application.Viewport;
@@ -1624,7 +1625,7 @@ public partial class PoseInspectorPane : IDisposable
             if (candidate.Id.LogicalId != sourceLineage)
                 others.Add(candidate);
 
-        void Record(GazeResult result) =>
+        void Record(Outcome result) =>
             _gazeRefusal = result.Success
                 ? null
                 : (actor, result.Detail ?? "Gaze change refused.");
@@ -1768,7 +1769,7 @@ public partial class PoseInspectorPane : IDisposable
         ActorId actor,
         GazeReading state,
         bool wide,
-        Action<GazeResult> record)
+        Action<Outcome> record)
     {
         bool off = state.Settings.Mode == GazeTargetMode.None;
         bool point = state.Settings.Mode == GazeTargetMode.Position;

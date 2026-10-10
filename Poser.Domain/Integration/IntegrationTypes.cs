@@ -15,20 +15,24 @@ public sealed record GlamourerAccess(GlamourerAccessKind Kind, string? Detail = 
         "Poser's imported character file holds this actor's appearance. Reset MCDF first.");
 }
 
-/// <summary>Session-level result for external integration commands.</summary>
+/// <summary>An <see cref="Outcome"/> for external integration commands, at
+/// the runtime port and the session alike, that also names an appearance
+/// refusal so surfaces can offer the matching release.</summary>
 public readonly record struct IntegrationResult(bool Success, string? Detail = null, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationResult Ok() => new(true);
     public static IntegrationResult Fail(string detail) => new(false, detail);
     public static IntegrationResult Refused(GlamourerAccess access) => new(false, access.Detail, access.Kind);
-}
+    public static IntegrationResult From(Outcome outcome) => new(outcome.Success, outcome.Detail);
 
-/// <summary>Runtime-port result for one external call.</summary>
-public readonly record struct IntegrationPortResult(bool Success, string? Detail = null, GlamourerAccessKind? AppearanceRefusal = null)
-{
-    public static IntegrationPortResult Ok() => new(true);
-    public static IntegrationPortResult Fail(string detail) => new(false, detail);
-    public static IntegrationPortResult Refused(GlamourerAccess access) => new(false, access.Detail, access.Kind);
+    /// <summary>The plain outcome. A Glamourer hold (another plugin's lock,
+    /// or Poser's own imported character file) is released by the user, so
+    /// that refusal is transient; every other refusal is permanent.</summary>
+    public Outcome Outcome => new(Success, Detail)
+    {
+        Transient = !Success
+            && AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld,
+    };
 }
 
 /// <summary>Runtime-port result carrying a value.</summary>

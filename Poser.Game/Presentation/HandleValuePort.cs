@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 
 namespace Poser.Game.Presentation;
@@ -49,7 +50,7 @@ public sealed class HandleValuePort<TId, THandle> : IEntityValuePort<TId>
         public T Read<T>(EntityProperty<TId, T> property) =>
             port._accessors.Read(property, port.Current(original) ?? original);
 
-        public ValueWriteResult Write<T>(EntityProperty<TId, T> property, T value) =>
+        public Outcome Write<T>(EntityProperty<TId, T> property, T value) =>
             port.Current(original) is { } live
                 ? port._accessors.Write(property, live, value)
                 : new(false, port._unavailable);

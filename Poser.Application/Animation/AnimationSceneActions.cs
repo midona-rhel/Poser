@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Scene;
+using Poser.Domain;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
@@ -64,7 +65,7 @@ public sealed class AnimationSceneActions
 
     private SceneActionReport Run(
         IReadOnlyList<ActorDescriptorId> targets,
-        System.Func<ActorId, AnimationResult> action)
+        System.Func<ActorId, Outcome> action)
     {
         var failures = new List<string>();
         var skipped = new List<string>();

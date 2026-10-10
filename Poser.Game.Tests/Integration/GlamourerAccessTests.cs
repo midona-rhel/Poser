@@ -43,7 +43,7 @@ public sealed class GlamourerAccessTests
             nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Actor"),
             nameof(IIntegrationRuntimePort.GetCustomizeState) => IntegrationValue<CustomizeState>.Ok(
                 new CustomizeState(new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 7 }, 0)),
-            nameof(IIntegrationRuntimePort.SetCustomize) => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
+            nameof(IIntegrationRuntimePort.SetCustomize) => IntegrationResult.Refused(GlamourerAccess.ForeignHeld),
             _ => throw new NotSupportedException(method.Name),
         };
     }

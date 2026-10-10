@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -45,26 +46,26 @@ public sealed class ActorModelIdSession
     /// incoming id — read BEFORE the write — and later applies keep that
     /// first capture.
     /// </summary>
-    public PresentationResult Apply(ActorId actor, int modelCharaId)
+    public Outcome Apply(ActorId actor, int modelCharaId)
     {
         if (modelCharaId < 0)
-            return PresentationResult.Fail("Model id must be zero or positive.");
+            return Outcome.Fail("Model id must be zero or positive.");
 
         int? captured = null;
         if (!_captures.ContainsKey(actor))
         {
             captured = _port.Read(actor);
             if (captured == null)
-                return PresentationResult.Fail("The actor is not available.");
+                return Outcome.Fail("The actor is not available.");
         }
 
         var written = _port.Write(actor, modelCharaId);
         if (!written.Success)
-            return PresentationResult.Fail(written.Detail ?? "Model id failed.");
+            return written;
 
         if (captured is { } incoming && !_captures.ContainsKey(actor))
             _captures[actor] = incoming;
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>
@@ -73,29 +74,28 @@ public sealed class ActorModelIdSession
     /// the next attempt; an unresolvable exact generation is dropped
     /// without writes — the capture must never land on a replacement.
     /// </summary>
-    public PresentationResult Reset(ActorId actor)
+    public Outcome Reset(ActorId actor)
     {
         if (!_captures.TryGetValue(actor, out var capture))
-            return PresentationResult.Ok();
+            return Outcome.Ok();
 
         if (_port.Read(actor) == null)
         {
             _captures.Remove(actor);
-            return PresentationResult.Ok();
+            return Outcome.Ok();
         }
 
         var written = _port.Write(actor, capture);
         if (!written.Success)
-            return PresentationResult.Fail(
-                written.Detail ?? "Model id restore failed.");
+            return written;
 
         _captures.Remove(actor);
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Restores every owned actor. Used by GPose exit, plugin
     /// disposal, and Reset All.</summary>
-    public PresentationResult ResetAll()
+    public Outcome ResetAll()
     {
         var failures = new List<string>();
         foreach (var actor in _captures.Keys.ToList())
@@ -105,8 +105,8 @@ public sealed class ActorModelIdSession
                 failures.Add($"{actor}: {detail}");
         }
         return failures.Count == 0
-            ? PresentationResult.Ok()
-            : PresentationResult.Fail(string.Join("; ", failures));
+            ? Outcome.Ok()
+            : Outcome.Fail(string.Join("; ", failures));
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using Poser.Application.Companions;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Services;
@@ -34,13 +35,13 @@ public sealed class CompanionRuntime(
         return new(ownerId, child, attachment);
     }
 
-    public ValueWriteResult Set(ActorId owner, CompanionAttachment? attachment)
+    public Outcome Set(ActorId owner, CompanionAttachment? attachment)
     {
         var resolved = bindings.Resolve(owner);
         if (!resolved.Success || resolved.Value is not { } live || !spawns.HasCompanionSlot(live))
             return new(false, "The companion owner is no longer available.");
         return spawns.SetCompanion(live, attachment)
-            ? ValueWriteResult.Ok()
+            ? Outcome.Ok()
             : new(false, "The game refused the companion-slot change.");
     }
 }

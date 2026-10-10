@@ -3,6 +3,7 @@ using Poser.Application.Selection;
 using Poser.Application.Transforms;
 using Poser.Application.World;
 using Dalamud.Plugin.Services;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -113,9 +114,9 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         }
     }
 
-    public ValueWriteResult SetVisibility(SelectionId id, bool visible)
+    public Outcome SetVisibility(SelectionId id, bool visible)
     {
-        ValueWriteResult Gone() => new(false, "That entity is no longer available.");
+        Outcome Gone() => new(false, "That entity is no longer available.");
         if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current
             || current.Id != id)
             return Gone();

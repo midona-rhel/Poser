@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
@@ -182,7 +183,7 @@ public sealed class ScenePane
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
         ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
 
-    private bool ReportLibrarySave(SceneActionResult result)
+    private bool ReportLibrarySave(Outcome result)
     {
         if (!result.Success) _notices.Refused(result.Detail ?? "The library save could not start.");
         return result.Success;

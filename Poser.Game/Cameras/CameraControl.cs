@@ -2,6 +2,7 @@ using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -59,13 +60,13 @@ public sealed class CameraControl : ICameraControl
 
     public void Seal() => _values.Seal();
 
-    public ValueWriteResult Set<T>(CameraId id, EntityProperty<CameraId, T> property, T value) =>
+    public Outcome Set<T>(CameraId id, EntityProperty<CameraId, T> property, T value) =>
         _values.Set(id, property, value);
 
-    public ValueWriteResult Update<T>(CameraId id, EntityProperty<CameraId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(CameraId id, EntityProperty<CameraId, T> property, Func<T, T> change) =>
         _values.Update(id, property, change);
 
-    public ValueWriteResult Cycle(int delta)
+    public Outcome Cycle(int delta)
     {
         if (!_framework.IsInFrameworkUpdateThread || !_cameras.IsAvailable)
             return new(false, ControlsUnavailable);
@@ -73,19 +74,19 @@ public sealed class CameraControl : ICameraControl
         int current = -1;
         for (int i = 0; i < list.Count; i++)
             if (ReferenceEquals(list[i], _cameras.LiveCamera)) { current = i; break; }
-        if (current < 0 || list.Count < 2) return ValueWriteResult.Ok();
+        if (current < 0 || list.Count < 2) return Outcome.Ok();
         int next = ((current + delta) % list.Count + list.Count) % list.Count;
         return _bindings.GetCameraId(list[next]) is { } id
             ? SetLive(id, true) : new(false, Unavailable);
     }
 
     /// <summary>The roll turns with the mode, read from the live camera.</summary>
-    public ValueWriteResult SetPortrait(CameraId id, bool value) =>
+    public Outcome SetPortrait(CameraId id, bool value) =>
         _values.Update(id, CameraProperties.Portrait, current => (value, current.Roll +
             (current.Portrait == value ? 0f : value ? MathF.PI / 2f : -MathF.PI / 2f)));
 
     /// <summary>Back to the spawn position (free) or a zero offset (game).</summary>
-    public ValueWriteResult ResetPosition(CameraId id)
+    public Outcome ResetPosition(CameraId id)
     {
         if (Resolve(id) is not { } camera) return new(false, Unavailable);
         return camera.Kind == CameraKind.Free
@@ -93,7 +94,7 @@ public sealed class CameraControl : ICameraControl
             : _values.Set(id, CameraProperties.PositionOffset, Vector3.Zero);
     }
 
-    public ValueWriteResult ResetProperties(CameraId id)
+    public Outcome ResetProperties(CameraId id)
     {
         if (Resolve(id) is not { } camera) return new(false, Unavailable);
         if (!_cameras.IsAvailable) return new(false, ControlsUnavailable);
@@ -108,9 +109,9 @@ public sealed class CameraControl : ICameraControl
             if (Current(camera) is not { } live) return new(false, Unavailable);
             CameraTargetControl.PutTarget(_bindings, _cameras, live, state.Target);
             state.Apply(live);
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }, () => Current(camera) is not null);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 
     // Only fields changed by the native reset belong to this edit. Do not use
@@ -152,7 +153,7 @@ public sealed class CameraControl : ICameraControl
 
     /// <summary>Makes the camera live; the step's undo makes the previous
     /// live camera live again.</summary>
-    public ValueWriteResult SetLive(CameraId id, bool value)
+    public Outcome SetLive(CameraId id, bool value)
     {
         if (Resolve(id) is not { } camera) return new(false, Unavailable);
         if (!_cameras.IsAvailable) return new(false, ControlsUnavailable);
@@ -162,7 +163,7 @@ public sealed class CameraControl : ICameraControl
             _cameras.Cameras.FirstOrDefault(c => c.IsDefault && c.IsValid);
         if (next is null) return new(false, "The main camera is unavailable.");
         var before = _cameras.LiveCamera;
-        if (ReferenceEquals(before, next)) return ValueWriteResult.Ok();
+        if (ReferenceEquals(before, next)) return Outcome.Ok();
         _cameras.SetLive(next);
         // Keys led by the camera service name no entity: this step stays global.
         _journal.Record(_cameras, "Switch camera", before, next, ValueWrites.Unchecked<IVirtualCamera?>(target =>
@@ -170,6 +171,6 @@ public sealed class CameraControl : ICameraControl
             if (target is not null && Current(target) is { } live)
                 _cameras.SetLive(live);
         }));
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 }

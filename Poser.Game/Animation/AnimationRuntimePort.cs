@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Entities;
@@ -716,13 +717,13 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     // ── Base, blend, loop ─────────────────────────────────────────────
 
     /// <summary>Plays a timeline through the native route.</summary>
-    public AnimationPortResult Blend(ActorId actor, ushort timeline,
+    public Outcome Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
         captured = null;
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         if (existing == null)
             captured = CaptureBase(character);
@@ -730,13 +731,13 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         return PlayTimeline(character, timeline);
     }
 
-    public AnimationPortResult PlayBase(ActorId actor, ushort timeline,
+    public Outcome PlayBase(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
         captured = null;
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         if (existing == null)
             captured = CaptureBase(character);
@@ -762,35 +763,35 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     /// scheduler and control. A container-level cancel (slot 0) left the
     /// layer alive and the base restore re-scheduled it (reset restarted
     /// breakfast from 0, 2026-09-01 22:4x).</summary>
-    public AnimationPortResult ClearSlotTimeline(ActorId actor, AnimationSlot slot)
+    public Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         int index = (int)slot;
         if (index is < 0 or >= 14)
-            return AnimationPortResult.Fail("Slot out of range.");
+            return Outcome.Fail("Slot out of range.");
         if (_cancelTimeline == null)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Timeline cancellation is unavailable: the game function was not found.");
         // CancelTimeline's second argument IS the slot (bridge experiment
         // 22:41: a2=1 dropped the upper layer, its scheduler and its havok
         // control cleanly; a2=timeline id did nothing; a3=1 reset the base).
         _cancelTimeline(&character->Timeline, (nint)index, nint.Zero);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Cancels the active container timeline.</summary>
-    public AnimationPortResult CancelActiveTimeline(ActorId actor)
+    public Outcome CancelActiveTimeline(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (_cancelTimeline == null)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Timeline cancellation is unavailable: the game function was not found.");
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Captures the current base state.</summary>
@@ -816,10 +817,10 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private static void WriteModeParam(Character* character, uint value) =>
         *(uint*)((byte*)character + ModeParamOffset) = value;
 
-    private AnimationPortResult PlayTimeline(Character* character, ushort timeline)
+    private Outcome PlayTimeline(Character* character, ushort timeline)
     {
         if (_setTimelineId == null)
-            return AnimationPortResult.Fail("Timeline playback is unavailable.");
+            return Outcome.Fail("Timeline playback is unavailable.");
 
         var mode = character->Mode;
         uint modeParam = ReadModeParam(character);
@@ -827,14 +828,14 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         bool hadForced = TryReadForcedTimeline(&character->Timeline, out var forced);
         TrySetForcedTimeline(&character->Timeline, 0);
         if (PlayWithMode(character, timeline))
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
 
         character->Mode = mode;
         WriteModeParam(character, modeParam);
         character->Timeline.BaseOverride = baseOverride;
         if (hadForced)
             TrySetForcedTimeline(&character->Timeline, forced);
-        return AnimationPortResult.Fail("Timeline playback failed.");
+        return Outcome.Fail("Timeline playback failed.");
     }
 
     /// <summary>Applies the timeline mode before native playback.</summary>
@@ -873,11 +874,11 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 #endif
     }
 
-    public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
+    public Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
@@ -893,18 +894,18 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         character->Mode = (CharacterModes)capture.Mode;
         WriteModeParam(character, capture.ModeParam);
         TrySetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public AnimationPortResult PlayEmote(ActorId actor, uint emoteId)
+    public Outcome PlayEmote(ActorId actor, uint emoteId)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         TrySetForcedTimeline(&character->Timeline, 0);
         return PlayEmoteNative(character, emoteId)
-            ? AnimationPortResult.Ok()
-            : AnimationPortResult.Fail("The emote entry point is unavailable.");
+            ? Outcome.Ok()
+            : Outcome.Fail("The emote entry point is unavailable.");
     }
 
     /// <summary>Plays an emote through the game entry point.</summary>
@@ -931,18 +932,18 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
     public bool LoopsSuspended { get; set; }
 
-    public AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
+    public Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!_loops.TryGetValue(actor, out var slots))
             _loops[actor] = slots = new Dictionary<int, LoopArm>();
         slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot)
+    public Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot)
     {
         if (_loops.TryGetValue(actor, out var slots))
         {
@@ -950,7 +951,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             if (slots.Count == 0)
                 _loops.Remove(actor);
         }
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     public void ClearLoops(ActorId actor)
@@ -1022,26 +1023,26 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         }
     }
 
-    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
+    public Outcome SetForceLoop(ActorId actor, ushort timeline)
     {
         if (!SupportsForceLoop)
-            return AnimationPortResult.Fail("Full-body repeat is unavailable for this client layout.");
+            return Outcome.Fail("Full-body repeat is unavailable for this client layout.");
         if (timeline != 0 && TimelineSlot(timeline) != AnimationSlot.Base)
-            return AnimationPortResult.Fail("Only full-body timelines can use repeat.");
+            return Outcome.Fail("Only full-body timelines can use repeat.");
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!TrySetForcedTimeline(&character->Timeline, timeline) ||
             !TryReadForcedTimeline(&character->Timeline, out var written) ||
             written != timeline)
-            return AnimationPortResult.Fail("The full-body repeat field rejected the write.");
+            return Outcome.Fail("The full-body repeat field rejected the write.");
         if (timeline == 0)
             _forcedLoops.Remove(actor);
         else
             _forcedLoops[actor] = timeline;
         _log.Information(
             $"Animation: full-body loop actor={actor} timeline={timeline} field={written}.");
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     public bool SupportsForceLoop => HasForcedTimelineLayout;
@@ -1089,35 +1090,35 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
     // ── Speed ─────────────────────────────────────────────────────────
 
-    public AnimationPortResult SetOverallSpeed(ActorId actor, float speed)
+    public Outcome SetOverallSpeed(ActorId actor, float speed)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!float.IsFinite(speed))
-            return AnimationPortResult.Fail("Speed must be a finite number.");
+            return Outcome.Fail("Speed must be a finite number.");
         // Without the enabled hook, the game replaces the value next frame.
         if (!_overallSpeedHookEnabled)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Speed is unavailable: the game's speed hook is not active.");
 
         EnforcementFor(actor).OverallSpeed = speed;
         SyncEnforcementIndex();
         ApplySpeedNow(character, speed);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public AnimationPortResult ClearOverallSpeed(ActorId actor)
+    public Outcome ClearOverallSpeed(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         // Resolve ownership before dropping enforcement. The hand-back write
         // runs only for a speed Poser enforced.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             enforcement.OverallSpeed == null)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
 
         enforcement.OverallSpeed = null;
         PruneEnforcement(actor);
@@ -1126,7 +1127,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         // Havok control, so a Poser pause (controls at 0) is released
         // here or not at all.
         ApplySpeedNow(character, 1f);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Writes the container speed and every Havok control's
@@ -1159,19 +1160,19 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     }
 
     /// <summary>Rewinds paused controls.</summary>
-    public AnimationPortResult RewindPausedControls(ActorId actor)
+    public Outcome RewindPausedControls(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null ||
             drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
         var charaBase = (CharacterBase*)drawObject;
         if (charaBase->Skeleton == null)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
         var skeleton = charaBase->Skeleton;
 
         for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
@@ -1194,18 +1195,18 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                     control->hkaAnimationControl.LocalTime = 0;
             }
         }
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
+    public Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!float.IsFinite(speed))
-            return AnimationPortResult.Fail("Speed must be a finite number.");
+            return Outcome.Fail("Speed must be a finite number.");
         if (!_slotSpeedHookEnabled)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Layer speed is unavailable: the game's slot-speed hook is not active.");
 
         EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
@@ -1214,21 +1215,21 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         _log.Information(
             $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
             + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public AnimationPortResult ClearSlotSpeed(
+    public Outcome ClearSlotSpeed(
         ActorId actor, AnimationSlot slot, float restoreSpeed = 1f)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         // Restore before dropping enforcement so the next native frame starts
         // from the value Poser originally observed.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             !enforcement.SlotSpeeds.Remove((int)slot))
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
 
         PruneEnforcement(actor);
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed);
@@ -1236,7 +1237,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         // the per-frame enforcement; with it gone nothing resets them, so
         // restore them here (the wand lagged at x0.5 after a clear).
         RestorePropSpeeds(character, (int)slot, restoreSpeed * character->Timeline.OverallSpeed);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     private static void RestorePropSpeeds(Character* character, int slot, float effective)
@@ -1267,25 +1268,25 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
     // ── Lips, stance, weapon, position ────────────────────────────────
 
-    public AnimationPortResult SetLips(ActorId actor, ushort timeline)
+    public Outcome SetLips(ActorId actor, ushort timeline)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         // Must go through the native setter: it does sequencer bookkeeping
         // that a direct field write skips.
         character->Timeline.SetLipsOverrideTimeline(timeline);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Changes the actor stance.</summary>
-    public AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose)
+    public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (_setEmoteMode == null || _cancelTimeline == null)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Stance changes are unavailable: a required game function was not found.");
 
         var poseType = stance switch
@@ -1339,7 +1340,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         // poses are played explicitly — as emotes past index 0, since those
         // poses only exist as emotes.
         if (stance != AnimationStance.Idle)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
 
         if (wrapped == 0)
         {
@@ -1355,21 +1356,21 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         {
             PlayEmoteNative(character, emote);
         }
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Sets the weapon animation state.</summary>
-    public AnimationPortResult SetWeaponDrawn(ActorId actor, bool drawn)
+    public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (character->Timeline.IsWeaponDrawn == drawn)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
         character->Timeline.TimelineSequencer.PlayTimeline(
             drawn ? AnimationTimelines.DrawWeapon : AnimationTimelines.SheatheWeapon, null);
         character->Timeline.IsWeaponDrawn = drawn;
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>
@@ -1377,66 +1378,66 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     /// game's per-frame write. Releasing clears only an override created here,
     /// so a placement made with the gizmo survives unlocking.
     /// </summary>
-    public AnimationPortResult SetPositionLock(ActorId actor, bool locked)
+    public Outcome SetPositionLock(ActorId actor, bool locked)
     {
         if (ResolveActor(actor) is not { } legacy)
-            return AnimationPortResult.Fail($"Actor {actor} is no longer available.");
+            return Outcome.Fail($"Actor {actor} is no longer available.");
 
         if (locked)
         {
             if (_posing.HasTransformOverride(legacy))
             {
                 // Already held in place by the user's own placement.
-                return AnimationPortResult.Ok();
+                return Outcome.Ok();
             }
             _posing.SetTransformOverride(legacy, _posing.GetEffectiveTransform(legacy));
             _positionLocks.Add(actor);
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
         }
 
         if (_positionLocks.Remove(actor))
             _posing.ClearTransformOverride(legacy);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Scrubbing ─────────────────────────────────────────────────────
 
-    public AnimationPortResult SetControlTime(
+    public Outcome SetControlTime(
         ActorId actor, ScrubControlId control, float time, ulong token)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!float.IsFinite(time))
-            return AnimationPortResult.Fail("Scrub time must be a finite number.");
+            return Outcome.Fail("Scrub time must be a finite number.");
 
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return AnimationPortResult.Fail("Actor has no character skeleton.");
+            return Outcome.Fail("Actor has no character skeleton.");
         var charaBase = (CharacterBase*)drawObject;
         if (charaBase->Skeleton == null)
-            return AnimationPortResult.Fail("Actor has no character skeleton.");
+            return Outcome.Fail("Actor has no character skeleton.");
         var skeleton = charaBase->Skeleton;
 
         if (control.Partial < 0 || control.Partial >= skeleton->PartialSkeletonCount)
-            return AnimationPortResult.Fail("Scrub target no longer exists.");
+            return Outcome.Fail("Scrub target no longer exists.");
         var partial = &skeleton->PartialSkeletons[control.Partial];
         var animated = partial->GetHavokAnimatedSkeleton(0);
         if (animated == null ||
             control.Control < 0 || control.Control >= animated->AnimationControls.Length)
-            return AnimationPortResult.Fail("Scrub target no longer exists.");
+            return Outcome.Fail("Scrub target no longer exists.");
         var target = animated->AnimationControls[control.Control].Value;
         if (target == null)
-            return AnimationPortResult.Fail("Scrub target no longer exists.");
+            return Outcome.Fail("Scrub target no longer exists.");
         var binding = target->hkaAnimationControl.Binding;
         if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-            return AnimationPortResult.Fail("Scrub target no longer exists.");
+            return Outcome.Fail("Scrub target no longer exists.");
 
         // Re-derive the token from the live skeleton: a replacement moves
         // the skeleton or changes the control count, and the write is
         // refused rather than landing on whatever now occupies the slot.
         if (token != 0 && token != CurrentToken(skeleton))
-            return AnimationPortResult.Fail("Skeleton changed; scrub cancelled.");
+            return Outcome.Fail("Skeleton changed; scrub cancelled.");
 
         float duration = binding.ptr->Animation.ptr->Duration;
         // Never PLACE a cursor on the last frame: a child timeline set
@@ -1533,7 +1534,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             // judged there, hence "dies on the old schedule" (2026-09-01).
             SeekChildTimelines(trackController, frames, 0);
         }
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     private static ulong CurrentToken(
@@ -1564,7 +1565,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
     public bool IsPhysicsFrozen => _physics.IsFrozen;
 
-    public AnimationPortResult SetPhysicsFrozen(bool frozen) => _physics.SetFrozen(frozen);
+    public Outcome SetPhysicsFrozen(bool frozen) => _physics.SetFrozen(frozen);
 
     public void Dispose()
     {

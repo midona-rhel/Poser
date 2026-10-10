@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 
@@ -8,7 +9,7 @@ public sealed class CompanionSession(ICompanionRuntime runtime, ValueJournal jou
 {
     public CompanionReading? Read(ActorId subject) => runtime.Read(subject);
 
-    public ValueWriteResult Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment)
+    public Outcome Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment)
     {
         if (Read(subject) is not { } current || current.Owner != expectedOwner)
             return new(false, "The attachment relationship changed.");

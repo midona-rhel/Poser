@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using Poser.Application.Animation;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Game.Animation;
@@ -111,7 +112,7 @@ public sealed class AnimationOwnershipTests
             AnimationSlot.Facial));
     }
 
-    private static AnimationResult PlayBase(AnimationSession session, ushort timeline)
+    private static Outcome PlayBase(AnimationSession session, ushort timeline)
     {
         var chosen = session.ChooseSlot(Actor, AnimationSlot.Base, timeline);
         return chosen.Success
@@ -167,39 +168,39 @@ public sealed class AnimationOwnershipTests
                 case "PlayBase":
                     Calls.Add($"PlayBase:{args![1]}");
                     args[3] = args[2] == null ? BaseCapture : null;
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "RestoreBase":
                     RestoredBaseCapture = (BaseAnimationCapture)args![1]!;
                     Calls.Add("RestoreBase");
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "SetForceLoop":
                     Calls.Add($"SetForceLoop:{args![1]}");
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "Blend":
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "SetSlotLoop":
                     Calls.Add($"SetSlotLoop:{args![1]}:{args[2]}");
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "ClearSlotLoop":
                     Calls.Add($"ClearSlotLoop:{args![1]}");
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "SetSlotSpeed":
                     Calls.Add(
                         $"SetSlotSpeed:{args![1]}:" +
                         ((float)args[2]!).ToString(CultureInfo.InvariantCulture));
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "ClearSlotSpeed":
                     Calls.Add(
                         $"ClearSlotSpeed:{args![1]}:" +
                         ((float)args[2]!).ToString(CultureInfo.InvariantCulture));
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 default:
-                    if (method?.ReturnType == typeof(AnimationPortResult))
+                    if (method?.ReturnType == typeof(Outcome))
                     {
                         Calls.Add(method.Name);
-                        return AnimationPortResult.Ok();
+                        return Outcome.Ok();
                     }
                     if (method?.ReturnType is { IsValueType: true } type &&
                         type != typeof(void))

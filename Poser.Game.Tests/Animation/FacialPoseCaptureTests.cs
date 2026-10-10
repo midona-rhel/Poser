@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
+using Poser.Domain;
 using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Application.Scene;
@@ -214,15 +215,15 @@ public sealed class FacialPoseCaptureTests
                     return true;
                 case "Blend":
                     args![3] = null;
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 case "get_SupportsForceLoop":
                 case "get_SupportsStance":
                     return true;
                 case "get_IsPhysicsFrozen":
                     return false;
                 default:
-                    if (method?.ReturnType == typeof(AnimationPortResult))
-                        return AnimationPortResult.Ok();
+                    if (method?.ReturnType == typeof(Outcome))
+                        return Outcome.Ok();
                     return Default(method?.ReturnType);
             }
         }

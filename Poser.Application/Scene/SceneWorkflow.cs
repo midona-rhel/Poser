@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Scene;
@@ -283,13 +284,13 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
 
     // ── Admission ────────────────────────────────────────────────────────
 
-    private SceneActionResult? AdmissionGate()
+    private Outcome? AdmissionGate()
     {
         if (_disposed)
-            return SceneActionResult.Fail(
+            return Outcome.Fail(
                 "Poser is shutting down; no new scene operation can start.");
         if (Busy)
-            return SceneActionResult.Fail(
+            return Outcome.Fail(
                 "Another scene operation is already running.");
         return null;
     }
@@ -324,7 +325,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
     /// <summary>Starts the whole-scene save: the bone-cache refresh is armed
     /// first, the framework-thread pointer-free capture runs once it lands,
     /// then off-thread validation and the atomic write.</summary>
-    public SceneActionResult BeginSave(
+    public Outcome BeginSave(
         string path,
         string? description = null,
         SceneSaveOptions? options = null)
@@ -332,7 +333,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         if (AdmissionGate() is { } refused)
             return refused;
         if (_runtime.ActiveSession is not { } session)
-            return SceneActionResult.Fail(
+            return Outcome.Fail(
                 "No GPose session is active; a scene save needs the exact session identity.");
 
         var sceneId = Guid.NewGuid();
@@ -351,16 +352,16 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                 options ?? SceneSaveOptions.Default,
                 cancellation),
             CancellationToken.None);
-        return SceneActionResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Starts the whole-scene load transaction. Null options is the
     /// load as it has always been — see <see cref="SceneLoadOptions.Default"/>.
     /// </summary>
-    public SceneActionResult BeginLoad(
+    public Outcome BeginLoad(
         string path, SceneLoadOptions? options = null) => BeginLoad(path, options, null);
 
-    private SceneActionResult BeginLoad(
+    private Outcome BeginLoad(
         string path, SceneLoadOptions? options, LoadHistory? replay)
     {
         var chosen = options ?? SceneLoadOptions.Default;
@@ -372,12 +373,12 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         if (AdmissionGate() is { } refused)
             return refused;
         if (_runtime.ActiveSession is not { } session)
-            return SceneActionResult.Fail(
+            return Outcome.Fail(
                 "No GPose session is active; a scene load needs the exact session identity.");
         // A load that includes no category would report success over a session
         // it never touched; refused at admission, where nothing has happened.
         if (!chosen.IncludesAnything)
-            return SceneActionResult.Fail(
+            return Outcome.Fail(
                 "The load has every category switched off, so there is nothing to restore.");
 
         var operation = Admit(
@@ -394,7 +395,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
         _task = Task.Run(
             () => RunLoad(operation, path, chosen, cancellation),
             CancellationToken.None);
-        return SceneActionResult.Ok();
+        return Outcome.Ok();
     }
 
     private sealed class LoadHistory(Operation current)

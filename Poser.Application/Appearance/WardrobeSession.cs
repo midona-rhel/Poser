@@ -1,5 +1,6 @@
 using Poser.Application.Integration;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 
@@ -50,7 +51,7 @@ public sealed class WardrobeSession : IWardrobeControl
         if (!result.Success)
             return result;
         _journal.Record(SelectionId.ForActor(actor), description, before, after,
-            worn => Written(_integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2)),
+            worn => _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2).Outcome,
             () => Alive(actor));
         return result;
     }
@@ -86,7 +87,7 @@ public sealed class WardrobeSession : IWardrobeControl
         if (!result.Success)
             return result;
         _journal.Record(SelectionId.ForActor(actor), description, before, bonusItemId,
-            id => Written(_integration.SetFacewear(actor, id)), () => Alive(actor));
+            id => _integration.SetFacewear(actor, id).Outcome, () => Alive(actor));
         return result;
     }
 
@@ -117,7 +118,7 @@ public sealed class WardrobeSession : IWardrobeControl
             _ => "Set switch",
         };
         _journal.Record(SelectionId.ForActor(actor), description, before, on,
-            value => Written(_integration.SetMetaSwitch(actor, which, value)), () => Alive(actor));
+            value => _integration.SetMetaSwitch(actor, which, value).Outcome, () => Alive(actor));
         return result;
     }
 
@@ -155,21 +156,20 @@ public sealed class WardrobeSession : IWardrobeControl
                 Dress, () => Alive(actor));
         return outcome;
 
-        ValueWriteResult Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
+        Outcome Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
         {
             foreach (var (slot, worn) in slots)
             {
                 var result = _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2);
                 if (!result.Success)
-                    return Written(result);
+                    return result.Outcome;
             }
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
     }
 
     public IntegrationResult Revert(ActorId actor) =>
         _disruptive.Run(actor, "Revert look", () => _integration.RevertState(actor));
 
-    private static ValueWriteResult Written(IntegrationResult result) => result.ToValueWrite();
     private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
 }

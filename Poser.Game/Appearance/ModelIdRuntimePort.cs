@@ -1,5 +1,6 @@
 using Poser.Application.Appearance;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
 using Poser.Services;
@@ -38,12 +39,12 @@ public sealed class ModelIdRuntimePort : IModelIdRuntimePort
         return _spawn.GetModelCharaId(legacy);
     }
 
-    public PresentationPortResult Write(ActorId actor, int modelCharaId)
+    public Outcome Write(ActorId actor, int modelCharaId)
     {
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
-            return PresentationPortResult.Fail(
+            return Outcome.Fail(
                 resolved.Detail ?? "The actor is no longer available.");
 
         _spawn.SetModelCharaId(legacy, modelCharaId);
@@ -52,7 +53,7 @@ public sealed class ModelIdRuntimePort : IModelIdRuntimePort
         // begins, so an immediate readback is the truthful outcome of the
         // write itself; the redraw completes over the following frames.
         return _spawn.GetModelCharaId(legacy) == modelCharaId
-            ? PresentationPortResult.Ok()
-            : PresentationPortResult.Fail("The model id write did not land.");
+            ? Outcome.Ok()
+            : Outcome.Fail("The model id write did not land.");
     }
 }

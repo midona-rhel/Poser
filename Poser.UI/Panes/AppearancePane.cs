@@ -7,6 +7,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
+using Poser.Domain;
 using Poser.Domain.Operations;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
@@ -553,7 +554,7 @@ public sealed partial class AppearancePane
     }
 
     /// <summary>Reports a model result and refreshes the numeric field.</summary>
-    private void ReportModel(PresentationResult result, string what)
+    private void ReportModel(Outcome result, string what)
     {
         Report(result, what);
         _modelActor = null;
@@ -1105,7 +1106,7 @@ public sealed partial class AppearancePane
         PresentationModel model) =>
         owned.Tints.TryGetValue(model, out var tint) ? tint : reading.TintFor(model);
 
-    private void Report(PresentationResult result, string what)
+    private void Report(Outcome result, string what)
     {
         if (!result.Success)
             _notices.Failed($"{what}: {result.Detail}");

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Domain.Scene;
@@ -72,8 +73,8 @@ public interface IGazeService
 
     /// <summary>Snapshot of the actor's managed gaze state.</summary>
     GazeState GetGazeState(IActor actor);
-    GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings);
-    GazeResult SetPoseAware(IActor actor, bool enabled) => GazeResult.Refused("Pose-aware gaze is unavailable.");
+    Outcome RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings);
+    Outcome SetPoseAware(IActor actor, bool enabled) => Outcome.Fail("Pose-aware gaze is unavailable.");
 
     /// <summary>
     /// One mode transition. Entering a non-Off mode with no participating
@@ -82,7 +83,7 @@ public interface IGazeService
     /// target and per-part points — only <see cref="ResetGaze"/> forgets them.
     /// Re-entering Entity on a stale remembered target is refused.
     /// </summary>
-    GazeResult SetGazeMode(IActor actor, GazeTargetMode mode);
+    Outcome SetGazeMode(IActor actor, GazeTargetMode mode);
 
     /// <summary>
     /// Changes part participation only, exactly as Brio's SetTargetType does:
@@ -91,13 +92,13 @@ public interface IGazeService
     /// mask, so re-adding a part resumes what was configured. Re-adding a part
     /// on a stale remembered target is refused; removing one never is.
     /// </summary>
-    GazeResult SetGazeParts(IActor actor, GazeTargetType parts);
+    Outcome SetGazeParts(IActor actor, GazeTargetType parts);
 
     /// <summary>
     /// Chooses the Entity-mode target and switches to Entity mode. The
     /// source actor itself is rejected.
     /// </summary>
-    GazeResult SetGazeTarget(IActor actor, IActor target);
+    Outcome SetGazeTarget(IActor actor, IActor target);
 
     /// <summary>
     /// Re-checks every entry against the published bindings: a departed

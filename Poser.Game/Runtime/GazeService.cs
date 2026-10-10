@@ -12,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Services;
@@ -584,12 +585,12 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
-    private GazeResult Unavailable() =>
-        GazeResult.Refused(UnavailableDetail ?? "Gaze capability unavailable.");
+    private Outcome Unavailable() =>
+        Outcome.Fail(UnavailableDetail ?? "Gaze capability unavailable.");
 
     /// <summary>The remembered target is gone, so reapplying it is refused by
     /// name instead of quietly following nothing or a reused address.</summary>
-    private static GazeResult StaleRefusal(GazeEntry entry) => GazeResult.Refused(
+    private static Outcome StaleRefusal(GazeEntry entry) => Outcome.Fail(
         $"The remembered gaze target ({entry.TargetId:X}) has left the scene. Choose another actor.");
 
     /// <summary>The actor's stable id and live body. An actor the registry
@@ -633,11 +634,11 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
-    public GazeResult RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings)
+    public Outcome RestoreSettings(IActor actor, Poser.Application.Gaze.GazeSettings settings)
     {
         if (!IsAvailable) return Unavailable();
         if (!Resolve(actor, out var id, out var gameObject))
-            return GazeResult.Refused("This actor is no longer resolvable.");
+            return Outcome.Fail("This actor is no longer resolvable.");
         bool writable = CanWriteCharacter(gameObject);
         ulong? pendingTarget;
         lock (_sync)
@@ -666,26 +667,26 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
         WriteCharacterTarget(gameObject, pendingTarget);
         _eventBus.Publish(new GazeStateChangedEvent());
-        return GazeResult.Ok();
+        return Outcome.Ok();
     }
 
-    public GazeResult SetPoseAware(IActor actor, bool enabled)
+    public Outcome SetPoseAware(IActor actor, bool enabled)
     {
         if (!IsAvailable) return Unavailable();
         if (!Resolve(actor, out var id, out var gameObject))
-            return GazeResult.Refused("This actor is no longer resolvable.");
+            return Outcome.Fail("This actor is no longer resolvable.");
         lock (_sync) Bind(id, gameObject.Address).PoseAware = enabled;
         if (!enabled) _gazeFrames.Request(actor.Address, false);
         _eventBus.Publish(new GazeStateChangedEvent());
-        return GazeResult.Ok();
+        return Outcome.Ok();
     }
 
-    public GazeResult SetGazeMode(IActor actor, GazeTargetMode mode)
+    public Outcome SetGazeMode(IActor actor, GazeTargetMode mode)
     {
         if (!IsAvailable)
             return Unavailable();
         if (!Resolve(actor, out var id, out var gameObject))
-            return GazeResult.Refused("This actor is no longer resolvable.");
+            return Outcome.Fail("This actor is no longer resolvable.");
         bool modeChanged;
         ulong? pendingTarget;
         // Resolved before the lock: the gate reads Dalamud wrapper properties,
@@ -730,15 +731,15 @@ public unsafe class GazeService : IGazeService, IDisposable
         // native thread, so the bus is never invoked while holding it.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
-        return GazeResult.Ok();
+        return Outcome.Ok();
     }
 
-    public GazeResult SetGazeParts(IActor actor, GazeTargetType parts)
+    public Outcome SetGazeParts(IActor actor, GazeTargetType parts)
     {
         if (!IsAvailable)
             return Unavailable();
         if (!Resolve(actor, out var id, out var gameObject))
-            return GazeResult.Refused("This actor is no longer resolvable.");
+            return Outcome.Fail("This actor is no longer resolvable.");
         bool modeChanged;
         ulong? pendingTarget;
         bool writable = CanWriteCharacter(gameObject);
@@ -776,29 +777,29 @@ public unsafe class GazeService : IGazeService, IDisposable
         // part edits that leave that alone stay silent. Published outside lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
-        return GazeResult.Ok();
+        return Outcome.Ok();
     }
 
-    public GazeResult SetGazeTarget(IActor actor, IActor target)
+    public Outcome SetGazeTarget(IActor actor, IActor target)
     {
         if (!IsAvailable)
             return Unavailable();
         if (!OnOwnerThread)
-            return GazeResult.Refused("Gaze targets can only be set on the game thread.");
+            return Outcome.Fail("Gaze targets can only be set on the game thread.");
         if (!Resolve(actor, out var id, out var gameObject)
             || !Resolve(target, out var targetKey, out var targetObject))
-            return GazeResult.Refused("This actor is no longer resolvable.");
+            return Outcome.Fail("This actor is no longer resolvable.");
         // The same predicate the write funnel enforces, spelled once, so this
         // refusal can never drift from what WriteCharacterTarget will accept.
         // It is stated here as well only to name the reason for the user.
         if (!CanWriteCharacter(gameObject))
-            return GazeResult.Refused("Only a GPose actor can be given a gaze target.");
+            return Outcome.Fail("Only a GPose actor can be given a gaze target.");
         // Stable identity, not GameObjectId: two clones of one player share
         // that id and are still two actors that may look at each other.
         if (id == targetKey)
         {
             _log.Warning("GazeService: an actor cannot gaze at itself.");
-            return GazeResult.Refused("An actor cannot gaze at itself.");
+            return Outcome.Fail("An actor cannot gaze at itself.");
         }
         bool modeChanged;
         ulong? pendingTarget;
@@ -829,7 +830,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         // move INTO Entity publishes. Published outside the lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
-        return GazeResult.Ok();
+        return Outcome.Ok();
     }
 
     public void SetGazePosition(IActor actor, Vector3 position)

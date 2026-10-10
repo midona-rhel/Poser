@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Animation;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
@@ -68,15 +69,15 @@ public sealed unsafe partial class AnimationRuntimePort
     }
 
     /// <summary>Experiment: CancelTimeline with chosen a2/a3.</summary>
-    public AnimationPortResult ProbeCancel(ActorId actor, nint a2, nint a3)
+    public Outcome ProbeCancel(ActorId actor, nint a2, nint a3)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return AnimationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (_cancelTimeline == null)
-            return AnimationPortResult.Fail("CancelTimeline unavailable.");
+            return Outcome.Fail("CancelTimeline unavailable.");
         _cancelTimeline(&character->Timeline, a2, a3);
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>The native facts the debug bridge reports beside the

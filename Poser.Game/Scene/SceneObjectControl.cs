@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Game.Presentation;
@@ -51,33 +52,33 @@ public sealed class SceneObjectControl : ISceneObjectControl
 
     public void Seal() => _journal.Seal();
 
-    public ValueWriteResult Set<T>(PropId id, EntityProperty<PropId, T> property, T value) =>
+    public Outcome Set<T>(PropId id, EntityProperty<PropId, T> property, T value) =>
         _props.Set(id, property, value);
 
-    public ValueWriteResult Update<T>(PropId id, EntityProperty<PropId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(PropId id, EntityProperty<PropId, T> property, Func<T, T> change) =>
         _props.Update(id, property, change);
 
-    public ValueWriteResult Set<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, T value) =>
+    public Outcome Set<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, T value) =>
         _objects.Set(id, property, value);
 
-    public ValueWriteResult Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change) =>
         _objects.Update(id, property, change);
 
     // A dye respawns the prop in place; its undo respawns the previous model.
     // Only a landed respawn is a step.
-    public ValueWriteResult SetModel(PropId id, PropModel model)
+    public Outcome SetModel(PropId id, PropModel model)
     {
         if (Resolve(id) is not { } p) return new(false, PropUnavailable);
         var before = p.Model;
         if (!p.Respawn(model, out var refusal)) return new(false, refusal);
         _journal.Record(SelectionId.ForProp(id), "Change prop model", before, model,
             next => Current(p) is not { } live ? new(false, PropUnavailable)
-                : live.Respawn(next, out var why) ? ValueWriteResult.Ok() : new(false, why),
+                : live.Respawn(next, out var why) ? Outcome.Ok() : new(false, why),
             () => Current(p) is not null);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 
-    public ValueWriteResult SetFurnitureLight(WorldObjectId id, string key, bool enabled)
+    public Outcome SetFurnitureLight(WorldObjectId id, string key, bool enabled)
     {
         _journal.Seal();
         var result = _objects.Update(id, WorldObjectProperties.FurnitureLights, lights =>
@@ -86,10 +87,9 @@ public sealed class SceneObjectControl : ISceneObjectControl
         return result;
     }
 
-    public async Task<ValueWriteResult> Respawn(WorldObjectId id, string path)
+    public async Task<Outcome> Respawn(WorldObjectId id, string path)
     {
         if (Resolve(id) is not { } o) return new(false, ObjectUnavailable);
-        var result = await o.Respawn(path);
-        return new(result.Succeeded, result.Detail);
+        return await o.Respawn(path);
     }
 }

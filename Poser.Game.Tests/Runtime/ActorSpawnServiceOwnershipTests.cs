@@ -26,7 +26,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             Assert.Equal(actor.Address, address);
             Assert.Null(native.DrawEnabled);
             order.Add("reset");
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         });
         using var service = NewService(native, new FakeActorManager(actor),
             framework: framework, appearance: appearance,
@@ -56,7 +56,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             Assert.Equal(actor.Address, address);
             Assert.NotEqual(source.Address, address);
             Assert.Null(native.DrawEnabled);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         });
         using var service = NewService(native, new FakeActorManager(actor),
             framework: framework, appearance: appearance);
@@ -67,16 +67,16 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.True(native.DrawEnabled);
     }
 
-    private sealed class FakeSpawnAppearance(Func<nint, IntegrationPortResult> reset) : ISpawnAppearancePort
+    private sealed class FakeSpawnAppearance(Func<nint, IntegrationResult> reset) : ISpawnAppearancePort
     {
         public int Calls { get; private set; }
         public List<(nint Source, nint Target)> Copies { get; } = new();
-        public IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
+        public IntegrationResult CopySpawnAppearance(nint sourceAddress, nint targetAddress)
         {
             Copies.Add((sourceAddress, targetAddress));
             return reset(targetAddress);
         }
-        public IntegrationPortResult ResetSpawnAppearance(nint address)
+        public IntegrationResult ResetSpawnAppearance(nint address)
         {
             Calls++;
             return reset(address);
@@ -150,15 +150,15 @@ public sealed class ActorSpawnServiceOwnershipTests
     private sealed class FakeCollections : ISpawnCollectionPort
     {
         public List<string> Calls { get; } = new();
-        public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
+        public IntegrationResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
             Record($"inherit:{cloneAddress:X}");
-        public IntegrationPortResult ReleaseCollection(nint cloneAddress) => Record($"release:{cloneAddress:X}");
-        public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) => Record($"assign:{cloneAddress:X}");
-        public IntegrationPortResult DiscardCollection(nint cloneAddress) => Record($"discard:{cloneAddress:X}");
-        private IntegrationPortResult Record(string call)
+        public IntegrationResult ReleaseCollection(nint cloneAddress) => Record($"release:{cloneAddress:X}");
+        public IntegrationResult AssignPlayerCollection(nint cloneAddress) => Record($"assign:{cloneAddress:X}");
+        public IntegrationResult DiscardCollection(nint cloneAddress) => Record($"discard:{cloneAddress:X}");
+        private IntegrationResult Record(string call)
         {
             Calls.Add(call);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
     }
 

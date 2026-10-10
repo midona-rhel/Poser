@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Gaze;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -65,32 +66,32 @@ public sealed class GazeSessionTests
         public string? UnavailableDetail => null;
         public GazeReading? Read(ActorId actor) => actor == Actor ? State : null;
 
-        private GazeResult Change(ActorId actor, Func<GazeSettings, GazeSettings> change)
+        private Outcome Change(ActorId actor, Func<GazeSettings, GazeSettings> change)
         {
-            if (actor != Actor) return GazeResult.Refused("Stale actor");
+            if (actor != Actor) return Outcome.Fail("Stale actor");
             Writes++;
             State = State with { Settings = change(State.Settings) };
-            return GazeResult.Ok();
+            return Outcome.Ok();
         }
 
-        public GazeResult RestoreSettings(ActorId actor, GazeSettings settings) => RefuseMode
-            ? GazeResult.Refused("Native transition refused") : Change(actor, _ => settings);
-        public GazeResult SetMode(ActorId actor, GazeTargetMode mode) => RefuseMode
-            ? GazeResult.Refused("Native transition refused") : Change(actor, s => s with { Mode = mode });
-        public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>
+        public Outcome RestoreSettings(ActorId actor, GazeSettings settings) => RefuseMode
+            ? Outcome.Fail("Native transition refused") : Change(actor, _ => settings);
+        public Outcome SetMode(ActorId actor, GazeTargetMode mode) => RefuseMode
+            ? Outcome.Fail("Native transition refused") : Change(actor, s => s with { Mode = mode });
+        public Outcome SetParts(ActorId actor, GazeTargetType parts) =>
             Change(actor, s => s with { TargetType = parts });
-        public GazeResult SetTarget(ActorId actor, ActorId target) => GazeResult.Refused("Stale target");
-        public GazeResult SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
+        public Outcome SetTarget(ActorId actor, ActorId target) => Outcome.Fail("Stale target");
+        public Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
             Change(actor, s => part switch
             {
                 GazeTargetType.Eyes => s with { EyesLocked = locked },
                 GazeTargetType.Head => s with { HeadLocked = locked },
                 _ => s with { BodyLocked = locked },
             });
-        public GazeResult SnapPartToCamera(ActorId actor, GazeTargetType part) =>
+        public Outcome SnapPartToCamera(ActorId actor, GazeTargetType part) =>
             SetPartPosition(actor, part, new(8, 9, 10));
-        public GazeResult Reset(ActorId actor) => Change(actor, _ => default);
-        public GazeResult SetGazePosition(ActorId actor, Vector3 position) =>
+        public Outcome Reset(ActorId actor) => Change(actor, _ => default);
+        public Outcome SetGazePosition(ActorId actor, Vector3 position) =>
             Change(actor, s => s with
             {
                 Position = position,
@@ -98,7 +99,7 @@ public sealed class GazeSessionTests
                 HeadPosition = s.HeadLocked ? s.HeadPosition : position,
                 BodyPosition = s.BodyLocked ? s.BodyPosition : position,
             });
-        public GazeResult SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
+        public Outcome SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
             Change(actor, s => part switch
             {
                 GazeTargetType.Eyes => s with { EyesPosition = position },

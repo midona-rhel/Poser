@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 
@@ -104,7 +105,7 @@ public sealed partial class AppearancePane
         }
     }
 
-    private void ReportColour(ValueWriteResult result)
+    private void ReportColour(Outcome result)
     {
         if (!result.Success) _notices.Failed(result.Detail ?? "The custom colour could not be changed.");
     }

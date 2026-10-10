@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
@@ -12,10 +13,10 @@ public interface IOverlayControl
 {
     OverlayReading? Read(OverlayId id);
     void Seal();
-    ValueWriteResult Set<T>(OverlayId id, EntityProperty<OverlayId, T> property, T value);
-    ValueWriteResult Update<T>(OverlayId id, EntityProperty<OverlayId, T> property, Func<T, T> change);
+    Outcome Set<T>(OverlayId id, EntityProperty<OverlayId, T> property, T value);
+    Outcome Update<T>(OverlayId id, EntityProperty<OverlayId, T> property, Func<T, T> change);
 
     /// <summary>Changes the overlay's current collider; refuses an overlay
     /// that has none.</summary>
-    ValueWriteResult EditCollider(OverlayId id, Func<IkCollider, IkCollider> change);
+    Outcome EditCollider(OverlayId id, Func<IkCollider, IkCollider> change);
 }

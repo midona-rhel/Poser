@@ -67,11 +67,11 @@ public sealed class ActorRedrawBarrierTests
             _redrawn += redrawn;
             return new Subscription(() => { Subscriptions--; _redrawn -= redrawn; });
         }
-        public IntegrationPortResult Request(ActorId actor)
+        public IntegrationResult Request(ActorId actor)
         {
             Assert.Equal(1, Subscriptions);
             if (NotifyDuringRequest) Notify(100, 3);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
         public void Notify(nint address, int index) => _redrawn?.Invoke(address, index);
         private sealed class Subscription(Action dispose) : IDisposable

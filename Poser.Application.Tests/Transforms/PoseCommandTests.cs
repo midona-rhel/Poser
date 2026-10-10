@@ -10,6 +10,7 @@ using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
@@ -185,7 +186,7 @@ public sealed class PoseCommandTests
     {
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
-            "Reset" => GazeResult.Ok(),
+            "Reset" => Outcome.Ok(),
             "ClearLoops" or "SuspendColors" or "ClearOwned" => null,
             _ => throw new InvalidOperationException($"Unexpected reset mechanism: {method.Name}"),
         };

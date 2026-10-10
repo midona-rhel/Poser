@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -35,7 +36,7 @@ public interface ILightControl
     LightReading? Read(LightId id);
     IReadOnlyList<LightGobo> Gobos { get; }
     void Seal();
-    ValueWriteResult Set<T>(LightId id, EntityProperty<LightId, T> property, T value);
-    ValueWriteResult Update<T>(LightId id, EntityProperty<LightId, T> property, Func<T, T> change);
-    ValueWriteResult ApplyGobo(LightId id, uint index);
+    Outcome Set<T>(LightId id, EntityProperty<LightId, T> property, T value);
+    Outcome Update<T>(LightId id, EntityProperty<LightId, T> property, Func<T, T> change);
+    Outcome ApplyGobo(LightId id, uint index);
 }

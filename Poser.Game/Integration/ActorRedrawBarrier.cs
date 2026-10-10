@@ -14,7 +14,7 @@ internal interface IActorRedrawRuntime
     IDisposable Observe(Action<nint, int> redrawn);
     bool ProviderAvailable { get; }
     bool Ready(RedrawActor actor);
-    IntegrationPortResult Request(ActorId actor);
+    IntegrationResult Request(ActorId actor);
 }
 
 /// <summary>One observed redraw at a time per exact actor. No native handles leave Game.</summary>
@@ -23,12 +23,12 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
     private readonly ConcurrentDictionary<ActorId, Guid> _pending = new();
     private readonly CancellationTokenSource _lifetime = new();
 
-    public async Task<IntegrationPortResult> RedrawAndWait(
+    public async Task<IntegrationResult> RedrawAndWait(
         ActorId actor, TimeSpan timeout, CancellationToken cancellation)
     {
         var operation = Guid.NewGuid();
         if (!_pending.TryAdd(actor, operation))
-            return IntegrationPortResult.Fail("A redraw is already pending for this actor.");
+            return IntegrationResult.Fail("A redraw is already pending for this actor.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _lifetime.Token);
         deadline.CancelAfter(timeout);
         var token = deadline.Token;
@@ -36,7 +36,7 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
         {
             var target = await runtime.OnFramework(() => runtime.Resolve(actor)).WaitAsync(token);
             if (target is not { } exact)
-                return IntegrationPortResult.Fail("The actor or GPose session is no longer available.");
+                return IntegrationResult.Fail("The actor or GPose session is no longer available.");
 
             var observed = 0;
             var requesting = 0;
@@ -52,7 +52,7 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
             var requested = await runtime.OnFramework(() =>
             {
                 if (token.IsCancellationRequested)
-                    return IntegrationPortResult.Fail("The redraw was cancelled.");
+                    return IntegrationResult.Fail("The redraw was cancelled.");
                 Interlocked.Exchange(ref requesting, 1);
                 return runtime.Request(actor);
             }).WaitAsync(token);
@@ -69,20 +69,20 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
                     // has acknowledged this actor's requested redraw.
                     return (Failed: (string?)null, Ready: Volatile.Read(ref observed) != 0 && runtime.Ready(exact));
                 }).WaitAsync(token);
-                if (state.Failed is { } failure) return IntegrationPortResult.Fail(failure);
-                if (state.Ready) return IntegrationPortResult.Ok();
+                if (state.Failed is { } failure) return IntegrationResult.Fail(failure);
+                if (state.Ready) return IntegrationResult.Ok();
                 await Task.Delay(25, token);
             }
         }
         catch (OperationCanceledException)
         {
-            return IntegrationPortResult.Fail(cancellation.IsCancellationRequested || _lifetime.IsCancellationRequested
+            return IntegrationResult.Fail(cancellation.IsCancellationRequested || _lifetime.IsCancellationRequested
                 ? "The redraw operation was cancelled."
                 : $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
         }
         catch (Exception ex)
         {
-            return IntegrationPortResult.Fail($"The actor redraw failed: {ex.Message}");
+            return IntegrationResult.Fail($"The actor redraw failed: {ex.Message}");
         }
         finally
         {

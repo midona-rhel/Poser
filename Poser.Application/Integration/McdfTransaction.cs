@@ -1004,10 +1004,10 @@ public sealed partial class McdfTransaction
     /// <summary>Unlocks by the captured name, or refuses truthfully when no
     /// name was ever captured — a lock Poser cannot address is evidence to
     /// keep, never a flag to quietly drop.</summary>
-    private IntegrationPortResult ByNameUnlock(string? name) =>
+    private IntegrationResult ByNameUnlock(string? name) =>
         name is { } addressable
             ? _port.UnlockGlamourerStateByName(addressable)
-            : IntegrationPortResult.Fail(
+            : IntegrationResult.Fail(
                 "The actor is gone and no character name was captured for this "
                 + "import, so its locked Glamourer state cannot be released.");
 
@@ -1017,7 +1017,7 @@ public sealed partial class McdfTransaction
     /// answers null when NEITHER does, which is the one case where the
     /// capture has nowhere to go and is dropped with the ownership.
     /// </summary>
-    private IntegrationPortResult? RestoreEither(
+    private IntegrationResult? RestoreEither(
         ActorId actor, bool resolvable, string? byName, string state) =>
         resolvable
             ? _port.RestoreGlamourerState(actor, state)
@@ -1386,12 +1386,12 @@ public sealed partial class McdfTransaction
 
     /// <summary>Retries deletion of extraction directories orphaned by
     /// pre-mutation import failures; whatever still fails stays owned.</summary>
-    private IntegrationPortResult DeleteOperationDirectory(string path)
+    private IntegrationResult DeleteOperationDirectory(string path)
     {
         if (!_directories.TryGetValue(path, out var ownership))
-            return IntegrationPortResult.Fail(
+            return IntegrationResult.Fail(
                 "The extraction directory ownership proof is unavailable; cleanup was refused.");
-        if (_historyDirectories.Contains(path)) return IntegrationPortResult.Ok();
+        if (_historyDirectories.Contains(path)) return IntegrationResult.Ok();
         var result = _files.DeleteOperationDirectory(ownership);
         if (result.Success)
         {

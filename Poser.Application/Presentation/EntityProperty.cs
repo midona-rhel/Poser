@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Presentation;
@@ -37,7 +38,7 @@ public interface IEntityValueTarget<TId> where TId : struct
     SelectionId Entity { get; }
     bool IsAlive { get; }
     T Read<T>(EntityProperty<TId, T> property);
-    ValueWriteResult Write<T>(EntityProperty<TId, T> property, T value);
+    Outcome Write<T>(EntityProperty<TId, T> property, T value);
 }
 
 /// <summary>The one write path for an entity kind's declared properties:
@@ -46,17 +47,17 @@ public interface IEntityValueTarget<TId> where TId : struct
 public sealed class EntityValues<TId>(ValueJournal journal, IEntityValuePort<TId> port, string unavailable,
     Func<IEntityValueTarget<TId>, EntityProperty, string?>? refuse = null) where TId : struct
 {
-    public ValueWriteResult Set<T>(TId id, EntityProperty<TId, T> property, T value) =>
+    public Outcome Set<T>(TId id, EntityProperty<TId, T> property, T value) =>
         port.Bind(id) is { } target ? Write(target, property, value) : new(false, unavailable);
 
     /// <summary>Changes the value against the entity's current state, not a
     /// retained UI snapshot (one component of a vector, for example).</summary>
-    public ValueWriteResult Update<T>(TId id, EntityProperty<TId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(TId id, EntityProperty<TId, T> property, Func<T, T> change) =>
         port.Bind(id) is { } target ? Write(target, property, change(target.Read(property))) : new(false, unavailable);
 
     public void Seal() => journal.Seal();
 
-    private ValueWriteResult Write<T>(IEntityValueTarget<TId> target, EntityProperty<TId, T> property, T value)
+    private Outcome Write<T>(IEntityValueTarget<TId> target, EntityProperty<TId, T> property, T value)
     {
         if (refuse?.Invoke(target, property) is { } why) return new(false, why);
         if (property.History == PropertyHistory.Transport)

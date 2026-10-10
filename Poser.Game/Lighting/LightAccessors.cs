@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Presentation;
@@ -32,7 +33,7 @@ public static class LightAccessors
             .Map(LightProperties.AreaAngle, l => l.AreaAngle, (l, v) =>
             {
                 l.AreaAngle = v;
-                return Vector2.DistanceSquared(l.AreaAngle, v) < 1e-6f ? ValueWriteResult.Ok() : new(false, NotApplied);
+                return Vector2.DistanceSquared(l.AreaAngle, v) < 1e-6f ? Outcome.Ok() : new(false, NotApplied);
             })
             .Assign(LightProperties.HasReflection, l => l.HasReflection, (l, v) => l.HasReflection = v, verify: true)
             .Assign(LightProperties.CastsDynamicShadows, l => l.CastsDynamicShadows, (l, v) => l.CastsDynamicShadows = v, verify: true)
@@ -44,15 +45,15 @@ public static class LightAccessors
             .Map(LightProperties.Gobo, l => l.GoboPath, (l, path) => ApplyGobo(lighting, l, path))
             .Complete(LightProperties.All);
 
-    private static ValueWriteResult ApplyGobo(ILightingService lighting, ILight light, string? path)
+    private static Outcome ApplyGobo(ILightingService lighting, ILight light, string? path)
     {
         if (path is null)
         {
             lighting.ClearGobo(light);
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
         var gobo = lighting.Gobos.FirstOrDefault(entry => string.Equals(entry.Path, path, StringComparison.OrdinalIgnoreCase))
             ?? new GoboEntry(path, path);
-        return lighting.ApplyGobo(light, gobo) ? ValueWriteResult.Ok() : new(false, "The texture could not be applied.");
+        return lighting.ApplyGobo(light, gobo) ? Outcome.Ok() : new(false, "The texture could not be applied.");
     }
 }

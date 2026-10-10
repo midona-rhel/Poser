@@ -138,8 +138,8 @@ public sealed class GlamourerAccessTests
             }
             if (name == nameof(IIntegrationRuntimePort.AddDesign))
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());
-            if (method.ReturnType == typeof(IntegrationPortResult))
-                return IntegrationPortResult.Ok();
+            if (method.ReturnType == typeof(IntegrationResult))
+                return IntegrationResult.Ok();
             throw new NotSupportedException(name);
         }
     }

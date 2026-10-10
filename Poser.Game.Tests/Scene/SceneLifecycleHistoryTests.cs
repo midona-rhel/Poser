@@ -3,6 +3,7 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
 using Poser.Core;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -496,10 +497,10 @@ public sealed class SceneLifecycleHistoryTests
             string displayName) => false;
         public void ClearTargetActor(IVirtualCamera camera) { }
         // Camera framing is outside lifecycle-history coverage.
-        public CameraCenterResult CenterOnActor(IActor actor) =>
-            CameraCenterResult.Refused("not available in lifecycle fake");
-        public CameraCenterResult CenterOnBone(IBone bone) =>
-            CameraCenterResult.Refused("not available in lifecycle fake");
+        public Outcome CenterOnActor(IActor actor) =>
+            Outcome.Fail("not available in lifecycle fake");
+        public Outcome CenterOnBone(IBone bone) =>
+            Outcome.Fail("not available in lifecycle fake");
     }
 
     private sealed class FakeCamera(CameraKind kind) : IVirtualCamera

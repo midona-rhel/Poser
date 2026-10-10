@@ -9,6 +9,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -1188,7 +1189,7 @@ public sealed class AnimationPane : IDisposable
         _layerSelections.Remove((actor, AnimationSlot.Base));
     }
 
-    private void ReportExpression(AnimationResult result, string what) =>
+    private void ReportExpression(Outcome result, string what) =>
         Report(result, what);
 
     private string ExpressionNameFor(ActorId actor, ushort timeline, string empty)
@@ -1217,7 +1218,7 @@ public sealed class AnimationPane : IDisposable
         ReportExpression(result, "Expression");
     }
 
-    private AnimationResult ApplyExpression(ActorId actor, ushort timeline) =>
+    private Outcome ApplyExpression(ActorId actor, ushort timeline) =>
         _expressions.Preview(actor, timeline);
 
     private void OnExpressionFailed(string detail) => _notices.Failed(detail);
@@ -1261,7 +1262,7 @@ public sealed class AnimationPane : IDisposable
                 _layerSelections.Remove(key);
     }
 
-    private void Report(AnimationResult result, string what)
+    private void Report(Outcome result, string what)
     {
         if (!result.Success)
             _notices.Failed($"{what}: {result.Detail}");

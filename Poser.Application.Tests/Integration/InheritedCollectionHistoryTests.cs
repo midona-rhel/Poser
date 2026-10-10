@@ -78,11 +78,11 @@ public sealed class InheritedCollectionHistoryTests
                 case nameof(IIntegrationRuntimePort.SetIndividualCollection):
                     Owned = null;
                     _individual = true;
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 case nameof(IIntegrationRuntimePort.RestoreCollection):
                     Owned = ((CollectionBaseline)args![1]!).InheritedCollection;
                     _individual = false;
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 case nameof(IIntegrationRuntimePort.CaptureInheritedCollection):
                     return CaptureFailure == null
                         ? IntegrationValue<SpawnCollectionSnapshot?>.Ok(Owned)
@@ -91,8 +91,8 @@ public sealed class InheritedCollectionHistoryTests
                     Owned = (SpawnCollectionSnapshot)args![1]!;
                     _individual = false;
                     Restores++;
-                    return IntegrationPortResult.Ok();
-                case nameof(IIntegrationRuntimePort.RequestRedraw): return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimePort.RequestRedraw): return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

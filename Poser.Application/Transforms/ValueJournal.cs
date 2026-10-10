@@ -1,32 +1,15 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using System.Runtime.CompilerServices;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>
-/// The outcome of one value write. A refusal is permanent unless its source
-/// knows it will clear by itself or by a user action outside history (an
-/// active transform gesture, an appearance hold the user releases): only
-/// those are <see cref="Transient"/>. History retries a transient refusal
-/// in place; a permanent one is reported, then skipped when it repeats.
-/// </summary>
-public readonly record struct ValueWriteResult(bool Success, string? Detail = null)
-{
-    /// <summary>The refusal is temporary; retrying the same write later can land.</summary>
-    public bool Transient { get; init; }
-
-    public static ValueWriteResult Ok() => new(true);
-
-    /// <summary>A temporary refusal: the step stays at the cursor for retry.</summary>
-    public static ValueWriteResult Busy(string? detail) => new(false, detail) { Transient = true };
-}
-
 /// <summary>Adapts a write that cannot report a refusal. Only for runtimes
 /// whose setters are still void (environment, animation, IK, parenting).</summary>
 public static class ValueWrites
 {
-    public static Func<T, ValueWriteResult> Unchecked<T>(Action<T> write) =>
-        value => { write(value); return ValueWriteResult.Ok(); };
+    public static Func<T, Outcome> Unchecked<T>(Action<T> write) =>
+        value => { write(value); return Outcome.Ok(); };
 }
 
 /// <summary>
@@ -91,13 +74,13 @@ public sealed class ValueJournal
     /// Equal keys share a baseline within a continuous edit.</param>
     /// <param name="alive">Whether the target still exists; a dead target
     /// makes the step's undo and redo no-ops.</param>
-    public ValueWriteResult Set<T>(object key, string description, Func<T> read,
-        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
+    public Outcome Set<T>(object key, string description, Func<T> read,
+        Func<T, Outcome> write, T value, Func<bool>? alive = null)
     {
         if (_editing == 0) CommitPending();
         var before = read();
         if (EqualityComparer<T>.Default.Equals(before, value))
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         var result = WriteResult(write, value);
         if (!result.Success || _suspended > 0)
             return result;
@@ -115,7 +98,7 @@ public sealed class ValueJournal
     /// latest after; other calls append once.
     /// </summary>
     public void Record<T>(object key, string description, T before, T after,
-        Func<T, ValueWriteResult> write, Func<bool>? alive = null)
+        Func<T, Outcome> write, Func<bool>? alive = null)
     {
         if (_editing == 0) CommitPending();
         if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
@@ -130,7 +113,7 @@ public sealed class ValueJournal
     // or a throw is reported once and dropped when the same step refuses
     // again, so one inverse that can never land does not wedge history.
     private static JournalStep ResultStep<T>(string description, T before, T after,
-        Func<T, ValueWriteResult> write, Func<bool>? alive)
+        Func<T, Outcome> write, Func<bool>? alive)
     {
         string? failure = null;
         bool transient = false;
@@ -162,7 +145,7 @@ public sealed class ValueJournal
         };
     }
 
-    private static ValueWriteResult WriteResult<T>(Func<T, ValueWriteResult> write, T value)
+    private static Outcome WriteResult<T>(Func<T, Outcome> write, T value)
     {
         try { return write(value); }
         catch (Exception ex) { return new(false, ex.Message); }
@@ -201,8 +184,8 @@ public sealed class ValueJournal
 
     /// <summary>Live numeric edit. History changes only when the control
     /// commits (release or typed focus loss), and a net no-op appends nothing.</summary>
-    public ValueWriteResult Adjust<T>(object key, string description, Func<T> read,
-        Func<T, ValueWriteResult> write, T value, Func<bool>? alive = null)
+    public Outcome Adjust<T>(object key, string description, Func<T> read,
+        Func<T, Outcome> write, T value, Func<bool>? alive = null)
     {
         if (_editing > 0) return Set(key, description, read, write, value, alive);
         if (_staged.Count > 0) Seal();
@@ -210,7 +193,7 @@ public sealed class ValueJournal
             Seal();
         var before = read();
         if (EqualityComparer<T>.Default.Equals(before, value))
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         var result = WriteResult(write, value);
         if (!result.Success || _suspended > 0)
             return result;

@@ -1,14 +1,9 @@
 using System.Collections.Generic;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
-
-public readonly record struct AnimationPortResult(bool Success, string? Detail = null)
-{
-    public static AnimationPortResult Ok() => new(true);
-    public static AnimationPortResult Fail(string detail) => new(false, detail);
-}
 
 /// <summary>
 /// Native animation boundary keyed by exact actor generation. The runtime
@@ -27,17 +22,17 @@ public interface IAnimationRuntimePort
 
     // ── Base and blend ────────────────────────────────────────────────
     /// <summary>Plays a timeline and captures the first base state.</summary>
-    AnimationPortResult Blend(ActorId actor, ushort timeline,
+    Outcome Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
     /// <summary>Clears the forced base timeline, then plays a base timeline.</summary>
-    AnimationPortResult PlayBase(ActorId actor, ushort timeline,
+    Outcome PlayBase(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
     /// <summary>Puts mode, mode parameter, and the base-override field
     /// back exactly as captured, then replays the captured base-slot
     /// timeline (idle only as fallback).</summary>
-    AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture);
+    Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture);
 
     /// <summary>The slot the sheet's Stance column routes a timeline onto,
     /// or null when unmapped — how the session knows which slot's incoming
@@ -50,16 +45,16 @@ public interface IAnimationRuntimePort
 
     /// <summary>Cancels the container's running timeline. The available
     /// native operation is container-wide rather than slot-specific.</summary>
-    AnimationPortResult CancelActiveTimeline(ActorId actor);
+    Outcome CancelActiveTimeline(ActorId actor);
 
     /// <summary>Clears one layered slot: its sequencer id entries and the
     /// active timeline, so a following base write cannot re-schedule it.</summary>
-    AnimationPortResult ClearSlotTimeline(ActorId actor, AnimationSlot slot);
+    Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot);
 
     // ── Loops ───────────────────────────────────────────
     /// <summary>Arms exact-slot replay for verified Base or Upper ownership.</summary>
-    AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
-    AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot);
+    Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
+    Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
     void ClearLoops(ActorId actor);
     /// <summary>Pauses loop enforcement while a multi-phase operation
@@ -68,7 +63,7 @@ public interface IAnimationRuntimePort
 
     /// <summary>Plays an emote through the game's emote entry point, which
     /// is the only way to get intro-then-loop playback.</summary>
-    AnimationPortResult PlayEmote(ActorId actor, uint emoteId);
+    Outcome PlayEmote(ActorId actor, uint emoteId);
 
     /// <summary>Whether full-body repeat is available.</summary>
     bool SupportsForceLoop { get; }
@@ -80,29 +75,29 @@ public interface IAnimationRuntimePort
 
     /// <summary>Owns the forced timeline id until a zero write releases it.
     /// The runtime reasserts an armed id after native animation updates.</summary>
-    AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);
+    Outcome SetForceLoop(ActorId actor, ushort timeline);
 
     // ── Speed ─────────────────────────────────────────────────────────
-    AnimationPortResult SetOverallSpeed(ActorId actor, float speed);
+    Outcome SetOverallSpeed(ActorId actor, float speed);
     /// <summary>Stops enforcing overall speed; the game's own value wins
     /// again from its next recalculation.</summary>
-    AnimationPortResult ClearOverallSpeed(ActorId actor);
+    Outcome ClearOverallSpeed(ActorId actor);
 
     /// <summary>
     /// Rewinds every paused Havok control to local time zero. Playing
     /// controls are unchanged, and the operation owns no persistent state.
     /// </summary>
-    AnimationPortResult RewindPausedControls(ActorId actor);
-    AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
+    Outcome RewindPausedControls(ActorId actor);
+    Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
     /// <summary>Releases enforcement after restoring the captured speed.</summary>
-    AnimationPortResult ClearSlotSpeed(
+    Outcome ClearSlotSpeed(
         ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
 
     // ── Lips, stance, weapon, position ────────────────────────────────
-    AnimationPortResult SetLips(ActorId actor, ushort timeline);
-    AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose);
-    AnimationPortResult SetWeaponDrawn(ActorId actor, bool drawn);
-    AnimationPortResult SetPositionLock(ActorId actor, bool locked);
+    Outcome SetLips(ActorId actor, ushort timeline);
+    Outcome SetStance(ActorId actor, AnimationStance stance, int pose);
+    Outcome SetWeaponDrawn(ActorId actor, bool drawn);
+    Outcome SetPositionLock(ActorId actor, bool locked);
 
     // ── Scrubbing ─────────────────────────────────────────────────────
     /// <summary>Every currently valid Havok control, freshly enumerated.
@@ -120,12 +115,12 @@ public interface IAnimationRuntimePort
     /// <summary>Writes a control's local time. Fails when the actor,
     /// skeleton, or control no longer matches <paramref name="token"/>,
     /// so a scrub can never land on a replaced skeleton.</summary>
-    AnimationPortResult SetControlTime(
+    Outcome SetControlTime(
         ActorId actor, ScrubControlId control, float time, ulong token);
 
     // ── Physics ───────────────────────────────────────────────────────
     /// <summary>Physics freeze is a global code patch, not per-actor; the
     /// session still records who asked so the last release restores it.</summary>
     bool IsPhysicsFrozen { get; }
-    AnimationPortResult SetPhysicsFrozen(bool frozen);
+    Outcome SetPhysicsFrozen(bool frozen);
 }

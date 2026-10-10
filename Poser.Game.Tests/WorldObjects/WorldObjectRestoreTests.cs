@@ -258,7 +258,7 @@ public sealed class WorldObjectRestoreTests
         Assert.False(operation.IsCompleted);
         Assert.Equal(original, spawned.Address);
         Assert.False(world.Port.VisibleOf(fresh));
-        Assert.False((await spawned.Respawn("bg/third.mdl")).Succeeded);
+        Assert.False((await spawned.Respawn("bg/third.mdl")).Success);
 
         spawned.Transform = Moved;
         spawned.Tint = new System.Numerics.Vector3(.2f, .4f, .6f);
@@ -271,7 +271,7 @@ public sealed class WorldObjectRestoreTests
 
         world.Port.FailBgTint = false;
         world.Service.PumpRespawns(DateTime.UtcNow);
-        Assert.True((await operation).Succeeded);
+        Assert.True((await operation).Success);
         Assert.Equal(fresh, spawned.Address);
         Assert.Equal(Moved, spawned.Transform);
         Assert.True(world.Port.VisibleOf(fresh));
@@ -292,7 +292,7 @@ public sealed class WorldObjectRestoreTests
         var operation = spawned.Respawn("bg/new.mdl");
         world.Port.FailFreshDestroy = true;
         world.Service.PumpRespawns(DateTime.UtcNow.AddSeconds(16));
-        Assert.False((await operation).Succeeded);
+        Assert.False((await operation).Success);
         Assert.Equal(original, spawned.Address);
         world.Port.FailFreshDestroy = false;
         world.Service.ReleaseAll();
@@ -311,7 +311,7 @@ public sealed class WorldObjectRestoreTests
         world.Port.Replace(fresh, "bg/unrelated.mdl", Moved);
         world.Port.BgReady = true;
         world.Service.PumpRespawns(DateTime.UtcNow);
-        Assert.False((await operation).Succeeded);
+        Assert.False((await operation).Success);
         Assert.Equal(original, spawned.Address);
         Assert.Equal(Moved, world.Port.PlacementOf(fresh));
         Assert.DoesNotContain(fresh, world.Port.Destroyed);

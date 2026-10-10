@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -10,13 +11,13 @@ public interface IGazeRuntimePort
     bool IsAvailable { get; }
     string? UnavailableDetail { get; }
     GazeReading? Read(ActorId actor);
-    GazeResult RestoreSettings(ActorId actor, GazeSettings settings);
-    GazeResult SetMode(ActorId actor, GazeTargetMode mode);
-    GazeResult SetParts(ActorId actor, GazeTargetType parts);
-    GazeResult SetTarget(ActorId actor, ActorId target);
-    GazeResult SetPartLock(ActorId actor, GazeTargetType part, bool locked);
-    GazeResult SnapPartToCamera(ActorId actor, GazeTargetType part);
-    GazeResult Reset(ActorId actor);
-    GazeResult SetGazePosition(ActorId actor, Vector3 position);
-    GazeResult SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position);
+    Outcome RestoreSettings(ActorId actor, GazeSettings settings);
+    Outcome SetMode(ActorId actor, GazeTargetMode mode);
+    Outcome SetParts(ActorId actor, GazeTargetType parts);
+    Outcome SetTarget(ActorId actor, ActorId target);
+    Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked);
+    Outcome SnapPartToCamera(ActorId actor, GazeTargetType part);
+    Outcome Reset(ActorId actor);
+    Outcome SetGazePosition(ActorId actor, Vector3 position);
+    Outcome SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position);
 }

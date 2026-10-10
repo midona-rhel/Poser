@@ -15,7 +15,7 @@ internal sealed class PenumbraRedrawRuntime(
     IDalamudPluginInterface plugin, IFramework framework,
     Lazy<StableBindingRegistry> bindings, Lazy<ISkeletonService> skeletons,
     ISessionGenerationSource sessions, Func<bool> available,
-    Func<ActorId, IntegrationPortResult> request) : IActorRedrawRuntime
+    Func<ActorId, IntegrationResult> request) : IActorRedrawRuntime
 {
     public Task<T> OnFramework<T>(Func<T> action) => framework.RunOnFrameworkThread(action);
 
@@ -46,7 +46,7 @@ internal sealed class PenumbraRedrawRuntime(
         return ActorPoseReadiness.IsReady(skeletons.Value.GetSkeletons(actor), bindings.Value);
     }
 
-    public IntegrationPortResult Request(ActorId actor) => request(actor);
+    public IntegrationResult Request(ActorId actor) => request(actor);
 
     private sealed class RedrawObservation : IDisposable
     {

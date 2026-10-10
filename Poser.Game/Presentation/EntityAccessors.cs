@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 
 namespace Poser.Game.Presentation;
 
@@ -11,7 +12,7 @@ public sealed class EntityAccessors<TId, THandle>(string unchanged) where TId : 
     private readonly Dictionary<EntityProperty, object> _accessors = new();
 
     public EntityAccessors<TId, THandle> Map<T>(EntityProperty<TId, T> property,
-        Func<THandle, T> read, Func<THandle, T, ValueWriteResult> write)
+        Func<THandle, T> read, Func<THandle, T, Outcome> write)
     {
         _accessors.Add(property, new Accessor<T>(read, write));
         return this;
@@ -25,7 +26,7 @@ public sealed class EntityAccessors<TId, THandle>(string unchanged) where TId : 
         {
             assign(handle, value);
             return !verify || EqualityComparer<T>.Default.Equals(read(handle), value)
-                ? ValueWriteResult.Ok() : new(false, unchanged);
+                ? Outcome.Ok() : new(false, unchanged);
         });
 
     public EntityAccessors<TId, THandle> Complete(IReadOnlyList<EntityProperty> declared)
@@ -39,12 +40,12 @@ public sealed class EntityAccessors<TId, THandle>(string unchanged) where TId : 
 
     public T Read<T>(EntityProperty<TId, T> property, THandle handle) => Get(property).Read(handle);
 
-    public ValueWriteResult Write<T>(EntityProperty<TId, T> property, THandle handle, T value) =>
+    public Outcome Write<T>(EntityProperty<TId, T> property, THandle handle, T value) =>
         Get(property).Write(handle, value);
 
     private Accessor<T> Get<T>(EntityProperty<TId, T> property) =>
         _accessors.TryGetValue(property, out var accessor) ? (Accessor<T>)accessor
             : throw new InvalidOperationException($"No accessor for {property.Key}.");
 
-    private sealed record Accessor<T>(Func<THandle, T> Read, Func<THandle, T, ValueWriteResult> Write);
+    private sealed record Accessor<T>(Func<THandle, T> Read, Func<THandle, T, Outcome> Write);
 }

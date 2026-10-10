@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Posing;
@@ -13,27 +14,27 @@ public sealed class ExpressionSession(ValueJournal journal, IExpressionRuntimePo
     public bool HasActiveExpression(ActorId actor) => runtime.HasActiveExpression(actor);
     public void Seal() => journal.Seal();
 
-    private static ValueWriteResult Missing() => new(false, "The actor is no longer available.");
+    private static Outcome Missing() => new(false, "The actor is no longer available.");
 
-    public ValueWriteResult SetWeight(ActorId actor, string unitId, float weight) =>
+    public Outcome SetWeight(ActorId actor, string unitId, float weight) =>
         !HasActor(actor) ? Missing() : journal.Set((actor, unitId), "Set expression",
             () => runtime.GetWeight(actor, unitId),
             value => runtime.Write(actor, [(unitId, value)], reset: false),
             weight, () => HasActor(actor));
 
-    public ValueWriteResult SetPair(ActorId actor, string leftId, string rightId, float weight) =>
+    public Outcome SetPair(ActorId actor, string leftId, string rightId, float weight) =>
         !HasActor(actor) ? Missing() : journal.Set((actor, leftId, rightId), "Set expression pair",
             () => (runtime.GetWeight(actor, leftId), runtime.GetWeight(actor, rightId)),
             pair => runtime.Write(actor, [(leftId, pair.Item1), (rightId, pair.Item2)], reset: false),
             (weight, weight), () => HasActor(actor));
 
-    public ValueWriteResult Reset(ActorId actor)
+    public Outcome Reset(ActorId actor)
     {
         if (!HasActor(actor)) return Missing();
         var before = runtime.GetUnits(actor)
             .Select(unit => (unit.Id, Weight: runtime.GetWeight(actor, unit.Id)))
             .Where(unit => unit.Weight != 0f).ToArray();
-        if (before.Length == 0) return ValueWriteResult.Ok();
+        if (before.Length == 0) return Outcome.Ok();
         var result = runtime.Write(actor, [], reset: true);
         if (result.Success)
             journal.Record(SelectionId.ForActor(actor), "Reset expression", before, Array.Empty<(string Id, float Weight)>(),

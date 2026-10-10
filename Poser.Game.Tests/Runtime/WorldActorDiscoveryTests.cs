@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Actors;
 using Dalamud.Plugin.Services;
 using Poser.Core;
@@ -178,18 +179,18 @@ public sealed class WorldActorDiscoveryTests
         public bool Supported = true;
         public bool IsSupported(ActorId actor) => Supported;
         public PresentationReading? Read(ActorId actor) => Supported ? new(1, Tint, null, null, default) : null;
-        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value)
-        { Tint = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value)
+        public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 value)
+        { Tint = value; return Outcome.Ok(); }
+        public Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 value)
         {
-            if (!Supported) return PresentationPortResult.Fail("Actor binding was removed.");
+            if (!Supported) return Outcome.Fail("Actor binding was removed.");
             Tint = value;
-            return PresentationPortResult.Ok();
+            return Outcome.Ok();
         }
-        public PresentationPortResult SetOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
-        public PresentationPortResult RestoreOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
-        public PresentationPortResult SetWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
-        public PresentationPortResult ClearWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
+        public Outcome SetOpacity(ActorId actor, float value) => Outcome.Ok();
+        public Outcome RestoreOpacity(ActorId actor, float value) => Outcome.Ok();
+        public Outcome SetWetness(ActorId actor, WetnessState value) => Outcome.Ok();
+        public Outcome ClearWetness(ActorId actor, WetnessState value) => Outcome.Ok();
         public void ClearOwned(ActorId actor) { }
     }
 

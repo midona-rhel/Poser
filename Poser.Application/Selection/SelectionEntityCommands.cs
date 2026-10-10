@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -37,7 +38,7 @@ public sealed record SelectionRemovalResult(IReadOnlyList<SelectionRemovalItem> 
     public int AppliedCount => Items.Count(item => item.Status == SelectionRemovalStatus.Removed);
 }
 
-public sealed record SelectionVisibilityItem(SelectionId Id, ValueWriteResult Result);
+public sealed record SelectionVisibilityItem(SelectionId Id, Outcome Result);
 
 public sealed record SelectionVisibilityResult(IReadOnlyList<SelectionVisibilityItem> Items)
 {
@@ -56,7 +57,7 @@ public interface ICurrentSelectionEntityReads
 public interface ISelectionEntityCommandPort
 {
     bool? ReadVisibility(SelectionId id);
-    ValueWriteResult SetVisibility(SelectionId id, bool visible);
+    Outcome SetVisibility(SelectionId id, bool visible);
     Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests);
 }
 
@@ -111,7 +112,7 @@ public sealed class SelectionEntityCommands(
         return new(items);
     }
 
-    private ValueWriteResult Write(SelectionId id, bool visible)
+    private Outcome Write(SelectionId id, bool visible)
     {
         try { return port.SetVisibility(id, visible); }
         catch (Exception ex) { return new(false, ex.Message); }

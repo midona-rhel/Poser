@@ -155,7 +155,7 @@ public sealed class CharacterFileSessionTests
                 case nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson):
                     Writes.Add((ActorId)args![0]!);
                     State = (string)args[1]!;
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

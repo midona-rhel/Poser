@@ -56,7 +56,7 @@ public sealed class CustomizeSession : ICustomizeControl
             next =>
             {
                 result = Apply(actor, new Dictionary<CustomizeKey, int> { [key] = next });
-                return result.ToValueWrite();
+                return result.Outcome;
             },
             value,
             () => Alive(actor));
@@ -105,7 +105,7 @@ public sealed class CustomizeSession : ICustomizeControl
             next =>
             {
                 var applied = Apply(actor, next);
-                return applied.ToValueWrite();
+                return applied.Outcome;
             }, () => Alive(actor));
         return result;
     }

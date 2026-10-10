@@ -50,15 +50,15 @@ public interface IIntegrationRuntimePort
 
     /// <summary>Captures only a currently effective collection owned by the duplicate lifecycle.</summary>
     IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor);
-    IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot);
+    IntegrationResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot);
 
     /// <summary>Creates or updates only this actor's individual assignment.</summary>
-    IntegrationPortResult SetIndividualCollection(ActorId actor, Guid collection);
+    IntegrationResult SetIndividualCollection(ActorId actor, Guid collection);
 
     /// <summary>Restores the captured assignment-vs-inheritance state: either
     /// the prior individual assignment, or deletion of Poser's assignment so
     /// inheritance resumes.</summary>
-    IntegrationPortResult RestoreCollection(ActorId actor, CollectionBaseline baseline);
+    IntegrationResult RestoreCollection(ActorId actor, CollectionBaseline baseline);
 
     /// <summary>Creates one temporary collection. The caller registers the
     /// returned id BEFORE assigning, so a failed assignment leaves a
@@ -68,11 +68,11 @@ public interface IIntegrationRuntimePort
     /// <summary>Assigns the temporary collection to the exact actor WITHOUT
     /// force: an existing temporary assignment (another plugin's) makes
     /// this fail instead of being deleted.</summary>
-    IntegrationPortResult AssignTemporaryCollection(Guid collection, ActorId actor);
+    IntegrationResult AssignTemporaryCollection(Guid collection, ActorId actor);
 
     /// <summary>Adds Poser's temporary mod (embedded files, swaps, and meta
     /// manipulations) to the temporary collection under the owned tag.</summary>
-    IntegrationPortResult AddTemporaryMods(
+    IntegrationResult AddTemporaryMods(
         Guid collection,
         IReadOnlyDictionary<string, string> paths,
         string manipulations);
@@ -80,7 +80,7 @@ public interface IIntegrationRuntimePort
     /// <summary>Deletes the temporary collection (and with it Poser's
     /// temporary mods and its assignment). Works by id after the actor is
     /// gone.</summary>
-    IntegrationPortResult DeleteTemporaryCollection(Guid collection);
+    IntegrationResult DeleteTemporaryCollection(Guid collection);
 
     /// <summary>Actor-specific meta manipulations, not the global/current
     /// UI collection's.</summary>
@@ -96,12 +96,12 @@ public interface IIntegrationRuntimePort
 
     /// <summary>Fire-and-forget redraw request for teardown paths that must
     /// not wait.</summary>
-    IntegrationPortResult RequestRedraw(ActorId actor);
+    IntegrationResult RequestRedraw(ActorId actor);
 
     /// <summary>Requests a redraw and waits, bounded, for the exact actor to
     /// be drawable again, then refreshes scene bindings so downstream state
     /// reconciles against the redrawn body.</summary>
-    Task<IntegrationPortResult> RedrawAndWait(
+    Task<IntegrationResult> RedrawAndWait(
         ActorId actor, TimeSpan timeout, CancellationToken cancellation);
 
     // ── Glamourer ────────────────────────────────────────────────────────
@@ -115,21 +115,21 @@ public interface IIntegrationRuntimePort
 
     /// <summary>Applies a design with the API's documented default design
     /// flags and no persistent lock.</summary>
-    IntegrationPortResult ApplyDesign(ActorId actor, Guid design);
+    IntegrationResult ApplyDesign(ActorId actor, Guid design);
 
     /// <summary>MCDF application mode: applies a serialized state as a
     /// FIXED state locked with Poser's own key, so the imported look
     /// survives automation until <see cref="UnlockGlamourerState"/>.</summary>
-    IntegrationPortResult HoldGlamourerState(ActorId actor, string state);
+    IntegrationResult HoldGlamourerState(ActorId actor, string state);
 
     /// <summary>Baseline/design restoration mode: applies a serialized
     /// state with the API's one-shot manual flags and NO persistent lock,
     /// leaving no Poser fixed state behind.</summary>
-    IntegrationPortResult RestoreGlamourerState(ActorId actor, string state);
+    IntegrationResult RestoreGlamourerState(ActorId actor, string state);
 
     /// <summary>Releases Poser's own lock only. Never touches another
     /// plugin's lock.</summary>
-    IntegrationPortResult UnlockGlamourerState(ActorId actor);
+    IntegrationResult UnlockGlamourerState(ActorId actor);
 
     /// <summary>
     /// <see cref="UnlockGlamourerState"/> for a character whose exact
@@ -139,7 +139,7 @@ public interface IIntegrationRuntimePort
     /// refuses. An absent character is a success, and never an excuse to
     /// skip the restore that follows.
     /// </summary>
-    IntegrationPortResult UnlockGlamourerStateByName(string name);
+    IntegrationResult UnlockGlamourerStateByName(string name);
 
     /// <summary>
     /// <see cref="RestoreGlamourerState"/> for that same character: writes
@@ -148,18 +148,18 @@ public interface IIntegrationRuntimePort
     /// share one Glamourer identity, so a revert would discard the design
     /// the user actually had.
     /// </summary>
-    IntegrationPortResult RestoreGlamourerStateByName(string name, string state);
+    IntegrationResult RestoreGlamourerStateByName(string name, string state);
 
     /// <summary>Outbound navigation: opens Glamourer's window on the actor.</summary>
-    IntegrationPortResult OpenGlamourer(ActorId actor);
+    IntegrationResult OpenGlamourer(ActorId actor);
 
     // ── the wardrobe: what Glamourer wears and switches per actor ──
     /// <summary>Puts an item with its two dyes in a slot.</summary>
-    IntegrationPortResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2);
+    IntegrationResult SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2);
     /// <summary>Puts a facewear on; 0 takes it off.</summary>
-    IntegrationPortResult SetFacewear(ActorId actor, ulong bonusItemId);
+    IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId);
     /// <summary>Flips one of the meta switches.</summary>
-    IntegrationPortResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on);
+    IntegrationResult SetMetaSwitch(ActorId actor, MetaSwitch which, bool on);
     /// <summary>The actor's whole Glamourer state as JSON.</summary>
     IntegrationValue<string> GetGlamourerStateJson(ActorId actor);
     /// <summary>The actor's wardrobe read out of that state.</summary>
@@ -168,11 +168,11 @@ public interface IIntegrationRuntimePort
     IntegrationValue<CustomizeState> GetCustomizeState(ActorId actor);
     /// <summary>Writes the given customize values and applies the whole
     /// customization once; a race or gender among them redraws.</summary>
-    IntegrationPortResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values);
+    IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values);
     /// <summary>Applies a JSON state; what it carries with Apply set lands.</summary>
-    IntegrationPortResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
+    IntegrationResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
     /// <summary>Hands the actor back to what the game and automation say.</summary>
-    IntegrationPortResult RevertGlamourerState(ActorId actor);
+    IntegrationResult RevertGlamourerState(ActorId actor);
     /// <summary>Saves a JSON state as a named design; returns its id.</summary>
     IntegrationValue<Guid> AddDesign(string stateJson, string name);
 
@@ -194,5 +194,5 @@ public interface IIntegrationRuntimePort
     /// ownership-safe cleanup primitive. There is deliberately no
     /// delete-by-actor: that would remove whichever temporary profile is
     /// active, including another plugin's.</summary>
-    IntegrationPortResult DeleteTemporaryBodyProfileById(Guid profile);
+    IntegrationResult DeleteTemporaryBodyProfileById(Guid profile);
 }

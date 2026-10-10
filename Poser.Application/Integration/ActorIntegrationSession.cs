@@ -57,12 +57,12 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public GlamourerAccess AppearanceAccess(ActorId actor) => _port.ProbeGlamourerAccess(actor);
 
-    private IntegrationResult EditLook(ActorId actor, Func<IntegrationPortResult> edit)
+    private IntegrationResult EditLook(ActorId actor, Func<IntegrationResult> edit)
     {
         if (McdfGate(actor) is { } gate)
             return gate;
         var access = AppearanceAccess(actor);
-        return access.CanEdit ? Lift(edit()) : IntegrationResult.Refused(access);
+        return access.CanEdit ? edit() : IntegrationResult.Refused(access);
     }
 
     public IntegrationOverrides OverridesFor(ActorId actor) =>
@@ -233,8 +233,8 @@ public sealed class ActorIntegrationSession : IDisposable
         if (snapshot.InheritedCollection is { } inherited)
         {
             var restored = _port.RestoreInheritedCollection(actor, inherited);
-            if (!restored.Success) return Lift(restored);
-            if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+            if (!restored.Success) return restored;
+            if (redraw) Check(_port.RequestRedraw(actor));
         }
         else if (snapshot.Collection is { } collection)
         {
@@ -243,7 +243,7 @@ public sealed class ActorIntegrationSession : IDisposable
             else
             {
                 var restored = _port.RestoreCollection(actor, new(false, null));
-                Check(Lift(restored));
+                Check(restored);
                 if (restored.Success)
                 {
                     var current = OverridesFor(actor);
@@ -253,7 +253,7 @@ public sealed class ActorIntegrationSession : IDisposable
                         CollectionOwned = false,
                         CollectionName = null,
                     });
-                    if (redraw) Check(Lift(_port.RequestRedraw(actor)));
+                    if (redraw) Check(_port.RequestRedraw(actor));
                 }
             }
         }
@@ -270,11 +270,7 @@ public sealed class ActorIntegrationSession : IDisposable
         return failures.Count == 0 ? IntegrationResult.Ok() : IntegrationResult.Fail(string.Join("; ", failures));
     }
 
-    public IntegrationResult OpenGlamourer(ActorId actor)
-    {
-        var result = _port.OpenGlamourer(actor);
-        return result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail!);
-    }
+    public IntegrationResult OpenGlamourer(ActorId actor) => _port.OpenGlamourer(actor);
 
     // ── the wardrobe ─────────────────────────────
 
@@ -320,9 +316,6 @@ public sealed class ActorIntegrationSession : IDisposable
 
     public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _port.AddDesign(stateJson, name);
 
-    private static IntegrationResult Lift(IntegrationPortResult result) =>
-        result.Success ? IntegrationResult.Ok() : new(false, result.Detail, result.AppearanceRefusal);
-
     // ── Selectors ────────────────────────────────────────────────────────
 
     /// <summary>A Penumbra redraw of the actor; nothing else changes.</summary>
@@ -342,8 +335,7 @@ public sealed class ActorIntegrationSession : IDisposable
     {
         var applied = await _port.OnFrameworkThread(() => SetCollection(actor, collection, name, redraw: false));
         if (!applied.Success) return applied;
-        var redrawn = await _port.RedrawAndWait(actor, timeout, cancellation);
-        return redrawn.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(redrawn.Detail!);
+        return await _port.RedrawAndWait(actor, timeout, cancellation);
     }
 
     private IntegrationResult SetCollection(ActorId actor, Guid collection, string name, bool redraw)
@@ -372,7 +364,7 @@ public sealed class ActorIntegrationSession : IDisposable
 
         var applied = _port.SetIndividualCollection(actor, collection);
         if (!applied.Success)
-            return IntegrationResult.Fail(applied.Detail!);
+            return applied;
 
         Mutate(actor, current with
         {
@@ -401,7 +393,7 @@ public sealed class ActorIntegrationSession : IDisposable
 
         var restored = _port.RestoreCollection(actor, baseline);
         if (!restored.Success)
-            return IntegrationResult.Fail(restored.Detail!);
+            return restored;
 
         Mutate(actor, current with
         {
@@ -463,7 +455,7 @@ public sealed class ActorIntegrationSession : IDisposable
 
         var applied = _port.ApplyDesign(actor, design);
         if (!applied.Success)
-            return Lift(applied);
+            return applied;
 
         Mutate(actor, current with
         {
@@ -533,7 +525,7 @@ public sealed class ActorIntegrationSession : IDisposable
         // game's own appearance.
         var restored = _port.RestoreGlamourerState(actor, state);
         if (!restored.Success)
-            return Lift(restored);
+            return restored;
 
         Mutate(actor, current with
         {
@@ -601,7 +593,7 @@ public sealed class ActorIntegrationSession : IDisposable
         // which may belong to another plugin.
         var deleted = _port.DeleteTemporaryBodyProfileById(owned);
         if (!deleted.Success)
-            return IntegrationResult.Fail(deleted.Detail!);
+            return deleted;
 
         Mutate(actor, current with
         {

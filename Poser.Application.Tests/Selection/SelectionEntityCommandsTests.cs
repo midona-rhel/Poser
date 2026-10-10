@@ -1,6 +1,7 @@
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -82,7 +83,7 @@ public sealed class SelectionEntityCommandsTests
         public Dictionary<SelectionId, string> Refuse { get; } = new();
         public Dictionary<SelectionId, bool> Visible { get; } = new();
 
-        public ValueWriteResult SetVisibility(SelectionId id, bool visible)
+        public Outcome SetVisibility(SelectionId id, bool visible)
         {
             Calls.Add((id, visible));
             if (Refuse.TryGetValue(id, out var detail)) return new(false, detail);
@@ -92,7 +93,7 @@ public sealed class SelectionEntityCommandsTests
             History?.Append(new JournalStep(visible ? "Show" : "Hide",
                 () => { Visible[id] = !visible; return true; },
                 () => { Visible[id] = visible; return true; }) { AffectedEntities = [id] });
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
 
         public Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests)

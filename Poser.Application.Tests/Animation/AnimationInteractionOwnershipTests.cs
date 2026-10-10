@@ -3,6 +3,7 @@ using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -22,8 +23,8 @@ public sealed class AnimationInteractionOwnershipTests
             call[1] = 7UL;
             return new[] { new ScrubControlReading(control, 0, 10, 1) };
         });
-        port.SetOverallSpeed(actor, 0).Returns(AnimationPortResult.Ok());
-        port.SetControlTime(actor, control, Arg.Any<float>(), 7).Returns(AnimationPortResult.Ok());
+        port.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
+        port.SetControlTime(actor, control, Arg.Any<float>(), 7).Returns(Outcome.Ok());
         var session = new AnimationSession(port);
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
@@ -41,7 +42,7 @@ public sealed class AnimationInteractionOwnershipTests
 
         Assert.True(session.BeginScrub(actor, control, first).Success);
         port.SetControlTime(actor, control, Arg.Any<float>(), 7)
-            .Returns(AnimationPortResult.Fail("Stale skeleton"));
+            .Returns(Outcome.Fail("Stale skeleton"));
         Assert.False(session.UpdateScrub(actor, 3, first).Success);
         port.ClearReceivedCalls();
         Assert.False(session.UpdateScrub(actor, 4, first).Success);

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Poser.Config;
 using Poser.Application.AutoSave;
 using CapturedPose = Poser.Files.NamedAutoSavePose;
+using Poser.Domain;
 using Poser.Services;
 
 namespace Poser.Files;
@@ -88,8 +89,6 @@ public class AutoSaveService : IAutoSaveService
     private readonly record struct HealthAdmission(
         AutoSaveHealthWriteResult Result,
         long Generation);
-
-    private readonly record struct WorkerResult(bool Success, string? Detail);
 
     private readonly record struct RecoveryEntryIdentity(
         string OperationId,
@@ -971,7 +970,7 @@ public class AutoSaveService : IAutoSaveService
     /// are recorded in the operation health receipt and logged; one bad actor
     /// never aborts the rest of the snapshot.
     /// </summary>
-    private WorkerResult WriteSnapshot(
+    private Outcome WriteSnapshot(
         string operationId,
         string reason,
         DateTime nowUtc,
@@ -1006,7 +1005,7 @@ public class AutoSaveService : IAutoSaveService
             failurePhase = "HealthTransition";
             failure ??= $"health update failed: {health.Detail}";
         }
-        return new WorkerResult(success, failure);
+        return new Outcome(success, failure);
     }
 
     /// <summary>Close admission and join the owned worker before disposal.</summary>

@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -21,17 +22,17 @@ public interface ISceneObjectControl
     PropReading? Read(PropId id);
     WorldObjectReading? Read(WorldObjectId id);
     void Seal();
-    ValueWriteResult Set<T>(PropId id, EntityProperty<PropId, T> property, T value);
-    ValueWriteResult Update<T>(PropId id, EntityProperty<PropId, T> property, Func<T, T> change);
-    ValueWriteResult Set<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, T value);
-    ValueWriteResult Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change);
+    Outcome Set<T>(PropId id, EntityProperty<PropId, T> property, T value);
+    Outcome Update<T>(PropId id, EntityProperty<PropId, T> property, Func<T, T> change);
+    Outcome Set<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, T value);
+    Outcome Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change);
 
     /// <summary>Respawns the prop as <paramref name="model"/>; only a landed
     /// respawn is a step.</summary>
-    ValueWriteResult SetModel(PropId id, PropModel model);
+    Outcome SetModel(PropId id, PropModel model);
 
     /// <summary>Switches one furniture light as its own discrete step.</summary>
-    ValueWriteResult SetFurnitureLight(WorldObjectId id, string key, bool enabled);
+    Outcome SetFurnitureLight(WorldObjectId id, string key, bool enabled);
 
-    Task<ValueWriteResult> Respawn(WorldObjectId id, string path);
+    Task<Outcome> Respawn(WorldObjectId id, string path);
 }

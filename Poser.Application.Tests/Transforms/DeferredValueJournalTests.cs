@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 
 namespace Poser.Application.Tests.Transforms;
 
@@ -10,9 +11,9 @@ public sealed class DeferredValueJournalTests
         var history = new TransformHistory();
         var journal = new ValueJournal(history);
         int value = 4;
-        ValueWriteResult Write(int next) { value = next; return ValueWriteResult.Ok(); }
+        Outcome Write(int next) { value = next; return Outcome.Ok(); }
         journal.Adjust("swivel", "Set IK", () => value, Write, 30);
-        journal.Record("toggle", "Toggle", false, true, _ => ValueWriteResult.Ok());
+        journal.Record("toggle", "Toggle", false, true, _ => Outcome.Ok());
         var toggle = Assert.IsType<JournalStep>(history.PeekUndo());
         history.CommitUndo(toggle);
         Assert.True(Assert.IsType<JournalStep>(history.PeekUndo()).Undo());

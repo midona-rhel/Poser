@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
 
@@ -144,13 +145,6 @@ public readonly record struct SceneMcdfOutcome(bool Restored, string? Detail)
     public static SceneMcdfOutcome Ok(string? detail = null) => new(true, detail);
 
     public static SceneMcdfOutcome Refused(string detail) => new(false, detail);
-}
-
-/// <summary>Typed admission result for starting a scene operation.</summary>
-public readonly record struct SceneActionResult(bool Success, string? Detail = null)
-{
-    public static SceneActionResult Ok() => new(true);
-    public static SceneActionResult Fail(string detail) => new(false, detail);
 }
 
 /// <summary>

@@ -1,6 +1,7 @@
 using System.Reflection;
 using Poser.Application.Animation;
 using Poser.Application.Posing;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
@@ -80,7 +81,7 @@ public sealed class PoseImportCoordinatorTests
             if (method!.Name == "IsSupported") return true;
             if (method.Name == "RewindPausedControls") Events.Add("rewind");
             if (method.Name is "SetOverallSpeed" or "ClearOverallSpeed" or "RewindPausedControls")
-                return AnimationPortResult.Ok();
+                return Outcome.Ok();
             throw new InvalidOperationException("Unexpected animation call: " + method.Name);
         }
     }

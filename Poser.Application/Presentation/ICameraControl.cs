@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -43,12 +44,12 @@ public interface ICameraControl
 {
     CameraReading? Read(CameraId id);
     void Seal();
-    ValueWriteResult Set<T>(CameraId id, EntityProperty<CameraId, T> property, T value);
-    ValueWriteResult Update<T>(CameraId id, EntityProperty<CameraId, T> property, Func<T, T> change);
-    ValueWriteResult Cycle(int delta);
-    ValueWriteResult ResetProperties(CameraId id);
+    Outcome Set<T>(CameraId id, EntityProperty<CameraId, T> property, T value);
+    Outcome Update<T>(CameraId id, EntityProperty<CameraId, T> property, Func<T, T> change);
+    Outcome Cycle(int delta);
+    Outcome ResetProperties(CameraId id);
     /// <summary>Quarter-turns the roll with the mode, as one step.</summary>
-    ValueWriteResult SetPortrait(CameraId id, bool value);
-    ValueWriteResult SetLive(CameraId id, bool value);
-    ValueWriteResult ResetPosition(CameraId id);
+    Outcome SetPortrait(CameraId id, bool value);
+    Outcome SetLive(CameraId id, bool value);
+    Outcome ResetPosition(CameraId id);
 }

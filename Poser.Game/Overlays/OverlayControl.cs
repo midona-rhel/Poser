@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Game.Presentation;
@@ -29,15 +30,15 @@ public sealed class OverlayControl : IOverlayControl
 
     public void Seal() => _values.Seal();
 
-    public ValueWriteResult Set<T>(OverlayId id, EntityProperty<OverlayId, T> property, T value) =>
+    public Outcome Set<T>(OverlayId id, EntityProperty<OverlayId, T> property, T value) =>
         _values.Set(id, property, value);
 
-    public ValueWriteResult Update<T>(OverlayId id, EntityProperty<OverlayId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(OverlayId id, EntityProperty<OverlayId, T> property, Func<T, T> change) =>
         _values.Update(id, property, change);
 
     // The collider is read through the bound node, never a UI snapshot: a
     // delayed edit must not replay over a newer transform or collision setting.
-    public ValueWriteResult EditCollider(OverlayId id, Func<IkCollider, IkCollider> change)
+    public Outcome EditCollider(OverlayId id, Func<IkCollider, IkCollider> change)
     {
         if (Resolve(id) is not { State.Collider: not null })
             return new(false, "The collider is no longer available.");

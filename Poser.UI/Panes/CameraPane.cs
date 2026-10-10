@@ -9,6 +9,7 @@ using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Core;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -690,7 +691,7 @@ public sealed class CameraPane
         DrawTrackingActors?.Invoke(form, camera.Id);
     }
 
-    private void ReportTarget(ValueWriteResult result)
+    private void ReportTarget(Outcome result)
     {
         if (!result.Success) _notices.Refused(result.Detail ?? "The camera action could not be completed.");
     }

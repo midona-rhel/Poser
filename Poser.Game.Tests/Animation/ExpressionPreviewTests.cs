@@ -4,6 +4,7 @@ using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
@@ -86,9 +87,9 @@ public sealed class ExpressionPreviewTests
                 {
                     Plays++;
                     a![3] = null;
-                    return AnimationPortResult.Ok();
+                    return Outcome.Ok();
                 }
-                if (m.ReturnType == typeof(AnimationPortResult)) return AnimationPortResult.Ok();
+                if (m.ReturnType == typeof(Outcome)) return Outcome.Ok();
                 if (m.ReturnType == typeof(bool)) return true;
                 return null;
             });

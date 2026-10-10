@@ -67,5 +67,5 @@ public interface IMcdfFileBoundary
     /// already-deleted directories; a failure is RETURNED so the caller
     /// keeps directory ownership and can retry — extracted payloads must
     /// never be released while something might still reference them.</summary>
-    IntegrationPortResult DeleteOperationDirectory(McdfOperationDirectory operationDirectory);
+    IntegrationResult DeleteOperationDirectory(McdfOperationDirectory operationDirectory);
 }

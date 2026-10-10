@@ -1,5 +1,6 @@
 using Poser.Application.Companions;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 
@@ -54,12 +55,12 @@ public sealed class CompanionControlTests
         public CompanionReading? Read(ActorId subject) =>
             subject == Owner || subject == Child && Attachment is not null
                 ? new(Owner, subject == Child, Attachment) : null;
-        public ValueWriteResult Set(ActorId owner, CompanionAttachment? attachment)
+        public Outcome Set(ActorId owner, CompanionAttachment? attachment)
         {
             Writes.Add(owner);
             if (Refuse) return new(false, "Slot refused");
             Attachment = attachment;
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
     }
 }

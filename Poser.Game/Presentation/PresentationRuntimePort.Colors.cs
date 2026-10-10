@@ -5,6 +5,7 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Shader;
 using Poser.Application.Integration;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
@@ -107,29 +108,29 @@ public sealed unsafe partial class PresentationRuntimePort
         return IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Ok(values);
     }
 
-    public PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
+    public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
         if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(value)))
-            return PresentationPortResult.Fail("The colour is invalid.");
+            return Outcome.Fail("The colour is invalid.");
         var buffer = ColorBuffer(actor, out var detail);
-        if (buffer.IsEmpty) return PresentationPortResult.Fail(detail!);
+        if (buffer.IsEmpty) return Outcome.Fail(detail!);
         var owned = OwnedFor(actor);
         WriteColor(ref buffer[0], channel, value);
         owned.Colors[channel] = value;
         owned.ColorsSuspended = false;
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+    public Outcome RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
     {
         if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(incoming)))
-            return PresentationPortResult.Fail("The captured colour is invalid.");
+            return Outcome.Fail("The captured colour is invalid.");
         var buffer = ColorBuffer(actor, out var detail);
-        if (buffer.IsEmpty) return PresentationPortResult.Fail(detail!);
+        if (buffer.IsEmpty) return Outcome.Fail(detail!);
         WriteColor(ref buffer[0], channel, incoming);
         // Relinquish only after the captured value reaches the current buffer.
         Release(actor, owned => owned.Colors.Remove(channel));
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     public void SuspendColors(ActorId actor)
@@ -137,12 +138,12 @@ public sealed unsafe partial class PresentationRuntimePort
         if (_owned.TryGetValue(actor, out var owned)) owned.ColorsSuspended = true;
     }
 
-    public PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
+    public Outcome RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
     {
         var buffer = ColorBuffer(actor, out var detail);
-        if (buffer.IsEmpty) return PresentationPortResult.Fail(detail!);
+        if (buffer.IsEmpty) return Outcome.Fail(detail!);
         foreach (var (channel, value) in captures) WriteColor(ref buffer[0], channel, value);
         Release(actor, owned => owned.Colors.Clear());
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 }

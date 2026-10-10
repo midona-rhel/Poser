@@ -609,7 +609,7 @@ public sealed partial class DebugBridge : IDisposable
                     "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
                     "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
                     "fov" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.FoV, Number("x")),
-                    _ => new Application.Transforms.ValueWriteResult(false, "Unknown camera command."),
+                    _ => new Application.Transforms.Outcome(false, "Unknown camera command."),
                 };
                 _cameraControl.Seal();
                 return Json(result);

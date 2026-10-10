@@ -1,5 +1,6 @@
 using System.Reflection;
 using Poser.Application.Posing;
+using Poser.Domain;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Application.Appearance;
@@ -100,11 +101,11 @@ public sealed class ActorAppearanceControlTests
         public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed) => throw new NotSupportedException();
         public int? Read(ActorId actor) => actor == Actor ? Model : null;
-        public PresentationPortResult Write(ActorId actor, int value)
+        public Outcome Write(ActorId actor, int value)
         {
-            if (RefuseModel || actor != Actor) return PresentationPortResult.Fail("Refused");
+            if (RefuseModel || actor != Actor) return Outcome.Fail("Refused");
             Model = value;
-            return PresentationPortResult.Ok();
+            return Outcome.Ok();
         }
     }
 
@@ -135,17 +136,17 @@ public sealed class ActorAppearanceControlTests
                     Assert.Equal(ActiveProfile, (Guid)args![0]!);
                     ActiveProfile = null;
                     ProfileJson = null;
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 case nameof(IIntegrationRuntimePort.GetCollectionAssignment):
                     return IntegrationValue<CollectionAssignment>.Ok(Collection);
                 case nameof(IIntegrationRuntimePort.SetIndividualCollection):
                     Collection = new((Guid)args![1]!, "Chosen", true);
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 case nameof(IIntegrationRuntimePort.RestoreCollection):
                     Collection = new(Guid.Empty, "Inherited", false);
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 case nameof(IIntegrationRuntimePort.RequestRedraw):
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

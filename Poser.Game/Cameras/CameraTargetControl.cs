@@ -1,6 +1,7 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -14,7 +15,7 @@ public sealed class CameraTargetControl(
     IEntityHistoryResolver<IVirtualCamera>? history = null) : ICameraTargetControl
 {
     private const string Unavailable = "The camera is no longer available.";
-    private static ValueWriteResult Refused(string detail) => new(false, detail);
+    private static Outcome Refused(string detail) => new(false, detail);
 
     private IVirtualCamera? Current(IVirtualCamera original)
     {
@@ -57,7 +58,7 @@ public sealed class CameraTargetControl(
             owner, bones, CanCenter(camera, owner));
     }
 
-    public ValueWriteResult Reconcile(CameraId id)
+    public Outcome Reconcile(CameraId id)
     {
         if (Resolve(id) is not { } camera) return Refused("The camera is no longer available.");
         bool staleTarget = false;
@@ -84,7 +85,7 @@ public sealed class CameraTargetControl(
         return staleTarget ? Refused("Follow: the target actor is no longer available.") : new(true);
     }
 
-    private ValueWriteResult Edit(CameraId id, Func<IVirtualCamera, ValueWriteResult> action)
+    private Outcome Edit(CameraId id, Func<IVirtualCamera, Outcome> action)
     {
         if (Resolve(id) is not { } camera || !cameras.IsAvailable)
             return Refused("Camera controls are unavailable.");
@@ -98,7 +99,7 @@ public sealed class CameraTargetControl(
             id.Skeleton.Actor != actor)) camera.TrackedBones.Clear();
     }
 
-    public ValueWriteResult Follow(CameraId id, ActorId actorId, string displayName) => Edit(id, camera =>
+    public Outcome Follow(CameraId id, ActorId actorId, string displayName) => Edit(id, camera =>
     {
         if (camera.IsTracking) return Refused("Follow: turn off bone tracking first.");
         if (camera.IsTargetLocked) return Refused("Follow: unlock the actor first.");
@@ -109,7 +110,7 @@ public sealed class CameraTargetControl(
         return new(true);
     });
 
-    public ValueWriteResult SetTargetLocked(CameraId id, bool value) => Edit(id, camera =>
+    public Outcome SetTargetLocked(CameraId id, bool value) => Edit(id, camera =>
     {
         if (!value) { ClearTargetActor(camera); return new(true); }
         if (camera.TargetActorId is { } target)
@@ -125,7 +126,7 @@ public sealed class CameraTargetControl(
         return Refused("Follow: no current actor can be locked.");
     });
 
-    public ValueWriteResult ToggleGameTarget(CameraId id) => Edit(id, camera =>
+    public Outcome ToggleGameTarget(CameraId id) => Edit(id, camera =>
     {
         if (camera.IsTracking || camera.IsTargetLocked)
             return Refused("Follow: unlock the target and turn off tracking first.");
@@ -137,12 +138,12 @@ public sealed class CameraTargetControl(
         return new(true);
     });
 
-    public ValueWriteResult SetTracking(CameraId id, bool value) =>
+    public Outcome SetTracking(CameraId id, bool value) =>
         Edit(id, _ => values.Set(id, CameraProperties.IsTracking, value));
-    public ValueWriteResult SetTrackingMode(CameraId id, CameraTrackingMode value) =>
+    public Outcome SetTrackingMode(CameraId id, CameraTrackingMode value) =>
         Edit(id, _ => values.Set(id, CameraProperties.TrackingMode, value));
 
-    public ValueWriteResult ToggleTrackedBone(CameraId id, BoneId boneId) => Edit(id, camera =>
+    public Outcome ToggleTrackedBone(CameraId id, BoneId boneId) => Edit(id, camera =>
     {
         if (TrackingActor(camera) != boneId.Skeleton.Actor)
             return Refused("Track: choose that actor first.");
@@ -162,21 +163,21 @@ public sealed class CameraTargetControl(
         return new(true);
     });
 
-    public ValueWriteResult CenterOnActor(ActorId id)
+    public Outcome CenterOnActor(ActorId id)
     {
         if (Resolve(id) is not { } actor) return Refused("Center: that actor is no longer available.");
         if (!spawns.IsVisible(actor)) return Refused("Center: that actor is not visible.");
         return Center(() => cameras.CenterOnActor(actor));
     }
 
-    public ValueWriteResult CenterTrackedActor(CameraId id)
+    public Outcome CenterTrackedActor(CameraId id)
     {
         if (Resolve(id) is not { } camera || TrackingActor(camera) is not { } actor ||
             !CanCenter(camera, actor)) return Refused("Center: the tracked actor cannot be framed.");
         return CenterOnActor(actor);
     }
 
-    public ValueWriteResult Recenter(CameraId id, SelectionId? selection) => Edit(id, camera =>
+    public Outcome Recenter(CameraId id, SelectionId? selection) => Edit(id, camera =>
     {
         var reconciled = Reconcile(id);
         if (!reconciled.Success) return reconciled;
@@ -195,13 +196,13 @@ public sealed class CameraTargetControl(
     });
 
     /// <summary>Centres the live camera; a landed centre is one step on that camera.</summary>
-    private ValueWriteResult Center(Func<CameraCenterResult> center)
+    private Outcome Center(Func<Outcome> center)
     {
         var camera = cameras.LiveCamera;
         var before = camera is null ? default : (camera.PositionOffset, camera.Zoom);
         var result = center();
         if (!result.Success || camera is null)
-            return new(result.Success, result.Detail);
+            return result;
         // Scoped to the centred camera (#411); an unbound camera stays global.
         object key = bindings.GetCameraId(camera) is { } id ? SelectionId.ForCamera(id) : cameras;
         journal.Record(key, "Centre camera", before, (camera.PositionOffset, camera.Zoom), next =>
@@ -209,9 +210,9 @@ public sealed class CameraTargetControl(
             if (Current(camera) is not { } live) return Refused(Unavailable);
             live.PositionOffset = next.Item1;
             live.Zoom = next.Item2;
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }, () => Current(camera) is not null);
-        return new(result.Success, result.Detail);
+        return result;
     }
 
     /// <summary>Follows the actor; the step's undo restores the previous
@@ -237,22 +238,22 @@ public sealed class CameraTargetControl(
             next => PutTarget(camera, next), () => Current(camera) is not null);
     }
 
-    private ValueWriteResult PutTarget(IVirtualCamera original, ActorId? target) =>
+    private Outcome PutTarget(IVirtualCamera original, ActorId? target) =>
         Current(original) is { } live ? PutTarget(bindings, cameras, live, target) : Refused(Unavailable);
 
-    internal static ValueWriteResult PutTarget(IEntityBindings bindings, IVirtualCameraService cameras,
+    internal static Outcome PutTarget(IEntityBindings bindings, IVirtualCameraService cameras,
         IVirtualCamera camera, ActorId? target)
     {
         if (target is not { } id)
         {
             cameras.ClearTargetActor(camera);
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
         // A followed actor that is gone has nothing to restore, as before.
         var resolved = bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } actor)
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         return cameras.SetTargetActor(camera, actor, id, actor.Name)
-            ? ValueWriteResult.Ok() : Refused("The camera could not follow the actor.");
+            ? Outcome.Ok() : Refused("The camera could not follow the actor.");
     }
 }

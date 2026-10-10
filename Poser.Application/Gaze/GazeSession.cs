@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -13,15 +14,14 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
     public GazeReading? Read(ActorId actor) => runtime.Read(actor);
     public void Seal() => journal.Seal();
 
-    private static GazeResult Missing() => GazeResult.Refused("This actor is no longer available.");
-    private static ValueWriteResult Written(GazeResult result) => new(result.Success, result.Detail);
+    private static Outcome Missing() => Outcome.Fail("This actor is no longer available.");
 
     // Preserve existing history scope: settings/points, not native entity retargeting.
-    private ValueWriteResult Restore(ActorId actor, GazeSettings settings) =>
-        Written(runtime.RestoreSettings(actor, settings));
+    private Outcome Restore(ActorId actor, GazeSettings settings) =>
+        runtime.RestoreSettings(actor, settings);
 
     /// <summary>Shared full-state restore, without creating another history entry.</summary>
-    public GazeResult RestoreState(ActorId actor, GazeReading reading)
+    public Outcome RestoreState(ActorId actor, GazeReading reading)
     {
         if (reading.Target is { } target)
         {
@@ -31,7 +31,7 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
         return runtime.RestoreSettings(actor, reading.Settings);
     }
 
-    private GazeResult Step(ActorId actor, string description, Func<GazeResult> change)
+    private Outcome Step(ActorId actor, string description, Func<Outcome> change)
     {
         if (Read(actor) is not { } before) return Missing();
         var result = change();
@@ -41,38 +41,37 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
         return result;
     }
 
-    public GazeResult SetMode(ActorId actor, GazeTargetMode mode) =>
+    public Outcome SetMode(ActorId actor, GazeTargetMode mode) =>
         Step(actor, "Set gaze mode", () => runtime.SetMode(actor, mode));
-    public GazeResult SetPoseAware(ActorId actor, bool enabled) =>
+    public Outcome SetPoseAware(ActorId actor, bool enabled) =>
         Step(actor, "Set pose-aware gaze", () => Read(actor) is { } state
             ? runtime.RestoreSettings(actor, state.Settings with { PoseAware = enabled }) : Missing());
-    public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>
+    public Outcome SetParts(ActorId actor, GazeTargetType parts) =>
         Step(actor, "Set gaze parts", () => runtime.SetParts(actor, parts));
-    public GazeResult SetTarget(ActorId actor, ActorId target) =>
+    public Outcome SetTarget(ActorId actor, ActorId target) =>
         Step(actor, "Set gaze target", () => runtime.SetTarget(actor, target));
-    public GazeResult SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
+    public Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
         Step(actor, locked ? "Lock gaze part" : "Unlock gaze part",
             () => runtime.SetPartLock(actor, part, locked));
-    public GazeResult SnapPartToCamera(ActorId actor, GazeTargetType part) =>
+    public Outcome SnapPartToCamera(ActorId actor, GazeTargetType part) =>
         Step(actor, "Snap gaze to camera", () => runtime.SnapPartToCamera(actor, part));
-    public GazeResult Reset(ActorId actor) =>
+    public Outcome Reset(ActorId actor) =>
         Step(actor, "Reset gaze", () => runtime.Reset(actor));
 
-    public GazeResult SetGazePosition(ActorId actor, Vector3 position) =>
+    public Outcome SetGazePosition(ActorId actor, Vector3 position) =>
         Adjust(actor, GazeTargetType.None, position);
-    public GazeResult SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
+    public Outcome SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
         Adjust(actor, part, position);
 
-    private GazeResult Adjust(ActorId actor, GazeTargetType part, Vector3 position)
+    private Outcome Adjust(ActorId actor, GazeTargetType part, Vector3 position)
     {
         if (Read(actor) is not { Settings.Mode: GazeTargetMode.Position })
-            return GazeResult.Refused("A live Point-mode gaze target is required.");
-        var result = journal.Adjust((actor, part), "Move gaze point",
+            return Outcome.Fail("A live Point-mode gaze target is required.");
+        return journal.Adjust((actor, part), "Move gaze point",
             () => Read(actor)!.Settings.PartPosition(part),
-            next => Written(part == GazeTargetType.None
+            next => part == GazeTargetType.None
                 ? runtime.SetGazePosition(actor, next)
-                : runtime.SetPartPosition(actor, part, next)),
+                : runtime.SetPartPosition(actor, part, next),
             position, () => Read(actor) is not null);
-        return new(result.Success, result.Detail);
     }
 }

@@ -1,4 +1,5 @@
 using Poser.Application.Selection;
+using Poser.Domain;
 using Poser.Services;
 using System;
 using System.Collections.Generic;
@@ -54,7 +55,7 @@ public sealed class WorldObjectsPane
     private WorldObjectId? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
-    private Task<ValueWriteResult>? _respawn;
+    private Task<Outcome>? _respawn;
     private WorldObjectId? _respawnTarget;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;

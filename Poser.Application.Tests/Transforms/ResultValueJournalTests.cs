@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Tests.Transforms;
@@ -12,17 +13,17 @@ public sealed class ResultValueJournalTests
         public bool Permanent;
         public bool Alive = true;
         public int Writes;
-        public ValueWriteResult Write(int value)
+        public Outcome Write(int value)
         {
             Writes++;
             if (Reject && Permanent) return new(false, "The game did not take the model.");
-            if (Reject) return ValueWriteResult.Busy("Foreign appearance hold");
+            if (Reject) return Outcome.Busy("Foreign appearance hold");
             Value = value;
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
     }
 
-    private static ValueWriteResult Set(ValueJournal journal, Target target, int value)
+    private static Outcome Set(ValueJournal journal, Target target, int value)
         => journal.Set(target, "Colour", () => target.Value, target.Write, value, () => target.Alive);
 
     [Fact]

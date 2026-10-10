@@ -1,5 +1,6 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game.Presentation;
@@ -57,13 +58,13 @@ public sealed class LightControl : ILightControl
 
     public void Seal() => _values.Seal();
 
-    public ValueWriteResult Set<T>(LightId id, EntityProperty<LightId, T> property, T value) =>
+    public Outcome Set<T>(LightId id, EntityProperty<LightId, T> property, T value) =>
         _values.Set(id, property, value);
 
-    public ValueWriteResult Update<T>(LightId id, EntityProperty<LightId, T> property, Func<T, T> change) =>
+    public Outcome Update<T>(LightId id, EntityProperty<LightId, T> property, Func<T, T> change) =>
         _values.Update(id, property, change);
 
-    public ValueWriteResult ApplyGobo(LightId id, uint index)
+    public Outcome ApplyGobo(LightId id, uint index)
     {
         if (Resolve(id) is null)
             return new(false, Unavailable);

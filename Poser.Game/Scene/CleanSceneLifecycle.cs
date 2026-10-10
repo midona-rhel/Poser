@@ -2,6 +2,7 @@
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
+using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.Services;
@@ -455,7 +456,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             () => Failure(_animation.ResetAll()),
             () => Failure(_presentation.ResetAll()),
             () => Failure(_modelId.ResetAll()),
-            () => Failure(_integration.ResetAll()),
+            () => Failure(_integration.ResetAll().Outcome),
             () =>
             {
                 // Groups are scene state: they end with the session and the
@@ -466,13 +467,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             },
             message => Report(reason, message));
 
-    private static string? Failure(Poser.Application.Animation.AnimationResult result) =>
-        result.Success ? null : result.Detail ?? "failed";
-
-    private static string? Failure(Poser.Application.Presentation.PresentationResult result) =>
-        result.Success ? null : result.Detail ?? "failed";
-
-    private static string? Failure(Poser.Domain.Integration.IntegrationResult result) =>
+    private static string? Failure(Outcome result) =>
         result.Success ? null : result.Detail ?? "failed";
 
     /// <summary>One named teardown step; returns its failure, or null.</summary>

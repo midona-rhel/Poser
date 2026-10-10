@@ -389,30 +389,30 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
         CancellationToken cancellation) =>
         Task.Run(() => WriteCore(destination, content, progress, cancellation), CancellationToken.None);
 
-    public IntegrationPortResult DeleteOperationDirectory(
+    public IntegrationResult DeleteOperationDirectory(
         McdfOperationDirectory operationDirectory)
     {
         try
         {
             if (!Directory.Exists(operationDirectory.Path))
-                return IntegrationPortResult.Ok();
+                return IntegrationResult.Ok();
             using var root =
                 McdfPlatformFileOwnership.OpenFencedDirectory(operationDirectory.Path);
             if (!OwnedDirectoryMatches(operationDirectory, root))
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     "The extraction directory ownership changed; cleanup was refused.");
             using var marker = ReopenAndVerifyOwnerMarker(
                 Path.Combine(operationDirectory.Path, ".owner"),
                 operationDirectory.MarkerIdentity,
                 operationDirectory.OwnerToken);
             if (marker == null)
-                return IntegrationPortResult.Fail(
+                return IntegrationResult.Fail(
                     "The extraction directory owner marker changed; cleanup was refused.");
             DeleteOwnedChildren(operationDirectory, root, marker);
             McdfPlatformFileOwnership.MarkDeleteOnClose(marker.SafeFileHandle);
             marker.Dispose();
             McdfPlatformFileOwnership.MarkDeleteOnClose(root);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
         catch (Exception ex)
         {
@@ -420,7 +420,7 @@ public sealed partial class McdfFileBoundary : IMcdfFileBoundary
             // is a REPORTED failure: the caller keeps ownership of the
             // directory and retries instead of releasing deleted-in-name
             // payloads.
-            return IntegrationPortResult.Fail(
+            return IntegrationResult.Fail(
                 $"The extracted files could not be deleted: {ex.Message}");
         }
     }

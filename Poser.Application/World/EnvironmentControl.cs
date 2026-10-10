@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Files;
 using Poser.Domain.Scene;
 
@@ -85,7 +86,7 @@ public sealed class EnvironmentControl : IEnvironmentControl
             "Set interior brightness",
             () => (Owned: _environment.IsInteriorBrightnessOverridden,
                 Value: _environment.InteriorBrightness ?? value),
-            next => new ValueWriteResult(next.Owned
+            next => new Outcome(next.Owned
                 ? _environment.TrySetInteriorBrightness(next.Value, binding)
                 : _environment.ReleaseInteriorBrightness(binding)),
             (Owned: true, Value: value),
