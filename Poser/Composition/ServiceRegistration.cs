@@ -303,7 +303,7 @@ internal static class ServiceRegistration
                 else if (!string.IsNullOrEmpty(result.Detail))
                     log.Information($"Pose edit '{description}': {result.Detail}");
             }));
-        services.AddSingleton<CleanTransformFacade>();
+        services.AddSingleton<TransformFacade>();
         // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
@@ -323,7 +323,7 @@ internal static class ServiceRegistration
         // The surfaces' ports over the runtime classes registered elsewhere.
         services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
         services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
-        services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<CleanTransformFacade>());
+        services.AddSingleton<ITransformFacade>(sp => sp.GetRequiredService<TransformFacade>());
         services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<IPoseInteraction, Game.Posing.PoseInteraction>();

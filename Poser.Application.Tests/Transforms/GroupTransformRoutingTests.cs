@@ -10,14 +10,13 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Game.Transforms;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Transforms;
 
 public sealed class GroupTransformRoutingTests
 {
     [Fact]
-    public void Legacy_facade_entry_points_always_attach_group_metadata()
+    public void Facade_entry_points_always_attach_group_metadata()
     {
         const TransformOperation operation = TransformOperation.Translate;
         var selection = new SelectionSession();
@@ -61,7 +60,7 @@ public sealed class GroupTransformRoutingTests
         using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, source);
         using var gestures = new TransformGestureService(scene, runtime, history,
             groupTransforms: state, groupSource: source, groupCoordinator: coordinator);
-        var facade = new CleanTransformFacade(scene, gestures,
+        var facade = new TransformFacade(scene, gestures,
             new TransformCommandService(scene, runtime, history, gestures), null!, coordinator, new ValueJournal(history));
         selection.Add(SelectionId.ForActor(actor));
         selection.Add(SelectionId.ForWorldObject(world));

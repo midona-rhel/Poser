@@ -504,7 +504,7 @@ work by string swap or shim): `ApiVersion`, `Actor.Pose.LoadFromJson`/`GetPoseAs
 `Reset`, `Actor.SetModelTransform`/`GetModelTransform`/`ResetModelTransform`,
 `Actor.Spawn`/`Despawn`/`Exists`/`GetAll`, `Actor.Freeze`/`UnFreeze`/`SetSpeed`/`GetSpeed`,
 `FreezePhysics`/`UnFreezePhysics` — each a thin adapter over the existing facades
-(`CleanPoseFacade`, `CleanTransformFacade`, `ActorSpawnService`, `AnimationSession`). Gate
+(`CleanPoseFacade`, `TransformFacade`, `ActorSpawnService`, `AnimationSession`). Gate
 behind a settings toggle like Brio's `EnableBrioIPC`.
 
 ### 16. Keybind coverage is thin

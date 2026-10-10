@@ -12,7 +12,7 @@ using Poser.Entities;
 using Poser.Files;
 using Poser.Scene;
 
-namespace Poser.Services;
+namespace Poser.Application.Transforms;
 
 /// <summary>Transform gestures, absolute writes, undo and redo.</summary>
 public interface ITransformFacade
