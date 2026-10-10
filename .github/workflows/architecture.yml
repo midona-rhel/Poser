@@ -2,7 +2,7 @@ name: Architecture boundaries
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, refactor]
 permissions:
   contents: read
 jobs:
