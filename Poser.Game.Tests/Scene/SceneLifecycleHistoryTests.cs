@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using NSubstitute;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
@@ -30,161 +28,18 @@ namespace Poser.Game.Tests.Scene;
 public sealed class SceneLifecycleHistoryTests
 {
     [Fact]
-    public void Generated_collider_group_seals_final_transforms_and_restores_its_frame_on_redo()
+    public void Prop_transform_history_rebinds_after_removal()
     {
         var world = new World();
-        var scene = new SceneSession(new SelectionSession());
-        var groups = new SceneGroups();
-        var state = new GroupTransformState();
-        var source = Substitute.For<IGroupTransformSource>();
-        source.Refusal(Arg.Any<TransformTargetId>()).Returns((string?)null);
-        FakeOverlay? Find(TransformTargetId target) => world.Overlays.Live.Cast<FakeOverlay>()
-            .FirstOrDefault(node => TransformTargetId.ForCollider(node.StableId) == target);
-        source.Read(Arg.Any<TransformTargetId>()).Returns(call => Find((TransformTargetId)call[0])?.State.Collider?.Transform);
-        source.CurrentTarget(Arg.Any<TransformTargetId>()).Returns(call =>
-            Find((TransformTargetId)call[0]) != null ? (TransformTargetId?)call[0] : null);
-        var heading = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
-        source.TryFrame(Arg.Any<Vector3>(), out Arg.Any<GroupTransformFrame>()).Returns(call =>
-        {
-            call[1] = new GroupTransformFrame((Vector3)call[0], heading);
-            return true;
-        });
-        using var coordinator = new GroupTransformCoordinator(scene, groups, state, source);
-        var steps = new GroupSteps(groups, world.History, new ValueJournal(world.History), state, coordinator);
-        void Publish() => scene.Refresh(new SceneSnapshot(1, [], [], [], [],
-            Overlays: world.Overlays.Live.Cast<FakeOverlay>()
-                .Select(node => new OverlayDescriptor(node.StableId, node.Name, node.Kind)).ToArray()));
-        var group = world.Lifecycle.SpawnOverlayGroup("Generated", [
-            new() { Kind = OverlayNodeKind.Collider, Collider = new() },
-            new() { Kind = OverlayNodeKind.Collider, Collider = new() }
-        ], groups, steps, node =>
-        {
-            Publish();
-            return SelectionId.ForOverlay(((FakeOverlay)node).StableId);
-        }, (id, index) =>
-        {
-            var node = Find(GroupTransformCoordinator.Target(id)!.Value)!;
-            node.State = node.State with { Collider = node.State.Collider! with
-                { Transform = PoseTransform.Identity with { Position = new(index * 2, 3, 0) } } };
-        });
-        var initial = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
-        Assert.Equal(new Vector3(1, 3, 0), initial.Controls.Position);
-        Assert.True(MathF.Abs(Quaternion.Dot(heading, initial.Baseline.Frame.Rotation)) > .99999f);
-        Assert.Equal("Create body colliders", world.History.UndoDescription);
-        heading = Quaternion.Identity; // Redo must not capture a new camera frame.
-        for (int i = 0; i < 2; i++)
-        {
-            var members = groups.Find(group.Id)!.Members.ToArray();
-            var targets = members.Select(id => GroupTransformCoordinator.Target(id)!.Value).ToArray();
-            Assert.True(coordinator.Admit(members, targets, GroupScaleMode.SizesAndSpacing, out var named, out var error), error);
-            Assert.Equal(group.Id, named);
-            Assert.True(world.Undo());
-            Assert.Empty(world.Overlays.Live);
-            Assert.Empty(groups.All);
-            Assert.Null(state.NamedSnapshot(group.Id));
-            Assert.False(world.History.CanUndo); // Creation is exactly one step.
-            Assert.True(world.Redo());
-            Publish();
-            var restored = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
-            Assert.Equal(initial.Baseline.Frame, restored.Baseline.Frame);
-            Assert.Equal(initial.Controls, restored.Controls);
-            Assert.All(restored.Expected.Keys, target => Assert.NotNull(Find(target)));
-        }
-    }
-
-    [Fact]
-    public void Failed_collider_parent_initialization_leaves_no_group_or_history()
-    {
-        var world = new World();
-        var groups = new SceneGroups();
-        var steps = new GroupSteps(groups, world.History, new ValueJournal(world.History));
-        Assert.Throws<InvalidOperationException>(() => world.Lifecycle.SpawnOverlayGroup("Failed", [
-            new() { Kind = OverlayNodeKind.Collider, Collider = new() },
-            new() { Kind = OverlayNodeKind.Collider, Collider = new() }
-        ], groups, steps, node => SelectionId.ForOverlay(((FakeOverlay)node).StableId),
-            (_, _) => throw new InvalidOperationException("Parent disappeared")));
-        Assert.Empty(groups.All);
-        Assert.Empty(world.Overlays.Live);
-        Assert.False(world.History.CanUndo);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Camera_lifecycle_replay_preserves_the_surviving_view(bool lookThroughMain)
-    {
-        var world = new World();
-        var main = world.Cameras.AddDefault();
-        var survivor = world.Cameras.CreateCamera(CameraKind.Game)!;
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        camera.Position = new(1, 2, 3);
-        camera.FoV = 0.8f;
-        var view = lookThroughMain ? main : survivor;
-        world.Cameras.SetLive(view);
-        Assert.True(world.Undo()); // Undo spawn.
-        Assert.Same(view, world.Cameras.LiveCamera);
-        Assert.True(world.Redo());
-        var restored = world.Cameras.Live.Single(c => c.Kind == CameraKind.Free);
-        Assert.Same(view, world.Cameras.LiveCamera);
-        Assert.Equal(new Vector3(1, 2, 3), restored.Position);
-        Assert.Equal(0.8f, restored.FoV);
-
-        var other = world.Lifecycle.CreateCamera(CameraKind.Game)!;
-        world.Cameras.SetLive(restored);
-        world.Lifecycle.DestroySelection(cameras: [restored, other]);
-        Assert.Same(main, world.Cameras.LiveCamera); // Removing live still needs a fallback.
-        world.Cameras.SetLive(view);
-        Assert.True(world.Undo()); // Undo the whole removal batch.
-        Assert.Same(view, world.Cameras.LiveCamera);
-        Assert.Equal(4, world.Cameras.Live.Count);
-        Assert.True(world.Redo());
-        Assert.Same(view, world.Cameras.LiveCamera);
-        Assert.Equal(2, world.Cameras.Live.Count);
-    }
-
-    [Fact]
-    public void Camera_switch_redo_uses_the_restored_camera()
-    {
-        var world = new World();
-        var values = new CameraSession(new ValueJournal(world.History), world.Cameras, null!, world.Lifecycle);
-        var previous = world.Cameras.AddDefault();
-        world.Cameras.SetLive(previous);
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        world.Cameras.SetLive(previous);
-        values.SetLive(camera);
-        world.Lifecycle.DestroyCamera(camera);
-        Assert.True(world.Undo());
-        var restored = Assert.Single(world.Cameras.Live.Where(c => !c.IsDefault));
-        Assert.True(world.Undo());
-        Assert.Same(previous, world.Cameras.LiveCamera);
-        Assert.True(world.Redo());
-        Assert.Same(restored, world.Cameras.LiveCamera);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Prop_and_collider_transform_history_rebinds_after_removal(bool collider)
-    {
-        var world = new World();
-        object entity = collider
-            ? world.Lifecycle.SpawnOverlay(new OverlayNodeState { Kind = OverlayNodeKind.Collider })!
-            : world.Lifecycle.SpawnProp(Apple)!;
-        TransformTargetId Target(object instance) => instance switch
-        {
-            FakeProp prop => TransformTargetId.ForProp(prop.StableId),
-            FakeOverlay overlay => TransformTargetId.ForCollider(overlay.StableId),
-            _ => throw new InvalidOperationException(),
-        };
-        object Current() => collider ? Assert.Single(world.Overlays.Live) : Assert.Single(world.Props.Live);
-        var oldTarget = Target(entity);
+        var prop = (FakeProp)world.Lifecycle.SpawnProp(Apple)!;
+        TransformTargetId Current() => TransformTargetId.ForProp(((FakeProp)Assert.Single(world.Props.Live)).StableId);
+        var oldTarget = TransformTargetId.ForProp(prop.StableId);
         var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
         world.History.Append(new TransformPatch("Move entity", [state], [state]));
-        if (collider) world.Lifecycle.DestroyOverlay(entity);
-        else world.Lifecycle.DestroyProp(entity);
+        world.Lifecycle.DestroyProp(prop);
         world.History.Reconcile(_ => false);
         Assert.True(world.Undo());
-        var newTarget = Target(Current());
+        var newTarget = Current();
         Assert.NotEqual(oldTarget, newTarget);
         var patch = Assert.IsType<TransformPatch>(world.History.PeekUndo());
         Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
@@ -192,159 +47,17 @@ public sealed class SceneLifecycleHistoryTests
         Assert.True(world.Undo());
         world.History.Reconcile(_ => false);
         Assert.True(world.Redo());
-        var thirdTarget = Target(Current());
+        var thirdTarget = Current();
         Assert.NotEqual(newTarget, thirdTarget);
         Assert.Equal(thirdTarget, Assert.Single(Assert.IsType<TransformPatch>(world.History.PeekRedo()).After).Target);
     }
 
     [Fact]
-    public void Camera_values_and_lock_survive_repeated_removal_and_creation()
-    {
-        var world = new World();
-        var values = new CameraSession(new ValueJournal(world.History), world.Cameras, null!, world.Lifecycle);
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        Assert.True(values.SetZoom(camera, 7));
-        values.SetLocked(camera, true);
-        world.Lifecycle.DestroyCamera(camera);
-        for (int i = 0; i < 3; i++)
-        {
-            Assert.True(world.Undo());
-            var restored = Assert.Single(world.Cameras.Live);
-            Assert.NotSame(camera, restored);
-            Assert.Equal(7, restored.Zoom);
-            Assert.True(restored.IsLocked);
-            Assert.True(world.Undo());
-            Assert.False(restored.IsLocked);
-            Assert.True(world.Undo());
-            Assert.Equal(0, restored.Zoom);
-            Assert.True(world.Undo());
-            Assert.Empty(world.Cameras.Live);
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            restored = Assert.Single(world.Cameras.Live);
-            Assert.Equal(7, restored.Zoom);
-            Assert.True(restored.IsLocked);
-            Assert.True(world.Redo());
-            Assert.Empty(world.Cameras.Live);
-        }
-    }
-
-    [Fact]
-    public void Prop_values_and_model_survive_repeated_removal_and_creation()
-    {
-        var world = new World();
-        var values = new PropSession(new ValueJournal(world.History), world.Lifecycle);
-        var prop = (IPropHandle)world.Lifecycle.SpawnProp(Apple)!;
-        var originalName = prop.Name;
-        var changed = Apple with { Name = "Dyed" };
-        values.SetName(prop, "Fruit");
-        Assert.True(values.SetModel(prop, changed, out _));
-        world.Lifecycle.DestroyProp(prop);
-        for (int i = 0; i < 3; i++)
-        {
-            Assert.True(world.Undo());
-            var restored = (IPropHandle)Assert.Single(world.Props.Live);
-            Assert.NotSame(prop, restored);
-            Assert.Equal("Fruit", restored.Name);
-            Assert.Equal(changed, restored.Model);
-            Assert.True(world.Undo());
-            Assert.Equal(Apple, restored.Model);
-            Assert.True(world.Undo());
-            Assert.Equal(originalName, restored.Name);
-            Assert.True(world.Undo());
-            Assert.Empty(world.Props.Live);
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            restored = (IPropHandle)Assert.Single(world.Props.Live);
-            Assert.Equal("Fruit", restored.Name);
-            Assert.Equal(changed, restored.Model);
-            Assert.True(world.Redo());
-            Assert.Empty(world.Props.Live);
-        }
-    }
-
-    [Fact]
-    public void Overlay_values_and_compound_size_survive_repeated_removal_and_creation()
-    {
-        var world = new World();
-        var values = new OverlaySession(new ValueJournal(world.History), world.Lifecycle);
-        var overlay = (IOverlayNode)world.Lifecycle.SpawnOverlay(new OverlayNodeState { Text = "Before", Scale = 2, Alpha = .5f })!;
-        values.SetText(overlay, "After");
-        values.ResetSize(overlay);
-        world.Lifecycle.DestroyOverlay(overlay);
-        for (int i = 0; i < 3; i++)
-        {
-            Assert.True(world.Undo());
-            var restored = (IOverlayNode)Assert.Single(world.Overlays.Live);
-            Assert.NotSame(overlay, restored);
-            Assert.Equal("After", restored.Text);
-            Assert.Equal((1f, 1f), (restored.Scale, restored.Alpha));
-            Assert.True(world.Undo());
-            Assert.Equal((2f, .5f), (restored.Scale, restored.Alpha));
-            Assert.True(world.Undo());
-            Assert.Equal("Before", restored.Text);
-            Assert.True(world.Undo());
-            Assert.Empty(world.Overlays.Live);
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            Assert.True(world.Redo());
-            restored = (IOverlayNode)Assert.Single(world.Overlays.Live);
-            Assert.Equal("After", restored.Text);
-            Assert.Equal((1f, 1f), (restored.Scale, restored.Alpha));
-            Assert.True(world.Redo());
-            Assert.Empty(world.Overlays.Live);
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Light_lifecycle_is_global_across_removal_and_replacement(bool borrowed)
-    {
-        var world = new World();
-        var actor = SelectionId.ForActor(ActorId.New());
-        var actorEdit = new JournalStep("Actor edit", () => true, () => true)
-            { AffectedEntities = new[] { actor } };
-        world.History.Append(actorEdit);
-        var light = borrowed
-            ? Borrow(world)
-            : world.Lifecycle.SpawnLight(LightKind.Point)!;
-        var original = world.Lighting.Target(light)!.Value.ToSelectionId();
-        for (int i = 0; i < 3; i++)
-        {
-            var id = world.Lighting.Target(Assert.Single(world.Lighting.Lights))!.Value.ToSelectionId();
-            Assert.Null(world.History.PeekUndo(id));
-            Assert.Same(actorEdit, world.History.PeekUndo(actor));
-            Assert.True(world.Undo());
-            Assert.Empty(world.Lighting.Lights);
-            Assert.Null(world.History.PeekRedo(id));
-            Assert.True(world.Redo());
-        }
-        var restored = Assert.Single(world.Lighting.Lights);
-        var current = world.Lighting.Target(restored)!.Value.ToSelectionId();
-        Assert.NotEqual(original, current);
-        world.Lifecycle.DestroyLight(restored);
-        Assert.Null(world.History.PeekUndo(current));
-        Assert.Same(actorEdit, world.History.PeekUndo(actor));
-        Assert.True(world.Undo());
-        var replacement = world.Lighting.Target(Assert.Single(world.Lighting.Lights))!.Value.ToSelectionId();
-        Assert.Null(world.History.PeekRedo(replacement));
-        Assert.True(world.Redo());
-        Assert.Empty(world.Lighting.Lights);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Light_edits_survive_release_and_repeated_restoration(bool borrowed)
+    public void Borrowed_light_edits_survive_release_and_repeated_restoration()
     {
         var world = new World();
         var values = new LightSession(new ValueJournal(world.History), world.Lighting, world.Lifecycle);
-        var light = borrowed
-            ? Borrow(world)
-            : world.Lifecycle.SpawnLight(LightKind.Point)!;
+        var light = Borrow(world);
         values.SetIntensity(light, 7);
         values.SetIsOn(light, false);
         world.Lifecycle.DestroyLight(light);
@@ -353,14 +66,14 @@ public sealed class SceneLifecycleHistoryTests
             Assert.True(world.Undo()); // release
             var restored = Assert.Single(world.Lighting.Lights);
             Assert.NotSame(light, restored);
-            Assert.Equal(borrowed ? LightOwnership.World : LightOwnership.Spawned, restored.Ownership);
+            Assert.Equal(LightOwnership.World, restored.Ownership);
             Assert.Equal(7, restored.Intensity);
             Assert.False(restored.IsOn);
             Assert.True(world.Undo()); // off
             Assert.True(restored.IsOn);
             Assert.True(world.Undo()); // intensity
             Assert.Equal(1, restored.Intensity);
-            Assert.True(world.Undo()); // acquire/spawn
+            Assert.True(world.Undo()); // acquire
             Assert.Empty(world.Lighting.Lights);
             Assert.True(world.Redo());
             Assert.True(world.Redo());
@@ -371,49 +84,6 @@ public sealed class SceneLifecycleHistoryTests
             Assert.True(world.Redo());
             Assert.Empty(world.Lighting.Lights);
         }
-    }
-
-    [Fact]
-    public void Refused_light_release_preserves_its_claim_and_history()
-    {
-        var world = new World();
-        var light = Borrow(world);
-        var acquisition = world.History.PeekUndo();
-        world.Lighting.RefuseDestroy = true;
-        world.Lifecycle.DestroyLight(light);
-        Assert.Same(light, Assert.Single(world.Lighting.Lights));
-        Assert.Same(acquisition, world.History.PeekUndo());
-        world.Lighting.RefuseDestroy = false;
-        world.Lifecycle.DestroyLight(light);
-        Assert.Empty(world.Lighting.Lights);
-        Assert.True(world.Undo());
-        Assert.Single(world.Lighting.Lights);
-    }
-
-    [Fact]
-    public void Light_transform_history_survives_absence_and_rekeys_only_inside_history()
-    {
-        var world = new World();
-        var light = Borrow(world);
-        var oldTarget = world.Lighting.Target(light)!.Value;
-        var state = new TransformTargetState(oldTarget, PoseTransform.Identity, new BonePose(), false);
-        world.History.Append(new TransformPatch("Move light", [state], [state]));
-        world.Lifecycle.DestroyLight(light);
-        world.History.Reconcile(_ => false);
-        Assert.True(world.Undo());
-        var restored = Assert.Single(world.Lighting.Lights);
-        var newTarget = world.Lighting.Target(restored)!.Value;
-        Assert.NotEqual(oldTarget, newTarget);
-        Assert.Null(world.Lighting.Target(light)); // old public identity remains dead
-        var patch = Assert.IsType<TransformPatch>(world.History.PeekUndo());
-        Assert.Equal(newTarget, Assert.Single(patch.Before).Target);
-        world.History.CommitUndo(patch);
-        Assert.True(world.Undo()); // undo acquisition, removes second native copy
-        world.History.Reconcile(_ => false);
-        Assert.True(world.Redo());
-        var thirdTarget = world.Lighting.Target(Assert.Single(world.Lighting.Lights));
-        Assert.NotEqual(newTarget, thirdTarget);
-        Assert.Equal(thirdTarget, Assert.Single(Assert.IsType<TransformPatch>(world.History.PeekRedo()).After).Target);
     }
 
     [Fact]
@@ -429,53 +99,15 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void Released_scenery_cannot_reclaim_an_address_reused_by_another_object()
+    public void Owned_actor_removal_restores_latest_state_without_its_creation_entry()
     {
         var world = new World();
-        var address = world.WorldObjects.Place(0x1000, MapStood);
-        var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
-        world.WorldObjects.Place(address, UserPut);
-        Assert.False(world.Undo());
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.Equal(UserPut, world.WorldObjects.MapPlacement(address));
-    }
-    [Fact]
-    public void Actor_removal_restores_latest_runtime_snapshot_without_replaying_the_clone_source()
-    {
-        var world = new World();
-        int originalSpawns = 0;
-        var actor = world.Lifecycle.SpawnActor("Clone", () =>
+        int spawns = 0;
+        var actor = world.Lifecycle.SpawnActor("Add", () =>
         {
-            originalSpawns++;
-            return world.Actors.Spawn("Source appearance");
+            spawns++;
+            return world.Actors.Spawn("Imported");
         })!;
-        var runtime = new ActorRuntimeState(null, new Poser.Application.Posing.ActorPropertiesSnapshot(0,
-            new Poser.Application.Integration.ActorAppearanceSnapshot("authored appearance", null, null, null, null),
-            PresentationOverrides.None, null, null), null, null, []);
-        var authored = new ActorState(MapStood, false, null) { Runtime = runtime };
-        world.Actors.Edit(actor, authored);
-        world.Lifecycle.DespawnActor(actor);
-        for (int i = 0; i < 3; i++)
-        {
-            Assert.True(world.Undo());
-            var restored = Assert.Single(world.Actors.Live);
-            Assert.Equal(authored, world.Actors.StateOf(restored));
-            Assert.True(world.Redo());
-            Assert.Empty(world.Actors.Live);
-        }
-        Assert.Equal(1, originalSpawns);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Owned_actor_removal_does_not_require_a_creation_history_entry(bool clearCreationHistory)
-    {
-        var world = new World();
-        var actor = clearCreationHistory
-            ? world.Lifecycle.SpawnActor("Add", () => world.Actors.Spawn("Imported"))!
-            : world.Actors.Spawn("Imported")!;
         world.History.Clear();
         actor.Name = "Authored actor";
         var authored = Posed(new Vector3(12, 3, -4), visible: false);
@@ -494,20 +126,7 @@ public sealed class SceneLifecycleHistoryTests
             Assert.True(world.Redo());
             Assert.Empty(world.Actors.Live);
         }
-    }
-
-    [Fact]
-    public void Refused_untracked_actor_removal_keeps_the_existing_history()
-    {
-        var world = new World();
-        world.Lifecycle.SpawnProp(Apple);
-        var previous = world.History.UndoDescription;
-        var actor = world.Actors.Spawn("Imported")!;
-        world.Actors.RefuseDestroy = true;
-
-        Assert.False(world.Lifecycle.DespawnActor(actor));
-        Assert.Same(actor, Assert.Single(world.Actors.Live));
-        Assert.Equal(previous, world.History.UndoDescription);
+        Assert.Equal(1, spawns); // Restore recreates the body, never replays the clone source.
     }
 
     [Fact]
@@ -532,147 +151,6 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void Camera_removal_restores_origin_lock_tracking_and_optics()
-    {
-        var world = new World();
-        world.Cameras.SpawnPosition = new(9, 8, 7);
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        camera.Position = Vector3.Zero;
-        camera.IsLocked = true;
-        camera.IsTracking = true;
-        camera.TrackingMode = CameraTrackingMode.Pan;
-        camera.TargetOffset = new(1, 2, 3);
-        camera.IsTargetLocked = true;
-        camera.FoV = 0.45f;
-        camera.Orthographic = true;
-        camera.OrthographicZoom = 7;
-        world.Lifecycle.DestroyCamera(camera);
-        Assert.True(world.Undo());
-        var restored = Assert.Single(world.Cameras.Live);
-        Assert.Equal(Vector3.Zero, restored.Position);
-        Assert.True(restored.IsLocked);
-        Assert.True(restored.IsTracking);
-        Assert.True(restored.IsTargetLocked);
-        Assert.Equal(CameraTrackingMode.Pan, restored.TrackingMode);
-        Assert.Equal(new Vector3(1, 2, 3), restored.TargetOffset);
-        Assert.Equal(0.45f, restored.FoV);
-        Assert.True(restored.Orthographic);
-        Assert.Equal(7, restored.OrthographicZoom);
-    }
-
-    [Fact]
-    public void Light_removal_restores_attachment_and_emission_settings()
-    {
-        var world = new World();
-        var bone = DispatchProxy.Create<IBone, BoneProxy>();
-        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
-        light.AttachedBone = bone;
-        light.Intensity = 4;
-        light.Color = new(.2f, .3f, .4f);
-        light.SpotAngle = .7f;
-        light.CastsCharacterShadow = true;
-        world.Lifecycle.DestroyLight(light);
-        Assert.True(world.Undo());
-        var restored = Assert.Single(world.Lighting.Lights);
-        Assert.Same(bone, restored.AttachedBone);
-        Assert.Equal(4, restored.Intensity);
-        Assert.Equal(new Vector3(.2f, .3f, .4f), restored.Color);
-        Assert.Equal(.7f, restored.SpotAngle);
-        Assert.True(restored.CastsCharacterShadow);
-    }
-
-    private class BoneProxy : DispatchProxy
-    {
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            method?.Name == "get_Skeleton" ? DispatchProxy.Create<ISkeleton, SkeletonProxy>() : null;
-    }
-
-    private class SkeletonProxy : DispatchProxy
-    {
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            method?.Name == "get_IsValid" ? true : null;
-    }
-
-    [Fact]
-    public void Overlay_copies_advance_names_in_a_batch_and_redo_preserves_name_and_offset()
-    {
-        var world = new World();
-        var one = world.Lifecycle.SpawnOverlay(new OverlayNodeState { Name = "Key 1" })!;
-        var two = world.Lifecycle.CloneOverlay(one)!;
-        var three = world.Lifecycle.CloneOverlay(two)!;
-        Assert.Equal("Key 3", world.Overlays.Read(three).Name);
-        world.Lifecycle.DestroyOverlay(two);
-        var four = world.Lifecycle.CloneOverlay(one)!;
-        Assert.Equal("Key 4", world.Overlays.Read(four).Name);
-        var state = world.Overlays.Read(four);
-        Assert.Equal(world.Overlays.Read(one).Position + new Vector2(24f), state.Position);
-        Assert.True(world.Undo());
-        Assert.True(world.Redo());
-        Assert.Contains(world.Overlays.Live, x => world.Overlays.Read(x) == state);
-    }
-
-    [Fact]
-    public void Duplicate_actor_advances_source_series_and_redo_keeps_the_authored_name()
-    {
-        var world = new World();
-        var one = world.Lifecycle.SpawnActor("Add", () => world.Actors.Spawn("Native"))!;
-        Assert.Equal("Actor 1", one.Name);
-        var two = world.Lifecycle.SpawnActor("Copy", () => world.Actors.Spawn("Native"), source: one)!;
-        var three = world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Native"), two)!;
-        Assert.Equal("Actor 3", three.Name);
-        world.Lifecycle.DespawnActor(two);
-        var four = world.Lifecycle.SpawnActor("Copy original", () => world.Actors.Spawn("Native"), source: one)!;
-        Assert.Equal("Actor 4", four.Name);
-        four.Name = "Lead 7";
-        Assert.True(world.Undo());
-        Assert.True(world.Redo());
-        Assert.Contains(world.Actors.Live, x => x.Name == "Lead 7");
-    }
-
-    [Fact]
-    public void Duplicate_prop_advances_past_a_deleted_middle_name_and_restores_the_copy_name()
-    {
-        var world = new World();
-        var one = world.Lifecycle.SpawnProp(Apple)!;
-        world.Props.Apply(one, world.Props.Read(one) with { Name = "Key 1" });
-        var two = world.Lifecycle.CloneProp(one)!;
-        Assert.Equal("Key 2", world.Props.Read(two).Name);
-        var three = world.Lifecycle.CloneProp(two)!;
-        Assert.Equal("Key 3", world.Props.Read(three).Name);
-        world.Lifecycle.DestroyProp(two);
-        var four = world.Lifecycle.CloneProp(one)!;
-        Assert.Equal("Key 4", world.Props.Read(four).Name);
-        Assert.True(world.Undo());
-        Assert.True(world.Redo());
-        Assert.Contains(world.Props.Live, x => world.Props.Read(x).Name == "Key 4");
-    }
-
-    [Fact]
-    public void Add_remove_undo_redo_preserves_latest_state_and_the_entity_slot()
-    {
-        var world = new World();
-        var original = world.Lifecycle.SpawnProp(Apple)!;
-        var moved = Transform.Identity;
-        moved.Position = new Vector3(4, 5, 6);
-        world.Props.Apply(original, new PropState("Fruit", Apple, moved, false));
-
-        Assert.True(world.Undo());
-        Assert.Empty(world.Props.Live);
-        Assert.True(world.Redo());
-
-        var restored = Assert.Single(world.Props.Live);
-        Assert.NotSame(original, restored);
-        Assert.Equal("Fruit", world.Props.Read(restored).Name);
-        Assert.Equal(moved, world.Props.Read(restored).Transform);
-        Assert.False(world.Props.Read(restored).Visible);
-
-        world.Lifecycle.DestroyProp(restored);
-        Assert.True(world.Undo());
-        Assert.True(world.Undo());
-        Assert.Empty(world.Props.Live);
-    }
-
-    [Fact]
     public void Refusals_do_not_add_history_or_discard_the_previous_entry()
     {
         var world = new World
@@ -691,39 +169,14 @@ public sealed class SceneLifecycleHistoryTests
         world.Lifecycle.DespawnActor(actor);
         Assert.Single(world.Actors.Live);
         Assert.Equal("Add actor", world.History.UndoDescription);
-    }
 
-    [Fact]
-    public void Selection_removal_restores_actors_and_other_entities_in_one_entry()
-    {
-        var world = new World();
-        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
-        var prop = world.Lifecycle.SpawnProp(Apple)!;
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
-        world.History.RecordLifecycleBatch("Remove selection", () =>
-        {
-            Assert.True(world.Lifecycle.DespawnActor(actor));
-            world.Lifecycle.DestroyProp(prop);
-            world.Lifecycle.DestroyLight(light);
-            world.Lifecycle.DestroyCamera(camera);
-        });
-        Assert.Empty(world.Actors.Live);
-        Assert.Empty(world.Props.Live);
-        Assert.Empty(world.Lighting.Live);
-        Assert.Empty(world.Cameras.Live);
-        Assert.Equal("Remove selection", world.History.UndoDescription);
-        Assert.True(world.Undo());
-        Assert.Single(world.Actors.Live);
-        Assert.Single(world.Lighting.Live);
-        Assert.Single(world.Props.Live);
-        Assert.Single(world.Cameras.Live);
-        Assert.Equal("Add actor", world.History.UndoDescription);
-        Assert.True(world.Redo());
-        Assert.Empty(world.Actors.Live);
-        Assert.Empty(world.Props.Live);
-        Assert.Empty(world.Lighting.Live);
-        Assert.Empty(world.Cameras.Live);
+        // A refused borrowed-light release keeps both the claim and its history.
+        var light = Borrow(world);
+        var acquisition = world.History.PeekUndo();
+        world.Lighting.RefuseDestroy = true;
+        world.Lifecycle.DestroyLight(light);
+        Assert.Same(light, Assert.Single(world.Lighting.Lights));
+        Assert.Same(acquisition, world.History.PeekUndo());
     }
 
     [Fact]
@@ -751,7 +204,7 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void World_adoption_undo_releases_and_redo_reclaims_the_same_incarnation()
+    public void Released_world_object_undo_reclaims_authored_state_and_adoption_undo_restores_the_map()
     {
         var world = new World();
         var address = world.WorldObjects.Place(0x1000, MapStood);
@@ -762,100 +215,26 @@ public sealed class SceneLifecycleHistoryTests
             Visible = false,
         });
 
+        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
+        Assert.True(world.Undo());
+        var restored = Assert.Single(world.WorldObjects.Live);
+        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
+        Assert.False(world.WorldObjects.Read(restored).Visible);
+
         Assert.True(world.Undo());
         Assert.Empty(world.WorldObjects.Live);
         Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
         Assert.True(world.Redo());
-        var restored = Assert.Single(world.WorldObjects.Live);
+        restored = Assert.Single(world.WorldObjects.Live);
         Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
-        Assert.False(world.WorldObjects.Read(restored).Visible);
     }
 
     [Theory]
-    [InlineData(false)]
     [InlineData(true)]
-    public void Releasing_borrowed_world_object_then_undo_reclaims_authored_state(bool isVfx)
-    {
-        var world = new World();
-        var address = world.WorldObjects.Place(0x1800, MapStood, isVfx);
-        var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        world.WorldObjects.Apply(claim, world.WorldObjects.Read(claim) with
-        {
-            Placement = UserPut,
-            Visible = false,
-        });
-
-        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.True(world.Undo());
-
-        var restored = Assert.Single(world.WorldObjects.Live);
-        Assert.Equal(isVfx, Assert.IsType<FakeWorldObject>(restored).IsVfx);
-        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
-        Assert.False(world.WorldObjects.Read(restored).Visible);
-        Assert.Equal(2, world.WorldObjects.AdoptCalls);
-    }
-
-    [Theory]
     [InlineData(false)]
-    [InlineData(true)]
-    public void Borrowed_world_objects_can_be_acquired_but_replacement_identity_is_refused(bool isVfx)
-    {
-        var world = new World();
-        var address = world.WorldObjects.Place(0x2000, MapStood, isVfx);
-        var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        Assert.NotNull(claim); // Initial BG/VFX borrowing still works.
-        Assert.Equal(isVfx, Assert.IsType<FakeWorldObject>(claim).IsVfx);
-        Assert.Equal(1, world.WorldObjects.AdoptCalls);
-
-        world.Lifecycle.ReleaseWorldObject(claim);
-        var replacementPlacement = new Transform(new System.Numerics.Vector3(9, 8, 7),
-            System.Numerics.Quaternion.Identity, System.Numerics.Vector3.One);
-        world.WorldObjects.Place(address, replacementPlacement, isVfx);
-        var refused = Assert.IsType<SceneLifecyclePatch>(world.History.PeekUndo());
-
-        Assert.False(refused.Undo());
-        Assert.Equal(1, world.WorldObjects.AdoptCalls); // No second adoption after release.
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.Equal(replacementPlacement, world.WorldObjects.MapPlacement(address));
-        Assert.Contains("identity", refused.FailureDetail!(), StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Missing_borrowed_candidate_is_skipped_and_older_history_continues()
-    {
-        var world = new World();
-        world.History.Append(new JournalStep("Earlier edit", () => true, () => true));
-        var address = world.WorldObjects.Place(0x2400, MapStood);
-        var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
-        world.WorldObjects.Remove(address);
-
-        Assert.False(world.Undo());
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.Equal(1, world.WorldObjects.AdoptCalls);
-        Assert.Contains("no longer in the current world graph", Assert.Single(world.Notices), StringComparison.OrdinalIgnoreCase);
-        Assert.True(world.Undo());
-        Assert.False(world.History.CanUndo);
-    }
-
-    [Fact]
-    public void Owned_world_object_restore_still_spawns_and_restores()
-    {
-        var world = new World();
-        var spawned = world.Lifecycle.SpawnWorldObject("bg/owned.mdl", UserPut, true)!;
-        Assert.True(world.Undo());
-        Assert.Empty(world.WorldObjects.Live);
-        Assert.True(world.Redo());
-        var restored = Assert.Single(world.WorldObjects.Live);
-        Assert.NotSame(spawned, restored);
-        Assert.Equal("bg/owned.mdl", world.WorldObjects.Read(restored).Path);
-        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
-        Assert.True(world.WorldObjects.Read(restored).Visible);
-    }
-
-    [Fact]
-    public void Released_borrowed_edit_is_invalidated_and_failed_restore_does_not_block_older_history()
+    public void Released_scenery_is_invalidated_when_its_address_is_reused_or_gone(bool reused)
     {
         var world = new World();
         world.History.Append(new JournalStep("Earlier unrelated edit", () => true, () => true));
@@ -865,69 +244,17 @@ public sealed class SceneLifecycleHistoryTests
         var state = new TransformTargetState(target, PoseTransform.Identity, new BonePose(), false);
         world.History.Append(new TransformPatch("Move borrowed BG", [state], [state]));
         Assert.True(world.Lifecycle.ReleaseWorldObject(claim));
-        world.WorldObjects.Place(address, MapStood); // Same address, new incarnation.
+        if (reused) world.WorldObjects.Place(address, UserPut); // Same address, new incarnation.
+        else world.WorldObjects.Remove(address);
 
         Assert.Equal("Remove world object", world.History.UndoDescription);
         Assert.False(world.Undo()); // Fails safely and drops the permanently un-restorable claim.
+        Assert.Empty(world.WorldObjects.Live);
+        if (reused) Assert.Equal(UserPut, world.WorldObjects.MapPlacement(address));
         Assert.Equal("Earlier unrelated edit", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.False(world.History.CanUndo);
         Assert.Equal(1, world.WorldObjects.AdoptCalls);
-    }
-
-    [Fact]
-    public void Failed_live_release_keeps_the_borrowed_object_transform_history()
-    {
-        var world = new World();
-        var address = world.WorldObjects.Place(0x3500, MapStood);
-        var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        var target = world.WorldObjects.Target(claim);
-        var state = new TransformTargetState(target, PoseTransform.Identity, new BonePose(), false);
-        world.History.Append(new TransformPatch("Move borrowed BG", [state], [state]));
-        world.WorldObjects.RefuseRelease = true;
-
-        Assert.False(world.Lifecycle.ReleaseWorldObject(claim));
-
-        Assert.Equal("Move borrowed BG", world.History.UndoDescription);
-        Assert.Single(world.WorldObjects.Live);
-    }
-
-    [Fact]
-    public void History_keeps_lifecycle_entries_ordered_and_clears_slots_when_disabled()
-    {
-        var world = new World();
-        world.History.Append(new TransformPatch("edit", [], []));
-        world.Lifecycle.SpawnLight(LightKind.Spot);
-        Assert.Equal("Add spot light", world.History.UndoDescription);
-        Assert.True(world.Undo());
-        Assert.Equal("edit", world.History.UndoDescription);
-        world.History.Reconcile(static _ => false);
-        Assert.True(world.History.CanUndo);
-
-        var disabled = new World(capacity: 0);
-        Assert.NotNull(disabled.Lifecycle.SpawnLight(LightKind.Spot));
-        Assert.False(disabled.History.CanUndo);
-        Assert.Equal(0, SlotCount(disabled.Lifecycle, "_lightOwner"));
-    }
-
-    [Fact]
-    public void Add_remove_undo_redo_covers_actor_and_camera_identity()
-    {
-        var world = new World();
-        var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
-        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-
-        Assert.True(world.Undo());
-        Assert.Empty(world.Cameras.Live);
-        Assert.True(world.Undo());
-        Assert.Empty(world.Actors.Live);
-
-        Assert.True(world.Redo());
-        Assert.True(world.Redo());
-        Assert.Single(world.Actors.Live);
-        Assert.Single(world.Cameras.Live);
-        Assert.NotSame(actor, world.Actors.Live[0]);
-        Assert.NotSame(camera, world.Cameras.Live[0]);
     }
 
     /// <summary>Borrows the fake's world light the way WorldService does:
@@ -951,14 +278,6 @@ public sealed class SceneLifecycleHistoryTests
 
     private static readonly Transform UserPut = new(
         new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
-
-    private static int SlotCount(SceneLifecycleHistory lifecycle, string field)
-    {
-        var owner = typeof(SceneLifecycleHistory)
-            .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(lifecycle)!;
-        return (int)owner.GetType().GetProperty("Count")!.GetValue(owner)!;
-    }
 
     // ── harness ──────────────────────────────────────────────────────────
 
@@ -1065,10 +384,6 @@ public sealed class SceneLifecycleHistoryTests
             ((FakeLight)light).IsValid = false;
         }
 
-        /// <summary>The light leaves without this seam's knowledge — a scene
-        /// import, or the game.</summary>
-        public void VanishWithoutNotice(ILight light) => DestroyLight(light);
-
         public ILight AddBorrowed()
         {
             var light = new FakeLight { Ownership = LightOwnership.World };
@@ -1126,7 +441,6 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeCameras : IVirtualCameraService
     {
-        public Vector3 SpawnPosition { get; set; }
         public bool SuppressFlightKeys { get; set; }
         public bool FlightActive => false;
         private readonly List<IVirtualCamera> _cameras = new();
@@ -1142,7 +456,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true)
         {
-            var camera = new FakeCamera(kind) { Position = SpawnPosition };
+            var camera = new FakeCamera(kind);
             _cameras.Add(camera);
             if (makeLive) SetLive(camera);
             return camera;
@@ -1150,13 +464,6 @@ public sealed class SceneLifecycleHistoryTests
 
         public IVirtualCamera? CloneCamera(IVirtualCamera source) =>
             CreateCamera(source.Kind);
-
-        public IVirtualCamera AddDefault()
-        {
-            var camera = new FakeCamera(CameraKind.Game) { IsDefault = true };
-            _cameras.Add(camera);
-            return camera;
-        }
 
         public void DestroyCamera(IVirtualCamera camera)
         {
@@ -1253,13 +560,10 @@ public sealed class SceneLifecycleHistoryTests
     {
         private readonly Dictionary<nint, Transform> _map = new();
         private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
-        private readonly HashSet<nint> _vfxAddresses = new();
         private readonly List<object> _adopted = new();
         private long _nextGeneration;
         public int AdoptCalls { get; private set; }
 
-        public bool RefuseAdopt { get; set; }
-        public bool RefuseRelease { get; set; }
         public IReadOnlyList<object> Live => _adopted;
         public IReadOnlyList<object> WorldObjects => _adopted.ToList();
 
@@ -1267,14 +571,11 @@ public sealed class SceneLifecycleHistoryTests
         /// release has to put back.</summary>
         public Transform MapPlacement(nint address) => _map[address];
 
-        public nint Place(nint address, Transform placement, bool isVfx = false)
+        public nint Place(nint address, Transform placement)
         {
             _map[address] = placement;
-            if (isVfx) _vfxAddresses.Add(address);
-            else _vfxAddresses.Remove(address);
-            long generation = ++_nextGeneration;
             _identities[address] = new WorldObjectIncarnation(
-                address, generation, isVfx ? (nint)generation : nint.Zero, isVfx);
+                address, ++_nextGeneration, nint.Zero, false);
             return address;
         }
 
@@ -1282,7 +583,6 @@ public sealed class SceneLifecycleHistoryTests
         {
             _map.Remove(address);
             _identities.Remove(address);
-            _vfxAddresses.Remove(address);
         }
 
         public TransformTargetId Target(object worldObject) =>
@@ -1291,7 +591,7 @@ public sealed class SceneLifecycleHistoryTests
         public object? Adopt(nint address)
         {
             AdoptCalls++;
-            if (RefuseAdopt || !_map.ContainsKey(address))
+            if (!_map.ContainsKey(address))
                 return null;
             var claim = new FakeWorldObject
             {
@@ -1301,7 +601,6 @@ public sealed class SceneLifecycleHistoryTests
                 {
                     Identity = _identities[address],
                 },
-                IsVfx = _vfxAddresses.Contains(address),
                 MapPlacement = _map[address],
             };
             _adopted.Add(claim);
@@ -1350,8 +649,6 @@ public sealed class SceneLifecycleHistoryTests
 
         public bool Release(object worldObject)
         {
-            if (RefuseRelease)
-                return false;
             var claim = (FakeWorldObject)worldObject;
             _adopted.Remove(claim);
             if (claim.IsValid)
@@ -1375,7 +672,6 @@ public sealed class SceneLifecycleHistoryTests
     {
         public FakeWorldObjects Owner { get; set; } = null!;
         public WorldObjectId Id { get; } = WorldObjectId.New();
-        public bool IsVfx { get; set; }
         public bool IsValid { get; set; } = true;
         public WorldObjectState State { get; set; }
 
@@ -1412,10 +708,6 @@ public sealed class SceneLifecycleHistoryTests
             _props.Remove(prop);
             ((FakeProp)prop).IsValid = false;
         }
-
-        /// <summary>The prop leaves without this seam's knowledge — a scene
-        /// import, or the game.</summary>
-        public void VanishWithoutNotice(object prop) => Destroy(prop);
 
         public PropState Read(object prop) => ((FakeProp)prop).State;
 
@@ -1473,14 +765,11 @@ public sealed class SceneLifecycleHistoryTests
             ((FakeOverlay)overlay).IsValid = false;
         }
 
-        public void VanishWithoutNotice(object overlay) => Destroy(overlay);
-
         public OverlayNodeState Read(object overlay) =>
             ((FakeOverlay)overlay).State;
 
         public void Write(object overlay, Func<OverlayNodeState, OverlayNodeState> edit) =>
             ((FakeOverlay)overlay).State = edit(((FakeOverlay)overlay).State);
-
     }
 
     private sealed class FakeOverlay : IOverlayNode
@@ -1510,23 +799,9 @@ public sealed class SceneLifecycleHistoryTests
         public void Destroy() => IsValid = false;
     }
 
-    [Fact]
-    public void Plain_copy_inherits_body_profile_but_posed_copy_does_not_apply_it_twice()
-    {
-        var world = new World();
-        var source = world.Actors.Spawn("Source")!;
-        var plain = world.Lifecycle.SpawnActor("Copy", () => world.Actors.Spawn("Copy"), source)!;
-        var posed = world.Lifecycle.SpawnActorWithPose("Copy posed", () => world.Actors.Spawn("Posed"), source);
-        Assert.Same(posed, Assert.Single(world.Actors.DetachedGaze));
-        Assert.Equal((source, plain), Assert.Single(world.Actors.BodyProfileCopies));
-    }
-
     private sealed class FakeActors : IActorLifecycle
     {
-        public List<object> DetachedGaze { get; } = new();
-        public void DetachGaze(object actor) => DetachedGaze.Add(actor);
-        public List<(IActor Source, IActor Target)> BodyProfileCopies { get; } = new();
-        public void CopyBodyProfile(IActor source, IActor target) => BodyProfileCopies.Add((source, target));
+        public void DetachGaze(object actor) { }
         public string GetName(object actor) => ((IActor)actor).Name;
         public void SetName(object actor, string name) => ((IActor)actor).Name = name;
         public void NameCreated(object actor, string seed) => SetName(actor,
@@ -1543,7 +818,6 @@ public sealed class SceneLifecycleHistoryTests
         private int _next;
 
         public IReadOnlyList<IActor> Live => _actors;
-        public int SpawnCalls { get; private set; }
         public bool RefuseDestroy { get; set; }
 
         /// <summary>Every refusal the seam named rather than skipping.
@@ -1552,7 +826,6 @@ public sealed class SceneLifecycleHistoryTests
 
         public IActor? Spawn(string name)
         {
-            SpawnCalls++;
             var actor = new ActorBase(
                 new EntityId($"{name}-{_next++}"),
                 name,

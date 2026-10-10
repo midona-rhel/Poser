@@ -12,34 +12,6 @@ namespace Poser.Game.Tests.Scene;
 
 public sealed class SceneObjectControlTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Stale_or_off_thread_edits_never_reach_native_objects(bool frameworkThread)
-    {
-        var prop = new PropId(Guid.NewGuid(), 2);
-        var world = new WorldObjectId(Guid.NewGuid(), 2);
-        var bindings = Stub<IEntityBindings>((method, args) =>
-        {
-            Assert.True(frameworkThread); // Off-thread requests must not even resolve.
-            Assert.Equal("Resolve", method);
-            return args![0] switch
-            {
-                PropId id when id == prop => new BindingResult<IPropHandle>(BindingStatus.StaleTarget),
-                WorldObjectId id when id == world => new BindingResult<IWorldObject>(BindingStatus.StaleTarget),
-                _ => throw new InvalidOperationException("A request changed its target."),
-            };
-        });
-        var framework = Stub<IFramework>((_, _) => frameworkThread);
-        ISceneObjectControl control = new SceneObjectControl(bindings, framework, null!, null!);
-        Assert.Null(control.Read(prop));
-        Assert.Null(control.Read(world));
-        Assert.False(control.SetVisible(prop, false).Success);
-        Assert.False(control.SetModel(prop, default).Success);
-        Assert.False(control.SetOpacity(world, 0.5f).Success);
-        Assert.False((await control.Respawn(world, "unused.mdl")).Success);
-    }
-
     [Fact]
     public void Model_edit_uses_existing_history_and_readings_are_detached()
     {

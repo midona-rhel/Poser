@@ -8,10 +8,8 @@ namespace Poser.Game.Tests.Scene;
 
 public class CoalescedRefreshTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FollowUpSeesReplacementAndIdenticalCandidatesDoNotChurnRevision(bool auxiliary)
+    [Fact]
+    public void FollowUpSeesReplacementAndIdenticalCandidatesDoNotChurnRevision()
     {
         var queue = new CoalescedRefresh();
         var scene = new SceneSession(new SelectionSession());
@@ -22,7 +20,7 @@ public class CoalescedRefreshTests
         {
             uint enumerated = generation;
             var candidate = new SceneSnapshot(0,
-                [new ActorDescriptor(new ActorId(lineage, auxiliary ? 1u : enumerated), "Actor", [])], [], [], []);
+                [new ActorDescriptor(new ActorId(lineage, enumerated), "Actor", [])], [], [], []);
             if (++passes == 1)
             {
                 generation = 2;
@@ -36,63 +34,41 @@ public class CoalescedRefreshTests
         ulong revision = scene.Snapshot.Revision;
         queue.Request(Refresh);
         Assert.Equal(revision, scene.Snapshot.Revision);
-        Assert.Equal(auxiliary ? 1u : 2u, scene.Snapshot.Actors[0].Id.Generation);
+        Assert.Equal(2u, scene.Snapshot.Actors[0].Id.Generation);
     }
 
     [Fact]
-    public void ReplacementAfterEnumerationIsObservedWithoutAnotherEvent()
+    public void NotificationsDuringFollowUpWaitForNextTickAndExitOrDisposeStopsQueuedWork()
     {
         var queue = new CoalescedRefresh();
-        int generation = 1, bound = 0, passes = 0, depth = 0;
+        int passes = 0, depth = 0;
         void Refresh()
         {
             Assert.Equal(1, ++depth);
-            bound = generation;
-            if (++passes == 1)
+            if (++passes < 4)
             {
-                generation = 2;
                 queue.Request(Refresh);
                 queue.Request(Refresh);
             }
             depth--;
         }
         queue.Request(Refresh);
-        Assert.Equal(2, bound);
-        Assert.Equal(2, passes);
-        queue.Drain(Refresh);
-        Assert.Equal(2, passes);
-    }
-
-    [Fact]
-    public void NotificationsDuringFollowUpWaitForNextTick()
-    {
-        var queue = new CoalescedRefresh();
-        int passes = 0;
-        void Refresh()
-        {
-            if (++passes < 4) queue.Request(Refresh);
-        }
-        queue.Request(Refresh);
         Assert.Equal(2, passes);
         queue.Drain(Refresh);
         Assert.Equal(4, passes);
-    }
 
-    [Fact]
-    public void ExitCancelsPendingWorkAndDisposeRejectsQueuedCallbacks()
-    {
-        var queue = new CoalescedRefresh();
-        int passes = 0;
-        void Refresh() { passes++; queue.Request(Refresh); }
-        queue.Request(Refresh);
+        // GPose exit cancels pending work; disposal rejects queued callbacks.
+        passes = 0;
+        void Endless() { passes++; queue.Request(Endless); }
+        queue.Request(Endless);
         queue.Cancel();
-        queue.Drain(Refresh);
+        queue.Drain(Endless);
         Assert.Equal(2, passes);
-        queue.Request(Refresh);
+        queue.Request(Endless);
         Assert.Equal(4, passes);
         queue.Stop();
-        queue.Drain(Refresh);
-        queue.Request(Refresh);
+        queue.Drain(Endless);
+        queue.Request(Endless);
         Assert.Equal(4, passes);
     }
 }

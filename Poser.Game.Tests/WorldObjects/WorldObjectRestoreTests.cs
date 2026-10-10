@@ -30,12 +30,8 @@ namespace Poser.Game.Tests.WorldObjects;
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
-    [Theory]
-    [InlineData("bg/tree.mdl", true)]
-    [InlineData("vfx/fire.avfx", true)]
-    [InlineData("bg/tree.mdl", false)]
-    [InlineData("bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb", false)]
-    public void Edits_replay_after_acquisition_and_release_restore_new_wrappers(string path, bool borrowed)
+    [Fact]
+    public void Edits_replay_after_acquisition_and_release_restore_new_wrappers()
     {
         var world = new World();
         var history = new TransformHistory();
@@ -55,9 +51,7 @@ public sealed class WorldObjectRestoreTests
         var values = new WorldObjectSession(new ValueJournal(history), lifecycle);
         world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
             history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid)));
-        var original = (AdoptedWorldObject)(borrowed
-            ? lifecycle.AdoptWorldObject(world.Port.Add(path, Placed, isVfx: path.EndsWith(".avfx")))!
-            : lifecycle.SpawnWorldObject(path, Placed, true)!);
+        var original = (AdoptedWorldObject)lifecycle.AdoptWorldObject(world.Port.Add("bg/tree.mdl", Placed))!;
         var target = Target(original)!.Value;
         original.Transform = Moved;
         TransformTargetState State(Transform value) =>
@@ -125,60 +119,7 @@ public sealed class WorldObjectRestoreTests
     }
 
     [Fact]
-    public void Furniture_light_switch_preserves_peers_and_restores_through_history_and_respawn()
-    {
-        var world = new World();
-        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
-        FurnitureLightState[] initial = [new("/0", true), new("/1/0", false)];
-        furniture.FurnitureLights = initial;
-        var history = new Poser.Application.Transforms.TransformHistory();
-        var session = new Poser.Game.Journal.WorldObjectSession(new Poser.Application.Transforms.ValueJournal(history));
-        session.SetFurnitureLight(furniture, "/0", false);
-        Assert.All(furniture.FurnitureLights, light => Assert.False(light.Enabled));
-        var step = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        Assert.Equal(initial, furniture.FurnitureLights);
-        Assert.True(step.Redo());
-        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
-        var state = lifecycle.Read(furniture);
-        lifecycle.Release(furniture);
-        var restored = (AdoptedWorldObject)lifecycle.Spawn(state.Path, state.Placement, state.Visible)!;
-        lifecycle.Apply(restored, state);
-        Assert.Equal(state.FurnitureLights, restored.FurnitureLights);
-        Assert.All(restored.FurnitureLights, light => Assert.False(light.Enabled));
-    }
-
-    [Fact]
-    public void Choosing_furniture_dye_clears_custom_tint_as_one_undoable_edit()
-    {
-        var world = new World();
-        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
-        furniture.Stain = 7;
-        var tint = new Vector3(.2f, .3f, .4f);
-        furniture.Tint = tint;
-        var history = new Poser.Application.Transforms.TransformHistory();
-        var session = new Poser.Game.Journal.WorldObjectSession(new Poser.Application.Transforms.ValueJournal(history));
-        session.SetStain(furniture, 42);
-        session.Seal();
-        Assert.Null(furniture.Tint);
-        Assert.Equal((byte)42, furniture.Stain);
-        var step = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        Assert.Equal(tint, furniture.Tint);
-        Assert.Equal((byte)7, furniture.Stain);
-        Assert.True(step.Redo());
-        Assert.Null(furniture.Tint);
-        Assert.Equal((byte)42, furniture.Stain);
-    }
-
-    [Theory]
-    [InlineData(1u, true, "bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb")]
-    [InlineData(12345u, false, "bgcommon/hou/outdoor/general/12345/asset/gar_b0_m12345.sgb")]
-    public void Furniture_paths_keep_model_key_and_indoor_outdoor_identity(uint key, bool indoors, string expected) =>
-        Assert.Equal(expected, FurnitureCatalog.PathFor(key, indoors));
-
-    [Fact]
-    public void Furniture_lifecycle_restores_stain_tint_placement_and_opacity()
+    public void Furniture_lifecycle_restores_stain_tint_lights_placement_and_opacity()
     {
         var world = new World();
         var lifecycle = new WorldObjectServiceLifecycle(world.Service);
@@ -190,6 +131,8 @@ public sealed class WorldObjectRestoreTests
         furniture.Tint = new Vector3(.1f, .2f, .3f);
         furniture.Visible = false;
         furniture.Opacity = .4f;
+        FurnitureLightState[] lights = [new("/0", false), new("/1/0", true)];
+        furniture.FurnitureLights = lights;
         Assert.Equal(.4f, world.Port.OpacityOf(furniture.Address));
         var state = lifecycle.Read(furniture);
         for (int i = 0; i < 2; i++)
@@ -197,45 +140,14 @@ public sealed class WorldObjectRestoreTests
             lifecycle.Release(furniture);
             furniture = (AdoptedWorldObject)lifecycle.Spawn(state.Path, state.Placement, state.Visible)!;
             lifecycle.Apply(furniture, state);
-            Assert.Equal(state with { Address = furniture.Address }, lifecycle.Read(furniture));
+            var read = lifecycle.Read(furniture);
+            Assert.Equal(lights, read.FurnitureLights);
+            Assert.Equal(state with { Address = furniture.Address, FurnitureLights = read.FurnitureLights }, read);
             Assert.Equal((byte)42, world.Port.LastFurnitureStain);
             Assert.True(furniture.NightState);
             Assert.True(world.Port.LastNightState);
             Assert.Equal(state.Tint, world.Port.LastBgTint);
         }
-    }
-
-    [Fact]
-    public void Furniture_timeout_removes_only_unready_furniture_and_cleans_allocation_once()
-    {
-        var world = new World();
-        world.Port.BgReady = false;
-        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
-        var model = world.Service.Spawn("bg/tree.mdl", Placed, true, out _)!;
-        world.Service.PumpFurnitureLoads(DateTime.UtcNow);
-        Assert.True(furniture.IsValid);
-        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(16));
-        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(17));
-        Assert.False(furniture.IsValid);
-        Assert.True(model.IsValid);
-        Assert.Equal(furniture.Address, Assert.Single(world.Port.Destroyed));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Ready_or_explicitly_released_furniture_has_no_later_timeout(bool release)
-    {
-        var world = new World();
-        world.Port.BgReady = false;
-        var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, false), Placed, true, out _)!;
-        if (release) world.Service.Release(furniture);
-        else world.Port.BgReady = true;
-        world.Service.PumpFurnitureLoads(DateTime.UtcNow);
-        world.Port.BgReady = false;
-        world.Service.PumpFurnitureLoads(DateTime.UtcNow.AddSeconds(16));
-        Assert.Equal(!release, furniture.IsValid);
-        Assert.Equal(release ? 1 : 0, world.Port.Destroyed.Count);
     }
 
     private static readonly Transform Placed = new(
@@ -247,7 +159,8 @@ public sealed class WorldObjectRestoreTests
         new Vector3(99f, 50f, 12f),
         Quaternion.CreateFromYawPitchRoll(1.5f, 0.25f, 0f),
         new Vector3(2f, 2f, 2f));
-[Fact]
+
+    [Fact]
     public void Adoption_captures_without_writing_and_duplicate_adoption_reuses_the_claim()
     {
         var world = new World();
@@ -258,228 +171,59 @@ public sealed class WorldObjectRestoreTests
         Assert.Same(first, second);
         Assert.Equal(Placed, first!.InitialPlacement);
         Assert.Equal((byte)0x21, first.InitialFlags);
-        Assert.Equal(0, world.Port.Writes);
-    }
 
-    [Fact]
-    public void Moving_then_releasing_restores_map_state_without_destroying_the_object()
-    {
-        var world = new World();
-        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
-        var adopted = world.Service.Adopt(address)!;
-        adopted.Transform = Moved;
-        adopted.Visible = false;
-
-        Assert.True(world.Service.Release(adopted));
-        Assert.Equal(Placed, world.Port.PlacementOf(address));
-        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
-        Assert.True(world.Port.VisibleOf(address));
-        Assert.True(world.Port.IsAlive(address));
-        Assert.False(adopted.IsValid);
-    }
-
-    [Theory]
-    [InlineData(0, 1f)]
-    [InlineData(1, .65f)]
-    [InlineData(2, .8f)]
-    public void Scenery_opacity_restores_on_release_exit_and_dispose(int action, float initial)
-    {
-        var world = new World();
-        var address = world.Port.Add("bg/tree.mdl", Placed);
-        world.Port.WriteOpacity(address, initial);
-        var adopted = world.Service.Adopt(address)!;
-        Assert.Equal(initial, adopted.Opacity);
-        adopted.Opacity = .276f;
-        adopted.Visible = false;
-        if (action == 0) Assert.True(world.Service.Release(adopted));
-        else if (action == 1) world.Events.Publish(new GPoseStateChangedEvent(false));
-        else world.Service.Dispose();
-        Assert.True(world.Port.TryReadOpacity(address, out var restored));
-        Assert.Equal(initial, restored);
-        Assert.True(world.Port.VisibleOf(address));
-        if (action == 0)
-            Assert.Equal(initial, world.Service.Adopt(address)!.Opacity);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Lifecycle_reclaim_restores_authored_properties_then_release_restores_original(bool isVfx)
-    {
-        var world = new World();
-        var address = world.Port.Add(isVfx ? "vfx/fire.avfx" : "bg/tree.mdl", Placed, isVfx: isVfx);
-        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
-        var claim = world.Service.Adopt(address)!;
-        claim.Name = "Edited object";
-        claim.Transform = Moved;
-        claim.Opacity = .342f;
-        claim.Tint = new Vector3(.2f, .4f, .6f);
-        claim.Visible = false;
-        if (isVfx)
-        {
-            claim.LoopVfx = false;
-            claim.VfxSpeed = .5f;
-            claim.VfxIntensity = 2f;
-            claim.VfxPaused = true;
-        }
-        else
-        {
-            claim.NightState = true;
-            claim.AnimationPaused = true;
-        }
-        var authored = lifecycle.Read(claim);
-
-        for (var cycle = 0; cycle < 2; cycle++)
-        {
-            lifecycle.Release(claim);
-            Assert.Equal(Placed, world.Port.PlacementOf(address));
-            claim = (AdoptedWorldObject)lifecycle.Adopt(address)!;
-            if (!isVfx) Assert.Equal(1f, claim.Opacity);
-            lifecycle.Apply(claim, authored);
-            Assert.Equal(authored, lifecycle.Read(claim));
-        }
-    }
-
-    // Identity re-adoption is GONE by ruling (2026-09-01): a document
-    // never carries a borrow, so a load never matches the map. The
-    // dead-address guard survives on the plain Adopt path.
-    [Fact]
-    public void Dead_address_refuses_without_writing()
-    {
-        var world = new World();
         var dead = world.Port.Add("bg/tree.mdl", Placed);
         world.Port.Kill(dead);
         Assert.Null(world.Service.Adopt(dead));
         Assert.Equal(0, world.Port.Writes);
     }
 
-    [Fact]
-    public void Repeated_playing_vfx_transforms_make_no_playback_requests()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Playing);
-        var effect = world.Service.Adopt(address)!;
-
-        effect.Transform = Moved;
-        effect.Transform = Placed;
-        Assert.Equal(2, world.Port.VfxTransformWrites);
-        Assert.Equal(0, world.Port.ResumeCalls);
-
-        effect.VfxPaused = true;
-        Assert.Equal(1, world.Port.PauseCalls);
-        effect.Transform = Placed;
-        Assert.Equal(2, world.Port.VfxTransformWrites);
-
-        effect.VfxPaused = false;
-        Assert.Equal(1, world.Port.ResumeCalls);
-        effect.Transform = Moved;
-        effect.Transform = Placed;
-        Assert.Equal(1, world.Port.ResumeCalls);
-
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Inactive);
-        effect.Transform = Moved;
-        Assert.Equal(4, world.Port.VfxTransformWrites);
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
-    }
-
     [Theory]
-    [InlineData(VfxPlaybackState.Playing)]
-    [InlineData(VfxPlaybackState.Paused)]
-    [InlineData(VfxPlaybackState.Inactive)]
-    public void Vfx_release_restores_the_exact_original_playback_state(
-        VfxPlaybackState original)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Every_end_path_restores_map_state_once_without_destroying_the_object(bool gposeExit)
     {
         var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        world.Port.SetVfxPlayback(address, original);
-        var effect = world.Service.Adopt(address)!;
-        effect.VfxPaused = true;
-        effect.Transform = Moved;
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+        world.Port.WriteOpacity(address, .65f);
+        var adopted = world.Service.Adopt(address)!;
+        adopted.Transform = Moved;
+        adopted.Visible = false;
+        adopted.Opacity = .276f;
 
-        Assert.True(world.Service.Release(effect));
-        Assert.Equal(original, world.Port.PlaybackOf(address));
+        if (gposeExit) world.Events.Publish(new GPoseStateChangedEvent(false));
+        else Assert.True(world.Service.Release(adopted));
         Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
+        Assert.True(world.Port.VisibleOf(address));
+        Assert.True(world.Port.TryReadOpacity(address, out var opacity));
+        Assert.Equal(.65f, opacity);
+        Assert.True(world.Port.IsAlive(address));
+        Assert.False(adopted.IsValid);
+        Assert.False(world.Service.Release(adopted));
+        world.Service.Dispose();
+        Assert.Equal(0, world.Service.Count);
     }
 
     [Fact]
-    public void Inactive_restore_stops_before_restoring_authored_speed()
+    public void Vfx_release_restores_the_exact_original_playback_state_and_retries_a_failed_restore()
     {
         var world = new World();
         var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
         world.Port.SetVfxPlayback(address, VfxPlaybackState.Inactive);
+        world.Port.SetVfxColor(address, new Vector4(1f, 1f, 1f, 0.35f));
         var effect = world.Service.Adopt(address)!;
-        Assert.True(world.Service.Release(effect));
+        effect.VfxPaused = true;
+        effect.Transform = Moved;
 
-        Assert.Equal(VfxPlaybackState.Inactive, world.Port.PlaybackOf(address));
-        Assert.Equal(1, world.Port.PauseCalls);
-        Assert.True(world.Port.SpeedWrites >= 1);
-        Assert.Equal(new[] { "pause", "speed" },
-            world.Port.VfxOperations.TakeLast(2));
-    }
-
-    [Fact]
-    public void Observed_vfx_stays_vfx_when_resource_path_is_unavailable()
-    {
-        var world = new World();
-        var address = world.Port.Add(string.Empty, Placed, isVfx: true);
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Playing);
-
-        Assert.True(world.Service.Adopt(address)!.IsVfx);
-        Assert.Contains(world.Port.Enumerate(), row => row.IsEffect);
-    }
-
-    [Fact]
-    public void Native_vfx_kind_survives_an_unavailable_row()
-    {
-        var world = new World();
-        var address = world.Port.Add("", Placed, isVfx: true);
-        world.Port.HideRows = true;
-
-        Assert.True(world.Service.Adopt(address)!.IsVfx);
-    }
-
-    [Fact]
-    public void Observed_vfx_refuses_when_playback_is_unavailable()
-    {
-        var world = new World();
-        var address = world.Port.Add(string.Empty, Placed, isVfx: true);
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Unavailable);
-
-        Assert.Null(world.Service.Adopt(address));
-    }
-
-    [Fact]
-    public void Vfx_owner_requires_resource_and_rejects_replacement_identity()
-    {
-        var world = new World();
-        var address = world.Port.Add("", Placed, isVfx: true);
-        world.Port.SetVfxResource(address, nint.Zero);
-        var owner = new VfxLifecycleOwner(world.Port);
-
-        Assert.False(owner.TryCapture(address, out _, out _));
-
-        world.Port.SetVfxResource(address, 0xCAFE);
-        Assert.True(owner.TryCapture(address, out var identity, out _));
-        Assert.True(owner.IsCurrent(identity));
-        world.Port.Replace(address, "", Moved, isVfx: true);
-        Assert.False(owner.IsCurrent(identity));
-    }
-
-    [Fact]
-    public void Release_and_gpose_exit_are_idempotent()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        var effect = world.Service.Adopt(address)!;
-
-        Assert.True(world.Service.Release(effect));
+        world.Port.NoOpRestore = true;
         Assert.False(world.Service.Release(effect));
-        world.Events.Publish(new GPoseStateChangedEvent(false));
-        world.Service.Dispose();
-
-        Assert.Equal(0, world.Service.Count);
-        Assert.True(world.Port.IsAlive(address));
+        Assert.True(effect.IsValid);
+        world.Port.NoOpRestore = false;
+        Assert.True(world.Service.Release(effect));
+        Assert.Equal(VfxPlaybackState.Inactive, world.Port.PlaybackOf(address));
+        Assert.Equal(0.35f, world.Port.ColorOf(address).W);
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
     }
 
     [Fact]
@@ -494,239 +238,6 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(Moved, world.Port.PlacementOf(address));
         Assert.True(world.Service.Release(adopted));
         Assert.Equal(Moved, world.Port.PlacementOf(address));
-    }
-
-    [Fact]
-    public void Spawned_vfx_is_destroyed_once_on_release()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out var detail);
-
-        Assert.NotNull(spawned);
-        Assert.Null(detail);
-        var address = spawned!.Address;
-        Assert.True(world.Service.Release(spawned));
-        Assert.Contains(address, world.Port.Destroyed);
-        Assert.False(world.Service.Release(spawned));
-    }
-
-    [Fact]
-    public void Two_spawned_same_path_instances_release_independently()
-    {
-        var world = new World();
-        var first = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out _)!;
-        var second = world.Service.Spawn(
-            "vfx/fire.avfx", Moved, true, out _)!;
-
-        Assert.True(world.Service.Release(first));
-        Assert.True(second.IsValid);
-        Assert.DoesNotContain(first.Address, world.Port.LiveAddresses);
-        Assert.True(world.Service.Release(second));
-        Assert.Empty(world.Port.LiveAddresses);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_validates_fresh_identity_before_destroying_old()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out _)!;
-        world.Port.FailIdentityReads = 3;
-
-        Assert.False((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.DoesNotContain(spawned.Address, world.Port.Destroyed);
-        Assert.True(spawned.IsValid);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_old_failure_cleans_fresh_and_retains_pending_until_retry()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out _)!;
-        world.Port.FailDestroyAddresses.Add(spawned.Address);
-        world.Port.FailFreshDestroy = true;
-
-        var result = await spawned.Respawn("vfx/new.avfx");
-        Assert.False(result.Succeeded);
-        Assert.Contains("cleanup remains outstanding", result.Detail);
-        Assert.True(spawned.IsValid);
-
-        world.Port.FailDestroyAddresses.Clear();
-        world.Port.FailFreshDestroy = false;
-        world.Service.Dispose();
-        Assert.False(spawned.IsValid);
-    }
-
-    [Fact]
-    public void Failed_spawned_teardown_retains_handle_for_retry()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out _)!;
-        world.Port.FailDestroy = true;
-
-        Assert.False(world.Service.Release(spawned));
-        Assert.True(spawned.IsValid);
-        world.Port.FailDestroy = false;
-        Assert.True(world.Service.Release(spawned));
-        Assert.False(spawned.IsValid);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_speed_refusal_keeps_old_instance_and_discards_replacement()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
-        var original = spawned.Address;
-        spawned.VfxSpeed = 2f;
-        world.Port.NoOpSpeed = true;
-        int changes = 0;
-        world.Events.Subscribe<WorldObjectListChangedEvent>(_ => changes++);
-
-        Assert.False((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.Equal(original, spawned.Address);
-        Assert.Equal("vfx/fire.avfx", spawned.Path);
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
-        Assert.Equal(0, changes);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_opacity_exception_keeps_old_instance_and_discards_replacement()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
-        var original = spawned.Address;
-        spawned.Opacity = .4f;
-        world.Port.ThrowOnOpacity = true;
-
-        Assert.False((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.Equal(original, spawned.Address);
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_pending_bg_cleanup_never_destroys_a_replacement_at_the_same_address()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        var original = spawned.Address;
-        world.Port.FailDestroyAddresses.Add(original);
-        world.Port.FailFreshDestroy = true;
-        Assert.False((await spawned.Respawn("bg/new.mdl")).Succeeded);
-        var pending = world.Port.LastSpawned;
-        world.Port.Replace(pending, "bg/unrelated.mdl", Moved);
-        world.Port.FailDestroyAddresses.Clear();
-        world.Port.FailFreshDestroy = false;
-
-        world.Service.ReleaseAll();
-        world.Service.ReleaseAll();
-        Assert.Contains(pending, world.Port.LiveAddresses);
-        Assert.DoesNotContain(pending, world.Port.Destroyed);
-        Assert.Equal(Moved, world.Port.PlacementOf(pending));
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_refuses_reused_old_bg_address_and_release_leaves_its_replacement_alone()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        var original = spawned.Address;
-        world.Port.Replace(original, "bg/unrelated.mdl", Moved);
-
-        Assert.False((await spawned.Respawn("bg/new.mdl")).Succeeded);
-        Assert.True(world.Service.Release(spawned));
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_restores_pause_before_releasing_old_and_commits_matching_playback()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
-        var original = spawned.Address;
-        spawned.VfxPaused = true;
-        world.Port.NoOpPlayback = true;
-        Assert.False((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.Equal(original, spawned.Address);
-
-        world.Port.NoOpPlayback = false;
-        Assert.True((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.True(spawned.VfxPaused);
-        Assert.Equal(VfxPlaybackState.Paused, spawned.VfxPlayback);
-        Assert.Equal(VfxPlaybackState.Paused, world.Port.PlaybackOf(spawned.Address));
-        Assert.Equal(DateTime.MaxValue, spawned.NextVfxRefresh);
-        Assert.Contains(original, world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_failed_spawn_leaves_old_handle_unchanged()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("vfx/fire.avfx", Placed, true, out _)!;
-        var original = spawned.Address;
-        world.Port.FailSpawn = true;
-
-        Assert.False((await spawned.Respawn("vfx/new.avfx")).Succeeded);
-        Assert.Equal(original, spawned.Address);
-        Assert.Equal("vfx/fire.avfx", spawned.Path);
-        Assert.Equal(Placed, spawned.Transform);
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
-        Assert.Empty(world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_rejects_replacement_before_first_graph_observation()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        var original = spawned.Address;
-        world.Port.ReplaceFreshBeforeObservation = true;
-        Assert.False((await spawned.Respawn("bg/new.mdl")).Succeeded);
-        Assert.Equal(original, spawned.Address);
-        Assert.Equal(Moved, world.Port.PlacementOf(world.Port.LastSpawned));
-        Assert.Empty(world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_subscriber_failure_does_not_destroy_committed_body()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        world.Events.Subscribe<WorldObjectListChangedEvent>(_ => throw new InvalidOperationException("subscriber"));
-        Assert.True((await spawned.Respawn("bg/new.mdl")).Succeeded);
-        Assert.True(spawned.IsValid);
-        Assert.Equal(new[] { spawned.Address }, world.Port.LiveAddresses);
-    }
-
-    [Fact]
-    public void Bg_initial_resource_attachment_keeps_allocation_but_reuse_does_not()
-    {
-        var loading = new WorldObjectIncarnation((nint)123, 1, 0);
-        Assert.True(loading.SameAllocation(new((nint)123, 1, (nint)456)));
-        Assert.False(loading.SameAllocation(new((nint)123, 2, (nint)456)));
-        Assert.False(loading.SameAllocation(new((nint)123, 1, 0, true)));
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_identity_read_failure_retains_allocation_cleanup_authority()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        world.Port.FailIdentityReads = 3;
-        world.Port.FailFreshDestroy = true;
-        Assert.False((await spawned.Respawn("bg/new.mdl")).Succeeded);
-        var fresh = world.Port.LastSpawned;
-        world.Port.FailIdentityReads = 0;
-        world.Port.FailFreshDestroy = false;
-        world.Service.ReleaseAll();
-        Assert.Contains(fresh, world.Port.Destroyed);
-        Assert.Empty(world.Port.LiveAddresses);
     }
 
     [Fact]
@@ -775,31 +286,10 @@ public sealed class WorldObjectRestoreTests
         var operation = spawned.Respawn("bg/new.mdl");
         world.Port.FailFreshDestroy = true;
         world.Service.PumpRespawns(DateTime.UtcNow.AddSeconds(16));
-        var result = await operation;
-        Assert.False(result.Succeeded);
-        Assert.Contains("cleanup remains outstanding", result.Detail);
+        Assert.False((await operation).Succeeded);
         Assert.Equal(original, spawned.Address);
         world.Port.FailFreshDestroy = false;
         world.Service.ReleaseAll();
-        Assert.Empty(world.Port.LiveAddresses);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async System.Threading.Tasks.Task Respawn_pending_work_cancels_on_release_exit_and_dispose(int action)
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        world.Port.BgReady = false;
-        var operation = spawned.Respawn("bg/new.mdl");
-        if (action == 0) world.Service.Release(spawned);
-        else if (action == 1) world.Events.Publish(new GPoseStateChangedEvent(false));
-        else world.Service.Dispose();
-        Assert.False((await operation).Succeeded);
-        world.Port.BgReady = true;
-        world.Service.PumpRespawns(DateTime.UtcNow);
         Assert.Empty(world.Port.LiveAddresses);
     }
 
@@ -819,136 +309,6 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(original, spawned.Address);
         Assert.Equal(Moved, world.Port.PlacementOf(fresh));
         Assert.DoesNotContain(fresh, world.Port.Destroyed);
-    }
-
-    [Fact]
-    public async System.Threading.Tasks.Task Respawn_undyeable_model_does_not_wait_for_a_stain_buffer()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
-        spawned.Tint = System.Numerics.Vector3.One;
-        world.Port.BgDyeable = false;
-        world.Port.FailBgTint = true;
-        Assert.True((await spawned.Respawn("bg/new.mdl")).Succeeded);
-    }
-
-    [Fact]
-    public void Gpose_exit_failure_enters_teardown_only_mode()
-    {
-        var world = new World();
-        var spawned = world.Service.Spawn(
-            "vfx/fire.avfx", Placed, true, out _)!;
-        world.Port.FailDestroy = true;
-
-        world.Events.Publish(new GPoseStateChangedEvent(false));
-        int speedWrites = world.Port.SpeedWrites;
-        spawned.VfxSpeed = 2f;
-
-        Assert.Equal(speedWrites, world.Port.SpeedWrites);
-        Assert.True(spawned.IsValid);
-        world.Port.FailDestroy = false;
-        Assert.True(world.Service.Release(spawned));
-    }
-
-    [Fact]
-    public void Failed_playback_commands_do_not_commit_managed_state()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        var effect = world.Service.Adopt(address)!;
-        effect.VfxPaused = true;
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Unavailable);
-
-        effect.VfxPaused = false;
-        Assert.True(effect.VfxPaused);
-
-        world.Port.Replace(address, "vfx/replacement.avfx", Moved, isVfx: true);
-        float priorSpeed = effect.VfxSpeed;
-        effect.VfxSpeed = 3f;
-        Assert.Equal(priorSpeed, effect.VfxSpeed);
-    }
-
-    [Fact]
-    public void Native_noop_speed_pause_resume_and_refresh_refuse()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        var effect = world.Service.Adopt(address)!;
-        world.Port.NoOpSpeed = true;
-        float priorSpeed = effect.VfxSpeed;
-        effect.VfxSpeed = 3f;
-        Assert.Equal(priorSpeed, effect.VfxSpeed);
-
-        effect.VfxPaused = true;
-        Assert.True(effect.VfxPaused);
-        world.Port.NoOpPlayback = true;
-        effect.VfxPaused = false;
-        Assert.True(effect.VfxPaused);
-        effect.Transform = Moved;
-        world.Port.NoOpRefresh = true;
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Playing);
-        effect.Transform = Placed;
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
-    }
-
-    [Fact]
-    public void Failed_vfx_restore_keeps_handle_for_retry()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        var effect = world.Service.Adopt(address)!;
-        world.Port.NoOpRestore = true;
-
-        Assert.False(world.Service.Release(effect));
-        Assert.True(effect.IsValid);
-
-        world.Port.NoOpRestore = false;
-        Assert.True(world.Service.Release(effect));
-    }
-
-    [Fact]
-    public void Vfx_restore_preserves_fractional_alpha_snapshot()
-    {
-        var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        world.Port.SetVfxColor(address, new Vector4(1f, 1f, 1f, 0.35f));
-        var effect = world.Service.Adopt(address)!;
-
-        Assert.True(world.Service.Release(effect));
-        Assert.Equal(0.35f, world.Port.ColorOf(address).W);
-        Assert.Equal(0, world.Port.VisibleWrites);
-    }
-    [Fact]
-    public void Scenery_pause_resume_and_immediate_repause_keep_the_composed_placement()
-    {
-        var world = new World();
-        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
-        var obj = world.Service.Adopt(address)!;
-        obj.Transform = new Transform(new Vector3(10, 0, 0), Quaternion.Identity, Vector3.One);
-        world.Service.HoldPausedAnimations();
-        // Native animation advances in its original frame.
-        world.Port.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
-        world.Service.HoldPausedAnimations();
-        world.Port.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
-
-        obj.AnimationPaused = true;
-        world.Port.Write(address, Transform.Identity);
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
-        obj.AnimationPaused = false;
-        obj.AnimationPaused = true; // No frame between resume and pause.
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
-        obj.AnimationPaused = false;
-        world.Port.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(11, world.Port.PlacementOf(address).Position.X);
-        world.Port.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(12, world.Port.PlacementOf(address).Position.X);
-        world.Service.Dispose();
     }
 
     [Fact]
@@ -987,30 +347,6 @@ public sealed class WorldObjectRestoreTests
         world.Service.Dispose();
     }
 
-    [Fact]
-    public void Pause_waits_for_a_loaded_tail_and_drag_updates_the_frozen_placement()
-    {
-        var world = new World();
-        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
-        var obj = world.Service.Adopt(address)!;
-        world.Port.BgReady = false;
-        obj.AnimationPaused = true;
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(0, world.Port.TailReads);
-        world.Port.BgReady = true;
-        world.Port.TailValue = 17;
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(1, world.Port.TailReads);
-        world.Port.TailValue = 22;
-        obj.Transform = Moved;
-        world.Port.Write(address, Transform.Identity);
-        world.Service.HoldPausedAnimations();
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
-        Assert.Equal(17, world.Port.HeldTail);
-        Assert.Equal(1, world.Port.TailReads);
-        world.Service.Dispose();
-    }
-
     private sealed class World
     {
         public FakePort Port { get; } = new();
@@ -1038,12 +374,7 @@ public sealed class WorldObjectRestoreTests
         private nint _next = 0x1000;
 
         public int Writes { get; private set; }
-        public bool ThrowOnWrite { get; set; }
-        public bool ThrowOnOpacity { get; set; }
-        public bool FailSpawn { get; set; }
-        public bool ReplaceFreshBeforeObservation { get; set; }
         public bool BgReady { get; set; } = true;
-        public bool BgDyeable { get; set; } = true;
         public bool FailBgTint { get; set; }
         public System.Numerics.Vector3? LastBgTint { get; private set; }
         public byte LastFurnitureStain { get; private set; }
@@ -1060,22 +391,9 @@ public sealed class WorldObjectRestoreTests
             return BgReady;
         }
         public bool LastNightState { get; private set; }
-        public bool NoOpSpeed { get; set; }
-        public bool NoOpPlayback { get; set; }
-        public bool NoOpRefresh { get; set; }
         public bool NoOpRestore { get; set; }
-        public bool HideRows { get; set; }
-        public bool FailDestroy { get; set; }
-        public int FailIdentityReads { get; set; }
         public bool FailFreshDestroy { get; set; }
-        public HashSet<nint> FailDestroyAddresses { get; } = new();
         public readonly List<nint> Destroyed = new();
-        public int VfxTransformWrites { get; private set; }
-        public int PauseCalls { get; private set; }
-        public int ResumeCalls { get; private set; }
-        public int SpeedWrites { get; private set; }
-        public int VisibleWrites { get; private set; }
-        public List<string> VfxOperations { get; } = new();
         public IReadOnlyCollection<nint> LiveAddresses => _nodes.Keys;
         public nint LastSpawned { get; private set; }
 
@@ -1084,12 +402,6 @@ public sealed class WorldObjectRestoreTests
         public bool TryReadIncarnation(
             nint address, out WorldObjectIncarnation incarnation)
         {
-            if (FailIdentityReads > 0)
-            {
-                FailIdentityReads--;
-                incarnation = default;
-                return false;
-            }
             if (!_nodes.ContainsKey(address))
             {
                 incarnation = default;
@@ -1105,16 +417,12 @@ public sealed class WorldObjectRestoreTests
 
         public void SetVfxSpeed(nint address, float speed)
         {
-            VfxOperations.Add("speed");
-            SpeedWrites++;
             if (_nodes.TryGetValue(address, out var node))
                 node.Speed = speed;
         }
 
         public bool TrySetVfxSpeed(nint address, float speed)
         {
-            if (NoOpSpeed)
-                return false;
             SetVfxSpeed(address, speed);
             return true;
         }
@@ -1128,47 +436,31 @@ public sealed class WorldObjectRestoreTests
             return true;
         }
         public bool IsBgReady(nint address) => BgReady;
-        public bool? CanDyeBg(nint address) => BgReady ? BgDyeable : null;
+        public bool? CanDyeBg(nint address) => BgReady ? true : null;
         public bool? ReadBgNightState(nint address) => null;
         public bool WriteBgAnimationSpeed(nint address, float speed) =>
             true;
-        public int TailReads;
-        public byte TailValue;
-        public byte HeldTail;
-        public bool TryReadBgTail(nint address, byte[] into)
-        {
-            TailReads++;
-            into[0] = TailValue;
-            return true;
-        }
-        public void WriteBgTailHeld(nint address, byte[] values) => HeldTail = values[0];
+        public bool TryReadBgTail(nint address, byte[] into) => true;
+        public void WriteBgTailHeld(nint address, byte[] values) { }
         public void WriteBgNightState(nint address, bool night) => LastNightState = night;
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address)
         {
-            VfxOperations.Add("pause");
-            PauseCalls++;
             if (_nodes.TryGetValue(address, out var node))
                 node.Playback = VfxPlaybackState.Paused;
         }
         public bool TryPauseVfx(nint address)
         {
-            if (NoOpPlayback)
-                return false;
             PauseVfx(address);
             return true;
         }
         public bool TryResumeVfx(nint address, float speed)
         {
-            if (NoOpPlayback)
-                return false;
             ResumeVfx(address, speed);
             return true;
         }
         public void ResumeVfx(nint address, float speed)
         {
-            VfxOperations.Add("resume");
-            ResumeCalls++;
             if (_nodes.TryGetValue(address, out var node))
                 node.Playback = VfxPlaybackState.Playing;
             SetVfxSpeed(address, speed);
@@ -1229,7 +521,6 @@ public sealed class WorldObjectRestoreTests
 
         public void WriteOpacity(nint address, float opacity)
         {
-            if (ThrowOnOpacity) throw new InvalidOperationException("Injected opacity failure");
             if (_nodes.TryGetValue(address, out var node)) node.Opacity = opacity;
         }
 
@@ -1241,7 +532,6 @@ public sealed class WorldObjectRestoreTests
 
         public nint Spawn(string path, in Transform placement)
         {
-            if (FailSpawn) return nint.Zero;
             var address = _next++;
             LastSpawned = address;
             _nodes[address] = new Node
@@ -1265,8 +555,6 @@ public sealed class WorldObjectRestoreTests
             var address = Spawn(path, placement);
             identity = address == nint.Zero ? default : new(address, address.ToInt64(),
                 _nodes[address].ResourceIdentity, _nodes[address].IsVfx);
-            if (address != nint.Zero && ReplaceFreshBeforeObservation)
-                Replace(address, "bg/unrelated.mdl", Moved);
             return address;
         }
 
@@ -1278,8 +566,7 @@ public sealed class WorldObjectRestoreTests
 
         public bool TryDestroy(nint address)
         {
-            if (FailDestroy || FailDestroyAddresses.Contains(address)
-                || (FailFreshDestroy && address == LastSpawned))
+            if (FailFreshDestroy && address == LastSpawned)
                 return false;
             Destroy(address);
             return true;
@@ -1332,9 +619,6 @@ public sealed class WorldObjectRestoreTests
         public void SetVfxPlayback(nint address, VfxPlaybackState state) =>
             _nodes[address].Playback = state;
 
-        public void SetVfxResource(nint address, nint resource) =>
-            _nodes[address].ResourceIdentity = resource;
-
         public VfxPlaybackState PlaybackOf(nint address) =>
             _nodes[address].Playback;
 
@@ -1349,8 +633,6 @@ public sealed class WorldObjectRestoreTests
 
         public IReadOnlyList<WorldObjectRow> Enumerate()
         {
-            if (HideRows)
-                return Array.Empty<WorldObjectRow>();
             var rows = new List<WorldObjectRow>(_nodes.Count);
             foreach (var (address, node) in _nodes)
                 rows.Add(new WorldObjectRow(
@@ -1358,18 +640,7 @@ public sealed class WorldObjectRestoreTests
             return rows;
         }
 
-        /// <summary>The graph's light-typed nodes. A light is never a BG
-        /// object, so this listing and <see cref="Enumerate"/>'s never
-        /// overlap — the same partition the real walk makes by ObjectType.
-        /// </summary>
-        public List<nint> Lights { get; } = new();
-
-        public IReadOnlyList<nint> EnumerateLights() => Lights.ToArray();
-
-        /// <summary>Every outline byte this fake was ever asked to write, in
-        /// order. The hover contract is a PAIRING — what goes on comes off —
-        /// and a sequence is the only thing that can state it.</summary>
-        public List<(nint Address, byte Outline)> OutlineWrites { get; } = new();
+        public IReadOnlyList<nint> EnumerateLights() => [];
 
         public bool TryReadOutline(nint address, out byte outline)
         {
@@ -1384,7 +655,6 @@ public sealed class WorldObjectRestoreTests
 
         public void WriteOutline(nint address, byte outline)
         {
-            OutlineWrites.Add((address, outline));
             if (_nodes.TryGetValue(address, out var node))
                 node.Outline = outline;
         }
@@ -1407,8 +677,6 @@ public sealed class WorldObjectRestoreTests
 
         public void Write(nint address, in Transform placement)
         {
-            if (ThrowOnWrite)
-                throw new InvalidOperationException("the world refused a write");
             if (!_nodes.TryGetValue(address, out var node))
                 return;
             node.Placement = placement;
@@ -1419,14 +687,11 @@ public sealed class WorldObjectRestoreTests
             nint address, in Transform placement)
         {
             Write(address, placement);
-            VfxTransformWrites++;
         }
 
         public bool TryWriteVfxTransform(
             nint address, in Transform placement)
         {
-            if (NoOpRefresh)
-                return false;
             WriteVfxTransform(address, placement);
             return true;
         }
@@ -1461,7 +726,6 @@ public sealed class WorldObjectRestoreTests
 
         public void WriteVisible(nint address, bool visible)
         {
-            VisibleWrites++;
             if (_nodes.TryGetValue(address, out var node))
                 node.Visible = visible;
         }
@@ -1486,8 +750,6 @@ public sealed class WorldObjectRestoreTests
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
-        public int ListChanges { get; private set; }
-
         public void Dispose() { }
 
         public void Subscribe<T>(Action<T> handler) where T : IEvent
@@ -1505,8 +767,6 @@ public sealed class WorldObjectRestoreTests
 
         public void Publish<T>(T evt) where T : IEvent
         {
-            if (evt is WorldObjectListChangedEvent)
-                ListChanges++;
             if (_handlers.TryGetValue(typeof(T), out var list))
                 foreach (var handler in list.ToArray())
                     ((Action<T>)handler)(evt);

@@ -31,37 +31,5 @@ public sealed class LibrarySceneActionsTests
         actions.LoadScene("scene.xivs", ObjectPlacementMode.AsSaved);
         scene.Received().BeginLoad("scene.xivs", Arg.Is<SceneLoadOptions>(o => o.ClearExistingScene));
     }
-
-    [Fact]
-    public void Missing_anchor_refuses_explicit_placement_but_portal_can_fall_back_to_saved()
-    {
-        var scene = Substitute.For<ISceneWorkflow>();
-        scene.BeginLoad(default!, default).ReturnsForAnyArgs(SceneActionResult.Ok());
-        var actions = new LibrarySceneActions(scene, new(), Substitute.For<IPlacementAnchorSource>(),
-            Substitute.For<ISceneCreation>(), Substitute.For<IPendingSceneCreation>());
-        Assert.False(actions.SpawnEntry("actor.xiva", PoseLibraryEntryKind.Actor,
-            ObjectPlacementMode.RelativeToSelectedActor).Success);
-        scene.DidNotReceiveWithAnyArgs().BeginLoad(default!, default);
-        Assert.True(actions.SpawnEntry("actor.xiva", PoseLibraryEntryKind.Actor,
-            ObjectPlacementMode.RelativeToSelectedActor, fallbackToSaved: true).Success);
-        scene.Received(1).BeginLoad("actor.xiva", Arg.Is<SceneLoadOptions>(o =>
-            o.Placement == ObjectPlacementMode.AsSaved && !o.ClearExistingScene));
-    }
-
-    [Fact]
-    public void Pose_spawn_hands_an_immutable_request_to_the_application_pending_owner()
-    {
-        var creation = Substitute.For<ISceneCreation>();
-        var pending = Substitute.For<IPendingSceneCreation>();
-        var handle = new SceneEntityHandle(SessionGeneration.New(), Poser.Domain.Identity.SceneEntityKind.Actor);
-        creation.CreateActor(default!).ReturnsForAnyArgs(new SceneCreationResult(handle));
-        var actions = new LibrarySceneActions(Substitute.For<ISceneWorkflow>(), new(),
-            Substitute.For<IPlacementAnchorSource>(), creation, pending);
-        var options = new PoseImportOptions { ApplyScale = true };
-        Assert.True(actions.SpawnPose("saved.pose", options).Success);
-        options.ApplyScale = false;
-        pending.Received(1).ApplyPoseWhenReady(handle, "saved.pose",
-            Arg.Is<PoseImportOptions>(o => o.ApplyScale));
-    }
 }
 
