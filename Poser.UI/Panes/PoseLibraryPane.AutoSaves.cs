@@ -212,10 +212,10 @@ public sealed partial class PoseLibraryPane
                     LabelLower = entry.NameLower,
                     Sub = entry.Stamp,
                     ThumbKey = entry.FilePath,
-                    // An auto-save is a normal export, so it carries whatever
-                    // preview the exporter wrote; the cache probes once and
-                    // memoizes a file without one.
-                    HasThumbnail = true,
+                    // Only a file whose document says it embeds an image asks
+                    // the cache: auto-saves are written without one, and a
+                    // blanket claim made the cache open every visible file.
+                    HasThumbnail = entry.HasThumbnail,
                     Favorite = favorites.Contains(entry.FilePath),
                     Folder = group,
                 });

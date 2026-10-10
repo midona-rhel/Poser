@@ -46,11 +46,23 @@ public sealed class AutoSaveEntry
     /// any file whose document no longer reads — and gathers under its day
     /// alone. No place is ever inferred.</summary>
     public required string Place { get; init; }
+
+    /// <summary>Whether the document embeds a preview image. Auto-saves are
+    /// written without one, so a tile that claimed one by default sent the
+    /// thumbnail cache to open and parse every visible file to learn that.
+    /// </summary>
+    public required bool HasThumbnail { get; init; }
 }
 
 
-/// <summary>Reads current and legacy autosave directories without application or game access.</summary>
-public static class AutoSaveLibraryReader
+/// <summary>
+/// Reads current and legacy autosave directories without application or game
+/// access. The listing is redone every pass, but what a FILE says about itself
+/// is remembered against the length and write time the listing reported, so a
+/// pass only opens the files written since the last one. One pass at a time:
+/// the owner serializes calls.
+/// </summary>
+public sealed class AutoSaveLibraryReader
 {
     private const string SnapshotFolderFormat = "yyyy-MM-dd HH-mm-ss'Z'";
     private const string SnapshotDayFolderFormat = "yyyy-MM-dd";
@@ -58,13 +70,25 @@ public static class AutoSaveLibraryReader
     private const string StampFormat = LibraryStamp.DateTimeFormat;
     private const string PoseExtension = ".pose";
 
-    public static List<AutoSaveFolder> Read(string root)
+    private readonly record struct FileStamp(long Length, long WriteTicks);
+
+    private readonly record struct FileFacts(FileStamp Stamp, string Place, bool HasThumbnail);
+
+    /// <summary>What the last pass read, and what this one has confirmed.
+    /// Swapped at the end of a pass, so a pruned file is forgotten with it.
+    /// </summary>
+    private Dictionary<string, FileFacts> _known = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, FileFacts> _seen = new(StringComparer.OrdinalIgnoreCase);
+
+    public List<AutoSaveFolder> Read(string root)
     {
-        var snapshots = new List<(string Directory, DateTime At)>();
+        var snapshots = new List<(DirectoryInfo Directory, DateTime At)>();
         try
         {
-            foreach (var directory in Directory.EnumerateDirectories(root))
-                snapshots.Add((directory, SafeFolderTime(directory)));
+            // The enumeration carries each entry's stamps, so ordering and
+            // caching need no second call per folder or file.
+            foreach (var directory in new DirectoryInfo(root).EnumerateDirectories())
+                snapshots.Add((directory, directory.LastWriteTimeUtc));
         }
         catch (Exception)
         {
@@ -78,18 +102,18 @@ public static class AutoSaveLibraryReader
             int byDate = b.At.CompareTo(a.At);
             return byDate != 0
                 ? byDate
-                : string.CompareOrdinal(b.Directory, a.Directory);
+                : string.CompareOrdinal(b.Directory.FullName, a.Directory.FullName);
         });
 
         var read = new List<AutoSaveFolder>(snapshots.Count);
-        var files = new List<string>();
-        foreach (var (directory, _) in snapshots)
+        var files = new List<FileInfo>();
+        foreach (var (directory, at) in snapshots)
         {
             files.Clear();
             try
             {
-                foreach (var file in Directory.EnumerateFiles(directory))
-                    if (System.IO.Path.GetExtension(file).Equals(
+                foreach (var file in directory.EnumerateFiles())
+                    if (System.IO.Path.GetExtension(file.Name).Equals(
                             PoseExtension, StringComparison.OrdinalIgnoreCase))
                         files.Add(file);
             }
@@ -100,44 +124,46 @@ public static class AutoSaveLibraryReader
             if (files.Count == 0)
                 continue;
             // Newest first, by the save time; the name only breaks ties.
-            files.Sort((a, b) =>
+            files.Sort(static (a, b) =>
             {
-                int byTime = SafeFileTime(b).CompareTo(SafeFileTime(a));
+                int byTime = b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc);
                 return byTime != 0
                     ? byTime
-                    : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+                    : string.Compare(a.FullName, b.FullName, StringComparison.OrdinalIgnoreCase);
             });
 
             var entries = new List<AutoSaveEntry>(files.Count);
             foreach (var file in files)
             {
-                var name = System.IO.Path.GetFileNameWithoutExtension(file);
+                var name = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+                var facts = Describe(file);
                 entries.Add(new AutoSaveEntry
                 {
-                    FilePath = file,
+                    FilePath = file.FullName,
                     Name = name,
                     NameLower = name.ToLowerInvariant(),
-                    Stamp = SafeFileTime(file).ToString(
+                    Stamp = file.LastWriteTime.ToString(
                         StampFormat, CultureInfo.InvariantCulture),
-                    Place = SafePlace(file),
+                    Place = facts.Place,
+                    HasThumbnail = facts.HasThumbnail,
                 });
             }
 
             read.Add(new AutoSaveFolder
             {
-                Directory = directory,
-                Day = SnapshotDay(directory),
+                Directory = directory.FullName,
+                Day = SnapshotDay(directory.Name, at),
                 Entries = entries,
             });
         }
 
+        (_known, _seen) = (_seen, _known);
+        _seen.Clear();
         return read;
     }
 
-    private static string SnapshotDay(string directory)
+    private static string SnapshotDay(string name, DateTime writtenUtc)
     {
-        var name = System.IO.Path.GetFileName(directory);
-
         // The per-day layout: the folder name IS the (local) day. Read off the
         // NAME rather than through the mtime fallback, which a later prune
         // deleting siblings inside the folder would silently bump — then
@@ -157,58 +183,40 @@ public static class AutoSaveLibraryReader
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out var parsed)
             ? parsed.ToLocalTime()
-            : SafeFolderTime(directory).ToLocalTime();
+            : writtenUtc.ToLocalTime();
         return time.ToString(DayFormat, CultureInfo.InvariantCulture);
     }
 
-    private static DateTime SafeFolderTime(string directory)
-    {
-        try
-        {
-            return Directory.GetLastWriteTimeUtc(directory);
-        }
-        catch (Exception)
-        {
-            return default;
-        }
-    }
-
-    private static DateTime SafeFileTime(string file)
-    {
-        try
-        {
-            return File.GetLastWriteTime(file);
-        }
-        catch (Exception)
-        {
-            return default;
-        }
-    }
-
     /// <summary>
-    /// Where an auto-saved pose says it was taken. Read through the ordinary
-    /// pose codec's own metadata probe — the same seam the scanned library
-    /// indexes every <c>.pose</c> with, so the auto-save tab is not a second
-    /// JSON contract. Worker thread only: the probe validates a whole bounded
-    /// document per file.
+    /// Where an auto-saved pose says it was taken, and whether it carries an
+    /// image. Read through the ordinary pose codec's own metadata probe — the
+    /// same seam the scanned library indexes every <c>.pose</c> with, so the
+    /// auto-save tab is not a second JSON contract — and only for a file whose
+    /// length or write time moved since the last pass: the probe walks the
+    /// whole bounded document.
     ///
     /// <para>Anything that does not answer a place is EMPTY, never a guess: a
     /// file written before auto-saves recorded one, and a file whose document
     /// no longer reads, are both "no place recorded" and gather under the day
-    /// alone.</para>
+    /// alone. A failed read is not remembered, so a file that was only
+    /// briefly unreadable is asked again next pass.</para>
     /// </summary>
-    private static string SafePlace(string file)
+    private FileFacts Describe(FileInfo file)
     {
-        try
+        var stamp = new FileStamp(file.Length, file.LastWriteTimeUtc.Ticks);
+        string path = file.FullName;
+        if (_known.TryGetValue(path, out var held) && held.Stamp == stamp)
         {
-            var metadata = AtomicPoseFileStore.Default.ReadMetadata(file);
-            return metadata.Succeeded ? metadata.PlaceName ?? string.Empty : string.Empty;
+            _seen[path] = held;
+            return held;
         }
-        catch (Exception)
-        {
-            return string.Empty;
-        }
+
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
+        if (!metadata.Succeeded)
+            return new FileFacts(stamp, string.Empty, false);
+        var facts = new FileFacts(
+            stamp, metadata.PlaceName ?? string.Empty, metadata.HasThumbnail);
+        _seen[path] = facts;
+        return facts;
     }
-
 }
-

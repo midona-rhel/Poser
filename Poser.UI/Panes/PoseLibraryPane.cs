@@ -646,8 +646,11 @@ public sealed partial class PoseLibraryPane
     private void Enter()
     {
         // Nothing is scanned until a surface asks, so the first entry is what
-        // pays for the file system.
+        // pays for the file system. The auto-save read starts here too, so the
+        // tab has a listing waiting when it is opened; the tab's own kick
+        // then only re-stats what this pass already read.
         _library.RequestScan();
+        _autoLibrary.RequestScan();
 
         // The type is a browsing mode, not a preference: every entry starts on
         // the poses, which is also what the import redirect expects to land on.
