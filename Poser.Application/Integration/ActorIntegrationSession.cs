@@ -80,6 +80,8 @@ public sealed class ActorIntegrationSession : IDisposable
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) =>
         _port.GetCollectionAssignment(actor);
 
+    public IntegrationValue<Guid> ReadPlayerCollection() => _port.GetPlayerCollection();
+
     /// <summary>Destructive commands cannot silently turn a failed capture into empty state.</summary>
     public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true)
     {

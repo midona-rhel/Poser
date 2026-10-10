@@ -414,18 +414,24 @@ public class ActorManager : IActorManager
                 disposable.Dispose();
         }
 
+        // Every subscriber is presence maintenance, so an unchanged list is
+        // published once, not once per caller: a redraw poll or a spawn step
+        // that finds the same wrappers fans nothing out.
+        bool changed = !_actors.SequenceEqual(refreshed, ReferenceEqualityComparer.Instance);
         _actors.Clear();
         _actors.AddRange(refreshed);
-        RefreshAuxiliaryActors();
-        _eventBus.Publish(new ActorListChangedEvent(AllActors()));
+        changed |= RefreshAuxiliaryActors();
+        if (changed)
+            _eventBus.Publish(new ActorListChangedEvent(AllActors()));
     }
 
     /// <summary>
     /// The same reconcile as the GPose scan, over the registered auxiliary
     /// indices: an unchanged address keeps its <see cref="ActorBase"/> so
     /// skeleton caches and bindings survive; a replaced body mints a new one.
+    /// Answers whether the auxiliary list changed.
     /// </summary>
-    private void RefreshAuxiliaryActors()
+    private bool RefreshAuxiliaryActors()
     {
         var existingByAddress = _auxiliaryActors.ToDictionary(actor => actor.Address);
         var refreshed = new List<IActor>();
@@ -464,8 +470,10 @@ public class ActorManager : IActorManager
                 disposable.Dispose();
         }
 
+        bool changed = !_auxiliaryActors.SequenceEqual(refreshed, ReferenceEqualityComparer.Instance);
         _auxiliaryActors.Clear();
         _auxiliaryActors.AddRange(refreshed);
+        return changed;
     }
 
     /// <summary>

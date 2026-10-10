@@ -127,6 +127,42 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
+    public void A_clone_whose_slot_vanished_first_still_has_its_collection_deleted()
+    {
+        var actor = Actor(0x830);
+        var native = new FakeNative(new(830, actor.Address, 830));
+        var bus = new FakeEventBus();
+        var collections = new FakeCollections();
+        using var service = new ActorSpawnService(
+            new FakeGPoseService(), new FakeActorManager(actor), bus, native, () => (nint)0x100,
+            null, null, (_, _, _, _) => { }, address => new EntityId($"test-{address}"),
+            collections: collections);
+        Assert.Same(actor, service.SpawnNewActor(reserveCompanionSlot: false));
+        Assert.Contains($"assign:{actor.Address:X}", collections.Calls);
+
+        native.Current = null; // The slot is emptied natively before Poser deletes it.
+        bus.Publish(new GPoseStateChangedEvent(false));
+
+        Assert.Empty(service.OwnershipSnapshot);
+        Assert.Contains($"discard:{actor.Address:X}", collections.Calls);
+    }
+
+    private sealed class FakeCollections : ISpawnCollectionPort
+    {
+        public List<string> Calls { get; } = new();
+        public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
+            Record($"inherit:{cloneAddress:X}");
+        public IntegrationPortResult ReleaseCollection(nint cloneAddress) => Record($"release:{cloneAddress:X}");
+        public IntegrationPortResult AssignPlayerCollection(nint cloneAddress) => Record($"assign:{cloneAddress:X}");
+        public IntegrationPortResult DiscardCollection(nint cloneAddress) => Record($"discard:{cloneAddress:X}");
+        private IntegrationPortResult Record(string call)
+        {
+            Calls.Add(call);
+            return IntegrationPortResult.Ok();
+        }
+    }
+
+    [Fact]
     public void Clone_and_visibility_refuse_stale_or_reused_native_identity()
     {
         var actor = Actor(0x900);

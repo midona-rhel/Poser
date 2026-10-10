@@ -40,6 +40,12 @@ public interface ISpawnCollectionPort
     /// on the object's identifier, which stops existing with the object.</summary>
     IntegrationPortResult ReleaseCollection(nint cloneAddress);
 
+    /// <summary>For a clone whose slot vanished before it could be released:
+    /// deletes its own temporary collection by GUID without touching the
+    /// object, so nothing outlives the clone and no later body at the same
+    /// address inherits the stale GUID.</summary>
+    IntegrationPortResult DiscardCollection(nint cloneAddress) => IntegrationPortResult.Ok();
+
     /// <summary>Assigns the PLAYER's effective collection to a fresh actor
     /// that was not copied from anyone in particular — a new actor, a
     /// catalog creature. Brio leaves such a spawn to Penumbra's own

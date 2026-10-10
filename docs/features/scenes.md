@@ -96,6 +96,9 @@ Earlier edits survive acquisition undo/redo and removal undo/redo. Expired publi
 selection IDs and acquisition receipts never redirect to the restored instance.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
+A duplicate's temporary collection is deleted by its GUID even when the clone's
+slot vanished first, and the delete's result code is checked, so none outlives
+its clone and a later spawn at the same address never inherits a stale one.
 MCDF history reuses its package reference; it is not a portable appearance export.
 Embedded scene packages stay staged until the GPose session ends or the plugin
 unloads, so deleting an actor does not invalidate its history's appearance source.
@@ -138,7 +141,12 @@ world objects, relationships, and optional world toggles. An actor can store
 model id, companion attachment and pose, visibility, absolute transform, gaze,
 and an appearance payload. Permanent Penumbra collections are local GUID
 references, restored and redrawn before companions and poses, as in Brio's
-`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods.
+`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods. Only
+a collection chosen for the actor is saved: every plain spawn is assigned the
+player's collection, and wearing it is inheriting, so it is not recorded. On
+load an actor already wearing the saved collection (an older file that recorded
+the player's) is left alone with no redraw; the rest are assigned and redrawn
+in parallel, not one barrier after another.
 Temporary collection IDs are not saved; those require the modded-appearance
 payload. Older files without collection references retain their existing load
 behavior. Other appearance remains external.

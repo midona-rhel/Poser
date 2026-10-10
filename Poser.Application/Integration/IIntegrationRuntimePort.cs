@@ -44,6 +44,10 @@ public interface IIntegrationRuntimePort
 
     IntegrationValue<CollectionAssignment> GetCollectionAssignment(ActorId actor);
 
+    /// <summary>The local player's effective collection: what every plain
+    /// spawn is assigned, so wearing it is inheriting, not a choice.</summary>
+    IntegrationValue<Guid> GetPlayerCollection();
+
     /// <summary>Captures only a currently effective collection owned by the duplicate lifecycle.</summary>
     IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor);
     IntegrationPortResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot);

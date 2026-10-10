@@ -879,9 +879,12 @@ internal static class SpawnOwnershipCleanup
             var current = native.ResolveByIndex(ownership.Descriptor.Value.Index);
             if (current is null)
             {
-                if (ownership.CollectionAssigned)
+                // The assignment died with the object's identifier; a
+                // duplicate's temporary collection did not, and goes by GUID.
+                if (ownership.CollectionAssigned && collections is not null
+                    && collections.DiscardCollection(ownership.Descriptor.Value.Address) is { Success: false } discarded)
                     log?.Warning(
-                        $"ActorSpawnService: the clone at index {ownership.CreatedIndex} was already gone, so its Penumbra collection assignment could not be released");
+                        $"ActorSpawnService: the clone at index {ownership.CreatedIndex} was already gone and its Penumbra collection could not be deleted: {discarded.Detail}");
                 return ledger.TryRetire(ownership);
             }
             if (current.Value != ownership.Descriptor.Value)

@@ -1162,6 +1162,19 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
             if (actors.Any(entry => entry.Mcdf is not null || entry.PenumbraCollection is not null))
             {
                 Step(ScenePhase.ApplyingAppearance);
+                // Collections are per-actor redraws with no shared slot: all
+                // of them run at once, so N actors cost one redraw's wait,
+                // not N of them back to back.
+                var collections = actors
+                    .Where(actor => actor.Mcdf is null && actor.PenumbraCollection is not null)
+                    .Select(actor => (actor.Name, Restore: _runtime.RestoreCollection(
+                        actorTokens[actor.Key], actor, ActorReadyTimeout, cancellation)))
+                    .ToList();
+                await Task.WhenAll(collections.Select(entry => entry.Restore));
+                foreach (var (name, restore) in collections)
+                    if (restore.Result is { } collectionError)
+                        entities.Add(new SceneEntityOutcome("Collection", name, false, collectionError));
+
                 foreach (var actor in actors)
                 {
                     if (Guard(operation, cancellation) is { } stop)
@@ -1170,13 +1183,7 @@ public sealed partial class SceneWorkflow : IDisposable, ISceneWorkflow
                         return;
                     }
                     if (actor.Mcdf is null)
-                    {
-                        var collectionError = await _runtime.RestoreCollection(
-                            actorTokens[actor.Key], actor, ActorReadyTimeout, cancellation);
-                        if (collectionError is not null)
-                            entities.Add(new SceneEntityOutcome("Collection", actor.Name, false, collectionError));
                         continue;
-                    }
                     var appearance = await _runtime.ImportMcdf(
                         path, actorTokens[actor.Key], actor,
                         McdfImportTimeout, cancellation);

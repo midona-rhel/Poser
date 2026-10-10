@@ -142,7 +142,8 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _actors = actors;
         _objects = objects;
         _redraw = new ActorRedrawBarrier(new PenumbraRedrawRuntime(
-            pluginInterface, framework, bindings, skeletons, actors, sessions, RequestRedraw));
+            pluginInterface, framework, bindings, skeletons, sessions,
+            () => Penumbra.Available, RequestRedraw));
 
         _penumbraVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         _getCollections = pluginInterface.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
@@ -314,6 +315,15 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             return IntegrationValue<IReadOnlyList<ExternalItem>>.Ok(items);
+        });
+
+    public IntegrationValue<Guid> GetPlayerCollection() =>
+        Guarded(Penumbra, "Player collection", () =>
+        {
+            var (valid, _, (id, _)) = _getCollectionForObject.InvokeFunc(0);
+            return valid
+                ? IntegrationValue<Guid>.Ok(id)
+                : IntegrationValue<Guid>.Fail("Penumbra cannot identify the player.");
         });
 
     public IntegrationValue<CollectionAssignment> GetCollectionAssignment(ActorId actor) =>
@@ -699,6 +709,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         {
             if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
                 return refusal;
+            // A body at a reused address owns no earlier duplicate's GUID.
+            if (DeleteDuplicateCollection(cloneAddress) is { Success: false } stale)
+                return stale;
             var (valid, _, (id, _)) = _getCollectionForObject.InvokeFunc(0);
             if (!valid)
                 return IntegrationPortResult.Fail("Penumbra cannot identify the player.");
@@ -714,12 +727,35 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return refusal;
             // The duplicate's own collection goes with it; deleting it drops
             // its assignment too.
-            if (_duplicateCollections.Remove(cloneAddress, out var own))
-                _deleteTemporaryCollection.InvokeFunc(own);
+            var deleted = DeleteDuplicateCollection(cloneAddress);
             var (ec, _) = _setCollectionForObject.InvokeFunc(
                 IndexOf(cloneAddress), null, /*allowCreateNew*/ false, /*allowDelete*/ true);
-            return PenumbraResult(ec, "releasing the clone's collection assignment");
+            return deleted.Success
+                ? PenumbraResult(ec, "releasing the clone's collection assignment")
+                : deleted;
         });
+
+    public IntegrationPortResult DiscardCollection(nint cloneAddress) =>
+        Guarded(Penumbra, "Discard collection", () =>
+            _framework.IsInFrameworkUpdateThread
+                ? DeleteDuplicateCollection(cloneAddress)
+                : IntegrationPortResult.Fail(
+                    "External integration calls must run on the framework thread."));
+
+    /// <summary>Deletes the duplicate's own temporary collection by its GUID.
+    /// It needs no live object, so it also serves a clone that vanished
+    /// first; the ledger entry goes either way, so no later body at the
+    /// address inherits it.</summary>
+    private IntegrationPortResult DeleteDuplicateCollection(nint cloneAddress)
+    {
+        if (!_duplicateCollections.Remove(cloneAddress, out var own))
+            return IntegrationPortResult.Ok();
+        int ec = _deleteTemporaryCollection.InvokeFunc(own);
+        return ec is PenumbraEcSuccess or PenumbraEcNothingChanged or PenumbraEcCollectionMissing
+            ? IntegrationPortResult.Ok()
+            : IntegrationPortResult.Fail(
+                $"Penumbra failed deleting the duplicate's collection (code {ec}).");
+    }
 
     /// <summary>The shared preconditions of the address-addressed calls: the
     /// framework thread, and two addresses that are actually objects. The

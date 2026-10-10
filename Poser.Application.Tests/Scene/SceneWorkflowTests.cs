@@ -332,6 +332,21 @@ public sealed class SceneWorkflowTests
             return Task.FromResult(SceneMcdfOutcome.Ok());
         }
 
+        public int CollectionRestoresRunning;
+        public int PeakCollectionRestores;
+
+        public async Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+            CancellationToken cancellation)
+        {
+            Record($"RestoreCollection:{data.Name}");
+            int running = Interlocked.Increment(ref CollectionRestoresRunning);
+            lock (Calls)
+                PeakCollectionRestores = Math.Max(PeakCollectionRestores, running);
+            await Task.Delay(20, cancellation);
+            Interlocked.Decrement(ref CollectionRestoresRunning);
+            return null;
+        }
+
         public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
         {
             Record($"SpawnActor:{data.Name}");
@@ -1015,6 +1030,24 @@ public sealed class SceneWorkflowTests
         Assert.Contains("CancelPoseImport", runtime.Calls);
         Assert.Equal(new[] { "actor:Lead" }, runtime.Destroyed.ToArray());
         Assert.False(runtime.HeldPoseImports);
+    }
+
+    // ── issue #438: collections redraw together, not one after another ───
+
+    [Fact]
+    public async Task Saved_collections_are_restored_in_parallel()
+    {
+        var first = Actor("First", out _);
+        var second = Actor("Second", out _);
+        first.PenumbraCollection = Guid.NewGuid();
+        second.PenumbraCollection = Guid.NewGuid();
+        var runtime = new FakeRuntime { ReadResult = SceneWith(first, second) };
+        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        Assert.Equal(2, runtime.PeakCollectionRestores);
     }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so

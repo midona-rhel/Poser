@@ -327,6 +327,13 @@ public sealed class SceneCaptureService
     {
         if (_integration.ReadCollection(actor) is not { Success: true, Value: { } assignment })
             return null;
+        // Every plain spawn is ASSIGNED the player's collection, so wearing
+        // it is inheriting: saved, it would force an assignment and a redraw
+        // per actor on load, and name a GUID other machines do not have.
+        if (!assignment.HasIndividualAssignment
+            || _integration.ReadPlayerCollection() is { Success: true, Value: var player }
+                && player == assignment.EffectiveId)
+            return null;
         // A duplicate/MCDF temporary collection's ID dies with its actor.
         // Only permanent local references can be reused on a later load.
         if (assignment.EffectiveId == Guid.Empty)

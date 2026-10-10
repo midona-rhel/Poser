@@ -738,6 +738,12 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             return null;
         var target = await OnFramework(() => _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
         if (target is not { } id) return "The actor is no longer bound.";
+        // Already wearing it (an older file that recorded the player's
+        // collection a spawn inherits): no assignment, and no redraw.
+        if (await OnFramework(() => _integration.ReadCollection(id)) is
+            { Success: true, Value: { HasIndividualAssignment: true } current }
+            && current.EffectiveId == collection)
+            return null;
         var available = await OnFramework(() => _integration.ListCollections());
         var name = collection == Guid.Empty ? "None"
             : available.Value?.FirstOrDefault(x => x.Id == collection)?.Name;
