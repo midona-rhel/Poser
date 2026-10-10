@@ -107,6 +107,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private bool _isAvailable;
     private bool _disposed;
     private bool _subscribed;
+    private bool _detourFaultLogged;
 
     public bool IsAvailable => _isAvailable && !_disposed;
 
@@ -242,8 +243,9 @@ public unsafe class GazeService : IGazeService, IDisposable
                 hooks,
                 actorLookAtLoopAddress,
                 ActorLookAtDetour);
-            hook.Enable();
+            // Published before enabling: the detour reads it and can run at once.
             _actorLookAtLoop = hook;
+            hook.Enable();
             _isAvailable = true;
 
             _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
@@ -423,9 +425,29 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     private nint ActorLookAtDetour(ContainerInterface* args)
     {
-        if (!IsAvailable)
-            return _actorLookAtLoop!.Original(args);
+        // Never throw into the game's look-at loop: a fault skips this pass's
+        // writes, is logged once, and the game's own loop still runs.
+        try
+        {
+            if (IsAvailable)
+                DriveLookAt(args);
+        }
+        catch (Exception ex)
+        {
+            if (!_detourFaultLogged)
+            {
+                _detourFaultLogged = true;
+                _log.Error($"GazeService: look-at detour faulted (logged once): {ex}");
+            }
+        }
+        // This advances native gaze inputs. Pose evaluation happens later,
+        // before BonePosingService applies the authored transforms.
+        return _actorLookAtLoop!.Original(args);
+    }
 
+    /// <summary>The detour's own writes, before the game's loop runs.</summary>
+    private void DriveLookAt(ContainerInterface* args)
+    {
         if (_gPoseService.IsGPosing)
         {
             bool any;
@@ -468,7 +490,7 @@ public unsafe class GazeService : IGazeService, IDisposable
 
                     // An actor Poser has never touched is the game's alone.
                     if (!known)
-                        return _actorLookAtLoop!.Original(args);
+                        return;
 
                     var lookAtController =
                         &((Character*)targetActor.Address)->LookAt.Controller;
@@ -500,7 +522,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     // Off performs no further write: every channel has been
                     // handed back and the game's own update owns them again.
                     if (mode == GazeTargetMode.None)
-                        return _actorLookAtLoop!.Original(args);
+                        return;
 
                     if (mode == GazeTargetMode.Detached)
                     {
@@ -511,7 +533,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                         _updateLookAt(lookAtController, &none, LookAtIndex_Body, 0);
                         _updateLookAt(lookAtController, &none, LookAtIndex_Head, 0);
                         _updateLookAt(lookAtController, &none, LookAtIndex_Eyes, 0);
-                        return _actorLookAtLoop!.Original(args);
+                        return;
                     }
 
                     // Camera and Forward are position sources refreshed each
@@ -563,10 +585,6 @@ public unsafe class GazeService : IGazeService, IDisposable
                 }
             }
         }
-
-        // This advances native gaze inputs. Pose evaluation happens later,
-        // before BonePosingService applies the authored transforms.
-        return _actorLookAtLoop!.Original(args);
     }
 
     private GazeResult Unavailable() =>

@@ -254,16 +254,14 @@ public class ActorManager : IActorManager
             }
         }
         // Adopted overworld bodies keep their own index below the GPose
-        // range; they are listed by address, and one that has left the
-        // world leaves the set.
+        // range; they are listed by their recorded slot, and one whose slot
+        // no longer holds that exact object leaves the set.
         if (_adopted.Count == 0)
             yield break;
-        foreach (var address in _adopted.ToArray())
+        foreach (var (address, adoption) in _adopted.ToArray())
         {
-            IGameObject? obj = null;
-            try { obj = _objectTable.CreateObjectReference(address); }
-            catch { }
-            if (obj is null || !obj.IsValid())
+            var obj = CurrentAdopted(address, adoption);
+            if (obj is null)
             {
                 _adopted.Remove(address);
                 continue;
@@ -272,70 +270,104 @@ public class ActorManager : IActorManager
         }
     }
 
-    private readonly HashSet<nint> _adopted = new();
-    /// <summary>Where each adopted body stood when it was taken — its
-    /// draw object's position, rotation and scale — so GPose leaving
-    /// puts it back exactly there. Its pose needs no restoring: once the
-    /// scene lets go, the game's own animation writes the skeleton again.</summary>
-    private readonly Dictionary<nint, (Vector3 Position, Quaternion Rotation, Vector3 Scale)> _adoptedSeats = new();
+    /// <summary>An adopted body is the exact (address, object-table index,
+    /// GameObjectId) triple it was taken as — the identity
+    /// <see cref="WorldActorObservation"/> carries. An address alone is
+    /// reused by the game, and whatever stands there next is not ours.
+    /// <c>Seat</c> is where its draw object stood when it was taken,
+    /// so GPose leaving puts it back exactly there; its pose needs no
+    /// restoring, the game's own animation writes the skeleton again.</summary>
+    private readonly record struct Adoption(
+        ushort ObjectIndex,
+        ulong GameObjectId,
+        (Vector3 Position, Quaternion Rotation, Vector3 Scale)? Seat);
+
+    private readonly Dictionary<nint, Adoption> _adopted = new();
+
+    /// <summary>The live object at the adoption's slot when it is still the
+    /// adopted one; null otherwise. Every write and classification goes
+    /// through this.</summary>
+    private IGameObject? CurrentAdopted(nint address, Adoption adoption)
+    {
+        try
+        {
+            var current = _objectTable[adoption.ObjectIndex];
+            return current is not null
+                && current.Address == address
+                && current.GameObjectId == adoption.GameObjectId
+                ? current
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public unsafe void AdoptWorldActor(nint address)
     {
-        if (address == nint.Zero || !_adopted.Add(address))
+        // An entry whose object has gone does not block the address's new
+        // occupant; it is replaced below.
+        if (address == nint.Zero
+            || (_adopted.TryGetValue(address, out var held) && CurrentAdopted(address, held) is not null))
             return;
+        IGameObject? source;
+        try { source = _objectTable.CreateObjectReference(address); }
+        catch { source = null; }
+        if (source is null || !source.IsValid())
+            return;
+        (Vector3, Quaternion, Vector3)? seat = null;
         try
         {
             var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
             if (draw != null)
-                _adoptedSeats[address] = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
+                seat = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
         }
         catch (Exception ex)
         {
             _log?.Warning($"ActorManager: could not read an adopted actor's seat: {ex.Message}");
         }
+        _adopted[address] = new Adoption(source.ObjectIndex, source.GameObjectId, seat);
         RefreshActors();
     }
 
     public void ReleaseWorldActor(nint address)
     {
-        if (!_adopted.Remove(address))
+        if (!_adopted.Remove(address, out var adoption))
             return;
-        if (_adoptedSeats.Remove(address, out var seat))
-            SeatBack(address, seat);
+        SeatBack(address, adoption);
         RefreshActors();
     }
 
-    private unsafe void RestoreAdoptedSeats()
+    private void RestoreAdoptedSeats()
     {
-        foreach (var (address, seat) in _adoptedSeats)
-            SeatBack(address, seat);
-        _adoptedSeats.Clear();
+        foreach (var (address, adoption) in _adopted)
+            SeatBack(address, adoption);
     }
 
-    private unsafe void SeatBack(
-        nint address, (Vector3 Position, Quaternion Rotation, Vector3 Scale) seat)
+    private unsafe void SeatBack(nint address, Adoption adoption)
     {
+        if (adoption.Seat is not { } seat || CurrentAdopted(address, adoption) is null)
+            return;
+        try
         {
-            try
-            {
-                var reference = _objectTable.CreateObjectReference(address);
-                if (reference is null || !reference.IsValid())
-                    return;
-                var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
-                if (draw == null)
-                    return;
-                draw->Object.Position = seat.Position;
-                draw->Object.Rotation = seat.Rotation;
-                draw->Object.Scale = seat.Scale;
-            }
-            catch (Exception ex)
-            {
-                _log?.Warning($"ActorManager: could not seat an adopted actor back: {ex.Message}");
-            }
+            var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
+            if (draw == null)
+                return;
+            draw->Object.Position = seat.Position;
+            draw->Object.Rotation = seat.Rotation;
+            draw->Object.Scale = seat.Scale;
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorManager: could not seat an adopted actor back: {ex.Message}");
         }
     }
 
-    public bool IsAdopted(IActor actor) => _adopted.Contains(actor.Address);
+    public bool IsAdopted(IActor actor) =>
+        _adopted.TryGetValue(actor.Address, out var adoption)
+        && actor.Id == ActorIdentity.For(adoption.GameObjectId, adoption.ObjectIndex)
+        && CurrentAdopted(actor.Address, adoption) is not null;
 
     public void RefreshActors()
     {

@@ -790,10 +790,16 @@ public sealed unsafe class LightingService : ILightingService
             if (_disposed || light == null)
                 return result;
 
-            lock (_worldGate)
+            // A handle is tracked only while the destructor hook can prune
+            // it; one constructed before that hook exists is found by the
+            // re-walk the hook's installation schedules.
+            if (_lightDtorHook != null)
             {
-                _worldLights.Add((nint)light);
-                _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
+                lock (_worldGate)
+                {
+                    _worldLights.Add((nint)light);
+                    _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
+                }
             }
 
             // The destructor has no signature of its own; its address comes
@@ -822,6 +828,9 @@ public sealed unsafe class LightingService : ILightingService
             _lightDtorHook =
                 _hooks.HookFromAddress<LightDtorDelegate>(address, LightDtorDetour);
             _lightDtorHook.Enable();
+            // Lights constructed before this point were never tracked; the
+            // next listing walks the graph for them.
+            _worldLightsSeeded = false;
         }
         catch (Exception ex)
         {
@@ -925,6 +934,27 @@ public sealed unsafe class LightingService : ILightingService
             return;
         }
 
+        // Every stored handle must be one the destructor hook will prune.
+        // These were walked this frame, so their virtual tables are live:
+        // install the hook from the first before storing anything, and store
+        // nothing when it cannot be installed.
+        if (_lightDtorHook == null && _destructorAddress == nint.Zero)
+        {
+            foreach (var handle in found)
+            {
+                var native = (GameLight*)handle;
+                if (native == null || native->VirtualTable == null)
+                    continue;
+                _destructorAddress = (nint)native->VirtualTable->Destructor;
+                HookDestructor(_destructorAddress);
+                break;
+            }
+            // A successful install asked for a re-walk; this walk is it.
+            _worldLightsSeeded = true;
+        }
+        if (_lightDtorHook == null)
+            return;
+
         var added = 0;
         lock (_worldGate)
         {
@@ -951,16 +981,14 @@ public sealed unsafe class LightingService : ILightingService
             return Array.Empty<WorldLightCandidate>();
 
         // The lazy half of the seed, for the session this service was
-        // constructed INSIDE of — a hot reload raises no GPose-enter event, so
-        // the first listing is the only place left to notice the set is empty.
+        // constructed INSIDE of — a hot reload raises no GPose-enter event —
+        // and for the lights that predate the destructor hook.
         if (!_worldLightsSeeded)
-        {
-            var empty = false;
-            lock (_worldGate)
-                empty = _worldLights.Count == 0;
-            if (empty)
-                SeedWorldLights();
-        }
+            SeedWorldLights();
+        // Without the destructor hook nothing is pruned, so nothing is
+        // tracked or trusted.
+        if (_lightDtorHook == null)
+            return Array.Empty<WorldLightCandidate>();
 
         nint[] handles;
         lock (_worldGate)
@@ -980,12 +1008,6 @@ public sealed unsafe class LightingService : ILightingService
             var native = (GameLight*)handle;
             if (native == null || native->LightRenderObject == null)
                 continue;
-            // A hot reload can discover existing lights before any constructor
-            // runs. Direct borrowing needs destruction tracking in that case too.
-            if (_lightDtorHook == null && native->VirtualTable != null)
-                HookDestructor((nint)native->VirtualTable->Destructor);
-            if (_lightDtorHook == null)
-                return Array.Empty<WorldLightCandidate>();
             Vector3 position = native->Transform.Position;
             long generation;
             lock (_worldGate) generation = _worldLightGenerations.GetValueOrDefault(handle);

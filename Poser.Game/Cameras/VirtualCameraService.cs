@@ -87,11 +87,19 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private delegate float* CalculateLookPositionDelegate(
         NativeCamera* camera, float* lookAt, float* position, byte mode);
 
-    private readonly Hook<CameraUpdateDelegate>? _cameraUpdateHook;
-    private readonly Hook<CameraCollisionDelegate>? _cameraCollisionHook;
+    // Not readonly: TryHook publishes each before enabling it.
+    private Hook<CameraUpdateDelegate>? _cameraUpdateHook;
+    private Hook<CameraCollisionDelegate>? _cameraCollisionHook;
     private readonly Runtime.SceneFramePhaseService? _framePhases;
-    private readonly Hook<HandleInputDelegate>? _handleInputHook;
-    private readonly Hook<CalculateLookPositionDelegate>? _lookPositionHook;
+    private Hook<HandleInputDelegate>? _handleInputHook;
+    private Hook<CalculateLookPositionDelegate>? _lookPositionHook;
+
+    // A detour never throws into the game: a fault is logged once per
+    // detour and the game's own call still runs.
+    private bool _updateFaultLogged;
+    private bool _collisionFaultLogged;
+    private bool _inputFaultLogged;
+    private bool _trackingFaultLogged;
     private readonly CameraMatrixLoadDelegate? _cameraMatrixLoad;
 
     private readonly List<VirtualCamera> _cameras = new();
@@ -180,7 +188,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
             error => log.Error(error, "Camera activation cleanup failed"));
 
-        Hook<T>? TryHook<T>(string name, string signature, T detour)
+        // The detour reads the field `publish` assigns and can run the moment
+        // the hook is enabled, so the field is set first.
+        void TryHook<T>(string name, string signature, T detour, Action<Hook<T>?> publish)
             where T : Delegate
         {
             try
@@ -190,30 +200,34 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 var hook = hooks.HookFromAddress<T>(
                     sigScanner.ScanText(signature), detour);
                 activating.OnFailure(hook.Dispose);
+                publish(hook);
                 hook.Enable();
                 startup.OnFailure(hook.Dispose);
                 activating.Complete();
-                return hook;
             }
             catch (Exception ex)
             {
+                publish(null);
                 _log.Warning(
                     $"VirtualCameraService: '{name}' unavailable: {ex.Message}");
-                return null;
             }
         }
 
-        _cameraUpdateHook = TryHook<CameraUpdateDelegate>(
-            "camera update", CameraUpdateSignature, CameraUpdateDetour);
+        TryHook<CameraUpdateDelegate>(
+            "camera update", CameraUpdateSignature, CameraUpdateDetour,
+            hook => _cameraUpdateHook = hook);
         IsAvailable = _cameraUpdateHook != null;
 
-        _cameraCollisionHook = TryHook<CameraCollisionDelegate>(
-            "camera collision", CameraCollisionSignature, CameraCollisionDetour);
-        _handleInputHook = TryHook<HandleInputDelegate>(
-            "input handler", HandleInputSignature, HandleInputDetour);
-        _lookPositionHook = TryHook<CalculateLookPositionDelegate>(
+        TryHook<CameraCollisionDelegate>(
+            "camera collision", CameraCollisionSignature, CameraCollisionDetour,
+            hook => _cameraCollisionHook = hook);
+        TryHook<HandleInputDelegate>(
+            "input handler", HandleInputSignature, HandleInputDetour,
+            hook => _handleInputHook = hook);
+        TryHook<CalculateLookPositionDelegate>(
             "look position", CalculateLookPositionSignature,
-            CalculateLookPositionDetour);
+            CalculateLookPositionDetour,
+            hook => _lookPositionHook = hook);
 
         try
         {
@@ -712,7 +726,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         }
         catch (Exception ex)
         {
-            _log.Error($"VirtualCameraService: camera update failed: {ex}");
+            if (!_updateFaultLogged)
+            {
+                _updateFaultLogged = true;
+                _log.Error($"VirtualCameraService: camera update failed (logged once): {ex}");
+            }
         }
         return result;
     }
@@ -723,11 +741,22 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private nint CameraCollisionDetour(
         NativeCamera* camera, Vector3* a2, Vector3* a3, float a4, nint a5, float a6)
     {
-        if (_gPose.IsGPosing &&
-            _live is { DisableCollision: true, Kind: not CameraKind.Free })
+        try
         {
-            camera->Collide = new Vector2(camera->MaxDistance);
-            return 0;
+            if (_gPose.IsGPosing &&
+                _live is { DisableCollision: true, Kind: not CameraKind.Free })
+            {
+                camera->Collide = new Vector2(camera->MaxDistance);
+                return 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_collisionFaultLogged)
+            {
+                _collisionFaultLogged = true;
+                _log.Error($"VirtualCameraService: camera collision failed (logged once): {ex}");
+            }
         }
         return _cameraCollisionHook!.Original(camera, a2, a3, a4, a5, a6);
     }
@@ -800,7 +829,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         }
         catch (Exception ex)
         {
-            _log.Error($"VirtualCameraService: input handling failed: {ex}");
+            if (!_inputFaultLogged)
+            {
+                _inputFaultLogged = true;
+                _log.Error($"VirtualCameraService: input handling failed (logged once): {ex}");
+            }
         }
     }
 
@@ -1081,7 +1114,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         }
         catch (Exception ex)
         {
-            _log.Error($"VirtualCameraService: tracking failed: {ex}");
+            if (!_trackingFaultLogged)
+            {
+                _trackingFaultLogged = true;
+                _log.Error($"VirtualCameraService: tracking failed (logged once): {ex}");
+            }
         }
         return _lookPositionHook!.Original(camera, lookAt, position, mode);
     }

@@ -242,6 +242,31 @@ public sealed class WorldActorDiscoveryTests
         Assert.Equal(WorldActorImportStatus.StaleCandidate, discovery.CloneCandidate(near.Id, out _).Status);
     }
 
+    [Fact]
+    public void Unhighlight_never_reaches_an_object_that_replaced_the_highlighted_one()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var painted = new List<(nint Address, bool On)>();
+        var discovery = new WorldActorDiscovery(
+            adapter, new FakeGPoseService(), new FakeActorManager(), new CloneSeam().Invoke,
+            paintHighlight: (address, on) => { painted.Add((address, on)); return true; });
+        var candidate = Assert.Single(discovery.RefreshCandidates());
+        Assert.True(discovery.SetHighlight(candidate.Id, true));
+        Assert.True(discovery.SetHighlight(candidate.Id, false));
+        Assert.True(discovery.SetHighlight(candidate.Id, true));
+
+        // Another object takes the same slot and address and the listing moves on.
+        adapter.World[0] = observed with { GameObjectId = 77 };
+        discovery.RefreshCandidates();
+        Assert.False(discovery.SetHighlight(candidate.Id, false));
+        Assert.False(discovery.SetHighlight(candidate.Id, false));
+        Assert.Equal(
+            new (nint, bool)[] { ((nint)0x10, true), ((nint)0x10, false), ((nint)0x10, true) },
+            painted);
+    }
+
     private static WorldActorObservation Obs(
         nint address,
         ushort index = 5,

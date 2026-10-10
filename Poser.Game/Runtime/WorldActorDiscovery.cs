@@ -160,6 +160,7 @@ public sealed class WorldActorDiscovery
     private readonly Func<nint, IActor?> _cloneSource;
     private readonly IFramework? _framework;
     private readonly IPluginLog? _log;
+    private readonly Func<nint, bool, bool> _paintHighlight;
 
     /// <summary>The current listing's observations, keyed by the opaque ids
     /// handed out. Replaced wholesale by every refresh: an id absent here is
@@ -205,8 +206,10 @@ public sealed class WorldActorDiscovery
         IActorManager actorManager,
         Func<nint, IActor?> cloneSource,
         IFramework? framework = null,
-        IPluginLog? log = null)
+        IPluginLog? log = null,
+        Func<nint, bool, bool>? paintHighlight = null)
     {
+        _paintHighlight = paintHighlight ?? PaintHighlight;
         _adapter = adapter;
         _gPose = gPoseService;
         _actorManager = actorManager;
@@ -289,33 +292,42 @@ public sealed class WorldActorDiscovery
     /// off-thread call, or an actor with nothing drawn. A caller must read that
     /// as "no highlight is on", never as an unpaired set.</para>
     /// </summary>
-    private nint _highlightedAddress;
+    private WorldActorObservation? _highlighted;
 
-    public unsafe bool SetHighlight(WorldActorCandidateId id, bool highlighted)
+    public bool SetHighlight(WorldActorCandidateId id, bool highlighted)
     {
         if (!OnOwnerThread)
             return false;
         // A body that was just adopted has left the listing, but its
-        // highlight is still lit: turning it off goes by the address the
+        // highlight is still lit: turning it off goes by the observation the
         // last highlight went to, whatever the listing knows now.
-        nint address = _observations.TryGetValue(id, out var stored)
-            ? stored.Address
-            : highlighted ? nint.Zero : _highlightedAddress;
-        if (address == nint.Zero)
+        WorldActorObservation? target = _observations.TryGetValue(id, out var listed)
+            ? listed
+            : highlighted ? null : _highlighted;
+        if (target is not { } stored)
             return false;
+        // The listing and the remembered highlight are both older than this
+        // call: the exact identity is re-proven before the virtual call, and a
+        // remembered highlight whose object is gone is simply dropped.
+        WorldActorObservation? current;
+        try { current = _adapter.Revalidate(stored); }
+        catch (Exception ex)
+        {
+            _log?.Warning(
+                $"WorldActorDiscovery: highlight revalidation failed: {ex.Message}");
+            current = null;
+        }
+        if (current is not { } fresh || fresh.Identity != stored.Identity)
+        {
+            if (!highlighted)
+                _highlighted = null;
+            return false;
+        }
         try
         {
-            var native =
-                (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)
-                    address;
-            if (native == null || native->DrawObject == null)
+            if (!_paintHighlight(fresh.Address, highlighted))
                 return false;
-            native->Highlight(highlighted
-                ? FFXIVClientStructs.FFXIV.Client.Game.Object
-                    .ObjectHighlightColor.Yellow
-                : FFXIVClientStructs.FFXIV.Client.Game.Object
-                    .ObjectHighlightColor.None);
-            _highlightedAddress = highlighted ? address : nint.Zero;
+            _highlighted = highlighted ? fresh : null;
             return true;
         }
         catch (Exception ex)
@@ -324,6 +336,22 @@ public sealed class WorldActorDiscovery
                 $"WorldActorDiscovery: highlighting a world actor failed: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>The native highlight write; false when the object has nothing
+    /// drawn. Only ever reached with an address revalidated this call.</summary>
+    private static unsafe bool PaintHighlight(nint address, bool highlighted)
+    {
+        var native =
+            (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address;
+        if (native == null || native->DrawObject == null)
+            return false;
+        native->Highlight(highlighted
+            ? FFXIVClientStructs.FFXIV.Client.Game.Object
+                .ObjectHighlightColor.Yellow
+            : FFXIVClientStructs.FFXIV.Client.Game.Object
+                .ObjectHighlightColor.None);
+        return true;
     }
 
     /// <summary>Adopts the candidate and returns its wrapper for pending selection.</summary>
@@ -430,7 +458,7 @@ public sealed class WorldActorDiscovery
             return WorldActorImportResult.Failed(
                 "The actor could not be added to the scene.");
         // The handle's highlight goes with the handle.
-        if (_highlightedAddress == fresh.Address)
+        if (_highlighted?.Identity == fresh.Identity)
             SetHighlight(default, false);
         spawned = clone;
         return WorldActorImportResult.Ok();

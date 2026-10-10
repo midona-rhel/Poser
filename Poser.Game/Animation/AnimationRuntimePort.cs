@@ -35,6 +35,11 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private readonly Dictionary<ActorId, ushort> _forcedLoops = new();
     // Derived index for the detours only; never a source of truth.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
+
+    // A detour never throws into the game: a fault is logged once per
+    // detour and the game's own call still runs.
+    private bool _speedFaultLogged;
+    private bool _slotSpeedFaultLogged;
     // Actors whose position lock this session created, so releasing it
     // cannot wipe a placement the user made with the gizmo.
     private readonly HashSet<ActorId> _positionLocks = new();
@@ -399,6 +404,23 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         bool result = _speedHook!.Original(container);
         if (container == null)
             return result;
+        try
+        {
+            return EnforceSpeeds(container, result);
+        }
+        catch (Exception ex)
+        {
+            if (!_speedFaultLogged)
+            {
+                _speedFaultLogged = true;
+                _log.Error($"Animation: overall-speed detour faulted (logged once): {ex}");
+            }
+            return result;
+        }
+    }
+
+    private bool EnforceSpeeds(TimelineContainer* container, bool result)
+    {
         var owner = (nint)container->OwnerObject;
         if (owner != nint.Zero &&
             _byAddress.TryGetValue(owner, out var enforcement))
@@ -524,12 +546,24 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private void SlotSpeedDetour(ActionTimelineSequencer* sequencer, uint slot, float speed)
     {
         float finalSpeed = speed;
-        var owner = (nint)sequencer->Parent;
-        if (owner != nint.Zero &&
-            _byAddress.TryGetValue(owner, out var enforcement) &&
-            enforcement.SlotSpeeds.TryGetValue((int)slot, out var overrideSpeed))
+        try
         {
-            finalSpeed = overrideSpeed;
+            var owner = (nint)sequencer->Parent;
+            if (owner != nint.Zero &&
+                _byAddress.TryGetValue(owner, out var enforcement) &&
+                enforcement.SlotSpeeds.TryGetValue((int)slot, out var overrideSpeed))
+            {
+                finalSpeed = overrideSpeed;
+            }
+        }
+        catch (Exception ex)
+        {
+            finalSpeed = speed;
+            if (!_slotSpeedFaultLogged)
+            {
+                _slotSpeedFaultLogged = true;
+                _log.Error($"Animation: slot-speed detour faulted (logged once): {ex}");
+            }
         }
         _slotSpeedHook!.Original(sequencer, slot, finalSpeed);
     }

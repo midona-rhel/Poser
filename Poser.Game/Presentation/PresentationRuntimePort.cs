@@ -72,6 +72,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     // throw. Tint commands gate on this, set only after Enable returned;
     // a partially constructed hook is still disposed.
     private readonly bool _tintHookEnabled;
+    private bool _tintFaultLogged;
 
     public PresentationRuntimePort(
         IFramework framework,
@@ -112,8 +113,20 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         // else keeps the game's own tinting.
         // One read of the field, then work off that snapshot: a concurrent
         // rebuild replaces the reference, it never edits this instance.
-        if (_ownedTintBases.Contains(characterBase))
-            return 0;
+        try
+        {
+            if (_ownedTintBases.Contains(characterBase))
+                return 0;
+        }
+        catch (Exception ex)
+        {
+            // Never throw into the game: a fault keeps the game's tinting.
+            if (!_tintFaultLogged)
+            {
+                _tintFaultLogged = true;
+                _log.Error($"Tint detour faulted (logged once): {ex}");
+            }
+        }
         return _updateTintHook!.Original(characterBase, tint);
     }
 

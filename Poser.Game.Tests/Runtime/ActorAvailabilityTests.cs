@@ -1,4 +1,6 @@
+using System.Numerics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -7,6 +9,9 @@ using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Services;
+
+using NativeDrawObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.DrawObject;
+using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Tests.Runtime;
 
@@ -47,6 +52,67 @@ public sealed class ActorAvailabilityTests
         Assert.False(actors.IsAvailable(retained));
         current = null;
         Assert.False(actors.IsAvailable(retained));
+    }
+
+    [Fact]
+    public unsafe void Adopted_body_is_never_written_or_classified_once_its_address_is_reused()
+    {
+        var native = (NativeGameObject*)NativeMemory.AllocZeroed((nuint)sizeof(NativeGameObject));
+        var draw = (NativeDrawObject*)NativeMemory.AllocZeroed((nuint)sizeof(NativeDrawObject));
+        try
+        {
+            native->DrawObject = draw;
+            draw->Object.Rotation = Quaternion.Identity;
+            draw->Object.Scale = Vector3.One;
+            var taken = new Vector3(1, 2, 3);
+            var moved = new Vector3(9, 9, 9);
+            draw->Object.Position = taken;
+            var address = (nint)native;
+            const ushort index = 12;
+            ulong objectId = 7;
+            IGameObject occupant = Proxy<ICharacter>((method, _) => method.Name switch
+            {
+                "get_ObjectIndex" => index,
+                "get_GameObjectId" => objectId,
+                "get_Address" => address,
+                "get_Name" => new SeString(),
+                "IsValid" => true,
+                _ => null,
+            });
+            var actors = new ActorManager(
+                Proxy<IObjectTable>((method, args) => method.Name switch
+                {
+                    "get_Item" when Convert.ToInt32(args![0]) == index => occupant,
+                    "CreateObjectReference" when (nint)args![0]! == address => occupant,
+                    _ => null,
+                }),
+                Proxy<IGPoseService>((_, _) => null),
+                Proxy<IFramework>((method, _) => method.Name == "get_IsInFrameworkUpdateThread" ? true : null),
+                Proxy<IEventBus>((_, _) => null),
+                Proxy<ITargetManager>((_, _) => null),
+                Proxy<IClientState>((_, _) => null));
+
+            // Same occupant: release seats the body back where it was taken.
+            actors.AdoptWorldActor(address);
+            Assert.True(actors.IsAdopted(Assert.Single(actors.Actors)));
+            draw->Object.Position = moved;
+            actors.ReleaseWorldActor(address);
+            Assert.Equal(taken, draw->Object.Position);
+
+            // A different object now stands at the same slot and address.
+            actors.AdoptWorldActor(address);
+            var adopted = Assert.Single(actors.Actors);
+            draw->Object.Position = moved;
+            objectId = 8;
+            Assert.False(actors.IsAdopted(adopted));
+            actors.Dispose(); // the GPose-exit restore path
+            Assert.Equal(moved, draw->Object.Position);
+        }
+        finally
+        {
+            NativeMemory.Free(draw);
+            NativeMemory.Free(native);
+        }
     }
 
     private static T Proxy<T>(Func<MethodInfo, object?[]?, object?> call) where T : class
