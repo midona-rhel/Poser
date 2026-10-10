@@ -16,14 +16,14 @@ namespace Poser.Application.Appearance;
 public sealed class WardrobeSession : IWardrobeControl
 {
     private readonly ValueJournal _journal;
-    private readonly ActorIntegrationSession _integration;
-    private readonly IIntegrationRuntimePort _runtime;
+    private readonly IntegrationSelectors _integration;
+    private readonly IIntegrationResolutionPort _runtime;
     private readonly DisruptiveSteps _disruptive;
 
     public WardrobeSession(
         ValueJournal journal,
-        ActorIntegrationSession integration,
-        IIntegrationRuntimePort runtime,
+        IntegrationSelectors integration,
+        IIntegrationResolutionPort runtime,
         DisruptiveSteps disruptive)
     {
         _journal = journal;

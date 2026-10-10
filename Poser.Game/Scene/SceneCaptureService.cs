@@ -58,7 +58,7 @@ public sealed class SceneCaptureService
     private readonly AnimationSession _animation;
     private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly Poser.Application.Integration.IntegrationSelectors _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly WorldObjects.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
@@ -83,7 +83,7 @@ public sealed class SceneCaptureService
         AnimationSession animation,
         GazeService gaze,
         PoseExportCapture exports,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.IntegrationSelectors integration,
         IWorldRenderingRuntimePort rendering,
         WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,

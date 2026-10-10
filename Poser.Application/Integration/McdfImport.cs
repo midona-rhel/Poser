@@ -14,10 +14,13 @@ namespace Poser.Application.Integration;
 /// late completion cannot mutate a replacement.
 /// </summary>
 internal sealed class McdfImport(
-    IIntegrationRuntimePort port,
+    IIntegrationResolutionPort actors,
+    IPenumbraPort penumbra,
+    IGlamourerPort glamourer,
+    ICustomizePlusPort customizePlus,
     IMcdfFileBoundary files,
     ISessionGenerationSource sessions,
-    ActorIntegrationSession owner,
+    IntegrationOwnership ownership,
     McdfTeardown teardown,
     SingleFlightOwner<McdfOperation, McdfProgress> flight)
 {
@@ -132,7 +135,7 @@ internal sealed class McdfImport(
                 // Idempotent: invalidation may already have cleaned pieces;
                 // each nulls out as it is released, so this only touches
                 // what remains.
-                return await port.OnFrameworkThread(() => Rollback(operation));
+                return await actors.OnFrameworkThread(() => Rollback(operation));
             }
             catch (Exception ex)
             {
@@ -174,7 +177,7 @@ internal sealed class McdfImport(
                     ?? "The MCDF operation directory could not be allocated.");
                 return;
             }
-            await port.OnFrameworkThread(() =>
+            await actors.OnFrameworkThread(() =>
             {
                 operation.OperationDirectory = operationDirectory;
                 teardown.Register(operationDirectory);
@@ -215,17 +218,17 @@ internal sealed class McdfImport(
             // content-derived requirements ON the framework thread, per the
             // port contract; anything missing fails before any actor change.
             Step(McdfPhase.Preparing, filesTotal, bytesTotal);
-            var prepared = await port.OnFrameworkThread(() =>
+            var prepared = await actors.OnFrameworkThread(() =>
             {
                 if (Guard() is { } stop)
                     return stop;
                 var missing = new List<string>();
-                if (package.HasResources && !port.Penumbra.Available)
-                    missing.Add(port.Penumbra.Detail);
-                if (package.GlamourerData.Length > 0 && !port.Glamourer.Available)
-                    missing.Add(port.Glamourer.Detail);
-                if (package.CustomizePlusData.Length > 0 && !port.CustomizePlus.Available)
-                    missing.Add(port.CustomizePlus.Detail);
+                if (package.HasResources && !penumbra.Penumbra.Available)
+                    missing.Add(penumbra.Penumbra.Detail);
+                if (package.GlamourerData.Length > 0 && !glamourer.Glamourer.Available)
+                    missing.Add(glamourer.Glamourer.Detail);
+                if (package.CustomizePlusData.Length > 0 && !customizePlus.CustomizePlus.Available)
+                    missing.Add(customizePlus.CustomizePlus.Detail);
                 if (missing.Count > 0)
                     return "This package needs: " + string.Join(" ", missing);
 
@@ -251,8 +254,8 @@ internal sealed class McdfImport(
             // bounded exact-actor barrier, before this import stacks new
             // ownership on the actor — a re-import never starts on top of an
             // unreleased predecessor.
-            bool priorRetained = await port.OnFrameworkThread(() =>
-                owner.OverridesFor(actor).Mcdf
+            bool priorRetained = await actors.OnFrameworkThread(() =>
+                ownership.OverridesFor(actor).Mcdf
                     is { RedrawPending: true, OperationDirectory: not null });
             if (priorRetained)
             {
@@ -274,7 +277,7 @@ internal sealed class McdfImport(
             if (package.HasResources)
             {
                 Step(McdfPhase.ApplyingResources, filesTotal, bytesTotal);
-                failure = await port.OnFrameworkThread(() =>
+                failure = await actors.OnFrameworkThread(() =>
                 {
                     if (Guard() is { } stop)
                         return stop;
@@ -285,20 +288,20 @@ internal sealed class McdfImport(
                     // refuses — and because nothing can interleave on the
                     // framework thread, the forced assignment below can
                     // never race into deleting one.
-                    var assignment = port.GetCollectionAssignment(actor);
+                    var assignment = penumbra.GetCollectionAssignment(actor);
                     if (!assignment.Success || assignment.Value is not { } collectionState)
                         return assignment.Detail ?? "The Penumbra assignment could not be read.";
-                    if (owner.ForeignTemporaryCollectionDetail(
-                            actor, owner.OverridesFor(actor), collectionState) is { } foreign)
+                    if (ownership.ForeignTemporaryCollectionDetail(
+                            actor, ownership.OverridesFor(actor), collectionState) is { } foreign)
                         return foreign;
-                    var created = port.CreateTemporaryCollection($"Poser MCDF {fileName}");
+                    var created = penumbra.CreateTemporaryCollection($"Poser MCDF {fileName}");
                     if (!created.Success)
                         return created.Detail;
                     // Registered BEFORE assignment: a failed assignment
                     // leaves a tracked collection for rollback to delete
                     // (kept owned and retryable when deletion fails too).
                     operation.TemporaryCollection = created.Value;
-                    var assigned = port.AssignTemporaryCollection(created.Value, actor);
+                    var assigned = penumbra.AssignTemporaryCollection(created.Value, actor);
                     if (!assigned.Success)
                         return assigned.Detail;
                     var paths = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -306,7 +309,7 @@ internal sealed class McdfImport(
                         paths[pair.Key] = pair.Value;
                     foreach (var pair in package.SwappedGamePaths)
                         paths[pair.Key] = pair.Value;
-                    var mods = port.AddTemporaryMods(
+                    var mods = penumbra.AddTemporaryMods(
                         created.Value, paths, package.ManipulationData);
                     return mods.Success ? null : mods.Detail;
                 });
@@ -315,11 +318,11 @@ internal sealed class McdfImport(
             if (failure == null && package.GlamourerData.Length > 0)
             {
                 Step(McdfPhase.ApplyingAppearance, filesTotal, bytesTotal);
-                failure = await port.OnFrameworkThread(() =>
+                failure = await actors.OnFrameworkThread(() =>
                 {
                     if (Guard() is { } stop)
                         return stop;
-                    var applied = port.HoldGlamourerState(actor, package.GlamourerData);
+                    var applied = glamourer.HoldGlamourerState(actor, package.GlamourerData);
                     if (applied.Success)
                         operation.GlamourerLocked = true;
                     return applied.Success ? null : applied.Detail;
@@ -329,7 +332,7 @@ internal sealed class McdfImport(
             if (failure == null && package.HasResources)
             {
                 Step(McdfPhase.AwaitingRedraw, filesTotal, bytesTotal);
-                var redraw = await port.RedrawAndWait(
+                var redraw = await penumbra.RedrawAndWait(
                     actor, McdfTeardown.RedrawBarrierTimeout, cancellation);
                 if (!redraw.Success)
                     failure = redraw.Detail;
@@ -337,14 +340,14 @@ internal sealed class McdfImport(
 
             if (failure == null && operation.TemporaryCollection is { } loadedCollection)
             {
-                failure = await port.OnFrameworkThread(() =>
+                failure = await actors.OnFrameworkThread(() =>
                 {
                     if (Guard() is { } stop)
                         return stop;
                     // Brio releases the load-only assignment after redraw so
                     // subsequent animations resolve against the normal collection.
                     // The loaded draw object still owns references to our files.
-                    var released = port.DeleteTemporaryCollection(loadedCollection);
+                    var released = penumbra.DeleteTemporaryCollection(loadedCollection);
                     if (!released.Success)
                         return released.Detail;
                     operation.TemporaryCollection = null;
@@ -356,11 +359,11 @@ internal sealed class McdfImport(
             if (failure == null && bodyJson != null)
             {
                 Step(McdfPhase.ApplyingBodyProfile, filesTotal, bytesTotal);
-                failure = await port.OnFrameworkThread(() =>
+                failure = await actors.OnFrameworkThread(() =>
                 {
                     if (Guard() is { } stop)
                         return stop;
-                    var applied = port.ApplyTemporaryBodyProfile(actor, bodyJson);
+                    var applied = customizePlus.ApplyTemporaryBodyProfile(actor, bodyJson);
                     if (applied.Success)
                     {
                         operation.TemporaryProfile = applied.Value;
@@ -384,20 +387,20 @@ internal sealed class McdfImport(
             // package replaced drop their per-selector ownership; the
             // ORIGINAL baseline stays.
             Step(McdfPhase.Committing, filesTotal, bytesTotal, cancellable: false);
-            var committed = await port.OnFrameworkThread(() =>
+            var committed = await actors.OnFrameworkThread(() =>
             {
                 if (Guard() is { } stop)
                     return stop;
                 // The exact generation must still resolve at the moment of
                 // ownership mutation — a despawned or replaced actor rolls
                 // back instead of committing onto a stale id.
-                if (!port.IsResolvable(actor))
+                if (!actors.IsResolvable(actor))
                     return "The actor is no longer available.";
-                var current = owner.OverridesFor(actor);
+                var current = ownership.OverridesFor(actor);
                 teardown.Commit(package, operation.Session);
                 bool replacedGlamourer = package.GlamourerData.Length > 0;
                 bool replacedBody = bodyJson != null;
-                owner.MutateOverrides(actor, current with
+                ownership.Mutate(actor, current with
                 {
                     Baseline = operation.Baseline,
                     Mcdf = new McdfOwnership(
@@ -447,19 +450,19 @@ internal sealed class McdfImport(
         McdfOperation operation, McdfPackage package)
     {
         var actor = operation.Target;
-        var current = owner.OverridesFor(actor);
+        var current = ownership.OverridesFor(actor);
         if (current.Mcdf is { } mcdf)
         {
             var failures = new List<string>();
-            bool stillThere = port.IsResolvable(actor);
+            bool stillThere = actors.IsResolvable(actor);
             current = teardown.TearDown(actor, current, mcdf, stillThere, failures);
-            owner.MutateOverrides(actor, current);
+            ownership.Mutate(actor, current);
             if (failures.Count > 0)
                 return (null, "Tearing down the active MCDF failed: "
                     + string.Join("; ", failures));
         }
 
-        if (!port.IsResolvable(actor))
+        if (!actors.IsResolvable(actor))
             return (null, "The actor is no longer available.");
 
         // Captured HERE, while the actor still resolves: a GPose exit
@@ -468,7 +471,7 @@ internal sealed class McdfImport(
         // can still be released through. A name that cannot be read is not
         // a refusal — the import is still valid, only its post-mortem
         // release loses its fallback, which the teardown reports.
-        var named = port.GetActorName(actor);
+        var named = actors.GetActorName(actor);
         if (named.Success && named.Value is { Length: > 0 } actorName)
             operation.ActorName = actorName;
 
@@ -479,10 +482,10 @@ internal sealed class McdfImport(
         // delete another plugin's temporary assignment.
         if (package.HasResources)
         {
-            var assignment = port.GetCollectionAssignment(actor);
+            var assignment = penumbra.GetCollectionAssignment(actor);
             if (!assignment.Success || assignment.Value is not { } collectionState)
                 return (null, assignment.Detail ?? "The Penumbra assignment could not be read.");
-            if (owner.ForeignTemporaryCollectionDetail(actor, current, collectionState) is { } foreign)
+            if (ownership.ForeignTemporaryCollectionDetail(actor, current, collectionState) is { } foreign)
                 return (null, foreign);
         }
 
@@ -493,7 +496,7 @@ internal sealed class McdfImport(
             // snapshot rollback returns to (which includes any active
             // Poser design), and — only when nothing was captured yet —
             // the durable baseline Reset restores.
-            var incoming = port.CaptureGlamourerState(actor);
+            var incoming = glamourer.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } state)
                 return (null, incoming.Detail ?? "The incoming Glamourer state could not be captured.");
             operation.WorkingGlamourerState = state;
@@ -502,10 +505,10 @@ internal sealed class McdfImport(
         }
         if (package.CustomizePlusData.Length > 0)
         {
-            var probe = port.ProbeBodyProfile(actor);
+            var probe = customizePlus.ProbeBodyProfile(actor);
             if (!probe.Success || probe.Value is not { } bodyState)
                 return (null, probe.Detail ?? "The Customize+ state could not be read.");
-            if (ActorIntegrationSession.ForeignTemporaryBody(current, bodyState))
+            if (IntegrationOwnership.ForeignTemporaryBody(current, bodyState))
                 return (null, "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.");
             if (!baseline.BodyProfileCaptured)
                 baseline = baseline with
@@ -540,7 +543,7 @@ internal sealed class McdfImport(
     private string? Rollback(McdfOperation operation)
     {
         var actor = operation.Target;
-        bool resolvable = port.IsResolvable(actor);
+        bool resolvable = actors.IsResolvable(actor);
         // The captured character name, and only while the object itself is
         // unreachable: Glamourer's state is keyed to the identity, so it is
         // still addressable when the exact generation is not.
@@ -569,7 +572,7 @@ internal sealed class McdfImport(
 
         if (operation.TemporaryProfile is { } profile)
         {
-            var deleted = port.DeleteTemporaryBodyProfileById(profile);
+            var deleted = customizePlus.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
                 operation.TemporaryProfile = null;
             else
@@ -583,13 +586,13 @@ internal sealed class McdfImport(
             {
                 // Put the working recipe back and record the NEW id
                 // Customize+ returns, preserving selector ownership.
-                var reapplied = port.ApplyTemporaryBodyProfile(actor, workingJson);
+                var reapplied = customizePlus.ApplyTemporaryBodyProfile(actor, workingJson);
                 if (reapplied.Success && reapplied.Value != default)
                 {
-                    var overrides = owner.OverridesFor(actor);
-                    if (overrides.TemporaryBodyProfile != null)
-                        owner.MutateOverrides(
-                            actor, overrides with { TemporaryBodyProfile = reapplied.Value });
+                    var owned = ownership.OverridesFor(actor);
+                    if (owned.TemporaryBodyProfile != null)
+                        ownership.Mutate(
+                            actor, owned with { TemporaryBodyProfile = reapplied.Value });
                     operation.PendingBodyRecoveryJson = null;
                 }
                 else
@@ -607,7 +610,7 @@ internal sealed class McdfImport(
 
         if (operation.GlamourerLocked && resolvable)
         {
-            var unlocked = port.UnlockGlamourerState(actor);
+            var unlocked = glamourer.UnlockGlamourerState(actor);
             if (unlocked.Success)
             {
                 operation.GlamourerLocked = false;
@@ -665,7 +668,7 @@ internal sealed class McdfImport(
 
         if (operation.TemporaryCollection is { } collection)
         {
-            var deleted = port.DeleteTemporaryCollection(collection);
+            var deleted = penumbra.DeleteTemporaryCollection(collection);
             if (deleted.Success)
             {
                 operation.TemporaryCollection = null;
@@ -718,7 +721,7 @@ internal sealed class McdfImport(
         if (clean && failures.Count == 0)
             return null;
 
-        var current = owner.OverridesFor(actor);
+        var current = ownership.OverridesFor(actor);
         bool nativeOutstanding = operation.TemporaryCollection != null
             || operation.GlamourerLocked
             || operation.TemporaryProfile != null
@@ -738,7 +741,7 @@ internal sealed class McdfImport(
                 // repeated transfer from appending the same path twice.
                 operation.OperationDirectory = null;
                 if (!current.PendingDirectories.Contains(orphan.Path))
-                    owner.MutateOverrides(actor, current with
+                    ownership.Mutate(actor, current with
                     {
                         PendingDirectories =
                             current.PendingDirectories.Append(orphan.Path).ToList(),
@@ -751,7 +754,7 @@ internal sealed class McdfImport(
         // any previous MCDF teardown completed — current.Mcdf is null here,
         // so this never overwrites an older teardown obligation. The
         // baseline merges only when Prepare actually captured it.
-        owner.MutateOverrides(actor, current with
+        ownership.Mutate(actor, current with
         {
             Baseline = operation.Prepared ? operation.Baseline : current.Baseline,
             Mcdf = new McdfOwnership(

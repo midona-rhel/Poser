@@ -17,7 +17,7 @@ namespace Poser.Game.Posing;
 
 /// <summary>Capture native state once; all file parsing/skinning works on managed snapshots.</summary>
 public sealed class ActorColliderCapture(
-    IEntityBindings bindings, IIntegrationRuntimePort integration, IDataManager data,
+    IEntityBindings bindings, IIntegrationResolutionPort integration, IPenumbraPort penumbra, IDataManager data,
     Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
     Application.Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
 {
@@ -76,7 +76,7 @@ public sealed class ActorColliderCapture(
         if (character == null || character->Skeleton == null)
             throw new InvalidOperationException("The actor's model is not loaded.");
 
-        var paths = integration.GetActorResourcePaths(id);
+        var paths = penumbra.GetActorResourcePaths(id);
         var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (paths.Value is { } resources)
             foreach (var (actual, original) in resources)

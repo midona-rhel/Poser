@@ -79,16 +79,17 @@ public sealed class CharacterFileSessionTests
         public RuntimeProxy Runtime { get; }
         public CreationProxy Creation { get; }
         public CharacterFileSession Control { get; }
-        private readonly ActorIntegrationSession _integration;
+        private readonly IntegrationSelectors _integration;
         public Fixture()
         {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
+            var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             var creation = DispatchProxy.Create<ISceneCreation, CreationProxy>();
             Creation = (CreationProxy)(object)creation;
             Creation.Session = () => ActiveSessionGeneration!.Value;
-            var integration = _integration = new ActorIntegrationSession(port, null!, this);
-            Control = new(integration, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
+            var integration = new IntegrationGraph(port, null!, this);
+            _integration = integration.Selectors;
+            Control = new(integration.Selectors, integration.Mcdf, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
         }
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
             IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
@@ -148,11 +149,11 @@ public sealed class CharacterFileSessionTests
         {
             switch (method!.Name)
             {
-                case nameof(IIntegrationRuntimePort.ProbeGlamourerAccess): return GlamourerAccess.Editable;
-                case nameof(IIntegrationRuntimePort.GetGlamourerStateJson):
-                case nameof(IIntegrationRuntimePort.CaptureGlamourerState): return IntegrationValue<string>.Ok(State);
-                case nameof(IIntegrationRuntimePort.GetActorName): return IntegrationValue<string>.Ok("Actor");
-                case nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess): return GlamourerAccess.Editable;
+                case nameof(IIntegrationRuntimeFake.GetGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.CaptureGlamourerState): return IntegrationValue<string>.Ok(State);
+                case nameof(IIntegrationRuntimeFake.GetActorName): return IntegrationValue<string>.Ok("Actor");
+                case nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson):
                     Writes.Add((ActorId)args![0]!);
                     State = (string)args[1]!;
                     return IntegrationResult.Ok();

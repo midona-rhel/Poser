@@ -4,6 +4,7 @@ using System.Reflection;
 using Poser.Application.Animation;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Presentation;
 using Poser.Application.Posing;
@@ -107,7 +108,7 @@ public sealed class PoseCommandTests
         public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
         public readonly IActorResetControl ResetAll;
-        private readonly ActorIntegrationSession _integration;
+        private readonly IntegrationGraph _integration;
         public int Captures;
         public int IkClears;
         public bool FailCapture;
@@ -132,13 +133,13 @@ public sealed class PoseCommandTests
             Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
             var edits = new PoseEditService(Scene, this, History, Gestures);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
-            _integration = new(Idle<IIntegrationRuntimePort>(), Idle<IMcdfFileBoundary>(),
+            _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
             ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
                 Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
-                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration,
+                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration.Reset,
                 History, new ValueJournal(History), this);
         }
 

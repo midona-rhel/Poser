@@ -36,7 +36,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
     private readonly IFramework _framework;
     private readonly ISessionGenerationSource _sessions;
     private readonly StableBindingRegistry _bindings;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly Poser.Application.Integration.McdfTransaction _mcdf;
     private readonly IObjectTable _objects;
     private readonly SceneCaptureService _capture;
     private readonly EnvironmentControl _environmentControl;
@@ -49,7 +49,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
         IFramework framework,
         ISessionGenerationSource sessions,
         StableBindingRegistry bindings,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.McdfTransaction mcdf,
         IObjectTable objects,
         SceneCaptureService capture,
         EnvironmentControl environmentControl,
@@ -61,7 +61,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
         _framework = framework;
         _sessions = sessions;
         _bindings = bindings;
-        _integration = integration;
+        _mcdf = mcdf;
         _objects = objects;
         _capture = capture;
         _environmentControl = environmentControl;
@@ -83,7 +83,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
 
-    public void AbandonChildWaits() => _integration.AbandonMcdfWaits();
+    public void AbandonChildWaits() => _mcdf.AbandonWaits();
 
     public SelectionId? ResolveSceneEntity(SceneEntityHandle token) =>
         SceneHistoryBinder.SelectionOf(_bindings, _handles.Resolve(token));

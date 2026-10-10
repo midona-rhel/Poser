@@ -3,6 +3,7 @@ using System.Reflection;
 using Poser.Application.Appearance;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Application.Presentation;
@@ -92,8 +93,8 @@ public sealed class ActorStateSnapshotsTests
         {
             var scene = new SceneSession(new SelectionSession());
             scene.TryRefresh(new SceneSnapshot(1, [new ActorDescriptor(Actor, "actor", [])], [], [], []));
-            var integrationPort = Port<IIntegrationRuntimePort>(Integration);
-            var appearance = new ActorIntegrationSession(integrationPort, null!, this);
+            var integrationPort = Port<IIntegrationRuntimeFake>(Integration);
+            var integration = new IntegrationGraph(integrationPort, null!, this);
             Presentation = new(Port<IPresentationRuntimePort>((method, args) =>
             {
                 switch (method.Name)
@@ -128,7 +129,8 @@ public sealed class ActorStateSnapshotsTests
                 "Write" => WriteExpression(args),
                 _ => throw new InvalidOperationException(method.Name),
             });
-            States = new(scene, this, new(() => this), appearance, Presentation, models, gaze, expressions, integrationPort);
+            States = new(scene, this, new(() => this), integration.Selectors, integration.Mcdf, Presentation,
+                models, gaze, expressions, integrationPort, integrationPort);
         }
 
         private Outcome WriteExpression(object?[] args)

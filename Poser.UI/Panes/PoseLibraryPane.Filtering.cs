@@ -398,9 +398,9 @@ public sealed partial class PoseLibraryPane
         // TAB is the only surface that can start one, so it is the only one
         // that may claim the footer: without that conjunct this hijacks the
         // Poses and Auto-saves captions and buries the auto-save health line.
-        var running = _integration.Mcdf;
+        var running = _mcdf.Progress;
         bool importing = ShowsImportCancel(
-            _type, _integration.McdfBusy, running, _integration.McdfReceipt);
+            _type, _mcdf.Busy, running, _mcdf.Receipt);
         _vm.ShowCancelImport = importing;
         // The stop greys — never vanishes — through Committing and Rolling
         // back, matching the appearance pane's progress row.

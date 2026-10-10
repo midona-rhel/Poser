@@ -155,7 +155,7 @@ public sealed partial class PoseLibraryPane
             string reading = path;
             Task.Run(() =>
             {
-                var read = _integration.ReadMcdfSummary(reading);
+                var read = _mcdf.ReadSummary(reading);
                 var landed = new CharacterFileState(
                     reading,
                     read.Success ? read.Value : null,

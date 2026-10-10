@@ -8,7 +8,7 @@ using Poser.Application.Presentation;
 namespace Poser.Application.Appearance;
 
 public sealed class ActorAppearanceControl(
-    ActorIntegrationSession integration,
+    IntegrationSelectors integration,
     ActorModelIdSession model,
     DisruptiveSteps history) : IActorAppearanceControl
 {

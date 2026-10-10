@@ -47,7 +47,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private readonly WorldObjects.WorldService _worldObjects;
     private readonly ICameraProjection _viewport;
     private readonly GazeService _gaze;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly IActorManager _actors;
 
     /// <summary>The selection, so a destroy path can never leave it pointing
@@ -70,7 +70,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         WorldObjects.WorldService worldObjects,
         ICameraProjection viewport,
         GazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.IntegrationReset integration,
         IActorManager actors,
         Poser.Application.Selection.SelectionSession selection,
         IPluginLog log)

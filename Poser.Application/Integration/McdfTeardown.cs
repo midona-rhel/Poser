@@ -17,10 +17,13 @@ namespace Poser.Application.Integration;
 /// game may still read.
 /// </summary>
 internal sealed class McdfTeardown(
-    IIntegrationRuntimePort port,
+    IIntegrationResolutionPort actors,
+    IPenumbraPort penumbra,
+    IGlamourerPort glamourer,
+    ICustomizePlusPort customizePlus,
     IMcdfFileBoundary files,
     ISessionGenerationSource sessions,
-    ActorIntegrationSession owner)
+    IntegrationOwnership ownership)
 {
     /// <summary>Same bound the import apply phase uses; a redraw that has
     /// not completed within this window is a failure, never an unbounded
@@ -76,7 +79,7 @@ internal sealed class McdfTeardown(
         var failures = new List<string>();
         foreach (var directory in _packages.Keys.ToArray())
         {
-            if (owner.UsesDirectory(directory) || inFlightDirectory == directory) continue;
+            if (ownership.UsesDirectory(directory) || inFlightDirectory == directory) continue;
             var released = DeleteOperationDirectory(directory);
             if (!released.Success) failures.Add(released.Detail ?? "Character-file resource cleanup failed.");
         }
@@ -93,7 +96,7 @@ internal sealed class McdfTeardown(
     /// keep, never a flag to quietly drop.</summary>
     internal IntegrationResult ByNameUnlock(string? name) =>
         name is { } addressable
-            ? port.UnlockGlamourerStateByName(addressable)
+            ? glamourer.UnlockGlamourerStateByName(addressable)
             : IntegrationResult.Fail(
                 "The actor is gone and no character name was captured for this "
                 + "import, so its locked Glamourer state cannot be released.");
@@ -107,9 +110,9 @@ internal sealed class McdfTeardown(
     internal IntegrationResult? RestoreEither(
         ActorId actor, bool resolvable, string? byName, string state) =>
         resolvable
-            ? port.RestoreGlamourerState(actor, state)
+            ? glamourer.RestoreGlamourerState(actor, state)
             : byName is { } name
-                ? port.RestoreGlamourerStateByName(name, state)
+                ? glamourer.RestoreGlamourerStateByName(name, state)
                 : null;
 
     // ── Teardown of committed ownership ──────────────────────────────────
@@ -143,7 +146,7 @@ internal sealed class McdfTeardown(
         bool locked = mcdf.GlamourerLocked;
         if (locked && resolvable)
         {
-            var unlocked = port.UnlockGlamourerState(actor);
+            var unlocked = glamourer.UnlockGlamourerState(actor);
             if (unlocked.Success)
                 locked = false;
             else
@@ -223,7 +226,7 @@ internal sealed class McdfTeardown(
         Guid? temporaryProfile = mcdf.TemporaryProfile;
         if (temporaryProfile is { } profile)
         {
-            var deleted = port.DeleteTemporaryBodyProfileById(profile);
+            var deleted = customizePlus.DeleteTemporaryBodyProfileById(profile);
             if (deleted.Success)
                 temporaryProfile = null;
             else
@@ -241,7 +244,7 @@ internal sealed class McdfTeardown(
         {
             if (resolvable)
             {
-                var reapplied = port.ApplyTemporaryBodyProfile(actor, bodyRecovery);
+                var reapplied = customizePlus.ApplyTemporaryBodyProfile(actor, bodyRecovery);
                 if (reapplied.Success && reapplied.Value != default)
                 {
                     if (current.TemporaryBodyProfile != null)
@@ -266,7 +269,7 @@ internal sealed class McdfTeardown(
         Guid? temporaryCollection = mcdf.TemporaryCollection;
         if (temporaryCollection is { } tempCollection)
         {
-            var collectionDeleted = port.DeleteTemporaryCollection(tempCollection);
+            var collectionDeleted = penumbra.DeleteTemporaryCollection(tempCollection);
             if (collectionDeleted.Success)
             {
                 temporaryCollection = null;
@@ -312,7 +315,7 @@ internal sealed class McdfTeardown(
         else if (removedPenumbra && resolvable && operationDirectory == null)
         {
             // No files left to guard — the owed redraw is visual only.
-            var redraw = port.RequestRedraw(actor);
+            var redraw = penumbra.RequestRedraw(actor);
             if (!redraw.Success)
             {
                 failures.Add($"The redraw request failed: {redraw.Detail}");
@@ -355,19 +358,19 @@ internal sealed class McdfTeardown(
     {
         try
         {
-            bool pending = await port.OnFrameworkThread(() =>
-                owner.OverridesFor(actor).Mcdf
+            bool pending = await actors.OnFrameworkThread(() =>
+                ownership.OverridesFor(actor).Mcdf
                     is { RedrawPending: true, OperationDirectory: not null });
             if (!pending)
                 return null;
-            var wait = await port.RedrawAndWait(actor, RedrawBarrierTimeout, cancellation);
-            return await port.OnFrameworkThread(() =>
+            var wait = await penumbra.RedrawAndWait(actor, RedrawBarrierTimeout, cancellation);
+            return await actors.OnFrameworkThread(() =>
             {
-                var current = owner.OverridesFor(actor);
+                var current = ownership.OverridesFor(actor);
                 if (current.Mcdf is not
                     { RedrawPending: true, OperationDirectory: { } path } mcdf)
                     return null;
-                if (!wait.Success && port.IsResolvable(actor))
+                if (!wait.Success && actors.IsResolvable(actor))
                     return "The extracted files stay owned until the actor's redraw "
                         + $"completes: {wait.Detail}";
                 var deleted = DeleteOperationDirectory(path);
@@ -375,13 +378,13 @@ internal sealed class McdfTeardown(
                 {
                     // The redraw completed; only the deletion remains, and
                     // Reset MCDF retries it without another barrier.
-                    owner.MutateOverrides(actor, current with
+                    ownership.Mutate(actor, current with
                     {
                         Mcdf = mcdf with { RedrawPending = false },
                     });
                     return deleted.Detail;
                 }
-                owner.MutateOverrides(actor, current with
+                ownership.Mutate(actor, current with
                 {
                     Mcdf = Normalize(mcdf with
                     {

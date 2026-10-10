@@ -61,8 +61,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly GazeService _gaze;
-    private readonly Poser.Application.Integration.ActorIntegrationSession
-        _integration;
+    private readonly Poser.Application.Integration.IntegrationSelectors _integration;
+    private readonly Poser.Application.Integration.McdfTransaction _mcdf;
+    private readonly Poser.Application.Integration.IntegrationReset _reset;
     private readonly Bindings.StableBindingRegistry _bindings;
     private readonly IBonePosingService _bonePosing;
     private readonly IActorManager _actorManager;
@@ -89,7 +90,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IFramework framework,
         IPluginLog log,
         GazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.IntegrationSelectors integration,
+        Poser.Application.Integration.McdfTransaction mcdf,
+        Poser.Application.Integration.IntegrationReset reset,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         IActorManager actorManager,
@@ -112,6 +115,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         _log = log;
         _gaze = gaze;
         _integration = integration;
+        _mcdf = mcdf;
+        _reset = reset;
         _bindings = bindings;
     }
 
@@ -160,7 +165,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         // cleanup a scene clear gives it — gaze released, appearance
         // reverted — because after the delete there is nothing left to name.
         if (!_spawns.IsSpawnedActor(target))
-            ActorRemovalCleanup.Prepare(target, _gaze, _integration, _bindings, Note);
+            ActorRemovalCleanup.Prepare(target, _gaze, _reset, _bindings, Note);
         return _spawns.RemoveActorFromScene(target);
     }
 

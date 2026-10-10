@@ -12,7 +12,7 @@ namespace Poser.Game.Integration;
 /// clone has no stable binding yet, and an overworld clone source never has
 /// one at all. Both addresses are resolved to object indices at the call
 /// boundary and nothing native is retained, exactly as
-/// <see cref="IntegrationRuntimePort"/> does for its stable-id calls.
+/// <see cref="PenumbraIpc"/> does for its stable-id calls.
 ///
 /// Why an explicit assignment is needed at all: Penumbra identifies a GPose
 /// actor through the parent index its CopyCharacter hook recorded

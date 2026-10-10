@@ -13,7 +13,7 @@ namespace Poser.Application.Posing;
 public sealed class ActorResetControl(
     SceneSession scene, TransformGestureService gestures, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
-    ActorPresentationSession presentation, ActorIntegrationSession integration,
+    ActorPresentationSession presentation, IntegrationReset integration,
     TransformHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl
 {

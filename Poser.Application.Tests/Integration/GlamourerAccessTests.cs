@@ -22,11 +22,11 @@ public sealed class GlamourerAccessTests
         Assert.True(session.RestoreHistory(replacement, saved).Success);
         Assert.Equal(authored, port.AppliedState);
         Assert.Equal(replacement, port.AppliedActor);
-        Assert.Contains(nameof(IIntegrationRuntimePort.SetIndividualCollection), port.Calls);
-        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.RevertGlamourerState), port.Calls);
+        Assert.Contains(nameof(IIntegrationRuntimeFake.SetIndividualCollection), port.Calls);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimeFake.RevertGlamourerState), port.Calls);
         Assert.True(session.OverridesFor(replacement).DesignOwned);
         Assert.True(session.ResetDesign(replacement).Success);
-        Assert.Contains(nameof(IIntegrationRuntimePort.RestoreGlamourerState), port.Calls);
+        Assert.Contains(nameof(IIntegrationRuntimeFake.RestoreGlamourerState), port.Calls);
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public sealed class GlamourerAccessTests
         Assert.Null(removal.Value.StateJson);
         port.Access = _ => GlamourerAccess.Editable;
         Assert.True(session.RestoreHistory(ActorId.New(), removal.Value).Success);
-        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson), port.Calls);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson), port.Calls);
         port.Access = _ => GlamourerAccess.ForeignHeld;
         Assert.False(session.TryCaptureHistory(actor, omitUnreadableLook: true).Success);
     }
@@ -65,7 +65,7 @@ public sealed class GlamourerAccessTests
         Assert.Equal(GlamourerAccessKind.ForeignHeld, session.GetStateJson(actor).AppearanceRefusal);
         Assert.Equal(GlamourerAccessKind.ForeignHeld, session.ReadWardrobe(actor).AppearanceRefusal);
         Assert.Equal(GlamourerAccessKind.ForeignHeld, session.ReadCustomize(actor).AppearanceRefusal);
-        Assert.All(port.Calls, call => Assert.Equal(nameof(IIntegrationRuntimePort.ProbeGlamourerAccess), call));
+        Assert.All(port.Calls, call => Assert.Equal(nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess), call));
         Assert.True(session.OpenGlamourer(actor).Success);
         Assert.False(session.OverridesFor(actor).HasAny);
     }
@@ -79,11 +79,11 @@ public sealed class GlamourerAccessTests
         port.Access = _ => GlamourerAccess.ForeignHeld;
         AssertRefused(session.ResetDesign(actor));
         Assert.Equal("baseline", session.OverridesFor(actor).Baseline.GlamourerState);
-        Assert.DoesNotContain(nameof(IIntegrationRuntimePort.RestoreGlamourerState), port.Calls);
+        Assert.DoesNotContain(nameof(IIntegrationRuntimeFake.RestoreGlamourerState), port.Calls);
         port.Access = _ => GlamourerAccess.Editable;
         Assert.True(session.ResetDesign(actor).Success);
         Assert.False(session.OverridesFor(actor).DesignOwned);
-        Assert.Contains(nameof(IIntegrationRuntimePort.RestoreGlamourerState), port.Calls);
+        Assert.Contains(nameof(IIntegrationRuntimeFake.RestoreGlamourerState), port.Calls);
     }
 
     private static void AssertRefused(IntegrationResult result)
@@ -92,10 +92,10 @@ public sealed class GlamourerAccessTests
         Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);
     }
 
-    private static (ActorIntegrationSession, RuntimeProxy) Create()
+    private static (IntegrationSelectors, RuntimeProxy) Create()
     {
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
-        return (new ActorIntegrationSession(port, null!, new SessionSource()), (RuntimeProxy)(object)port);
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
+        return (new IntegrationGraph(port, null!, new SessionSource()).Selectors, (RuntimeProxy)(object)port);
     }
 
     private sealed class SessionSource : ISessionGenerationSource
@@ -117,26 +117,26 @@ public sealed class GlamourerAccessTests
             Calls.Add(name);
             if (name is "get_CustomizePlus" or "get_Penumbra" or "get_Glamourer")
                 return new IntegrationAvailability(true, "Available");
-            if (name == nameof(IIntegrationRuntimePort.ProbeBodyProfile))
+            if (name == nameof(IIntegrationRuntimeFake.ProbeBodyProfile))
                 return IntegrationValue<BodyProfileProbe>.Ok(new(null, false));
-            if (name == nameof(IIntegrationRuntimePort.ProbeGlamourerAccess))
+            if (name == nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess))
                 return Access((ActorId)args![0]!);
-            if (name == nameof(IIntegrationRuntimePort.IsResolvable))
+            if (name == nameof(IIntegrationRuntimeFake.IsResolvable))
                 return false;
-            if (name == nameof(IIntegrationRuntimePort.CaptureGlamourerState))
+            if (name == nameof(IIntegrationRuntimeFake.CaptureGlamourerState))
                 return IntegrationValue<string>.Ok("baseline");
-            if (name == nameof(IIntegrationRuntimePort.GetActorName))
+            if (name == nameof(IIntegrationRuntimeFake.GetActorName))
                 return IntegrationValue<string>.Ok("Actor");
-            if (name == nameof(IIntegrationRuntimePort.GetGlamourerStateJson))
+            if (name == nameof(IIntegrationRuntimeFake.GetGlamourerStateJson))
                 return StateResult;
-            if (name == nameof(IIntegrationRuntimePort.GetCollectionAssignment))
+            if (name == nameof(IIntegrationRuntimeFake.GetCollectionAssignment))
                 return IntegrationValue<CollectionAssignment>.Ok(new(Guid.Empty, "Empty", true));
-            if (name == nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson))
+            if (name == nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson))
             {
                 AppliedActor = (ActorId)args![0]!;
                 AppliedState = (string)args[1]!;
             }
-            if (name == nameof(IIntegrationRuntimePort.AddDesign))
+            if (name == nameof(IIntegrationRuntimeFake.AddDesign))
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());
             if (method.ReturnType == typeof(IntegrationResult))
                 return IntegrationResult.Ok();

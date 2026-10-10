@@ -68,7 +68,6 @@ public partial class MainWindow : Window
 
     private readonly IGazeControl _gazeService;
 
-    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
 
     /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
@@ -360,7 +359,6 @@ public partial class MainWindow : Window
         WorldAdoptionSource worldAdoption,
         IGazeControl gazeService,
         EntityActions entityActions,
-        global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
@@ -480,7 +478,6 @@ public partial class MainWindow : Window
         _referenceImages = referenceImages;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
-        _integration = integration;
         _entityActions = entityActions;
         _entityCommands = entityCommands;
         _notices = notices;

@@ -15,14 +15,14 @@ namespace Poser.Application.Appearance;
 public sealed class CustomizeSession : ICustomizeControl
 {
     private readonly ValueJournal _journal;
-    private readonly ActorIntegrationSession _integration;
-    private readonly IIntegrationRuntimePort _runtime;
+    private readonly IntegrationSelectors _integration;
+    private readonly IIntegrationResolutionPort _runtime;
     private readonly DisruptiveSteps _disruptive;
 
     public CustomizeSession(
         ValueJournal journal,
-        ActorIntegrationSession integration,
-        IIntegrationRuntimePort runtime,
+        IntegrationSelectors integration,
+        IIntegrationResolutionPort runtime,
         DisruptiveSteps disruptive)
     {
         _journal = journal;

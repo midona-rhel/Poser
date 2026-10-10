@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Reflection;
 using Poser.Application.Presentation;
 using Poser.Application.Integration;
+using Poser.Game.Tests.Integration;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
@@ -225,8 +226,8 @@ public sealed class PresentationResetHistoryTests
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
             Journal = new(History, runner, _ => true, new SilentNotices());
-            var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
-            ColorValues = new(Session, integration, values, runner, Bindings);
+            var integration = new IntegrationGraph(DispatchProxy.Create<IIntegrationRuntimeFake, IntegrationProxy>(), null!, null!);
+            ColorValues = new(Session, integration.Selectors, values, runner, Bindings);
         }
         public VisibilitySpawnProxy Visibility =>
             (VisibilitySpawnProxy)(object)Spawn;

@@ -8,9 +8,10 @@ namespace Poser.Application.Integration;
 
 /// <summary>
 /// The single-flight owner of the MCDF workflow: admission (exact session
-/// generation, owner-local operation epoch, operation id), the bounded
-/// cancel/drain that runs before the integration port is disposed, and the
-/// one slot that <see cref="McdfImport"/>, <see cref="McdfExport"/> and
+/// generation, owner-local operation epoch, operation id), a parent's bounded
+/// wait on its own operation, the bounded cancel/drain that runs before the
+/// integration ports are disposed, and the one slot that
+/// <see cref="McdfImport"/>, <see cref="McdfExport"/> and
 /// <see cref="McdfTeardown"/>'s release barrier run in.
 ///
 /// Two rules shape every path. First, identity: every framework-thread
@@ -21,9 +22,9 @@ namespace Poser.Application.Integration;
 /// overwrite a newer terminal. Second, file lifetime: see
 /// <see cref="McdfTeardown"/>.
 ///
-/// <see cref="ActorIntegrationSession"/> remains the public compatibility
-/// facade and the owner of the per-actor override store; this class and its
-/// collaborators mutate that store only through the session's internal seam.
+/// Committed MCDF ownership lives in <see cref="IntegrationOwnership"/>
+/// beside the selectors' state; this class and its collaborators mutate it
+/// only through that store.
 /// </summary>
 public sealed class McdfTransaction
 {
@@ -34,28 +35,41 @@ public sealed class McdfTransaction
     /// mutate anything.</summary>
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
-    private readonly IIntegrationRuntimePort _port;
+    /// <summary>Long enough for a cancelled import's rollback to sit out its
+    /// own redraw barrier (10 s) before the parent stops waiting.</summary>
+    public static readonly TimeSpan DrainBound = TimeSpan.FromSeconds(15);
+
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
+
+    private readonly IIntegrationResolutionPort _actors;
     private readonly IMcdfFileBoundary _files;
     private readonly ISessionGenerationSource _sessions;
-    private readonly ActorIntegrationSession _owner;
+    private readonly IntegrationOwnership _ownership;
     private readonly SingleFlightOwner<McdfOperation, McdfProgress> _flight = new();
     private readonly McdfTeardown _teardown;
     private readonly McdfImport _import;
     private readonly McdfExport _export;
 
-    internal McdfTransaction(
-        IIntegrationRuntimePort port,
+    /// <summary>Cancelled once at unload; never disposed, so a late reader
+    /// cannot fault on it.</summary>
+    private readonly CancellationTokenSource _shutdown = new();
+
+    public McdfTransaction(
+        IIntegrationResolutionPort actors,
+        IPenumbraPort penumbra,
+        IGlamourerPort glamourer,
+        ICustomizePlusPort customizePlus,
         IMcdfFileBoundary files,
         ISessionGenerationSource sessions,
-        ActorIntegrationSession owner)
+        IntegrationOwnership ownership)
     {
-        _port = port;
+        _actors = actors;
         _files = files;
         _sessions = sessions;
-        _owner = owner;
-        _teardown = new McdfTeardown(port, files, sessions, owner);
-        _import = new McdfImport(port, files, sessions, owner, _teardown, _flight);
-        _export = new McdfExport(port, files, owner, _flight);
+        _ownership = ownership;
+        _teardown = new McdfTeardown(actors, penumbra, glamourer, customizePlus, files, sessions, ownership);
+        _import = new McdfImport(actors, penumbra, glamourer, customizePlus, files, sessions, ownership, _teardown, _flight);
+        _export = new McdfExport(penumbra, glamourer, files, ownership, _flight);
     }
 
     /// <summary>Hard validation limits for incoming packages.</summary>
@@ -78,10 +92,21 @@ public sealed class McdfTransaction
     /// time.</summary>
     public bool Busy => _flight.Busy;
 
-    internal Task CurrentCompletion => _flight.Completion;
+    /// <summary>Await the transaction already admitted by import/reset; never
+    /// start a competing redraw.</summary>
+    public Task CurrentCompletion => _flight.Completion;
 
     /// <summary>Cooperative cancellation of the running operation.</summary>
     public void Cancel() => _flight.Cancel();
+
+    /// <summary>
+    /// What a package says about itself, header only. Deliberately NOT routed
+    /// through the single slot: it takes no actor, claims none of the
+    /// operation slot, and writes nothing — a highlight must never occupy the
+    /// machinery an import needs. Blocking file work; call it off the frame.
+    /// </summary>
+    public IntegrationValue<McdfSummary> ReadSummary(string path) =>
+        _files.ReadSummary(path);
 
     // ── Admission ────────────────────────────────────────────────────────
 
@@ -111,7 +136,9 @@ public sealed class McdfTransaction
             new McdfProgress(actor, fileName, kind, firstPhase, 0, 0, 0, 0, true, null),
             out cancellation);
 
-    internal IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained = null)
+    public IntegrationResult BeginImport(ActorId actor, string path) => BeginImport(actor, path, null);
+
+    private IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -127,6 +154,132 @@ public sealed class McdfTransaction
         _flight.Run(() => _import.Run(operation, path, cancellation, retained, retainedDirectory));
         return IntegrationResult.Ok();
     }
+
+    // ── A parent's wait on its own operation ─────────────────────────────
+
+    /// <summary>
+    /// A parent's wait on ONE admitted MCDF operation. Returns at its terminal
+    /// receipt; on the deadline or the parent's cancellation it cancels and
+    /// drains that operation (<see cref="CancelAndDrain"/>) instead of
+    /// walking away from it. Never awaited on the framework thread.
+    /// </summary>
+    public async Task<McdfWait> AwaitOperation(
+        Guid operationId, TimeSpan bound, CancellationToken cancellation,
+        TimeSpan? drainBound = null)
+    {
+        McdfWait? done = null;
+        McdfWaitEnd end;
+        try
+        {
+            if (await FrameworkPoll.Until(
+                    () => Task.FromResult((done = TerminalOf(operationId)) is not null),
+                    bound, PollInterval, cancellation))
+                return done!.Value;
+            end = McdfWaitEnd.DeadlinePassed;
+        }
+        catch (OperationCanceledException)
+        {
+            end = McdfWaitEnd.ParentCancelled;
+        }
+        var drained = await CancelAndDrain(operationId, drainBound ?? DrainBound);
+        return drained with { End = end };
+    }
+
+    /// <summary>
+    /// Cancels the operation only while it is still THIS one — matched by
+    /// receipt id on the framework thread, never the shared slot blindly —
+    /// then waits up to <paramref name="bound"/> for it to finish. A result
+    /// that is not <see cref="McdfWait.Terminal"/> means the child still runs
+    /// (cancelled, so every later mutation refuses) and the caller keeps
+    /// owning whatever the child reads or writes.
+    /// </summary>
+    public async Task<McdfWait> CancelAndDrain(Guid operationId, TimeSpan bound)
+    {
+        if (_shutdown.IsCancellationRequested)
+        {
+            // Unload: the framework thread is blocked in Dispose, so a hop
+            // would never run. AbandonWaits already cancelled the child;
+            // answer at once and leave the join to Drain.
+            CancelQuietly();
+        }
+        else
+        {
+            async Task CancelAndJoin()
+            {
+                var running = await _actors.OnFrameworkThread(() => CancelIfCurrent(operationId));
+                await running;
+            }
+            try
+            {
+                // The hop is inside the bound too, and unload cuts both short.
+                await CancelAndJoin().WaitAsync(bound, _shutdown.Token);
+            }
+            catch (Exception)
+            {
+                // Timeout: still running, reported through the non-terminal
+                // result below. Cancelled: unload. Faulted: the child is
+                // finished and its receipt says how.
+            }
+        }
+        return TerminalOf(operationId)
+            ?? new McdfWait(McdfWaitEnd.Finished, false, Receipt);
+    }
+
+    /// <summary>
+    /// Completes once the operation has stopped running: at once when its
+    /// receipt is terminal, else with the transaction's task. A caller that
+    /// got a non-terminal <see cref="McdfWait"/> deletes the files the child
+    /// reads or writes on this, never before.
+    /// </summary>
+    public Task Settled(Guid operationId) =>
+        TerminalOf(operationId) is null ? CurrentCompletion : Task.CompletedTask;
+
+    /// <summary>
+    /// Unload edge, called on the disposing thread before any parent is
+    /// joined. Every later <see cref="CancelAndDrain"/>, and any drain
+    /// already waiting, returns at once instead of waiting on a hop the
+    /// blocked framework thread can never run; the running child is
+    /// cancelled directly. Idempotent.
+    /// </summary>
+    public void AbandonWaits()
+    {
+        _shutdown.Cancel();
+        CancelQuietly();
+    }
+
+    private void CancelQuietly()
+    {
+        try
+        {
+            Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation already finished and released its source.
+        }
+    }
+
+    /// <summary>Framework thread only.</summary>
+    internal Task CancelIfCurrent(Guid operationId)
+    {
+        if (Receipt is not { State: OperationReceiptState.Pending } receipt
+            || receipt.OperationId != operationId)
+            return Task.CompletedTask;
+        Cancel();
+        return CurrentCompletion;
+    }
+
+    /// <summary>The operation's terminal result, or null while it runs. A
+    /// different receipt means a newer operation was admitted, which the
+    /// single slot allows only after this one finished.</summary>
+    private McdfWait? TerminalOf(Guid operationId) => Receipt switch
+    {
+        { } receipt when receipt.OperationId != operationId =>
+            new McdfWait(McdfWaitEnd.Finished, true, null),
+        { State: not OperationReceiptState.Pending } receipt =>
+            new McdfWait(McdfWaitEnd.Finished, true, receipt),
+        _ => null,
+    };
 
     // ── In-flight invalidation ───────────────────────────────────────────
 
@@ -172,11 +325,11 @@ public sealed class McdfTransaction
     /// components stay owned and keep their own resets. When the teardown
     /// leaves the extracted directory owned pending a redraw, the bounded
     /// release barrier is scheduled as the one active transaction.</summary>
-    internal IntegrationResult Reset(ActorId actor)
+    public IntegrationResult Reset(ActorId actor)
     {
         if (Busy)
             return IntegrationResult.Fail("An MCDF operation is still running.");
-        var current = _owner.OverridesFor(actor);
+        var current = _ownership.OverridesFor(actor);
         if (current.Mcdf is not { } mcdf)
         {
             // No active MCDF — but standalone pending-directory cleanup
@@ -184,18 +337,18 @@ public sealed class McdfTransaction
             if (current.PendingDirectories.Count == 0)
                 return IntegrationResult.Ok();
             var cleanupFailures = new List<string>();
-            _owner.MutateOverrides(
+            _ownership.Mutate(
                 actor, RetryPendingDirectories(current, cleanupFailures));
             return cleanupFailures.Count == 0
                 ? IntegrationResult.Ok()
                 : IntegrationResult.Fail(string.Join("; ", cleanupFailures));
         }
 
-        bool resolvable = _port.IsResolvable(actor);
+        bool resolvable = _actors.IsResolvable(actor);
         var failures = new List<string>();
         current = TearDown(actor, current, mcdf, resolvable, failures);
         current = RetryPendingDirectories(current, failures);
-        _owner.MutateOverrides(actor, current);
+        _ownership.Mutate(actor, current);
         ScheduleDirectoryReleaseIfPending(actor);
         return failures.Count == 0
             ? IntegrationResult.Ok()
@@ -213,7 +366,7 @@ public sealed class McdfTransaction
     {
         if (_flight.Closed || Busy)
             return;
-        if (_owner.OverridesFor(actor).Mcdf
+        if (_ownership.OverridesFor(actor).Mcdf
             is not { RedrawPending: true, OperationDirectory: not null })
             return;
         _flight.Run(() => _teardown.ReleaseRetainedDirectory(actor, _flight.Disposal));
@@ -228,7 +381,7 @@ public sealed class McdfTransaction
     /// the actor (no repackaging), while another operation runs, and when
     /// the Glamourer state is locked by another plugin.
     /// </summary>
-    internal IntegrationResult BeginExport(ActorId actor, string path, string description)
+    public IntegrationResult BeginExport(ActorId actor, string path, string description)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -265,7 +418,7 @@ public sealed class McdfTransaction
     // ── Drain ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Bounded cancel/drain before the integration port and provider are
+    /// Bounded cancel/drain before the integration ports and providers are
     /// disposed: admission closes permanently, the active operation's token
     /// and the barrier token cancel, and the active task is joined inside
     /// <see cref="DisposeDrainTimeout"/>. An abandoned task cannot mutate
@@ -277,4 +430,27 @@ public sealed class McdfTransaction
         _flight.Close();
         _flight.Drain(DisposeDrainTimeout);
     }
+}
+
+/// <summary>Why a parent stopped waiting on its MCDF child.</summary>
+public enum McdfWaitEnd
+{
+    Finished,
+    DeadlinePassed,
+    ParentCancelled,
+}
+
+/// <summary>
+/// What a parent learned about its own MCDF operation. <see cref="Terminal"/>
+/// false means the child was cancelled but has not finished within the drain
+/// bound: it can no longer commit, yet it may still read its input, so the
+/// caller retains that input. <see cref="Receipt"/> is the operation's own
+/// receipt, or null when a newer operation has replaced it.
+/// </summary>
+public readonly record struct McdfWait(McdfWaitEnd End, bool Terminal, OperationReceipt? Receipt)
+{
+    /// <summary>The child committed. Possible after the deadline too: a
+    /// commit ordered before the matched cancel on the framework thread is
+    /// a real, owned result, not a late write.</summary>
+    public bool Applied => Receipt is { State: OperationReceiptState.Applied };
 }

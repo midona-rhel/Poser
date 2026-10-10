@@ -48,8 +48,10 @@ public sealed partial class DebugBridge : IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ISceneCreation _creation;
-    private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
-    private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
+    private readonly global::Poser.Game.Integration.PenumbraIpc _penumbra;
+    private readonly global::Poser.Application.Integration.IGlamourerPort _glamourer;
+    private readonly global::Poser.Application.Integration.ICustomizePlusPort _customizePlus;
+    private readonly global::Poser.Application.Integration.IntegrationSelectors _session;
     private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
     private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
@@ -102,8 +104,10 @@ public sealed partial class DebugBridge : IDisposable
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ISceneCreation creation,
-        global::Poser.Application.Integration.IIntegrationRuntimePort integration,
-        global::Poser.Application.Integration.ActorIntegrationSession session,
+        global::Poser.Game.Integration.PenumbraIpc penumbra,
+        global::Poser.Application.Integration.IGlamourerPort glamourer,
+        global::Poser.Application.Integration.ICustomizePlusPort customizePlus,
+        global::Poser.Application.Integration.IntegrationSelectors session,
         global::Poser.Application.Appearance.IActorAppearanceControl appearance,
         global::Poser.Application.Settings.ReleaseNotesSession releaseNotes,
         global::Poser.Services.ISkeletonService skeletons,
@@ -167,7 +171,9 @@ public sealed partial class DebugBridge : IDisposable
         _library = library;
         _bonePosing = bonePosing;
         _ikConfiguration = ikConfiguration;
-        _integration = integration;
+        _penumbra = penumbra;
+        _glamourer = glamourer;
+        _customizePlus = customizePlus;
         _session = session;
         _appearance = appearance;
         _releaseNotes = releaseNotes;
@@ -824,7 +830,7 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/setcollection":
             {
-                var read = _integration.GetCollectionAssignment(id);
+                var read = _penumbra.GetCollectionAssignment(id);
                 if (!read.Success || read.Value is not { } cur)
                     return Json(new { error = read.Detail });
                 var guid = query.TryGetValue("id", out var g) ? Guid.Parse(g) : cur.EffectiveId;
@@ -835,7 +841,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/resources":
             {
-                var paths = _integration.GetActorResourcePaths(id);
+                var paths = _penumbra.GetActorResourcePaths(id);
                 if (!paths.Success || paths.Value is not { } tree)
                     return Json(new { error = paths.Detail });
                 var modded = tree.Where(p => !p.Value.Contains(p.Key)).Select(p => p.Key).ToArray();
@@ -887,7 +893,7 @@ public sealed partial class DebugBridge : IDisposable
             case "/mcdf":
             {
                 if (query.TryGetValue("resolve", out var resourcePath))
-                    return Json(((Game.Integration.IntegrationRuntimePort)_integration).DebugResolveResourcePath(id, resourcePath));
+                    return Json(_penumbra.DebugResolveResourcePath(id, resourcePath));
                 if (query.TryGetValue("spawn", out var packagePath))
                     return Json(_characterFiles.Spawn(packagePath));
                 if (query.GetValueOrDefault("reset") == "1")
@@ -900,7 +906,7 @@ public sealed partial class DebugBridge : IDisposable
                 if (query.TryGetValue("import", out var source))
                     return Json(_characterFiles.Import(id, source));
                 return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress,
-                    owned = Owned(id), collection = _integration.GetCollectionAssignment(id) });
+                    owned = Owned(id), collection = _penumbra.GetCollectionAssignment(id) });
             }
             case "/bonediff":
             {
@@ -1274,7 +1280,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/meta":
             {
-                var meta = _integration.GetActorMetaManipulations(id);
+                var meta = _penumbra.GetActorMetaManipulations(id);
                 if (!meta.Success || meta.Value is not { } m)
                     return Json(new { error = meta.Detail });
                 return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
@@ -1315,7 +1321,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/redraw":
             {
-                var r = _integration.RequestRedraw(id);
+                var r = _penumbra.RequestRedraw(id);
                 return Json(new { ok = r.Success, r.Detail });
             }
             case "/collections":
@@ -1441,8 +1447,8 @@ public sealed partial class DebugBridge : IDisposable
                     ? new { name = reference.Name.TextValue, type = reference.GetType().Name, id = reference.GameObjectId,
                         world = (reference as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)?.HomeWorld.RowId } : null,
             },
-            penumbra = _integration.Penumbra,
-            glamourer = _integration.Glamourer,
+            penumbra = _penumbra.Penumbra,
+            glamourer = _glamourer.Glamourer,
             paused = _animation.IsPaused(id),
             anyPlaying = _animation.AnyPlaying(id),
             overallSpeed = reading?.OverallSpeed,
@@ -1539,7 +1545,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private object BodyProfile(ActorId id)
     {
-        var probe = _integration.ProbeBodyProfile(id);
+        var probe = _customizePlus.ProbeBodyProfile(id);
         return new
         {
             ok = probe.Success,

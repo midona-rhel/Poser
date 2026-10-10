@@ -15,48 +15,48 @@ public sealed class McdfHistoryTests
     {
         var sessions = new Sessions();
         var files = new Files();
-        using var integration = new ActorIntegrationSession(
-            DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, sessions);
+        using var integration = new IntegrationGraph(
+            DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, sessions);
         var actor = ActorId.New();
-        Assert.True(integration.BeginImport(actor, "original.mcdf").Success);
-        await integration.PendingCompletion;
-        Assert.True(integration.Mcdf!.Outcome!.Success, integration.Mcdf.Outcome.Detail);
-        var captured = integration.TryCaptureHistory(actor);
+        Assert.True(integration.Mcdf.BeginImport(actor, "original.mcdf").Success);
+        await integration.Mcdf.CurrentCompletion;
+        Assert.True(integration.Mcdf.Progress!.Outcome!.Success, integration.Mcdf.Progress.Outcome.Detail);
+        var captured = integration.Selectors.TryCaptureHistory(actor);
         Assert.True(captured.Success, captured.Detail);
         Assert.NotNull(captured.Value!.McdfResources);
 
-        Assert.True(integration.ResetActor(actor).Success);
-        await integration.PendingCompletion;
+        Assert.True(integration.Reset.ResetActor(actor).Success);
+        await integration.Mcdf.CurrentCompletion;
         Assert.Empty(files.Deleted);
         files.OriginalAvailable = false;
-        var restored = await integration.RestoreHistoryAndWait(actor, captured.Value, () => true, CancellationToken.None);
+        var restored = await integration.Selectors.RestoreHistoryAndWait(actor, captured.Value, () => true, CancellationToken.None);
         Assert.True(restored.Success, restored.Detail);
         Assert.Equal(1, files.Reads);
         Assert.Equal(1, files.Copies);
 
-        Assert.True(integration.ResetAll().Success);
+        Assert.True(integration.Reset.ResetAll().Success);
         Assert.Equal(2, files.Deleted.Count);
-        Assert.False(integration.RestoreHistory(actor, captured.Value).Success);
+        Assert.False(integration.Selectors.RestoreHistory(actor, captured.Value).Success);
     }
 
     [Fact]
     public async Task Copy_failure_keeps_retained_resources_and_does_not_apply_a_partial_package()
     {
         var files = new Files();
-        using var integration = new ActorIntegrationSession(
-            DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+        using var integration = new IntegrationGraph(
+            DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, new Sessions());
         var actor = ActorId.New();
-        Assert.True(integration.BeginImport(actor, "original.mcdf").Success);
-        await integration.PendingCompletion;
-        var captured = integration.TryCaptureHistory(actor).Value!;
-        Assert.True(integration.ResetActor(actor).Success);
+        Assert.True(integration.Mcdf.BeginImport(actor, "original.mcdf").Success);
+        await integration.Mcdf.CurrentCompletion;
+        var captured = integration.Selectors.TryCaptureHistory(actor).Value!;
+        Assert.True(integration.Reset.ResetActor(actor).Success);
         files.FailCopy = true;
-        var failed = await integration.RestoreHistoryAndWait(actor, captured, () => true, CancellationToken.None);
+        var failed = await integration.Selectors.RestoreHistoryAndWait(actor, captured, () => true, CancellationToken.None);
         Assert.False(failed.Success);
-        Assert.Null(integration.OverridesFor(actor).Mcdf);
+        Assert.Null(integration.Ownership.OverridesFor(actor).Mcdf);
         Assert.DoesNotContain("directory-1", files.Deleted);
         files.FailCopy = false;
-        var retried = await integration.RestoreHistoryAndWait(actor, captured, () => true, CancellationToken.None);
+        var retried = await integration.Selectors.RestoreHistoryAndWait(actor, captured, () => true, CancellationToken.None);
         Assert.True(retried.Success, retried.Detail);
     }
 
@@ -68,13 +68,13 @@ public sealed class McdfHistoryTests
         try
         {
             var files = new Files { Hold = new(), InputExists = File.Exists };
-            using var integration = new ActorIntegrationSession(
-                DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+            using var integration = new IntegrationGraph(
+                DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, new Sessions());
             var actor = ActorId.New();
-            Assert.True(integration.BeginImport(actor, staged).Success);
-            var id = integration.McdfReceipt!.OperationId;
+            Assert.True(integration.Mcdf.BeginImport(actor, staged).Success);
+            var id = integration.Mcdf.Receipt!.OperationId;
 
-            var waited = await integration.AwaitMcdf(
+            var waited = await integration.Mcdf.AwaitOperation(
                 id, TimeSpan.FromMilliseconds(100), CancellationToken.None, TimeSpan.FromMilliseconds(100));
 
             // Still reading: the parent stopped, the child is cancelled but not
@@ -85,10 +85,10 @@ public sealed class McdfHistoryTests
             Assert.True(File.Exists(staged));
 
             files.Hold.SetResult();
-            await integration.PendingCompletion;
+            await integration.Mcdf.CurrentCompletion;
             Assert.True(Assert.Single(files.InputPresentAtRead));
-            Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
-            Assert.Null(integration.OverridesFor(actor).Mcdf);
+            Assert.Equal(OperationReceiptState.Cancelled, integration.Mcdf.Receipt!.State);
+            Assert.Null(integration.Ownership.OverridesFor(actor).Mcdf);
         }
         finally
         {
@@ -100,57 +100,57 @@ public sealed class McdfHistoryTests
     public async Task Late_cancel_of_a_finished_operation_never_cancels_the_newer_one()
     {
         var files = new Files();
-        using var integration = new ActorIntegrationSession(
-            DispatchProxy.Create<IIntegrationRuntimePort, Runtime>(), files, new Sessions());
+        using var integration = new IntegrationGraph(
+            DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, new Sessions());
         var first = ActorId.New();
-        Assert.True(integration.BeginImport(first, "first.mcdf").Success);
-        var old = integration.McdfReceipt!.OperationId;
-        await integration.PendingCompletion;
+        Assert.True(integration.Mcdf.BeginImport(first, "first.mcdf").Success);
+        var old = integration.Mcdf.Receipt!.OperationId;
+        await integration.Mcdf.CurrentCompletion;
 
         files.Hold = new();
         var second = ActorId.New();
-        Assert.True(integration.BeginImport(second, "second.mcdf").Success);
-        var late = await integration.CancelMcdfAndDrain(old, TimeSpan.FromMilliseconds(50));
+        Assert.True(integration.Mcdf.BeginImport(second, "second.mcdf").Success);
+        var late = await integration.Mcdf.CancelAndDrain(old, TimeSpan.FromMilliseconds(50));
         Assert.True(late.Terminal);
         Assert.Null(late.Receipt);
 
         files.Hold.SetResult();
-        await integration.PendingCompletion;
-        Assert.Equal(OperationReceiptState.Applied, integration.McdfReceipt!.State);
-        Assert.NotNull(integration.OverridesFor(second).Mcdf);
+        await integration.Mcdf.CurrentCompletion;
+        Assert.Equal(OperationReceiptState.Applied, integration.Mcdf.Receipt!.State);
+        Assert.NotNull(integration.Ownership.OverridesFor(second).Mcdf);
     }
 
     [Fact]
     public async Task Unload_returns_a_cancelled_parent_without_waiting_on_the_blocked_framework_thread()
     {
         var files = new Files { Hold = new() };
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>();
         var runtime = (Runtime)(object)port;
-        using var integration = new ActorIntegrationSession(port, files, new Sessions());
+        using var integration = new IntegrationGraph(port, files, new Sessions());
         var actor = ActorId.New();
-        Assert.True(integration.BeginImport(actor, "held.mcdf").Success);
-        var id = integration.McdfReceipt!.OperationId;
+        Assert.True(integration.Mcdf.BeginImport(actor, "held.mcdf").Success);
+        var id = integration.Mcdf.Receipt!.OperationId;
         await files.ReadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // Dispose holds the framework thread: no hop queued from here runs.
         runtime.FrameworkBlocked = true;
         using var parent = new CancellationTokenSource();
-        var wait = integration.AwaitMcdf(id, TimeSpan.FromMinutes(1), parent.Token);
+        var wait = integration.Mcdf.AwaitOperation(id, TimeSpan.FromMinutes(1), parent.Token);
         parent.Cancel();
-        integration.AbandonMcdfWaits();
+        integration.Mcdf.AbandonWaits();
 
         var waited = await wait.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(McdfWaitEnd.ParentCancelled, waited.End);
         Assert.False(waited.Terminal);
-        var settled = integration.McdfSettled(id);
+        var settled = integration.Mcdf.Settled(id);
         Assert.False(settled.IsCompleted);
 
         // The child was cancelled directly, so once it can run it stops.
         runtime.FrameworkBlocked = false;
         files.Hold.SetResult();
         await settled.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
-        Assert.Null(integration.OverridesFor(actor).Mcdf);
+        Assert.Equal(OperationReceiptState.Cancelled, integration.Mcdf.Receipt!.State);
+        Assert.Null(integration.Ownership.OverridesFor(actor).Mcdf);
     }
 
     private sealed class Sessions : ISessionGenerationSource
@@ -167,7 +167,7 @@ public sealed class McdfHistoryTests
         private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
-            if (method!.Name == nameof(IIntegrationRuntimePort.OnFrameworkThread))
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
             {
                 if (FrameworkBlocked)
                 {
@@ -180,30 +180,30 @@ public sealed class McdfHistoryTests
                 return typeof(Task).GetMethod(nameof(Task.FromResult))!
                     .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
             }
-            if (method.Name == nameof(IIntegrationRuntimePort.AssignTemporaryCollection))
+            if (method.Name == nameof(IIntegrationRuntimeFake.AssignTemporaryCollection))
             {
                 Assignments++;
                 return IntegrationResult.Ok();
             }
-            if (method.Name == nameof(IIntegrationRuntimePort.RedrawAndWait))
+            if (method.Name == nameof(IIntegrationRuntimeFake.RedrawAndWait))
                 return Task.FromResult(IntegrationResult.Ok());
             return method.Name switch
             {
                 "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
                 "get_Glamourer" or "get_CustomizePlus" => new IntegrationAvailability(false, "Unavailable"),
-                nameof(IIntegrationRuntimePort.GetCollectionAssignment) =>
+                nameof(IIntegrationRuntimeFake.GetCollectionAssignment) =>
                     IntegrationValue<CollectionAssignment>.Ok(new(_collection, "Temporary", false)),
-                nameof(IIntegrationRuntimePort.GetCollections) =>
+                nameof(IIntegrationRuntimeFake.GetCollections) =>
                     IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([]),
-                nameof(IIntegrationRuntimePort.CaptureInheritedCollection) =>
+                nameof(IIntegrationRuntimeFake.CaptureInheritedCollection) =>
                     IntegrationValue<SpawnCollectionSnapshot?>.Ok(OwnedDuplicate
                         ? new(new Dictionary<string, string> { ["model"] = "mod/model" }, "") : null),
-                nameof(IIntegrationRuntimePort.CreateTemporaryCollection) => IntegrationValue<Guid>.Ok(Guid.NewGuid()),
-                nameof(IIntegrationRuntimePort.AddTemporaryMods) =>
+                nameof(IIntegrationRuntimeFake.CreateTemporaryCollection) => IntegrationValue<Guid>.Ok(Guid.NewGuid()),
+                nameof(IIntegrationRuntimeFake.AddTemporaryMods) =>
                     IntegrationResult.Ok(),
-                nameof(IIntegrationRuntimePort.DeleteTemporaryCollection) => IntegrationResult.Ok(),
-                nameof(IIntegrationRuntimePort.IsResolvable) => true,
-                nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Test actor"),
+                nameof(IIntegrationRuntimeFake.DeleteTemporaryCollection) => IntegrationResult.Ok(),
+                nameof(IIntegrationRuntimeFake.IsResolvable) => true,
+                nameof(IIntegrationRuntimeFake.GetActorName) => IntegrationValue<string>.Ok("Test actor"),
                 _ => throw new NotSupportedException(method.Name),
             };
         }

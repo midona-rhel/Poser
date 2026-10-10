@@ -39,7 +39,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     private readonly SceneCaptureService _capture;
     private readonly IActorSpawnService _spawns;
     private readonly StableBindingRegistry _bindings;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly Poser.Application.Integration.IntegrationSelectors _integration;
+    private readonly Poser.Application.Integration.McdfTransaction _mcdf;
     private readonly IActorManager _actors;
 
     /// <summary>Finds an appearance package by its bytes. Held as the
@@ -57,7 +58,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         SceneCaptureService capture,
         IActorSpawnService spawns,
         StableBindingRegistry bindings,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.IntegrationSelectors integration,
+        Poser.Application.Integration.McdfTransaction mcdf,
         IActorManager actors,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         IPluginLog log)
@@ -70,6 +72,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         _spawns = spawns;
         _bindings = bindings;
         _integration = integration;
+        _mcdf = mcdf;
         _actors = actors;
         _mcdfHashes = mcdfHashes;
         _log = log;
@@ -301,9 +304,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             Task? holder = null;
             var refusal = await _framework.RunOnFrameworkThread(() =>
             {
-                if (!_integration.McdfBusy)
+                if (!_mcdf.Busy)
                     return begin();
-                holder = _integration.PendingCompletion;
+                holder = _mcdf.CurrentCompletion;
                 return null;
             });
             if (holder is null)
@@ -335,11 +338,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         Guid? operationId = null;
         var refusal = await BeginMcdfChild(() =>
         {
-            var started = _integration.BeginExport(
+            var started = _mcdf.BeginExport(
                 id, destination, $"Scene appearance: {name}");
             if (!started.Success)
                 return started.Detail ?? "the appearance could not be packaged.";
-            operationId = _integration.McdfReceipt?.OperationId;
+            operationId = _mcdf.Receipt?.OperationId;
             return null;
         }, "another character-file operation held the slot for the whole bound.",
             "the save was cancelled.", bound, cancellation);
@@ -351,14 +354,14 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
         // The export is this save's child: on the deadline or a cancelled
         // save it is cancelled by its own id and drained, never abandoned.
-        var waited = await _integration.AwaitMcdf(admitted, bound, cancellation);
+        var waited = await _mcdf.AwaitOperation(admitted, bound, cancellation);
         if (waited.Applied)
             return (null, false);
         if (!waited.Terminal)
         {
             // Still writing past the drain bound: the destination stays the
             // child's until it stops, and is deleted then — never under it.
-            DeleteWhenSettled(destination, _integration.McdfSettled(admitted));
+            DeleteWhenSettled(destination, _mcdf.Settled(admitted));
             _log.Warning(
                 $"Scene save: the appearance export for '{name}' did not stop within " +
                 "its drain bound; its partial file is deleted once it stops.");
@@ -575,12 +578,12 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 if (target == null) return "The actor is no longer available.";
                 if (_bindings.GetActorId(target) is not { } id)
                     return "The actor has no stable identity to import a character file onto.";
-                var started = _integration.BeginImport(id, source);
+                var started = _mcdf.BeginImport(id, source);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
                 // The transaction publishes a Pending receipt inside admission, so
                 // the id of THIS operation is readable the moment it is admitted.
-                operationId = _integration.McdfReceipt?.OperationId;
+                operationId = _mcdf.Receipt?.OperationId;
                 return null;
             }, "Another character-file operation held the slot for the whole bound.",
                 "The load was cancelled.", bound, cancellation);
@@ -595,7 +598,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             // load it is cancelled by its own id and drained: once cancelled,
             // every later phase refuses before mutating, so a late completion
             // rolls back instead of changing the actor.
-            var waited = await _integration.AwaitMcdf(admitted, bound, cancellation);
+            var waited = await _mcdf.AwaitOperation(admitted, bound, cancellation);
             if (waited.Applied)
             {
                 // Committed (possibly just before a matched cancel): owned by
@@ -614,7 +617,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 // know the child is alive.
                 if (staged is not null)
                 {
-                    DeleteWhenSettled(staged, _integration.McdfSettled(admitted));
+                    DeleteWhenSettled(staged, _mcdf.Settled(admitted));
                     staged = null;
                 }
                 _log.Warning(

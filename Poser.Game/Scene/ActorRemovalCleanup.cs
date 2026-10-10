@@ -35,7 +35,7 @@ internal static class ActorRemovalCleanup
     public static void Prepare(
         IActor actor,
         GazeService gaze,
-        ActorIntegrationSession integration,
+        IntegrationReset integration,
         StableBindingRegistry bindings,
         Action<string> refuse)
     {

@@ -32,14 +32,14 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
-    private readonly Application.Integration.ActorIntegrationSession _integration;
+    private readonly Application.Integration.IntegrationSelectors _integration;
     private readonly IPluginLog _log;
     private readonly Application.Transforms.TransformParenting _parenting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
-        Application.Integration.ActorIntegrationSession integration, IPluginLog log,
+        Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
         _framework = framework;

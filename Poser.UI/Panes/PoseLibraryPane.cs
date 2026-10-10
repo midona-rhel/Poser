@@ -138,7 +138,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly SceneSession _scene;
 
-    private readonly ActorIntegrationSession _integration;
+    private readonly McdfTransaction _mcdf;
 
     private readonly IAutoSaveService _autoSave;
 
@@ -353,7 +353,7 @@ public sealed partial class PoseLibraryPane
         Application.Library.ILibrarySceneActions libraryScene,
         SelectionSession selection,
         SceneSession scene,
-        ActorIntegrationSession integration,
+        McdfTransaction mcdf,
         IAutoSaveService autoSave,
         PropertiesContent properties,
         IPosePreview preview,
@@ -379,7 +379,7 @@ public sealed partial class PoseLibraryPane
         _details = new(environment);
         _selection = selection;
         _scene = scene;
-        _integration = integration;
+        _mcdf = mcdf;
         _autoSave = autoSave;
         _files = properties.PoseFiles;
         _notices = notices;
@@ -434,7 +434,7 @@ public sealed partial class PoseLibraryPane
         // The character-file apply is the one long transaction this pane
         // starts, so this pane also carries its stop — the same cooperative
         // cancel the appearance pane's progress row calls.
-        _vm.OnCancelImport = _integration.CancelMcdf;
+        _vm.OnCancelImport = _mcdf.Cancel;
         _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
         _vm.OnEditMetadata = OpenMetadataEditor;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();

@@ -19,7 +19,7 @@ namespace Poser.Game.Animation;
 public sealed class IdleModRuntime(
     IFramework framework, IDataManager data, ISigScanner scanner,
     StableBindingRegistry bindings, ISkeletonService skeletons, PoseExportCapture capture,
-    IPoseImportCommands imports, IIntegrationRuntimePort integration) : IIdleModRuntime
+    IPoseImportCommands imports, IPenumbraPort integration) : IIdleModRuntime
 {
     private readonly IdleHavokEncoder _encoder = new(framework, scanner);
 

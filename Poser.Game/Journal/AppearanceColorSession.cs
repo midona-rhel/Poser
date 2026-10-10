@@ -12,7 +12,7 @@ namespace Poser.Game.Journal;
 
 /// <summary>Actor-facing custom colour commands; ownership stays in presentation.</summary>
 public sealed class AppearanceColorSession(
-    ActorPresentationSession presentation, ActorIntegrationSession integration,
+    ActorPresentationSession presentation, IntegrationSelectors integration,
     ValueJournal journal, TransformGestureService runner, IEntityBindings bindings) : IAppearanceColorControl
 {
     public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> Read(ActorId actor) => presentation.ReadColors(actor);

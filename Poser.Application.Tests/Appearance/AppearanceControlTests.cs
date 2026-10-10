@@ -1,6 +1,7 @@
 using System.Reflection;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Domain.Presentation;
@@ -108,9 +109,9 @@ public sealed class AppearanceControlTests
 
         public Fixture()
         {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
+            var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
-            var integration = new ActorIntegrationSession(port, null!, this);
+            var integration = new IntegrationGraph(port, null!, this).Selectors;
             var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History));
             var journal = new ValueJournal(History);
             Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
@@ -156,27 +157,27 @@ public sealed class AppearanceControlTests
         {
             switch (method!.Name)
             {
-                case nameof(IIntegrationRuntimePort.IsResolvable): return (ActorId)args![0]! == Actor;
-                case nameof(IIntegrationRuntimePort.ProbeGlamourerAccess): return GlamourerAccess.Editable;
-                case nameof(IIntegrationRuntimePort.CaptureGlamourerState): return IntegrationValue<string>.Ok("baseline");
-                case nameof(IIntegrationRuntimePort.GetActorName): return IntegrationValue<string>.Ok("Actor");
-                case nameof(IIntegrationRuntimePort.GetWardrobeState): return IntegrationValue<WardrobeState>.Ok(ReadWardrobe());
-                case nameof(IIntegrationRuntimePort.GetCustomizeState):
+                case nameof(IIntegrationRuntimeFake.IsResolvable): return (ActorId)args![0]! == Actor;
+                case nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess): return GlamourerAccess.Editable;
+                case nameof(IIntegrationRuntimeFake.CaptureGlamourerState): return IntegrationValue<string>.Ok("baseline");
+                case nameof(IIntegrationRuntimeFake.GetActorName): return IntegrationValue<string>.Ok("Actor");
+                case nameof(IIntegrationRuntimeFake.GetWardrobeState): return IntegrationValue<WardrobeState>.Ok(ReadWardrobe());
+                case nameof(IIntegrationRuntimeFake.GetCustomizeState):
                     return IntegrationValue<CustomizeState>.Ok(new(new Dictionary<CustomizeKey, int>(Customize), 0));
-                case nameof(IIntegrationRuntimePort.GetGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.GetGlamourerStateJson):
                     return IntegrationValue<string>.Fail("State unavailable");
             }
             Writes.Add(method.Name);
-            if (Refuse || method.Name == nameof(IIntegrationRuntimePort.SetItem) && (EquipSlot)args![1]! == RefuseSlot)
+            if (Refuse || method.Name == nameof(IIntegrationRuntimeFake.SetItem) && (EquipSlot)args![1]! == RefuseSlot)
                 return IntegrationResult.Fail("Write refused");
             switch (method.Name)
             {
-                case nameof(IIntegrationRuntimePort.SetItem):
+                case nameof(IIntegrationRuntimeFake.SetItem):
                     Slots[(EquipSlot)args![1]!] = new((ulong)args[2]!, (byte)args[3]!, (byte)args[4]!);
                     break;
-                case nameof(IIntegrationRuntimePort.SetFacewear): _facewear = (ulong)args![1]!; break;
-                case nameof(IIntegrationRuntimePort.SetMetaSwitch): _hatVisible = (bool)args![2]!; break;
-                case nameof(IIntegrationRuntimePort.SetCustomize):
+                case nameof(IIntegrationRuntimeFake.SetFacewear): _facewear = (ulong)args![1]!; break;
+                case nameof(IIntegrationRuntimeFake.SetMetaSwitch): _hatVisible = (bool)args![2]!; break;
+                case nameof(IIntegrationRuntimeFake.SetCustomize):
                     foreach (var (key, value) in (IReadOnlyDictionary<CustomizeKey, int>)args![1]!) Customize[key] = value;
                     if (NormalizeBody && Customize[CustomizeKey.Gender] == 0)
                         Customize[CustomizeKey.BustSize] = 0;

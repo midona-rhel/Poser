@@ -393,41 +393,58 @@ internal static class ServiceRegistration
         services.AddSingleton<Documents.Mcdf.IMcdfFileBoundary, Documents.Mcdf.McdfFileBoundary>();
         // The lazy registry hand-off breaks the load-time cycle
         // StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort →
-        // IntegrationRuntimePort → StableBindingRegistry: the port resolves
-        // the registry on first use, never during construction.
+        // PenumbraIpc → IntegrationActorResolution → StableBindingRegistry:
+        // resolution reads the registry on first use, never during construction.
         services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
             sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
-        services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
+        services.AddSingleton<Game.Integration.IntegrationActorResolution>();
+        services.AddSingleton<Application.Integration.IIntegrationResolutionPort>(
+            sp => sp.GetRequiredService<Game.Integration.IntegrationActorResolution>());
+        services.AddSingleton<Game.Integration.PenumbraIpc>();
+        services.AddSingleton<Application.Integration.IPenumbraPort>(
+            sp => sp.GetRequiredService<Game.Integration.PenumbraIpc>());
+        // The same Penumbra client seen by address rather than by stable id:
+        // a clone has no binding yet at the moment it needs the source's collection.
+        services.AddSingleton<Game.Integration.ISpawnCollectionPort>(
+            sp => sp.GetRequiredService<Game.Integration.PenumbraIpc>());
+        services.AddSingleton<Game.Integration.GlamourerIpc>();
+        services.AddSingleton<Application.Integration.IGlamourerPort>(
+            sp => sp.GetRequiredService<Game.Integration.GlamourerIpc>());
+        services.AddSingleton<Game.Integration.ISpawnAppearancePort>(
+            sp => sp.GetRequiredService<Game.Integration.GlamourerIpc>());
+        services.AddSingleton<Game.Integration.CustomizePlusIpc>();
+        services.AddSingleton<Application.Integration.ICustomizePlusPort>(
+            sp => sp.GetRequiredService<Game.Integration.CustomizePlusIpc>());
         services.AddSingleton<Game.Integration.InvisibleSkinService>();
         services.AddSingleton<IInvisibleSkinService>(sp => sp.GetRequiredService<Game.Integration.InvisibleSkinService>());
-        services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
-            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
-        // The same port seen by address rather than by stable id: a clone has
-        // no binding yet at the moment it needs the source's collection.
-        services.AddSingleton<Game.Integration.ISpawnCollectionPort>(
-            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
-        services.AddSingleton<Game.Integration.ISpawnAppearancePort>(
-            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
-        services.AddSingleton<Application.Integration.ActorIntegrationSession>(sp =>
+        services.AddSingleton<Application.Integration.IntegrationOwnership>();
+        services.AddSingleton(sp =>
         {
-            // The session owns the concrete McdfTransaction; the session
-            // source gives every MCDF operation its exact GPose identity.
-            var session = new Application.Integration.ActorIntegrationSession(
-                sp.GetRequiredService<Application.Integration.IIntegrationRuntimePort>(),
+            // The session source gives every MCDF operation its exact GPose identity.
+            var mcdf = new Application.Integration.McdfTransaction(
+                sp.GetRequiredService<Application.Integration.IIntegrationResolutionPort>(),
+                sp.GetRequiredService<Application.Integration.IPenumbraPort>(),
+                sp.GetRequiredService<Application.Integration.IGlamourerPort>(),
+                sp.GetRequiredService<Application.Integration.ICustomizePlusPort>(),
                 sp.GetRequiredService<Documents.Mcdf.IMcdfFileBoundary>(),
-                sp.GetRequiredService<ISessionGenerationSource>());
+                sp.GetRequiredService<ISessionGenerationSource>(),
+                sp.GetRequiredService<Application.Integration.IntegrationOwnership>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.
             var limits = sp.GetRequiredService<Config.ConfigurationService>()
                 .Config.Integration;
-            session.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
+            mcdf.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
                 limits.McdfMaxTotalBytes,
                 limits.McdfMaxFileBytes,
                 limits.McdfMaxFileCount,
                 limits.McdfMaxGamePathCount);
-            return session;
+            return mcdf;
         });
-        services.AddStartable<Application.Integration.ActorIntegrationSession>(StartStage.Integration);
+        services.AddSingleton<Application.Integration.IntegrationSelectors>();
+        // Created after the ports it resets, so container disposal runs its
+        // unload edge before they tear down.
+        services.AddSingleton<Application.Integration.IntegrationReset>();
+        services.AddStartable<Application.Integration.IntegrationReset>(StartStage.Integration);
         return services;
     }
 

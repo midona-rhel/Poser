@@ -95,7 +95,7 @@ internal sealed partial class ActorServiceLifecycle
         void Next() => _framework.RunOnTick(
             () => PrepareRuntime(actor, state, attempts - 1, current), delayTicks: 1);
         if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id)
-            || _poses.IsImportBusy || _integration.McdfBusy)
+            || _poses.IsImportBusy || _mcdf.Busy)
         { Next(); return; }
         // A redraw can publish a skeleton before its stable bone bindings.
         var skeletons = _skeletons.GetSkeletons(actor);

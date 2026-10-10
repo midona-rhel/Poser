@@ -28,7 +28,7 @@ namespace Poser.Game.Integration;
 /// </summary>
 public sealed class InvisibleSkinService : IInvisibleSkinService
 {
-    private readonly IntegrationRuntimePort _port;
+    private readonly PenumbraIpc _port;
     private readonly IFramework _framework;
     private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -41,7 +41,7 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     private bool _pathsLoaded;
 
     public InvisibleSkinService(
-        IntegrationRuntimePort port,
+        PenumbraIpc port,
         IFramework framework,
         Lazy<StableBindingRegistry> bindings,
         IDalamudPluginInterface pluginInterface,

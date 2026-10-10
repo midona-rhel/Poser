@@ -14,7 +14,7 @@ public sealed class SpawnAppearanceCopyTests
         var before = source.ToString();
         var keys = new List<uint>();
         int writes = 0;
-        var result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
+        var result = GlamourerIpc.CopySpawnAppearance(17, 18,
             (index, key) =>
             {
                 Assert.Equal(17, index);
@@ -44,7 +44,7 @@ public sealed class SpawnAppearanceCopyTests
     public void Refused_source_never_writes_target()
     {
         int reads = 0;
-        var result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
+        var result = GlamourerIpc.CopySpawnAppearance(17, 18,
             (_, key) => { reads++; return (6, null); },
             () => throw new InvalidOperationException("Must not reset a target with a refused source."),
             (_, _, _, _) => throw new InvalidOperationException("Must not write a refused source."));
@@ -57,7 +57,7 @@ public sealed class SpawnAppearanceCopyTests
     public void Target_initialization_precedes_source_application()
     {
         var calls = new List<string>();
-        var result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
+        var result = GlamourerIpc.CopySpawnAppearance(17, 18,
             (_, _) => { calls.Add("read source"); return (0, new JObject()); },
             () => { calls.Add("initialize target"); return IntegrationResult.Ok(); },
             (_, _, _, _) => { calls.Add("apply copy"); return 0; });
@@ -65,7 +65,7 @@ public sealed class SpawnAppearanceCopyTests
         Assert.Equal(new[] { "read source", "initialize target", "apply copy" }, calls);
 
         // A refused target initialization never applies the copy.
-        result = IntegrationRuntimePort.CopySpawnAppearance(17, 18,
+        result = GlamourerIpc.CopySpawnAppearance(17, 18,
             (_, _) => (0, new JObject()),
             () => IntegrationResult.Refused(GlamourerAccess.ForeignHeld),
             (_, _, _, _) => throw new InvalidOperationException("Must not apply to a refused target."));

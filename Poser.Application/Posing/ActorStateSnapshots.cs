@@ -33,9 +33,9 @@ public interface IActorStateSnapshots
 /// <summary>Coordinates the existing state owners; no animation playback is captured or restored.</summary>
 public sealed class ActorStateSnapshots(
     SceneSession scene, ISessionGenerationSource sessions, Lazy<IPoseSnapshotPort> poses,
-    ActorIntegrationSession appearance, ActorPresentationSession presentation,
+    IntegrationSelectors appearance, McdfTransaction mcdf, ActorPresentationSession presentation,
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
-    IIntegrationRuntimePort runtime) : IActorStateSnapshots
+    IIntegrationResolutionPort runtime, IPenumbraPort penumbra) : IActorStateSnapshots
 {
     public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
         bool omitUnreadableLook = false)
@@ -113,9 +113,9 @@ public sealed class ActorStateSnapshots(
         if (!model.Success) return IntegrationResult.From(model);
         // MCDF already uses the same barrier, but a restored model id can require
         // a subsequent redraw. Ordinary looks and collections also finish here.
-        if (await runtime.OnFrameworkThread(() => runtime.Penumbra.Available))
+        if (await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available))
         {
-            var ready = await runtime.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
+            var ready = await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
             if (!ready.Success) return ready;
         }
         return IntegrationResult.Ok();
@@ -145,7 +145,7 @@ public sealed class ActorStateSnapshots(
         var session = sessions.ActiveSessionGeneration;
         _ = Complete(async () =>
         {
-            await appearance.PendingCompletion.WaitAsync(cancellation);
+            await mcdf.CurrentCompletion.WaitAsync(cancellation);
             var check = await runtime.OnFrameworkThread(() =>
             {
                 if (cancellation.IsCancellationRequested || !stillCurrent()
@@ -156,9 +156,9 @@ public sealed class ActorStateSnapshots(
                     : GestureResult.Ok();
             });
             if (!check.Success) return check;
-            if (await runtime.OnFrameworkThread(() => runtime.Penumbra.Available))
+            if (await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available))
             {
-                var ready = await runtime.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
+                var ready = await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
                 if (!ready.Success) return GestureResult.From(ready.Outcome);
             }
             return await runtime.OnFrameworkThread(() => !cancellation.IsCancellationRequested && stillCurrent()

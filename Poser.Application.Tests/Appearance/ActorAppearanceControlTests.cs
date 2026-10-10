@@ -5,6 +5,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
@@ -69,15 +70,15 @@ public sealed class ActorAppearanceControlTests
         public TransformHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
         public IActorAppearanceControl Control { get; }
-        private readonly ActorIntegrationSession _integration;
+        private readonly IntegrationSelectors _integration;
         private readonly ActorModelIdSession _models;
         public int Model;
         public bool RefuseModel;
         public Fixture()
         {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
+            var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
-            _integration = new(port, null!, this);
+            _integration = new IntegrationGraph(port, null!, this).Selectors;
             _models = new(this);
             Control = new ActorAppearanceControl(_integration, _models,
                 new(History, this, new ValueJournal(History)));
@@ -122,30 +123,30 @@ public sealed class ActorAppearanceControlTests
                 case "get_Penumbra":
                 case "get_CustomizePlus": return new IntegrationAvailability(true, "");
                 case "get_Glamourer": return new IntegrationAvailability(false, "");
-                case nameof(IIntegrationRuntimePort.GetBodyProfileJson):
+                case nameof(IIntegrationRuntimeFake.GetBodyProfileJson):
                     return (Guid)args![0]! == SavedProfile
                         ? IntegrationValue<string>.Ok("body contents")
                         : IntegrationValue<string>.Fail("Temporary id is not a saved profile");
-                case nameof(IIntegrationRuntimePort.ProbeBodyProfile):
+                case nameof(IIntegrationRuntimeFake.ProbeBodyProfile):
                     return IntegrationValue<BodyProfileProbe>.Ok(new(ActiveProfile, false));
-                case nameof(IIntegrationRuntimePort.ApplyTemporaryBodyProfile):
+                case nameof(IIntegrationRuntimeFake.ApplyTemporaryBodyProfile):
                     ProfileJson = (string)args![1]!;
                     ActiveProfile = Guid.NewGuid();
                     return IntegrationValue<Guid>.Ok(ActiveProfile.Value);
-                case nameof(IIntegrationRuntimePort.DeleteTemporaryBodyProfileById):
+                case nameof(IIntegrationRuntimeFake.DeleteTemporaryBodyProfileById):
                     Assert.Equal(ActiveProfile, (Guid)args![0]!);
                     ActiveProfile = null;
                     ProfileJson = null;
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.GetCollectionAssignment):
+                case nameof(IIntegrationRuntimeFake.GetCollectionAssignment):
                     return IntegrationValue<CollectionAssignment>.Ok(Collection);
-                case nameof(IIntegrationRuntimePort.SetIndividualCollection):
+                case nameof(IIntegrationRuntimeFake.SetIndividualCollection):
                     Collection = new((Guid)args![1]!, "Chosen", true);
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.RestoreCollection):
+                case nameof(IIntegrationRuntimeFake.RestoreCollection):
                     Collection = new(Guid.Empty, "Inherited", false);
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.RequestRedraw):
+                case nameof(IIntegrationRuntimeFake.RequestRedraw):
                     return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }

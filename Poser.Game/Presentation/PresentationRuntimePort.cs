@@ -80,7 +80,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        IIntegrationRuntimePort integration,
+        IGlamourerPort integration,
         IObjectTable objects)
     {
         _framework = framework;

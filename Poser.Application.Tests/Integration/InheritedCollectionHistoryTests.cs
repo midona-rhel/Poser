@@ -43,10 +43,10 @@ public sealed class InheritedCollectionHistoryTests
         Assert.Equal(0, runtime.Restores);
     }
 
-    private static (ActorIntegrationSession, RuntimeProxy) Create()
+    private static (IntegrationSelectors, RuntimeProxy) Create()
     {
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
-        return (new(port, null!, new SessionSource()), (RuntimeProxy)(object)port);
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
+        return (new IntegrationGraph(port, null!, new SessionSource()).Selectors, (RuntimeProxy)(object)port);
     }
 
     private sealed class SessionSource : ISessionGenerationSource
@@ -70,29 +70,29 @@ public sealed class InheritedCollectionHistoryTests
                 case "get_Penumbra": return new IntegrationAvailability(true, "");
                 case "get_Glamourer":
                 case "get_CustomizePlus": return new IntegrationAvailability(false, "");
-                case nameof(IIntegrationRuntimePort.GetCollectionAssignment):
+                case nameof(IIntegrationRuntimeFake.GetCollectionAssignment):
                     return IntegrationValue<CollectionAssignment>.Ok(_individual
                         ? new(Installed, "Installed", true) : new(_collection, "Duplicate", false));
-                case nameof(IIntegrationRuntimePort.GetCollections):
+                case nameof(IIntegrationRuntimeFake.GetCollections):
                     return IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([new(Installed, "Installed")]);
-                case nameof(IIntegrationRuntimePort.SetIndividualCollection):
+                case nameof(IIntegrationRuntimeFake.SetIndividualCollection):
                     Owned = null;
                     _individual = true;
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.RestoreCollection):
+                case nameof(IIntegrationRuntimeFake.RestoreCollection):
                     Owned = ((CollectionBaseline)args![1]!).InheritedCollection;
                     _individual = false;
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.CaptureInheritedCollection):
+                case nameof(IIntegrationRuntimeFake.CaptureInheritedCollection):
                     return CaptureFailure == null
                         ? IntegrationValue<SpawnCollectionSnapshot?>.Ok(Owned)
                         : IntegrationValue<SpawnCollectionSnapshot?>.Fail(CaptureFailure);
-                case nameof(IIntegrationRuntimePort.RestoreInheritedCollection):
+                case nameof(IIntegrationRuntimeFake.RestoreInheritedCollection):
                     Owned = (SpawnCollectionSnapshot)args![1]!;
                     _individual = false;
                     Restores++;
                     return IntegrationResult.Ok();
-                case nameof(IIntegrationRuntimePort.RequestRedraw): return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimeFake.RequestRedraw): return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

@@ -31,7 +31,7 @@ internal sealed class SceneClearRuntime(
     IActorManager actors,
     StableBindingRegistry bindings,
     GazeService gaze,
-    Poser.Application.Integration.ActorIntegrationSession integration,
+    Poser.Application.Integration.IntegrationReset integration,
     IActorSpawnService spawns,
     PropSpawnService props,
     Poser.Game.Overlays.OverlayNodeService overlays,

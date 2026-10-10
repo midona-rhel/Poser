@@ -24,7 +24,9 @@ public class SettingsWindow : Window
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
-    private readonly IIntegrationRuntimePort _integrations;
+    private readonly IPenumbraPort _penumbra;
+    private readonly IGlamourerPort _glamourer;
+    private readonly ICustomizePlusPort _customizePlus;
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Dalamud.Plugin.Services.IKeyState _keyState;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
@@ -41,7 +43,9 @@ public class SettingsWindow : Window
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
-        IIntegrationRuntimePort integrations,
+        IPenumbraPort penumbra,
+        IGlamourerPort glamourer,
+        ICustomizePlusPort customizePlus,
         Controls.IssueReportModal issueReport,
         IPoseLibraryService library,
         UserNotices notices,
@@ -53,7 +57,9 @@ public class SettingsWindow : Window
     {
         _configuration = configuration;
         _autoSave = autoSave;
-        _integrations = integrations;
+        _penumbra = penumbra;
+        _glamourer = glamourer;
+        _customizePlus = customizePlus;
         _issueReport = issueReport;
         _keyState = keyState;
         _log = log;
@@ -368,16 +374,16 @@ public class SettingsWindow : Window
         vm.Integrations.Clear();
         vm.Integrations.Add(new IntegrationStatusVm(
             "Penumbra",
-            _integrations.Penumbra.Available,
-            _integrations.Penumbra.Detail));
+            _penumbra.Penumbra.Available,
+            _penumbra.Penumbra.Detail));
         vm.Integrations.Add(new IntegrationStatusVm(
             "Glamourer",
-            _integrations.Glamourer.Available,
-            _integrations.Glamourer.Detail));
+            _glamourer.Glamourer.Available,
+            _glamourer.Glamourer.Detail));
         vm.Integrations.Add(new IntegrationStatusVm(
             "Customize+",
-            _integrations.CustomizePlus.Available,
-            _integrations.CustomizePlus.Detail));
+            _customizePlus.CustomizePlus.Available,
+            _customizePlus.CustomizePlus.Detail));
     }
     private void ResetConfig(ConfigResetScope scope)
     {

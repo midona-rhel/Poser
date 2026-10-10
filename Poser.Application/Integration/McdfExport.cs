@@ -21,9 +21,10 @@ internal sealed record McdfExportCapture(
 /// filtered and written off-thread.
 /// </summary>
 internal sealed class McdfExport(
-    IIntegrationRuntimePort port,
+    IPenumbraPort penumbra,
+    IGlamourerPort glamourer,
     IMcdfFileBoundary files,
-    ActorIntegrationSession owner,
+    IntegrationOwnership ownership,
     SingleFlightOwner<McdfOperation, McdfProgress> flight)
 {
     /// <summary>
@@ -33,35 +34,35 @@ internal sealed class McdfExport(
     /// </summary>
     internal (IntegrationResult? Refusal, McdfExportCapture? Captured) Capture(ActorId actor)
     {
-        var current = owner.OverridesFor(actor);
+        var current = ownership.OverridesFor(actor);
         if (current.Mcdf != null)
             return (IntegrationResult.Fail(
                 "This actor is wearing an imported character file; exporting would repackage it. Reset MCDF first."), null);
-        if (!port.Penumbra.Available)
-            return (IntegrationResult.Fail(port.Penumbra.Detail), null);
-        if (!port.Glamourer.Available)
-            return (IntegrationResult.Fail(port.Glamourer.Detail), null);
+        if (!penumbra.Penumbra.Available)
+            return (IntegrationResult.Fail(penumbra.Penumbra.Detail), null);
+        if (!glamourer.Glamourer.Available)
+            return (IntegrationResult.Fail(glamourer.Glamourer.Detail), null);
 
-        var glamourer = port.CaptureGlamourerState(actor);
-        if (!glamourer.Success || glamourer.Value is not { } glamourerState)
+        var look = glamourer.CaptureGlamourerState(actor);
+        if (!look.Success || look.Value is not { } glamourerState)
             return (IntegrationResult.Fail(
-                glamourer.Detail ?? "The Glamourer state could not be captured."), null);
-        var manipulations = port.GetActorMetaManipulations(actor);
+                look.Detail ?? "The Glamourer state could not be captured."), null);
+        var manipulations = penumbra.GetActorMetaManipulations(actor);
         if (!manipulations.Success || manipulations.Value is not { } manipulationData)
             return (IntegrationResult.Fail(
                 manipulations.Detail ?? "The meta manipulations could not be captured."), null);
-        var resources = port.GetActorResourcePaths(actor);
+        var resources = penumbra.GetActorResourcePaths(actor);
         if (!resources.Success || resources.Value is not { } tree)
             return (IntegrationResult.Fail(
                 resources.Detail ?? "The actor's resources could not be captured."), null);
-        var modRoot = port.GetModDirectory();
+        var modRoot = penumbra.GetModDirectory();
         if (!modRoot.Success || modRoot.Value is not { } root)
             return (IntegrationResult.Fail(
                 modRoot.Detail ?? "Penumbra's mod directory could not be read."), null);
 
         // The C+ active-profile query can omit temporary profiles. Copy,
         // history and export must use the same retained-profile precedence.
-        var body = owner.CaptureBodyProfile(actor);
+        var body = ownership.CaptureBodyProfile(actor);
         if (!body.Success)
             return (IntegrationResult.Fail(body.Detail ?? "The Customize+ profile could not be captured."), null);
         string customizeData = body.Value is { } profileJson

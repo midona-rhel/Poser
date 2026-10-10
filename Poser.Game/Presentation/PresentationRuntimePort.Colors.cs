@@ -15,7 +15,7 @@ namespace Poser.Game.Presentation;
 
 public sealed unsafe partial class PresentationRuntimePort
 {
-    private readonly IIntegrationRuntimePort _integration;
+    private readonly IGlamourerPort _integration;
     private bool _colorsDisposed;
 
     private void EnforceColors(ActorId actor, Owned owned)
