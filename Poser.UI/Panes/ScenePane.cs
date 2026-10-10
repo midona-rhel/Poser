@@ -547,7 +547,9 @@ public sealed class ScenePane
                 cancelDisabled: !progress.Cancellable,
                 cancelHelp: progress.Cancellable
                     ? "Stop and undo"
-                    : "Past the point of cancelling");
+                    : progress.Phase == ScenePhase.Cancelling
+                        ? "Already cancelling"
+                        : "Past the point of cancelling");
             form.Status(
                 $"{(progress.Kind == SceneOperationKind.Save ? "Saving" : "Loading")} " +
                 $"{progress.FileName}.");
@@ -574,6 +576,7 @@ public sealed class ScenePane
         ScenePhase.ApplyingEnvironment => "Restoring the environment",
         ScenePhase.Committing => "Finishing",
         ScenePhase.RollingBack => "Undoing what was created",
+        ScenePhase.Cancelling => "Cancelling…",
         ScenePhase.Completed => "Done",
         ScenePhase.RolledBack => "Undone",
         ScenePhase.Failed => "Failed",

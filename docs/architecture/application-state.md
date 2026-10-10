@@ -260,7 +260,9 @@ scene groups and their transform state. Every step runs even when an earlier
 one fails. Each step returns its result. Failures are logged and shown
 together in one notice, in teardown order. The presentation restore on
 `GPoseExitingEvent` reports the same way. Nothing is retried here; owners
-keep failed state retryable themselves.
+keep failed state retryable themselves. On plugin disposal the groups are
+also cleared directly after that reset, because an off-thread disposal's
+bounded framework hop can abandon the reset.
 
 Actor nicknames and anonymous-name masks last for one GPose session. The exit
 notification clears them after final-save capture, since native slot reuse can

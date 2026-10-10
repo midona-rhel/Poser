@@ -181,6 +181,19 @@ public sealed class CleanSceneLifecycle : IDisposable
             // is tearing down anyway; there is nothing left to restore
             // into.
         }
+
+        // Groups are plain managed state, so they end with the plugin
+        // whether or not the reset above ran: the bounded hop can abandon
+        // it. Past the gate, a reset that did run has already finished.
+        try
+        {
+            _groups.Clear();
+            _groupTransforms.Clear();
+        }
+        catch
+        {
+            // Disposal must not throw.
+        }
     }
 
     private void Refresh()

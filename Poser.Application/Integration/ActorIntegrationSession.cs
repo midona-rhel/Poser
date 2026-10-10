@@ -35,6 +35,10 @@ public sealed class ActorIntegrationSession : IDisposable
     private readonly McdfTransaction _mcdf;
     private readonly Dictionary<ActorId, IntegrationOverrides> _overrides = new();
 
+    /// <summary>Cancelled once at unload; never disposed, so a late reader
+    /// cannot fault on it.</summary>
+    private readonly CancellationTokenSource _shutdown = new();
+
     public ActorIntegrationSession(
         IIntegrationRuntimePort port,
         IMcdfFileBoundary files,
@@ -878,22 +882,68 @@ public sealed class ActorIntegrationSession : IDisposable
     /// </summary>
     public async Task<McdfWait> CancelMcdfAndDrain(Guid operationId, TimeSpan bound)
     {
-        try
+        if (_shutdown.IsCancellationRequested)
         {
-            var running = await _port.OnFrameworkThread(() => CancelIfCurrent(operationId));
-            await running.WaitAsync(bound);
+            // Unload: the framework thread is blocked in Dispose, so a hop
+            // would never run. AbandonMcdfWaits already cancelled the child;
+            // answer at once and leave the join to Drain.
+            CancelMcdfQuietly();
         }
-        catch (TimeoutException)
+        else
         {
-            // Still running; reported through the non-terminal result below.
-        }
-        catch (Exception)
-        {
-            // A faulted child is finished and its receipt says how; an
-            // unreachable framework thread (unload) leaves it to Drain.
+            async Task CancelAndJoin()
+            {
+                var running = await _port.OnFrameworkThread(() => CancelIfCurrent(operationId));
+                await running;
+            }
+            try
+            {
+                // The hop is inside the bound too, and unload cuts both short.
+                await CancelAndJoin().WaitAsync(bound, _shutdown.Token);
+            }
+            catch (Exception)
+            {
+                // Timeout: still running, reported through the non-terminal
+                // result below. Cancelled: unload. Faulted: the child is
+                // finished and its receipt says how.
+            }
         }
         return TerminalOf(operationId)
             ?? new McdfWait(McdfWaitEnd.Finished, false, McdfReceipt);
+    }
+
+    /// <summary>
+    /// Completes once the operation has stopped running: at once when its
+    /// receipt is terminal, else with the transaction's task. A caller that
+    /// got a non-terminal <see cref="McdfWait"/> deletes the files the child
+    /// reads or writes on this, never before.
+    /// </summary>
+    public Task McdfSettled(Guid operationId) =>
+        TerminalOf(operationId) is null ? _mcdf.CurrentCompletion : Task.CompletedTask;
+
+    /// <summary>
+    /// Unload edge, called on the disposing thread before any parent is
+    /// joined. Every later <see cref="CancelMcdfAndDrain"/>, and any drain
+    /// already waiting, returns at once instead of waiting on a hop the
+    /// blocked framework thread can never run; the running child is
+    /// cancelled directly. Idempotent.
+    /// </summary>
+    public void AbandonMcdfWaits()
+    {
+        _shutdown.Cancel();
+        CancelMcdfQuietly();
+    }
+
+    private void CancelMcdfQuietly()
+    {
+        try
+        {
+            CancelMcdf();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation already finished and released its source.
+        }
     }
 
     /// <summary>Framework thread only.</summary>
@@ -962,6 +1012,7 @@ public sealed class ActorIntegrationSession : IDisposable
     /// </summary>
     public void Dispose()
     {
+        AbandonMcdfWaits();
         _mcdf.Drain();
         ResetAll();
     }

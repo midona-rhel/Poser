@@ -366,9 +366,15 @@ slot, so a newer operation is never touched. It then waits up to 15 seconds
 for the child to stop. Once cancelled, the child's remaining phases refuse
 and roll back, so a late completion cannot change the actor. A staged
 package or export file is deleted only after its child stops. A child that
-outlives that wait keeps its file in the session retention until GPose
-ends, and the outcome and log say so. A child that committed before the
-matched cancel is a successful import.
+outlives that wait has its file deleted when it does stop, and the outcome
+and log say so. A child that committed before the matched cancel is a
+successful import. While the parent waits, the scene pane reads
+"Cancelling…" rather than holding the last step.
+
+Plugin unload does not drain: the framework thread is blocked in disposal,
+so the drain's framework hop could never run. Disposal cancels the children
+directly first, the parent returns at once, and the MCDF transaction's own
+bounded drain joins the child.
 
 ## Appearance identity
 

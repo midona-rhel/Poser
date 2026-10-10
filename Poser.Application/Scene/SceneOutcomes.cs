@@ -41,6 +41,9 @@ public enum ScenePhase
     ApplyingEnvironment,
     Committing,
     RollingBack,
+    /// <summary>The user cancelled; the operation is stopping its children
+    /// (a bounded drain) before it can report Cancelled.</summary>
+    Cancelling,
     Completed,
     RolledBack,
     Failed,

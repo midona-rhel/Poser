@@ -120,6 +120,39 @@ public sealed class McdfHistoryTests
         Assert.NotNull(integration.OverridesFor(second).Mcdf);
     }
 
+    [Fact]
+    public async Task Unload_returns_a_cancelled_parent_without_waiting_on_the_blocked_framework_thread()
+    {
+        var files = new Files { Hold = new() };
+        var port = DispatchProxy.Create<IIntegrationRuntimePort, Runtime>();
+        var runtime = (Runtime)(object)port;
+        using var integration = new ActorIntegrationSession(port, files, new Sessions());
+        var actor = ActorId.New();
+        Assert.True(integration.BeginImport(actor, "held.mcdf").Success);
+        var id = integration.McdfReceipt!.OperationId;
+        await files.ReadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Dispose holds the framework thread: no hop queued from here runs.
+        runtime.FrameworkBlocked = true;
+        using var parent = new CancellationTokenSource();
+        var wait = integration.AwaitMcdf(id, TimeSpan.FromMinutes(1), parent.Token);
+        parent.Cancel();
+        integration.AbandonMcdfWaits();
+
+        var waited = await wait.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(McdfWaitEnd.ParentCancelled, waited.End);
+        Assert.False(waited.Terminal);
+        var settled = integration.McdfSettled(id);
+        Assert.False(settled.IsCompleted);
+
+        // The child was cancelled directly, so once it can run it stops.
+        runtime.FrameworkBlocked = false;
+        files.Hold.SetResult();
+        await settled.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationReceiptState.Cancelled, integration.McdfReceipt!.State);
+        Assert.Null(integration.OverridesFor(actor).Mcdf);
+    }
+
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
@@ -128,12 +161,21 @@ public sealed class McdfHistoryTests
     public class Runtime : DispatchProxy
     {
         public bool Resources, OwnedDuplicate;
+        /// <summary>A framework thread blocked in Dispose: hops never run.</summary>
+        public volatile bool FrameworkBlocked;
         public int Assignments;
         private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == nameof(IIntegrationRuntimePort.OnFrameworkThread))
             {
+                if (FrameworkBlocked)
+                {
+                    var never = Activator.CreateInstance(typeof(TaskCompletionSource<>)
+                        .MakeGenericType(method.GetGenericArguments()[0]))!;
+                    return never.GetType().GetProperty(nameof(TaskCompletionSource<int>.Task))!
+                        .GetValue(never);
+                }
                 var value = ((Delegate)args![0]!).DynamicInvoke();
                 return typeof(Task).GetMethod(nameof(Task.FromResult))!
                     .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
@@ -181,10 +223,13 @@ public sealed class McdfHistoryTests
         public TaskCompletionSource? Hold;
         public Func<string, bool>? InputExists;
         public List<bool> InputPresentAtRead { get; } = [];
+        public TaskCompletionSource ReadEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
             McdfOperationDirectory directory, Action<McdfProgressStep> progress, CancellationToken cancellation)
         {
             Reads++;
+            ReadEntered.TrySetResult();
             if (Hold is { } hold)
                 await hold.Task;
             if (InputExists is { } exists)

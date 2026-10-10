@@ -170,6 +170,8 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     public Task<T> OnFramework<T>(Func<T> func) =>
         _framework.RunOnFrameworkThread(func);
 
+    public void AbandonChildWaits() => _integration.AbandonMcdfWaits();
+
     public SelectionId? ResolveSceneEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token));
 
     public SelectionId? ResolveHistoryEntity(SceneEntityHandle token) => SelectionOf(_handles.Resolve(token) switch
@@ -421,14 +423,13 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
         if (!waited.Terminal)
         {
             // Still writing past the drain bound: the destination stays the
-            // child's, handed to session retention instead of deleted under it.
-            var retained = ActiveSession is { } session
-                && _historyAppearanceFiles.Retain(destination, session);
+            // child's until it stops, and is deleted then — never under it.
+            DeleteWhenSettled(destination, _integration.McdfSettled(admitted));
             _log?.Warning(
                 $"Scene save: the appearance export for '{name}' did not stop within " +
-                $"its drain bound; its file is {(retained ? "retained until the session ends" : "left in place")}.");
+                "its drain bound; its partial file is deleted once it stops.");
             return ("the appearance export did not stop in time; its partial file is " +
-                "kept until the GPose session ends.", false);
+                "deleted once it stops.", false);
         }
         return (waited.End switch
         {
@@ -524,6 +525,17 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
     }
 
     public void DeleteTemporary(string path) => DeleteQuietly(path);
+
+    /// <summary>A temporary file a still-running MCDF child reads or writes:
+    /// deleted once that child has stopped, whatever the outcome. The child
+    /// is cancelled and joined by the transaction's own drain at unload, so
+    /// this runs then at the latest.</summary>
+    internal static void DeleteWhenSettled(string path, Task settled) =>
+        _ = settled.ContinueWith(
+            _ => DeleteQuietly(path),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private static void DeleteQuietly(string path)
     {
@@ -884,19 +896,20 @@ internal sealed partial class SceneRuntimeAdapter : ISceneRuntime, IDisposable
             if (!waited.Terminal)
             {
                 // Cancelled but still running past the drain bound: it may still
-                // read the staged package, so the session retention owns it now.
-                bool retained = staged is null
-                    || historySession is { } owner && _historyAppearanceFiles.Retain(staged, owner);
-                if (retained)
+                // read the staged package, so it is deleted when the child
+                // stops — not here, and not by a session sweep that does not
+                // know the child is alive.
+                if (staged is not null)
+                {
+                    DeleteWhenSettled(staged, _integration.McdfSettled(admitted));
                     staged = null;
+                }
                 _log?.Warning(
                     $"Scene load: the import of '{saved.FileName}' was cancelled but had not " +
-                    "stopped within its drain bound" +
-                    (retained ? "; its staged package is retained until the session ends." : "."));
+                    "stopped within its drain bound; its staged package is deleted once it stops.");
                 return SceneMcdfOutcome.Refused(
                     $"The character file '{saved.FileName}' was cancelled and is still " +
-                    "stopping; it cannot apply, and its staged package is kept until the " +
-                    "GPose session ends.");
+                    "stopping; it cannot apply.");
             }
             return SceneMcdfOutcome.Refused(waited.End switch
             {
