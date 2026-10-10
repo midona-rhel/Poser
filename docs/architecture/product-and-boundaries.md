@@ -72,8 +72,12 @@ or starts native catalog work. Character-file progress and cancellation use
 the same application boundary as import/export. Host composition starts catalog
 warm-up; native integration sessions remain the single owners of provider state.
 
-Embedded resources retain their original `Poser.Data.*` logical names after
-moving to Documents (rest poses and graphical-bone data) or Game (expressions).
+Every namespace starts with its owning project: `<Project>` or
+`<Project>.<folder>` (`Poser.Documents.Files`, `Poser.Game.Services`), so a
+`using` names the layer it crosses into. Embedded resources retain their
+original `Poser.Data.*` logical names after moving to Documents (rest poses
+and graphical-bone data) or Game (expressions); those names are set in the
+project files and do not follow the C# namespaces.
 Portable transforms live in Domain; file conversion operators live on the
 Documents DTOs. Existing serialized fields and keybinding enum values are unchanged.
 
