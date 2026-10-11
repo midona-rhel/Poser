@@ -326,8 +326,9 @@ public sealed partial class DebugBridge : IDisposable
                         "actor.model.read", "actor.model.set", "actor.model.reset", "actor.model.spawn",
                         "prop.model.read", "prop.model.set",
                         "world-object.model.read", "world-object.model.respawn",
-                        "overlay-node.create", "overlay-node.read",
-                        "library.entry.save", "library.entry.spawn",
+                        "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
+                        "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
+                        "actor.weapon-state.read", "actor.weapon-state.set",
                         "selection.entities",
                     },
                     endpoints = new[]
@@ -345,8 +346,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true or ?spawn=MODEL_ID",
                         "/propmodel?prop=SELECTION_ID&model=ID&submodel=ID&variant=ID",
                         "/worldobjectmodel?object=SELECTION_ID&path=ABSOLUTE_RESOURCE_PATH",
-                        "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID",
-                        "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH",
+                        "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER",
+                        "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera|RelativeToCamera|RelativeToSelectedActor",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -358,6 +359,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
+                        "/weaponstate?actor=NAME|INDEX&drawn=true|false (draw/sheath only; returns native state and published rig)",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
@@ -794,6 +796,29 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(Rig(actor));
             case "/state":
                 return Json(State(id, actor));
+            case "/weaponstate":
+            {
+                global::Poser.Domain.Outcome? result = null;
+                if (query.TryGetValue("drawn", out var requested))
+                {
+                    if (!TryBoolean(requested, out var drawn))
+                        return Json(new { accepted = false, applied = false,
+                            reason = "drawn must be true, false, 1 or 0." });
+                    result = _animation.SetWeaponDrawn(id, drawn);
+                }
+                var snapshot = _port.ProbeSnapshot(id);
+                return Json(new
+                {
+                    accepted = result?.Success ?? true,
+                    applied = result?.Success,
+                    reason = result?.Detail,
+                    actor = id.ToString(),
+                    weaponDrawn = snapshot?.WeaponDrawn,
+                    weaponHidden = snapshot?.WeaponHidden,
+                    hasDrawObject = snapshot?.HasDrawObject,
+                    rig = Rig(actor),
+                });
+            }
             case "/apply":
             {
                 if (!query.TryGetValue("timeline", out var tl)

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using Poser.Application.Library;
 using Poser.Application.Presentation;
@@ -126,16 +127,54 @@ public sealed partial class DebugBridge
                     reason = "kind must be Talk, Balloon or Status." };
             var result = _creation.CreateOverlay(kind);
             var id = result.Handle is { } handle ? _creation.Resolve(handle)?.Overlay : null;
+            bool accepted = result.Handle != null;
+            bool published = id != null;
             return new { accepted = result.Handle != null,
-                outcome = result.Handle != null ? "Applied" : "Refused", reason = result.Detail,
+                published, outcome = !accepted ? "Refused" : published ? "Applied" : "Pending",
+                reason = result.Detail,
                 id = id is { } stable ? SelectionId.ForOverlay(stable).ToString() : null };
         }
         if (ResolveSelection(query.GetValueOrDefault("overlay", "")) is not
             { Overlay: { } overlayId } selection || BridgeOverlays.Read(overlayId) is not { } reading)
             return new { accepted = false, outcome = "Refused", reason = "Unknown overlay selection." };
-        return new
+        if (query.ContainsKey("x") || query.ContainsKey("y") || query.ContainsKey("scale"))
+        {
+            var before = OverlayNodeState(selection, reading);
+            bool move = query.ContainsKey("x") || query.ContainsKey("y");
+            if (move && query.ContainsKey("scale"))
+                return new { accepted = false, outcome = "Refused",
+                    reason = "Move and scale are separate production edits." };
+            BridgeOverlays.Seal();
+            global::Poser.Domain.Outcome result;
+            if (move)
+            {
+                if (!TryFloat(query, "x", out var x) || !TryFloat(query, "y", out var y))
+                    return new { accepted = false, outcome = "Refused",
+                        reason = "Both finite x and y are required." };
+                result = BridgeOverlays.Set(overlayId, OverlayProperties.Position, new Vector2(x, y));
+            }
+            else
+            {
+                if (!TryFloat(query, "scale", out var scale))
+                    return new { accepted = false, outcome = "Refused",
+                        reason = "A finite scale is required." };
+                result = BridgeOverlays.Set(overlayId, OverlayProperties.Scale, scale);
+            }
+            BridgeOverlays.Seal();
+            if (!result.Success || BridgeOverlays.Read(overlayId) is not { } updated)
+                return new { accepted = result.Success, applied = false, outcome = "Refused",
+                    reason = result.Detail, before, after = (object?)null, historyLabel = _transforms.UndoDescription };
+            return new { accepted = true, applied = true, outcome = "Applied",
+                reason = result.Detail, before, after = OverlayNodeState(selection, updated),
+                historyLabel = _transforms.UndoDescription };
+        }
+        return OverlayNodeState(selection, reading);
+    }
+
+    private static object OverlayNodeState(SelectionId selection, OverlayReading reading) => new
         {
             accepted = true,
+            outcome = "Applied",
             id = selection.ToString(),
             kind = reading.State.Kind.ToString(),
             position = new { reading.State.Position.X, reading.State.Position.Y },
@@ -161,7 +200,6 @@ public sealed partial class DebugBridge
             },
             externalReferences = Array.Empty<string>(),
         };
-    }
 
     private object LibraryEntryCommand(Dictionary<string, string> query)
     {
@@ -174,7 +212,7 @@ public sealed partial class DebugBridge
             if (File.Exists(path))
                 return new { accepted = false, outcome = "Refused",
                     reason = "Choose a new path; bridge saves never overwrite.", path };
-            if (ResolveSelection(query.GetValueOrDefault("entity", "")) is not { } entity)
+            if (ResolveLibrarySelection(query.GetValueOrDefault("entity", "")) is not { } entity)
                 return new { accepted = false, outcome = "Refused",
                     reason = "Unknown entity selection.", path };
             var result = BridgeLibrarySave.SaveEntryTo(entity, path);
@@ -186,12 +224,21 @@ public sealed partial class DebugBridge
             if (!Enum.TryParse<PoseLibraryEntryKind>(query.GetValueOrDefault("kind"), true, out var kind)
                 || !Enum.IsDefined(kind))
                 return new { accepted = false, outcome = "Refused", reason = "Unknown entry kind.", path };
+            if (!Enum.TryParse<ObjectPlacementMode>(query.GetValueOrDefault("placement", "AsSaved"), true,
+                    out var placement) || !Enum.IsDefined(placement))
+                return new { accepted = false, outcome = "Refused", reason = "Unknown placement mode.", path };
+            bool fallbackToSaved = false;
+            if (query.TryGetValue("fallbackToSaved", out var fallback)
+                && !TryBoolean(fallback, out fallbackToSaved))
+                return new { accepted = false, outcome = "Refused",
+                    reason = "fallbackToSaved must be true, false, 1 or 0.", path };
             var before = ParentProbeEntities().Select(entity => entity.Id.ToString()).ToHashSet();
-            var result = BridgeLibraryActions.SpawnEntry(path, kind, ObjectPlacementMode.AsSaved);
+            var result = BridgeLibraryActions.SpawnEntry(path, kind, placement, fallbackToSaved);
             // Loading is asynchronous. The caller polls /scene and diffs /parenting;
             // IDs cannot truthfully be reported before the production load commits.
             return new { accepted = result.Success, path, kind = kind.ToString(),
                 outcome = result.Success ? "Pending" : "Refused", reason = result.Detail,
+                placement = placement.ToString(), fallbackToSaved,
                 existingStableIds = before.ToArray() };
         }
         return new { accepted = false, outcome = "Refused", reason = "Unknown library-entry action.", path };
@@ -203,6 +250,28 @@ public sealed partial class DebugBridge
         value = default;
         return query.TryGetValue(key, out var text)
             && T.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private SelectionId? ResolveLibrarySelection(string value)
+    {
+        if (ResolveSelection(value) is { } entity)
+            return entity;
+        foreach (var camera in _sceneSession.Snapshot.Cameras)
+        {
+            var id = SelectionId.ForCamera(camera.Id);
+            if (string.Equals(id.ToString(), value, StringComparison.OrdinalIgnoreCase)
+                && _sceneSession.Resolve(id) == id)
+                return id;
+        }
+        return null;
+    }
+
+    private static bool TryFloat(Dictionary<string, string> query, string key, out float value)
+    {
+        value = default;
+        return query.TryGetValue(key, out var text)
+            && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+            && float.IsFinite(value);
     }
 }
 #endif
