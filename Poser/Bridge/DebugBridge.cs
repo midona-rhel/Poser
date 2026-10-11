@@ -329,6 +329,8 @@ public sealed partial class DebugBridge : IDisposable
                         "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
                         "actor.weapon-state.read", "actor.weapon-state.set",
+                        "autosave.config.read", "autosave.config.write", "autosave.status.read",
+                        "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
                         "selection.entities",
                     },
                     endpoints = new[]
@@ -360,6 +362,9 @@ public sealed partial class DebugBridge : IDisposable
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false (draw/sheath only; returns native state and published rig)",
+                        "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
+                        "/autosavestatus (read-only pose-autosave terminal and health state)",
+                        "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
@@ -383,6 +388,12 @@ public sealed partial class DebugBridge : IDisposable
                 return CreateBodyColliders(query);
             case "/worldobjectmodel":
                 return WorldObjectModel(query);
+            case "/autosaveconfig":
+                return _framework.RunOnFrameworkThread(() => Json(AutoSaveConfigCommand(query)));
+            case "/autosavestatus":
+                return _framework.RunOnFrameworkThread(() => Json(AutoSaveStatus()));
+            case "/autosavelibrary":
+                return _framework.RunOnFrameworkThread(() => Json(AutoSaveLibraryCommand(query)));
             case "/idleexport":
                 return ExportIdle(query);
             case "/idlecheck":
