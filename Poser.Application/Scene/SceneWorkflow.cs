@@ -547,10 +547,13 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         // the ONE terminal publication rather than at each of the twenty-odd
         // refusal sites is what makes "a refused row explains itself" an
         // invariant rather than a habit a new site can forget.
+        // A cancelled or rolled-back load left nothing behind, so no row may
+        // tell the user to select what it made.
+        bool kept = state is not (OperationReceiptState.RolledBack or OperationReceiptState.Cancelled);
         entities = entities
             .Select(entity => entity.Restored || entity.Remedy != null
                 ? entity
-                : entity with { Remedy = entity.Kind.Remedy() })
+                : entity with { Remedy = entity.Kind.Remedy(kept) })
             .ToList();
 
         var progress = new SceneProgress(
