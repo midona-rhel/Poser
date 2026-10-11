@@ -25,6 +25,7 @@ public enum McdfPhase
     Committing,
     CapturingExport,
     WritingPackage,
+    Cancelling,
     RollingBack,
     Completed,
     Failed,

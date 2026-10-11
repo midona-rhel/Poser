@@ -1187,6 +1187,7 @@ public sealed partial class AppearancePane
         McdfPhase.Committing => "Committing",
         McdfPhase.CapturingExport => "Capturing",
         McdfPhase.WritingPackage => "Writing",
+        McdfPhase.Cancelling => "Cancelling…",
         McdfPhase.RollingBack => "Rolling back",
         McdfPhase.Completed => "Completed",
         McdfPhase.Failed => "Failed",

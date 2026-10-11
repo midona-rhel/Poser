@@ -18,7 +18,34 @@ public sealed partial class DebugBridge
                 .OrderBy(id => id).Select(id => id.ToString()).ToArray(),
             customizePlus = _integrationCleanupCustomizeAllowlist
                 .OrderBy(id => id).Select(id => id.ToString()).ToArray(),
+            providers = new
+            {
+                penumbra = new
+                {
+                    available = _penumbra.Penumbra.Available,
+                    detail = _penumbra.Penumbra.Detail,
+                },
+                customizePlus = new
+                {
+                    available = _customizePlus.CustomizePlus.Available,
+                    detail = _customizePlus.CustomizePlus.Detail,
+                },
+            },
         };
+
+        string? CurrentOwner(Guid id, bool penumbra)
+        {
+            foreach (var actor in _actors.Actors)
+            {
+                if (_bindings.GetActorId(actor) is not { } actorId) continue;
+                var owned = _session.OverridesFor(actorId);
+                bool matches = penumbra
+                    ? owned.Mcdf?.TemporaryCollection == id
+                    : owned.TemporaryBodyProfile == id || owned.Mcdf?.TemporaryProfile == id;
+                if (matches) return actorId.ToString();
+            }
+            return null;
+        }
 
         if (query.TryGetValue("captureActor", out var actorKey))
         {
@@ -48,8 +75,11 @@ public sealed partial class DebugBridge
         if (query.TryGetValue("verifyPenumbra", out var penumbraText))
         {
             if (!Guid.TryParse(penumbraText, out var id)
-                || !_integrationCleanupPenumbraAllowlist.Remove(id))
+                || !_integrationCleanupPenumbraAllowlist.Contains(id))
                 return new { error = "verifyPenumbra must be one unconsumed ID captured from current Poser ownership." };
+            if (CurrentOwner(id, penumbra: true) is { } owner)
+                return new { error = $"Captured Penumbra ID is still owned by current actor {owner}; ordinary teardown has not completed." };
+            _integrationCleanupPenumbraAllowlist.Remove(id);
             var probe = _penumbra.DebugDeleteTemporaryCollection(id);
             return new
             {
@@ -67,8 +97,11 @@ public sealed partial class DebugBridge
         if (query.TryGetValue("verifyCustomize", out var customizeText))
         {
             if (!Guid.TryParse(customizeText, out var id)
-                || !_integrationCleanupCustomizeAllowlist.Remove(id))
+                || !_integrationCleanupCustomizeAllowlist.Contains(id))
                 return new { error = "verifyCustomize must be one unconsumed ID captured from current Poser ownership." };
+            if (CurrentOwner(id, penumbra: false) is { } owner)
+                return new { error = $"Captured Customize+ ID is still owned by current actor {owner}; ordinary teardown has not completed." };
+            _integrationCleanupCustomizeAllowlist.Remove(id);
             var read = _customizePlus.GetBodyProfileJson(id);
             bool missing = !read.Success
                 && read.Detail?.Contains("(code 3)", StringComparison.Ordinal) == true;

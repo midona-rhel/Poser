@@ -16,6 +16,9 @@ internal sealed class McdfOperation : SingleFlightOperation
 {
     public required string FileName { get; init; }
     public required McdfOperationKind Kind { get; init; }
+    /// <summary>Keeps cancellable worker publications shaped as Cancelling
+    /// until the worker enters its non-cancellable rollback.</summary>
+    public bool CancelRequested;
 
     /// <summary>The package this import READ. Carried into ownership so a
     /// scene can state which character file an actor is wearing; no phase

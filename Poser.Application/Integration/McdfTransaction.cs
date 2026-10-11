@@ -45,7 +45,10 @@ public sealed class McdfTransaction
     private readonly IMcdfFileBoundary _files;
     private readonly ISessionGenerationSource _sessions;
     private readonly IntegrationOwnership _ownership;
-    private readonly SingleFlightOwner<McdfOperation, McdfProgress> _flight = new();
+    private readonly SingleFlightOwner<McdfOperation, McdfProgress> _flight = new(
+        (operation, progress) => operation.CancelRequested && progress.Cancellable
+            ? progress with { Phase = McdfPhase.Cancelling, Cancellable = false }
+            : progress);
     private readonly McdfTeardown _teardown;
     private readonly McdfImport _import;
     private readonly McdfExport _export;
@@ -96,8 +99,22 @@ public sealed class McdfTransaction
     /// start a competing redraw.</summary>
     public Task CurrentCompletion => _flight.Completion;
 
-    /// <summary>Cooperative cancellation of the running operation.</summary>
-    public void Cancel() => _flight.Cancel();
+    /// <summary>Cooperative cancellation of the running operation. Publish
+    /// the request immediately; rollback can trail while unwinding provider
+    /// state and extracted files.</summary>
+    public void Cancel()
+    {
+        bool published = _flight.TryReplaceProgress((operation, progress) =>
+        {
+            if (operation.CancelRequested || progress is not { Cancellable: true } cancellable)
+                return null;
+            operation.CancelRequested = true;
+            return cancellable with { Phase = McdfPhase.Cancelling, Cancellable = false };
+        });
+        _flight.Cancel();
+        if (published)
+            _flight.RaiseChanged();
+    }
 
     /// <summary>
     /// What a package says about itself, header only. Deliberately NOT routed
