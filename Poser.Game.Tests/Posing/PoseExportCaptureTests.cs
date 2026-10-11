@@ -37,6 +37,19 @@ public sealed class PoseExportCaptureTests
         Assert.Equal(new[] { false, false, true }, fixture.Results);
     }
 
+    [Fact]
+    public void Concurrent_captures_each_complete_from_the_same_refresh()
+    {
+        using var fixture = new Fixture();
+        fixture.Begin();
+        fixture.Begin();
+        foreach (var slot in fixture.Slots) fixture.Posing.End(slot, true);
+        foreach (var completion in fixture.Framework.Scheduled.Skip(2).ToArray()) completion();
+        Assert.Equal(2, fixture.Writes);
+        Assert.Equal(new[] { true, true }, fixture.Results);
+        Assert.False(fixture.Capture.IsPending);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public readonly Proxy Framework;

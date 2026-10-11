@@ -118,7 +118,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         IBonePosingService bonePosing,
         IActorManager actorManager,
         ActorStateSnapshots actorStates,
-        Integration.ISpawnCollectionPort collections)
+        Integration.ISpawnCollectionPort collections,
+        Poser.Game.Posing.PoseExportCapture exports)
         : this(
             history,
             lighting,
@@ -126,7 +127,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
             new ActorServiceLifecycle(
                 configuration,
                 actors, posing, skeletons, poseFiles, poses, imports, animation, framework, log,
-                gaze, integration, mcdf, reset, bindings, bonePosing, actorManager, actorStates, collections),
+                gaze, integration, mcdf, reset, bindings, bonePosing, actorManager, actorStates, collections, exports),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects),

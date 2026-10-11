@@ -50,7 +50,12 @@ internal interface IActorLifecycle
 
     ActorState Read(object actor);
 
-    ActorState ReadPoseForCopy(object actor) => Read(actor) with { Runtime = null };
+    /// <summary>Reads <paramref name="actor"/>'s pose for a copy and hands
+    /// it to <paramref name="done"/>, or null when it could not be read. The
+    /// live lifecycle answers on a later tick, once the source's caches are in
+    /// the frame the copy's import writes in.</summary>
+    void CapturePoseForCopy(object actor, Action<ActorState?> done) =>
+        done(Read(actor) with { Runtime = null });
 
     void CopyBodyProfile(IActor source, IActor target) { }
 
@@ -156,12 +161,14 @@ internal sealed class ActorLifecycleOwner
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
-        var state = _actors.ReadPoseForCopy(source) with { FreezePoseOnRestore = true };
+        // Read once, a tick or two after the click (see CapturePoseForCopy);
+        // the first copy and every redo get the same snapshot.
+        ActorState? state = null;
         IActor? Posed()
         {
             var copy = spawn();
-            if (copy != null)
-                _actors.Restore(copy, state);
+            if (copy != null && state is { } captured)
+                _actors.Restore(copy, captured);
             return copy;
         }
         var actor = Posed();
@@ -177,6 +184,18 @@ internal sealed class ActorLifecycleOwner
             description,
             () => _slots.CaptureAndRemove(slot),
             () => _slots.Restore(slot)));
+        _actors.CapturePoseForCopy(source, captured =>
+        {
+            if (captured is null)
+            {
+                _actors.Note($"Duplicate: the pose of '{name}' could not be read, so the copy keeps its own pose.");
+                return;
+            }
+            var posed = captured.Value with { FreezePoseOnRestore = true };
+            state = posed;
+            if (_slots.CurrentInstance(slot) is { } live)
+                _actors.Restore(live, posed, () => ReferenceEquals(_slots.CurrentInstance(slot), live));
+        });
         return actor;
     }
 
