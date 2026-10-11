@@ -130,23 +130,31 @@ public sealed class SceneObjectControl : ISceneObjectControl
             BeforeValue = before,
             AfterValue = after,
             CompleteReplay = (undo, current, cancellation, completed) =>
-                _ = ReplayModel(original, undo ? before : after, current, completed),
+                _ = ReplayModel(original, undo ? before : after, current, cancellation, completed),
         };
 
     private async Task ReplayModel(IWorldObject original, string path, Func<bool> current,
-        Action<Poser.Domain.Transforms.GestureResult> completed)
+        System.Threading.CancellationToken cancellation, Action<Poser.Domain.Transforms.GestureResult> completed)
     {
-        var live = _objectHistory is null ? original : _objectHistory.Resolve(original);
-        if (live is not { IsValid: true })
+        Poser.Domain.Transforms.GestureResult result;
+        try
         {
-            completed(Poser.Domain.Transforms.GestureResult.Fail(ObjectUnavailable));
-            return;
+            var live = _objectHistory is null ? original : _objectHistory.Resolve(original);
+            if (live is not { IsValid: true })
+                result = Poser.Domain.Transforms.GestureResult.Fail(ObjectUnavailable);
+            else
+            {
+                var restored = await live.Respawn(path, current, cancellation);
+                result = restored.Success
+                    ? Poser.Domain.Transforms.GestureResult.Ok()
+                    : Poser.Domain.Transforms.GestureResult.Fail(restored.Detail ?? "The model could not be restored.");
+            }
         }
-        var result = await live.Respawn(path);
-        // The journal checks the step is still current before committing.
-        void Finish() => completed(result.Success
-            ? Poser.Domain.Transforms.GestureResult.Ok()
-            : Poser.Domain.Transforms.GestureResult.Fail(result.Detail ?? "The model could not be restored."));
+        catch (Exception ex)
+        {
+            result = Poser.Domain.Transforms.GestureResult.Fail(ex.Message);
+        }
+        void Finish() => completed(result);
         if (_framework is null || _framework.IsInFrameworkUpdateThread) Finish();
         else await _framework.RunOnFrameworkThread(Finish);
     }

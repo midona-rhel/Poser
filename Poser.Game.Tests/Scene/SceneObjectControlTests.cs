@@ -123,6 +123,52 @@ public sealed class SceneObjectControlTests
         Assert.Same(step, history.PeekUndo());
     }
 
+    [Fact]
+    public async Task Model_replay_forwards_validity_and_completes_when_respawn_faults()
+    {
+        string path = "old";
+        bool replay = false;
+        var pending = new TaskCompletionSource<Poser.Domain.Outcome>();
+        Func<bool>? forwarded = null;
+        CancellationToken forwardedToken = default;
+        var world = Stub<IWorldObject>((method, args) => method switch
+        {
+            "get_IsValid" => true,
+            "get_Path" => path,
+            "Respawn" => Respawn(args!),
+            _ => throw new InvalidOperationException(method),
+        });
+        Task<Poser.Domain.Outcome> Respawn(object?[] args)
+        {
+            if (!replay)
+            {
+                path = (string)args[0]!;
+                return Task.FromResult(Poser.Domain.Outcome.Ok());
+            }
+            forwarded = (Func<bool>?)args[1];
+            forwardedToken = (CancellationToken)args[2]!;
+            return pending.Task;
+        }
+        var bindings = Stub<IEntityBindings>((_, _) => new BindingResult<IWorldObject>(BindingStatus.Success, world));
+        var history = new EditHistory();
+        var control = new SceneObjectControl(bindings, new ValueJournal(history), history: history);
+        await control.Respawn(WorldObjectId.New(), "new");
+        replay = true;
+        using var cancellation = new CancellationTokenSource();
+        Func<bool> current = () => !cancellation.IsCancellationRequested;
+        var completed = new TaskCompletionSource<Poser.Domain.Transforms.GestureResult>();
+        Assert.IsType<JournalStep>(history.PeekUndo()).CompleteReplay!(true, current, cancellation.Token,
+            result => completed.SetResult(result));
+        Assert.Same(current, forwarded);
+        Assert.Equal(cancellation.Token, forwardedToken);
+        cancellation.Cancel();
+        Assert.False(forwarded!());
+        pending.SetException(new InvalidOperationException("test failure"));
+        var result = await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(result.Success);
+        Assert.Equal("test failure", result.Detail);
+    }
+
     private static T Stub<T>(Func<string, object?[]?, object?> call) where T : class
     {
         var proxy = DispatchProxy.Create<T, StubProxy>();

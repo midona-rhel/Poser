@@ -283,6 +283,49 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(new[] { fresh }, world.Port.LiveAddresses);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async System.Threading.Tasks.Task Invalidated_respawn_keeps_original_and_cleans_pending_body(bool cancelToken)
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        var original = spawned.Address;
+        using var cancellation = new System.Threading.CancellationTokenSource();
+        bool current = true;
+        world.Port.BgReady = false;
+        var operation = spawned.Respawn("bg/new.mdl", () => current, cancellation.Token);
+        var fresh = world.Port.LastSpawned;
+        Assert.False(operation.IsCompleted);
+        if (cancelToken) cancellation.Cancel(); else current = false;
+        world.Port.BgReady = true;
+        world.Service.PumpRespawns(DateTime.UtcNow);
+        Assert.False((await operation).Success);
+        Assert.Equal(original, spawned.Address);
+        Assert.Equal("bg/old.mdl", spawned.Path);
+        Assert.DoesNotContain(original, world.Port.Destroyed);
+        Assert.Contains(fresh, world.Port.Destroyed);
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.True((await spawned.Respawn("bg/next.mdl")).Success);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Respawn_rechecks_validity_at_commit_boundary()
+    {
+        var world = new World();
+        var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
+        var original = spawned.Address;
+        int checks = 0;
+        // Admission and the first Advance guard pass; the last reversible
+        // point refuses the replacement.
+        var result = await spawned.Respawn("bg/new.mdl", () => ++checks < 3);
+        Assert.False(result.Success);
+        Assert.Equal(3, checks);
+        Assert.Equal(original, spawned.Address);
+        Assert.DoesNotContain(original, world.Port.Destroyed);
+        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+    }
+
     [Fact]
     public async System.Threading.Tasks.Task Respawn_loading_timeout_rolls_back_and_retains_failed_cleanup()
     {
