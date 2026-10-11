@@ -58,6 +58,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     /// rejected candidate, so the next poll retries.</summary>
     private IReadOnlyList<object?>? _idleSignature;
     private readonly CoalescedRefresh _refreshQueue = new();
+    private bool _friendlyBoneNames;
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
     private DateTime _nextRetryUtc = DateTime.MinValue;
@@ -109,6 +110,8 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events = events;
         _framework = framework;
         _configuration = configuration;
+        _friendlyBoneNames = configuration.Config.Skeleton.ShowFriendlyBoneNames;
+        _configuration.OnConfigurationChanged += OnConfigurationChanged;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
         _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Subscribe<CameraListChangedEvent>(OnCameraListChanged);
@@ -129,6 +132,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     public void Dispose()
     {
         _refreshQueue.Stop();
+        _configuration.OnConfigurationChanged -= OnConfigurationChanged;
         // Unhooking the pump stops any pending missing-skeleton retries.
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
@@ -408,6 +412,19 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
         RequestRefresh();
+
+    /// <summary>Bone descriptors retain their display strings in the
+    /// committed scene snapshot. A saved toggle or reset therefore needs a
+    /// descriptor refresh on the next framework frame; the one-second idle
+    /// signature is only a fallback, not acceptable UI latency.</summary>
+    private void OnConfigurationChanged()
+    {
+        bool friendly = _configuration.Config.Skeleton.ShowFriendlyBoneNames;
+        if (_friendlyBoneNames == friendly)
+            return;
+        _friendlyBoneNames = friendly;
+        RequestRefresh();
+    }
 
     /// <summary>
     /// Leaving GPose is the last chance to write into the actors Poser
