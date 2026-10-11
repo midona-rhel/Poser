@@ -57,7 +57,7 @@ internal interface IActorLifecycle
     void CapturePoseForCopy(object actor, Action<ActorState?> done) =>
         done(Read(actor) with { Runtime = null });
 
-    Action<IActor>? CaptureBodyProfile(IActor source) => null;
+    Action<IActor, Action>? CaptureBodyProfile(IActor source) => null;
 
     IActor? Recreate(ActorState state) => null;
 
@@ -91,7 +91,7 @@ internal sealed class ActorLifecycleSlot
     public ActorState Document;
     public bool HasDocument;
     public bool PosedDuplicate;
-    public Action<IActor>? ApplyBodyProfile;
+    public Action<IActor, Action>? ApplyBodyProfile;
 }
 
 /// <summary>Owns actor lifecycle entries. An actor's document cannot rebuild
@@ -138,7 +138,7 @@ internal sealed class ActorLifecycleOwner
         slot.Respawn = spawn;
         slot.HasRespawn = true;
         slot.ApplyBodyProfile = bodyProfile;
-        bodyProfile?.Invoke(actor);
+        bodyProfile?.Invoke(actor, static () => { });
         _history.Append(new SceneLifecyclePatch(
             description,
             () => _slots.CaptureAndRemove(slot),
@@ -181,9 +181,18 @@ internal sealed class ActorLifecycleOwner
             description,
             () => _slots.CaptureAndRemove(slot),
             () => _slots.Restore(slot)));
-        // Profile shaping establishes the target skeleton's basis; restore the
-        // raw pose only after its deferred application has been queued.
-        bodyProfile?.Invoke(actor);
+        ActorState? posed = null;
+        bool profileReady = bodyProfile is null;
+        void RestoreWhenReady()
+        {
+            if (!profileReady || posed is not { } captured)
+                return;
+            if (ReferenceEquals(_slots.CurrentInstance(slot), actor))
+                _actors.Restore(actor, captured, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
+        }
+        // Profile shaping establishes the target skeleton's basis. Its
+        // completion is an apply-frame barrier, not merely IPC acceptance.
+        bodyProfile?.Invoke(actor, () => { profileReady = true; RestoreWhenReady(); });
         _actors.CapturePoseForCopy(source, captured =>
         {
             if (captured is null)
@@ -191,9 +200,8 @@ internal sealed class ActorLifecycleOwner
                 _actors.Note($"Duplicate: the pose of '{name}' could not be read, so the copy keeps its own pose.");
                 return;
             }
-            var posed = captured.Value with { FreezePoseOnRestore = true };
-            if (_slots.CurrentInstance(slot) is { } live)
-                _actors.Restore(live, posed, () => ReferenceEquals(_slots.CurrentInstance(slot), live));
+            posed = captured.Value with { FreezePoseOnRestore = true };
+            RestoreWhenReady();
         });
         return actor;
     }
@@ -266,14 +274,20 @@ internal sealed class ActorLifecycleOwner
         slot.Live = actor;
         if (slot.Name is { } name)
             _actors.SetName(actor, name);
-        slot.ApplyBodyProfile?.Invoke(actor);
+        void RestoreState()
+        {
+            if (slot.HasDocument)
+                _actors.Restore(actor, slot.Document, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
+        }
+        if (slot.ApplyBodyProfile is { } applyBodyProfile)
+            applyBodyProfile(actor, RestoreState);
+        else
+            RestoreState();
         // The body is back; the placement and the pose land on it over the
         // next few ticks, because the skeleton they need is built with a draw
         // object the spawn deliberately defers. The entry has landed either
         // way: the actor IS restored, and a pose that cannot follow says so
         // rather than leaving the step un-consumed and unrepeatable.
-        if (slot.HasDocument)
-            _actors.Restore(actor, slot.Document, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         return true;
     }
 }

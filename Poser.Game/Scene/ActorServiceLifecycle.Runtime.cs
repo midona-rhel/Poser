@@ -32,7 +32,7 @@ internal sealed partial class ActorServiceLifecycle
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;
 
-    public Action<IActor>? CaptureBodyProfile(IActor source)
+    public Action<IActor, Action>? CaptureBodyProfile(IActor source)
     {
         if (_bindings.GetActorId(source) is not { } sourceId) return null;
         var captured = _integration.CaptureBodyProfile(sourceId);
@@ -42,11 +42,32 @@ internal sealed partial class ActorServiceLifecycle
             return null;
         }
         if (captured.Value is not { } profile) return null;
-        return target => WhenPosable(target, ready =>
+        return (target, readyToRestore) => WhenPosable(target, ready =>
         {
             if (_bindings.GetActorId((IActor)ready) is not { } targetId) return;
             var result = _integration.ApplyBodyProfileJson(targetId, profile, "Copied profile");
-            if (!result.Success) Note($"'{target.Name}': {result.Detail}");
+            if (!result.Success)
+            {
+                Note($"'{target.Name}': {result.Detail}");
+                readyToRestore();
+                return;
+            }
+            var skeletons = _skeletons.GetSkeletons(target);
+            if (skeletons.Count == 0)
+            {
+                readyToRestore();
+                return;
+            }
+            var begun = _exports.Begin(skeletons, static _ => true, ok =>
+            {
+                if (!ok) Note($"'{target.Name}': the copied body profile did not reach a refreshed pose frame.");
+                readyToRestore();
+            });
+            if (!begun.Success)
+            {
+                Note($"'{target.Name}': {begun.Detail}");
+                readyToRestore();
+            }
         });
     }
 
