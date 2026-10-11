@@ -154,7 +154,7 @@ public sealed partial class DebugBridge
             usesDefaultRoot = string.IsNullOrWhiteSpace(stored),
             effectiveServiceRoot = effective,
             reloadRequired = !string.Equals(configured, effective, StringComparison.OrdinalIgnoreCase),
-            sceneRootIsolationSupported = false,
+            sceneRootIsolationSupported = true,
         };
     }
 
@@ -166,9 +166,9 @@ public sealed partial class DebugBridge
             root = Path.GetFullPath(service.RootDirectory),
             terminal = service.LastTerminalResult,
             health = service.LastHealthRecord,
-            // SceneAutoSaveStore is fixed to plugin config at composition time;
-            // the bridge deliberately offers no failure injection against it.
-            sceneRootIsolationSupported = false,
+            // Isolation is selected by /sceneautosaveconfig and takes effect
+            // only after reload; this endpoint never swaps the running store.
+            sceneRootIsolationSupported = true,
         };
     }
 
