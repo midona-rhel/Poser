@@ -1054,6 +1054,22 @@ public sealed class SceneWorkflowTests
     }
 
     [Fact]
+    public async Task Successful_load_summary_counts_borrowed_world_objects_as_objects()
+    {
+        var scene = new SceneFile { SceneId = Guid.NewGuid() };
+        scene.WorldObjects = [WorldObject("bg/island-palm.mdl")];
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var load = Workflow(runtime);
+
+        Assert.True(load.BeginLoad("housing.xivs").Success);
+        await load.Drain;
+
+        AssertApplied(load);
+        Assert.Contains("1 object", load.Progress!.Outcome!.Detail);
+        Assert.DoesNotContain("0 objects", load.Progress.Outcome.Detail);
+    }
+
+    [Fact]
     public async Task A_pose_import_that_never_finishes_is_cancelled_not_left_armed()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
